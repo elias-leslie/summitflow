@@ -33,7 +33,7 @@ def init_schema() -> None:
     """Initialize database schema."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Projects table
+            # Projects table (with config columns for verification engine)
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS projects (
@@ -43,6 +43,9 @@ def init_schema() -> None:
                     health_endpoint TEXT DEFAULT '/health',
                     frontend_port INTEGER DEFAULT 3000,
                     backend_port INTEGER DEFAULT 8000,
+                    backend_dir TEXT,
+                    browser_scripts_dir TEXT,
+                    data_dir TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
                 """
@@ -212,6 +215,11 @@ def init_schema() -> None:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     completed_at TIMESTAMPTZ,
                     completed_by VARCHAR(50),
+                    files TEXT[],
+                    notes TEXT,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    effort VARCHAR(10),
+                    task_type VARCHAR(20) DEFAULT 'implementation',
                     CONSTRAINT feature_tasks_unique_task UNIQUE (feature_id, task_id)
                 )
                 """
@@ -289,6 +297,57 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_criterion ON artifacts(criterion_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_quality ON artifacts(quality_status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_current ON artifacts(is_current) WHERE is_current = TRUE")
+
+            # Evidence table (same structure as artifacts, renamed for clarity)
+            # Used by evidence_manager service
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS evidence (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    evidence_id VARCHAR(50) NOT NULL,
+                    feature_id VARCHAR(20) NOT NULL,
+                    criterion_id VARCHAR(20),
+                    evidence_type VARCHAR(20) DEFAULT 'evidence',
+                    file_path VARCHAR(500) NOT NULL,
+                    file_size_bytes INTEGER,
+                    version INTEGER DEFAULT 1,
+                    is_current BOOLEAN DEFAULT TRUE,
+                    captured_at TIMESTAMPTZ DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ,
+                    quality_status VARCHAR(20) DEFAULT 'pending',
+                    quality_issues JSONB DEFAULT '[]'::jsonb,
+                    confidence FLOAT,
+                    ai_reviewed_at TIMESTAMPTZ,
+                    ai_reviewed_by VARCHAR(50),
+                    ai_evidence TEXT,
+                    user_reviewed_at TIMESTAMPTZ,
+                    user_approved BOOLEAN,
+                    user_notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, evidence_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_feature ON evidence(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE")
+
+            # Add new columns to existing tables if they don't exist
+            # This allows running init_schema() on existing databases
+            for column, table in [
+                ("backend_dir TEXT", "projects"),
+                ("browser_scripts_dir TEXT", "projects"),
+                ("data_dir TEXT", "projects"),
+            ]:
+                try:
+                    col_name = column.split()[0]
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
+                except Exception:
+                    pass  # Column already exists
 
             conn.commit()
 
