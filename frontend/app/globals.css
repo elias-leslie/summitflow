@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --phosphor: #00c853;
+  --phosphor-glow: rgba(0, 200, 83, 0.15);
+  --slate-deep: #0a0c0f;
+  --grid-color: rgba(45, 51, 59, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background: var(--slate-deep);
+  color: #e4e7eb;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle scanline overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.015) 2px,
+    rgba(0, 0, 0, 0.015) 4px
+  );
+}
+
+/* Grid background pattern */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Phosphor glow effect */
+.glow-phosphor {
+  box-shadow:
+    0 0 20px var(--phosphor-glow),
+    0 0 40px var(--phosphor-glow),
+    inset 0 0 20px var(--phosphor-glow);
+}
+
+.glow-phosphor-sm {
+  box-shadow: 0 0 10px var(--phosphor-glow);
+}
+
+.glow-phosphor-text {
+  text-shadow: 0 0 10px var(--phosphor-glow);
+}
+
+/* Status indicator dots */
+.status-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-dot.healthy {
+  @apply bg-phosphor-500;
+  box-shadow: 0 0 8px rgba(0, 200, 83, 0.6);
+}
+
+.status-dot.warning {
+  @apply bg-amber-400;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+}
+
+.status-dot.error {
+  @apply bg-rose-500;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
+}
+
+.status-dot.unknown {
+  @apply bg-slate-600;
+}
+
+/* Card styles */
+.card {
+  @apply bg-slate-850 border border-slate-700 rounded-lg;
+  background: linear-gradient(
+    135deg,
+    rgba(20, 23, 28, 0.9) 0%,
+    rgba(15, 17, 21, 0.95) 100%
+  );
+}
+
+.card-elevated {
+  @apply card;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -2px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+/* Button styles */
+.btn {
+  @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
+  @apply focus:outline-none focus:ring-2 focus:ring-phosphor-500/50;
+}
+
+.btn-primary {
+  @apply btn bg-phosphor-600 text-white;
+  @apply hover:bg-phosphor-500 hover:shadow-lg;
+  box-shadow: 0 0 20px rgba(0, 200, 83, 0.2);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 30px rgba(0, 200, 83, 0.3);
+}
+
+.btn-secondary {
+  @apply btn bg-slate-750 text-slate-200 border border-slate-600;
+  @apply hover:bg-slate-700 hover:border-slate-500;
+}
+
+.btn-ghost {
+  @apply btn text-slate-400;
+  @apply hover:text-phosphor-400 hover:bg-slate-800/50;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-3 py-2 rounded-md;
+  @apply bg-slate-900 border border-slate-700;
+  @apply text-slate-200 placeholder-slate-500;
+  @apply focus:outline-none focus:border-phosphor-500/50 focus:ring-1 focus:ring-phosphor-500/30;
+  @apply transition-all duration-200;
+}
+
+/* Monospace text */
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Display font for headings */
+.display {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+}
+
+.badge-phosphor {
+  @apply badge bg-phosphor-500/10 text-phosphor-400 border border-phosphor-500/30;
+}
+
+.badge-amber {
+  @apply badge bg-amber-500/10 text-amber-400 border border-amber-500/30;
+}
+
+.badge-rose {
+  @apply badge bg-rose-500/10 text-rose-400 border border-rose-500/30;
+}
+
+.badge-slate {
+  @apply badge bg-slate-700/50 text-slate-400 border border-slate-600;
+}
+
+/* Table styles */
+.table-row {
+  @apply border-b border-slate-800 hover:bg-slate-800/30 transition-colors;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 17, 21, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2d333b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d444d;
+}
+
+/* Animation utilities */
+.animate-in {
+  animation: fadeIn 0.4s ease-out, slideUp 0.4s ease-out;
+  animation-fill-mode: both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+  animation-fill-mode: both;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Terminal-style cursor blink */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: '▋';
+  animation: blink 1s step-end infinite;
+  color: var(--phosphor);
+}

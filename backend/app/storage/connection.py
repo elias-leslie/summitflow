@@ -9,7 +9,7 @@ import psycopg
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://kasadis@localhost:5432/summitflow",
+    "postgresql://portfolio_ai_user:portfolio_ai_dev_2025@localhost:5432/summitflow",
 )
 
 
