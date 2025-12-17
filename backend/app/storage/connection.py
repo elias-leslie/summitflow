@@ -43,6 +43,7 @@ def init_schema() -> None:
                     health_endpoint TEXT DEFAULT '/health',
                     frontend_port INTEGER DEFAULT 3000,
                     backend_port INTEGER DEFAULT 8000,
+                    root_path TEXT,
                     backend_dir TEXT,
                     browser_scripts_dir TEXT,
                     data_dir TEXT,
@@ -336,9 +337,37 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE")
 
+            # File audit table - stores file scan results per project
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_audit (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    path TEXT NOT NULL,
+                    is_directory BOOLEAN NOT NULL DEFAULT FALSE,
+                    extension VARCHAR(20),
+                    size_bytes INTEGER DEFAULT 0,
+                    lines_of_code INTEGER DEFAULT 0,
+                    file_count INTEGER,
+                    total_loc INTEGER,
+                    bloat_level VARCHAR(20),
+                    last_modified TIMESTAMPTZ,
+                    last_commit_days INTEGER,
+                    reference_count INTEGER DEFAULT 0,
+                    stale_status VARCHAR(20),
+                    scanned_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, path)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_project ON file_audit(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_path ON file_audit(path)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_bloat ON file_audit(bloat_level) WHERE bloat_level IS NOT NULL")
+
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
             for column, table in [
+                ("root_path TEXT", "projects"),
                 ("backend_dir TEXT", "projects"),
                 ("browser_scripts_dir TEXT", "projects"),
                 ("data_dir TEXT", "projects"),
