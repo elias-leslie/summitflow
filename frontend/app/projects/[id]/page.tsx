@@ -1,15 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe } from "lucide-react";
+import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { SitemapTab } from "@/components/sitemap/SitemapTab";
+import { FeaturesTab } from "@/components/features/FeaturesTab";
+
+type TabId = "sitemap" | "features";
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
+  const [activeTab, setActiveTab] = useState<TabId>("sitemap");
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -107,13 +112,48 @@ export default function ProjectDetailPage() {
         </div>
       </header>
 
-      {/* Sitemap Section */}
-      <section className="animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <div className="flex items-center gap-2 mb-4">
-          <Activity className="w-5 h-5 text-phosphor-500" />
-          <h2 className="display font-semibold text-lg text-white">Sitemap</h2>
+      {/* Tab Navigation */}
+      <nav className="border-b border-slate-700">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setActiveTab("sitemap")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "sitemap"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              Sitemap
+            </div>
+            {activeTab === "sitemap" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("features")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "features"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <ListChecks className="w-4 h-4" />
+              Features
+            </div>
+            {activeTab === "features" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
-        <SitemapTab projectId={projectId} />
+      </nav>
+
+      {/* Tab Content */}
+      <section className="animate-fade-in">
+        {activeTab === "sitemap" && <SitemapTab projectId={projectId} />}
+        {activeTab === "features" && <FeaturesTab projectId={projectId} />}
       </section>
     </div>
   );
