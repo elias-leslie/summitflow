@@ -1,4 +1,4 @@
-"""DevVision database storage."""
+"""SummitFlow database storage."""
 
 from .connection import get_connection
 

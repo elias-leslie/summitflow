@@ -1,4 +1,4 @@
-"""DevVision API routers."""
+"""SummitFlow API routers."""
 
 from . import projects
 

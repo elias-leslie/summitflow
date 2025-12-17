@@ -1,1 +1,1 @@
-"""DevVision backend application."""
+"""SummitFlow backend application."""
