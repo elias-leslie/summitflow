@@ -1,6 +1,6 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
-// Build: 2025-12-17-v4
+// Build: 2025-12-17-v6
 function getApiBase(): string {
   return "";
 }
@@ -24,7 +24,7 @@ export interface ProjectHealth {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/`);
+  const res = await fetch(`${getApiBase()}/api/projects`);
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
 }

@@ -42,7 +42,7 @@ class ProjectHealthResponse(BaseModel):
     checked_at: datetime
 
 
-@router.post("/", response_model=ProjectResponse)
+@router.post("", response_model=ProjectResponse)
 async def create_project(project: ProjectCreate) -> ProjectResponse:
     """Register a new project."""
     with get_connection() as conn:
@@ -77,7 +77,7 @@ async def create_project(project: ProjectCreate) -> ProjectResponse:
     )
 
 
-@router.get("/", response_model=list[ProjectResponse])
+@router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
     with get_connection() as conn:

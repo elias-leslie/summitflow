@@ -68,7 +68,7 @@ class VisionGoalUpdate(BaseModel):
     category: str | None = None
 
 
-@router.get("/", response_model=list[VisionGoalWithStats])
+@router.get("", response_model=list[VisionGoalWithStats])
 async def get_vision_goals(project_id: str) -> list[VisionGoalWithStats]:
     """Get all vision goals with feature and criteria statistics for a project."""
     try:
@@ -338,7 +338,7 @@ async def get_vision_goal_details(project_id: str, code: str) -> list[dict[str, 
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/", response_model=dict[str, Any])
+@router.post("", response_model=dict[str, Any])
 async def create_vision_goal(project_id: str, goal: VisionGoalCreate) -> dict[str, Any]:
     """Create a new vision goal."""
     try:
