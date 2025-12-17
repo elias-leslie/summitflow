@@ -1,21 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target } from "lucide-react";
+import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target, FileCode2, Camera } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { SitemapTab } from "@/components/sitemap/SitemapTab";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
+import { FilesTab } from "@/components/files/FilesTab";
 
-type TabId = "sitemap" | "features" | "vision";
+type TabId = "sitemap" | "features" | "vision" | "files" | "evidence";
 
 export default function ProjectDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.id as string;
-  const [activeTab, setActiveTab] = useState<TabId>("sitemap");
+
+  // Get initial tab from URL query param
+  const urlTab = searchParams.get("tab") as TabId | null;
+  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "sitemap");
+
+  // Sync with URL changes
+  useEffect(() => {
+    if (urlTab && ["sitemap", "features", "vision", "files", "evidence"].includes(urlTab)) {
+      setActiveTab(urlTab);
+    }
+  }, [urlTab]);
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -164,6 +176,38 @@ export default function ProjectDetailPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("files")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "files"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <FileCode2 className="w-4 h-4" />
+              Files
+            </div>
+            {activeTab === "files" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("evidence")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "evidence"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Camera className="w-4 h-4" />
+              Evidence
+            </div>
+            {activeTab === "evidence" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -172,6 +216,14 @@ export default function ProjectDetailPage() {
         {activeTab === "sitemap" && <SitemapTab projectId={projectId} />}
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
+        {activeTab === "files" && <FilesTab projectId={projectId} />}
+        {activeTab === "evidence" && (
+          <div className="card p-8 text-center">
+            <Camera className="w-12 h-12 mx-auto text-slate-600 mb-4" />
+            <p className="text-slate-400">Evidence capture coming soon</p>
+            <p className="text-sm text-slate-500 mt-2">Screenshots and verification artifacts will appear here</p>
+          </div>
+        )}
       </section>
     </div>
   );

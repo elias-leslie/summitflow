@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+// Always use relative URLs - Next.js rewrites handle proxying to backend
+// Build: 2025-12-17-v2
+const API_BASE = "";
 
 export interface Project {
   id: string;
@@ -19,7 +21,7 @@ export interface ProjectHealth {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/api/projects/`);
+  const res = await fetch(`${API_BASE}/api/projects`);
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
 }
@@ -477,5 +479,141 @@ export async function fetchVisionGoalDetails(projectId: string, code: string): P
 export async function fetchVisionContent(projectId: string): Promise<VisionContentResponse> {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision`);
   if (!res.ok) throw new Error("Failed to fetch vision content");
+  return res.json();
+}
+
+// ============================================================================
+// Files Types
+// ============================================================================
+
+export interface FileSummary {
+  totalFiles: number;
+  totalDirectories: number;
+  totalLoc: number;
+  bloatWarnings: number;
+  bloatCritical: number;
+  staleFiles: number;
+  orphanFiles: number;
+  freshFiles: number;
+  untrackedFiles: number;
+  lastScan: string | null;
+  byExtension: Array<{ extension: string; count: number; loc: number }>;
+}
+
+export interface FileNode {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  extension: string | null;
+  sizeBytes: number;
+  linesOfCode: number;
+  fileCount: number | null;
+  totalLoc: number | null;
+  bloatLevel: "warning" | "critical" | null;
+  lastModified: string | null;
+  subdirCount: number;
+  directFileCount: number;
+  hasChildren: boolean;
+  lastCommitDays: number | null;
+  referenceCount: number | null;
+  staleStatus: "fresh" | "stale" | "orphan" | "untracked" | null;
+}
+
+export interface GitCommit {
+  hash: string;
+  fullHash: string;
+  author: string;
+  date: string;
+  subject: string;
+  linesAdded: number;
+  linesDeleted: number;
+}
+
+export interface GitHistory {
+  commits: GitCommit[];
+  totalCommits: number;
+  filePath: string;
+  error?: string;
+}
+
+export interface FilesListResponse {
+  items: FileNode[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export type FileSortField = "name" | "loc" | "size" | "files" | "modified";
+export type SortDir = "asc" | "desc";
+
+// ============================================================================
+// Files API Functions
+// ============================================================================
+
+export async function fetchFileSummary(projectId: string): Promise<FileSummary> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/summary`);
+  if (!res.ok) throw new Error("Failed to fetch file summary");
+  return res.json();
+}
+
+export async function fetchFileChildren(
+  projectId: string,
+  path: string,
+  sort: FileSortField,
+  dir: SortDir,
+  foldersFirst: boolean
+): Promise<FileNode[]> {
+  const params = new URLSearchParams({
+    path,
+    sort,
+    dir,
+    folders_first: String(foldersFirst),
+    include_files: "true",
+  });
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/children?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch file children");
+  return res.json();
+}
+
+export async function fetchGitHistory(projectId: string, path: string): Promise<GitHistory> {
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/files/history?path=${encodeURIComponent(path)}&limit=5`
+  );
+  if (!res.ok) {
+    return { commits: [], totalCommits: 0, filePath: path, error: "Failed to fetch" };
+  }
+  return res.json();
+}
+
+export async function triggerFileScan(projectId: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/scan`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to trigger scan");
+  return res.json();
+}
+
+export async function fetchAllFiles(
+  projectId: string,
+  sort: FileSortField,
+  dir: SortDir,
+  limit = 500
+): Promise<FilesListResponse> {
+  const sortMap: Record<FileSortField, string> = {
+    name: "path",
+    loc: "lines_of_code",
+    size: "size_bytes",
+    files: "path",
+    modified: "last_modified",
+  };
+  const params = new URLSearchParams({
+    is_directory: "false",
+    sort: sortMap[sort],
+    dir,
+    limit: String(limit),
+    offset: "0",
+  });
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch all files");
   return res.json();
 }
