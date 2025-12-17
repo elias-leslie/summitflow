@@ -1,5 +1,5 @@
 """SummitFlow API routers."""
 
-from . import projects
+from . import features, projects
 
-__all__ = ["projects"]
+__all__ = ["features", "projects"]

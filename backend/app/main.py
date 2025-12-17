@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import projects, sitemap
+from .api import features, projects, sitemap
 
 app = FastAPI(
     title="SummitFlow",
@@ -23,6 +23,7 @@ app.add_middleware(
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(sitemap.router, prefix="/api/projects", tags=["sitemap"])
+app.include_router(features.router, prefix="/api", tags=["features"])
 
 
 @app.get("/health")
