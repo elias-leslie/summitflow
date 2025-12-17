@@ -260,7 +260,7 @@ async def get_features(
         cur.execute(
             f"""
                 SELECT id, project_id, feature_id, name, category, description,
-                       layers, layer_results, priority, acceptance_criteria,
+                       verification_layers, layer_results, priority, acceptance_criteria,
                        vision_goals, last_verified_at, created_at, updated_at
                 FROM feature_capabilities
                 WHERE {where_sql}
@@ -599,7 +599,7 @@ async def get_feature(project_id: str, feature_id: str) -> FeatureResponse:
         cur.execute(
             """
                 SELECT id, project_id, feature_id, name, category, description,
-                       layers, layer_results, priority, acceptance_criteria,
+                       verification_layers, layer_results, priority, acceptance_criteria,
                        vision_goals, last_verified_at, created_at, updated_at
                 FROM feature_capabilities
                 WHERE project_id = %s AND feature_id = %s
@@ -795,10 +795,10 @@ async def delete_feature(project_id: str, feature_id: str) -> dict[str, Any]:
         feature_name = feature_check[1]
 
         # Delete in correct order due to FK constraints
-        # 1. Delete artifacts
+        # 1. Delete artifacts (feature_id is VARCHAR in artifacts table)
         cur.execute(
-            "DELETE FROM artifacts WHERE feature_id = %s",
-            (feature_db_id,),
+            "DELETE FROM artifacts WHERE project_id = %s AND feature_id = %s",
+            (project_id, feature_id),
         )
 
         # 2. Delete subtasks
@@ -888,11 +888,11 @@ async def update_feature_layers(
         cur.execute(
             """
                 UPDATE feature_capabilities
-                SET layers = %s, updated_at = NOW()
+                SET verification_layers = %s, updated_at = NOW()
                 WHERE project_id = %s AND feature_id = %s
                 RETURNING feature_id
                 """,
-            (update.layers, project_id, feature_id),
+            (update.verification_layers, project_id, feature_id),
         )
         result = cur.fetchone()
         conn.commit()
@@ -906,7 +906,7 @@ async def update_feature_layers(
         "status": "updated",
         "project_id": project_id,
         "feature_id": feature_id,
-        "layers": update.layers,
+        "layers": update.verification_layers,
     }
 
 
