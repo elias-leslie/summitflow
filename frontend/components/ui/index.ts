@@ -9,3 +9,4 @@ export { Checkbox } from "./checkbox";
 export { Skeleton } from "./skeleton";
 export { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell, TableCaption } from "./table";
 export { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./tooltip";
+export { Progress } from "./progress";

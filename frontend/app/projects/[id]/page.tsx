@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks } from "lucide-react";
+import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { SitemapTab } from "@/components/sitemap/SitemapTab";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
+import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 
-type TabId = "sitemap" | "features";
+type TabId = "sitemap" | "features" | "vision";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -147,6 +148,22 @@ export default function ProjectDetailPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("vision")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "vision"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Target className="w-4 h-4" />
+              Vision
+            </div>
+            {activeTab === "vision" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -154,6 +171,7 @@ export default function ProjectDetailPage() {
       <section className="animate-fade-in">
         {activeTab === "sitemap" && <SitemapTab projectId={projectId} />}
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
+        {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
       </section>
     </div>
   );

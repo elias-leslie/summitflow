@@ -19,7 +19,7 @@ export interface ProjectHealth {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/api/projects`);
+  const res = await fetch(`${API_BASE}/api/projects/`);
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
 }
@@ -395,5 +395,87 @@ export async function fetchFeatureSummary(projectId: string): Promise<FeatureSum
 export async function fetchVerificationSummary(projectId: string): Promise<VerificationSummary> {
   const res = await fetch(`${API_BASE}/api/projects/${projectId}/features/verification-summary`);
   if (!res.ok) throw new Error("Failed to fetch verification summary");
+  return res.json();
+}
+
+// ============================================================================
+// Vision Types
+// ============================================================================
+
+export interface VisionGoal {
+  code: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  feature_count: number;
+  criteria_total: number;
+  criteria_passed: number;
+  pass_rate: number;
+}
+
+export interface FeatureLink {
+  feature_id: string;
+  name: string;
+  criteria_total: number;
+  criteria_passed: number;
+}
+
+export interface VisionGoalDetail extends VisionGoal {
+  features: FeatureLink[];
+}
+
+export interface VisionContentItem {
+  id: number;
+  content_type: string;
+  content_key: string;
+  title: string | null;
+  content: string;
+  order_num: number;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface VisionContentResponse {
+  content_types: string[];
+  content: Record<string, VisionContentItem[]>;
+}
+
+export interface GoalDetail {
+  id: number;
+  goal_code: string;
+  detail_type: string;
+  content: string;
+  order_num: number;
+  metadata: Record<string, unknown> | null;
+}
+
+// ============================================================================
+// Vision API Functions
+// ============================================================================
+
+export async function fetchVisionGoals(projectId: string): Promise<VisionGoal[]> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals`);
+  if (!res.ok) throw new Error("Failed to fetch vision goals");
+  return res.json();
+}
+
+export async function fetchVisionGoal(projectId: string, code: string): Promise<VisionGoalDetail> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals/${code}`);
+  if (!res.ok) throw new Error("Failed to fetch vision goal");
+  return res.json();
+}
+
+export async function fetchVisionGoalDetails(projectId: string, code: string): Promise<GoalDetail[]> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals/${code}/details`);
+  if (!res.ok) {
+    // Goal details may not exist - return empty array
+    if (res.status === 404) return [];
+    throw new Error("Failed to fetch vision goal details");
+  }
+  return res.json();
+}
+
+export async function fetchVisionContent(projectId: string): Promise<VisionContentResponse> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision`);
+  if (!res.ok) throw new Error("Failed to fetch vision content");
   return res.json();
 }

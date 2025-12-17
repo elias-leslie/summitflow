@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import evidence, features, projects, sitemap
+from .api import evidence, features, projects, sitemap, vision_content, vision_goals
 
 app = FastAPI(
     title="SummitFlow",
@@ -14,7 +14,11 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001", "http://192.168.8.233:3001"],
+    allow_origins=[
+        "http://localhost:3001",
+        "http://192.168.8.233:3001",
+        "https://dev.summitflow.dev",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,6 +29,8 @@ app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(sitemap.router, prefix="/api/projects", tags=["sitemap"])
 app.include_router(features.router, prefix="/api", tags=["features"])
 app.include_router(evidence.router, prefix="/api", tags=["evidence"])
+app.include_router(vision_goals.router, prefix="/api", tags=["vision"])
+app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 
 
 @app.get("/health")
