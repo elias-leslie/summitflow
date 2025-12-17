@@ -60,3 +60,115 @@ export async function deleteProject(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete project");
 }
+
+// ============================================================================
+// Sitemap Types
+// ============================================================================
+
+export type HealthStatus = "healthy" | "warning" | "error" | "unknown";
+
+export interface SitemapEntry {
+  id: number;
+  port: number;
+  path: string;
+  method: string;
+  entry_type: string;
+  source: string | null;
+  title: string | null;
+  parent_path: string | null;
+  health_status: HealthStatus;
+  console_errors: number;
+  console_warnings: number;
+  http_status: number | null;
+  response_time_ms: number | null;
+  last_error_message: string | null;
+  last_checked_at: string | null;
+  discovered_at: string | null;
+}
+
+export interface SitemapListResponse {
+  total: number;
+  entries: SitemapEntry[];
+}
+
+export interface HealthSummaryResponse {
+  total: number;
+  healthy: number;
+  warning: number;
+  error: number;
+  unknown: number;
+  by_port: Record<string, { healthy: number; warning: number; error: number; unknown: number }>;
+}
+
+export interface DiscoveryResponse {
+  backend_discovered: number;
+  frontend_discovered: number;
+  total_saved: number;
+}
+
+export interface HealthCheckResponse {
+  success: boolean;
+  entry_id?: number;
+  health_status?: HealthStatus;
+  http_status?: number;
+  response_time_ms?: number;
+  error?: string;
+}
+
+export interface CheckAllResponse {
+  checked: number;
+  healthy: number;
+  warning: number;
+  error: number;
+}
+
+// ============================================================================
+// Sitemap API Functions
+// ============================================================================
+
+export async function fetchSitemapEntries(
+  projectId: string,
+  filters: { port?: number; health_status?: HealthStatus; limit?: number } = {}
+): Promise<SitemapListResponse> {
+  const params = new URLSearchParams();
+  if (filters.port) params.append("port", filters.port.toString());
+  if (filters.health_status) params.append("health_status", filters.health_status);
+  if (filters.limit) params.append("limit", filters.limit.toString());
+
+  const queryString = params.toString();
+  const res = await fetch(
+    `${API_BASE}/api/projects/${projectId}/sitemap/entries${queryString ? `?${queryString}` : ""}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch sitemap entries");
+  return res.json();
+}
+
+export async function fetchHealthSummary(projectId: string): Promise<HealthSummaryResponse> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/health-summary`);
+  if (!res.ok) throw new Error("Failed to fetch health summary");
+  return res.json();
+}
+
+export async function triggerDiscovery(projectId: string): Promise<DiscoveryResponse> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/discover`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to trigger discovery");
+  return res.json();
+}
+
+export async function checkEntryHealth(projectId: string, entryId: number): Promise<HealthCheckResponse> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/check/${entryId}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to check health");
+  return res.json();
+}
+
+export async function checkAllHealth(projectId: string): Promise<CheckAllResponse> {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/check-all`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to check all health");
+  return res.json();
+}
