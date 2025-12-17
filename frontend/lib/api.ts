@@ -1,6 +1,9 @@
-// Always use relative URLs - Next.js rewrites handle proxying to backend
-// Build: 2025-12-17-v2
-const API_BASE = "";
+// API Base URL - always empty to use relative URLs
+// Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
+// Build: 2025-12-17-v4
+function getApiBase(): string {
+  return "";
+}
 
 export interface Project {
   id: string;
@@ -21,19 +24,19 @@ export interface ProjectHealth {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/api/projects`);
+  const res = await fetch(`${getApiBase()}/api/projects/`);
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
 }
 
 export async function fetchProject(id: string): Promise<Project> {
-  const res = await fetch(`${API_BASE}/api/projects/${id}`);
+  const res = await fetch(`${getApiBase()}/api/projects/${id}`);
   if (!res.ok) throw new Error("Failed to fetch project");
   return res.json();
 }
 
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
-  const res = await fetch(`${API_BASE}/api/projects/${id}/health`);
+  const res = await fetch(`${getApiBase()}/api/projects/${id}/health`);
   if (!res.ok) throw new Error("Failed to check project health");
   return res.json();
 }
@@ -44,7 +47,7 @@ export async function createProject(project: {
   base_url: string;
   health_endpoint?: string;
 }): Promise<Project> {
-  const res = await fetch(`${API_BASE}/api/projects`, {
+  const res = await fetch(`${getApiBase()}/api/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(project),
@@ -57,7 +60,7 @@ export async function createProject(project: {
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/projects/${id}`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete project");
@@ -139,20 +142,20 @@ export async function fetchSitemapEntries(
 
   const queryString = params.toString();
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/sitemap/entries${queryString ? `?${queryString}` : ""}`
+    `${getApiBase()}/api/projects/${projectId}/sitemap/entries${queryString ? `?${queryString}` : ""}`
   );
   if (!res.ok) throw new Error("Failed to fetch sitemap entries");
   return res.json();
 }
 
 export async function fetchHealthSummary(projectId: string): Promise<HealthSummaryResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/health-summary`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/sitemap/health-summary`);
   if (!res.ok) throw new Error("Failed to fetch health summary");
   return res.json();
 }
 
 export async function triggerDiscovery(projectId: string): Promise<DiscoveryResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/discover`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/sitemap/discover`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to trigger discovery");
@@ -160,7 +163,7 @@ export async function triggerDiscovery(projectId: string): Promise<DiscoveryResp
 }
 
 export async function checkEntryHealth(projectId: string, entryId: number): Promise<HealthCheckResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/check/${entryId}`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/sitemap/check/${entryId}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to check health");
@@ -168,7 +171,7 @@ export async function checkEntryHealth(projectId: string, entryId: number): Prom
 }
 
 export async function checkAllHealth(projectId: string): Promise<CheckAllResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/sitemap/check-all`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/sitemap/check-all`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to check all health");
@@ -261,7 +264,7 @@ export async function fetchEvidence(
   if (version) params.append("version", version.toString());
 
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/evidence/${featureId}/${criterionId}?${params}`
+    `${getApiBase()}/api/projects/${projectId}/evidence/${featureId}/${criterionId}?${params}`
   );
   if (!res.ok) {
     if (res.status === 404) throw new Error("No evidence captured yet");
@@ -276,7 +279,7 @@ export async function refreshEvidence(
   criterionId: string,
   url: string
 ): Promise<{ success: boolean; version?: number; error?: string }> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/evidence/refresh`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/evidence/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ feature_id: featureId, criterion_id: criterionId, url }),
@@ -291,7 +294,7 @@ export async function submitEvidenceReview(
   approved: boolean | null,
   notes?: string
 ): Promise<{ success: boolean }> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/evidence/${evidenceId}/review`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/evidence/${evidenceId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ approved, notes }),
@@ -301,7 +304,7 @@ export async function submitEvidenceReview(
 }
 
 export function getScreenshotUrl(projectId: string, featureId: string, criterionId: string, version: number): string {
-  return `${API_BASE}/api/projects/${projectId}/evidence/${featureId}/${criterionId}/screenshot?version=${version}`;
+  return `${getApiBase()}/api/projects/${projectId}/evidence/${featureId}/${criterionId}/screenshot?version=${version}`;
 }
 
 // ============================================================================
@@ -382,20 +385,20 @@ export async function fetchFeatures(
 
   const queryString = params.toString();
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/features${queryString ? `?${queryString}` : ""}`
+    `${getApiBase()}/api/projects/${projectId}/features${queryString ? `?${queryString}` : ""}`
   );
   if (!res.ok) throw new Error("Failed to fetch features");
   return res.json();
 }
 
 export async function fetchFeatureSummary(projectId: string): Promise<FeatureSummary> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/features/summary`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/summary`);
   if (!res.ok) throw new Error("Failed to fetch feature summary");
   return res.json();
 }
 
 export async function fetchVerificationSummary(projectId: string): Promise<VerificationSummary> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/features/verification-summary`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/verification-summary`);
   if (!res.ok) throw new Error("Failed to fetch verification summary");
   return res.json();
 }
@@ -455,19 +458,19 @@ export interface GoalDetail {
 // ============================================================================
 
 export async function fetchVisionGoals(projectId: string): Promise<VisionGoal[]> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals`);
   if (!res.ok) throw new Error("Failed to fetch vision goals");
   return res.json();
 }
 
 export async function fetchVisionGoal(projectId: string, code: string): Promise<VisionGoalDetail> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals/${code}`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals/${code}`);
   if (!res.ok) throw new Error("Failed to fetch vision goal");
   return res.json();
 }
 
 export async function fetchVisionGoalDetails(projectId: string, code: string): Promise<GoalDetail[]> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision-goals/${code}/details`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals/${code}/details`);
   if (!res.ok) {
     // Goal details may not exist - return empty array
     if (res.status === 404) return [];
@@ -477,7 +480,7 @@ export async function fetchVisionGoalDetails(projectId: string, code: string): P
 }
 
 export async function fetchVisionContent(projectId: string): Promise<VisionContentResponse> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/vision`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision`);
   if (!res.ok) throw new Error("Failed to fetch vision content");
   return res.json();
 }
@@ -551,7 +554,7 @@ export type SortDir = "asc" | "desc";
 // ============================================================================
 
 export async function fetchFileSummary(projectId: string): Promise<FileSummary> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/summary`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/files/summary`);
   if (!res.ok) throw new Error("Failed to fetch file summary");
   return res.json();
 }
@@ -570,14 +573,14 @@ export async function fetchFileChildren(
     folders_first: String(foldersFirst),
     include_files: "true",
   });
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/children?${params}`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/files/children?${params}`);
   if (!res.ok) throw new Error("Failed to fetch file children");
   return res.json();
 }
 
 export async function fetchGitHistory(projectId: string, path: string): Promise<GitHistory> {
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/files/history?path=${encodeURIComponent(path)}&limit=5`
+    `${getApiBase()}/api/projects/${projectId}/files/history?path=${encodeURIComponent(path)}&limit=5`
   );
   if (!res.ok) {
     return { commits: [], totalCommits: 0, filePath: path, error: "Failed to fetch" };
@@ -586,7 +589,7 @@ export async function fetchGitHistory(projectId: string, path: string): Promise<
 }
 
 export async function triggerFileScan(projectId: string): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files/scan`, {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/files/scan`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to trigger scan");
@@ -613,7 +616,7 @@ export async function fetchAllFiles(
     limit: String(limit),
     offset: "0",
   });
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files?${params}`);
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/files?${params}`);
   if (!res.ok) throw new Error("Failed to fetch all files");
   return res.json();
 }

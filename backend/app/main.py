@@ -9,6 +9,7 @@ app = FastAPI(
     title="SummitFlow",
     description="AI-assisted software development platform",
     version="0.1.0",
+    redirect_slashes=False,  # Prevent 307 redirects that expose backend URL
 )
 
 # CORS middleware
