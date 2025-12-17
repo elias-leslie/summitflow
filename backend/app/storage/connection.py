@@ -105,6 +105,189 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_health_history_entry ON sitemap_health_history(sitemap_entry_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_health_history_checked ON sitemap_health_history(checked_at)")
 
+            # ============================================================
+            # Phase 3: Features, Vision, Artifacts Tables
+            # ============================================================
+
+            # Vision goals lookup table (must be before feature_capabilities due to FK)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vision_goals (
+                    code TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goals_category ON vision_goals(category)")
+
+            # Vision goal details (objectives, features, success criteria)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vision_goal_details (
+                    id SERIAL PRIMARY KEY,
+                    goal_code TEXT NOT NULL REFERENCES vision_goals(code) ON DELETE CASCADE,
+                    detail_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    order_num INT DEFAULT 0,
+                    metadata JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (goal_code, detail_type, order_num)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goal_details_code ON vision_goal_details(goal_code)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goal_details_type ON vision_goal_details(detail_type)")
+
+            # Vision content (mission, vision, principles, roadmap)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vision_content (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    content_type TEXT NOT NULL,
+                    content_key TEXT NOT NULL,
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    order_num INT DEFAULT 0,
+                    metadata JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (project_id, content_type, content_key)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_content_project ON vision_content(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_content_type ON vision_content(content_type)")
+
+            # Feature capabilities - main features table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feature_capabilities (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    feature_id VARCHAR(20) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    category VARCHAR(100),
+                    description TEXT,
+                    passes BOOLEAN DEFAULT NULL,
+                    task_file VARCHAR(255),
+                    task_section VARCHAR(20),
+                    health_status VARCHAR(20) DEFAULT 'active',
+                    status VARCHAR(20) DEFAULT 'planned',
+                    effort VARCHAR(10),
+                    priority INTEGER DEFAULT 2,
+                    verification_layers JSONB DEFAULT '[]'::jsonb,
+                    implementation_notes TEXT,
+                    acceptance_criteria JSONB DEFAULT '[]'::jsonb,
+                    last_verified_at TIMESTAMPTZ,
+                    verified_by VARCHAR(50),
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, feature_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_project ON feature_capabilities(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_category ON feature_capabilities(category)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_passes ON feature_capabilities(passes)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_status ON feature_capabilities(status)")
+
+            # Feature tasks - subtasks for features
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feature_tasks (
+                    id SERIAL PRIMARY KEY,
+                    feature_id INTEGER NOT NULL REFERENCES feature_capabilities(id) ON DELETE CASCADE,
+                    task_id VARCHAR(20) NOT NULL,
+                    description TEXT NOT NULL,
+                    completed BOOLEAN NOT NULL DEFAULT false,
+                    order_num INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    completed_at TIMESTAMPTZ,
+                    completed_by VARCHAR(50),
+                    CONSTRAINT feature_tasks_unique_task UNIQUE (feature_id, task_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_tasks_feature ON feature_tasks(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_tasks_completed ON feature_tasks(completed)")
+
+            # Feature dependencies
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feature_dependencies (
+                    id SERIAL PRIMARY KEY,
+                    feature_id INTEGER NOT NULL REFERENCES feature_capabilities(id) ON DELETE CASCADE,
+                    depends_on_id INTEGER NOT NULL REFERENCES feature_capabilities(id) ON DELETE CASCADE,
+                    dependency_type TEXT NOT NULL DEFAULT 'blocks',
+                    notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(feature_id, depends_on_id),
+                    CHECK (feature_id != depends_on_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_deps_feature ON feature_dependencies(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_deps_depends ON feature_dependencies(depends_on_id)")
+
+            # Feature vision goal mappings (junction table)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feature_vision_goal_mappings (
+                    id SERIAL PRIMARY KEY,
+                    feature_id INT NOT NULL REFERENCES feature_capabilities(id) ON DELETE CASCADE,
+                    vision_code TEXT NOT NULL REFERENCES vision_goals(code) ON DELETE CASCADE,
+                    linked_at TIMESTAMPTZ DEFAULT NOW(),
+                    linked_by VARCHAR(50),
+                    UNIQUE (feature_id, vision_code)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_fvgm_feature ON feature_vision_goal_mappings(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_fvgm_vision ON feature_vision_goal_mappings(vision_code)")
+
+            # Artifacts - evidence storage for verification
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS artifacts (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    artifact_id VARCHAR(50) NOT NULL,
+                    feature_id VARCHAR(20) NOT NULL,
+                    criterion_id VARCHAR(20),
+                    artifact_type VARCHAR(20) DEFAULT 'evidence',
+                    file_path VARCHAR(500) NOT NULL,
+                    file_size_bytes INTEGER,
+                    version INTEGER DEFAULT 1,
+                    is_current BOOLEAN DEFAULT TRUE,
+                    captured_at TIMESTAMPTZ DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ,
+                    quality_status VARCHAR(20) DEFAULT 'pending',
+                    quality_issues JSONB DEFAULT '[]'::jsonb,
+                    confidence FLOAT,
+                    ai_reviewed_at TIMESTAMPTZ,
+                    ai_reviewed_by VARCHAR(50),
+                    ai_evidence TEXT,
+                    user_reviewed_at TIMESTAMPTZ,
+                    user_approved BOOLEAN,
+                    user_notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, artifact_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_feature ON artifacts(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_criterion ON artifacts(criterion_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_quality ON artifacts(quality_status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_current ON artifacts(is_current) WHERE is_current = TRUE")
+
             conn.commit()
 
 
