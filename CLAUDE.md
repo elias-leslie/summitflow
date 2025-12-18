@@ -2,16 +2,54 @@
 
 SummitFlow - AI-assisted software development platform.
 
+**Read [AGENTS.md](AGENTS.md) for task tracking and workflow.**
+
+---
+
+## MANDATORY: Discovered Issues = Immediate Beads
+
+**When you encounter ANY pre-existing bug/error during work:**
+1. Review ALL open beads: `bd list --status open --json | jq -r '.[] | "\(.id) \(.title)"'`
+2. Create if missing: `bd create "Fix: <desc>" -t bug -p 2 -l "complexity:small,domains:backend" --json`
+3. Link to parent: `bd dep add <new-id> <parent-id> --type discovered-from`
+
+**Do NOT filter by keywords. Scan the FULL bead list. No exceptions.**
+
+**Bead Reference:** See `~/.claude/docs/bead-reference.md` for valid types, labels, and commands.
+See `.claude/rules/issue-tracking.md` for full protocol.
+
+---
+
 ## Quick Reference
 
 | Action | Command |
 |--------|---------|
+| Find work | `bd ready --json` |
+| Claim work | `bd update <id> --status in_progress` |
+| Complete work | `bd close <id> --reason "Done"` |
+| **End session** | See "Landing the Plane" in AGENTS.md |
 | Start services | `bash ~/summitflow/scripts/start.sh` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
 | Stop services | `bash ~/summitflow/scripts/shutdown.sh` |
 | Check status | `bash ~/summitflow/scripts/status.sh` |
-| Run tests | `cd ~/summitflow/backend && source .venv/bin/activate && pytest` |
-| Create schema | `cd ~/summitflow/backend && source .venv/bin/activate && python -m app.storage.connection` |
+| Run tests | `cd ~/summitflow/backend && .venv/bin/pytest` |
+
+**Session End (NON-NEGOTIABLE):** Commit impl → `bd close` → commit beads → `git pull --rebase && git push` (see AGENTS.md for full checklist)
+
+---
+
+## Rules (6 files in `.claude/rules/`)
+
+| Rule | Purpose |
+|------|---------|
+| `issue-tracking.md` | **MANDATORY: Track ALL discovered bugs** |
+| `architecture-coherence.md` | **MANDATORY: Anti-silo, DRY, holistic architecture** |
+| `bead-quality.md` | Label requirements for beads |
+| `ui-backend-lockstep.md` | Backend changes need UI visibility |
+| `service-management.md` | Systemd ops |
+| `interaction-style.md` | Communication style |
+
+---
 
 ## URLs
 
@@ -21,6 +59,8 @@ SummitFlow - AI-assisted software development platform.
 | Local Frontend | http://localhost:3001 |
 | Local Backend | http://localhost:8001 |
 | API Docs | http://localhost:8001/docs |
+
+---
 
 ## Service Management
 
@@ -41,6 +81,8 @@ systemctl --user stop summitflow-frontend
 systemctl --user restart summitflow-backend
 ```
 
+---
+
 ## Project Structure
 
 ```
@@ -56,14 +98,18 @@ summitflow/
 │   ├── app/           # Next.js pages
 │   ├── components/    # React components
 │   └── lib/           # API client, utilities
+├── .beads/            # Beads issue tracker
+├── .claude/           # Claude configuration
+│   ├── rules/         # Mandatory rules
+│   ├── docs/          # Reference documentation
+│   └── skills/        # Domain skills
 └── scripts/
     ├── systemd/       # Service files
     ├── nginx/         # nginx config
-    ├── restart.sh     # Restart all services
-    ├── status.sh      # Check service status
-    ├── start.sh       # Start all services
-    └── shutdown.sh    # Stop all services
+    └── *.sh           # Control scripts
 ```
+
+---
 
 ## Database
 
@@ -71,18 +117,23 @@ PostgreSQL database: `summitflow`
 
 Core tables:
 - `projects` - Registered target applications
-
-Future tables (Phase 2+):
-- `features` - Feature tracking per project
-- `acceptance_criteria` - Feature verification criteria
+- `sitemap_entries` - Discovered endpoints per project
+- `sitemap_health_history` - Health check history
+- `feature_capabilities` - Feature tracking
 - `artifacts` - Evidence (screenshots, logs)
-- `sitemap_entries` - Discovered endpoints
+- `scanner_database` - Database capability scans
+- `scanner_api` - API capability scans
+- `scanner_celery` - Celery task scans
+
+---
 
 ## API Conventions
 
 - All endpoints scoped by `project_id`
 - Timestamps in UTC (ISO 8601)
 - IDs are prefixed (e.g., `FEAT-001`, `AC-001`)
+
+---
 
 ## First-Time Setup
 
@@ -96,10 +147,28 @@ bash ~/summitflow/scripts/start.sh
 # 3. Access at https://192.168.8.233:444
 ```
 
-## Migration Plan
+---
 
-Extracted from portfolio-ai. See:
-- Plan: `/home/kasadis/.claude/plans/sparkling-meandering-cascade.md`
-- Epic: `portfolio-ai-43g`
-- Phase 1: `portfolio-ai-2kp` (CLOSED)
-- Phase 2: `portfolio-ai-6lg` (Sitemap extraction)
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [AGENTS.md](AGENTS.md) | Task tracking, workflow |
+| `~/.claude/docs/bead-reference.md` | Beads command reference (global) |
+| `.claude/rules/` | Project-specific rules |
+| `~/.claude/rules/` | Global rules (beads-workflow, summitflow-vs-app) |
+
+---
+
+## Epic Tracker
+
+| Bead | Description | Status |
+|------|-------------|--------|
+| summitflow-y6s | Epic: SummitFlow Platform Extraction | Open |
+| summitflow-y6s.1 | Cross-project Celery task explorer | Open |
+| summitflow-y6s.2 | Sitemap UI polish | Open |
+| summitflow-y6s.3 | Agent Hub (deferred v1.1) | Open |
+
+---
+
+**Version**: 1.0.0 | **Updated**: 2025-12-18
