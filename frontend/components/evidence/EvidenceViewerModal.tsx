@@ -443,21 +443,21 @@ export function EvidenceViewerModal({
                         <div className="p-3 rounded border border-slate-700 bg-slate-900/50">
                           <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Page Load</div>
                           <div className="text-xl mono text-white">
-                            {evidence.performance.pageLoadMs ?? "N/A"}
+                            {evidence.performance?.pageLoadMs ?? "N/A"}
                             <span className="text-sm text-slate-500 ml-1">ms</span>
                           </div>
                         </div>
                         <div className="p-3 rounded border border-slate-700 bg-slate-900/50">
                           <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">DOM Ready</div>
                           <div className="text-xl mono text-white">
-                            {evidence.performance.domContentLoadedMs ?? "N/A"}
+                            {evidence.performance?.domContentLoadedMs ?? "N/A"}
                             <span className="text-sm text-slate-500 ml-1">ms</span>
                           </div>
                         </div>
                         <div className="p-3 rounded border border-slate-700 bg-slate-900/50">
                           <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">LCP</div>
                           <div className="text-xl mono text-white">
-                            {evidence.performance.largestContentfulPaintMs ?? "N/A"}
+                            {evidence.performance?.largestContentfulPaintMs ?? "N/A"}
                             <span className="text-sm text-slate-500 ml-1">ms</span>
                           </div>
                         </div>
