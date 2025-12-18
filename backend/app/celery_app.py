@@ -65,6 +65,12 @@ celery_app.conf.update(
 
 # Celery Beat schedule
 celery_app.conf.beat_schedule = {
+    # Explorer scan - scan all projects every 6 hours
+    "scan-all-projects": {
+        "task": "summitflow.scan_all_projects",
+        "schedule": 60 * 60 * 6,  # Every 6 hours
+        "kwargs": {"dry_run": False},
+    },
     # Evidence capture - refresh expired evidence every 6 hours
     "capture-scheduled-evidence": {
         "task": "summitflow.capture_scheduled_evidence",
@@ -110,4 +116,4 @@ def setup_celery_task_logger(logger: logging.Logger, *args, **kwargs) -> None:  
 
 
 # Import tasks to register them with Celery
-from app.tasks import evidence_tasks  # noqa: F401, E402
+from app.tasks import evidence_tasks, explorer_tasks  # noqa: F401, E402

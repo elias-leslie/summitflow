@@ -3,9 +3,10 @@
 from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from ..services import explorer
 from ..storage.connection import get_connection
 
 router = APIRouter()
@@ -45,8 +46,13 @@ class ProjectHealthResponse(BaseModel):
 
 
 @router.post("", response_model=ProjectResponse)
-async def create_project(project: ProjectCreate) -> ProjectResponse:
-    """Register a new project."""
+async def create_project(
+    project: ProjectCreate, background_tasks: BackgroundTasks
+) -> ProjectResponse:
+    """Register a new project.
+
+    Triggers an initial Explorer scan for all types in the background.
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Check if already exists
@@ -70,6 +76,10 @@ async def create_project(project: ProjectCreate) -> ProjectResponse:
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create project")
 
+    # Trigger initial Explorer scan in background (all types)
+    explorer.start_scan(project.id, None)
+    background_tasks.add_task(explorer.run_scan_with_tracking, project.id, None)
+
     return ProjectResponse(
         id=row[0],
         name=row[1],
@@ -83,16 +93,15 @@ async def create_project(project: ProjectCreate) -> ProjectResponse:
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 SELECT id, name, base_url, health_endpoint, root_path, created_at
                 FROM projects
                 ORDER BY created_at DESC
                 """
-            )
-            rows = cur.fetchall()
+        )
+        rows = cur.fetchall()
 
     return [
         ProjectResponse(
@@ -110,17 +119,16 @@ async def list_projects() -> list[ProjectResponse]:
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: str) -> ProjectResponse:
     """Get a specific project."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 SELECT id, name, base_url, health_endpoint, root_path, created_at
                 FROM projects
                 WHERE id = %s
                 """,
-                (project_id,),
-            )
-            row = cur.fetchone()
+            (project_id,),
+        )
+        row = cur.fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
@@ -139,13 +147,12 @@ async def get_project(project_id: str) -> ProjectResponse:
 async def check_project_health(project_id: str) -> ProjectHealthResponse:
     """Check health of a registered project."""
     # Get project
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT base_url, health_endpoint FROM projects WHERE id = %s",
-                (project_id,),
-            )
-            row = cur.fetchone()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT base_url, health_endpoint FROM projects WHERE id = %s",
+            (project_id,),
+        )
+        row = cur.fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
@@ -188,43 +195,42 @@ class ProjectUpdate(BaseModel):
 @router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(project_id: str, update: ProjectUpdate) -> ProjectResponse:
     """Update a project."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            # Check if project exists
-            cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-            if not cur.fetchone():
-                raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check if project exists
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-            # Build update query dynamically
-            updates = []
-            params = []
-            if update.name is not None:
-                updates.append("name = %s")
-                params.append(update.name)
-            if update.base_url is not None:
-                updates.append("base_url = %s")
-                params.append(update.base_url)
-            if update.health_endpoint is not None:
-                updates.append("health_endpoint = %s")
-                params.append(update.health_endpoint)
-            if update.root_path is not None:
-                updates.append("root_path = %s")
-                params.append(update.root_path)
+        # Build update query dynamically
+        updates = []
+        params = []
+        if update.name is not None:
+            updates.append("name = %s")
+            params.append(update.name)
+        if update.base_url is not None:
+            updates.append("base_url = %s")
+            params.append(update.base_url)
+        if update.health_endpoint is not None:
+            updates.append("health_endpoint = %s")
+            params.append(update.health_endpoint)
+        if update.root_path is not None:
+            updates.append("root_path = %s")
+            params.append(update.root_path)
 
-            if not updates:
-                raise HTTPException(status_code=400, detail="No fields to update")
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
 
-            params.append(project_id)
-            cur.execute(
-                f"""
+        params.append(project_id)
+        cur.execute(
+            f"""
                 UPDATE projects SET {', '.join(updates)}
                 WHERE id = %s
                 RETURNING id, name, base_url, health_endpoint, root_path, created_at
                 """,
-                params,
-            )
-            row = cur.fetchone()
-            conn.commit()
+            params,
+        )
+        row = cur.fetchone()
+        conn.commit()
 
     if not row:
         raise HTTPException(status_code=500, detail="Failed to update project")
@@ -242,11 +248,10 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
 @router.delete("/{project_id}")
 async def delete_project(project_id: str) -> dict[str, str]:
     """Delete a project."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM projects WHERE id = %s RETURNING id", (project_id,))
-            row = cur.fetchone()
-            conn.commit()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM projects WHERE id = %s RETURNING id", (project_id,))
+        row = cur.fetchone()
+        conn.commit()
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
