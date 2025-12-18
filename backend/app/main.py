@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     beads,
+    capabilities,
     celery_endpoints,
     evidence,
     features,
@@ -45,6 +46,7 @@ app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 app.include_router(files.router, prefix="/api/projects", tags=["files"])
 app.include_router(celery_endpoints.router, tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
+app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 
 
 @app.get("/health")

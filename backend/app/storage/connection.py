@@ -364,6 +364,97 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_path ON file_audit(path)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_bloat ON file_audit(bloat_level) WHERE bloat_level IS NOT NULL")
 
+            # ============================================================
+            # Scanner Tables (Database, API, Celery introspection)
+            # ============================================================
+
+            # Database scanner - table introspection results
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scanner_database (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    table_name VARCHAR(255) NOT NULL,
+                    category VARCHAR(100),
+                    row_count INTEGER DEFAULT 0,
+                    total_columns INTEGER DEFAULT 0,
+                    columns JSONB DEFAULT '[]',
+                    columns_with_data JSONB DEFAULT '[]',
+                    columns_mostly_null JSONB DEFAULT '[]',
+                    completeness_pct INTEGER DEFAULT 0,
+                    date_range_start DATE,
+                    date_range_end DATE,
+                    expected_freshness VARCHAR(20),
+                    days_since_update INTEGER,
+                    freshness_status VARCHAR(20),
+                    health_status VARCHAR(20) DEFAULT 'unknown',
+                    fk_referenced_by JSONB DEFAULT '[]',
+                    last_scanned_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, table_name)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_db_project ON scanner_database(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_db_health ON scanner_database(health_status)")
+
+            # API scanner - static route analysis results
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scanner_api (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    endpoint_path VARCHAR(512) NOT NULL,
+                    http_method VARCHAR(10) NOT NULL,
+                    category VARCHAR(100),
+                    route_file VARCHAR(255),
+                    function_name VARCHAR(255),
+                    depends_on_tables JSONB DEFAULT '[]',
+                    frontend_callers JSONB DEFAULT '[]',
+                    health_status VARCHAR(20) DEFAULT 'unknown',
+                    last_scanned_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, endpoint_path, http_method)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_api_project ON scanner_api(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_api_health ON scanner_api(health_status)")
+
+            # Celery scanner - task introspection results
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scanner_celery (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    category VARCHAR(100),
+                    task_path VARCHAR(512),
+                    function_name VARCHAR(255),
+                    schedule_description VARCHAR(255),
+                    schedule_crontab VARCHAR(100),
+                    schedule_interval_seconds INTEGER,
+                    last_run_at TIMESTAMPTZ,
+                    success_count_7d INTEGER DEFAULT 0,
+                    failure_count_7d INTEGER DEFAULT 0,
+                    success_rate_pct INTEGER,
+                    populates_tables JSONB DEFAULT '[]',
+                    reads_from_tables JSONB DEFAULT '[]',
+                    depends_on_tasks JSONB DEFAULT '[]',
+                    called_by JSONB DEFAULT '[]',
+                    health_status VARCHAR(20) DEFAULT 'unknown',
+                    last_scanned_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, task_name)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_project ON scanner_celery(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_health ON scanner_celery(health_status)")
+
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
             for column, table in [
