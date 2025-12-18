@@ -1,5 +1,7 @@
 """SummitFlow FastAPI application."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,12 +17,22 @@ from .api import (
     vision_content,
     vision_goals,
 )
+from .storage.connection import init_schema
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database schema on startup."""
+    init_schema()
+    yield
+
 
 app = FastAPI(
     title="SummitFlow",
     description="AI-assisted software development platform",
     version="0.1.0",
     redirect_slashes=False,  # Prevent 307 redirects that expose backend URL
+    lifespan=lifespan,
 )
 
 # CORS middleware
