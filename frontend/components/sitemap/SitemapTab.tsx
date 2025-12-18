@@ -14,6 +14,7 @@ import {
   Globe,
   Server,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchSitemapEntries,
   fetchHealthSummary,
@@ -54,19 +55,19 @@ export function SitemapTab({ projectId }: SitemapTabProps) {
   const discoverMutation = useMutation({
     mutationFn: () => triggerDiscovery(projectId),
     onSuccess: (result) => {
-      alert(`Discovery complete: ${result.backend_discovered} backend, ${result.frontend_discovered} frontend`);
+      toast.success(`Discovery complete: ${result.backend_discovered} backend, ${result.frontend_discovered} frontend`);
       setTimeout(() => queryClient.invalidateQueries({ queryKey: ["sitemap", projectId] }), 2000);
     },
-    onError: (e) => alert(`Discovery failed: ${e}`),
+    onError: (e) => toast.error(`Discovery failed: ${e}`),
   });
 
   const checkAllMutation = useMutation({
     mutationFn: () => checkAllHealth(projectId),
     onSuccess: (result) => {
-      alert(`Health check complete: ${result.healthy} healthy, ${result.warning} warning, ${result.error} error`);
+      toast.success(`Health check: ${result.healthy} healthy, ${result.warning} warning, ${result.error} error`);
       queryClient.invalidateQueries({ queryKey: ["sitemap", projectId] });
     },
-    onError: (e) => alert(`Health check failed: ${e}`),
+    onError: (e) => toast.error(`Health check failed: ${e}`),
   });
 
   // Health indicator

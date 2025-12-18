@@ -28,6 +28,7 @@ import {
   X,
   GitCommit as GitCommitIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -388,7 +389,7 @@ export function FilesTab({ projectId }: FilesTabProps) {
   const scanMutation = useMutation({
     mutationFn: () => triggerFileScan(projectId),
     onSuccess: () => {
-      alert("File scan started");
+      toast.success("File scan started");
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["files", projectId] });
         setLoadedChildren(new Map());
@@ -396,7 +397,7 @@ export function FilesTab({ projectId }: FilesTabProps) {
         setDetailsOpenPaths(new Set());
       }, 5000);
     },
-    onError: () => alert("Failed to start scan"),
+    onError: () => toast.error("Failed to start scan"),
   });
 
   // Handlers
