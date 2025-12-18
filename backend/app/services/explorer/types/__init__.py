@@ -22,17 +22,17 @@ if TYPE_CHECKING:
 
 # Import scanners
 from .database import DatabaseScanner
+from .endpoints import EndpointScanner
 from .files import FileScanner
 from .tasks import TaskScanner
 
 # Registry of scanner classes by entry type
 # Format: {entry_type: ScannerClass}
-# Add new scanners here as they are implemented
 SCANNERS: dict[str, type["BaseScanner"]] = {
     "file": FileScanner,
     "table": DatabaseScanner,
     "task": TaskScanner,
-    # "endpoint": EndpointScanner, # TODO: Phase 2
+    "endpoint": EndpointScanner,
 }
 
 
