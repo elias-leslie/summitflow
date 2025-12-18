@@ -6,8 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   FolderKanban,
-  Map,
-  FileCode2,
+  Compass,
   Target,
   Camera,
   Settings,
@@ -70,9 +69,8 @@ export function Sidebar() {
     if (selectedProjectId) {
       return [
         ...base,
+        { name: "Explorer", href: `/projects/${selectedProjectId}?tab=explorer`, icon: Compass },
         { name: "Features", href: `/projects/${selectedProjectId}?tab=features`, icon: Target },
-        { name: "Sitemap", href: `/projects/${selectedProjectId}?tab=sitemap`, icon: Map },
-        { name: "Files", href: `/projects/${selectedProjectId}?tab=files`, icon: FileCode2 },
         { name: "Evidence", href: `/projects/${selectedProjectId}?tab=evidence`, icon: Camera },
       ];
     }
@@ -80,8 +78,6 @@ export function Sidebar() {
     return [
       ...base,
       { name: "Features", href: "/features", icon: Target },
-      { name: "Sitemap", href: "/sitemap", icon: Map },
-      { name: "Files", href: "/files", icon: FileCode2 },
       { name: "Evidence", href: "/evidence", icon: Camera },
     ];
   };

@@ -5,7 +5,7 @@ import {
   Activity,
   FolderKanban,
   Target,
-  FileCode2,
+  Compass,
   ArrowUpRight,
   Clock,
   CheckCircle2,
@@ -87,11 +87,11 @@ function StatsGrid() {
       href: "/features",
     },
     {
-      label: "Files Tracked",
+      label: "Explorer",
       value: 0,
-      icon: FileCode2,
+      icon: Compass,
       color: "rose",
-      href: "/files",
+      href: "/projects",
     },
   ];
 
