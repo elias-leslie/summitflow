@@ -3,15 +3,16 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target, FileCode2, Camera } from "lucide-react";
+import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target, FileCode2, Camera, CircleDot } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { SitemapTab } from "@/components/sitemap/SitemapTab";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 import { FilesTab } from "@/components/files/FilesTab";
+import { BeadsTab } from "@/components/beads/BeadsTab";
 
-type TabId = "sitemap" | "features" | "vision" | "files" | "evidence";
+type TabId = "sitemap" | "features" | "vision" | "files" | "evidence" | "beads";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -24,7 +25,7 @@ export default function ProjectDetailPage() {
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["sitemap", "features", "vision", "files", "evidence"].includes(urlTab)) {
+    if (urlTab && ["sitemap", "features", "vision", "files", "evidence", "beads"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -208,6 +209,22 @@ export default function ProjectDetailPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("beads")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "beads"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <CircleDot className="w-4 h-4" />
+              Beads
+            </div>
+            {activeTab === "beads" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -224,6 +241,7 @@ export default function ProjectDetailPage() {
             <p className="text-sm text-slate-500 mt-2">Screenshots and verification artifacts will appear here</p>
           </div>
         )}
+        {activeTab === "beads" && <BeadsTab projectId={projectId} />}
       </section>
     </div>
   );

@@ -620,3 +620,137 @@ export async function fetchAllFiles(
   if (!res.ok) throw new Error("Failed to fetch all files");
   return res.json();
 }
+
+// ============================================================================
+// Beads Types (Issue Tracking)
+// ============================================================================
+
+export interface Bead {
+  id: string;
+  title: string;
+  description: string | null;
+  notes: string | null;
+  status: "open" | "in_progress" | "closed";
+  priority: number;
+  issue_type: string;
+  labels: string[] | null;
+  created_at: string | null;
+  updated_at: string | null;
+  closed_at: string | null;
+  dependency_count: number | null;
+  dependent_count: number | null;
+}
+
+export interface BeadsListResponse {
+  beads: Bead[];
+  total: number;
+  stats: {
+    total: number;
+    open: number;
+    closed: number;
+    in_progress: number;
+    by_priority: Record<number, number>;
+    by_type: Record<string, number>;
+  };
+}
+
+export interface BeadStatsResponse {
+  total: number;
+  open: number;
+  closed: number;
+  in_progress: number;
+  by_priority: Record<number, number>;
+  by_type: Record<string, number>;
+}
+
+// ============================================================================
+// Beads API Functions
+// ============================================================================
+
+export async function fetchBeads(
+  projectId: string,
+  status?: "all" | "open" | "closed",
+  limit = 100
+): Promise<BeadsListResponse> {
+  const params = new URLSearchParams();
+  if (status) params.append("status", status);
+  params.append("limit", limit.toString());
+
+  const queryString = params.toString();
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/beads${queryString ? `?${queryString}` : ""}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch beads");
+  return res.json();
+}
+
+export async function fetchReadyBeads(projectId: string): Promise<BeadsListResponse> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads/ready`);
+  if (!res.ok) throw new Error("Failed to fetch ready beads");
+  return res.json();
+}
+
+export async function fetchBeadStats(projectId: string): Promise<BeadStatsResponse> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads/stats`);
+  if (!res.ok) throw new Error("Failed to fetch bead stats");
+  return res.json();
+}
+
+export async function fetchBead(projectId: string, beadId: string): Promise<Bead> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads/${beadId}`);
+  if (!res.ok) throw new Error("Failed to fetch bead");
+  return res.json();
+}
+
+export async function createBead(
+  projectId: string,
+  bead: {
+    title: string;
+    description?: string;
+    priority?: number;
+    issue_type?: string;
+    labels?: string[];
+  }
+): Promise<Bead> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bead),
+  });
+  if (!res.ok) throw new Error("Failed to create bead");
+  return res.json();
+}
+
+export async function updateBead(
+  projectId: string,
+  beadId: string,
+  updates: {
+    status?: string;
+    priority?: number;
+    title?: string;
+    notes?: string;
+    labels?: string[];
+  }
+): Promise<Bead> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads/${beadId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error("Failed to update bead");
+  return res.json();
+}
+
+export async function closeBead(
+  projectId: string,
+  beadId: string,
+  reason: string
+): Promise<Bead> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/beads/${beadId}/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw new Error("Failed to close bead");
+  return res.json();
+}
