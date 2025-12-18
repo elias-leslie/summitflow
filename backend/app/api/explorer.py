@@ -77,7 +77,8 @@ async def list_entries(
     filters = {k: v for k, v in filters.items() if v is not None}
 
     entries = explorer.get_entries(project_id, filters)
-    stats = explorer.get_stats(project_id)
+    # Get stats filtered by type if type filter is applied
+    stats = explorer.get_stats(project_id, entry_type=type)
 
     return {
         "entries": entries,

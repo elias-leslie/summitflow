@@ -12,11 +12,16 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Folder, Database, Zap, Globe, Loader2 } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
 import { SummaryBar, ScanningOverlay } from "./SummaryBar";
+import {
+  fetchExplorerEntries,
+  triggerExplorerScan,
+  type ExplorerResponse,
+} from "@/lib/api/explorer";
 import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
 
 interface ExplorerShellProps {
@@ -38,36 +43,12 @@ export interface ExplorerChildProps {
   onCollapseAll: () => void;
 }
 
-// Placeholder stats for demo - replace with real data fetching
-const demoStats: Record<ExplorerType, ExplorerStats> = {
-  files: {
-    total: 234,
-    fresh: 189,
-    stale: 32,
-    orphan: 13,
-    lastScan: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-  },
-  database: {
-    total: 47,
-    fresh: 38,
-    stale: 7,
-    orphan: 2,
-    lastScan: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-  },
-  celery: {
-    total: 23,
-    fresh: 18,
-    stale: 4,
-    orphan: 1,
-    lastScan: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-  },
-  api: {
-    total: 89,
-    fresh: 82,
-    stale: 5,
-    orphan: 2,
-    lastScan: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  },
+// Map UI type to API entry type
+const uiTypeToApiType: Record<ExplorerType, string> = {
+  files: "file",
+  database: "table",
+  celery: "task",
+  api: "endpoint",
 };
 
 const typeIcons: Record<ExplorerType, React.ReactNode> = {
@@ -98,9 +79,52 @@ export function ExplorerShell({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
 
+  // Stats state - fetched from API
+  const [statsData, setStatsData] = useState<Record<ExplorerType, ExplorerStats>>({
+    files: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    database: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+  });
+
+  // Fetch stats for all types on mount and when scanning completes
+  useEffect(() => {
+    const fetchAllStats = async () => {
+      const types: ExplorerType[] = ["files", "database", "celery", "api"];
+      const newStats: Record<ExplorerType, ExplorerStats> = { ...statsData };
+
+      for (const type of types) {
+        try {
+          const apiType = uiTypeToApiType[type];
+          const response = await fetchExplorerEntries(projectId, {
+            type: apiType as "file" | "table" | "task" | "endpoint",
+            limit: 1, // Just need stats, not entries
+          });
+
+          // Map API health statuses to UI stats
+          const byHealth = response.stats?.byHealth || {};
+          newStats[type] = {
+            total: response.total || 0,
+            fresh: (byHealth.healthy || 0) as number,
+            stale: (byHealth.warning || 0) as number,
+            orphan: (byHealth.error || 0) as number,
+            lastScan: null, // API doesn't return this per-type yet
+          };
+        } catch (err) {
+          console.error(`Failed to fetch stats for ${type}:`, err);
+        }
+      }
+
+      setStatsData(newStats);
+    };
+
+    fetchAllStats();
+  }, [projectId, isScanning]); // Re-fetch when scanning completes
+
   // Handlers
   const handleTypeChange = useCallback((type: ExplorerType) => {
     setActiveType(type);
+    setActiveFilter("all"); // Reset filter on type change
     setExpandedIds(new Set()); // Reset expansion on type change
     setSortField("name");
     setSortDir("asc");
@@ -143,24 +167,31 @@ export function ExplorerShell({
     setExpandedIds(new Set());
   }, []);
 
-  const handleScan = useCallback(() => {
+  const handleScan = useCallback(async () => {
     setIsScanning(true);
-    // Simulate scan - replace with real API call
-    setTimeout(() => {
+    try {
+      const apiType = uiTypeToApiType[activeType];
+      await triggerExplorerScan(projectId, apiType as "file" | "table" | "task" | "endpoint");
+      // Wait a bit for scan to complete, then refresh stats
+      setTimeout(() => {
+        setIsScanning(false);
+      }, 3000);
+    } catch (err) {
+      console.error("Scan failed:", err);
       setIsScanning(false);
-    }, 3000);
-  }, []);
+    }
+  }, [projectId, activeType]);
 
   // Current stats
-  const stats = demoStats[activeType];
+  const stats = statsData[activeType];
   const counts = useMemo(
     () => ({
-      files: demoStats.files.total,
-      database: demoStats.database.total,
-      celery: demoStats.celery.total,
-      api: demoStats.api.total,
+      files: statsData.files.total,
+      database: statsData.database.total,
+      celery: statsData.celery.total,
+      api: statsData.api.total,
     }),
-    []
+    [statsData]
   );
 
   // Props for child render function

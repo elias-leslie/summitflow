@@ -222,11 +222,12 @@ def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dic
         return [_row_to_entry(row) for row in rows]
 
 
-def get_stats(project_id: str) -> dict:
+def get_stats(project_id: str, entry_type: str | None = None) -> dict:
     """Get aggregated statistics for explorer entries.
 
     Args:
         project_id: Project ID for scoping
+        entry_type: Optional entry type to filter stats by
 
     Returns:
         Dict with:
@@ -236,38 +237,45 @@ def get_stats(project_id: str) -> dict:
             - last_scanned: most recent scan timestamp
     """
     with get_connection() as conn, conn.cursor() as cur:
+        # Build WHERE clause
+        where_clause = "WHERE project_id = %s"
+        params: list[Any] = [project_id]
+        if entry_type:
+            where_clause += " AND entry_type = %s"
+            params.append(entry_type)
+
         # Count by type
         cur.execute(
-            """
+            f"""
             SELECT entry_type, COUNT(*) as count
             FROM explorer_entries
-            WHERE project_id = %s
+            {where_clause}
             GROUP BY entry_type
             """,
-            (project_id,),
+            params,
         )
         by_type = {row[0]: row[1] for row in cur.fetchall()}
 
         # Count by health
         cur.execute(
-            """
+            f"""
             SELECT health_status, COUNT(*) as count
             FROM explorer_entries
-            WHERE project_id = %s
+            {where_clause}
             GROUP BY health_status
             """,
-            (project_id,),
+            params,
         )
         by_health = {row[0]: row[1] for row in cur.fetchall()}
 
         # Total and last scanned
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*), MAX(last_scanned_at)
             FROM explorer_entries
-            WHERE project_id = %s
+            {where_clause}
             """,
-            (project_id,),
+            params,
         )
         row = cur.fetchone()
         total = row[0] if row else 0

@@ -123,13 +123,14 @@ def get_children(project_id: str, entry_type: str, parent_path: str = "") -> lis
     return storage.get_children(project_id, entry_type, parent_path)
 
 
-def get_stats(project_id: str) -> dict:
+def get_stats(project_id: str, entry_type: str | None = None) -> dict:
     """Get aggregated statistics.
 
     Args:
         project_id: Project ID for scoping
+        entry_type: Optional entry type to filter stats by
 
     Returns:
         Stats dict with by_type, by_health, total, last_scanned
     """
-    return storage.get_stats(project_id)
+    return storage.get_stats(project_id, entry_type)
