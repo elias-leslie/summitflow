@@ -20,11 +20,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..base import BaseScanner
 
+# Import scanners
+from .files import FileScanner
+
 # Registry of scanner classes by entry type
 # Format: {entry_type: ScannerClass}
 # Add new scanners here as they are implemented
 SCANNERS: dict[str, type["BaseScanner"]] = {
-    # "file": FileScanner,      # TODO: Phase 2
+    "file": FileScanner,
     # "table": DatabaseScanner, # TODO: Phase 2
     # "task": TaskScanner,      # TODO: Phase 2
     # "endpoint": EndpointScanner, # TODO: Phase 2
