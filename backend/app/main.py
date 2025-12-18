@@ -10,6 +10,7 @@ from .api import (
     capabilities,
     celery_endpoints,
     evidence,
+    explorer,
     features,
     files,
     projects,
@@ -56,6 +57,7 @@ app.include_router(evidence.router, prefix="/api", tags=["evidence"])
 app.include_router(vision_goals.router, prefix="/api", tags=["vision"])
 app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 app.include_router(files.router, prefix="/api/projects", tags=["files"])
+app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
