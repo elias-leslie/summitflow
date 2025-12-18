@@ -417,7 +417,7 @@ export function EvidenceViewerModal({
                     <div>
                       <h4 className="text-sm font-medium mb-3 text-slate-300">Key Elements Found</h4>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {Object.entries(evidence.pageState.keyElements).map(([key, value]) => (
+                        {Object.entries(evidence.pageState?.keyElements ?? {}).map(([key, value]) => (
                           <div
                             key={key}
                             className={`p-3 rounded border flex justify-between items-center ${
@@ -467,7 +467,7 @@ export function EvidenceViewerModal({
                     <div>
                       <h4 className="text-sm font-medium mb-2 text-slate-300">Visible Text Sample</h4>
                       <div className="p-4 rounded border border-slate-700 bg-slate-950 text-sm mono text-slate-400">
-                        {evidence.pageState.visibleTextSample || "No text content"}
+                        {evidence.pageState?.visibleTextSample || "No text content"}
                       </div>
                     </div>
                   </div>
