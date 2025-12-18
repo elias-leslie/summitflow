@@ -39,7 +39,6 @@ export interface ExplorerChildProps {
   expandedIds: Set<string>;
   onSort: (field: string) => void;
   onToggleExpand: (id: string) => void;
-  onExpandAll: () => void;
   onCollapseAll: () => void;
 }
 
@@ -158,11 +157,6 @@ export function ExplorerShell({
     });
   }, []);
 
-  const handleExpandAll = useCallback(() => {
-    // This would need to be connected to actual data
-    // For now, it's a placeholder
-  }, []);
-
   const handleCollapseAll = useCallback(() => {
     setExpandedIds(new Set());
   }, []);
@@ -203,7 +197,6 @@ export function ExplorerShell({
     expandedIds,
     onSort: handleSort,
     onToggleExpand: handleToggleExpand,
-    onExpandAll: handleExpandAll,
     onCollapseAll: handleCollapseAll,
   };
 
