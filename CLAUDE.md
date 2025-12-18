@@ -105,7 +105,6 @@ summitflow/
 │   └── skills/        # Domain skills
 └── scripts/
     ├── systemd/       # Service files
-    ├── nginx/         # nginx config
     └── *.sh           # Control scripts
 ```
 
@@ -117,13 +116,12 @@ PostgreSQL database: `summitflow`
 
 Core tables:
 - `projects` - Registered target applications
-- `sitemap_entries` - Discovered endpoints per project
-- `sitemap_health_history` - Health check history
+- `explorer_entries` - Unified explorer data (files, tables, tasks, endpoints)
+- `explorer_relationships` - Cross-entity relationships
 - `feature_capabilities` - Feature tracking
 - `artifacts` - Evidence (screenshots, logs)
-- `scanner_database` - Database capability scans
-- `scanner_api` - API capability scans
-- `scanner_celery` - Celery task scans
+- `vision_goals` - Project vision goals
+- `vision_content` - Vision documentation
 
 ---
 
@@ -164,9 +162,8 @@ bash ~/summitflow/scripts/start.sh
 
 | Bead | Description | Status |
 |------|-------------|--------|
+| summitflow-bye | Epic: Explorer Foundation Rebuild | Near Complete |
 | summitflow-y6s | Epic: SummitFlow Platform Extraction | Open |
-| summitflow-y6s.1 | Cross-project Celery task explorer | Open |
-| summitflow-y6s.2 | Sitemap UI polish | Open |
 | summitflow-y6s.3 | Agent Hub (deferred v1.1) | Open |
 
 ---
