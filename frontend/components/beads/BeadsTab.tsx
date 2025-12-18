@@ -256,7 +256,7 @@ function BeadRow({
   const status = statusConfig[bead.status] || statusConfig.open;
   const TypeIcon = typeIcons[bead.issue_type] || ListTodo;
   const StatusIcon = status.icon;
-  const hasChildren = bead.children.length > 0;
+  const hasChildren = (bead.children?.length ?? 0) > 0;
 
   return (
     <>
