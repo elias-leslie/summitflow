@@ -3,7 +3,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import evidence, features, files, projects, sitemap, vision_content, vision_goals
+from .api import (
+    celery_endpoints,
+    evidence,
+    features,
+    files,
+    projects,
+    sitemap,
+    vision_content,
+    vision_goals,
+)
 
 app = FastAPI(
     title="SummitFlow",
@@ -33,6 +42,7 @@ app.include_router(evidence.router, prefix="/api", tags=["evidence"])
 app.include_router(vision_goals.router, prefix="/api", tags=["vision"])
 app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 app.include_router(files.router, prefix="/api/projects", tags=["files"])
+app.include_router(celery_endpoints.router, tags=["tasks"])
 
 
 @app.get("/health")

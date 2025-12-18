@@ -1,0 +1,20 @@
+[Unit]
+Description=SummitFlow Celery Worker
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/summitflow/backend
+Environment="PATH=%h/summitflow/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=%h"
+EnvironmentFile=-%h/summitflow/backend/.env
+ExecStart=%h/summitflow/backend/.venv/bin/celery -A app.celery_app worker --loglevel=info --concurrency=2
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-celery
+
+[Install]
+WantedBy=default.target
