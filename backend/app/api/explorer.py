@@ -4,7 +4,8 @@ Provides a consistent API for exploring:
 - Files: Source code structure
 - Database: Tables, columns, relationships
 - Tasks: Celery tasks, schedules
-- Endpoints: API routes, frontend pages
+- Endpoints: API routes
+- Pages: Frontend pages (Next.js)
 
 Endpoints:
 - GET /api/projects/{id}/explorer - List entries with filters
@@ -25,7 +26,7 @@ router = APIRouter()
 
 def _validate_entry_type(entry_type: str) -> None:
     """Validate entry type parameter."""
-    valid_types = {"file", "table", "task", "endpoint"}
+    valid_types = {"file", "table", "task", "endpoint", "page"}
     if entry_type not in valid_types:
         raise HTTPException(
             status_code=400,

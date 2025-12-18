@@ -8,7 +8,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Folder, Database, Zap, Globe, Filter, Search } from "lucide-react";
+import { Folder, Database, Zap, Globe, FileText, Filter, Search } from "lucide-react";
 import type { ExplorerType } from "./types";
 import type { HealthStatus } from "./types";
 
@@ -59,6 +59,13 @@ const typeConfig: Record<
     activeClass: "bg-lime-500/20 border-lime-500/50 text-lime-300",
     glowClass: "shadow-[0_0_12px_rgba(163,230,53,0.4)]",
   },
+  pages: {
+    icon: FileText,
+    label: "Pages",
+    color: "text-pink-400",
+    activeClass: "bg-pink-500/20 border-pink-500/50 text-pink-300",
+    glowClass: "shadow-[0_0_12px_rgba(236,72,153,0.4)]",
+  },
 };
 
 const filterConfig: Record<
@@ -81,7 +88,7 @@ export function TypeNavigator({
   counts,
   className,
 }: TypeNavigatorProps) {
-  const types: ExplorerType[] = ["files", "database", "celery", "api"];
+  const types: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
   const filters: (HealthStatus | "all")[] = [
     "all",
     "fresh",

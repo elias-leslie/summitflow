@@ -1,18 +1,17 @@
 """Endpoint scanner for Explorer.
 
-Scans API routes and frontend pages, producing entries for explorer_entries table.
+Scans API routes (FastAPI), producing entries for explorer_entries table.
+Frontend pages are scanned by PageScanner.
 
 Metadata schema (per architecture doc):
 {
   "method": "GET",
   "port": 8001,
-  "endpoint_type": "api",
   "source_file": "app/api/users.py",
   "function_name": "get_user",
+  "category": "users",
   "http_status": 200,
   "response_time_ms": 45,
-  "console_errors": 0,
-  "console_warnings": 0,
   "depends_on_tables": ["users", "profiles"],
   "called_by_frontend": ["/users/[id]", "/dashboard"],
   "last_health_check": "2025-12-18T10:30:00Z"
@@ -23,7 +22,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
@@ -79,7 +77,6 @@ class EndpointScanner(BaseScanner):
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.backend_dir: str = "backend"
-        self.frontend_dir: str = "frontend"
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan API routes and return endpoint entries."""
@@ -100,8 +97,6 @@ class EndpointScanner(BaseScanner):
                 self.root_path = Path(self.config["root_path"])
             if self.config.get("backend_dir"):
                 self.backend_dir = self.config["backend_dir"]
-            if self.config.get("frontend_dir"):
-                self.frontend_dir = self.config["frontend_dir"]
 
         if not self.root_path:
             logger.error(f"No root_path for project {self.project_id}")
@@ -109,17 +104,10 @@ class EndpointScanner(BaseScanner):
 
         logger.info(f"Endpoint scan started for {self.project_id}")
 
-        entries: list[ExplorerEntryCreate] = []
+        # Scan API routes only (frontend pages handled by PageScanner)
+        entries = self._scan_api_routes()
 
-        # Scan API routes
-        api_entries = self._scan_api_routes()
-        entries.extend(api_entries)
-
-        # Scan frontend pages (Next.js app router)
-        frontend_entries = self._scan_frontend_pages()
-        entries.extend(frontend_entries)
-
-        logger.info(f"Endpoint scan found {len(entries)} endpoints ({len(api_entries)} API, {len(frontend_entries)} frontend)")
+        logger.info(f"Endpoint scan found {len(entries)} API endpoints")
         return entries
 
     def _scan_api_routes(self) -> list[ExplorerEntryCreate]:
@@ -189,7 +177,6 @@ class EndpointScanner(BaseScanner):
                 metadata={
                     "method": method.upper(),
                     "port": 8001,
-                    "endpoint_type": "api",
                     "source_file": str(route_file.relative_to(self.root_path)),
                     "function_name": function_name or "unknown",
                     "category": category,
@@ -262,59 +249,12 @@ class EndpointScanner(BaseScanner):
 
         return sorted(tables)
 
-    def _scan_frontend_pages(self) -> list[ExplorerEntryCreate]:
-        """Scan Next.js app router for frontend pages."""
-        entries = []
-
-        app_dir = self.root_path / self.frontend_dir / "app"
-        if not app_dir.exists():
-            return entries
-
-        # Find all page.tsx files in app directory
-        for page_file in app_dir.rglob("page.tsx"):
-            try:
-                # Extract route path from file location
-                rel_path = page_file.parent.relative_to(app_dir)
-                route_path = "/" + str(rel_path).replace("\\", "/")
-
-                # Clean up Next.js route syntax
-                route_path = re.sub(r"\[([^\]]+)\]", r":\1", route_path)  # [id] -> :id
-                route_path = route_path.replace("/(", "/").replace(")/", "/")  # Remove route groups
-                if route_path == "/.":
-                    route_path = "/"
-
-                entries.append(ExplorerEntryCreate(
-                    path=f"PAGE {route_path}",
-                    name=page_file.parent.name or "home",
-                    health_status="unknown",
-                    metadata={
-                        "method": "GET",
-                        "port": 3001,
-                        "endpoint_type": "frontend",
-                        "source_file": str(page_file.relative_to(self.root_path)),
-                        "function_name": "page",
-                        "category": "frontend",
-                        "depends_on_tables": [],
-                        "called_by_frontend": [],
-                        "http_status": None,
-                        "response_time_ms": None,
-                        "console_errors": None,
-                        "console_warnings": None,
-                        "last_health_check": None,
-                    },
-                ))
-            except Exception as e:
-                logger.warning(f"Failed to scan page {page_file}: {e}")
-
-        return entries
-
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for an endpoint entry."""
         meta = entry.metadata
 
         # Check if health check data is available
         http_status = meta.get("http_status")
-        console_errors = meta.get("console_errors")
 
         if http_status is not None:
             if http_status >= 500:
@@ -324,18 +264,11 @@ class EndpointScanner(BaseScanner):
             if http_status == 404:
                 return "warning"
 
-        if console_errors is not None and console_errors > 0:
-            return "error"
-
         # Check for orphaned endpoints (no table dependencies and not called by frontend)
         depends_on = meta.get("depends_on_tables", [])
         called_by = meta.get("called_by_frontend", [])
 
-        if not depends_on and not called_by and meta.get("endpoint_type") == "api":
+        if not depends_on and not called_by:
             return "warning"
-
-        # Default: healthy for frontend, unknown for API without health check
-        if meta.get("endpoint_type") == "frontend":
-            return "healthy"
 
         return "healthy"

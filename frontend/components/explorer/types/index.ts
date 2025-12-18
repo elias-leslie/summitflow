@@ -5,7 +5,7 @@
  * Each type provides columns, row renderer, and detail renderer.
  */
 
-import { Folder, Database, Zap, Globe } from "lucide-react";
+import { Folder, Database, Zap, Globe, FileText } from "lucide-react";
 import type { ExplorerColumn, ExplorerType as UIExplorerType } from "../types";
 import type { ExplorerEntry, ExplorerEntryType } from "@/lib/api/explorer";
 
@@ -14,18 +14,21 @@ export * from "./files";
 export * from "./database";
 export * from "./tasks";
 export * from "./endpoints";
+export * from "./pages";
 
 // Import columns
 import { fileColumns } from "./files";
 import { tableColumns } from "./database";
 import { taskColumns } from "./tasks";
 import { endpointColumns } from "./endpoints";
+import { pageColumns } from "./pages";
 
 // Import row/detail components
 import { FileRow, FileDetail } from "./files";
 import { TableRow, TableDetail } from "./database";
 import { TaskRow, TaskDetail } from "./tasks";
 import { EndpointRow, EndpointDetail } from "./endpoints";
+import { PageRow, PageDetail } from "./pages";
 
 /**
  * Type configuration with all rendering info
@@ -93,6 +96,16 @@ export const typeConfigs: Record<ExplorerEntryType, ExplorerTypeConfig> = {
     RowComponent: EndpointRow,
     DetailComponent: EndpointDetail,
   },
+  page: {
+    entryType: "page",
+    uiType: "pages",
+    label: "Pages",
+    icon: FileText,
+    colorClass: "text-purple-500",
+    columns: pageColumns,
+    RowComponent: PageRow,
+    DetailComponent: PageDetail,
+  },
 };
 
 /**
@@ -103,6 +116,7 @@ export const uiTypeToEntryType: Record<UIExplorerType, ExplorerEntryType> = {
   database: "table",
   celery: "task",
   api: "endpoint",
+  pages: "page",
 };
 
 /**
@@ -113,6 +127,7 @@ export const entryTypeToUiType: Record<ExplorerEntryType, UIExplorerType> = {
   table: "database",
   task: "celery",
   endpoint: "api",
+  page: "pages",
 };
 
 /**

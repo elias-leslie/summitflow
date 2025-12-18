@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Folder, Database, Zap, Globe, Loader2 } from "lucide-react";
+import { Folder, Database, Zap, Globe, FileText, Loader2 } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
 import { SummaryBar, ScanningOverlay } from "./SummaryBar";
 import {
@@ -48,6 +48,7 @@ const uiTypeToApiType: Record<ExplorerType, string> = {
   database: "table",
   celery: "task",
   api: "endpoint",
+  pages: "page",
 };
 
 const typeIcons: Record<ExplorerType, React.ReactNode> = {
@@ -55,6 +56,7 @@ const typeIcons: Record<ExplorerType, React.ReactNode> = {
   database: <Database className="w-5 h-5" />,
   celery: <Zap className="w-5 h-5" />,
   api: <Globe className="w-5 h-5" />,
+  pages: <FileText className="w-5 h-5" />,
 };
 
 const typeTitles: Record<ExplorerType, string> = {
@@ -62,6 +64,7 @@ const typeTitles: Record<ExplorerType, string> = {
   database: "Database Tables",
   celery: "Celery Tasks",
   api: "API Endpoints",
+  pages: "Frontend Pages",
 };
 
 export function ExplorerShell({
@@ -84,19 +87,20 @@ export function ExplorerShell({
     database: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
   });
 
   // Fetch stats for all types on mount and when scanning completes
   useEffect(() => {
     const fetchAllStats = async () => {
-      const types: ExplorerType[] = ["files", "database", "celery", "api"];
+      const types: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
       const newStats: Record<ExplorerType, ExplorerStats> = { ...statsData };
 
       for (const type of types) {
         try {
           const apiType = uiTypeToApiType[type];
           const response = await fetchExplorerEntries(projectId, {
-            type: apiType as "file" | "table" | "task" | "endpoint",
+            type: apiType as "file" | "table" | "task" | "endpoint" | "page",
             limit: 1, // Just need stats, not entries
           });
 
@@ -165,7 +169,7 @@ export function ExplorerShell({
     setIsScanning(true);
     try {
       const apiType = uiTypeToApiType[activeType];
-      await triggerExplorerScan(projectId, apiType as "file" | "table" | "task" | "endpoint");
+      await triggerExplorerScan(projectId, apiType as "file" | "table" | "task" | "endpoint" | "page");
       // Wait a bit for scan to complete, then refresh stats
       setTimeout(() => {
         setIsScanning(false);
@@ -184,6 +188,7 @@ export function ExplorerShell({
       database: statsData.database.total,
       celery: statsData.celery.total,
       api: statsData.api.total,
+      pages: statsData.pages.total,
     }),
     [statsData]
   );

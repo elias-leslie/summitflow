@@ -9,7 +9,7 @@
 // Types - Aligned with backend API contract (docs/explorer-architecture.md)
 // ============================================================================
 
-export type ExplorerEntryType = "file" | "table" | "task" | "endpoint";
+export type ExplorerEntryType = "file" | "table" | "task" | "endpoint" | "page";
 export type ExplorerHealthStatus = "healthy" | "warning" | "error" | "unknown";
 
 export interface ExplorerEntryMetadata {
@@ -58,7 +58,6 @@ export interface ExplorerEntryMetadata {
   // Endpoint metadata
   method?: string;
   port?: number;
-  endpoint_type?: "api" | "page";
   source_file?: string;
   http_status?: number;
   response_time_ms?: number;
@@ -67,6 +66,9 @@ export interface ExplorerEntryMetadata {
   depends_on_tables?: string[];
   called_by_frontend?: string[];
   last_health_check?: string;
+
+  // Page metadata
+  route_params?: string[];
 
   // Generic extension
   [key: string]: unknown;

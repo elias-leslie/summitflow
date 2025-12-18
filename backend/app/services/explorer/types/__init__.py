@@ -24,19 +24,21 @@ if TYPE_CHECKING:
 from .database import DatabaseScanner
 from .endpoints import EndpointScanner
 from .files import FileScanner
+from .pages import PageScanner
 from .tasks import TaskScanner
 
 # Registry of scanner classes by entry type
 # Format: {entry_type: ScannerClass}
-SCANNERS: dict[str, type["BaseScanner"]] = {
+SCANNERS: dict[str, type[BaseScanner]] = {
     "file": FileScanner,
     "table": DatabaseScanner,
     "task": TaskScanner,
     "endpoint": EndpointScanner,
+    "page": PageScanner,
 }
 
 
-def get_scanner(entry_type: str) -> type["BaseScanner"] | None:
+def get_scanner(entry_type: str) -> type[BaseScanner] | None:
     """Get the scanner class for an entry type.
 
     Args:
@@ -48,7 +50,7 @@ def get_scanner(entry_type: str) -> type["BaseScanner"] | None:
     return SCANNERS.get(entry_type)
 
 
-def register_scanner(entry_type: str, scanner_class: type["BaseScanner"]) -> None:
+def register_scanner(entry_type: str, scanner_class: type[BaseScanner]) -> None:
     """Register a scanner class for an entry type.
 
     Args:

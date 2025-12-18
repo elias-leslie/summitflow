@@ -20,14 +20,12 @@ Metadata schema (per architecture doc):
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
-from ..health import calculate_bloat_level, calculate_staleness
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
