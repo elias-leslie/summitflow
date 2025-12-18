@@ -80,14 +80,14 @@ export function TaskDetail({ entry }: TaskDetailProps) {
           <p
             className={cn(
               "font-mono text-sm mt-1",
-              meta.success_rate_pct !== undefined && meta.success_rate_pct >= 99
+              meta.success_rate_pct != null && meta.success_rate_pct >= 99
                 ? "text-emerald-400"
-                : meta.success_rate_pct !== undefined && meta.success_rate_pct < 90
+                : meta.success_rate_pct != null && meta.success_rate_pct < 90
                 ? "text-amber-400"
                 : "text-slate-200"
             )}
           >
-            {meta.success_rate_pct !== undefined ? `${meta.success_rate_pct.toFixed(1)}%` : "-"}
+            {meta.success_rate_pct != null ? `${meta.success_rate_pct.toFixed(1)}%` : "-"}
           </p>
         </div>
         <div>
