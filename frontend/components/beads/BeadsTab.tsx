@@ -171,7 +171,9 @@ function BeadCard({
             </span>
             <TypeIcon className="w-3 h-3 text-slate-400" />
             {level > 1 && (
-              <GitBranch className="w-3 h-3 text-slate-500" title="Child bead" />
+              <span title="Child bead">
+                <GitBranch className="w-3 h-3 text-slate-500" />
+              </span>
             )}
           </div>
           <p className="text-sm text-slate-200 truncate mb-1">{bead.title}</p>
