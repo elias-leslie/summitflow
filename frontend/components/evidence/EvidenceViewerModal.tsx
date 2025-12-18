@@ -153,7 +153,7 @@ export function EvidenceViewerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!max-w-[95vw] w-fit min-w-[50vw] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="!max-w-[95vw] !w-[90vw] !h-[90vh] !fixed !top-1/2 !left-1/2 !-translate-x-1/2 !-translate-y-1/2 flex flex-col p-0 gap-0 overflow-hidden">
         {/* Header */}
         <DialogHeader className="px-5 py-4 border-b border-slate-700 shrink-0 relative">
           <button
