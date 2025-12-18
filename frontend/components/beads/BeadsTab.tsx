@@ -4,13 +4,15 @@
  * Displays beads (issues) for a project with:
  * - Ready work section (unblocked tasks)
  * - Full bead list with status/priority filters
+ * - Board view (Kanban-style)
+ * - Hierarchy grouping (parent/child)
  * - Create/edit modal
  * - Status updates (open/in_progress/close)
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -21,6 +23,10 @@ import {
   Circle,
   Clock,
   Filter,
+  GitBranch,
+  GripVertical,
+  LayoutGrid,
+  List,
   ListTodo,
   Loader2,
   Plus,
@@ -57,10 +63,10 @@ const priorityConfig: Record<number, { label: string; color: string; bgColor: st
 };
 
 // Status colors
-const statusConfig: Record<string, { label: string; icon: typeof Circle; color: string }> = {
-  open: { label: "Open", icon: Circle, color: "text-blue-500" },
-  in_progress: { label: "In Progress", icon: Loader2, color: "text-yellow-500" },
-  closed: { label: "Closed", icon: CheckCircle2, color: "text-green-500" },
+const statusConfig: Record<string, { label: string; icon: typeof Circle; color: string; bgColor: string }> = {
+  open: { label: "Open", icon: Circle, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+  in_progress: { label: "In Progress", icon: Loader2, color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
+  closed: { label: "Closed", icon: CheckCircle2, color: "text-green-500", bgColor: "bg-green-500/10" },
 };
 
 // Type icons
@@ -84,24 +90,171 @@ function formatDate(dateStr: string | null): string {
   return date.toLocaleDateString();
 }
 
-// Bead Row Component
+// Parse hierarchy from bead ID (e.g., "portfolio-ai-6rd.1" -> parent: "portfolio-ai-6rd", level: 2)
+function parseHierarchy(beadId: string): { parentId: string | null; level: number } {
+  const parts = beadId.split(".");
+  if (parts.length === 1) {
+    return { parentId: null, level: 1 };
+  }
+  // portfolio-ai-6rd.1 -> parent is portfolio-ai-6rd
+  // portfolio-ai-6rd.1.1 -> parent is portfolio-ai-6rd.1
+  const parentId = parts.slice(0, -1).join(".");
+  return { parentId, level: parts.length };
+}
+
+// Group beads by hierarchy
+interface BeadWithHierarchy extends Bead {
+  parentId: string | null;
+  level: number;
+  children: BeadWithHierarchy[];
+}
+
+function buildHierarchy(beads: Bead[]): BeadWithHierarchy[] {
+  // First pass: add hierarchy info to all beads
+  const beadsMap = new Map<string, BeadWithHierarchy>();
+  beads.forEach((bead) => {
+    const { parentId, level } = parseHierarchy(bead.id);
+    beadsMap.set(bead.id, { ...bead, parentId, level, children: [] });
+  });
+
+  // Second pass: build tree structure
+  const roots: BeadWithHierarchy[] = [];
+  beadsMap.forEach((bead) => {
+    if (bead.parentId && beadsMap.has(bead.parentId)) {
+      beadsMap.get(bead.parentId)!.children.push(bead);
+    } else {
+      roots.push(bead);
+    }
+  });
+
+  // Sort children by priority, then by ID
+  const sortBeads = (beads: BeadWithHierarchy[]) => {
+    beads.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+    beads.forEach((bead) => sortBeads(bead.children));
+  };
+  sortBeads(roots);
+
+  return roots;
+}
+
+// Bead Card Component (for board view)
+function BeadCard({
+  bead,
+  onStatusChange,
+  isUpdating,
+}: {
+  bead: Bead;
+  onStatusChange: (status: string, reason?: string) => void;
+  isUpdating: boolean;
+}) {
+  const priority = priorityConfig[bead.priority] || priorityConfig[2];
+  const TypeIcon = typeIcons[bead.issue_type] || ListTodo;
+  const { level } = parseHierarchy(bead.id);
+
+  return (
+    <div
+      className={cn(
+        "card p-3 mb-2 border-l-2 hover:bg-slate-800/50 transition-colors cursor-pointer",
+        priority.color === "text-red-600" && "border-l-red-500",
+        priority.color === "text-orange-600" && "border-l-orange-500",
+        priority.color === "text-yellow-600" && "border-l-yellow-500",
+        priority.color === "text-blue-600" && "border-l-blue-500",
+        priority.color === "text-slate-500" && "border-l-slate-500"
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <GripVertical className="w-4 h-4 text-slate-600 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={cn("text-xs font-mono font-bold", priority.color)}>
+              {priority.label}
+            </span>
+            <TypeIcon className="w-3 h-3 text-slate-400" />
+            {level > 1 && (
+              <GitBranch className="w-3 h-3 text-slate-500" title="Child bead" />
+            )}
+          </div>
+          <p className="text-sm text-slate-200 truncate mb-1">{bead.title}</p>
+          <div className="flex items-center gap-2">
+            <code className="text-xs text-slate-500">{bead.id}</code>
+            {bead.labels && bead.labels.length > 0 && (
+              <Badge variant="outline" className="text-xs py-0 h-4">
+                {bead.labels[0]}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Board Column Component
+function BoardColumn({
+  status,
+  beads,
+  onStatusChange,
+  isUpdating,
+}: {
+  status: string;
+  beads: Bead[];
+  onStatusChange: (beadId: string, status: string, reason?: string) => void;
+  isUpdating: boolean;
+}) {
+  const config = statusConfig[status] || statusConfig.open;
+  const StatusIcon = config.icon;
+
+  return (
+    <div className="flex-1 min-w-[280px] max-w-[350px]">
+      <div className={cn("rounded-lg p-3", config.bgColor)}>
+        <div className="flex items-center gap-2 mb-3">
+          <StatusIcon className={cn("w-4 h-4", config.color, status === "in_progress" && "animate-spin")} />
+          <span className="font-medium text-white">{config.label}</span>
+          <Badge variant="outline" className="ml-auto text-xs">
+            {beads.length}
+          </Badge>
+        </div>
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {beads.map((bead) => (
+            <BeadCard
+              key={bead.id}
+              bead={bead}
+              onStatusChange={(newStatus, reason) => onStatusChange(bead.id, newStatus, reason)}
+              isUpdating={isUpdating}
+            />
+          ))}
+          {beads.length === 0 && (
+            <div className="text-center text-slate-500 text-sm py-4">
+              No beads
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Bead Row Component (for list view)
 function BeadRow({
   bead,
   isExpanded,
   onToggle,
   onStatusChange,
   isUpdating,
+  indent = 0,
 }: {
-  bead: Bead;
+  bead: BeadWithHierarchy;
   isExpanded: boolean;
   onToggle: () => void;
   onStatusChange: (status: string, reason?: string) => void;
   isUpdating: boolean;
+  indent?: number;
 }) {
   const priority = priorityConfig[bead.priority] || priorityConfig[2];
   const status = statusConfig[bead.status] || statusConfig.open;
   const TypeIcon = typeIcons[bead.issue_type] || ListTodo;
   const StatusIcon = status.icon;
+  const hasChildren = bead.children.length > 0;
 
   return (
     <>
@@ -113,12 +266,17 @@ function BeadRow({
         onClick={onToggle}
       >
         {/* Expand */}
-        <td className="w-8 px-2 py-2">
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-slate-500" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-slate-500" />
-          )}
+        <td className="w-8 px-2 py-2" style={{ paddingLeft: `${8 + indent * 16}px` }}>
+          <div className="flex items-center gap-1">
+            {hasChildren && (
+              <GitBranch className="w-3 h-3 text-slate-500 mr-1" />
+            )}
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-500" />
+            )}
+          </div>
         </td>
 
         {/* Priority */}
@@ -134,7 +292,7 @@ function BeadRow({
         </td>
 
         {/* ID */}
-        <td className="w-32 px-2 py-2">
+        <td className="w-36 px-2 py-2">
           <code className="text-xs text-slate-500">{bead.id}</code>
         </td>
 
@@ -193,6 +351,20 @@ function BeadRow({
                   <p className="text-sm text-slate-300 whitespace-pre-wrap max-h-24 overflow-y-auto">
                     {bead.notes}
                   </p>
+                </div>
+              )}
+
+              {/* Children indicator */}
+              {hasChildren && (
+                <div>
+                  <h4 className="text-xs font-medium text-slate-400 mb-1">Child Beads</h4>
+                  <div className="flex gap-2 flex-wrap">
+                    {bead.children.map((child) => (
+                      <Badge key={child.id} variant="outline" className="text-xs">
+                        {child.id}: {child.title.slice(0, 30)}...
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -263,6 +435,39 @@ function BeadRow({
   );
 }
 
+// Recursive render for hierarchical beads
+function RenderBeadRows({
+  beads,
+  expandedId,
+  onToggle,
+  onStatusChange,
+  isUpdating,
+  indent = 0,
+}: {
+  beads: BeadWithHierarchy[];
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+  onStatusChange: (beadId: string, status: string, reason?: string) => void;
+  isUpdating: boolean;
+  indent?: number;
+}) {
+  return (
+    <>
+      {beads.map((bead) => (
+        <BeadRow
+          key={bead.id}
+          bead={bead}
+          isExpanded={expandedId === bead.id}
+          onToggle={() => onToggle(bead.id)}
+          onStatusChange={(status, reason) => onStatusChange(bead.id, status, reason)}
+          isUpdating={isUpdating}
+          indent={indent}
+        />
+      ))}
+    </>
+  );
+}
+
 // Stats Summary Component
 function StatsSummary({ stats }: { stats: BeadStatsResponse }) {
   return (
@@ -290,6 +495,7 @@ function StatsSummary({ stats }: { stats: BeadStatsResponse }) {
 export function BeadsTab({ projectId }: BeadsTabProps) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "closed">("open");
+  const [viewMode, setViewMode] = useState<"list" | "board">("list");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -366,6 +572,18 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
   const beads = beadsData?.beads || [];
   const isUpdating = updateMutation.isPending || closeMutation.isPending;
 
+  // Build hierarchy for list view
+  const hierarchicalBeads = useMemo(() => buildHierarchy(beads), [beads]);
+
+  // Group by status for board view
+  const beadsByStatus = useMemo(() => {
+    return {
+      open: beads.filter((b) => b.status === "open"),
+      in_progress: beads.filter((b) => b.status === "in_progress"),
+      closed: beads.filter((b) => b.status === "closed"),
+    };
+  }, [beads]);
+
   return (
     <div className="space-y-6">
       {/* Stats Summary */}
@@ -387,6 +605,7 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
             {readyBeads.slice(0, 5).map((bead) => {
               const priority = priorityConfig[bead.priority] || priorityConfig[2];
               const TypeIcon = typeIcons[bead.issue_type] || ListTodo;
+              const { level } = parseHierarchy(bead.id);
               return (
                 <div
                   key={bead.id}
@@ -397,6 +616,7 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
                     {priority.label}
                   </span>
                   <TypeIcon className="w-4 h-4 text-slate-400" />
+                  {level > 1 && <GitBranch className="w-3 h-3 text-slate-500" />}
                   <span className="text-sm text-slate-200 flex-1">{bead.title}</span>
                   <code className="text-xs text-slate-500">{bead.id}</code>
                 </div>
@@ -415,23 +635,49 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
               <h3 className="font-medium text-white">All Beads</h3>
             </div>
             <div className="flex items-center gap-2">
-              {/* Status Filter */}
+              {/* View Toggle */}
               <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-                {(["open", "closed", "all"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={cn(
-                      "px-3 py-1 text-xs rounded transition-colors",
-                      statusFilter === s
-                        ? "bg-slate-700 text-white"
-                        : "text-slate-400 hover:text-white"
-                    )}
-                  >
-                    {s === "all" ? "All" : s === "open" ? "Open" : "Closed"}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "p-1.5 rounded transition-colors",
+                    viewMode === "list" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
+                  )}
+                  title="List view"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode("board")}
+                  className={cn(
+                    "p-1.5 rounded transition-colors",
+                    viewMode === "board" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
+                  )}
+                  title="Board view"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
               </div>
+
+              {/* Status Filter (only for list view) */}
+              {viewMode === "list" && (
+                <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+                  {(["open", "closed", "all"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      className={cn(
+                        "px-3 py-1 text-xs rounded transition-colors",
+                        statusFilter === s
+                          ? "bg-slate-700 text-white"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      {s === "all" ? "All" : s === "open" ? "Open" : "Closed"}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Refresh */}
               <Button
@@ -452,7 +698,7 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
           </div>
         </div>
 
-        {/* Beads Table */}
+        {/* Content */}
         {beadsLoading ? (
           <div className="p-8 flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -461,7 +707,30 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
           <div className="p-8 text-center text-slate-500">
             No beads found
           </div>
+        ) : viewMode === "board" ? (
+          /* Board View */
+          <div className="p-4 flex gap-4 overflow-x-auto">
+            <BoardColumn
+              status="open"
+              beads={beadsByStatus.open}
+              onStatusChange={handleStatusChange}
+              isUpdating={isUpdating}
+            />
+            <BoardColumn
+              status="in_progress"
+              beads={beadsByStatus.in_progress}
+              onStatusChange={handleStatusChange}
+              isUpdating={isUpdating}
+            />
+            <BoardColumn
+              status="closed"
+              beads={beadsByStatus.closed}
+              onStatusChange={handleStatusChange}
+              isUpdating={isUpdating}
+            />
+          </div>
         ) : (
+          /* List View with Hierarchy */
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -469,23 +738,20 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
                   <th className="w-8 px-2 py-2"></th>
                   <th className="w-12 px-2 py-2 text-left">Pri</th>
                   <th className="w-10 px-2 py-2"></th>
-                  <th className="w-32 px-2 py-2 text-left">ID</th>
+                  <th className="w-36 px-2 py-2 text-left">ID</th>
                   <th className="px-2 py-2 text-left">Title</th>
                   <th className="w-28 px-2 py-2 text-left">Status</th>
                   <th className="w-24 px-2 py-2 text-left">Updated</th>
                 </tr>
               </thead>
               <tbody>
-                {beads.map((bead) => (
-                  <BeadRow
-                    key={bead.id}
-                    bead={bead}
-                    isExpanded={expandedId === bead.id}
-                    onToggle={() => setExpandedId(expandedId === bead.id ? null : bead.id)}
-                    onStatusChange={(status, reason) => handleStatusChange(bead.id, status, reason)}
-                    isUpdating={isUpdating}
-                  />
-                ))}
+                <RenderBeadRows
+                  beads={hierarchicalBeads}
+                  expandedId={expandedId}
+                  onToggle={(id) => setExpandedId(expandedId === id ? null : id)}
+                  onStatusChange={handleStatusChange}
+                  isUpdating={isUpdating}
+                />
               </tbody>
             </table>
           </div>
