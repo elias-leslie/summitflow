@@ -230,3 +230,69 @@ body::before {
   animation: blink 1s step-end infinite;
   color: var(--phosphor);
 }
+
+/* ============================================================================
+   Explorer Component Styles
+   ============================================================================ */
+
+/* Scan sweep animation for loading state */
+@keyframes scan-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Type-specific glow colors */
+.glow-purple {
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.4);
+}
+
+.glow-orange {
+  box-shadow: 0 0 12px rgba(251, 146, 60, 0.4);
+}
+
+.glow-lime {
+  box-shadow: 0 0 12px rgba(163, 230, 53, 0.4);
+}
+
+/* Explorer row hover state */
+.explorer-row {
+  @apply transition-colors duration-100;
+}
+
+.explorer-row:hover {
+  @apply bg-slate-800/40;
+}
+
+.explorer-row.expanded {
+  @apply bg-slate-800/30;
+}
+
+/* Detail panel slide animation */
+.detail-panel-enter {
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Status pulse for attention states */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
