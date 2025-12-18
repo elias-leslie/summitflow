@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/capabilities",
+    "featureId": "FEAT-080",
+    "criterionId": "ac-001",
+    "version": 18,
+    "capturedAt": "2025-12-15T05:00:08.863Z",
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://192.168.8.233:3000/capabilities\nCall log:\n  - navigating to \"http://192.168.8.233:3000/capabilities\", waiting until \"networkidle\"\n"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": []
+  },
+  "network": {
+    "totalRequests": 1,
+    "failedRequests": 1
+  }
+}

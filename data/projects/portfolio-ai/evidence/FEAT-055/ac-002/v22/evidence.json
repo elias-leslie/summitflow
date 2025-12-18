@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/trading",
+    "featureId": "FEAT-055",
+    "criterionId": "ac-002",
+    "version": 22,
+    "capturedAt": "2025-12-16T02:35:09.345Z",
+    "error": "page.waitForTimeout: Target page, context or browser has been closed"
+  },
+  "console": {
+    "errorCount": 44,
+    "warningCount": 0,
+    "errors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:34:56.177Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/automation/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:34:56.282Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/paper-trading/transactions?limit=50",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:34:56.283Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/paper-trades?status=open&limit=100",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:34:56.285Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/paper-trades?status=closed&limit=100",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:34:56.287Z"
+      }
+    ]
+  },
+  "network": {
+    "totalRequests": 34,
+    "failedRequests": 0
+  }
+}

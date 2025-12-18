@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/capabilities",
+    "featureId": "FEAT-165",
+    "criterionId": "ac-003",
+    "version": 18,
+    "capturedAt": "2025-12-16T01:35:39.688Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 35501
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 41,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/capabilities",
+        "durationMs": 6739
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/sitemap/health-summary",
+        "durationMs": 16418
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed System Registry Scan System Vision Features Workflows Sources Rules Files DB 99 Tasks 74 Sitemap 271 M",
+    "keyElements": {
+      "tables": 1,
+      "charts": 1,
+      "buttons": 14,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 8166,
+    "domContentLoadedMs": 7135,
+    "largestContentfulPaintMs": 8748
+  }
+}

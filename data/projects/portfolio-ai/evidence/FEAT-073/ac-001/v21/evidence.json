@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/recommendations",
+    "featureId": "FEAT-073",
+    "criterionId": "ac-001",
+    "version": 21,
+    "capturedAt": "2025-12-16T03:13:08.989Z",
+    "error": "page.title: Execution context was destroyed, most likely because of a navigation"
+  },
+  "console": {
+    "errorCount": 14,
+    "warningCount": 0,
+    "errors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/recommendations?min_strength=5&limit=20&signal_type=BUY&portfolio_size=100000&position_pct=0.05",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:12:47.651Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/recommendations?min_strength=5&limit=20&signal_type=BUY&portfolio_size=100000&position_pct=0.05",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:12:48.667Z"
+      },
+      {
+        "type": "error",
+        "text": "WebSocket connection to 'ws://192.168.8.233:3000/_next/webpack-hmr?id=XlzuucgSbBRnT7OGXO1fP' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js",
+          "lineNumber": 10116,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:12:49.693Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/recommendations?min_strength=5&limit=20&signal_type=BUY&portfolio_size=100000&position_pct=0.05",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:12:50.670Z"
+      },
+      {
+        "type": "error",
+        "text": "WebSocket connection to 'ws://192.168.8.233:3000/_next/webpack-hmr?id=XlzuucgSbBRnT7OGXO1fP' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js",
+          "lineNumber": 10116,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:12:50.696Z"
+      }
+    ]
+  },
+  "network": {
+    "totalRequests": 30,
+    "failedRequests": 0
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "https://dev.summitflow.dev/",
+    "pageTitle": "SummitFlow",
+    "projectId": "summitflow",
+    "capturedAt": "2025-12-18T04:25:19.507959+00:00",
+    "captureMethod": "client-side-screen-capture-api"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "failedRequests": 0,
+    "failures": []
+  }
+}

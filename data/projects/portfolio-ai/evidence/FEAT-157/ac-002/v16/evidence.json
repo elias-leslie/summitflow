@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/watchlist",
+    "featureId": "FEAT-157",
+    "criterionId": "ac-002",
+    "version": 16,
+    "capturedAt": "2025-12-14T05:05:23.658Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 11487
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 57,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": []
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs System Market Closed Watchlist Intelligence Hub Showing all 24 symbols Refresh Add Symbol All Signals (24) All Styles (24)",
+    "keyElements": {
+      "tables": 1,
+      "charts": 1,
+      "buttons": 133,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 244,
+    "domContentLoadedMs": 91,
+    "largestContentfulPaintMs": 120
+  }
+}

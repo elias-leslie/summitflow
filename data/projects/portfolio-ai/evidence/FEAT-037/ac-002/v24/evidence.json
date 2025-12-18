@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/backtest",
+    "featureId": "FEAT-037",
+    "criterionId": "ac-002",
+    "version": 24,
+    "capturedAt": "2025-12-16T03:17:41.006Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 16812
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 34,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/api/market/status",
+        "durationMs": 3780
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/backtest/runs",
+        "durationMs": 3764
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed Backtesting Strategy validation with historical data Generate Strategies View Strategies New Backtes",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 12,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 2468,
+    "domContentLoadedMs": 2241,
+    "largestContentfulPaintMs": 2496
+  }
+}

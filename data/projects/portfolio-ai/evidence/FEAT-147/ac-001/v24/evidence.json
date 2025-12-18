@@ -1,0 +1,149 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/status",
+    "featureId": "FEAT-147",
+    "criterionId": "ac-001",
+    "version": 24,
+    "capturedAt": "2025-12-16T03:23:09.595Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 23841
+  },
+  "console": {
+    "errorCount": 89,
+    "warningCount": 0,
+    "errors": [
+      {
+        "text": "Failed to load resource: net::ERR_EMPTY_RESPONSE",
+        "source": "http://192.168.8.233:3000/api/status/resources:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/status/resources:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING",
+        "source": "http://192.168.8.233:3000/api/status/stream:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/status/stream:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/status/stream:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/status/table-freshness:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/news/source-stats:0"
+      },
+      {
+        "text": "Failed to fetch source metrics: TypeError: Failed to fetch\n    at fetchMetrics (http://192.168.8.233:3000/_next/static/chunks/_5e76ccd6._.js:5065:36)\n    at SourceQualityCard.useEffect (http://192.168.8.233:3000/_next/static/chunks/_5e76ccd6._.js:5097:13)\n    at Object.react_stack_bottom_frame (http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js:14866:22)\n    at runWithFiberInDEV (http://192.168.8.233:3000/_next/static/chunks/node_modules_next_di",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:3117"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/status/ml-model-metrics:0"
+      },
+      {
+        "text": "Failed to fetch ML model status: TypeError: Failed to fetch\n    at fetchStatus (http://192.168.8.233:3000/_next/static/chunks/_5e76ccd6._.js:5575:36)\n    at MLModelCard.useEffect (http://192.168.8.233:3000/_next/static/chunks/_5e76ccd6._.js:5588:13)\n    at Object.react_stack_bottom_frame (http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js:14866:22)\n    at runWithFiberInDEV (http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_com",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:3117"
+      }
+    ],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 47,
+    "failedRequests": 16,
+    "failures": [
+      {
+        "url": "http://192.168.8.233:3000/api/status/resources",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/status/stream",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/status/table-freshness",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/news/source-stats",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/status/ml-model-metrics",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/agents/telemetry/summary?days=7",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/maintenance/file-cleanup-status",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/maintenance/last-run",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/maintenance/disk-space",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/maintenance/database-size",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      }
+    ],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/health",
+        "durationMs": 5560
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/news/health",
+        "durationMs": 9839
+      },
+      {
+        "url": "http://192.168.8.233:3000/health/detailed",
+        "durationMs": 10195
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed System Status Real-time monitoring of services, workers, and integrations. Polling Retry live Clear",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 32,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 280,
+    "domContentLoadedMs": 98,
+    "largestContentfulPaintMs": 144
+  }
+}

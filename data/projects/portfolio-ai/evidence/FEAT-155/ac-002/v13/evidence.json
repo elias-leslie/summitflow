@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/watchlist?symbol=AAPL",
+    "featureId": "FEAT-155",
+    "criterionId": "ac-002",
+    "version": 13,
+    "capturedAt": "2025-12-13T14:43:30.311Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 23059
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 58,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/4543f0cf-4118-4c25-8cbe-c224eb783a2c/history",
+        "durationMs": 7581
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/4a531447-11ac-4796-8b25-cb161b71787d/history",
+        "durationMs": 7579
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/915ae979-0e94-40da-a6bb-e80fef6fb395/history",
+        "durationMs": 7580
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/65823317-623b-4dc7-961a-e8385e30813a/history",
+        "durationMs": 7958
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/b6e1f781-33cd-4c3d-8863-4965c6189a72/history",
+        "durationMs": 7956
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed Watchlist Intelligence Hub Showing all 24 symbols Refresh Add Symbol All Signals (24) All Style",
+    "keyElements": {
+      "tables": 1,
+      "charts": 2,
+      "buttons": 138,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 233,
+    "domContentLoadedMs": 89,
+    "largestContentfulPaintMs": 112
+  }
+}

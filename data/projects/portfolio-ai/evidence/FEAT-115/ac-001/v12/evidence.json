@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/agents",
+    "featureId": "FEAT-115",
+    "criterionId": "ac-001",
+    "version": 12,
+    "capturedAt": "2025-12-13T05:03:25.866Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 15637
+  },
+  "console": {
+    "errorCount": 1,
+    "warningCount": 0,
+    "errors": [
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/agents:0"
+      }
+    ],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 21,
+    "failedRequests": 1,
+    "failures": [
+      {
+        "url": "http://192.168.8.233:3000/agents",
+        "status": 404
+      }
+    ],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/status",
+        "durationMs": 4748
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed 404 This page could not be found.",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 1,
+      "errorMessages": 1,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 379,
+    "domContentLoadedMs": 192,
+    "largestContentfulPaintMs": 216
+  }
+}

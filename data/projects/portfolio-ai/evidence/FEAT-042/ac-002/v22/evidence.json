@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/portfolio",
+    "featureId": "FEAT-042",
+    "criterionId": "ac-002",
+    "version": 22,
+    "capturedAt": "2025-12-16T02:58:30.137Z",
+    "error": "page.evaluate: Target page, context or browser has been closed"
+  },
+  "console": {
+    "errorCount": 25,
+    "warningCount": 0,
+    "errors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:58:19.242Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/portfolio/analytics",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:58:19.251Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/portfolio",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:58:19.261Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/portfolio/accounts",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:58:19.264Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T02:58:20.247Z"
+      }
+    ]
+  },
+  "network": {
+    "totalRequests": 31,
+    "failedRequests": 0
+  }
+}

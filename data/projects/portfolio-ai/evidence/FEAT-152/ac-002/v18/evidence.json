@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/",
+    "featureId": "FEAT-152",
+    "criterionId": "ac-002",
+    "version": 18,
+    "capturedAt": "2025-12-16T03:15:47.022Z",
+    "error": "page.evaluate: Target page, context or browser has been closed"
+  },
+  "console": {
+    "errorCount": 29,
+    "warningCount": 0,
+    "errors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/intelligence",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:15:29.629Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:15:29.630Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/intelligence",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:15:30.632Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/api/market/status",
+          "lineNumber": 0,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:15:30.632Z"
+      },
+      {
+        "type": "error",
+        "text": "WebSocket connection to 'ws://192.168.8.233:3000/_next/webpack-hmr?id=p2Ya7uzR7rGPKfDhqSkjX' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+        "location": {
+          "url": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js",
+          "lineNumber": 10116,
+          "columnNumber": 0
+        },
+        "timestamp": "2025-12-16T03:15:30.632Z"
+      }
+    ]
+  },
+  "network": {
+    "totalRequests": 29,
+    "failedRequests": 2
+  }
+}

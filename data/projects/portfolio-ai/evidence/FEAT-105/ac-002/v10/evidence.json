@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/settings",
+    "featureId": "FEAT-105",
+    "criterionId": "ac-002",
+    "version": 10,
+    "capturedAt": "2025-12-11T05:01:53.238Z",
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://192.168.8.233:3000/settings\nCall log:\n  - navigating to \"http://192.168.8.233:3000/settings\", waiting until \"networkidle\"\n"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": []
+  },
+  "network": {
+    "totalRequests": 1,
+    "failedRequests": 1
+  }
+}

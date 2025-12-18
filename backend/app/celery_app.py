@@ -54,13 +54,20 @@ celery_app.conf.update(
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
 )
 
-# Celery Beat schedule - minimal for now, will expand
-# Tasks will be added when task modules are created
+# Celery Beat schedule
 celery_app.conf.beat_schedule = {
-    # Placeholder - actual tasks will be added in future beads:
-    # - Scheduled file scanning (bead 0ft: scanners)
-    # - Scheduled evidence capture (bead 9kx)
-    # - Sitemap health checks
+    # Evidence capture - refresh expired evidence every 6 hours
+    "capture-scheduled-evidence": {
+        "task": "summitflow.capture_scheduled_evidence",
+        "schedule": 60 * 60 * 6,  # Every 6 hours
+        "kwargs": {"dry_run": False},
+    },
+    # Debug cleanup - daily at 3 AM UTC
+    "cleanup-debug-captures": {
+        "task": "summitflow.cleanup_debug_captures",
+        "schedule": 60 * 60 * 24,  # Every 24 hours
+        "kwargs": {"max_age_days": 7, "max_files": 20},
+    },
 }
 
 
@@ -93,10 +100,5 @@ def setup_celery_task_logger(logger: logging.Logger, *args, **kwargs) -> None:  
         )
 
 
-# Task imports will be added here when task modules are created
-# Example (future):
-# from app.tasks import (
-#     file_scan_tasks,
-#     evidence_tasks,
-#     sitemap_tasks,
-# )
+# Import tasks to register them with Celery
+from app.tasks import evidence_tasks  # noqa: F401, E402

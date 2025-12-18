@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/capabilities",
+    "featureId": "FEAT-088",
+    "criterionId": "ac-003",
+    "version": 1,
+    "capturedAt": "2025-12-13T21:05:45.046Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 11235
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 39,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": []
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed System Capabilities Registry Scan System Dashboard Vision Features Workflows QA Sources Rules DB",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 26,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 635,
+    "domContentLoadedMs": 226,
+    "largestContentfulPaintMs": 268
+  }
+}

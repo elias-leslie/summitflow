@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/status",
+    "featureId": "FEAT-143",
+    "criterionId": "ac-001",
+    "version": 19,
+    "capturedAt": "2025-12-13T21:19:17.261Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 23711
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 43,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/status",
+        "durationMs": 15257
+      },
+      {
+        "url": "http://192.168.8.233:8000/health",
+        "durationMs": 15257
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/news/health",
+        "durationMs": 20241
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/status/stream",
+        "durationMs": 8551
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/status/unified-logs?lines=500&since=5+minutes+ago",
+        "durationMs": 12514
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed System Status Real-time monitoring of services, workers, and integrations. Live Clear Cache Ref",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 27,
+      "errorMessages": 0,
+      "loadingSpinners": 2,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 258,
+    "domContentLoadedMs": 93,
+    "largestContentfulPaintMs": 140
+  }
+}

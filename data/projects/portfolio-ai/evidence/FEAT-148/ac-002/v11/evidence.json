@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/backtest?runId=first",
+    "featureId": "FEAT-148",
+    "criterionId": "ac-002",
+    "version": 11,
+    "capturedAt": "2025-12-12T05:04:42.936Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 22636
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 37,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/status",
+        "durationMs": 15675
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/backtest/runs",
+        "durationMs": 7825
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/backtest/runs/553979f9-6eea-4663-92c9-c7a36457f25c",
+        "durationMs": 8120
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/backtest/runs/553979f9-6eea-4663-92c9-c7a36457f25c/equity",
+        "durationMs": 8186
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed Backtesting Strategy validation with historical data Generate Strategies View Strategies New Ba",
+    "keyElements": {
+      "tables": 2,
+      "charts": 176,
+      "buttons": 11,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 253,
+    "domContentLoadedMs": 82,
+    "largestContentfulPaintMs": 116
+  }
+}

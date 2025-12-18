@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/watchlist",
+    "featureId": "FEAT-006",
+    "criterionId": "ac-002",
+    "version": 10,
+    "capturedAt": "2025-12-11T05:00:23.357Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 22063
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 57,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/status",
+        "durationMs": 6572
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist/daily-report",
+        "durationMs": 5138
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/preferences/",
+        "durationMs": 6570
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/watchlist",
+        "durationMs": 6571
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/disagreements?days=7&limit=20",
+        "durationMs": 5146
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Theme: Dark Market Closed Watchlist Intelligence Hub Showing all 24 symbols Refresh Add Symbol All Signals (2",
+    "keyElements": {
+      "tables": 1,
+      "charts": 1,
+      "buttons": 133,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 1094,
+    "domContentLoadedMs": 920,
+    "largestContentfulPaintMs": 988
+  }
+}

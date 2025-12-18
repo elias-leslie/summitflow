@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "url": "https://192.168.8.233/portfolio",
+    "featureId": "FEAT-224",
+    "criterionId": "ac-001",
+    "version": 1,
+    "capturedAt": "2025-12-16T05:19:15.262539+00:00",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1709,
+      "height": 1218
+    },
+    "scroll": {
+      "x": 0,
+      "y": 0
+    },
+    "captureMethod": "client-side-screen-capture-api"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": [],
+    "note": "Client-side evidence from visible error elements"
+  },
+  "network": {
+    "totalRequests": 0,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [],
+    "note": "Client-side evidence from Performance API"
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "",
+    "keyElements": {},
+    "note": "Captured user's exact viewport state"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/portfolio",
+    "featureId": "FEAT-048",
+    "criterionId": "ac-001",
+    "version": 24,
+    "capturedAt": "2025-12-16T03:18:05.571Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 16370
+  },
+  "console": {
+    "errorCount": 4,
+    "warningCount": 0,
+    "errors": [
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      }
+    ],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 31,
+    "failedRequests": 1,
+    "failures": [
+      {
+        "url": "http://192.168.8.233:3000/api/portfolio",
+        "status": 404
+      }
+    ],
+    "slowRequests": []
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed Portfolio Management Manage your positions, accounts, and view detailed analytics. Total Value $0.00",
+    "keyElements": {
+      "tables": 0,
+      "charts": 3,
+      "buttons": 5,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 561,
+    "domContentLoadedMs": 174,
+    "largestContentfulPaintMs": 204
+  }
+}

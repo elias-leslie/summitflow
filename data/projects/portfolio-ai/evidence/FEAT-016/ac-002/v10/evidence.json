@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/",
+    "featureId": "FEAT-016",
+    "criterionId": "ac-002",
+    "version": 10,
+    "capturedAt": "2025-12-12T05:01:00.194Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 59625
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 6,
+    "errors": [],
+    "warnings": [
+      {
+        "text": "The width(-1) and height(-1) of chart should be greater than 0,\n       please check the style of container, or the props width(100%) and height(100%),\n       or add a minWidth(0) or minHeight(undefine",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287"
+      },
+      {
+        "text": "The width(-1) and height(-1) of chart should be greater than 0,\n       please check the style of container, or the props width(100%) and height(100%),\n       or add a minWidth(0) or minHeight(undefine",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287"
+      },
+      {
+        "text": "The width(-1) and height(-1) of chart should be greater than 0,\n       please check the style of container, or the props width(100%) and height(100%),\n       or add a minWidth(0) or minHeight(undefine",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287"
+      },
+      {
+        "text": "The width(-1) and height(-1) of chart should be greater than 0,\n       please check the style of container, or the props width(100%) and height(100%),\n       or add a minWidth(0) or minHeight(undefine",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287"
+      },
+      {
+        "text": "The width(-1) and height(-1) of chart should be greater than 0,\n       please check the style of container, or the props width(100%) and height(100%),\n       or add a minWidth(0) or minHeight(undefine",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287"
+      }
+    ]
+  },
+  "network": {
+    "totalRequests": 35,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/intelligence",
+        "durationMs": 6235
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/market/movers?count=10",
+        "durationMs": 15607
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/market/fear-greed-history?days=365",
+        "durationMs": 15605
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/market/news-sentiment-history?days=365&granularity=daily",
+        "durationMs": 16137
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/market/indicator-history?days=365",
+        "durationMs": 15631
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed Portfolio AI Dashboard AI-powered portfolio intelligence and market insights Market Conditions",
+    "keyElements": {
+      "tables": 2,
+      "charts": 198,
+      "buttons": 37,
+      "errorMessages": 0,
+      "loadingSpinners": 1,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 1335,
+    "domContentLoadedMs": 584,
+    "largestContentfulPaintMs": 660
+  }
+}

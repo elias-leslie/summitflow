@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/",
+    "featureId": "FEAT-122",
+    "criterionId": "ac-001",
+    "version": 6,
+    "capturedAt": "2025-12-16T03:14:11.524Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 61881
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 37,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/api/market/intelligence",
+        "durationMs": 24135
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed Portfolio AI Dashboard AI-powered portfolio intelligence and market insights Market Conditions Marke",
+    "keyElements": {
+      "tables": 2,
+      "charts": 198,
+      "buttons": 39,
+      "errorMessages": 0,
+      "loadingSpinners": 1,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 553,
+    "domContentLoadedMs": 102,
+    "largestContentfulPaintMs": 176
+  }
+}

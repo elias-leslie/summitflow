@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/trading",
+    "featureId": "FEAT-051",
+    "criterionId": "ac-001",
+    "version": 19,
+    "capturedAt": "2025-12-16T00:34:47.611Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 11597
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 32,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": []
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System After Hours Paper Trading AI-driven paper trades with real-time performance tracking Generate Strategies View Stra",
+    "keyElements": {
+      "tables": 0,
+      "charts": 2,
+      "buttons": 10,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 617,
+    "domContentLoadedMs": 321,
+    "largestContentfulPaintMs": 672
+  }
+}

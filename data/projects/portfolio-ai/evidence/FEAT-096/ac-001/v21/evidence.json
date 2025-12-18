@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/status",
+    "featureId": "FEAT-096",
+    "criterionId": "ac-001",
+    "version": 21,
+    "capturedAt": "2025-12-16T00:34:57.270Z",
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://192.168.8.233:3000/status\nCall log:\n  - navigating to \"http://192.168.8.233:3000/status\", waiting until \"domcontentloaded\"\n"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": []
+  },
+  "network": {
+    "totalRequests": 1,
+    "failedRequests": 1
+  }
+}

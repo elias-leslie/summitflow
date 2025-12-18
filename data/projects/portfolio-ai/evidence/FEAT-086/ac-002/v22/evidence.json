@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/capabilities",
+    "featureId": "FEAT-086",
+    "criterionId": "ac-002",
+    "version": 22,
+    "capturedAt": "2025-12-16T03:18:50.613Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 16731
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 41,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/api/market/status",
+        "durationMs": 5647
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/vision-goals",
+        "durationMs": 5577
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/vision",
+        "durationMs": 5588
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/capabilities/health/summary",
+        "durationMs": 5588
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/sitemap/health-summary",
+        "durationMs": 5703
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed System Registry Scan System Vision Features Workflows Sources Rules Files DB 99 Tasks 74 Sitemap 86 Mi",
+    "keyElements": {
+      "tables": 1,
+      "charts": 1,
+      "buttons": 14,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 259,
+    "domContentLoadedMs": 96,
+    "largestContentfulPaintMs": 6076
+  }
+}

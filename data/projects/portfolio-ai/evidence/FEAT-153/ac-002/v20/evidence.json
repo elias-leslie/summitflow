@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/portfolio",
+    "featureId": "FEAT-153",
+    "criterionId": "ac-002",
+    "version": 20,
+    "capturedAt": "2025-12-16T03:23:07.324Z",
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://192.168.8.233:3000/portfolio\nCall log:\n  - navigating to \"http://192.168.8.233:3000/portfolio\", waiting until \"networkidle\"\n"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": []
+  },
+  "network": {
+    "totalRequests": 1,
+    "failedRequests": 1
+  }
+}

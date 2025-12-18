@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/portfolio",
+    "featureId": "FEAT-140",
+    "criterionId": "ac-002",
+    "version": 14,
+    "capturedAt": "2025-12-13T21:07:45.586Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 20329
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 30,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/portfolio/",
+        "durationMs": 9046
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/portfolio/analytics",
+        "durationMs": 5963
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/portfolio/accounts",
+        "durationMs": 8261
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Market Closed Portfolio Management Manage your positions, accounts, and view detailed analytics. Total Value",
+    "keyElements": {
+      "tables": 0,
+      "charts": 3,
+      "buttons": 4,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 473,
+    "domContentLoadedMs": 221,
+    "largestContentfulPaintMs": 260
+  }
+}

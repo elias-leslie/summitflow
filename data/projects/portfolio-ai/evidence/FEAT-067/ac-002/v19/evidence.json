@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/backtest",
+    "featureId": "FEAT-067",
+    "criterionId": "ac-002",
+    "version": 19,
+    "capturedAt": "2025-12-16T00:35:15.340Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 27337
+  },
+  "console": {
+    "errorCount": 36,
+    "warningCount": 0,
+    "errors": [
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_c8c997ce._.js:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_f26f265a._.js:0"
+      },
+      {
+        "text": "WebSocket connection to 'ws://192.168.8.233:3000/_next/webpack-hmr?id=umrRQ6YPyCv8WVuPVMuwO' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js:10116"
+      },
+      {
+        "text": "Failed to load chunk /_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_c8c997ce._.js from module [turbopack]/browser/dev/hmr-client/hmr-client.ts [app-client] (ecmascript, async loader)",
+        "source": null
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/favicon.ico?favicon.0b3bf435.ico:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/market/status:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/__nextjs_original-stack-frames:0"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/backtest/runs:0"
+      },
+      {
+        "text": "WebSocket connection to 'ws://192.168.8.233:3000/_next/webpack-hmr?id=umrRQ6YPyCv8WVuPVMuwO' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js:10116"
+      },
+      {
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "source": "http://192.168.8.233:3000/api/market/status:0"
+      }
+    ],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 36,
+    "failedRequests": 6,
+    "failures": [
+      {
+        "url": "http://192.168.8.233:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_c8c997ce._.js",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_f26f265a._.js",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/favicon.ico?favicon.0b3bf435.ico",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/market/status",
+        "status": 500
+      },
+      {
+        "url": "http://192.168.8.233:3000/__nextjs_original-stack-frames",
+        "status": "failed",
+        "error": "net::ERR_CONNECTION_REFUSED"
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/backtest/runs",
+        "status": 500
+      }
+    ],
+    "slowRequests": []
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Unknown Backtesting Strategy validation with historical data Generate Strategies View Strategies New Backtest No b",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 5,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 320,
+    "domContentLoadedMs": 149,
+    "largestContentfulPaintMs": 196
+  }
+}

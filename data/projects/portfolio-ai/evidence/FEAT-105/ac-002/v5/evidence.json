@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/settings",
+    "featureId": "FEAT-105",
+    "criterionId": "ac-002",
+    "version": 5,
+    "capturedAt": "2025-12-07T20:55:29.296Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 34065
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 29,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:8000/api/market/status",
+        "durationMs": 23096
+      },
+      {
+        "url": "http://192.168.8.233:8000/api/preferences/",
+        "durationMs": 22758
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Recs Capabilities Theme: Dark Market Closed Settings Configure your preferences, risk tolerance, and system behavior. Profiles",
+    "keyElements": {
+      "tables": 0,
+      "charts": 1,
+      "buttons": 10,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 414,
+    "domContentLoadedMs": 86,
+    "largestContentfulPaintMs": 23484
+  }
+}

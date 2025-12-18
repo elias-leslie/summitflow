@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/",
+    "featureId": "FEAT-132",
+    "criterionId": "ac-002",
+    "version": 19,
+    "capturedAt": "2025-12-16T03:22:53.582Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 61821
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": [],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 36,
+    "failedRequests": 0,
+    "failures": [],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/api/market/status",
+        "durationMs": 11355
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/market/intelligence",
+        "durationMs": 9733
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/market/movers?count=10",
+        "durationMs": 11358
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/market/fear-greed-history?days=365",
+        "durationMs": 11374
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/market/news-sentiment-history?days=365&granularity=daily",
+        "durationMs": 11384
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed Portfolio AI Dashboard AI-powered portfolio intelligence and market insights Market Conditions Marke",
+    "keyElements": {
+      "tables": 2,
+      "charts": 198,
+      "buttons": 39,
+      "errorMessages": 0,
+      "loadingSpinners": 1,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 348,
+    "domContentLoadedMs": 119,
+    "largestContentfulPaintMs": 160
+  }
+}

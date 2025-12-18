@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/watchlist",
+    "featureId": "FEAT-035",
+    "criterionId": "ac-001",
+    "version": 24,
+    "capturedAt": "2025-12-16T03:17:24.506Z",
+    "pageTitle": "Portfolio AI Platform",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "captureTimeMs": 17102
+  },
+  "console": {
+    "errorCount": 8,
+    "warningCount": 0,
+    "errors": [
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/preferences:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/preferences:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/preferences:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/preferences:0"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "source": "http://192.168.8.233:3000/api/portfolio:0"
+      }
+    ],
+    "warnings": []
+  },
+  "network": {
+    "totalRequests": 59,
+    "failedRequests": 2,
+    "failures": [
+      {
+        "url": "http://192.168.8.233:3000/api/preferences",
+        "status": 404
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/portfolio",
+        "status": 404
+      }
+    ],
+    "slowRequests": [
+      {
+        "url": "http://192.168.8.233:3000/api/watchlist/cba2fd5f-5bbd-4a8d-baa9-168a90070b0c/history",
+        "durationMs": 3206
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/watchlist/2f95b693-46a0-4059-a755-adbf3bd623f4/history",
+        "durationMs": 3280
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/watchlist/4d2600ce-ee2a-49ef-aa08-487955825ff0/history",
+        "durationMs": 3359
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/watchlist/807e5a72-7c58-44dd-a060-7e35fcb69a51/history",
+        "durationMs": 3402
+      },
+      {
+        "url": "http://192.168.8.233:3000/api/watchlist/8c69ffbc-fc21-4e65-bdf4-3ba7419d269a/history",
+        "durationMs": 3478
+      }
+    ]
+  },
+  "pageState": {
+    "hasContent": true,
+    "visibleTextSample": "Portfolio AI Dashboard Portfolio Watchlist Trading Backtest Strategies Picks System Market Closed Watchlist Intelligence Hub Showing all 24 symbols Refresh Add Symbol All Signals (24) All Styles (24",
+    "keyElements": {
+      "tables": 1,
+      "charts": 1,
+      "buttons": 132,
+      "errorMessages": 0,
+      "loadingSpinners": 0,
+      "emptyStates": 0
+    }
+  },
+  "performance": {
+    "pageLoadMs": 416,
+    "domContentLoadedMs": 195,
+    "largestContentfulPaintMs": 228
+  }
+}

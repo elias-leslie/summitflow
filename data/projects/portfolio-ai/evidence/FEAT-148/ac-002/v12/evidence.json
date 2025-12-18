@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "url": "http://192.168.8.233:3000/backtest?runId=first",
+    "featureId": "FEAT-148",
+    "criterionId": "ac-002",
+    "version": 12,
+    "capturedAt": "2025-12-13T05:03:48.223Z",
+    "error": "page.goto: Target page, context or browser has been closed\nCall log:\n  - navigating to \"http://192.168.8.233:3000/backtest?runId=first\", waiting until \"networkidle\"\n"
+  },
+  "console": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "errors": []
+  },
+  "network": {
+    "totalRequests": 35,
+    "failedRequests": 0
+  }
+}
