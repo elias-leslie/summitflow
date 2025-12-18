@@ -91,6 +91,7 @@ async def list_entries(
         "stats": {
             "byHealth": stats["by_health"],
             "byType": stats["by_type"],
+            "lastScanned": stats["last_scanned"],
         },
     }
 

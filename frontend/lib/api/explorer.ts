@@ -87,6 +87,7 @@ export interface ExplorerEntry {
 export interface ExplorerStats {
   byHealth: Record<ExplorerHealthStatus, number>;
   byType: Record<ExplorerEntryType, number>;
+  lastScanned?: string | null;
 }
 
 export interface ExplorerResponse {

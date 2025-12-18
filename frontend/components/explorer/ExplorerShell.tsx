@@ -114,7 +114,7 @@ export function ExplorerShell({
             fresh: (byHealth.healthy || 0) as number,
             stale: (byHealth.warning || 0) as number,
             orphan: (byHealth.error || 0) as number,
-            lastScan: null, // API doesn't return this per-type yet
+            lastScan: response.stats?.lastScanned || null,
           };
         } catch (err) {
           console.error(`Failed to fetch stats for ${type}:`, err);
