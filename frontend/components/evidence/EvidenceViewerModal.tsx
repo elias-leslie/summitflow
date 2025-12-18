@@ -410,7 +410,7 @@ export function EvidenceViewerModal({
                       </div>
                       <div className="p-4 rounded border border-slate-700 bg-slate-900/50">
                         <h4 className="text-xs text-slate-500 uppercase tracking-wider mb-1">Viewport</h4>
-                        <p className="text-sm mono text-white">{evidence.metadata.viewport.width} x {evidence.metadata.viewport.height}</p>
+                        <p className="text-sm mono text-white">{evidence.metadata.viewport?.width ?? '?'} x {evidence.metadata.viewport?.height ?? '?'}</p>
                       </div>
                     </div>
 
