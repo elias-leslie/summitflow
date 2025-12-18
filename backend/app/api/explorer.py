@@ -47,8 +47,12 @@ def _validate_project_exists(project_id: str) -> None:
 @router.get("/{project_id}/explorer")
 async def list_entries(
     project_id: str,
-    type: str | None = Query(None, description="Filter by entry type (file, table, task, endpoint)"),
-    health: str | None = Query(None, description="Filter by health status (healthy, warning, error, unknown)"),
+    type: str | None = Query(
+        None, description="Filter by entry type (file, table, task, endpoint)"
+    ),
+    health: str | None = Query(
+        None, description="Filter by health status (healthy, warning, error, unknown)"
+    ),
     path: str | None = Query(None, description="Filter by path prefix"),
     sort: str = Query("path", description="Sort field: path, name, health_status, last_scanned_at"),
     dir: str = Query("asc", description="Sort direction: asc, desc"),
@@ -125,6 +129,51 @@ async def get_children(
     return explorer.get_children(project_id, type, path)
 
 
+@router.get("/{project_id}/explorer/scan/status")
+async def get_scan_status(project_id: str) -> dict[str, Any]:
+    """Get current scan status for polling.
+
+    Returns status, progress, and timing information.
+    Poll this endpoint to track scan completion.
+    """
+    _validate_project_exists(project_id)
+
+    return explorer.get_scan_status(project_id)
+
+
+@router.post("/{project_id}/explorer/scan")
+async def trigger_scan(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    type: str | None = Query(
+        None,
+        description="Entry type to scan (file, table, task, endpoint). Scans all if not specified.",
+    ),
+) -> dict[str, Any]:
+    """Trigger a scan for explorer entries.
+
+    Runs in background. Returns immediately with scan status.
+    Poll GET /scan/status for completion.
+    """
+    _validate_project_exists(project_id)
+
+    if type:
+        _validate_entry_type(type)
+
+    # Initialize scan state tracking
+    explorer.start_scan(project_id, type)
+
+    # Run scan with progress tracking in background
+    background_tasks.add_task(explorer.run_scan_with_tracking, project_id, type)
+
+    return {
+        "status": "scanning",
+        "message": f"Scan started for {project_id}"
+        + (f" (type: {type})" if type else " (all types)"),
+        "type": type,
+    }
+
+
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")
 async def get_entry(
     project_id: str,
@@ -146,43 +195,3 @@ async def get_entry(
         )
 
     return entry
-
-
-@router.post("/{project_id}/explorer/scan")
-async def trigger_scan(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-    type: str | None = Query(None, description="Entry type to scan (file, table, task, endpoint). Scans all if not specified."),
-) -> dict[str, Any]:
-    """Trigger a scan for explorer entries.
-
-    Runs in background. Returns immediately with scan status.
-    """
-    _validate_project_exists(project_id)
-
-    if type:
-        _validate_entry_type(type)
-
-    # Define scan function
-    def run_scan() -> None:
-        if type:
-            # Scan specific type
-            result = explorer.scan(project_id, type)
-            if not result.success:
-                # Log error but don't raise - it's a background task
-                from ..logging_config import get_logger
-                logger = get_logger(__name__)
-                logger.error(f"Scan failed for {type}: {result.error}")
-        else:
-            # Scan all registered types
-            from ..services.explorer.types import list_registered_types
-            for t in list_registered_types():
-                explorer.scan(project_id, t)
-
-    background_tasks.add_task(run_scan)
-
-    return {
-        "status": "scanning",
-        "message": f"Scan started for {project_id}" + (f" (type: {type})" if type else " (all types)"),
-        "type": type,
-    }

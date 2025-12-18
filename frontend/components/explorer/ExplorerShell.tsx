@@ -20,7 +20,9 @@ import { SummaryBar, ScanningOverlay } from "./SummaryBar";
 import {
   fetchExplorerEntries,
   triggerExplorerScan,
+  fetchScanStatus,
   type ExplorerResponse,
+  type ScanStatusResponse,
 } from "@/lib/api/explorer";
 import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
 
@@ -80,6 +82,7 @@ export function ExplorerShell({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(null);
 
   // Stats state - fetched from API
   const [statsData, setStatsData] = useState<Record<ExplorerType, ExplorerStats>>({
@@ -167,18 +170,49 @@ export function ExplorerShell({
 
   const handleScan = useCallback(async () => {
     setIsScanning(true);
+    setScanProgress(null);
+
     try {
       const apiType = uiTypeToApiType[activeType];
       await triggerExplorerScan(projectId, apiType as "file" | "table" | "task" | "endpoint" | "page");
-      // Wait a bit for scan to complete, then refresh stats
+
+      // Poll for completion every 500ms
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await fetchScanStatus(projectId);
+          setScanProgress(status);
+
+          if (status.status === "complete" || status.status === "error") {
+            clearInterval(pollInterval);
+            setIsScanning(false);
+            setScanProgress(null);
+
+            if (status.status === "error" && status.error) {
+              console.error("Scan completed with error:", status.error);
+            }
+          }
+        } catch (pollErr) {
+          console.error("Poll failed:", pollErr);
+          clearInterval(pollInterval);
+          setIsScanning(false);
+          setScanProgress(null);
+        }
+      }, 500);
+
+      // Safety timeout after 60 seconds
       setTimeout(() => {
-        setIsScanning(false);
-      }, 3000);
+        clearInterval(pollInterval);
+        if (isScanning) {
+          setIsScanning(false);
+          setScanProgress(null);
+        }
+      }, 60000);
     } catch (err) {
       console.error("Scan failed:", err);
       setIsScanning(false);
+      setScanProgress(null);
     }
-  }, [projectId, activeType]);
+  }, [projectId, activeType, isScanning]);
 
   // Current stats
   const stats = statsData[activeType];
@@ -225,7 +259,7 @@ export function ExplorerShell({
       {/* Center: Main content */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Scanning overlay */}
-        {isScanning && <ScanningOverlay />}
+        {isScanning && <ScanningOverlay progress={scanProgress} />}
 
         {/* Header */}
         <div

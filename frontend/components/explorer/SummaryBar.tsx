@@ -145,24 +145,51 @@ export function SummaryBar({
   );
 }
 
+interface ScanningOverlayProps {
+  className?: string;
+  progress?: {
+    current_type: string | null;
+    types_completed: number;
+    types_total: number;
+    progress_pct: number;
+  } | null;
+}
+
 /**
- * ScanningOverlay - Shows during active scan
+ * ScanningOverlay - Shows during active scan with progress
  */
-export function ScanningOverlay({ className }: { className?: string }) {
+export function ScanningOverlay({ className, progress }: ScanningOverlayProps) {
   return (
     <div
       className={cn(
-        "absolute inset-x-0 top-0 h-0.5 overflow-hidden",
+        "absolute inset-x-0 top-0 z-10",
         className
       )}
     >
-      <div
-        className={cn(
-          "h-full w-1/3",
-          "bg-gradient-to-r from-transparent via-phosphor-500/60 to-transparent",
-          "animate-[scan-sweep_1.5s_ease-in-out_infinite]"
+      {/* Progress bar */}
+      <div className="h-1 bg-slate-800/50 overflow-hidden">
+        {progress && progress.progress_pct > 0 ? (
+          <div
+            className="h-full bg-phosphor-500/80 transition-all duration-300"
+            style={{ width: `${progress.progress_pct}%` }}
+          />
+        ) : (
+          <div
+            className={cn(
+              "h-full w-1/3",
+              "bg-gradient-to-r from-transparent via-phosphor-500/60 to-transparent",
+              "animate-[scan-sweep_1.5s_ease-in-out_infinite]"
+            )}
+          />
         )}
-      />
+      </div>
+
+      {/* Progress text */}
+      {progress && progress.current_type && (
+        <div className="absolute top-2 left-4 text-xs text-slate-400 bg-slate-900/90 px-2 py-1 rounded">
+          Scanning {progress.current_type}... ({progress.types_completed}/{progress.types_total})
+        </div>
+      )}
     </div>
   );
 }

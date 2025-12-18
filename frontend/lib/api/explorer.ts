@@ -108,6 +108,24 @@ export interface ScanResponse {
   type: ExplorerEntryType | null;
 }
 
+export interface ScanStatusResponse {
+  status: "idle" | "scanning" | "complete" | "error";
+  current_type: string | null;
+  types_total: number;
+  types_completed: number;
+  progress_pct: number;
+  started_at: number | null;
+  completed_at: number | null;
+  error: string | null;
+  results: Array<{
+    entry_type: string;
+    entries_found: number;
+    entries_saved: number;
+    duration_ms: number;
+    success: boolean;
+  }>;
+}
+
 // ============================================================================
 // Filter Types
 // ============================================================================
@@ -230,6 +248,22 @@ export async function triggerExplorerScan(
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to trigger scan" }));
     throw new Error(error.detail || "Failed to trigger scan");
+  }
+  return res.json();
+}
+
+/**
+ * Get current scan status for polling.
+ *
+ * @param projectId - Project to check
+ */
+export async function fetchScanStatus(
+  projectId: string
+): Promise<ScanStatusResponse> {
+  const res = await fetch(`/api/projects/${projectId}/explorer/scan/status`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan status" }));
+    throw new Error(error.detail || "Failed to fetch scan status");
   }
   return res.json();
 }
