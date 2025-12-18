@@ -327,7 +327,7 @@ async def list_evidence_endpoint(
                 "userApproved": e["user_approved"],
                 "userNotes": e["user_notes"],
                 "fileSizeBytes": e["file_size_bytes"],
-                "screenshotUrl": f"/summitflow/api/projects/{project_id}/evidence/{e['feature_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
+                "screenshotUrl": f"/api/projects/{project_id}/evidence/{e['feature_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
             }
             for e in evidence_list
         ],
