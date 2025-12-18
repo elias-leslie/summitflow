@@ -55,7 +55,7 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 
 | Service | URL |
 |---------|-----|
-| HTTPS (nginx) | https://192.168.8.233:444 |
+| Production (Cloudflare) | https://dev.summitflow.dev |
 | Local Frontend | http://localhost:3001 |
 | Local Backend | http://localhost:8001 |
 | API Docs | http://localhost:8001/docs |
@@ -144,7 +144,7 @@ bash ~/summitflow/scripts/setup-services.sh
 # 2. Start services
 bash ~/summitflow/scripts/start.sh
 
-# 3. Access at https://192.168.8.233:444
+# 3. Access at https://dev.summitflow.dev
 ```
 
 ---
