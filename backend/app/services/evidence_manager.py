@@ -376,6 +376,75 @@ def get_evidence_versions(
         return [_row_to_evidence(row) for row in rows]
 
 
+def list_evidence(
+    project_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    feature_id: str | None = None,
+    quality_status: str | None = None,
+    search: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """List all current evidence for a project with filtering.
+
+    Args:
+        project_id: Project ID for scoping
+        limit: Maximum number of results
+        offset: Offset for pagination
+        feature_id: Optional filter by feature ID
+        quality_status: Optional filter by quality status
+        search: Optional search term (matches feature_id, criterion_id)
+
+    Returns:
+        Tuple of (list of evidence records, total count)
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Build WHERE clause
+        where_clauses = ["project_id = %s", "is_current = TRUE"]
+        params: list[Any] = [project_id]
+
+        if feature_id:
+            where_clauses.append("feature_id = %s")
+            params.append(feature_id)
+
+        if quality_status:
+            where_clauses.append("quality_status = %s")
+            params.append(quality_status)
+
+        if search:
+            where_clauses.append(
+                "(feature_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
+            )
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+
+        where_sql = " AND ".join(where_clauses)
+
+        # Get total count
+        cur.execute(f"SELECT COUNT(*) FROM evidence WHERE {where_sql}", params)
+        count_row = cur.fetchone()
+        total = int(count_row[0]) if count_row and count_row[0] else 0
+
+        # Get paginated results
+        params.extend([limit, offset])
+        cur.execute(
+            f"""
+            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+                   file_path, file_size_bytes, version, is_current,
+                   captured_at, expires_at, quality_status, quality_issues,
+                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
+                   user_reviewed_at, user_approved, user_notes
+            FROM evidence
+            WHERE {where_sql}
+            ORDER BY captured_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+        return [_row_to_evidence(row) for row in rows], total
+
+
 def get_pending_review(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get evidence pending AI review.
 

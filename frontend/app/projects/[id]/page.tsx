@@ -11,6 +11,7 @@ import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 import { FilesTab } from "@/components/files/FilesTab";
 import { BeadsTab } from "@/components/beads/BeadsTab";
+import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 
 type TabId = "sitemap" | "features" | "vision" | "files" | "evidence" | "beads";
 
@@ -234,13 +235,7 @@ export default function ProjectDetailPage() {
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
         {activeTab === "files" && <FilesTab projectId={projectId} />}
-        {activeTab === "evidence" && (
-          <div className="card p-8 text-center">
-            <Camera className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-            <p className="text-slate-400">Evidence capture coming soon</p>
-            <p className="text-sm text-slate-500 mt-2">Screenshots and verification artifacts will appear here</p>
-          </div>
-        )}
+        {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
         {activeTab === "beads" && <BeadsTab projectId={projectId} />}
       </section>
     </div>

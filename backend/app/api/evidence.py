@@ -29,6 +29,7 @@ from ..services.evidence_manager import (
     get_evidence_versions,
     get_next_version,
     get_summary,
+    list_evidence,
     read_evidence_file,
     save_evidence,
     update_user_review,
@@ -289,6 +290,51 @@ async def submit_review(
         raise HTTPException(status_code=404, detail="Evidence not found")
 
     return {"success": True, "message": "Review submitted"}
+
+
+@router.get("/projects/{project_id}/evidence")
+async def list_evidence_endpoint(
+    project_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    feature_id: str | None = Query(None, description="Filter by feature ID"),
+    status: str | None = Query(None, description="Filter by quality status"),
+    search: str | None = Query(None, description="Search feature/criterion IDs"),
+) -> dict[str, Any]:
+    """List all evidence for a project with optional filtering."""
+    evidence_list, total = list_evidence(
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+        feature_id=feature_id,
+        quality_status=status,
+        search=search,
+    )
+
+    return {
+        "evidence": [
+            {
+                "id": e["id"],
+                "evidenceId": e["evidence_id"],
+                "featureId": e["feature_id"],
+                "criterionId": e["criterion_id"],
+                "version": e["version"],
+                "isCurrent": e["is_current"],
+                "capturedAt": e["captured_at"],
+                "expiresAt": e["expires_at"],
+                "qualityStatus": e["quality_status"],
+                "confidence": e["confidence"],
+                "userApproved": e["user_approved"],
+                "userNotes": e["user_notes"],
+                "fileSizeBytes": e["file_size_bytes"],
+                "screenshotUrl": f"/summitflow/api/projects/{project_id}/evidence/{e['feature_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
+            }
+            for e in evidence_list
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/projects/{project_id}/evidence/summary")
