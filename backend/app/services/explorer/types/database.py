@@ -21,9 +21,12 @@ Metadata schema (per architecture doc):
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
 
 from ....logging_config import get_logger
@@ -32,16 +35,21 @@ from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
 
+# Load environment from ~/.env.local
+_env_file = Path.home() / ".env.local"
+if _env_file.exists():
+    load_dotenv(_env_file)
+
 # System tables to exclude
 SYSTEM_TABLES = {
     "celery_taskmeta", "celery_tasksetmeta", "alembic_version",
     "spatial_ref_sys",
 }
 
-# Known project database URLs (future: store in projects table)
-PROJECT_DB_URLS = {
-    "portfolio-ai": "postgresql://portfolio_ai_user:portfolio_ai_dev_2025@localhost:5432/portfolio_ai",
-    "summitflow": "postgresql://portfolio_ai_user:portfolio_ai_dev_2025@localhost:5432/summitflow",
+# Map project IDs to environment variable names
+PROJECT_DB_ENV_VARS = {
+    "portfolio-ai": "PORTFOLIO_AI_DB_URL",
+    "summitflow": "DATABASE_URL",
 }
 
 
@@ -88,10 +96,12 @@ class DatabaseScanner(BaseScanner):
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan database tables and return entries."""
-        # Get DB URL from config or known URLs
+        # Get DB URL from config or environment variable
         self.db_url = self.config.get("db_url") if self.config else None
         if not self.db_url:
-            self.db_url = PROJECT_DB_URLS.get(self.project_id)
+            env_var = PROJECT_DB_ENV_VARS.get(self.project_id)
+            if env_var:
+                self.db_url = os.environ.get(env_var)
 
         if not self.db_url:
             logger.error(f"No database URL configured for project {self.project_id}")

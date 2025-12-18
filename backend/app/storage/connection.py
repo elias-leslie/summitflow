@@ -2,15 +2,23 @@
 
 import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Generator
 
 import psycopg
+from dotenv import load_dotenv
 
+# Load environment from ~/.env.local (same pattern as ~/.smbcredentials)
+_env_file = Path.home() / ".env.local"
+if _env_file.exists():
+    load_dotenv(_env_file)
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://portfolio_ai_user:portfolio_ai_dev_2025@localhost:5432/summitflow",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is required. "
+        "Create ~/.env.local with DATABASE_URL=postgresql://..."
+    )
 
 
 @contextmanager
