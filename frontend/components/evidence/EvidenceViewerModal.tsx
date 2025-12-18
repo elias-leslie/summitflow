@@ -301,7 +301,7 @@ export function EvidenceViewerModal({
                       </span>
                     </div>
 
-                    {evidence.console.errors.length > 0 && (
+                    {(evidence.console.errors?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-medium border-b border-slate-800 pb-1 text-slate-300">Errors</h4>
                         {evidence.console.errors.map((err, i) => (
@@ -319,7 +319,7 @@ export function EvidenceViewerModal({
                       </div>
                     )}
 
-                    {evidence.console.warnings.length > 0 && (
+                    {(evidence.console.warnings?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-medium border-b border-slate-800 pb-1 text-slate-300">Warnings</h4>
                         {evidence.console.warnings.map((warn, i) => (
@@ -337,7 +337,7 @@ export function EvidenceViewerModal({
                       </div>
                     )}
 
-                    {evidence.console.errors.length === 0 && evidence.console.warnings.length === 0 && (
+                    {(evidence.console.errors?.length ?? 0) === 0 && (evidence.console.warnings?.length ?? 0) === 0 && (
                       <div className="text-center py-12 text-slate-500">
                         <CheckCircle2 className="h-12 w-12 mx-auto mb-2 text-phosphor-500/30" />
                         <p>No console errors or warnings captured.</p>
@@ -358,12 +358,12 @@ export function EvidenceViewerModal({
                         <div className="text-sm text-slate-500">Failed</div>
                       </div>
                       <div className="p-4 rounded border border-slate-700 bg-slate-900/50">
-                        <div className="text-2xl font-bold mono text-amber-400">{evidence.network.slowRequests.length}</div>
+                        <div className="text-2xl font-bold mono text-amber-400">{evidence.network.slowRequests?.length ?? 0}</div>
                         <div className="text-sm text-slate-500">Slow ({">"}3s)</div>
                       </div>
                     </div>
 
-                    {evidence.network.failures.length > 0 && (
+                    {(evidence.network.failures?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-medium border-b border-slate-800 pb-1 text-slate-300">Failed Requests</h4>
                         {evidence.network.failures.map((fail, i) => (
@@ -380,7 +380,7 @@ export function EvidenceViewerModal({
                       </div>
                     )}
 
-                    {evidence.network.slowRequests.length > 0 && (
+                    {(evidence.network.slowRequests?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-medium border-b border-slate-800 pb-1 text-slate-300">Slow Requests</h4>
                         {evidence.network.slowRequests.map((req, i) => (
@@ -392,7 +392,7 @@ export function EvidenceViewerModal({
                       </div>
                     )}
 
-                    {evidence.network.failures.length === 0 && evidence.network.slowRequests.length === 0 && (
+                    {(evidence.network.failures?.length ?? 0) === 0 && (evidence.network.slowRequests?.length ?? 0) === 0 && (
                       <div className="text-center py-12 text-slate-500">
                         <CheckCircle2 className="h-12 w-12 mx-auto mb-2 text-phosphor-500/30" />
                         <p>All network requests completed successfully.</p>
