@@ -3,17 +3,16 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity, CheckCircle2, AlertCircle, Clock, Globe, ListChecks, Target, FileCode2, Camera, CircleDot } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, CircleDot, Compass } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
-import { SitemapTab } from "@/components/sitemap/SitemapTab";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
-import { FilesTab } from "@/components/files/FilesTab";
 import { BeadsTab } from "@/components/beads/BeadsTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
+import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 
-type TabId = "sitemap" | "features" | "vision" | "files" | "evidence" | "beads";
+type TabId = "explorer" | "features" | "vision" | "evidence" | "beads";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -22,11 +21,11 @@ export default function ProjectDetailPage() {
 
   // Get initial tab from URL query param
   const urlTab = searchParams.get("tab") as TabId | null;
-  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "sitemap");
+  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "explorer");
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["sitemap", "features", "vision", "files", "evidence", "beads"].includes(urlTab)) {
+    if (urlTab && ["explorer", "features", "vision", "evidence", "beads"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -131,18 +130,18 @@ export default function ProjectDetailPage() {
       <nav className="border-b border-slate-700">
         <div className="flex gap-1">
           <button
-            onClick={() => setActiveTab("sitemap")}
+            onClick={() => setActiveTab("explorer")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "sitemap"
+              activeTab === "explorer"
                 ? "text-phosphor-400"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Sitemap
+              <Compass className="w-4 h-4" />
+              Explorer
             </div>
-            {activeTab === "sitemap" && (
+            {activeTab === "explorer" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -175,22 +174,6 @@ export default function ProjectDetailPage() {
               Vision
             </div>
             {activeTab === "vision" && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("files")}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "files"
-                ? "text-phosphor-400"
-                : "text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <FileCode2 className="w-4 h-4" />
-              Files
-            </div>
-            {activeTab === "files" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -231,10 +214,9 @@ export default function ProjectDetailPage() {
 
       {/* Tab Content */}
       <section className="animate-fade-in">
-        {activeTab === "sitemap" && <SitemapTab projectId={projectId} />}
+        {activeTab === "explorer" && <ExplorerTab projectId={projectId} />}
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
-        {activeTab === "files" && <FilesTab projectId={projectId} />}
         {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
         {activeTab === "beads" && <BeadsTab projectId={projectId} />}
       </section>
