@@ -11,7 +11,12 @@ This module implements the autonomous execution loop for agent tasks, including:
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+from .agents import AgentType, get_agent
+
+if TYPE_CHECKING:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -242,3 +247,136 @@ def _get_complexity_reasons(
             reasons.append(f"Single domain: {domain_str}")
 
     return reasons
+
+
+# =========================================================================
+# Spec Generation
+# =========================================================================
+
+SPEC_GENERATION_PROMPT = """You are a technical architect creating a detailed specification for a software feature.
+
+Analyze the following feature and create a comprehensive specification document that an AI agent can use to implement this feature.
+
+FEATURE:
+Name: {name}
+Category: {category}
+Description: {description}
+
+ACCEPTANCE CRITERIA:
+{criteria_list}
+
+Create a detailed specification that includes:
+
+1. **OVERVIEW**: Brief summary of what needs to be built (2-3 sentences)
+
+2. **TECHNICAL APPROACH**: How to implement this feature
+   - Architecture decisions
+   - Technology choices (use existing patterns from the codebase)
+   - Key components to create or modify
+
+3. **IMPLEMENTATION STEPS**: Ordered list of specific implementation tasks
+   - Each step should be concrete and actionable
+   - Group by domain (backend, frontend, database) if multi-domain
+
+4. **DEPENDENCIES**: External libraries, services, or prerequisite work
+
+5. **ACCEPTANCE CRITERIA MAPPING**: For each criterion, explain:
+   - How to implement it
+   - How to verify it passes
+
+6. **EDGE CASES**: Potential issues to handle
+
+7. **TESTING STRATEGY**: How to verify the implementation works
+
+Output the specification in MARKDOWN format.
+"""
+
+
+def generate_spec(
+    feature: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> str:
+    """Generate a detailed specification for a feature using an AI agent.
+
+    This is used for complex features that need detailed planning before
+    implementation. The spec helps guide the agent through implementation.
+
+    Args:
+        feature: Feature dict with name, description, acceptance_criteria
+        agent_type: Which agent to use ("claude" or "gemini")
+        model: Optional model override
+
+    Returns:
+        Specification document as markdown string
+
+    Raises:
+        RuntimeError: If spec generation fails
+    """
+    agent = get_agent(agent_type, model)
+
+    # Format criteria list
+    criteria = feature.get("acceptance_criteria", [])
+    criteria_lines = []
+    for i, c in enumerate(criteria, 1):
+        status = "✓" if c.get("passes") else "○"
+        criteria_lines.append(f"{i}. [{status}] {c.get('description', 'No description')}")
+
+    criteria_list = "\n".join(criteria_lines) if criteria_lines else "No criteria defined"
+
+    # Build the prompt
+    prompt = SPEC_GENERATION_PROMPT.format(
+        name=feature.get("name", "Unnamed Feature"),
+        category=feature.get("category", "general"),
+        description=feature.get("description", "No description provided"),
+        criteria_list=criteria_list,
+    )
+
+    logger.info(f"Generating spec for feature: {feature.get('name')}")
+
+    try:
+        response = agent.generate(
+            prompt=prompt,
+            system="You are a senior software architect. Provide clear, actionable specifications.",
+            max_tokens=4096,
+            temperature=0.7,
+        )
+
+        spec_content = response.content
+        logger.info(
+            f"Spec generated: {len(spec_content)} chars, "
+            f"{response.usage.get('output_tokens', 0)} tokens"
+        )
+
+        return spec_content
+
+    except Exception as e:
+        logger.error(f"Failed to generate spec: {e}")
+        raise RuntimeError(f"Spec generation failed: {e}") from e
+
+
+def generate_spec_for_task(
+    feature: dict[str, Any],
+    task: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Generate spec and return with metadata for task storage.
+
+    Args:
+        feature: Feature dict
+        task: Task dict (for context)
+        agent_type: Which agent to use
+        model: Optional model override
+
+    Returns:
+        Dict with spec_content and metadata
+    """
+    spec_content = generate_spec(feature, agent_type, model)
+
+    return {
+        "spec_content": spec_content,
+        "generated_by": agent_type,
+        "feature_id": feature.get("feature_id"),
+        "complexity": assess_complexity(feature),
+    }
