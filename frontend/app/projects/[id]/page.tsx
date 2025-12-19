@@ -16,6 +16,7 @@ import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
 import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
 import { RoundtableChat } from "@/components/roundtable/RoundtableChat";
 import { TerminalTabs } from "@/components/terminal/TerminalTabs";
+import { StartTaskDialog } from "@/components/tasks/StartTaskDialog";
 import type { Feature } from "@/lib/api";
 
 type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban" | "roundtable" | "terminal";
@@ -39,6 +40,8 @@ export default function ProjectDetailPage() {
   // Kanban state
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
+  const [startFeature, setStartFeature] = useState<Feature | null>(null);
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -67,9 +70,8 @@ export default function ProjectDetailPage() {
   };
 
   const handleStartClick = (feature: Feature) => {
-    if (feature.status !== "in_progress") {
-      updateStatus.mutate({ featureId: feature.feature_id, newStatus: "in_progress" });
-    }
+    setStartFeature(feature);
+    setStartDialogOpen(true);
   };
 
   if (isLoading) {
@@ -312,6 +314,14 @@ export default function ProjectDetailPage() {
               onOpenChange={setDrawerOpen}
               onStartClick={handleStartClick}
             />
+            {startFeature && (
+              <StartTaskDialog
+                open={startDialogOpen}
+                onOpenChange={setStartDialogOpen}
+                projectId={projectId}
+                feature={startFeature}
+              />
+            )}
           </>
         )}
         {activeTab === "roundtable" && (
