@@ -314,6 +314,98 @@ def delete_criterion(
     return True
 
 
+def link_evidence_to_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+    evidence_id: str,
+    evidence_type: str = "after",
+) -> dict[str, Any] | None:
+    """Link evidence to a criterion.
+
+    Criteria can have before_evidence_id (initial state) and after_evidence_id
+    (verification state) to show before/after comparison.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion_id: Criterion ID (e.g., ac-001)
+        evidence_id: Evidence ID to link
+        evidence_type: 'before' or 'after' (default: 'after')
+
+    Returns:
+        Updated criterion dict, or None if not found.
+    """
+    if evidence_type not in ("before", "after"):
+        raise ValueError("evidence_type must be 'before' or 'after'")
+
+    field = f"{evidence_type}_evidence_id"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get current criteria
+        cur.execute(
+            """
+            SELECT acceptance_criteria
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        criteria: list[dict[str, Any]] = row[0] if row[0] else []
+
+        # Find and update the criterion
+        updated_criterion = None
+        for c in criteria:
+            if c.get("id") == criterion_id:
+                c[field] = evidence_id
+                # Also update legacy evidence_id for backward compat
+                if evidence_type == "after":
+                    c["evidence_id"] = evidence_id
+                updated_criterion = c
+                break
+
+        if not updated_criterion:
+            return None
+
+        # Update database
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET acceptance_criteria = %s::jsonb, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (json.dumps(criteria), project_id, feature_id),
+        )
+        conn.commit()
+
+    return updated_criterion
+
+
+def get_evidence_for_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+) -> dict[str, str | None]:
+    """Get before and after evidence IDs for a criterion.
+
+    Returns:
+        Dict with 'before_evidence_id' and 'after_evidence_id' (may be None)
+    """
+    criteria = get_criteria(project_id, feature_id)
+    for c in criteria:
+        if c.get("id") == criterion_id:
+            return {
+                "before_evidence_id": c.get("before_evidence_id"),
+                "after_evidence_id": c.get("after_evidence_id") or c.get("evidence_id"),
+            }
+    return {"before_evidence_id": None, "after_evidence_id": None}
+
+
 def create_feature(
     project_id: str,
     feature_id: str,

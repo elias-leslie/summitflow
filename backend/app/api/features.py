@@ -37,9 +37,10 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..storage.connection import get_connection
+from ..storage import features as storage_features
 
 router = APIRouter()
 
@@ -1522,3 +1523,91 @@ async def verify_feature(project_id: str, feature_id: str) -> dict[str, Any]:
         status_code=501,
         detail="Feature verification not yet implemented. Will be added with Celery integration.",
     )
+
+
+# =========================================================================
+# Evidence Linking Endpoints
+# =========================================================================
+
+
+class LinkEvidenceRequest(BaseModel):
+    """Request to link evidence to a criterion."""
+
+    evidence_id: str = Field(..., description="Evidence ID to link")
+    evidence_type: str = Field(
+        default="after",
+        description="'before' for initial state or 'after' for verification state",
+    )
+
+
+@router.post(
+    "/projects/{project_id}/features/{feature_id}/criteria/{criterion_id}/link-evidence",
+    response_model=dict[str, Any],
+)
+async def link_evidence(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+    request: LinkEvidenceRequest,
+) -> dict[str, Any]:
+    """Link evidence to a criterion.
+
+    Criteria can have:
+    - before_evidence_id: Evidence of initial/broken state
+    - after_evidence_id: Evidence of fixed/verified state
+
+    This allows before/after comparison in the UI.
+    """
+    if request.evidence_type not in ("before", "after"):
+        raise HTTPException(
+            status_code=400,
+            detail="evidence_type must be 'before' or 'after'",
+        )
+
+    result = storage_features.link_evidence_to_criterion(
+        project_id=project_id,
+        feature_id=feature_id,
+        criterion_id=criterion_id,
+        evidence_id=request.evidence_id,
+        evidence_type=request.evidence_type,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Criterion {criterion_id} not found in feature {feature_id}",
+        )
+
+    return {
+        "success": True,
+        "criterion": result,
+        "linked_field": f"{request.evidence_type}_evidence_id",
+    }
+
+
+@router.get(
+    "/projects/{project_id}/features/{feature_id}/criteria/{criterion_id}/evidence",
+    response_model=dict[str, Any],
+)
+async def get_criterion_evidence(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+) -> dict[str, Any]:
+    """Get linked evidence for a criterion.
+
+    Returns both before and after evidence IDs (if linked).
+    """
+    evidence = storage_features.get_evidence_for_criterion(
+        project_id=project_id,
+        feature_id=feature_id,
+        criterion_id=criterion_id,
+    )
+
+    return {
+        "project_id": project_id,
+        "feature_id": feature_id,
+        "criterion_id": criterion_id,
+        "before_evidence_id": evidence["before_evidence_id"],
+        "after_evidence_id": evidence["after_evidence_id"],
+    }
