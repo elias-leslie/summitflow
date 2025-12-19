@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import { Badge, SuccessBadge, ErrorBadge, WarningBadge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
+import { Button } from "../ui/button";
 import {
   CheckCircle,
   XCircle,
@@ -12,21 +13,28 @@ import {
   Clock,
   Loader2,
   WifiOff,
+  Pause,
+  Play,
 } from "lucide-react";
+import { updateTaskStatus, startTask, TaskStatus, AgentType } from "@/lib/api";
 
 interface TaskLogViewerProps {
   projectId: string;
   taskId: string;
   className?: string;
   autoScroll?: boolean;
+  /** Agent type used to start the task (needed for resume) */
+  agentType?: AgentType;
+  /** Model used (optional, for resume) */
+  model?: string;
+  /** Whether delegation was enabled (optional, for resume) */
+  allowDelegation?: boolean;
 }
 
 interface SSEEvent {
   type: "connected" | "log" | "status" | "complete" | "error";
   data: Record<string, unknown>;
 }
-
-type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
 
 const statusConfig: Record<TaskStatus, { icon: typeof CheckCircle; variant: "phosphor" | "amber" | "rose" | "slate" }> = {
   pending: { icon: Clock, variant: "slate" },
@@ -41,14 +49,53 @@ export function TaskLogViewer({
   taskId,
   className,
   autoScroll = true,
+  agentType = "gemini",
+  model,
+  allowDelegation,
 }: TaskLogViewerProps) {
   const [log, setLog] = useState<string>("");
   const [status, setStatus] = useState<TaskStatus>("pending");
   const [tokensUsed, setTokensUsed] = useState<number>(0);
   const [connected, setConnected] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Pause the task
+  const handlePause = useCallback(async () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+    try {
+      await updateTaskStatus(projectId, taskId, "paused");
+      setStatus("paused");
+      setLog((prev) => prev + "\n[PAUSED] Task paused by user.\n");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to pause task");
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [projectId, taskId, isUpdating]);
+
+  // Resume the task
+  const handleResume = useCallback(async () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+    try {
+      // Resume by starting the task again with the same parameters
+      await startTask(projectId, taskId, {
+        agent_type: agentType,
+        model,
+        allow_delegation: allowDelegation,
+      });
+      setStatus("running");
+      setLog((prev) => prev + "\n[RESUMED] Task resumed by user.\n");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resume task");
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating]);
 
   // Connect to SSE stream
   useEffect(() => {
@@ -141,6 +188,40 @@ export function TaskLogViewer({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Pause/Resume buttons */}
+          {status === "running" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handlePause}
+              disabled={isUpdating}
+              className="h-7 px-2 text-amber-400 hover:text-amber-300 hover:bg-amber-950/30"
+            >
+              {isUpdating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Pause className="w-4 h-4" />
+              )}
+              <span className="ml-1.5 text-xs">Pause</span>
+            </Button>
+          )}
+          {status === "paused" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResume}
+              disabled={isUpdating}
+              className="h-7 px-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30"
+            >
+              {isUpdating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              <span className="ml-1.5 text-xs">Resume</span>
+            </Button>
+          )}
+
           {!connected && error && (
             <div className="flex items-center gap-1.5 text-rose-400 text-xs">
               <WifiOff className="w-3.5 h-3.5" />

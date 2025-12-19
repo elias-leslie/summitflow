@@ -642,3 +642,21 @@ export async function startTask(
   }
   return res.json();
 }
+
+export async function updateTaskStatus(
+  projectId: string,
+  taskId: string,
+  status: TaskStatus,
+  errorMessage?: string
+): Promise<Task> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, error_message: errorMessage }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to update task status");
+  }
+  return res.json();
+}
