@@ -152,6 +152,7 @@ bash ~/summitflow/scripts/start.sh
 | Document | Purpose |
 |----------|---------|
 | [AGENTS.md](AGENTS.md) | Task tracking, workflow |
+| [docs/workflow-guide.md](docs/workflow-guide.md) | SummitFlow Features/Tasks workflow |
 | `~/.claude/docs/bead-reference.md` | Beads command reference (global) |
 | `.claude/rules/` | Project-specific rules |
 | `~/.claude/rules/` | Global rules (beads-workflow, summitflow-vs-app) |
