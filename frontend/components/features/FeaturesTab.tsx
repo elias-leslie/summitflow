@@ -15,6 +15,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Plus,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { EvidenceViewerModal } from "@/components/evidence/EvidenceViewerModal";
+import { CreateFeatureDialog } from "./CreateFeatureDialog";
 import {
   fetchFeatures,
   fetchFeatureSummary,
@@ -91,6 +93,7 @@ export function FeaturesTab({ projectId }: FeaturesTabProps) {
     criterionText: string;
     verificationUrl: string;
   }>({ open: false, featureId: "", criterionId: "", criterionText: "", verificationUrl: "" });
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   // Fetch features
   const { data: featuresData, isLoading } = useQuery<FeaturesListResponse>({
@@ -433,6 +436,11 @@ export function FeaturesTab({ projectId }: FeaturesTabProps) {
             <SelectItem value="100">100</SelectItem>
           </SelectContent>
         </Select>
+
+        <Button onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="w-4 h-4 mr-1.5" />
+          Create Feature
+        </Button>
       </div>
 
       {/* Results count */}
@@ -627,6 +635,13 @@ export function FeaturesTab({ projectId }: FeaturesTabProps) {
           </div>
         </div>
       )}
+
+      {/* Create Feature Dialog */}
+      <CreateFeatureDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        projectId={projectId}
+      />
 
       {/* Evidence Modal */}
       <EvidenceViewerModal
