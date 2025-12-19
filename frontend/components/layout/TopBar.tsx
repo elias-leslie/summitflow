@@ -1,8 +1,9 @@
 "use client";
 
-import { Search, Bell, RefreshCw, Terminal, Camera } from "lucide-react";
+import { Search, RefreshCw, Terminal, Camera } from "lucide-react";
 import { useState, useEffect } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
+import { NotificationBell } from "@/components/notifications";
 
 // SummitFlow captures evidence for itself (dogfooding)
 const SUMMITFLOW_PROJECT_ID = "summitflow";
@@ -72,13 +73,7 @@ export function TopBar() {
           </button>
 
           {/* Notifications */}
-          <button
-            className="btn-ghost p-2 rounded-lg relative"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-phosphor-500 rounded-full" />
-          </button>
+          <NotificationBell projectId={SUMMITFLOW_PROJECT_ID} />
 
           {/* Separator */}
           <div className="w-px h-6 bg-slate-700 mx-2" />

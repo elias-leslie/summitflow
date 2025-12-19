@@ -660,3 +660,79 @@ export async function updateTaskStatus(
   }
   return res.json();
 }
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+export interface Notification {
+  id: string;
+  project_id: string;
+  task_id: string | null;
+  type: "task_failed" | "task_needs_input" | "task_completed" | "system";
+  title: string;
+  message: string;
+  severity: "info" | "warning" | "error" | "critical";
+  status: "pending" | "read" | "dismissed";
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+  read_at: string | null;
+  dismissed_at: string | null;
+}
+
+export interface NotificationListResponse {
+  items: Notification[];
+  total: number;
+  pending_count: number;
+}
+
+export async function fetchNotifications(
+  projectId: string,
+  options: { status?: string; limit?: number; offset?: number; include_dismissed?: boolean } = {}
+): Promise<NotificationListResponse> {
+  const params = new URLSearchParams();
+  if (options.status) params.append("status", options.status);
+  if (options.limit) params.append("limit", options.limit.toString());
+  if (options.offset) params.append("offset", options.offset.toString());
+  if (options.include_dismissed) params.append("include_dismissed", "true");
+
+  const queryString = params.toString();
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/notifications${queryString ? `?${queryString}` : ""}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch notifications");
+  return res.json();
+}
+
+export async function fetchNotificationCount(projectId: string): Promise<number> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/notifications/count`);
+  if (!res.ok) throw new Error("Failed to fetch notification count");
+  const data = await res.json();
+  return data.pending;
+}
+
+export async function markNotificationRead(projectId: string, notificationId: string): Promise<Notification> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/notifications/${notificationId}/read`,
+    { method: "PATCH" }
+  );
+  if (!res.ok) throw new Error("Failed to mark notification as read");
+  return res.json();
+}
+
+export async function dismissNotification(projectId: string, notificationId: string): Promise<Notification> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/notifications/${notificationId}/dismiss`,
+    { method: "PATCH" }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss notification");
+  return res.json();
+}
+
+export async function dismissAllNotifications(projectId: string): Promise<{ dismissed: number }> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/notifications/dismiss-all`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to dismiss all notifications");
+  return res.json();
+}
