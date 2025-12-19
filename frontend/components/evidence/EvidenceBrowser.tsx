@@ -12,6 +12,9 @@ import {
   Loader2,
   Globe,
   AlertTriangle,
+  CheckCircle2,
+  Bot,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,23 @@ interface CaptureResult {
   feature_id?: string;
   criterion_id?: string;
   error?: string;
+  evidence?: {
+    console: { errorCount: number; warningCount: number };
+    network: { failedRequests: number };
+    metadata: { url: string; capturedAt: string };
+  };
+}
+
+interface LastCapture {
+  featureId: string;
+  criterionId: string;
+  version: number;
+  capturedAt: string;
+  url: string;
+  screenshotUrl: string;
+  errorCount: number;
+  warningCount: number;
+  failedRequests: number;
 }
 
 export function EvidenceBrowser({
@@ -48,6 +68,8 @@ export function EvidenceBrowser({
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [history, setHistory] = useState<string[]>([initialUrl]);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [lastCapture, setLastCapture] = useState<LastCapture | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Reset state when opened
@@ -134,10 +156,23 @@ export function EvidenceBrowser({
 
   const handleCaptureComplete = useCallback((result: CaptureResult) => {
     setCaptureModalOpen(false);
-    if (result.success) {
-      toast.success(`Captured evidence v${result.version}`);
+    if (result.success && result.feature_id && result.criterion_id && result.version) {
+      const capture: LastCapture = {
+        featureId: result.feature_id,
+        criterionId: result.criterion_id,
+        version: result.version,
+        capturedAt: result.evidence?.metadata?.capturedAt || new Date().toISOString(),
+        url: result.evidence?.metadata?.url || currentUrl,
+        screenshotUrl: `/api/projects/${projectId}/evidence/${result.feature_id}/${result.criterion_id}/screenshot?version=${result.version}`,
+        errorCount: result.evidence?.console?.errorCount || 0,
+        warningCount: result.evidence?.console?.warningCount || 0,
+        failedRequests: result.evidence?.network?.failedRequests || 0,
+      };
+      setLastCapture(capture);
+      setShowPreview(true);
+      toast.success(`Captured evidence v${result.version} for ${result.feature_id}`);
     }
-  }, []);
+  }, [currentUrl, projectId]);
 
   // Handle escape key
   useEffect(() => {
@@ -302,6 +337,96 @@ export function EvidenceBrowser({
                   </div>
                 )}
               </div>
+
+              {/* Capture Preview Panel */}
+              <AnimatePresence>
+                {showPreview && lastCapture && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="border-t border-slate-700 bg-slate-900/95 overflow-hidden"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start gap-4">
+                        {/* Screenshot thumbnail */}
+                        <div className="shrink-0 w-48 h-32 rounded border border-slate-700 overflow-hidden bg-slate-800">
+                          <img
+                            src={lastCapture.screenshotUrl}
+                            alt="Captured screenshot"
+                            className="w-full h-full object-cover object-top"
+                          />
+                        </div>
+
+                        {/* Capture info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <CheckCircle2 className="h-5 w-5 text-phosphor-500" />
+                            <span className="font-medium text-white">Evidence Captured</span>
+                            <span className="mono text-sm text-slate-400">v{lastCapture.version}</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">Feature:</span>
+                              <span className="mono text-phosphor-400">{lastCapture.featureId}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">Criterion:</span>
+                              <span className="mono text-slate-300">{lastCapture.criterionId}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">Console:</span>
+                              <span className={lastCapture.errorCount > 0 ? "text-rose-400" : "text-slate-300"}>
+                                {lastCapture.errorCount} errors, {lastCapture.warningCount} warnings
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">Network:</span>
+                              <span className={lastCapture.failedRequests > 0 ? "text-rose-400" : "text-slate-300"}>
+                                {lastCapture.failedRequests} failed
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                toast.info("Agent review coming soon!");
+                                // TODO: Task 8.5 - Call agent review endpoint
+                              }}
+                              className="gap-1.5"
+                            >
+                              <Bot className="h-4 w-4" />
+                              Review with Agent
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(lastCapture.screenshotUrl, "_blank")}
+                              className="gap-1.5"
+                            >
+                              <ImageIcon className="h-4 w-4" />
+                              View Full
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowPreview(false)}
+                            >
+                              <X className="h-4 w-4" />
+                              Dismiss
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </>
         )}
