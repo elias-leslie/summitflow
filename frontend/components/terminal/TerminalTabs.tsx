@@ -131,6 +131,46 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     setPaneSizes(newSizes);
   }, [setPaneSizes]);
 
+  // Track previous layout mode to detect transitions
+  const prevLayoutModeRef = useRef(layoutMode);
+
+  // Handle layout mode transitions
+  useEffect(() => {
+    const prevMode = prevLayoutModeRef.current;
+    prevLayoutModeRef.current = layoutMode;
+
+    // Skip if no change
+    if (prevMode === layoutMode) return;
+
+    // Switching from single to split mode
+    if (prevMode === "single" && layoutMode !== "single") {
+      // Initialize first pane to active session
+      if (!paneSessions[0] && activeId) {
+        setPaneSession(0, activeId);
+      }
+      // Initialize second pane to next available session
+      if (!paneSessions[1]) {
+        const firstPaneId = paneSessions[0] || activeId;
+        const nextSession = sessions.find((s) => s.id !== firstPaneId);
+        if (nextSession) {
+          setPaneSession(1, nextSession.id);
+        } else if (sessions.length > 0) {
+          // Fall back to first session if no other available
+          setPaneSession(1, sessions[0].id);
+        }
+      }
+    }
+
+    // Switching from split to single mode
+    if (prevMode !== "single" && layoutMode === "single") {
+      // Set active session to first pane's session
+      const firstPaneSession = paneSessions[0] || sessions[0]?.id;
+      if (firstPaneSession && firstPaneSession !== activeId) {
+        setActiveId(firstPaneSession);
+      }
+    }
+  }, [layoutMode, sessions, activeId, paneSessions, setPaneSession, setActiveId]);
+
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
