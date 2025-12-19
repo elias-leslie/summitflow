@@ -791,3 +791,250 @@ def get_execution_progress(feature: dict[str, Any]) -> dict[str, Any]:
         "percentage": (passed / total * 100) if total > 0 else 0,
         "all_passed": passed == total and total > 0,
     }
+
+
+# =========================================================================
+# Auto-Continue Execution
+# =========================================================================
+
+
+def execute_all_criteria(
+    task: dict[str, Any],
+    feature: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+    delay_seconds: float = 3.0,
+    stop_on_failure: bool = True,
+    auto_mark_passed: bool = True,
+) -> dict[str, Any]:
+    """Execute all unpassed criteria in sequence with auto-continue.
+
+    This function implements the autonomous loop:
+    1. Get next unpassed criterion
+    2. Execute criterion
+    3. Optionally mark as passed
+    4. Wait for delay
+    5. Continue to next criterion
+    6. Stop on completion or failure
+
+    Args:
+        task: Task dict from database
+        feature: Feature dict with acceptance_criteria
+        agent_type: Which agent to use
+        model: Optional model override
+        delay_seconds: Delay between criteria (default 3.0)
+        stop_on_failure: Stop if a criterion fails (default True)
+        auto_mark_passed: Automatically mark criteria as passed (default True)
+
+    Returns:
+        Dict with:
+        - completed: Number of criteria completed
+        - failed: Number of criteria failed
+        - total_tokens: Total tokens used
+        - all_passed: Whether all criteria are now passed
+        - stopped_at: Criterion ID where execution stopped (if any)
+        - error: Error message if execution failed
+    """
+    import time
+
+    from ..storage import features as feature_storage
+    from ..storage import tasks as task_storage
+
+    result = {
+        "completed": 0,
+        "failed": 0,
+        "total_tokens": 0,
+        "all_passed": False,
+        "stopped_at": None,
+        "error": None,
+        "executions": [],
+    }
+
+    task_storage.append_progress_log(
+        task["id"],
+        f"Starting auto-execution: delay={delay_seconds}s, stop_on_failure={stop_on_failure}",
+    )
+
+    # Keep executing until all criteria pass or we hit a failure
+    while True:
+        # Refresh feature to get latest criteria status
+        fresh_feature = feature_storage.get_feature(feature["project_id"], feature["feature_id"])
+        if not fresh_feature:
+            result["error"] = "Feature not found"
+            break
+
+        # Get next unpassed criterion
+        criterion = get_next_criterion(fresh_feature)
+        if criterion is None:
+            # All criteria passed
+            result["all_passed"] = True
+            task_storage.append_progress_log(task["id"], "All criteria passed! ✓")
+            break
+
+        criterion_id = criterion.get("id", "unknown")
+
+        try:
+            # Execute the criterion
+            execution = execute_criterion(
+                task=task,
+                criterion=criterion,
+                feature=fresh_feature,
+                agent_type=agent_type,
+                model=model,
+            )
+
+            result["total_tokens"] += execution.get("tokens_used", 0)
+            result["executions"].append(
+                {
+                    "criterion_id": criterion_id,
+                    "success": execution.get("success", False),
+                    "tokens_used": execution.get("tokens_used", 0),
+                }
+            )
+
+            if execution.get("success"):
+                result["completed"] += 1
+
+                # Auto-mark as passed if enabled
+                if auto_mark_passed:
+                    mark_criterion_passed(
+                        task=task,
+                        criterion_id=criterion_id,
+                        feature=fresh_feature,
+                    )
+
+                # Wait before next criterion
+                if delay_seconds > 0:
+                    task_storage.append_progress_log(
+                        task["id"], f"Waiting {delay_seconds}s before next criterion..."
+                    )
+                    time.sleep(delay_seconds)
+            else:
+                result["failed"] += 1
+                result["stopped_at"] = criterion_id
+
+                if stop_on_failure:
+                    task_storage.append_progress_log(
+                        task["id"], f"Stopping: criterion {criterion_id} did not succeed"
+                    )
+                    break
+
+        except Exception as e:
+            result["failed"] += 1
+            result["error"] = str(e)
+            result["stopped_at"] = criterion_id
+            task_storage.append_progress_log(task["id"], f"Execution error at {criterion_id}: {e}")
+
+            if stop_on_failure:
+                break
+
+    # Final progress summary
+    task_storage.append_progress_log(
+        task["id"],
+        f"Auto-execution complete: {result['completed']} completed, "
+        f"{result['failed']} failed, {result['total_tokens']} tokens",
+    )
+
+    return result
+
+
+async def execute_all_criteria_async(
+    task: dict[str, Any],
+    feature: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+    delay_seconds: float = 3.0,
+    stop_on_failure: bool = True,
+    auto_mark_passed: bool = True,
+) -> dict[str, Any]:
+    """Async version of execute_all_criteria for use in async contexts.
+
+    Same parameters and return value as execute_all_criteria.
+    """
+    import asyncio
+
+    from ..storage import features as feature_storage
+    from ..storage import tasks as task_storage
+
+    result = {
+        "completed": 0,
+        "failed": 0,
+        "total_tokens": 0,
+        "all_passed": False,
+        "stopped_at": None,
+        "error": None,
+        "executions": [],
+    }
+
+    task_storage.append_progress_log(
+        task["id"],
+        f"Starting async auto-execution: delay={delay_seconds}s",
+    )
+
+    while True:
+        fresh_feature = feature_storage.get_feature(feature["project_id"], feature["feature_id"])
+        if not fresh_feature:
+            result["error"] = "Feature not found"
+            break
+
+        criterion = get_next_criterion(fresh_feature)
+        if criterion is None:
+            result["all_passed"] = True
+            task_storage.append_progress_log(task["id"], "All criteria passed! ✓")
+            break
+
+        criterion_id = criterion.get("id", "unknown")
+
+        try:
+            # Run sync execution in thread pool
+            # Use functools.partial to avoid closure issues
+            import functools
+
+            loop = asyncio.get_event_loop()
+            execution = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    execute_criterion,
+                    task=task,
+                    criterion=criterion,
+                    feature=fresh_feature,
+                    agent_type=agent_type,
+                    model=model,
+                ),
+            )
+
+            result["total_tokens"] += execution.get("tokens_used", 0)
+            result["executions"].append(
+                {
+                    "criterion_id": criterion_id,
+                    "success": execution.get("success", False),
+                    "tokens_used": execution.get("tokens_used", 0),
+                }
+            )
+
+            if execution.get("success"):
+                result["completed"] += 1
+
+                if auto_mark_passed:
+                    mark_criterion_passed(
+                        task=task,
+                        criterion_id=criterion_id,
+                        feature=fresh_feature,
+                    )
+
+                if delay_seconds > 0:
+                    await asyncio.sleep(delay_seconds)
+            else:
+                result["failed"] += 1
+                result["stopped_at"] = criterion_id
+                if stop_on_failure:
+                    break
+
+        except Exception as e:
+            result["failed"] += 1
+            result["error"] = str(e)
+            result["stopped_at"] = criterion_id
+            if stop_on_failure:
+                break
+
+    return result
