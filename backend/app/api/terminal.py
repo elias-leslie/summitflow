@@ -22,6 +22,8 @@ from typing import Any
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..logging_config import get_logger
+from ..services import terminal_lifecycle as lifecycle
+from ..storage import terminal as terminal_store
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -122,8 +124,30 @@ async def terminal_websocket(
     pid: int | None = None
 
     try:
-        # Create or attach to tmux session
-        session_name = _create_tmux_session(session_id, working_dir)
+        # Check if session exists in DB and ensure tmux is alive
+        # This will recreate tmux if the DB record exists but tmux died
+        try:
+            is_alive = lifecycle.ensure_session_alive(session_id)
+        except Exception as e:
+            # Handle invalid session IDs (e.g., non-UUID format)
+            logger.warning("terminal_session_invalid", session_id=session_id, error=str(e))
+            is_alive = False
+
+        if not is_alive:
+            # Session doesn't exist in DB or couldn't be resurrected
+            logger.warning("terminal_session_dead", session_id=session_id)
+            await websocket.close(code=4000, reason='{"error": "session_dead", "message": "Session not found or could not be restored"}')
+            return
+
+        # Touch session to update last_accessed_at
+        terminal_store.touch_session(session_id)
+
+        # Get session info for working directory (if we need to recreate)
+        session = terminal_store.get_session(session_id)
+        session_working_dir = session.get("working_dir") if session else working_dir
+
+        # Create or attach to tmux session (should exist now due to ensure_session_alive)
+        session_name = _create_tmux_session(session_id, session_working_dir)
 
         # Spawn PTY for tmux
         master_fd, pid = _spawn_pty_for_tmux(session_name)
