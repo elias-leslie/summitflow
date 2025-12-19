@@ -12,6 +12,7 @@ from .api import (
     explorer,
     features,
     projects,
+    tasks,
     vision_content,
     vision_goals,
 )
@@ -53,7 +54,8 @@ app.include_router(evidence.router, prefix="/api", tags=["evidence"])
 app.include_router(vision_goals.router, prefix="/api", tags=["vision"])
 app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
-app.include_router(celery_endpoints.router, tags=["tasks"])
+app.include_router(celery_endpoints.router, tags=["celery"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
 
 
