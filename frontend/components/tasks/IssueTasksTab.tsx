@@ -31,7 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   fetchTasks,
   fetchReadyTasks,
-  createTask,
   updateTaskStatus,
   type Task,
   type TaskType,
@@ -39,6 +38,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TaskLogViewer } from "./TaskLogViewer";
+import { CreateTaskDialog } from "./CreateTaskDialog";
 
 interface IssueTasksTabProps {
   projectId: string;
@@ -313,37 +313,8 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
     },
   });
 
-  // Create mutation
-  const createMutation = useMutation({
-    mutationFn: (data: {
-      title: string;
-      description?: string;
-      priority?: number;
-      task_type?: TaskType;
-      labels?: string[];
-    }) => createTask(projectId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
-      setShowCreate(false);
-    },
-  });
-
   const handleStatusChange = (taskId: string, status: TaskStatus) => {
     statusMutation.mutate({ taskId, status });
-  };
-
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    const labelsStr = formData.get("labels") as string;
-    createMutation.mutate({
-      title: formData.get("title") as string,
-      description: (formData.get("description") as string) || undefined,
-      priority: parseInt(formData.get("priority") as string) || 2,
-      task_type: (formData.get("type") as TaskType) || "task",
-      labels: labelsStr ? labelsStr.split(",").map((l) => l.trim()) : [],
-    });
   };
 
   const readyTasks = readyData?.tasks || [];
@@ -509,81 +480,12 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
         )}
       </div>
 
-      {/* Create Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-lg m-4">
-            <div className="p-4 border-b border-slate-700">
-              <h3 className="font-medium text-white">Create Task</h3>
-            </div>
-            <form onSubmit={handleCreate} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Title</label>
-                <input
-                  name="title"
-                  required
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white"
-                  placeholder="Brief description"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Description</label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white resize-none"
-                  placeholder="Detailed description (optional)"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Priority</label>
-                  <select
-                    name="priority"
-                    defaultValue="2"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white"
-                  >
-                    <option value="0">P0 - Critical</option>
-                    <option value="1">P1 - High</option>
-                    <option value="2">P2 - Medium</option>
-                    <option value="3">P3 - Low</option>
-                    <option value="4">P4 - Backlog</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Type</label>
-                  <select
-                    name="type"
-                    defaultValue="task"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white"
-                  >
-                    <option value="task">Task</option>
-                    <option value="bug">Bug</option>
-                    <option value="chore">Chore</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Labels (comma-separated)</label>
-                <input
-                  name="labels"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white"
-                  placeholder="complexity:small, domains:backend"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
-                  Create
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        projectId={projectId}
+      />
     </div>
   );
 }
