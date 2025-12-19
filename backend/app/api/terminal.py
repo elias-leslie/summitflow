@@ -19,7 +19,7 @@ import subprocess
 import termios
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..logging_config import get_logger
 
@@ -30,11 +30,12 @@ router = APIRouter()
 _sessions: dict[str, dict[str, Any]] = {}
 
 
-def _create_tmux_session(session_id: str) -> str:
+def _create_tmux_session(session_id: str, working_dir: str | None = None) -> str:
     """Create or attach to a tmux session.
 
     Args:
         session_id: Unique session identifier
+        working_dir: Optional working directory to start in
 
     Returns:
         tmux session name
@@ -48,12 +49,12 @@ def _create_tmux_session(session_id: str) -> str:
     )
 
     if result.returncode != 0:
-        # Create new session
-        subprocess.run(
-            ["tmux", "new-session", "-d", "-s", session_name, "-x", "120", "-y", "30"],
-            capture_output=True,
-        )
-        logger.info("tmux_session_created", session=session_name)
+        # Create new session with optional working directory
+        cmd = ["tmux", "new-session", "-d", "-s", session_name, "-x", "120", "-y", "30"]
+        if working_dir:
+            cmd.extend(["-c", working_dir])
+        subprocess.run(cmd, capture_output=True)
+        logger.info("tmux_session_created", session=session_name, working_dir=working_dir)
     else:
         logger.info("tmux_session_attached", session=session_name)
 
@@ -96,7 +97,11 @@ def _resize_pty(master_fd: int, cols: int, rows: int) -> None:
 
 
 @router.websocket("/ws/terminal/{session_id}")
-async def terminal_websocket(websocket: WebSocket, session_id: str) -> None:
+async def terminal_websocket(
+    websocket: WebSocket,
+    session_id: str,
+    working_dir: str | None = Query(None),
+) -> None:
     """WebSocket endpoint for terminal sessions.
 
     Protocol:
@@ -107,16 +112,17 @@ async def terminal_websocket(websocket: WebSocket, session_id: str) -> None:
     Args:
         websocket: WebSocket connection
         session_id: Terminal session identifier
+        working_dir: Optional working directory for new sessions
     """
     await websocket.accept()
-    logger.info("terminal_connected", session_id=session_id)
+    logger.info("terminal_connected", session_id=session_id, working_dir=working_dir)
 
     master_fd: int | None = None
     pid: int | None = None
 
     try:
         # Create or attach to tmux session
-        session_name = _create_tmux_session(session_id)
+        session_name = _create_tmux_session(session_id, working_dir)
 
         # Spawn PTY for tmux
         master_fd, pid = _spawn_pty_for_tmux(session_name)

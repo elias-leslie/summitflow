@@ -10,6 +10,7 @@ let WebLinksAddon: typeof import("@xterm/addon-web-links").WebLinksAddon;
 
 interface TerminalProps {
   sessionId: string;
+  workingDir?: string;
   className?: string;
   onDisconnect?: () => void;
 }
@@ -18,6 +19,7 @@ type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
 export function TerminalComponent({
   sessionId,
+  workingDir,
   className,
   onDisconnect,
 }: TerminalProps) {
@@ -107,7 +109,10 @@ export function TerminalComponent({
       // Connect to WebSocket
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/ws/terminal/${sessionId}`;
+      let wsUrl = `${protocol}//${host}/ws/terminal/${sessionId}`;
+      if (workingDir) {
+        wsUrl += `?working_dir=${encodeURIComponent(workingDir)}`;
+      }
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -174,7 +179,7 @@ export function TerminalComponent({
         terminalRef.current = null;
       }
     };
-  }, [sessionId, handleResize, onDisconnect]);
+  }, [sessionId, workingDir, handleResize, onDisconnect]);
 
   // Handle container resize
   useEffect(() => {

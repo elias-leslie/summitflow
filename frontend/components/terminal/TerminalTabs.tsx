@@ -12,6 +12,7 @@ interface TerminalTab {
 
 interface TerminalTabsProps {
   projectId?: string;
+  projectPath?: string;
   className?: string;
 }
 
@@ -19,7 +20,7 @@ function generateSessionId(): string {
   return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export function TerminalTabs({ projectId, className }: TerminalTabsProps) {
+export function TerminalTabs({ projectId, projectPath, className }: TerminalTabsProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>(() => {
     const initialId = generateSessionId();
     return [{ id: initialId, label: "Terminal 1" }];
@@ -117,6 +118,7 @@ export function TerminalTabs({ projectId, className }: TerminalTabsProps) {
           >
             <TerminalComponent
               sessionId={projectId ? `${projectId}-${tab.id}` : tab.id}
+              workingDir={projectPath}
               className="h-full"
               onDisconnect={() => handleTabDisconnect(tab.id)}
             />
