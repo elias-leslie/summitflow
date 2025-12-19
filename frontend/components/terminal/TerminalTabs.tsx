@@ -4,92 +4,18 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, ChevronDown } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2 } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+
+// Maximum number of split panes
+const MAX_SPLIT_PANES = 4;
 
 interface TerminalTabsProps {
   projectId?: string;
   projectPath?: string;
   className?: string;
-}
-
-interface LayoutModeButtonProps {
-  mode: LayoutMode;
-  currentMode: LayoutMode;
-  onClick: (mode: LayoutMode) => void;
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-}
-
-function LayoutModeButton({ mode, currentMode, onClick, icon: Icon, title }: LayoutModeButtonProps) {
-  const isActive = currentMode === mode;
-  return (
-    <button
-      onClick={() => onClick(mode)}
-      title={title}
-      className={clsx(
-        "p-1.5 rounded transition-colors",
-        isActive
-          ? "bg-slate-700 text-phosphor-400"
-          : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-      )}
-    >
-      <Icon className="w-4 h-4" />
-    </button>
-  );
-}
-
-interface SessionSelectorProps {
-  sessions: Array<{ id: string; name: string; is_alive: boolean }>;
-  selectedId: string | undefined;
-  onSelect: (id: string) => void;
-  paneIndex: number;
-}
-
-function SessionSelector({ sessions, selectedId, onSelect, paneIndex }: SessionSelectorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const selectedSession = sessions.find((s) => s.id === selectedId);
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-slate-300"
-      >
-        <TerminalIcon className="w-3 h-3" />
-        <span className="truncate max-w-[100px]">
-          {selectedSession?.name || `Pane ${paneIndex + 1}`}
-        </span>
-        <ChevronDown className="w-3 h-3" />
-      </button>
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg z-20 min-w-[150px]">
-            {sessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => {
-                  onSelect(session.id);
-                  setIsOpen(false);
-                }}
-                className={clsx(
-                  "w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 flex items-center gap-2",
-                  session.id === selectedId && "bg-slate-700 text-phosphor-400"
-                )}
-              >
-                <TerminalIcon className="w-3 h-3" />
-                <span className="truncate">{session.name}</span>
-                {!session.is_alive && <span className="text-red-400">(dead)</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
 }
 
 export function TerminalTabs({ projectId, projectPath, className }: TerminalTabsProps) {
@@ -104,72 +30,21 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     isCreating,
   } = useTerminalSessions(projectId);
 
-  const { layoutMode, setLayoutMode, paneSizes, setPaneSizes, paneSessions, setPaneSessions } = useTerminalState();
+  const { layoutMode, setLayoutMode } = useTerminalState();
   const isMobile = useMediaQuery("(max-width: 767px)");
 
-  // Get session IDs for each pane (default to first sessions if not set)
-  const getPaneSession = useCallback((paneIndex: number): string | undefined => {
-    if (paneSessions[paneIndex]) {
-      // Verify the session still exists
-      const exists = sessions.some((s) => s.id === paneSessions[paneIndex]);
-      if (exists) return paneSessions[paneIndex];
+  // Number of panes to show in split mode (1:1 with sessions, capped)
+  const splitPaneCount = Math.min(sessions.length, MAX_SPLIT_PANES);
+
+  // Handle layout mode change - create session if needed for split
+  const handleLayoutModeChange = useCallback(async (mode: LayoutMode) => {
+    if (mode !== "single" && sessions.length === 1) {
+      // Create a second terminal before switching to split
+      const name = `Terminal ${sessions.length + 1}`;
+      await create(name, projectPath);
     }
-    // Fall back to session by index
-    return sessions[paneIndex]?.id;
-  }, [paneSessions, sessions]);
-
-  // Update a specific pane's session
-  const setPaneSession = useCallback((paneIndex: number, sessionId: string) => {
-    const newPaneSessions = [...paneSessions];
-    newPaneSessions[paneIndex] = sessionId;
-    setPaneSessions(newPaneSessions);
-  }, [paneSessions, setPaneSessions]);
-
-  // Handle pane resize
-  const handlePane0Resize = useCallback((size: { asPercentage: number }) => {
-    const newSizes = [size.asPercentage, 100 - size.asPercentage];
-    setPaneSizes(newSizes);
-  }, [setPaneSizes]);
-
-  // Track previous layout mode to detect transitions
-  const prevLayoutModeRef = useRef(layoutMode);
-
-  // Handle layout mode transitions
-  useEffect(() => {
-    const prevMode = prevLayoutModeRef.current;
-    prevLayoutModeRef.current = layoutMode;
-
-    // Skip if no change
-    if (prevMode === layoutMode) return;
-
-    // Switching from single to split mode
-    if (prevMode === "single" && layoutMode !== "single") {
-      // Initialize first pane to active session
-      if (!paneSessions[0] && activeId) {
-        setPaneSession(0, activeId);
-      }
-      // Initialize second pane to next available session
-      if (!paneSessions[1]) {
-        const firstPaneId = paneSessions[0] || activeId;
-        const nextSession = sessions.find((s) => s.id !== firstPaneId);
-        if (nextSession) {
-          setPaneSession(1, nextSession.id);
-        } else if (sessions.length > 0) {
-          // Fall back to first session if no other available
-          setPaneSession(1, sessions[0].id);
-        }
-      }
-    }
-
-    // Switching from split to single mode
-    if (prevMode !== "single" && layoutMode === "single") {
-      // Set active session to first pane's session
-      const firstPaneSession = paneSessions[0] || sessions[0]?.id;
-      if (firstPaneSession && firstPaneSession !== activeId) {
-        setActiveId(firstPaneSession);
-      }
-    }
-  }, [layoutMode, sessions, activeId, paneSessions, setPaneSession, setActiveId]);
+    setLayoutMode(mode);
+  }, [sessions.length, create, projectPath, setLayoutMode]);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -339,27 +214,42 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
         {/* Layout mode buttons - hidden on mobile */}
         {!isMobile && (
           <div className="ml-auto flex items-center gap-0.5 border-l border-slate-700 pl-2">
-            <LayoutModeButton
-              mode="single"
-              currentMode={layoutMode}
-              onClick={setLayoutMode}
-              icon={Square}
+            <button
+              onClick={() => handleLayoutModeChange("single")}
               title="Single pane"
-            />
-            <LayoutModeButton
-              mode="horizontal"
-              currentMode={layoutMode}
-              onClick={setLayoutMode}
-              icon={Rows2}
+              className={clsx(
+                "p-1.5 rounded transition-colors",
+                layoutMode === "single"
+                  ? "bg-slate-700 text-phosphor-400"
+                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
+              )}
+            >
+              <Square className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleLayoutModeChange("horizontal")}
               title="Horizontal split"
-            />
-            <LayoutModeButton
-              mode="vertical"
-              currentMode={layoutMode}
-              onClick={setLayoutMode}
-              icon={Columns2}
+              className={clsx(
+                "p-1.5 rounded transition-colors",
+                layoutMode === "horizontal"
+                  ? "bg-slate-700 text-phosphor-400"
+                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
+              )}
+            >
+              <Rows2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleLayoutModeChange("vertical")}
               title="Vertical split"
-            />
+              className={clsx(
+                "p-1.5 rounded transition-colors",
+                layoutMode === "vertical"
+                  ? "bg-slate-700 text-phosphor-400"
+                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
+              )}
+            >
+              <Columns2 className="w-4 h-4" />
+            </button>
           </div>
         )}
       </div>
@@ -384,96 +274,73 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             </div>
           ))
         ) : (
-          // Split pane layout
+          // Split pane layout - 1:1 mapping with sessions
           <Group
             orientation={layoutMode === "horizontal" ? "vertical" : "horizontal"}
             className="h-full"
           >
-            {/* First pane */}
-            <Panel
-              defaultSize={paneSizes[0] ?? 50}
-              minSize={20}
-              onResize={handlePane0Resize}
-              className="flex flex-col"
-            >
-              <div className="flex items-center px-2 py-1 bg-slate-800/50 border-b border-slate-700">
-                <SessionSelector
-                  sessions={sessions}
-                  selectedId={getPaneSession(0)}
-                  onSelect={(id) => setPaneSession(0, id)}
-                  paneIndex={0}
-                />
-              </div>
-              <div className="flex-1 relative">
-                {sessions.map((session) => {
-                  const isActive = session.id === getPaneSession(0);
-                  return (
-                    <div
-                      key={session.id}
-                      className={clsx(
-                        "absolute inset-0",
-                        isActive ? "z-10 visible" : "z-0 invisible"
-                      )}
-                    >
-                      <TerminalComponent
-                        sessionId={session.id}
-                        workingDir={session.working_dir || projectPath}
-                        className="h-full"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </Panel>
-
-            {/* Resize handle */}
-            <Separator
-              className={clsx(
-                layoutMode === "horizontal"
-                  ? "h-1 cursor-row-resize"
-                  : "w-1 cursor-col-resize",
-                "bg-slate-700 hover:bg-slate-600 active:bg-phosphor-500 transition-colors"
-              )}
-            />
-
-            {/* Second pane */}
-            <Panel
-              defaultSize={paneSizes[1] ?? 50}
-              minSize={20}
-              className="flex flex-col"
-            >
-              <div className="flex items-center px-2 py-1 bg-slate-800/50 border-b border-slate-700">
-                <SessionSelector
-                  sessions={sessions}
-                  selectedId={getPaneSession(1)}
-                  onSelect={(id) => setPaneSession(1, id)}
-                  paneIndex={1}
-                />
-              </div>
-              <div className="flex-1 relative">
-                {sessions.map((session) => {
-                  const isActive = session.id === getPaneSession(1);
-                  return (
-                    <div
-                      key={session.id}
-                      className={clsx(
-                        "absolute inset-0",
-                        isActive ? "z-10 visible" : "z-0 invisible"
-                      )}
-                    >
-                      <TerminalComponent
-                        sessionId={session.id}
-                        workingDir={session.working_dir || projectPath}
-                        className="h-full"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </Panel>
+            {sessions.slice(0, splitPaneCount).map((session, index) => (
+              <SplitPane
+                key={session.id}
+                session={session}
+                projectPath={projectPath}
+                layoutMode={layoutMode}
+                isLast={index === splitPaneCount - 1}
+                paneCount={splitPaneCount}
+              />
+            ))}
           </Group>
         )}
       </div>
     </div>
+  );
+}
+
+// Split pane component for cleaner rendering
+interface SplitPaneProps {
+  session: { id: string; name: string; working_dir: string | null; is_alive: boolean };
+  projectPath?: string;
+  layoutMode: LayoutMode;
+  isLast: boolean;
+  paneCount: number;
+}
+
+function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: SplitPaneProps) {
+  const defaultSize = 100 / paneCount;
+  const minSize = Math.max(10, 100 / (paneCount * 2)); // Dynamic min size
+
+  return (
+    <>
+      <Panel
+        id={session.id}
+        defaultSize={defaultSize}
+        minSize={minSize}
+        className="flex flex-col"
+      >
+        {/* Small header showing terminal name */}
+        <div className="flex items-center px-2 py-0.5 bg-slate-800/50 border-b border-slate-700">
+          <TerminalIcon className="w-3 h-3 text-slate-500 mr-1.5" />
+          <span className="text-xs text-slate-400 truncate">{session.name}</span>
+          {!session.is_alive && <span className="text-xs text-red-400 ml-1">(dead)</span>}
+        </div>
+        <div className="flex-1">
+          <TerminalComponent
+            sessionId={session.id}
+            workingDir={session.working_dir || projectPath}
+            className="h-full"
+          />
+        </div>
+      </Panel>
+      {!isLast && (
+        <Separator
+          className={clsx(
+            layoutMode === "horizontal"
+              ? "h-1 cursor-row-resize"
+              : "w-1 cursor-col-resize",
+            "bg-slate-700 hover:bg-slate-600 active:bg-phosphor-500 transition-colors"
+          )}
+        />
+      )}
+    </>
   );
 }
