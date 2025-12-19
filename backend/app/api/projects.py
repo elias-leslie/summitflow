@@ -257,3 +257,95 @@ async def delete_project(project_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
     return {"status": "deleted", "id": project_id}
+
+
+# --- Agent Configuration Endpoints ---
+
+from ..storage import agent_configs
+
+
+class AgentConfigResponse(BaseModel):
+    """Response model for agent configuration."""
+
+    claude_enabled: bool
+    gemini_enabled: bool
+    default_agent: str
+    claude_model: str
+    gemini_model: str
+
+
+class AgentConfigUpdate(BaseModel):
+    """Request model for updating agent configuration."""
+
+    claude_enabled: bool | None = None
+    gemini_enabled: bool | None = None
+    default_agent: str | None = None
+    claude_model: str | None = None
+    gemini_model: str | None = None
+
+
+@router.get("/{project_id}/agents", response_model=AgentConfigResponse)
+async def get_agent_config(project_id: str) -> AgentConfigResponse:
+    """Get agent configuration for a project."""
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    config = agent_configs.get_agent_config(project_id)
+    return AgentConfigResponse(**config)
+
+
+@router.patch("/{project_id}/agents", response_model=AgentConfigResponse)
+async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> AgentConfigResponse:
+    """Update agent configuration for a project."""
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    # Build config update dict from non-None values
+    config_update = {}
+    if update.claude_enabled is not None:
+        config_update["claude_enabled"] = update.claude_enabled
+    if update.gemini_enabled is not None:
+        config_update["gemini_enabled"] = update.gemini_enabled
+    if update.default_agent is not None:
+        if update.default_agent not in ("claude", "gemini"):
+            raise HTTPException(
+                status_code=400, detail="default_agent must be 'claude' or 'gemini'"
+            )
+        config_update["default_agent"] = update.default_agent
+    if update.claude_model is not None:
+        if update.claude_model not in ("sonnet", "opus", "haiku"):
+            raise HTTPException(
+                status_code=400, detail="claude_model must be 'sonnet', 'opus', or 'haiku'"
+            )
+        config_update["claude_model"] = update.claude_model
+    if update.gemini_model is not None:
+        valid_models = ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro")
+        if update.gemini_model not in valid_models:
+            raise HTTPException(
+                status_code=400, detail=f"gemini_model must be one of: {valid_models}"
+            )
+        config_update["gemini_model"] = update.gemini_model
+
+    if not config_update:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    updated = agent_configs.update_agent_config(project_id, config_update)
+    return AgentConfigResponse(**updated)
+
+
+@router.get("/{project_id}/agents/enabled", response_model=list[str])
+async def get_enabled_agents(project_id: str) -> list[str]:
+    """Get list of enabled agents for a project."""
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    return agent_configs.get_enabled_agents(project_id)

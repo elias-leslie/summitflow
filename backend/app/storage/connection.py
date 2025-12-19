@@ -55,6 +55,13 @@ def init_schema() -> None:
                     backend_dir TEXT,
                     browser_scripts_dir TEXT,
                     data_dir TEXT,
+                    agent_configs JSONB DEFAULT '{
+                        "claude_enabled": true,
+                        "gemini_enabled": true,
+                        "default_agent": "gemini",
+                        "claude_model": "sonnet",
+                        "gemini_model": "gemini-2.5-flash"
+                    }'::jsonb,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
                 """
