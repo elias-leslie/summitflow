@@ -19,13 +19,16 @@ from .api import (
     vision_content,
     vision_goals,
 )
+from .services import terminal_lifecycle
 from .storage.connection import init_schema
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database schema on startup."""
+    """Initialize database and services on startup."""
     init_schema()
+    # Reconcile terminal sessions DB with tmux state
+    terminal_lifecycle.reconcile_on_startup()
     yield
 
 
