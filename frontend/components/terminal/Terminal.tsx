@@ -107,9 +107,21 @@ export function TerminalComponent({
       fitAddonRef.current = fitAddon;
 
       // Connect to WebSocket
+      // WebSocket needs to connect directly to backend, not through Next.js
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
-      let wsUrl = `${protocol}//${host}/ws/terminal/${sessionId}`;
+      let wsHost: string;
+
+      // Map frontend hosts to their backend WebSocket endpoints
+      if (window.location.host === "dev.summitflow.dev") {
+        wsHost = "devapi.summitflow.dev";
+      } else if (window.location.host.includes("localhost:3001")) {
+        wsHost = "localhost:8001";
+      } else {
+        // Default: same host (for local dev or other setups)
+        wsHost = window.location.host;
+      }
+
+      let wsUrl = `${protocol}//${wsHost}/ws/terminal/${sessionId}`;
       if (workingDir) {
         wsUrl += `?working_dir=${encodeURIComponent(workingDir)}`;
       }
