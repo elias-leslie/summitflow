@@ -2,6 +2,7 @@
 
 import { Search, RefreshCw, Terminal, Camera } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
 
@@ -12,6 +13,8 @@ export function TopBar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
   // Get current URL on client side
   useEffect(() => {
@@ -66,10 +69,16 @@ export function TopBar() {
 
           {/* Refresh */}
           <button
+            onClick={async () => {
+              setIsRefreshing(true);
+              await queryClient.invalidateQueries();
+              setTimeout(() => setIsRefreshing(false), 500);
+            }}
             className="btn-ghost p-2 rounded-lg"
             title="Refresh Data"
+            disabled={isRefreshing}
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
           </button>
 
           {/* Notifications */}
