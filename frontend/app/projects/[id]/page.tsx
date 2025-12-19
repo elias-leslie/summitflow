@@ -3,12 +3,12 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, CircleDot, Compass, Kanban } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
-import { BeadsTab } from "@/components/beads/BeadsTab";
+import { IssueTasksTab } from "@/components/tasks/IssueTasksTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard";
@@ -16,7 +16,7 @@ import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
 import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
 import type { Feature } from "@/lib/api";
 
-type TabId = "explorer" | "features" | "vision" | "evidence" | "beads" | "kanban";
+type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -29,7 +29,7 @@ export default function ProjectDetailPage() {
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["explorer", "features", "vision", "evidence", "beads", "kanban"].includes(urlTab)) {
+    if (urlTab && ["explorer", "features", "vision", "evidence", "tasks", "kanban"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -223,18 +223,18 @@ export default function ProjectDetailPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab("beads")}
+            onClick={() => setActiveTab("tasks")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "beads"
+              activeTab === "tasks"
                 ? "text-phosphor-400"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
             <div className="flex items-center gap-2">
-              <CircleDot className="w-4 h-4" />
-              Beads
+              <ListTodo className="w-4 h-4" />
+              Tasks
             </div>
-            {activeTab === "beads" && (
+            {activeTab === "tasks" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -263,7 +263,7 @@ export default function ProjectDetailPage() {
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
         {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
-        {activeTab === "beads" && <BeadsTab projectId={projectId} />}
+        {activeTab === "tasks" && <IssueTasksTab projectId={projectId} />}
         {activeTab === "kanban" && (
           <>
             <KanbanBoard
