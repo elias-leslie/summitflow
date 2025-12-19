@@ -74,7 +74,8 @@ def _spawn_pty_for_tmux(session_name: str) -> tuple[int, int]:
     pid, master_fd = pty.fork()
 
     if pid == 0:
-        # Child process - attach to tmux
+        # Child process - set TERM and attach to tmux
+        os.environ["TERM"] = "xterm-256color"
         os.execvp("tmux", ["tmux", "attach-session", "-t", session_name])
     else:
         # Parent process - configure the master FD
