@@ -573,3 +573,221 @@ def generate_plan_for_task(
         "feature_id": feature.get("feature_id"),
         "subtask_count": len(plan.get("subtasks", [])),
     }
+
+
+# =========================================================================
+# Criterion-by-Criterion Execution
+# =========================================================================
+
+CRITERION_EXECUTION_PROMPT = """You are implementing a specific acceptance criterion for a software feature.
+
+FEATURE CONTEXT:
+Name: {feature_name}
+Description: {feature_description}
+
+CRITERION TO IMPLEMENT:
+ID: {criterion_id}
+Description: {criterion_description}
+
+{spec_section}
+
+{plan_section}
+
+YOUR TASK:
+1. Implement ONLY what's needed to make this criterion pass
+2. Be specific and actionable
+3. Provide code if needed, or specific instructions
+4. Explain how to verify the criterion passes
+
+Output your implementation response as markdown.
+"""
+
+
+def execute_criterion(
+    task: dict[str, Any],
+    criterion: dict[str, Any],
+    feature: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Execute a single acceptance criterion using an AI agent.
+
+    This function:
+    1. Updates task.current_criterion_id
+    2. Executes agent with criterion-specific prompt
+    3. Returns agent's response with execution metadata
+
+    The caller is responsible for:
+    - Updating criterion status (passes=true) after verification
+    - Capturing evidence
+    - Advancing to next criterion
+
+    Args:
+        task: Task dict from database
+        criterion: Criterion dict to execute
+        feature: Feature dict with context
+        agent_type: Which agent to use
+        model: Optional model override
+
+    Returns:
+        Dict with:
+        - response: Agent's response content
+        - criterion_id: ID of criterion executed
+        - tokens_used: Token count for this execution
+        - success: Whether execution completed without error
+
+    Raises:
+        RuntimeError: If execution fails
+    """
+    from ..storage import tasks as task_storage
+
+    agent = get_agent(agent_type, model)
+
+    criterion_id = criterion.get("id", "unknown")
+    criterion_desc = criterion.get("description", "No description")
+
+    # Update current_criterion_id before starting
+    task_storage.update_task(task["id"], current_criterion_id=criterion_id)
+    task_storage.append_progress_log(
+        task["id"], f"Starting criterion: {criterion_id} - {criterion_desc[:50]}..."
+    )
+
+    # Build spec section if available
+    spec_section = ""
+    if task.get("spec_content"):
+        spec = task["spec_content"]
+        truncated = spec[:2000] + "..." if len(spec) > 2000 else spec
+        spec_section = f"\nSPECIFICATION (relevant parts):\n{truncated}\n"
+
+    # Build plan section if available
+    plan_section = ""
+    if task.get("plan_content"):
+        plan = task["plan_content"]
+        if isinstance(plan, dict):
+            # Find subtasks related to this criterion
+            related_subtasks = [
+                st for st in plan.get("subtasks", []) if criterion_id in st.get("criteria_ids", [])
+            ]
+            if related_subtasks:
+                subtask_text = "\n".join(
+                    [f"- {st['title']}: {st.get('description', '')}" for st in related_subtasks]
+                )
+                plan_section = f"\nRELATED SUBTASKS:\n{subtask_text}\n"
+
+    # Build the prompt
+    prompt = CRITERION_EXECUTION_PROMPT.format(
+        feature_name=feature.get("name", "Unknown Feature"),
+        feature_description=feature.get("description", "No description"),
+        criterion_id=criterion_id,
+        criterion_description=criterion_desc,
+        spec_section=spec_section,
+        plan_section=plan_section,
+    )
+
+    logger.info(f"Executing criterion: {criterion_id}")
+
+    try:
+        response = agent.generate(
+            prompt=prompt,
+            system="You are a skilled software developer. Implement the criterion precisely and concisely.",
+            max_tokens=4096,
+            temperature=0.7,
+        )
+
+        tokens_used = response.usage.get("output_tokens", 0) + response.usage.get("input_tokens", 0)
+
+        # Log completion
+        task_storage.append_progress_log(
+            task["id"],
+            f"Criterion {criterion_id} executed ({tokens_used} tokens)",
+        )
+
+        logger.info(f"Criterion {criterion_id} executed: {tokens_used} tokens")
+
+        return {
+            "response": response.content,
+            "criterion_id": criterion_id,
+            "tokens_used": tokens_used,
+            "success": True,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to execute criterion {criterion_id}: {e}")
+        task_storage.append_progress_log(task["id"], f"Criterion {criterion_id} FAILED: {e}")
+        raise RuntimeError(f"Criterion execution failed: {e}") from e
+
+
+def mark_criterion_passed(
+    task: dict[str, Any],
+    criterion_id: str,
+    feature: dict[str, Any],
+    evidence_id: str | None = None,
+) -> bool:
+    """Mark a criterion as passed after verification.
+
+    Args:
+        task: Task dict
+        criterion_id: ID of criterion to mark
+        feature: Feature dict
+        evidence_id: Optional evidence ID to link
+
+    Returns:
+        True if marked successfully
+    """
+    from ..storage import features as feature_storage
+    from ..storage import tasks as task_storage
+
+    result = feature_storage.update_criterion_status(
+        project_id=feature["project_id"],
+        feature_id=feature["feature_id"],
+        criterion_id=criterion_id,
+        passes=True,
+        evidence_id=evidence_id,
+    )
+
+    if result:
+        task_storage.append_progress_log(task["id"], f"Criterion {criterion_id} PASSED ✓")
+        return True
+
+    task_storage.append_progress_log(
+        task["id"], f"Failed to mark criterion {criterion_id} as passed"
+    )
+    return False
+
+
+def get_next_criterion(feature: dict[str, Any]) -> dict[str, Any] | None:
+    """Get the next unpassed criterion for a feature.
+
+    Args:
+        feature: Feature dict with acceptance_criteria
+
+    Returns:
+        Next criterion dict or None if all passed
+    """
+    criteria = feature.get("acceptance_criteria", [])
+    for criterion in criteria:
+        if not criterion.get("passes"):
+            return criterion
+    return None
+
+
+def get_execution_progress(feature: dict[str, Any]) -> dict[str, Any]:
+    """Get execution progress summary for a feature.
+
+    Args:
+        feature: Feature dict with acceptance_criteria
+
+    Returns:
+        Dict with total, passed, remaining counts and percentage
+    """
+    criteria = feature.get("acceptance_criteria", [])
+    total = len(criteria)
+    passed = sum(1 for c in criteria if c.get("passes"))
+
+    return {
+        "total": total,
+        "passed": passed,
+        "remaining": total - passed,
+        "percentage": (passed / total * 100) if total > 0 else 0,
+        "all_passed": passed == total and total > 0,
+    }
