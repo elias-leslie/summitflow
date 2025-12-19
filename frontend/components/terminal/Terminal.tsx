@@ -15,7 +15,7 @@ interface TerminalProps {
   onDisconnect?: () => void;
 }
 
-type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead";
 
 export function TerminalComponent({
   sessionId,
@@ -151,10 +151,23 @@ export function TerminalComponent({
         term.write(event.data);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (!mounted) return;
-        setStatus("disconnected");
-        term.writeln("\r\n\x1b[31mDisconnected from terminal\x1b[0m");
+
+        // Check for session_dead error (code 4000)
+        if (event.code === 4000) {
+          setStatus("session_dead");
+          try {
+            const reason = JSON.parse(event.reason);
+            term.writeln(`\r\n\x1b[31m${reason.message || "Session not found"}\x1b[0m`);
+          } catch {
+            term.writeln("\r\n\x1b[31mSession not found or could not be restored\x1b[0m");
+          }
+        } else {
+          setStatus("disconnected");
+          term.writeln("\r\n\x1b[31mDisconnected from terminal\x1b[0m");
+        }
+
         onDisconnect?.();
       };
 
@@ -218,9 +231,12 @@ export function TerminalComponent({
             "bg-green-400": status === "connected",
             "bg-gray-400": status === "disconnected",
             "bg-red-400": status === "error",
+            "bg-orange-400": status === "session_dead",
           })}
         />
-        <span className="text-xs text-slate-400">{status}</span>
+        <span className="text-xs text-slate-400">
+          {status === "session_dead" ? "dead" : status}
+        </span>
       </div>
 
       {/* Terminal container */}
