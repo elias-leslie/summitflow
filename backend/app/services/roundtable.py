@@ -356,6 +356,155 @@ Respond to the user's latest message, taking into account the full conversation 
 
         return responses
 
+    # =========================================================================
+    # Spec-Driven Mode: Feature Extraction
+    # =========================================================================
+
+    FEATURE_EXTRACTION_PROMPT = """Analyze the following Roundtable conversation and extract any features that were discussed, designed, or planned.
+
+For each feature, provide:
+1. A clear, concise name (title)
+2. A description of what the feature should do
+3. A category (e.g., "ui", "backend", "api", "database", "auth", "integration")
+4. Priority (1=critical, 2=high, 3=medium, 4=low, 5=nice-to-have)
+5. A list of acceptance criteria - specific, testable conditions that must be true for the feature to be complete
+
+IMPORTANT: Return ONLY valid JSON in this exact format:
+{
+  "features": [
+    {
+      "name": "Feature Title",
+      "description": "Detailed description of the feature",
+      "category": "category_name",
+      "priority": 3,
+      "acceptance_criteria": [
+        {"id": "ac-001", "description": "When X happens, Y should be true"},
+        {"id": "ac-002", "description": "User can do Z"}
+      ]
+    }
+  ]
+}
+
+If no features were discussed, return: {"features": []}
+
+CONVERSATION:
+"""
+
+    def extract_features_from_conversation(
+        self,
+        session: RoundtableSession,
+        agent_type: AgentType = "gemini",
+    ) -> list[dict]:
+        """Extract features from a Roundtable conversation.
+
+        Uses an AI agent to analyze the conversation and identify
+        features with their acceptance criteria.
+
+        Args:
+            session: The roundtable session to analyze
+            agent_type: Which agent to use for extraction
+
+        Returns:
+            List of extracted feature dicts ready for creation
+        """
+        import json as json_module
+        import re
+
+        # Build conversation transcript
+        context = session.get_context(max_messages=50)
+
+        model = (
+            self.claude_model if agent_type == "claude" else self.gemini_model
+        )
+        agent = get_agent(agent_type, model=model)
+
+        prompt = self.FEATURE_EXTRACTION_PROMPT + context
+
+        try:
+            response = agent.generate(
+                prompt=prompt,
+                system="You are a feature extraction specialist. Extract structured feature definitions from conversations.",
+                max_tokens=8192,
+                temperature=0.3,  # Lower temperature for more consistent JSON
+            )
+
+            # Parse JSON from response
+            content = response.content.strip()
+
+            # Try to extract JSON from markdown code blocks
+            json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+
+            data = json_module.loads(content)
+            return data.get("features", [])
+
+        except Exception as e:
+            logger.error(f"Feature extraction failed: {e}")
+            return []
+
+    def create_features_from_conversation(
+        self,
+        session: RoundtableSession,
+        agent_type: AgentType = "gemini",
+    ) -> list[dict]:
+        """Extract features from conversation and create them in the database.
+
+        This is the main method for Spec-Driven mode output.
+
+        Args:
+            session: The roundtable session to analyze
+            agent_type: Which agent to use for extraction
+
+        Returns:
+            List of created feature dicts with IDs
+        """
+        from app.storage import features as feature_storage
+
+        # Extract features from conversation
+        extracted = self.extract_features_from_conversation(session, agent_type)
+
+        if not extracted:
+            logger.info("No features extracted from conversation")
+            return []
+
+        created_features = []
+
+        for feat in extracted:
+            # Get next feature ID
+            feature_id = feature_storage.get_next_feature_id(session.project_id)
+
+            # Prepare acceptance criteria with IDs if not present
+            criteria = []
+            for i, crit in enumerate(feat.get("acceptance_criteria", [])):
+                criterion = {
+                    "id": crit.get("id", f"ac-{i+1:03d}"),
+                    "description": crit.get("description", ""),
+                    "passes": False,
+                    "verified_at": None,
+                    "evidence_id": None,
+                }
+                criteria.append(criterion)
+
+            # Create feature in database
+            created = feature_storage.create_feature(
+                project_id=session.project_id,
+                feature_id=feature_id,
+                name=feat.get("name", "Untitled Feature"),
+                category=feat.get("category", "feature"),
+                description=feat.get("description", ""),
+                acceptance_criteria=criteria,
+                priority=feat.get("priority", 3),
+            )
+
+            if created:
+                created_features.append(created)
+                logger.info(f"Created feature {feature_id}: {created['name']}")
+            else:
+                logger.warning(f"Failed to create feature: {feat.get('name')}")
+
+        return created_features
+
 
 # Module-level singleton for convenience
 _roundtable_service: RoundtableService | None = None

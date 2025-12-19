@@ -6,7 +6,7 @@ This module provides data access for features and their acceptance criteria.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .connection import get_connection
@@ -238,7 +238,7 @@ def update_criterion_status(
         for c in criteria:
             if c.get("id") == criterion_id:
                 c["passes"] = passes
-                c["verified_at"] = datetime.now(timezone.utc).isoformat()
+                c["verified_at"] = datetime.now(UTC).isoformat()
                 if evidence_id:
                     c["evidence_id"] = evidence_id
                 updated_criterion = c
@@ -312,6 +312,103 @@ def delete_criterion(
         conn.commit()
 
     return True
+
+
+def create_feature(
+    project_id: str,
+    feature_id: str,
+    name: str,
+    category: str = "feature",
+    description: str = "",
+    acceptance_criteria: list[dict[str, Any]] | None = None,
+    priority: int = 3,
+) -> dict[str, Any] | None:
+    """Create a new feature with optional acceptance criteria.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        name: Feature name/title
+        category: Category (default: feature)
+        description: Feature description
+        acceptance_criteria: List of criterion dicts (optional)
+        priority: Priority 1-5 (default: 3)
+
+    Returns:
+        Created feature dict, or None if feature_id already exists.
+    """
+    criteria = acceptance_criteria or []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check if feature already exists
+        cur.execute(
+            """
+            SELECT id FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        if cur.fetchone():
+            return None  # Already exists
+
+        # Insert new feature
+        cur.execute(
+            """
+            INSERT INTO feature_capabilities
+                (project_id, feature_id, name, category, description, priority,
+                 acceptance_criteria, status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, 'backlog', NOW(), NOW())
+            RETURNING id, feature_id, name
+            """,
+            (project_id, feature_id, name, category, description, priority, json.dumps(criteria)),
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    if not result:
+        return None
+
+    return {
+        "id": result[0],
+        "project_id": project_id,
+        "feature_id": result[1],
+        "name": result[2],
+        "category": category,
+        "description": description,
+        "acceptance_criteria": criteria,
+        "priority": priority,
+        "status": "backlog",
+    }
+
+
+def get_next_feature_id(project_id: str) -> str:
+    """Get the next available feature ID for a project.
+
+    Returns:
+        Next feature ID in format FEAT-XXX
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT feature_id FROM feature_capabilities
+            WHERE project_id = %s AND feature_id LIKE 'FEAT-%%'
+            ORDER BY feature_id DESC
+            LIMIT 1
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return "FEAT-001"
+
+    # Extract number and increment
+    last_id = row[0]
+    try:
+        num = int(last_id.replace("FEAT-", ""))
+        return f"FEAT-{num + 1:03d}"
+    except ValueError:
+        return "FEAT-001"
 
 
 def update_feature_status(
