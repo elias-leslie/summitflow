@@ -120,6 +120,7 @@ class FeatureResponse(BaseModel):
     completed_tasks: int = 0  # From DB
     completion_pct: int = 0
     health_status: str  # active or orphaned (based on tasks)
+    status: str = "backlog"  # Kanban status: backlog, in_progress, review, done
     last_verified_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -178,6 +179,7 @@ def _feature_to_response(f: dict[str, Any]) -> FeatureResponse:
         completed_tasks=f.get("completed_tasks", 0),
         completion_pct=f.get("completion_pct", 0),
         health_status=f.get("health_status", "unknown"),
+        status=f.get("status", "backlog"),
         last_verified_at=(f["last_verified_at"].isoformat() if f.get("last_verified_at") else None),
         created_at=f["created_at"].isoformat() if f.get("created_at") else None,
         updated_at=f["updated_at"].isoformat() if f.get("updated_at") else None,
@@ -261,7 +263,7 @@ async def get_features(
             f"""
                 SELECT id, project_id, feature_id, name, category, description,
                        verification_layers, layer_results, priority, acceptance_criteria,
-                       vision_goals, last_verified_at, created_at, updated_at
+                       vision_goals, last_verified_at, created_at, updated_at, status
                 FROM feature_capabilities
                 WHERE {where_sql}
                 ORDER BY created_at DESC
@@ -289,6 +291,7 @@ async def get_features(
             "last_verified_at": row[11],
             "created_at": row[12],
             "updated_at": row[13],
+            "status": row[14] or "backlog",
             "total_tasks": 0,  # TODO: Calculate from feature_tasks
             "completed_tasks": 0,  # TODO: Calculate from feature_tasks
             "completion_pct": 0,

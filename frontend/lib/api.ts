@@ -228,6 +228,7 @@ export interface Feature {
   completed_tasks: number;
   completion_pct: number;
   health_status: string;
+  status?: "backlog" | "in_progress" | "review" | "done";
   last_verified_at: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -294,6 +295,25 @@ export async function fetchFeatureSummary(projectId: string): Promise<FeatureSum
 export async function fetchVerificationSummary(projectId: string): Promise<VerificationSummary> {
   const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/verification-summary`);
   if (!res.ok) throw new Error("Failed to fetch verification summary");
+  return res.json();
+}
+
+export type FeatureStatus = "backlog" | "in_progress" | "review" | "done";
+
+export async function updateFeatureStatus(
+  projectId: string,
+  featureId: string,
+  status: FeatureStatus
+): Promise<{ status: string; work_status: FeatureStatus }> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/${featureId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to update feature status" }));
+    throw new Error(error.detail || "Failed to update feature status");
+  }
   return res.json();
 }
 

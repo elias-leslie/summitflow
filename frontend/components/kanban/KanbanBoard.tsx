@@ -19,14 +19,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-import type { Feature } from "@/lib/api";
+import type { Feature, FeatureStatus } from "@/lib/api";
 import { FeatureCard, DragOverlayCard } from "./FeatureCard";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type KanbanStatus = "backlog" | "in_progress" | "review" | "done";
+export type KanbanStatus = FeatureStatus;
 
 export interface KanbanColumn {
   id: KanbanStatus;
