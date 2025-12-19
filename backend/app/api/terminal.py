@@ -232,51 +232,5 @@ async def _read_output(websocket: WebSocket, master_fd: int) -> None:
         logger.error("terminal_output_error", error=str(e))
 
 
-@router.get("/api/terminal/sessions")
-async def list_sessions() -> dict[str, Any]:
-    """List active terminal sessions.
-
-    Returns:
-        Dict with active session IDs
-    """
-    # Get tmux sessions
-    result = subprocess.run(
-        ["tmux", "list-sessions", "-F", "#{session_name}"],
-        capture_output=True,
-        text=True,
-    )
-
-    sessions = []
-    if result.returncode == 0:
-        for line in result.stdout.strip().split("\n"):
-            if line.startswith("summitflow-"):
-                sessions.append(line.replace("summitflow-", ""))
-
-    return {
-        "sessions": sessions,
-        "active_connections": list(_sessions.keys()),
-    }
-
-
-@router.delete("/api/terminal/sessions/{session_id}")
-async def kill_session(session_id: str) -> dict[str, str]:
-    """Kill a terminal session.
-
-    Args:
-        session_id: Session to kill
-
-    Returns:
-        Status dict
-    """
-    session_name = f"summitflow-{session_id}"
-
-    result = subprocess.run(
-        ["tmux", "kill-session", "-t", session_name],
-        capture_output=True,
-    )
-
-    if result.returncode == 0:
-        logger.info("tmux_session_killed", session=session_name)
-        return {"status": "killed", "session_id": session_id}
-    else:
-        return {"status": "not_found", "session_id": session_id}
+# NOTE: REST endpoints for session management moved to terminal_sessions.py
+# This file now only handles WebSocket connections

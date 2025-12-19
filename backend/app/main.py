@@ -15,6 +15,7 @@ from .api import (
     projects,
     tasks,
     terminal,
+    terminal_sessions,
     vision_content,
     vision_goals,
 )
@@ -61,6 +62,7 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(terminal.router, tags=["terminal"])
+app.include_router(terminal_sessions.router, tags=["terminal"])
 
 
 @app.get("/health")
