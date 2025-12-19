@@ -118,20 +118,27 @@ export function AppShell({ children }: AppShellProps) {
     );
   }
 
-  // Handle resize - extract percentage from PanelSize
-  const handleResize = (panelSize: { asPercentage: number; inPixels: number }) => {
-    setWidth(panelSize.asPercentage);
-  };
-
   return (
-    <Group orientation="horizontal" className="flex-1">
+    <Group
+      orientation="horizontal"
+      className="flex-1 h-full"
+      defaultLayout={{ main: 100 - width, terminal: width }}
+      onLayoutChange={(layout) => {
+        if (layout.terminal !== undefined) {
+          setWidth(layout.terminal);
+        }
+      }}
+    >
       {/* Main content panel */}
       <Panel
-        defaultSize={100 - width}
-        minSize={100 - MAX_SIZE}
-        className="overflow-auto"
+        id="main"
+        minSize="30%"
+        maxSize="85%"
+        className="overflow-auto h-full"
       >
-        {children}
+        <div className="h-full w-full overflow-auto">
+          {children}
+        </div>
       </Panel>
 
       {/* Resize handle */}
@@ -139,11 +146,10 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Terminal panel */}
       <Panel
-        defaultSize={width}
-        minSize={MIN_SIZE}
-        maxSize={MAX_SIZE}
-        onResize={handleResize}
-        className="bg-slate-900 flex flex-col"
+        id="terminal"
+        minSize="15%"
+        maxSize="70%"
+        className="bg-slate-900 flex flex-col h-full"
       >
         <TerminalTabs
           projectId={activeProjectId}
