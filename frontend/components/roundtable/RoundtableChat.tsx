@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  FormEvent,
+  DragEvent,
+  ClipboardEvent,
+  ChangeEvent,
+} from "react";
 import { clsx } from "clsx";
 import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
@@ -14,9 +23,21 @@ import {
   Bot,
   WifiOff,
   CircleDot,
+  Paperclip,
+  X,
+  FileText,
+  Image as ImageIcon,
+  File,
 } from "lucide-react";
 
 export type AgentType = "claude" | "gemini" | "user";
+
+export interface FileAttachment {
+  id: string;
+  file: File;
+  previewUrl?: string;
+  type: "image" | "document" | "other";
+}
 
 export interface ChatMessage {
   id: string;
@@ -25,13 +46,18 @@ export interface ChatMessage {
   timestamp: Date;
   isStreaming?: boolean;
   tokensUsed?: number;
+  attachments?: FileAttachment[];
 }
 
 interface RoundtableChatProps {
   projectId: string;
   sessionId?: string;
   className?: string;
-  onSendMessage?: (message: string, targetAgent?: AgentType) => Promise<void>;
+  onSendMessage?: (
+    message: string,
+    attachments?: FileAttachment[],
+    targetAgent?: AgentType
+  ) => Promise<void>;
   messages?: ChatMessage[];
   isLoading?: boolean;
   connected?: boolean;
@@ -75,6 +101,97 @@ const agentConfig: Record<
     iconBg: "bg-blue-900/50",
   },
 };
+
+function getFileType(file: File): "image" | "document" | "other" {
+  if (file.type.startsWith("image/")) return "image";
+  if (
+    file.type.includes("pdf") ||
+    file.type.includes("text") ||
+    file.type.includes("document") ||
+    file.name.endsWith(".md") ||
+    file.name.endsWith(".txt") ||
+    file.name.endsWith(".json")
+  )
+    return "document";
+  return "other";
+}
+
+function FilePreview({
+  attachment,
+  onRemove,
+}: {
+  attachment: FileAttachment;
+  onRemove: () => void;
+}) {
+  const Icon =
+    attachment.type === "image"
+      ? ImageIcon
+      : attachment.type === "document"
+        ? FileText
+        : File;
+
+  return (
+    <div className="relative group flex-shrink-0">
+      {attachment.type === "image" && attachment.previewUrl ? (
+        <div className="w-16 h-16 rounded-lg overflow-hidden border border-slate-600">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={attachment.previewUrl}
+            alt={attachment.file.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      ) : (
+        <div className="w-16 h-16 rounded-lg bg-slate-700 border border-slate-600 flex flex-col items-center justify-center gap-1">
+          <Icon className="w-5 h-5 text-slate-400" />
+          <span className="text-[10px] text-slate-400 truncate max-w-[56px] px-1">
+            {attachment.file.name.split(".").pop()?.toUpperCase()}
+          </span>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <X className="w-3 h-3" />
+      </button>
+      <span className="absolute -bottom-5 left-0 right-0 text-[9px] text-slate-500 truncate text-center">
+        {attachment.file.name}
+      </span>
+    </div>
+  );
+}
+
+function MessageAttachments({
+  attachments,
+}: {
+  attachments: FileAttachment[];
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="flex-shrink-0">
+          {attachment.type === "image" && attachment.previewUrl ? (
+            <div className="w-24 h-24 rounded-lg overflow-hidden border border-slate-600">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachment.previewUrl}
+                alt={attachment.file.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600">
+              <FileText className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-300">{attachment.file.name}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function MessageBubble({
   message,
@@ -143,6 +260,11 @@ function MessageBubble({
             <span className="inline-block w-2 h-4 bg-current animate-pulse ml-0.5" />
           )}
         </div>
+
+        {/* Attachments */}
+        {message.attachments && message.attachments.length > 0 && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
       </div>
     </div>
   );
@@ -160,8 +282,11 @@ export function RoundtableChat({
 }: RoundtableChatProps) {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -170,22 +295,115 @@ export function RoundtableChat({
     }
   }, [messages]);
 
+  // Cleanup preview URLs on unmount or attachment change
+  useEffect(() => {
+    return () => {
+      attachments.forEach((att) => {
+        if (att.previewUrl) {
+          URL.revokeObjectURL(att.previewUrl);
+        }
+      });
+    };
+  }, [attachments]);
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const newAttachments: FileAttachment[] = Array.from(files).map((file) => {
+      const type = getFileType(file);
+      const previewUrl = type === "image" ? URL.createObjectURL(file) : undefined;
+      return {
+        id: crypto.randomUUID(),
+        file,
+        type,
+        previewUrl,
+      };
+    });
+    setAttachments((prev) => [...prev, ...newAttachments]);
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const att = prev.find((a) => a.id === id);
+      if (att?.previewUrl) {
+        URL.revokeObjectURL(att.previewUrl);
+      }
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      if (e.dataTransfer.files?.length) {
+        addFiles(e.dataTransfer.files);
+      }
+    },
+    [addFiles]
+  );
+
+  const handlePaste = useCallback(
+    (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        addFiles(files);
+      }
+    },
+    [addFiles]
+  );
+
+  const handleFileChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files?.length) {
+        addFiles(e.target.files);
+        e.target.value = ""; // Reset for re-selection
+      }
+    },
+    [addFiles]
+  );
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       const trimmedValue = inputValue.trim();
-      if (!trimmedValue || isSending || !onSendMessage) return;
+      if ((!trimmedValue && attachments.length === 0) || isSending || !onSendMessage)
+        return;
 
       setIsSending(true);
       try {
-        await onSendMessage(trimmedValue);
+        await onSendMessage(
+          trimmedValue,
+          attachments.length > 0 ? attachments : undefined
+        );
         setInputValue("");
+        setAttachments([]);
       } finally {
         setIsSending(false);
         inputRef.current?.focus();
       }
     },
-    [inputValue, isSending, onSendMessage]
+    [inputValue, attachments, isSending, onSendMessage]
   );
 
   const handleKeyDown = useCallback(
@@ -204,6 +422,9 @@ export function RoundtableChat({
         "flex flex-col bg-slate-900 rounded-lg border border-slate-800",
         className
       )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
@@ -244,8 +465,21 @@ export function RoundtableChat({
       {/* Messages */}
       <ScrollArea
         ref={scrollRef}
-        className="flex-1 min-h-[300px] max-h-[600px] p-4"
+        className={clsx(
+          "flex-1 min-h-[300px] max-h-[600px] p-4 transition-colors",
+          isDragging && "bg-phosphor-500/10"
+        )}
       >
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="absolute inset-4 flex items-center justify-center border-2 border-dashed border-phosphor-500 rounded-lg bg-phosphor-500/5 z-10">
+            <div className="text-center">
+              <Paperclip className="w-8 h-8 text-phosphor-400 mx-auto mb-2" />
+              <p className="text-sm text-phosphor-300">Drop files here</p>
+            </div>
+          </div>
+        )}
+
         {messages.length > 0 ? (
           <div className="flex flex-col gap-4">
             {messages.map((message, index) => (
@@ -278,24 +512,63 @@ export function RoundtableChat({
         </div>
       )}
 
+      {/* Attachments preview */}
+      {attachments.length > 0 && (
+        <div className="flex gap-3 px-4 py-3 border-t border-slate-800 overflow-x-auto">
+          {attachments.map((att) => (
+            <FilePreview
+              key={att.id}
+              attachment={att}
+              onRemove={() => removeAttachment(att.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
         className="flex items-end gap-2 p-4 border-t border-slate-800"
       >
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+          accept="image/*,.pdf,.txt,.md,.json,.csv"
+        />
+
+        {/* Upload button */}
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isSending || !connected}
+          className="h-11 w-11 p-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+        >
+          <Paperclip className="w-5 h-5" />
+        </Button>
+
         <Textarea
           ref={inputRef}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+          onPaste={handlePaste}
+          placeholder="Type a message... (paste images, drag files)"
           className="flex-1 min-h-[44px] max-h-[120px] resize-none bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-500"
           disabled={isSending || !connected}
           rows={1}
         />
         <Button
           type="submit"
-          disabled={!inputValue.trim() || isSending || !connected}
+          disabled={
+            (!inputValue.trim() && attachments.length === 0) ||
+            isSending ||
+            !connected
+          }
           className="h-11 w-11 p-0 bg-phosphor-500 hover:bg-phosphor-600 disabled:opacity-50"
         >
           {isSending ? (
