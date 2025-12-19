@@ -1,14 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { clsx } from "clsx";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon } from "lucide-react";
-
-interface TerminalTab {
-  id: string;
-  label: string;
-}
+import { Plus, X, Terminal as TerminalIcon, Loader2 } from "lucide-react";
+import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 
 interface TerminalTabsProps {
   projectId?: string;
@@ -16,79 +12,93 @@ interface TerminalTabsProps {
   className?: string;
 }
 
-function generateSessionId(): string {
-  return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
 export function TerminalTabs({ projectId, projectPath, className }: TerminalTabsProps) {
-  const [tabs, setTabs] = useState<TerminalTab[]>(() => {
-    const initialId = generateSessionId();
-    return [{ id: initialId, label: "Terminal 1" }];
-  });
-  const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
+  const {
+    sessions,
+    activeId,
+    setActiveId,
+    create,
+    remove,
+    isLoading,
+    isCreating,
+  } = useTerminalSessions(projectId);
 
-  const addTab = useCallback(() => {
-    const newId = generateSessionId();
-    const newLabel = `Terminal ${tabs.length + 1}`;
-    setTabs((prev) => [...prev, { id: newId, label: newLabel }]);
-    setActiveTabId(newId);
-  }, [tabs.length]);
+  // Create new terminal session
+  const handleAddTab = useCallback(async () => {
+    const name = `Terminal ${sessions.length + 1}`;
+    await create(name, projectPath);
+  }, [sessions.length, create, projectPath]);
 
-  const closeTab = useCallback(
-    (tabId: string, e: React.MouseEvent) => {
+  // Close terminal session
+  const handleCloseTab = useCallback(
+    async (sessionId: string, e: React.MouseEvent) => {
       e.stopPropagation();
-
-      // Don't close the last tab
-      if (tabs.length <= 1) return;
-
-      const tabIndex = tabs.findIndex((t) => t.id === tabId);
-      const newTabs = tabs.filter((t) => t.id !== tabId);
-      setTabs(newTabs);
-
-      // If closing the active tab, switch to an adjacent one
-      if (tabId === activeTabId) {
-        const newActiveIndex = Math.min(tabIndex, newTabs.length - 1);
-        setActiveTabId(newTabs[newActiveIndex].id);
-      }
+      // Don't close the last session
+      if (sessions.length <= 1) return;
+      await remove(sessionId);
     },
-    [tabs, activeTabId]
+    [sessions.length, remove]
   );
 
-  const handleTabDisconnect = useCallback((tabId: string) => {
-    // Update tab label to show disconnected state
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tabId
-          ? { ...t, label: t.label.replace(/( \(disconnected\))?$/, " (disconnected)") }
-          : t
-      )
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className={clsx("flex flex-col h-full items-center justify-center", className)}>
+        <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+        <span className="mt-2 text-sm text-slate-500">Loading terminals...</span>
+      </div>
     );
-  }, []);
+  }
+
+  // No sessions - show create button
+  if (sessions.length === 0) {
+    return (
+      <div className={clsx("flex flex-col h-full items-center justify-center", className)}>
+        <TerminalIcon className="w-12 h-12 text-slate-600 mb-4" />
+        <p className="text-slate-400 mb-4">No terminal sessions</p>
+        <button
+          onClick={handleAddTab}
+          disabled={isCreating}
+          className="flex items-center gap-2 px-4 py-2 bg-phosphor-500 hover:bg-phosphor-400 text-slate-900 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {isCreating ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
+          <span>New Terminal</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className={clsx("flex flex-col h-full", className)}>
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto">
-        {tabs.map((tab) => (
+        {sessions.map((session) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
+            key={session.id}
+            onClick={() => setActiveId(session.id)}
             className={clsx(
               "flex items-center gap-2 px-3 py-1.5 text-sm rounded-t-md transition-colors",
               "group min-w-0 flex-shrink-0",
-              tab.id === activeTabId
+              session.id === activeId
                 ? "bg-slate-900 text-white border-t border-l border-r border-slate-700"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
             )}
           >
             <TerminalIcon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate max-w-[120px]">{tab.label}</span>
-            {tabs.length > 1 && (
+            <span className="truncate max-w-[120px]">
+              {session.name}
+              {!session.is_alive && " (dead)"}
+            </span>
+            {sessions.length > 1 && (
               <button
-                onClick={(e) => closeTab(tab.id, e)}
+                onClick={(e) => handleCloseTab(session.id, e)}
                 className={clsx(
                   "p-0.5 rounded hover:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity",
-                  tab.id === activeTabId && "opacity-100"
+                  session.id === activeId && "opacity-100"
                 )}
               >
                 <X className="w-3 h-3" />
@@ -99,28 +109,32 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
         {/* Add new terminal button */}
         <button
-          onClick={addTab}
-          className="flex items-center gap-1 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
+          onClick={handleAddTab}
+          disabled={isCreating}
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors disabled:opacity-50"
         >
-          <Plus className="w-4 h-4" />
+          {isCreating ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
         </button>
       </div>
 
       {/* Terminal panels */}
       <div className="flex-1 relative">
-        {tabs.map((tab) => (
+        {sessions.map((session) => (
           <div
-            key={tab.id}
+            key={session.id}
             className={clsx(
               "absolute inset-0",
-              tab.id === activeTabId ? "z-10 visible" : "z-0 invisible"
+              session.id === activeId ? "z-10 visible" : "z-0 invisible"
             )}
           >
             <TerminalComponent
-              sessionId={projectId ? `${projectId}-${tab.id}` : tab.id}
-              workingDir={projectPath}
+              sessionId={session.id}
+              workingDir={session.working_dir || projectPath}
               className="h-full"
-              onDisconnect={() => handleTabDisconnect(tab.id)}
             />
           </div>
         ))}
