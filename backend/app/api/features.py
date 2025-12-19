@@ -1141,6 +1141,92 @@ async def update_acceptance_criterion_passed(
     }
 
 
+class AcceptanceCriterionCreate(BaseModel):
+    """Request model for creating a new acceptance criterion."""
+
+    id: str  # e.g., "ac-001"
+    description: str  # What needs to be true
+    verification: str | None = None  # How to verify
+    type: str | None = None  # api, ui, db, backend
+
+
+@router.post(
+    "/projects/{project_id}/features/{feature_id}/criteria",
+    response_model=dict[str, Any],
+)
+async def add_acceptance_criterion(
+    project_id: str, feature_id: str, criterion: AcceptanceCriterionCreate
+) -> dict[str, Any]:
+    """Add a new acceptance criterion to a feature.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion: New criterion data
+    """
+    from ..storage import features as feat_store
+
+    try:
+        result = feat_store.add_criterion(
+            project_id,
+            feature_id,
+            {
+                "id": criterion.id,
+                "description": criterion.description,
+                "verification": criterion.verification,
+                "type": criterion.type,
+                "passes": False,
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Feature {feature_id} not found in project {project_id}",
+        )
+
+    return {
+        "status": "created",
+        "project_id": project_id,
+        "feature_id": feature_id,
+        "criterion": result,
+    }
+
+
+@router.delete(
+    "/projects/{project_id}/features/{feature_id}/criteria/{criterion_id}",
+    response_model=dict[str, Any],
+)
+async def delete_acceptance_criterion(
+    project_id: str, feature_id: str, criterion_id: str
+) -> dict[str, Any]:
+    """Delete an acceptance criterion from a feature.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion_id: Criterion ID to delete (e.g., ac-001)
+    """
+    from ..storage import features as feat_store
+
+    deleted = feat_store.delete_criterion(project_id, feature_id, criterion_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Criterion {criterion_id} not found in feature {feature_id}",
+        )
+
+    return {
+        "status": "deleted",
+        "project_id": project_id,
+        "feature_id": feature_id,
+        "criterion_id": criterion_id,
+    }
+
+
 class VisionGoalsUpdate(BaseModel):
     """Request model for updating vision goals."""
 
