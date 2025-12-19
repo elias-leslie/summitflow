@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EvidenceCaptureModal } from "./EvidenceCaptureModal";
+import { EvidenceReviewDialog } from "./EvidenceReviewDialog";
 
 interface EvidenceBrowserProps {
   open: boolean;
@@ -70,6 +71,7 @@ export function EvidenceBrowser({
   const [historyIndex, setHistoryIndex] = useState(0);
   const [lastCapture, setLastCapture] = useState<LastCapture | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Reset state when opened
@@ -394,10 +396,7 @@ export function EvidenceBrowser({
                             <Button
                               variant="primary"
                               size="sm"
-                              onClick={() => {
-                                toast.info("Agent review coming soon!");
-                                // TODO: Task 8.5 - Call agent review endpoint
-                              }}
+                              onClick={() => setReviewDialogOpen(true)}
                               className="gap-1.5"
                             >
                               <Bot className="h-4 w-4" />
@@ -440,6 +439,22 @@ export function EvidenceBrowser({
         pageUrl={currentUrl}
         onCaptured={handleCaptureComplete}
       />
+
+      {/* Evidence Review Dialog */}
+      {lastCapture && (
+        <EvidenceReviewDialog
+          open={reviewDialogOpen}
+          onOpenChange={setReviewDialogOpen}
+          projectId={projectId}
+          evidenceId={`${lastCapture.featureId}-${lastCapture.criterionId}-v${lastCapture.version}`}
+          screenshotUrl={lastCapture.screenshotUrl}
+          featureId={lastCapture.featureId}
+          criterionId={lastCapture.criterionId}
+          onFeaturesCreated={(features) => {
+            toast.success(`Created ${features.length} feature(s)`);
+          }}
+        />
+      )}
     </>
   );
 }
