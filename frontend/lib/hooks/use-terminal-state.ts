@@ -4,8 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY_OPEN = "terminal-open";
 const STORAGE_KEY_WIDTH = "terminal-width";
+const STORAGE_KEY_LAYOUT_MODE = "terminal-layout-mode";
+const STORAGE_KEY_PANE_SIZES = "terminal-pane-sizes";
+const STORAGE_KEY_PANE_SESSIONS = "terminal-pane-sessions";
 
 const DEFAULT_WIDTH = 40; // 40% default width
+
+export type LayoutMode = "single" | "horizontal" | "vertical";
+
+const DEFAULT_LAYOUT_MODE: LayoutMode = "single";
+const DEFAULT_PANE_SIZES = [50, 50]; // Equal split for two panes
 
 /**
  * Hook for managing terminal panel UI state with localStorage persistence.
@@ -38,6 +46,9 @@ export function useTerminalState() {
   // Default to closed on initial render (SSR-safe)
   const [isOpen, setIsOpenState] = useState(false);
   const [width, setWidthState] = useState(DEFAULT_WIDTH);
+  const [layoutMode, setLayoutModeState] = useState<LayoutMode>(DEFAULT_LAYOUT_MODE);
+  const [paneSizes, setPaneSizesState] = useState<number[]>(DEFAULT_PANE_SIZES);
+  const [paneSessions, setPaneSessionsState] = useState<string[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Read from localStorage on mount (client only)
@@ -47,6 +58,9 @@ export function useTerminalState() {
     try {
       const storedOpen = localStorage.getItem(STORAGE_KEY_OPEN);
       const storedWidth = localStorage.getItem(STORAGE_KEY_WIDTH);
+      const storedLayoutMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
+      const storedPaneSizes = localStorage.getItem(STORAGE_KEY_PANE_SIZES);
+      const storedPaneSessions = localStorage.getItem(STORAGE_KEY_PANE_SESSIONS);
 
       if (storedOpen !== null) {
         setIsOpenState(storedOpen === "true");
@@ -58,8 +72,28 @@ export function useTerminalState() {
           setWidthState(parsed);
         }
       }
+
+      if (storedLayoutMode !== null) {
+        if (["single", "horizontal", "vertical"].includes(storedLayoutMode)) {
+          setLayoutModeState(storedLayoutMode as LayoutMode);
+        }
+      }
+
+      if (storedPaneSizes !== null) {
+        const parsed = JSON.parse(storedPaneSizes);
+        if (Array.isArray(parsed) && parsed.every((n) => typeof n === "number")) {
+          setPaneSizesState(parsed);
+        }
+      }
+
+      if (storedPaneSessions !== null) {
+        const parsed = JSON.parse(storedPaneSessions);
+        if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
+          setPaneSessionsState(parsed);
+        }
+      }
     } catch {
-      // localStorage not available
+      // localStorage not available or parse error
     }
 
     setIsInitialized(true);
@@ -90,11 +124,47 @@ export function useTerminalState() {
     setOpen(!isOpen);
   }, [isOpen, setOpen]);
 
+  // Persist layoutMode to localStorage
+  const setLayoutMode = useCallback((mode: LayoutMode) => {
+    setLayoutModeState(mode);
+    try {
+      localStorage.setItem(STORAGE_KEY_LAYOUT_MODE, mode);
+    } catch {
+      // localStorage not available
+    }
+  }, []);
+
+  // Persist paneSizes to localStorage
+  const setPaneSizes = useCallback((sizes: number[]) => {
+    setPaneSizesState(sizes);
+    try {
+      localStorage.setItem(STORAGE_KEY_PANE_SIZES, JSON.stringify(sizes));
+    } catch {
+      // localStorage not available
+    }
+  }, []);
+
+  // Persist paneSessions to localStorage
+  const setPaneSessions = useCallback((sessions: string[]) => {
+    setPaneSessionsState(sessions);
+    try {
+      localStorage.setItem(STORAGE_KEY_PANE_SESSIONS, JSON.stringify(sessions));
+    } catch {
+      // localStorage not available
+    }
+  }, []);
+
   return {
     isOpen,
     width,
+    layoutMode,
+    paneSizes,
+    paneSessions,
     setOpen,
     setWidth,
+    setLayoutMode,
+    setPaneSizes,
+    setPaneSessions,
     toggle,
     /** True once state has been read from localStorage */
     isInitialized,
