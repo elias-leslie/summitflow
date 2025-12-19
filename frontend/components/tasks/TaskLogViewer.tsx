@@ -15,6 +15,7 @@ import {
   WifiOff,
   Pause,
   Play,
+  RefreshCw,
 } from "lucide-react";
 import { updateTaskStatus, startTask, TaskStatus, AgentType } from "@/lib/api";
 
@@ -77,7 +78,7 @@ export function TaskLogViewer({
     }
   }, [projectId, taskId, isUpdating]);
 
-  // Resume the task
+  // Resume the task (for paused status)
   const handleResume = useCallback(async () => {
     if (isUpdating) return;
     setIsUpdating(true);
@@ -92,6 +93,28 @@ export function TaskLogViewer({
       setLog((prev) => prev + "\n[RESUMED] Task resumed by user.\n");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resume task");
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating]);
+
+  // Retry the task (for failed status)
+  const handleRetry = useCallback(async () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+    try {
+      // First reset status to pending, then start
+      await updateTaskStatus(projectId, taskId, "pending");
+      await startTask(projectId, taskId, {
+        agent_type: agentType,
+        model,
+        allow_delegation: allowDelegation,
+      });
+      setStatus("running");
+      setError(null);
+      setLog((prev) => prev + "\n[RETRY] Task retried by user.\n");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to retry task");
     } finally {
       setIsUpdating(false);
     }
@@ -219,6 +242,22 @@ export function TaskLogViewer({
                 <Play className="w-4 h-4" />
               )}
               <span className="ml-1.5 text-xs">Resume</span>
+            </Button>
+          )}
+          {status === "failed" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRetry}
+              disabled={isUpdating}
+              className="h-7 px-2 text-amber-400 hover:text-amber-300 hover:bg-amber-950/30"
+            >
+              {isUpdating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              <span className="ml-1.5 text-xs">Retry</span>
             </Button>
           )}
 

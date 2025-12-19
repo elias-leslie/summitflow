@@ -11,6 +11,7 @@ This module implements the autonomous execution loop for agent tasks, including:
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from .agents import AgentType, get_agent
@@ -717,6 +718,131 @@ def execute_criterion(
         raise RuntimeError(f"Criterion execution failed: {e}") from e
 
 
+# Transient errors that should be retried
+TRANSIENT_ERROR_PATTERNS = [
+    "timeout",
+    "connection",
+    "rate limit",
+    "temporarily unavailable",
+    "503",
+    "429",
+    "overloaded",
+    "capacity",
+    "network",
+    "socket",
+]
+
+
+def is_transient_error(error: Exception) -> bool:
+    """Check if an error is transient and should be retried.
+
+    Args:
+        error: The exception to check
+
+    Returns:
+        True if the error appears transient
+    """
+    error_str = str(error).lower()
+    return any(pattern in error_str for pattern in TRANSIENT_ERROR_PATTERNS)
+
+
+def execute_criterion_with_retry(
+    task: dict[str, Any],
+    criterion: dict[str, Any],
+    feature: dict[str, Any],
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+    max_retries: int = 3,
+    retry_delay: float = 5.0,
+) -> dict[str, Any]:
+    """Execute a criterion with automatic retry on transient failures.
+
+    Args:
+        task: Task dict from database
+        criterion: Criterion dict to execute
+        feature: Feature dict with context
+        agent_type: Which agent to use
+        model: Optional model override
+        max_retries: Maximum number of retry attempts (default 3)
+        retry_delay: Delay between retries in seconds (default 5.0)
+
+    Returns:
+        Dict with execution result, including retry_count and is_transient
+
+    Raises:
+        RuntimeError: If all retry attempts fail
+    """
+    from ..storage import tasks as task_storage
+
+    criterion_id = criterion.get("id", "unknown")
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        try:
+            result = execute_criterion(
+                task=task,
+                criterion=criterion,
+                feature=feature,
+                agent_type=agent_type,
+                model=model,
+            )
+            result["retry_count"] = attempt
+            result["is_transient"] = False
+            return result
+
+        except Exception as e:
+            last_error = e
+            is_transient = is_transient_error(e)
+
+            if attempt < max_retries and is_transient:
+                # Log retry attempt
+                task_storage.append_progress_log(
+                    task["id"],
+                    f"Criterion {criterion_id} failed (transient): {e}. "
+                    f"Retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})",
+                )
+                logger.warning(
+                    f"Transient error for criterion {criterion_id}, "
+                    f"retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(retry_delay)
+                # Exponential backoff for subsequent retries
+                retry_delay = min(retry_delay * 2, 60.0)
+            else:
+                # Non-transient error or max retries reached
+                if not is_transient:
+                    task_storage.append_progress_log(
+                        task["id"],
+                        f"Criterion {criterion_id} failed (non-transient): {e}. No retry.",
+                    )
+                else:
+                    task_storage.append_progress_log(
+                        task["id"],
+                        f"Criterion {criterion_id} failed after {attempt + 1} attempts: {e}",
+                    )
+                # Return failure result instead of raising
+                return {
+                    "response": None,
+                    "criterion_id": criterion_id,
+                    "tokens_used": 0,
+                    "success": False,
+                    "retry_count": attempt,
+                    "is_transient": is_transient,
+                    "error": str(e),
+                }
+
+    # This shouldn't be reached, but just in case
+    return {
+        "response": None,
+        "criterion_id": criterion_id,
+        "tokens_used": 0,
+        "success": False,
+        "retry_count": max_retries,
+        "is_transient": True,
+        "error": str(last_error) if last_error else "Unknown error",
+    }
+
+
 def mark_criterion_passed(
     task: dict[str, Any],
     criterion_id: str,
@@ -806,12 +932,14 @@ def execute_all_criteria(
     delay_seconds: float = 3.0,
     stop_on_failure: bool = True,
     auto_mark_passed: bool = True,
+    max_retries: int = 3,
+    retry_delay: float = 5.0,
 ) -> dict[str, Any]:
     """Execute all unpassed criteria in sequence with auto-continue.
 
     This function implements the autonomous loop:
     1. Get next unpassed criterion
-    2. Execute criterion
+    2. Execute criterion with automatic retry on transient failures
     3. Optionally mark as passed
     4. Wait for delay
     5. Continue to next criterion
@@ -825,6 +953,8 @@ def execute_all_criteria(
         delay_seconds: Delay between criteria (default 3.0)
         stop_on_failure: Stop if a criterion fails (default True)
         auto_mark_passed: Automatically mark criteria as passed (default True)
+        max_retries: Maximum retry attempts per criterion (default 3)
+        retry_delay: Initial delay between retries (default 5.0)
 
     Returns:
         Dict with:
@@ -835,8 +965,6 @@ def execute_all_criteria(
         - stopped_at: Criterion ID where execution stopped (if any)
         - error: Error message if execution failed
     """
-    import time
-
     from ..storage import features as feature_storage
     from ..storage import tasks as task_storage
 
@@ -873,59 +1001,62 @@ def execute_all_criteria(
 
         criterion_id = criterion.get("id", "unknown")
 
-        try:
-            # Execute the criterion
-            execution = execute_criterion(
-                task=task,
-                criterion=criterion,
-                feature=fresh_feature,
-                agent_type=agent_type,
-                model=model,
-            )
+        # Execute the criterion with retry logic
+        execution = execute_criterion_with_retry(
+            task=task,
+            criterion=criterion,
+            feature=fresh_feature,
+            agent_type=agent_type,
+            model=model,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+        )
 
-            result["total_tokens"] += execution.get("tokens_used", 0)
-            result["executions"].append(
-                {
-                    "criterion_id": criterion_id,
-                    "success": execution.get("success", False),
-                    "tokens_used": execution.get("tokens_used", 0),
-                }
-            )
+        result["total_tokens"] += execution.get("tokens_used", 0)
+        result["executions"].append(
+            {
+                "criterion_id": criterion_id,
+                "success": execution.get("success", False),
+                "tokens_used": execution.get("tokens_used", 0),
+                "retry_count": execution.get("retry_count", 0),
+            }
+        )
 
-            if execution.get("success"):
-                result["completed"] += 1
+        if execution.get("success"):
+            result["completed"] += 1
 
-                # Auto-mark as passed if enabled
-                if auto_mark_passed:
-                    mark_criterion_passed(
-                        task=task,
-                        criterion_id=criterion_id,
-                        feature=fresh_feature,
-                    )
+            # Auto-mark as passed if enabled
+            if auto_mark_passed:
+                mark_criterion_passed(
+                    task=task,
+                    criterion_id=criterion_id,
+                    feature=fresh_feature,
+                )
 
-                # Wait before next criterion
-                if delay_seconds > 0:
-                    task_storage.append_progress_log(
-                        task["id"], f"Waiting {delay_seconds}s before next criterion..."
-                    )
-                    time.sleep(delay_seconds)
-            else:
-                result["failed"] += 1
-                result["stopped_at"] = criterion_id
-
-                if stop_on_failure:
-                    task_storage.append_progress_log(
-                        task["id"], f"Stopping: criterion {criterion_id} did not succeed"
-                    )
-                    break
-
-        except Exception as e:
+            # Wait before next criterion
+            if delay_seconds > 0:
+                task_storage.append_progress_log(
+                    task["id"], f"Waiting {delay_seconds}s before next criterion..."
+                )
+                time.sleep(delay_seconds)
+        else:
             result["failed"] += 1
-            result["error"] = str(e)
             result["stopped_at"] = criterion_id
-            task_storage.append_progress_log(task["id"], f"Execution error at {criterion_id}: {e}")
+            result["error"] = execution.get("error", "Unknown error")
+
+            # Update task with error message on persistent failure
+            task_storage.update_task_status(
+                task["id"],
+                "failed",
+                error_message=f"Criterion {criterion_id} failed: {execution.get('error', 'Unknown error')}",
+                validate_transition=False,  # Allow transition even if task is not running
+            )
 
             if stop_on_failure:
+                task_storage.append_progress_log(
+                    task["id"],
+                    f"Stopping: criterion {criterion_id} failed after {execution.get('retry_count', 0) + 1} attempts",
+                )
                 break
 
     # Final progress summary
