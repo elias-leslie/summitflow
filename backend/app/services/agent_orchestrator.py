@@ -1038,3 +1038,129 @@ async def execute_all_criteria_async(
                 break
 
     return result
+
+
+# =========================================================================
+# Commit per Criterion
+# =========================================================================
+
+
+def commit_for_criterion(
+    task: dict[str, Any],
+    criterion: dict[str, Any],
+    feature: dict[str, Any],
+    project_path: str,
+) -> str | None:
+    """Create a git commit after a criterion passes.
+
+    Commit message format: feat({feature}): {criterion} [task-{id}]
+
+    Args:
+        task: Task dict
+        criterion: Criterion dict that was just completed
+        feature: Feature dict
+        project_path: Path to the git repository
+
+    Returns:
+        Commit SHA if created, None if nothing to commit
+    """
+    from ..storage import tasks as task_storage
+    from . import git_service
+
+    criterion_id = criterion.get("id", "unknown")
+    criterion_desc = criterion.get("description", "criterion completed")
+    feature_name = feature.get("name", "feature")
+
+    # Create a slug from the feature name for the commit type
+    feature_slug = git_service.slugify(feature_name, max_length=20)
+
+    # Truncate criterion description for commit message
+    criterion_short = criterion_desc[:50] + "..." if len(criterion_desc) > 50 else criterion_desc
+
+    # Build commit message
+    commit_message = (
+        f"feat({feature_slug}): {criterion_short} [task-{task['id'].replace('task-', '')}]"
+    )
+
+    try:
+        commit_sha = git_service.commit_changes(
+            message=commit_message,
+            project_path=project_path,
+            add_all=True,
+        )
+
+        if commit_sha:
+            # Add commit to task's commits array
+            task_storage.add_commit(task["id"], commit_sha)
+            task_storage.append_progress_log(
+                task["id"], f"Commit created: {commit_sha[:8]} for {criterion_id}"
+            )
+            logger.info(f"Commit created for {criterion_id}: {commit_sha[:8]}")
+            return commit_sha
+        else:
+            task_storage.append_progress_log(task["id"], f"No changes to commit for {criterion_id}")
+            return None
+
+    except Exception as e:
+        task_storage.append_progress_log(
+            task["id"], f"Failed to create commit for {criterion_id}: {e}"
+        )
+        logger.error(f"Commit failed for {criterion_id}: {e}")
+        return None
+
+
+def execute_criterion_with_commit(
+    task: dict[str, Any],
+    criterion: dict[str, Any],
+    feature: dict[str, Any],
+    project_path: str,
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Execute a criterion and create a commit if it passes.
+
+    Combines execute_criterion, mark_criterion_passed, and commit_for_criterion
+    into a single workflow.
+
+    Args:
+        task: Task dict
+        criterion: Criterion dict to execute
+        feature: Feature dict
+        project_path: Path to git repository
+        agent_type: Which agent to use
+        model: Optional model override
+
+    Returns:
+        Dict with execution result plus commit_sha
+    """
+    # Execute the criterion
+    result = execute_criterion(
+        task=task,
+        criterion=criterion,
+        feature=feature,
+        agent_type=agent_type,
+        model=model,
+    )
+
+    # If successful, mark as passed and commit
+    if result.get("success"):
+        criterion_id = criterion.get("id")
+
+        # Mark criterion as passed
+        mark_criterion_passed(
+            task=task,
+            criterion_id=criterion_id,
+            feature=feature,
+        )
+
+        # Create commit
+        commit_sha = commit_for_criterion(
+            task=task,
+            criterion=criterion,
+            feature=feature,
+            project_path=project_path,
+        )
+
+        result["commit_sha"] = commit_sha
+
+    return result
