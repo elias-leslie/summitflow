@@ -21,6 +21,16 @@ import type { Feature } from "@/lib/api";
 
 type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban" | "roundtable" | "terminal";
 
+// Map project IDs to their filesystem paths for terminal working directories
+const PROJECT_PATHS: Record<string, string> = {
+  "summitflow": "/home/kasadis/summitflow",
+  "portfolio-ai": "/home/kasadis/portfolio-ai",
+};
+
+function getProjectPath(projectId: string): string | undefined {
+  return PROJECT_PATHS[projectId];
+}
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -330,14 +340,14 @@ export default function ProjectDetailPage() {
             className="h-[calc(100vh-320px)] min-h-[500px]"
           />
         )}
-        {activeTab === "terminal" && (
-          <div className="h-[calc(100vh-320px)] min-h-[500px]">
-            <TerminalTabs
-              projectId={projectId}
-              className="h-full"
-            />
-          </div>
-        )}
+        {/* Terminal is always mounted but hidden to prevent WebSocket reconnection on tab switch */}
+        <div className={activeTab === "terminal" ? "h-[calc(100vh-280px)] min-h-[600px]" : "hidden"}>
+          <TerminalTabs
+            projectId={projectId}
+            projectPath={getProjectPath(projectId)}
+            className="h-full"
+          />
+        </div>
       </section>
     </div>
   );

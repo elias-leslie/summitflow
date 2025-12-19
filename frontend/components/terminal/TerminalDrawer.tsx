@@ -23,7 +23,7 @@ export function TerminalDrawer({ open, onOpenChange, projectId, projectPath }: T
           </SheetTitle>
           <SheetClose onClose={() => onOpenChange(false)} />
         </SheetHeader>
-        <div className="h-[calc(100%-60px)]">
+        <div className="h-[calc(100vh-80px)]">
           <TerminalTabs
             projectId={projectId}
             projectPath={projectPath}
