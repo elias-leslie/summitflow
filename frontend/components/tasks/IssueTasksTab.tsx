@@ -38,6 +38,7 @@ import {
   type TaskStatus,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { TaskLogViewer } from "./TaskLogViewer";
 
 interface IssueTasksTabProps {
   projectId: string;
@@ -87,12 +88,14 @@ function TaskRow({
   onToggle,
   onStatusChange,
   isUpdating,
+  projectId,
 }: {
   task: Task;
   isExpanded: boolean;
   onToggle: () => void;
   onStatusChange: (status: TaskStatus) => void;
   isUpdating: boolean;
+  projectId: string;
 }) {
   const priority = priorityConfig[task.priority] || priorityConfig[2];
   const status = statusConfig[task.status] || statusConfig.pending;
@@ -255,6 +258,18 @@ function TaskRow({
                   </Button>
                 )}
               </div>
+
+              {/* Task Log Viewer for running/paused tasks */}
+              {(task.status === "running" || task.status === "paused") && (
+                <div className="pt-3 border-t border-slate-700" onClick={(e) => e.stopPropagation()}>
+                  <h4 className="text-xs font-medium text-slate-400 mb-2">Task Logs</h4>
+                  <TaskLogViewer
+                    projectId={projectId}
+                    taskId={task.id}
+                    className="max-h-[400px]"
+                  />
+                </div>
+              )}
             </div>
           </td>
         </tr>
@@ -485,6 +500,7 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
                     onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
                     onStatusChange={(status) => handleStatusChange(task.id, status)}
                     isUpdating={isUpdating}
+                    projectId={projectId}
                   />
                 ))}
               </tbody>
