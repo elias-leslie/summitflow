@@ -494,7 +494,12 @@ def init_schema() -> None:
                     total_tokens_used INTEGER DEFAULT 0,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     started_at TIMESTAMPTZ,
-                    completed_at TIMESTAMPTZ
+                    completed_at TIMESTAMPTZ,
+                    -- Issue tracking fields (beads migration)
+                    priority INTEGER DEFAULT 2,
+                    labels TEXT[] DEFAULT '{}',
+                    task_type VARCHAR(20) DEFAULT 'task',
+                    parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL
                 )
                 """
             )
@@ -502,6 +507,27 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(task_type)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)")
+
+            # ============================================================
+            # Task Dependencies - Dependency tracking between tasks
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_dependencies (
+                    id SERIAL PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    dependency_type VARCHAR(20) NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(task_id, depends_on_task_id, dependency_type)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)")
 
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
@@ -555,6 +581,11 @@ def init_schema() -> None:
                 ("backend_dir TEXT", "projects"),
                 ("browser_scripts_dir TEXT", "projects"),
                 ("data_dir TEXT", "projects"),
+                # Issue tracking fields for tasks (beads migration)
+                ("priority INTEGER DEFAULT 2", "tasks"),
+                ("labels TEXT[] DEFAULT '{}'", "tasks"),
+                ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
+                ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
             ]:
                 try:
                     col_name = column.split()[0]

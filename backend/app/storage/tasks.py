@@ -25,6 +25,10 @@ def create_task(
     feature_id: int | None = None,
     description: str | None = None,
     task_id: str | None = None,
+    priority: int = 2,
+    labels: list[str] | None = None,
+    task_type: str = "task",
+    parent_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -34,24 +38,33 @@ def create_task(
         feature_id: Optional feature database ID to link to
         description: Optional task description
         task_id: Optional custom task ID (auto-generated if not provided)
+        priority: Priority 0-4 (0=critical, 4=backlog), default 2
+        labels: List of labels (complexity:small, domains:backend, etc.)
+        task_type: Type: 'task', 'bug', 'chore'
+        parent_task_id: Parent task ID for subtasks
 
     Returns:
         The created task dict with all columns.
     """
     if task_id is None:
         task_id = _generate_task_id()
+    if labels is None:
+        labels = []
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO tasks (id, project_id, feature_id, title, description)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO tasks (id, project_id, feature_id, title, description,
+                               priority, labels, task_type, parent_task_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, feature_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
                       error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at
+                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                      priority, labels, task_type, parent_task_id
             """,
-            (task_id, project_id, feature_id, title, description),
+            (task_id, project_id, feature_id, title, description,
+             priority, labels, task_type, parent_task_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -71,7 +84,8 @@ def get_task(task_id: str) -> dict[str, Any] | None:
             SELECT id, project_id, feature_id, title, description, status,
                    current_criterion_id, spec_content, plan_content, progress_log,
                    error_message, branch_name, commits, pull_request_url,
-                   total_sessions, total_tokens_used, created_at, started_at, completed_at
+                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                   priority, labels, task_type, parent_task_id
             FROM tasks
             WHERE id = %s
             """,
@@ -116,6 +130,11 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "total_tokens_used",
         "started_at",
         "completed_at",
+        # Issue tracking fields
+        "priority",
+        "labels",
+        "task_type",
+        "parent_task_id",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -125,7 +144,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     set_clauses = []
     params = []
     for field, value in fields.items():
-        if field == "commits" and isinstance(value, list):
+        if field in ("commits", "labels") and isinstance(value, list):
             set_clauses.append(f"{field} = %s")
             params.append(value)
         elif field == "plan_content" and isinstance(value, dict):
@@ -146,7 +165,8 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
             RETURNING id, project_id, feature_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
                       error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at
+                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                      priority, labels, task_type, parent_task_id
             """,
             tuple(params),
         )
@@ -178,6 +198,9 @@ def delete_task(task_id: str) -> bool:
 def list_tasks(
     project_id: str,
     status_filter: str | None = None,
+    task_type_filter: str | None = None,
+    priority_filter: int | None = None,
+    labels_filter: list[str] | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -186,41 +209,49 @@ def list_tasks(
     Args:
         project_id: Project ID
         status_filter: Optional status filter (pending, running, paused, failed, completed)
+        task_type_filter: Optional type filter (task, bug, chore)
+        priority_filter: Optional priority filter (0-4)
+        labels_filter: Optional labels filter (task must have ALL specified labels)
         limit: Max results (default 50)
         offset: Result offset
 
     Returns:
         List of task dicts.
     """
+    conditions = ["project_id = %s"]
+    params: list[Any] = [project_id]
+
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    if task_type_filter:
+        conditions.append("task_type = %s")
+        params.append(task_type_filter)
+    if priority_filter is not None:
+        conditions.append("priority = %s")
+        params.append(priority_filter)
+    if labels_filter:
+        # Task must contain all specified labels
+        conditions.append("labels @> %s")
+        params.append(labels_filter)
+
+    params.extend([limit, offset])
+
     with get_connection() as conn, conn.cursor() as cur:
-        if status_filter:
-            cur.execute(
-                """
-                SELECT id, project_id, feature_id, title, description, status,
-                       current_criterion_id, spec_content, plan_content, progress_log,
-                       error_message, branch_name, commits, pull_request_url,
-                       total_sessions, total_tokens_used, created_at, started_at, completed_at
-                FROM tasks
-                WHERE project_id = %s AND status = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (project_id, status_filter, limit, offset),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, project_id, feature_id, title, description, status,
-                       current_criterion_id, spec_content, plan_content, progress_log,
-                       error_message, branch_name, commits, pull_request_url,
-                       total_sessions, total_tokens_used, created_at, started_at, completed_at
-                FROM tasks
-                WHERE project_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (project_id, limit, offset),
-            )
+        cur.execute(
+            f"""
+            SELECT id, project_id, feature_id, title, description, status,
+                   current_criterion_id, spec_content, plan_content, progress_log,
+                   error_message, branch_name, commits, pull_request_url,
+                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                   priority, labels, task_type, parent_task_id
+            FROM tasks
+            WHERE {" AND ".join(conditions)}
+            ORDER BY priority ASC, created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        )
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
@@ -241,7 +272,8 @@ def get_tasks_by_feature(feature_id: int) -> list[dict[str, Any]]:
             SELECT id, project_id, feature_id, title, description, status,
                    current_criterion_id, spec_content, plan_content, progress_log,
                    error_message, branch_name, commits, pull_request_url,
-                   total_sessions, total_tokens_used, created_at, started_at, completed_at
+                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                   priority, labels, task_type, parent_task_id
             FROM tasks
             WHERE feature_id = %s
             ORDER BY created_at DESC
@@ -322,7 +354,8 @@ def update_task_status(
                 RETURNING id, project_id, feature_id, title, description, status,
                           current_criterion_id, spec_content, plan_content, progress_log,
                           error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at
+                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                          priority, labels, task_type, parent_task_id
                 """,
                 (status, task_id),
             )
@@ -335,7 +368,8 @@ def update_task_status(
                 RETURNING id, project_id, feature_id, title, description, status,
                           current_criterion_id, spec_content, plan_content, progress_log,
                           error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at
+                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                          priority, labels, task_type, parent_task_id
                 """,
                 (status, error_message, task_id),
             )
@@ -348,7 +382,8 @@ def update_task_status(
                 RETURNING id, project_id, feature_id, title, description, status,
                           current_criterion_id, spec_content, plan_content, progress_log,
                           error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at
+                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                          priority, labels, task_type, parent_task_id
                 """,
                 (status, task_id),
             )
@@ -383,7 +418,8 @@ def append_progress_log(task_id: str, entry: str) -> dict[str, Any] | None:
             RETURNING id, project_id, feature_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
                       error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at
+                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                      priority, labels, task_type, parent_task_id
             """,
             (log_entry, task_id),
         )
@@ -414,7 +450,8 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
             RETURNING id, project_id, feature_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
                       error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at
+                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
+                      priority, labels, task_type, parent_task_id
             """,
             (commit_sha, task_id),
         )
@@ -448,4 +485,90 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "created_at": row[16],
         "started_at": row[17],
         "completed_at": row[18],
+        # Issue tracking fields
+        "priority": row[19],
+        "labels": row[20] or [],
+        "task_type": row[21],
+        "parent_task_id": row[22],
     }
+
+
+def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """List tasks that are not blocked by dependencies.
+
+    A task is "ready" if:
+    - Status is 'pending' (not started)
+    - Has no incomplete blocking dependencies
+
+    Args:
+        project_id: Project ID
+        limit: Max results (default 50)
+
+    Returns:
+        List of ready task dicts, ordered by priority then creation date.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.id, t.project_id, t.feature_id, t.title, t.description, t.status,
+                   t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+                   t.error_message, t.branch_name, t.commits, t.pull_request_url,
+                   t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+                   t.priority, t.labels, t.task_type, t.parent_task_id
+            FROM tasks t
+            WHERE t.project_id = %s
+              AND t.status = 'pending'
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_dependencies d
+                  JOIN tasks blocker ON d.depends_on_task_id = blocker.id
+                  WHERE d.task_id = t.id
+                    AND d.dependency_type = 'blocks'
+                    AND blocker.status NOT IN ('completed')
+              )
+            ORDER BY t.priority ASC, t.created_at ASC
+            LIMIT %s
+            """,
+            (project_id, limit),
+        )
+        rows = cur.fetchall()
+
+    return [_row_to_dict(row) for row in rows]
+
+
+def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """List tasks that are blocked by incomplete dependencies.
+
+    Args:
+        project_id: Project ID
+        limit: Max results (default 50)
+
+    Returns:
+        List of blocked task dicts with blocking_tasks field added.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get blocked tasks
+        cur.execute(
+            """
+            SELECT DISTINCT t.id, t.project_id, t.feature_id, t.title, t.description, t.status,
+                   t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+                   t.error_message, t.branch_name, t.commits, t.pull_request_url,
+                   t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+                   t.priority, t.labels, t.task_type, t.parent_task_id
+            FROM tasks t
+            WHERE t.project_id = %s
+              AND t.status = 'pending'
+              AND EXISTS (
+                  SELECT 1 FROM task_dependencies d
+                  JOIN tasks blocker ON d.depends_on_task_id = blocker.id
+                  WHERE d.task_id = t.id
+                    AND d.dependency_type = 'blocks'
+                    AND blocker.status NOT IN ('completed')
+              )
+            ORDER BY t.priority ASC, t.created_at ASC
+            LIMIT %s
+            """,
+            (project_id, limit),
+        )
+        rows = cur.fetchall()
+
+    return [_row_to_dict(row) for row in rows]

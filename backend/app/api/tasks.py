@@ -16,13 +16,14 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..logging_config import get_logger
+from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
 
 logger = get_logger(__name__)
@@ -37,6 +38,11 @@ class TaskCreate(BaseModel):
     title: str
     description: str | None = None
     feature_id: int | None = None  # Database ID of feature (optional)
+    # Issue tracking fields
+    priority: int = Field(default=2, ge=0, le=4, description="Priority 0-4 (0=critical, 4=backlog)")
+    labels: list[str] = Field(default_factory=list, description="Labels (complexity:small, domains:backend)")
+    task_type: Literal["task", "bug", "chore"] = "task"
+    parent_task_id: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -46,6 +52,11 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     branch_name: str | None = None
     pull_request_url: str | None = None
+    # Issue tracking fields
+    priority: int | None = Field(default=None, ge=0, le=4)
+    labels: list[str] | None = None
+    task_type: Literal["task", "bug", "chore"] | None = None
+    parent_task_id: str | None = None
 
 
 class TaskStatusUpdate(BaseModel):
@@ -59,6 +70,25 @@ class TaskLogEntry(BaseModel):
     """Request model for appending to progress log."""
 
     entry: str
+
+
+class DependencyCreate(BaseModel):
+    """Request model for creating a dependency."""
+
+    depends_on_task_id: str
+    dependency_type: Literal["blocks", "discovered-from"] = "blocks"
+
+
+class DependencyResponse(BaseModel):
+    """Response model for a dependency."""
+
+    id: int
+    task_id: str
+    depends_on_task_id: str
+    dependency_type: str
+    created_at: str | None
+    depends_on_title: str | None = None
+    depends_on_status: str | None = None
 
 
 class TaskResponse(BaseModel):
@@ -83,6 +113,11 @@ class TaskResponse(BaseModel):
     created_at: str | None
     started_at: str | None
     completed_at: str | None
+    # Issue tracking fields
+    priority: int
+    labels: list[str]
+    task_type: str
+    parent_task_id: str | None
 
 
 class TaskListResponse(BaseModel):
@@ -114,6 +149,11 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         created_at=task["created_at"].isoformat() if task["created_at"] else None,
         started_at=task["started_at"].isoformat() if task["started_at"] else None,
         completed_at=task["completed_at"].isoformat() if task["completed_at"] else None,
+        # Issue tracking fields
+        priority=task.get("priority", 2),
+        labels=task.get("labels") or [],
+        task_type=task.get("task_type", "task"),
+        parent_task_id=task.get("parent_task_id"),
     )
 
 
@@ -122,6 +162,9 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
 async def list_tasks(
     project_id: str,
     status: str | None = Query(None, description="Filter by status"),
+    task_type: str | None = Query(None, alias="type", description="Filter by type (task, bug, chore)"),
+    priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
+    labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ) -> TaskListResponse:
@@ -129,13 +172,58 @@ async def list_tasks(
 
     Query params:
         - status: Filter by status (pending, running, paused, failed, completed)
+        - type: Filter by task type (task, bug, chore)
+        - priority: Filter by priority (0-4)
+        - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
-    tasks = task_store.list_tasks(project_id, status_filter=status, limit=limit, offset=offset)
+    labels_list = labels.split(",") if labels else None
+    tasks = task_store.list_tasks(
+        project_id,
+        status_filter=status,
+        task_type_filter=task_type,
+        priority_filter=priority,
+        labels_filter=labels_list,
+        limit=limit,
+        offset=offset,
+    )
     return TaskListResponse(
         tasks=[_task_to_response(t) for t in tasks],
         total=len(tasks),  # TODO: Add proper total count
+    )
+
+
+@router.get("/projects/{project_id}/tasks/ready", response_model=TaskListResponse)
+async def list_ready_tasks(
+    project_id: str,
+    limit: int = Query(50, ge=1, le=500, description="Results per page"),
+) -> TaskListResponse:
+    """List tasks that are ready to work on (not blocked by dependencies).
+
+    Returns pending tasks with no incomplete blocking dependencies,
+    ordered by priority then creation date.
+    """
+    tasks = task_store.list_ready_tasks(project_id, limit=limit)
+    return TaskListResponse(
+        tasks=[_task_to_response(t) for t in tasks],
+        total=len(tasks),
+    )
+
+
+@router.get("/projects/{project_id}/tasks/blocked", response_model=TaskListResponse)
+async def list_blocked_tasks(
+    project_id: str,
+    limit: int = Query(50, ge=1, le=500, description="Results per page"),
+) -> TaskListResponse:
+    """List tasks that are blocked by incomplete dependencies.
+
+    Returns pending tasks that have unresolved blocking dependencies.
+    """
+    tasks = task_store.list_blocked_tasks(project_id, limit=limit)
+    return TaskListResponse(
+        tasks=[_task_to_response(t) for t in tasks],
+        total=len(tasks),
     )
 
 
@@ -145,13 +233,17 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
 
     Args:
         project_id: Project ID
-        task: Task data (title, description, optional feature_id)
+        task: Task data (title, description, priority, labels, task_type, etc.)
     """
     created = task_store.create_task(
         project_id=project_id,
         title=task.title,
         description=task.description,
         feature_id=task.feature_id,
+        priority=task.priority,
+        labels=task.labels,
+        task_type=task.task_type,
+        parent_task_id=task.parent_task_id,
     )
     return _task_to_response(created)
 
@@ -202,6 +294,15 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
         update_fields["branch_name"] = update.branch_name
     if update.pull_request_url is not None:
         update_fields["pull_request_url"] = update.pull_request_url
+    # Issue tracking fields
+    if update.priority is not None:
+        update_fields["priority"] = update.priority
+    if update.labels is not None:
+        update_fields["labels"] = update.labels
+    if update.task_type is not None:
+        update_fields["task_type"] = update.task_type
+    if update.parent_task_id is not None:
+        update_fields["parent_task_id"] = update.parent_task_id
 
     if not update_fields:
         return _task_to_response(existing)
@@ -496,4 +597,131 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
         "task_id": task_id,
         "celery_task_id": celery_task.id,
         "agent_type": request.agent_type,
+    }
+
+
+# Dependency endpoints
+@router.get("/projects/{project_id}/tasks/{task_id}/dependencies", response_model=list[DependencyResponse])
+async def get_task_dependencies(project_id: str, task_id: str) -> list[DependencyResponse]:
+    """Get dependencies for a task (what this task depends on).
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        List of dependencies with details about the blocking tasks.
+    """
+    # Verify task exists and belongs to project
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+
+    deps = dep_store.get_dependencies(task_id)
+    return [
+        DependencyResponse(
+            id=d["id"],
+            task_id=d["task_id"],
+            depends_on_task_id=d["depends_on_task_id"],
+            dependency_type=d["dependency_type"],
+            created_at=d["created_at"].isoformat() if d["created_at"] else None,
+            depends_on_title=d.get("depends_on_title"),
+            depends_on_status=d.get("depends_on_status"),
+        )
+        for d in deps
+    ]
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/dependencies", response_model=DependencyResponse)
+async def add_task_dependency(
+    project_id: str, task_id: str, dep: DependencyCreate
+) -> DependencyResponse:
+    """Add a dependency to a task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID (the task that depends on another)
+        dep: Dependency details (depends_on_task_id, dependency_type)
+
+    Returns:
+        The created dependency.
+    """
+    # Verify task exists and belongs to project
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+
+    # Verify target task exists
+    target = task_store.get_task(dep.depends_on_task_id)
+    if not target:
+        raise HTTPException(
+            status_code=404, detail=f"Target task {dep.depends_on_task_id} not found"
+        )
+
+    try:
+        created = dep_store.add_dependency(
+            task_id=task_id,
+            depends_on_task_id=dep.depends_on_task_id,
+            dependency_type=dep.dependency_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if not created:
+        raise HTTPException(status_code=400, detail="Failed to create dependency")
+
+    return DependencyResponse(
+        id=created["id"],
+        task_id=created["task_id"],
+        depends_on_task_id=created["depends_on_task_id"],
+        dependency_type=created["dependency_type"],
+        created_at=created["created_at"].isoformat() if created["created_at"] else None,
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/tasks/{task_id}/dependencies/{depends_on_task_id}",
+    response_model=dict[str, Any],
+)
+async def remove_task_dependency(
+    project_id: str,
+    task_id: str,
+    depends_on_task_id: str,
+    dependency_type: str | None = Query(None, description="Type to remove (all if not specified)"),
+) -> dict[str, Any]:
+    """Remove a dependency from a task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        depends_on_task_id: ID of the task being depended on
+        dependency_type: Optional type filter (removes all types if not specified)
+
+    Returns:
+        Status dict.
+    """
+    # Verify task exists and belongs to project
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+
+    removed = dep_store.remove_dependency(task_id, depends_on_task_id, dependency_type)
+
+    return {
+        "status": "removed" if removed else "not_found",
+        "task_id": task_id,
+        "depends_on_task_id": depends_on_task_id,
+        "dependency_type": dependency_type,
     }

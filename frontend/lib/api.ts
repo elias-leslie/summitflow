@@ -539,6 +539,7 @@ export async function closeBead(
 // ============================================================================
 
 export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+export type TaskType = "task" | "bug" | "chore";
 
 export interface Task {
   id: string;
@@ -560,11 +561,26 @@ export interface Task {
   created_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  // Issue tracking fields
+  priority: number;
+  labels: string[];
+  task_type: TaskType;
+  parent_task_id: string | null;
 }
 
 export interface TaskListResponse {
   tasks: Task[];
   total: number;
+}
+
+export interface TaskDependency {
+  id: number;
+  task_id: string;
+  depends_on_task_id: string;
+  dependency_type: string;
+  created_at: string | null;
+  depends_on_title?: string;
+  depends_on_status?: string;
 }
 
 // ============================================================================
@@ -577,6 +593,10 @@ export async function createTask(
     title: string;
     description?: string;
     feature_id?: number;
+    priority?: number;
+    labels?: string[];
+    task_type?: TaskType;
+    parent_task_id?: string;
   }
 ): Promise<Task> {
   const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`, {
@@ -593,10 +613,20 @@ export async function createTask(
 
 export async function fetchTasks(
   projectId: string,
-  options: { status?: TaskStatus; limit?: number; offset?: number } = {}
+  options: {
+    status?: TaskStatus;
+    type?: TaskType;
+    priority?: number;
+    labels?: string;
+    limit?: number;
+    offset?: number;
+  } = {}
 ): Promise<TaskListResponse> {
   const params = new URLSearchParams();
   if (options.status) params.append("status", options.status);
+  if (options.type) params.append("type", options.type);
+  if (options.priority !== undefined) params.append("priority", options.priority.toString());
+  if (options.labels) params.append("labels", options.labels);
   if (options.limit) params.append("limit", options.limit.toString());
   if (options.offset) params.append("offset", options.offset.toString());
 
@@ -606,6 +636,75 @@ export async function fetchTasks(
   );
   if (!res.ok) throw new Error("Failed to fetch tasks");
   return res.json();
+}
+
+export async function fetchReadyTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/ready?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch ready tasks");
+  return res.json();
+}
+
+export async function fetchBlockedTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/blocked?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch blocked tasks");
+  return res.json();
+}
+
+export async function updateTask(
+  projectId: string,
+  taskId: string,
+  updates: {
+    title?: string;
+    description?: string;
+    priority?: number;
+    labels?: string[];
+    task_type?: TaskType;
+    parent_task_id?: string;
+  }
+): Promise<Task> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to update task");
+  }
+  return res.json();
+}
+
+export async function fetchTaskDependencies(projectId: string, taskId: string): Promise<TaskDependency[]> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies`);
+  if (!res.ok) throw new Error("Failed to fetch dependencies");
+  return res.json();
+}
+
+export async function addTaskDependency(
+  projectId: string,
+  taskId: string,
+  dependsOnTaskId: string,
+  dependencyType: "blocks" | "discovered-from" = "blocks"
+): Promise<TaskDependency> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ depends_on_task_id: dependsOnTaskId, dependency_type: dependencyType }),
+  });
+  if (!res.ok) throw new Error("Failed to add dependency");
+  return res.json();
+}
+
+export async function removeTaskDependency(
+  projectId: string,
+  taskId: string,
+  dependsOnTaskId: string
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies/${dependsOnTaskId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error("Failed to remove dependency");
 }
 
 export async function fetchTask(projectId: string, taskId: string): Promise<Task> {

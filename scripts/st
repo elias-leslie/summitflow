@@ -1,0 +1,786 @@
+#!/bin/bash
+# st - SummitFlow Tasks CLI
+# Issue tracking for all projects via SummitFlow Tasks API
+
+set -e
+
+API_BASE="${ST_API_BASE:-http://localhost:8001/api}"
+PROJECT_ID="${ST_PROJECT_ID:-summitflow}"
+
+# Color output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Help text
+show_help() {
+    cat << 'EOF'
+st - SummitFlow Tasks CLI
+
+USAGE:
+    st <command> [options]
+
+COMMANDS:
+    create <title>     Create a new task
+    list               List tasks
+    ready              List ready (unblocked) tasks
+    blocked            List blocked tasks
+    show <id>          Show task details
+    update <id>        Update task fields
+    close <id>         Close/complete a task
+    dep add            Add dependency
+    dep list           List dependencies
+    dep rm             Remove dependency
+
+ENVIRONMENT:
+    ST_PROJECT_ID      Project ID (default: summitflow)
+    ST_API_BASE        API base URL (default: http://localhost:8001/api)
+
+EXAMPLES:
+    st create "Fix: login bug" -t bug -p 1 -l "complexity:small,domains:backend"
+    st list --status pending --type bug
+    st ready
+    st update task-123 --status running
+    st close task-123 --reason "Fixed in commit abc"
+    st dep add task-456 task-123 --type blocks
+
+See 'st <command> --help' for command-specific help.
+EOF
+}
+
+# Create task
+cmd_create() {
+    local title=""
+    local description=""
+    local priority=2
+    local labels=""
+    local task_type="task"
+    local parent_id=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--description)
+                description="$2"
+                shift 2
+                ;;
+            -p|--priority)
+                priority="$2"
+                shift 2
+                ;;
+            -l|--labels)
+                labels="$2"
+                shift 2
+                ;;
+            -t|--type)
+                task_type="$2"
+                shift 2
+                ;;
+            --parent)
+                parent_id="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st create - Create a new task
+
+USAGE:
+    st create <title> [options]
+
+OPTIONS:
+    -d, --description <text>   Task description
+    -p, --priority <0-4>       Priority (0=critical, 2=medium default, 4=backlog)
+    -l, --labels <labels>      Comma-separated labels (complexity:small,domains:backend)
+    -t, --type <type>          Task type: task, bug, chore (default: task)
+    --parent <task-id>         Parent task ID for subtasks
+    --json                     Output as JSON
+EOF
+                return 0
+                ;;
+            -*)
+                echo -e "${RED}Unknown option: $1${NC}" >&2
+                return 1
+                ;;
+            *)
+                if [[ -z "$title" ]]; then
+                    title="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$title" ]]; then
+        echo -e "${RED}Error: Title is required${NC}" >&2
+        return 1
+    fi
+
+    # Build JSON payload
+    local json_data
+    json_data=$(jq -n \
+        --arg title "$title" \
+        --arg description "$description" \
+        --argjson priority "$priority" \
+        --arg task_type "$task_type" \
+        --arg parent_id "$parent_id" \
+        --arg labels "$labels" \
+        '{
+            title: $title,
+            priority: $priority,
+            task_type: $task_type
+        }
+        + (if $description != "" then {description: $description} else {} end)
+        + (if $parent_id != "" then {parent_task_id: $parent_id} else {} end)
+        + (if $labels != "" then {labels: ($labels | split(","))} else {labels: []} end)
+        ')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tasks" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local task_id title priority task_type
+        task_id=$(echo "$response" | jq -r '.id')
+        title=$(echo "$response" | jq -r '.title')
+        priority=$(echo "$response" | jq -r '.priority')
+        task_type=$(echo "$response" | jq -r '.task_type')
+        labels=$(echo "$response" | jq -r '.labels | join(",")')
+
+        echo -e "${GREEN}Created task:${NC} $task_id"
+        echo -e "  Title:    $title"
+        echo -e "  Type:     $task_type"
+        echo -e "  Priority: P$priority"
+        [[ -n "$labels" ]] && echo -e "  Labels:   $labels"
+    fi
+}
+
+# List tasks
+cmd_list() {
+    local status=""
+    local task_type=""
+    local priority=""
+    local labels=""
+    local limit=50
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -s|--status)
+                status="$2"
+                shift 2
+                ;;
+            -t|--type)
+                task_type="$2"
+                shift 2
+                ;;
+            -p|--priority)
+                priority="$2"
+                shift 2
+                ;;
+            -l|--labels)
+                labels="$2"
+                shift 2
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --ready)
+                cmd_ready "$@"
+                return
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st list - List tasks
+
+USAGE:
+    st list [options]
+
+OPTIONS:
+    -s, --status <status>      Filter by status (pending, running, completed, failed)
+    -t, --type <type>          Filter by type (task, bug, chore)
+    -p, --priority <0-4>       Filter by priority
+    -l, --labels <labels>      Filter by labels
+    --limit <n>                Max results (default: 50)
+    --ready                    Show only ready (unblocked) tasks
+    --json                     Output as JSON
+EOF
+                return 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Build query string
+    local query="limit=$limit"
+    [[ -n "$status" ]] && query="$query&status=$status"
+    [[ -n "$task_type" ]] && query="$query&type=$task_type"
+    [[ -n "$priority" ]] && query="$query&priority=$priority"
+    [[ -n "$labels" ]] && query="$query&labels=$labels"
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tasks?$query")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq '.tasks | length')
+        echo -e "${BLUE}Tasks ($count):${NC}\n"
+
+        echo "$response" | jq -r '.tasks[] |
+            "\(.id) [\(.status)] P\(.priority) [\(.task_type)] \(.title)"
+            + (if .labels | length > 0 then "\n      Labels: " + (.labels | join(", ")) else "" end)' | \
+        while IFS= read -r line; do
+            # Color status
+            if [[ "$line" =~ \[pending\] ]]; then
+                echo -e "${YELLOW}$line${NC}"
+            elif [[ "$line" =~ \[running\] ]]; then
+                echo -e "${BLUE}$line${NC}"
+            elif [[ "$line" =~ \[completed\] ]]; then
+                echo -e "${GREEN}$line${NC}"
+            elif [[ "$line" =~ \[failed\] ]]; then
+                echo -e "${RED}$line${NC}"
+            else
+                echo "$line"
+            fi
+        done
+    fi
+}
+
+# Ready tasks (unblocked)
+cmd_ready() {
+    local limit=50
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                echo "st ready - List ready (unblocked) tasks"
+                echo ""
+                echo "USAGE: st ready [--limit n] [--json]"
+                return 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tasks/ready?limit=$limit")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq '.tasks | length')
+        echo -e "${GREEN}Ready tasks ($count):${NC}\n"
+
+        echo "$response" | jq -r '.tasks[] |
+            "\(.id) P\(.priority) [\(.task_type)] \(.title)"
+            + (if .labels | length > 0 then "\n      Labels: " + (.labels | join(", ")) else "" end)'
+    fi
+}
+
+# Blocked tasks
+cmd_blocked() {
+    local limit=50
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tasks/blocked?limit=$limit")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq '.tasks | length')
+        echo -e "${RED}Blocked tasks ($count):${NC}\n"
+
+        echo "$response" | jq -r '.tasks[] |
+            "\(.id) P\(.priority) [\(.task_type)] \(.title)"'
+    fi
+}
+
+# Show task details
+cmd_show() {
+    local task_id="$1"
+    shift || true
+
+    if [[ -z "$task_id" ]]; then
+        echo -e "${RED}Error: Task ID required${NC}" >&2
+        return 1
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}")
+
+    # Check for error
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Task: $(echo "$response" | jq -r '.id')${NC}"
+        echo "$response" | jq -r '"
+Title:       \(.title)
+Type:        \(.task_type)
+Status:      \(.status)
+Priority:    P\(.priority)
+Labels:      \(.labels | join(", "))
+Parent:      \(.parent_task_id // "none")
+Created:     \(.created_at)
+Description: \(.description // "(none)")
+"'
+    fi
+}
+
+# Update task
+cmd_update() {
+    local task_id="$1"
+    shift || true
+
+    if [[ -z "$task_id" ]]; then
+        echo -e "${RED}Error: Task ID required${NC}" >&2
+        return 1
+    fi
+
+    local status=""
+    local priority=""
+    local labels=""
+    local task_type=""
+    local title=""
+    local description=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -s|--status)
+                status="$2"
+                shift 2
+                ;;
+            -p|--priority)
+                priority="$2"
+                shift 2
+                ;;
+            -l|--labels)
+                labels="$2"
+                shift 2
+                ;;
+            -t|--type)
+                task_type="$2"
+                shift 2
+                ;;
+            --title)
+                title="$2"
+                shift 2
+                ;;
+            -d|--description)
+                description="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st update - Update task fields
+
+USAGE:
+    st update <task-id> [options]
+
+OPTIONS:
+    -s, --status <status>      New status (pending, running, paused, completed, failed)
+    -p, --priority <0-4>       New priority
+    -l, --labels <labels>      New labels (comma-separated)
+    -t, --type <type>          New type (task, bug, chore)
+    --title <title>            New title
+    -d, --description <text>   New description
+    --json                     Output as JSON
+EOF
+                return 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Handle status updates via /status endpoint
+    if [[ -n "$status" ]]; then
+        local json_data
+        json_data=$(jq -n --arg status "$status" '{status: $status}')
+
+        local response
+        response=$(curl -s -X PATCH "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/status" \
+            -H "Content-Type: application/json" \
+            -d "$json_data")
+
+        if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+            echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+            return 1
+        fi
+
+        if [[ -n "${JSON_OUTPUT:-}" ]]; then
+            echo "$response" | jq '.'
+        else
+            echo -e "${GREEN}Updated task $task_id status to: $status${NC}"
+        fi
+        return
+    fi
+
+    # Build update payload for other fields
+    local json_data="{}"
+    [[ -n "$priority" ]] && json_data=$(echo "$json_data" | jq --argjson p "$priority" '. + {priority: $p}')
+    [[ -n "$labels" ]] && json_data=$(echo "$json_data" | jq --arg l "$labels" '. + {labels: ($l | split(","))}')
+    [[ -n "$task_type" ]] && json_data=$(echo "$json_data" | jq --arg t "$task_type" '. + {task_type: $t}')
+    [[ -n "$title" ]] && json_data=$(echo "$json_data" | jq --arg t "$title" '. + {title: $t}')
+    [[ -n "$description" ]] && json_data=$(echo "$json_data" | jq --arg d "$description" '. + {description: $d}')
+
+    if [[ "$json_data" == "{}" ]]; then
+        echo -e "${YELLOW}No updates specified${NC}"
+        return 0
+    fi
+
+    local response
+    response=$(curl -s -X PATCH "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${GREEN}Updated task: $task_id${NC}"
+    fi
+}
+
+# Close task
+cmd_close() {
+    local task_id="$1"
+    shift || true
+
+    if [[ -z "$task_id" ]]; then
+        echo -e "${RED}Error: Task ID required${NC}" >&2
+        return 1
+    fi
+
+    local reason=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -r|--reason)
+                reason="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local json_data
+    json_data=$(jq -n '{status: "completed"}')
+
+    local response
+    response=$(curl -s -X PATCH "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/status" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    # Add reason to description if provided
+    if [[ -n "$reason" ]]; then
+        local current_desc
+        current_desc=$(echo "$response" | jq -r '.description // ""')
+        local new_desc="$current_desc
+
+Closed: $reason"
+
+        curl -s -X PATCH "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg d "$new_desc" '{description: $d}')" > /dev/null
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${GREEN}Closed task: $task_id${NC}"
+        [[ -n "$reason" ]] && echo -e "  Reason: $reason"
+    fi
+}
+
+# Dependency commands
+cmd_dep() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        add)
+            cmd_dep_add "$@"
+            ;;
+        list|ls)
+            cmd_dep_list "$@"
+            ;;
+        rm|remove)
+            cmd_dep_rm "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st dep - Manage task dependencies
+
+USAGE:
+    st dep <subcommand> [options]
+
+SUBCOMMANDS:
+    add <task-id> <depends-on-id>   Add dependency
+    list <task-id>                  List dependencies
+    rm <task-id> <depends-on-id>    Remove dependency
+
+EXAMPLES:
+    st dep add task-456 task-123 --type blocks
+    st dep list task-456
+EOF
+            ;;
+    esac
+}
+
+cmd_dep_add() {
+    local task_id="$1"
+    local depends_on="$2"
+    shift 2 || true
+
+    if [[ -z "$task_id" || -z "$depends_on" ]]; then
+        echo -e "${RED}Error: Both task-id and depends-on-id required${NC}" >&2
+        return 1
+    fi
+
+    local dep_type="blocks"
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--type)
+                dep_type="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local json_data
+    json_data=$(jq -n \
+        --arg depends_on "$depends_on" \
+        --arg dep_type "$dep_type" \
+        '{depends_on_task_id: $depends_on, dependency_type: $dep_type}')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/dependencies" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${GREEN}Added dependency: $task_id -> $depends_on ($dep_type)${NC}"
+    fi
+}
+
+cmd_dep_list() {
+    local task_id="$1"
+    shift || true
+
+    if [[ -z "$task_id" ]]; then
+        echo -e "${RED}Error: Task ID required${NC}" >&2
+        return 1
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/dependencies")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq 'length')
+        echo -e "${BLUE}Dependencies for $task_id ($count):${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.depends_on_task_id) [\(.depends_on_status)] \(.dependency_type) - \(.depends_on_title)"'
+    fi
+}
+
+cmd_dep_rm() {
+    local task_id="$1"
+    local depends_on="$2"
+    shift 2 || true
+
+    if [[ -z "$task_id" || -z "$depends_on" ]]; then
+        echo -e "${RED}Error: Both task-id and depends-on-id required${NC}" >&2
+        return 1
+    fi
+
+    local dep_type=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--type)
+                dep_type="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local url="${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/dependencies/${depends_on}"
+    [[ -n "$dep_type" ]] && url="$url?dependency_type=$dep_type"
+
+    local response
+    response=$(curl -s -X DELETE "$url")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local status
+        status=$(echo "$response" | jq -r '.status')
+        if [[ "$status" == "removed" ]]; then
+            echo -e "${GREEN}Removed dependency: $task_id -> $depends_on${NC}"
+        else
+            echo -e "${YELLOW}Dependency not found${NC}"
+        fi
+    fi
+}
+
+# Main entry point
+main() {
+    local cmd="${1:-}"
+    shift || true
+
+    case "$cmd" in
+        create|new|add)
+            cmd_create "$@"
+            ;;
+        list|ls)
+            cmd_list "$@"
+            ;;
+        ready)
+            cmd_ready "$@"
+            ;;
+        blocked)
+            cmd_blocked "$@"
+            ;;
+        show|get)
+            cmd_show "$@"
+            ;;
+        update|edit)
+            cmd_update "$@"
+            ;;
+        close|done|complete)
+            cmd_close "$@"
+            ;;
+        dep|dependency)
+            cmd_dep "$@"
+            ;;
+        -h|--help|help|"")
+            show_help
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $cmd${NC}" >&2
+            echo "Run 'st --help' for usage."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
