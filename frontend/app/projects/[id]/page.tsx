@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle, Terminal } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
@@ -15,9 +15,10 @@ import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard"
 import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
 import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
 import { RoundtableChat } from "@/components/roundtable/RoundtableChat";
+import { TerminalTabs } from "@/components/terminal/TerminalTabs";
 import type { Feature } from "@/lib/api";
 
-type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban" | "roundtable";
+type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban" | "roundtable" | "terminal";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -30,7 +31,7 @@ export default function ProjectDetailPage() {
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["explorer", "features", "vision", "evidence", "tasks", "kanban", "roundtable"].includes(urlTab)) {
+    if (urlTab && ["explorer", "features", "vision", "evidence", "tasks", "kanban", "roundtable", "terminal"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -271,6 +272,22 @@ export default function ProjectDetailPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("terminal")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "terminal"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Terminal className="w-4 h-4" />
+              Terminal
+            </div>
+            {activeTab === "terminal" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -302,6 +319,14 @@ export default function ProjectDetailPage() {
             projectId={projectId}
             className="h-[calc(100vh-320px)] min-h-[500px]"
           />
+        )}
+        {activeTab === "terminal" && (
+          <div className="h-[calc(100vh-320px)] min-h-[500px]">
+            <TerminalTabs
+              projectId={projectId}
+              className="h-full"
+            />
+          </div>
         )}
       </section>
     </div>
