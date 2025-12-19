@@ -12,6 +12,7 @@ export interface Project {
   health_endpoint: string;
   created_at: string;
   health_status?: string;
+  root_path?: string;
 }
 
 export interface ProjectHealth {

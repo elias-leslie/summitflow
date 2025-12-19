@@ -2,11 +2,13 @@
 
 import { ReactNode, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { Terminal, ChevronDown } from "lucide-react";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 import { useIsMobile } from "@/lib/hooks/use-media-query";
 import { TerminalTabs } from "@/components/terminal/TerminalTabs";
+import { fetchProject } from "@/lib/api";
 
 interface AppShellProps {
   children: ReactNode;
@@ -35,6 +37,17 @@ export function AppShell({ children }: AppShellProps) {
 
   // Extract project ID from URL for context-aware working directory
   const activeProjectId = useMemo(() => extractProjectId(pathname), [pathname]);
+
+  // Fetch project to get root_path for terminal working directory
+  const { data: project } = useQuery({
+    queryKey: ["project", activeProjectId],
+    queryFn: () => fetchProject(activeProjectId!),
+    enabled: !!activeProjectId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Use project root_path, fallback to home directory
+  const projectPath = project?.root_path ?? "/home/kasadis";
 
   // Convert width percentage to min size in percentage
   // Minimum 300px, but we need percentage for PanelGroup
@@ -65,6 +78,7 @@ export function AppShell({ children }: AppShellProps) {
             {/* Terminal content */}
             <TerminalTabs
               projectId={activeProjectId}
+              projectPath={projectPath}
               className="flex-1"
             />
 
