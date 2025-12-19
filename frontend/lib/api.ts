@@ -533,3 +533,112 @@ export async function closeBead(
   if (!res.ok) throw new Error("Failed to close bead");
   return res.json();
 }
+
+// ============================================================================
+// Task Types
+// ============================================================================
+
+export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+
+export interface Task {
+  id: string;
+  project_id: string;
+  feature_id: number | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  current_criterion_id: string | null;
+  spec_content: string | null;
+  plan_content: Record<string, unknown> | null;
+  progress_log: string | null;
+  error_message: string | null;
+  branch_name: string | null;
+  commits: string[];
+  pull_request_url: string | null;
+  total_sessions: number;
+  total_tokens_used: number;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface TaskListResponse {
+  tasks: Task[];
+  total: number;
+}
+
+// ============================================================================
+// Task API Functions
+// ============================================================================
+
+export async function createTask(
+  projectId: string,
+  task: {
+    title: string;
+    description?: string;
+    feature_id?: number;
+  }
+): Promise<Task> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(task),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to create task");
+  }
+  return res.json();
+}
+
+export async function fetchTasks(
+  projectId: string,
+  options: { status?: TaskStatus; limit?: number; offset?: number } = {}
+): Promise<TaskListResponse> {
+  const params = new URLSearchParams();
+  if (options.status) params.append("status", options.status);
+  if (options.limit) params.append("limit", options.limit.toString());
+  if (options.offset) params.append("offset", options.offset.toString());
+
+  const queryString = params.toString();
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/tasks${queryString ? `?${queryString}` : ""}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch tasks");
+  return res.json();
+}
+
+export async function fetchTask(projectId: string, taskId: string): Promise<Task> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}`);
+  if (!res.ok) throw new Error("Failed to fetch task");
+  return res.json();
+}
+
+export type AgentType = "claude" | "gemini";
+
+export interface StartTaskResult {
+  status: string;
+  task_id: string;
+  celery_task_id?: string;
+}
+
+export async function startTask(
+  projectId: string,
+  taskId: string,
+  options: {
+    agent_type: AgentType;
+    model?: string;
+    allow_delegation?: boolean;
+  }
+): Promise<StartTaskResult> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to start task");
+  }
+  return res.json();
+}

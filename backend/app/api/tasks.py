@@ -426,3 +426,74 @@ def _sse_event(event_type: str, data: dict[str, Any]) -> str:
         Formatted SSE event string
     """
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+
+class StartTaskRequest(BaseModel):
+    """Request model for starting task execution."""
+
+    agent_type: str  # claude or gemini
+    model: str | None = None
+    allow_delegation: bool = False
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/start", response_model=dict[str, Any])
+async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -> dict[str, Any]:
+    """Start task execution with an agent.
+
+    Creates a Celery task to execute the agent on this task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        request: Agent configuration
+
+    Returns:
+        Dict with status, task_id, and celery_task_id
+    """
+    from ..tasks.agent_runner import run_agent_task
+
+    # Verify task exists and belongs to project
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+
+    # Check task is in a valid state to start
+    if task["status"] not in ("pending", "paused", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task cannot be started from status '{task['status']}'. "
+            f"Must be pending, paused, or failed.",
+        )
+
+    # Validate agent type
+    valid_agents = {"claude", "gemini"}
+    if request.agent_type not in valid_agents:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid agent_type '{request.agent_type}'. Must be one of: {valid_agents}",
+        )
+
+    # Start the Celery task
+    celery_task = run_agent_task.delay(
+        task_id=task_id,
+        agent_type=request.agent_type,
+        model=request.model,
+    )
+
+    logger.info(
+        "task_execution_started",
+        task_id=task_id,
+        agent_type=request.agent_type,
+        celery_task_id=celery_task.id,
+    )
+
+    return {
+        "status": "started",
+        "task_id": task_id,
+        "celery_task_id": celery_task.id,
+        "agent_type": request.agent_type,
+    }
