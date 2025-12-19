@@ -14,16 +14,13 @@ import {
   type DragOverEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
 
 import type { Feature } from "@/lib/api";
+import { FeatureCard, DragOverlayCard } from "./FeatureCard";
 
 // ============================================================================
 // Types
@@ -41,6 +38,7 @@ interface KanbanBoardProps {
   features: Feature[];
   onStatusChange?: (featureId: string, newStatus: KanbanStatus) => void;
   onFeatureClick?: (feature: Feature) => void;
+  onStartClick?: (feature: Feature) => void;
 }
 
 // ============================================================================
@@ -55,101 +53,6 @@ const COLUMNS: KanbanColumn[] = [
 ];
 
 // ============================================================================
-// Sortable Feature Card
-// ============================================================================
-
-interface SortableFeatureCardProps {
-  feature: Feature;
-  onClick?: () => void;
-}
-
-function SortableFeatureCard({ feature, onClick }: SortableFeatureCardProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: feature.feature_id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const criteria = feature.acceptance_criteria ?? [];
-  const passedCount = criteria.filter((c) => c.passed).length;
-  const totalCount = criteria.length;
-  const progressPct = totalCount > 0 ? (passedCount / totalCount) * 100 : 0;
-
-  const priorityColors: Record<number, string> = {
-    1: "bg-rose-500/20 text-rose-400 border-rose-500/30",
-    2: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    3: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    4: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    5: "bg-slate-500/20 text-slate-400 border-slate-500/30",
-  };
-  const priority = feature.priority ?? feature.effective_priority ?? 3;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="group relative rounded-lg border border-slate-700 bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-colors cursor-pointer"
-      onClick={onClick}
-    >
-      {/* Drag Handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-4 w-4 text-slate-500" />
-      </div>
-
-      {/* Card Content */}
-      <div className="pl-4">
-        {/* Header: ID + Priority */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs mono text-slate-500">{feature.feature_id}</span>
-          <span
-            className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityColors[priority] || priorityColors[5]}`}
-          >
-            P{priority}
-          </span>
-        </div>
-
-        {/* Title */}
-        <h4 className="text-sm font-medium text-white leading-tight mb-2 line-clamp-2">
-          {feature.name}
-        </h4>
-
-        {/* Criteria Progress */}
-        {totalCount > 0 && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Criteria</span>
-              <span className="text-xs mono text-slate-400">
-                {passedCount}/{totalCount}
-              </span>
-            </div>
-            <div className="h-1 w-full bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all ${progressPct === 100 ? "bg-phosphor-500" : "bg-blue-500"}`}
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Droppable Column
 // ============================================================================
 
@@ -157,9 +60,10 @@ interface DroppableColumnProps {
   column: KanbanColumn;
   features: Feature[];
   onFeatureClick?: (feature: Feature) => void;
+  onStartClick?: (feature: Feature) => void;
 }
 
-function DroppableColumn({ column, features, onFeatureClick }: DroppableColumnProps) {
+function DroppableColumn({ column, features, onFeatureClick, onStartClick }: DroppableColumnProps) {
   const colorClasses: Record<string, { header: string; border: string }> = {
     slate: { header: "text-slate-400", border: "border-slate-700" },
     blue: { header: "text-blue-400", border: "border-blue-700/50" },
@@ -188,10 +92,11 @@ function DroppableColumn({ column, features, onFeatureClick }: DroppableColumnPr
           <div className="space-y-2">
             {features.length > 0 ? (
               features.map((feature) => (
-                <SortableFeatureCard
+                <FeatureCard
                   key={feature.feature_id}
                   feature={feature}
                   onClick={() => onFeatureClick?.(feature)}
+                  onStartClick={onStartClick}
                 />
               ))
             ) : (
@@ -214,6 +119,7 @@ export function KanbanBoard({
   features,
   onStatusChange,
   onFeatureClick,
+  onStartClick,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -238,8 +144,7 @@ export function KanbanBoard({
     };
 
     for (const feature of features) {
-      // Use health_status or default to backlog
-      // The actual status field should be mapped from the backend
+      // Use status field from backend, default to backlog
       const status = (feature as Feature & { status?: string }).status as KanbanStatus | undefined;
       const column = status && status in grouped ? status : "backlog";
       grouped[column].push(feature);
@@ -267,8 +172,8 @@ export function KanbanBoard({
     setActiveId(event.active.id as string);
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
-    // Handle drag over logic if needed
+  const handleDragOver = (_event: DragOverEvent) => {
+    // Handle drag over logic if needed for visual feedback
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -323,22 +228,14 @@ export function KanbanBoard({
             column={column}
             features={featuresByStatus[column.id]}
             onFeatureClick={onFeatureClick}
+            onStartClick={onStartClick}
           />
         ))}
       </div>
 
       {/* Drag Overlay */}
       <DragOverlay>
-        {activeFeature && (
-          <div className="rounded-lg border border-phosphor-500 bg-slate-900 p-3 shadow-xl shadow-phosphor-500/20 rotate-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs mono text-slate-500">{activeFeature.feature_id}</span>
-            </div>
-            <h4 className="text-sm font-medium text-white line-clamp-2">
-              {activeFeature.name}
-            </h4>
-          </div>
-        )}
+        {activeFeature && <DragOverlayCard feature={activeFeature} />}
       </DragOverlay>
     </DndContext>
   );
