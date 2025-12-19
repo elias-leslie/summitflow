@@ -1,9 +1,9 @@
 """Database connection management."""
 
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 import psycopg
 from dotenv import load_dotenv
@@ -502,6 +502,25 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)")
+
+            # ============================================================
+            # Roundtable Sessions - Multi-agent chat persistence
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS roundtable_sessions (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    mode VARCHAR(20) NOT NULL DEFAULT 'quick',
+                    messages JSONB DEFAULT '[]'::jsonb,
+                    generated_features JSONB DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)")
 
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
