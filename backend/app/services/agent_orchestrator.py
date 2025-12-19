@@ -1164,3 +1164,190 @@ def execute_criterion_with_commit(
         result["commit_sha"] = commit_sha
 
     return result
+
+
+# =========================================================================
+# Cross-Agent Delegation
+# =========================================================================
+
+DELEGATION_PROMPT = """You are being asked to help with a specific question from another AI agent.
+
+CONTEXT:
+{context}
+
+QUESTION:
+{query}
+
+Provide a clear, actionable response focused on the specific question asked.
+If you need more context, say so clearly.
+"""
+
+
+def delegate_to_agent(
+    context: str,
+    query: str,
+    target_agent: AgentType = "gemini",
+    model: str | None = None,
+    task: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Delegate a question to another agent.
+
+    This enables cross-agent collaboration where one agent can ask
+    another for help with specific aspects (e.g., Claude asking
+    Gemini for UI design suggestions).
+
+    Args:
+        context: Background context for the question
+        query: The specific question to answer
+        target_agent: Which agent to delegate to ("gemini" or "claude")
+        model: Optional model override
+        task: Optional task for logging
+
+    Returns:
+        Dict with:
+        - response: Agent's response content
+        - agent: Which agent responded
+        - tokens_used: Token count
+        - success: Whether delegation succeeded
+    """
+    from ..storage import tasks as task_storage
+
+    agent = get_agent(target_agent, model)
+
+    if task:
+        task_storage.append_progress_log(
+            task["id"], f"Delegating to {target_agent}: {query[:50]}..."
+        )
+
+    prompt = DELEGATION_PROMPT.format(context=context, query=query)
+
+    try:
+        response = agent.generate(
+            prompt=prompt,
+            system=f"You are a {target_agent} AI assistant helping another AI agent.",
+            max_tokens=4096,
+            temperature=0.7,
+        )
+
+        tokens_used = response.usage.get("output_tokens", 0) + response.usage.get("input_tokens", 0)
+
+        if task:
+            task_storage.append_progress_log(
+                task["id"],
+                f"Delegation response from {target_agent}: {tokens_used} tokens",
+            )
+
+        logger.info(f"Delegation to {target_agent} completed: {tokens_used} tokens")
+
+        return {
+            "response": response.content,
+            "agent": target_agent,
+            "tokens_used": tokens_used,
+            "success": True,
+        }
+
+    except Exception as e:
+        logger.error(f"Delegation to {target_agent} failed: {e}")
+        if task:
+            task_storage.append_progress_log(
+                task["id"], f"Delegation to {target_agent} FAILED: {e}"
+            )
+        return {
+            "response": None,
+            "agent": target_agent,
+            "tokens_used": 0,
+            "success": False,
+            "error": str(e),
+        }
+
+
+def delegate_to_gemini(
+    context: str,
+    query: str,
+    model: str | None = None,
+    task: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Convenience function to delegate to Gemini.
+
+    Args:
+        context: Background context
+        query: The question to answer
+        model: Optional model override
+        task: Optional task for logging
+
+    Returns:
+        Delegation result dict
+    """
+    return delegate_to_agent(
+        context=context,
+        query=query,
+        target_agent="gemini",
+        model=model,
+        task=task,
+    )
+
+
+def delegate_to_claude(
+    context: str,
+    query: str,
+    model: str | None = None,
+    task: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Convenience function to delegate to Claude.
+
+    Args:
+        context: Background context
+        query: The question to answer
+        model: Optional model override
+        task: Optional task for logging
+
+    Returns:
+        Delegation result dict
+    """
+    return delegate_to_agent(
+        context=context,
+        query=query,
+        target_agent="claude",
+        model=model,
+        task=task,
+    )
+
+
+def should_delegate(
+    criterion: dict[str, Any],
+    current_agent: AgentType,
+    delegation_enabled: bool = True,
+) -> tuple[bool, AgentType | None, str | None]:
+    """Determine if a criterion should be delegated to another agent.
+
+    Simple heuristic: delegate UI/design questions to Gemini,
+    backend/code questions to Claude.
+
+    Args:
+        criterion: The criterion being worked on
+        current_agent: The agent currently executing
+        delegation_enabled: Whether delegation is allowed
+
+    Returns:
+        Tuple of (should_delegate, target_agent, reason)
+    """
+    if not delegation_enabled:
+        return False, None, None
+
+    desc = criterion.get("description", "").lower()
+    crit_type = criterion.get("type", "").lower()
+
+    # UI/design keywords suggest Gemini
+    ui_keywords = {"ui", "design", "layout", "style", "component", "visual", "responsive"}
+    # Backend/code keywords suggest Claude
+    backend_keywords = {"api", "endpoint", "database", "backend", "server", "logic", "algorithm"}
+
+    # If current agent is Claude and criterion is UI-focused, suggest Gemini
+    if current_agent == "claude" and any(kw in desc or kw in crit_type for kw in ui_keywords):
+        return True, "gemini", "UI/design criterion - Gemini excels at visual design"
+
+    # If current agent is Gemini and criterion is backend-focused, suggest Claude
+    if current_agent == "gemini" and any(kw in desc or kw in crit_type for kw in backend_keywords):
+        return True, "claude", "Backend/code criterion - Claude excels at code"
+
+    return False, None, None
