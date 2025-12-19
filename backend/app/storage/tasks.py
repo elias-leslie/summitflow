@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .connection import get_connection
@@ -101,10 +101,21 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         raise ValueError("No fields provided to update")
 
     allowed_fields = {
-        "title", "description", "status", "current_criterion_id",
-        "spec_content", "plan_content", "progress_log", "error_message",
-        "branch_name", "commits", "pull_request_url",
-        "total_sessions", "total_tokens_used", "started_at", "completed_at",
+        "title",
+        "description",
+        "status",
+        "current_criterion_id",
+        "spec_content",
+        "plan_content",
+        "progress_log",
+        "error_message",
+        "branch_name",
+        "commits",
+        "pull_request_url",
+        "total_sessions",
+        "total_tokens_used",
+        "started_at",
+        "completed_at",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -130,7 +141,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         cur.execute(
             f"""
             UPDATE tasks
-            SET {', '.join(set_clauses)}
+            SET {", ".join(set_clauses)}
             WHERE id = %s
             RETURNING id, project_id, feature_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
@@ -242,27 +253,63 @@ def get_tasks_by_feature(feature_id: int) -> list[dict[str, Any]]:
     return [_row_to_dict(row) for row in rows]
 
 
+# Valid task status transitions
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"running", "paused"},
+    "running": {"paused", "failed", "completed"},
+    "paused": {"running", "pending", "failed"},
+    "failed": {"pending", "running"},  # Allow retry
+    "completed": set(),  # Terminal - no transitions allowed
+}
+
+
+def validate_status_transition(current: str, target: str) -> bool:
+    """Check if a status transition is valid.
+
+    Args:
+        current: Current task status
+        target: Target task status
+
+    Returns:
+        True if transition is valid
+    """
+    return target in VALID_TRANSITIONS.get(current, set())
+
+
 def update_task_status(
     task_id: str,
     status: str,
     error_message: str | None = None,
+    validate_transition: bool = True,
 ) -> dict[str, Any] | None:
-    """Update task status with timestamp handling.
+    """Update task status with timestamp handling and transition validation.
 
     Args:
         task_id: Task ID
         status: New status (pending, running, paused, failed, completed)
         error_message: Optional error message (for failed status)
+        validate_transition: Whether to validate status transition (default True)
 
     Returns:
         Updated task dict or None if not found.
 
     Raises:
-        ValueError: If invalid status.
+        ValueError: If invalid status or invalid transition.
     """
     valid_statuses = {"pending", "running", "paused", "failed", "completed"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {valid_statuses}")
+
+    # Get current status if validating transitions
+    if validate_transition:
+        current_task = get_task(task_id)
+        if current_task:
+            current_status = current_task["status"]
+            if current_status != status and not validate_status_transition(current_status, status):
+                raise ValueError(
+                    f"Invalid transition from '{current_status}' to '{status}'. "
+                    f"Valid transitions: {VALID_TRANSITIONS.get(current_status, set())}"
+                )
 
     with get_connection() as conn, conn.cursor() as cur:
         # Build update based on status
@@ -324,7 +371,7 @@ def append_progress_log(task_id: str, entry: str) -> dict[str, Any] | None:
     Returns:
         Updated task dict or None if not found.
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     log_entry = f"[{timestamp}] {entry}\n"
 
     with get_connection() as conn, conn.cursor() as cur:
