@@ -5,13 +5,16 @@ import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
+import { TerminalDrawer } from "@/components/terminal/TerminalDrawer";
 
 // SummitFlow captures evidence for itself (dogfooding)
 const SUMMITFLOW_PROJECT_ID = "summitflow";
+const SUMMITFLOW_PROJECT_PATH = "/home/kasadis/summitflow";
 
 export function TopBar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const queryClient = useQueryClient();
@@ -61,7 +64,8 @@ export function TopBar() {
 
           {/* Terminal shortcut */}
           <button
-            className="btn-ghost p-2 rounded-lg"
+            onClick={() => setTerminalOpen(true)}
+            className="btn-ghost p-2 rounded-lg hover:bg-phosphor-500/10 hover:text-phosphor-400 transition-colors"
             title="Open Terminal"
           >
             <Terminal className="w-4 h-4" />
@@ -103,6 +107,14 @@ export function TopBar() {
         onCaptured={() => {
           setCaptureModalOpen(false);
         }}
+      />
+
+      {/* Terminal Drawer */}
+      <TerminalDrawer
+        open={terminalOpen}
+        onOpenChange={setTerminalOpen}
+        projectId={SUMMITFLOW_PROJECT_ID}
+        projectPath={SUMMITFLOW_PROJECT_PATH}
       />
     </>
   );
