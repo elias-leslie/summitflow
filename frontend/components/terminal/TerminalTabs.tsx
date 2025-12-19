@@ -2,8 +2,9 @@
 
 import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2 } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, ChevronDown } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
@@ -40,6 +41,57 @@ function LayoutModeButton({ mode, currentMode, onClick, icon: Icon, title }: Lay
   );
 }
 
+interface SessionSelectorProps {
+  sessions: Array<{ id: string; name: string; is_alive: boolean }>;
+  selectedId: string | undefined;
+  onSelect: (id: string) => void;
+  paneIndex: number;
+}
+
+function SessionSelector({ sessions, selectedId, onSelect, paneIndex }: SessionSelectorProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedSession = sessions.find((s) => s.id === selectedId);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-slate-300"
+      >
+        <TerminalIcon className="w-3 h-3" />
+        <span className="truncate max-w-[100px]">
+          {selectedSession?.name || `Pane ${paneIndex + 1}`}
+        </span>
+        <ChevronDown className="w-3 h-3" />
+      </button>
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg z-20 min-w-[150px]">
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                onClick={() => {
+                  onSelect(session.id);
+                  setIsOpen(false);
+                }}
+                className={clsx(
+                  "w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 flex items-center gap-2",
+                  session.id === selectedId && "bg-slate-700 text-phosphor-400"
+                )}
+              >
+                <TerminalIcon className="w-3 h-3" />
+                <span className="truncate">{session.name}</span>
+                {!session.is_alive && <span className="text-red-400">(dead)</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TerminalTabs({ projectId, projectPath, className }: TerminalTabsProps) {
   const {
     sessions,
@@ -52,8 +104,32 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     isCreating,
   } = useTerminalSessions(projectId);
 
-  const { layoutMode, setLayoutMode } = useTerminalState();
+  const { layoutMode, setLayoutMode, paneSizes, setPaneSizes, paneSessions, setPaneSessions } = useTerminalState();
   const isMobile = useMediaQuery("(max-width: 767px)");
+
+  // Get session IDs for each pane (default to first sessions if not set)
+  const getPaneSession = useCallback((paneIndex: number): string | undefined => {
+    if (paneSessions[paneIndex]) {
+      // Verify the session still exists
+      const exists = sessions.some((s) => s.id === paneSessions[paneIndex]);
+      if (exists) return paneSessions[paneIndex];
+    }
+    // Fall back to session by index
+    return sessions[paneIndex]?.id;
+  }, [paneSessions, sessions]);
+
+  // Update a specific pane's session
+  const setPaneSession = useCallback((paneIndex: number, sessionId: string) => {
+    const newPaneSessions = [...paneSessions];
+    newPaneSessions[paneIndex] = sessionId;
+    setPaneSessions(newPaneSessions);
+  }, [paneSessions, setPaneSessions]);
+
+  // Handle pane resize
+  const handlePane0Resize = useCallback((size: { asPercentage: number }) => {
+    const newSizes = [size.asPercentage, 100 - size.asPercentage];
+    setPaneSizes(newSizes);
+  }, [setPaneSizes]);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -250,21 +326,113 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
       {/* Terminal panels */}
       <div className="flex-1 relative">
-        {sessions.map((session) => (
-          <div
-            key={session.id}
-            className={clsx(
-              "absolute inset-0",
-              session.id === activeId ? "z-10 visible" : "z-0 invisible"
-            )}
+        {layoutMode === "single" ? (
+          // Single pane - show active session
+          sessions.map((session) => (
+            <div
+              key={session.id}
+              className={clsx(
+                "absolute inset-0",
+                session.id === activeId ? "z-10 visible" : "z-0 invisible"
+              )}
+            >
+              <TerminalComponent
+                sessionId={session.id}
+                workingDir={session.working_dir || projectPath}
+                className="h-full"
+              />
+            </div>
+          ))
+        ) : (
+          // Split pane layout
+          <Group
+            orientation={layoutMode === "horizontal" ? "vertical" : "horizontal"}
+            className="h-full"
           >
-            <TerminalComponent
-              sessionId={session.id}
-              workingDir={session.working_dir || projectPath}
-              className="h-full"
+            {/* First pane */}
+            <Panel
+              defaultSize={paneSizes[0] ?? 50}
+              minSize={20}
+              onResize={handlePane0Resize}
+              className="flex flex-col"
+            >
+              <div className="flex items-center px-2 py-1 bg-slate-800/50 border-b border-slate-700">
+                <SessionSelector
+                  sessions={sessions}
+                  selectedId={getPaneSession(0)}
+                  onSelect={(id) => setPaneSession(0, id)}
+                  paneIndex={0}
+                />
+              </div>
+              <div className="flex-1 relative">
+                {sessions.map((session) => {
+                  const isActive = session.id === getPaneSession(0);
+                  return (
+                    <div
+                      key={session.id}
+                      className={clsx(
+                        "absolute inset-0",
+                        isActive ? "z-10 visible" : "z-0 invisible"
+                      )}
+                    >
+                      <TerminalComponent
+                        sessionId={session.id}
+                        workingDir={session.working_dir || projectPath}
+                        className="h-full"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+
+            {/* Resize handle */}
+            <Separator
+              className={clsx(
+                layoutMode === "horizontal"
+                  ? "h-1 cursor-row-resize"
+                  : "w-1 cursor-col-resize",
+                "bg-slate-700 hover:bg-slate-600 active:bg-phosphor-500 transition-colors"
+              )}
             />
-          </div>
-        ))}
+
+            {/* Second pane */}
+            <Panel
+              defaultSize={paneSizes[1] ?? 50}
+              minSize={20}
+              className="flex flex-col"
+            >
+              <div className="flex items-center px-2 py-1 bg-slate-800/50 border-b border-slate-700">
+                <SessionSelector
+                  sessions={sessions}
+                  selectedId={getPaneSession(1)}
+                  onSelect={(id) => setPaneSession(1, id)}
+                  paneIndex={1}
+                />
+              </div>
+              <div className="flex-1 relative">
+                {sessions.map((session) => {
+                  const isActive = session.id === getPaneSession(1);
+                  return (
+                    <div
+                      key={session.id}
+                      className={clsx(
+                        "absolute inset-0",
+                        isActive ? "z-10 visible" : "z-0 invisible"
+                      )}
+                    >
+                      <TerminalComponent
+                        sessionId={session.id}
+                        workingDir={session.working_dir || projectPath}
+                        className="h-full"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+          </Group>
+        )}
       </div>
     </div>
   );
