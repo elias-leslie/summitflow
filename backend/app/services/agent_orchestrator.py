@@ -177,10 +177,7 @@ def assess_complexity(feature: dict[str, Any]) -> ComplexityLevel:
     detected_domains = _detect_domains(all_text)
     domain_count = len(detected_domains)
 
-    logger.debug(
-        f"Complexity assessment: criteria={criteria_count}, "
-        f"domains={detected_domains}"
-    )
+    logger.debug(f"Complexity assessment: criteria={criteria_count}, domains={detected_domains}")
 
     # Complex: >5 criteria OR multi-domain (2+ domains)
     if criteria_count > 5 or domain_count >= 2:
@@ -214,9 +211,7 @@ def get_complexity_summary(feature: dict[str, Any]) -> dict[str, Any]:
         "detected_domains": list(detected_domains),
         "domain_count": len(detected_domains),
         "is_multi_domain": len(detected_domains) >= 2,
-        "reasons": _get_complexity_reasons(
-            len(criteria), detected_domains, complexity
-        ),
+        "reasons": _get_complexity_reasons(len(criteria), detected_domains, complexity),
     }
 
 
@@ -379,4 +374,202 @@ def generate_spec_for_task(
         "generated_by": agent_type,
         "feature_id": feature.get("feature_id"),
         "complexity": assess_complexity(feature),
+    }
+
+
+# =========================================================================
+# Plan Generation
+# =========================================================================
+
+PLAN_GENERATION_PROMPT = """You are a technical project manager breaking down a feature into actionable subtasks.
+
+FEATURE:
+Name: {name}
+Category: {category}
+Description: {description}
+
+ACCEPTANCE CRITERIA:
+{criteria_list}
+
+{spec_section}
+
+Create an implementation plan as a JSON array of subtasks. Each subtask should:
+1. Be small enough to complete in one session
+2. Map to one or more acceptance criteria
+3. Have clear dependencies on other subtasks (if any)
+
+Output ONLY valid JSON in this exact format:
+{{
+  "subtasks": [
+    {{
+      "id": "st-001",
+      "title": "Short descriptive title",
+      "description": "What to implement in this subtask",
+      "domain": "backend|frontend|database",
+      "criteria_ids": ["ac-001"],
+      "depends_on": [],
+      "estimated_complexity": "small|medium|large"
+    }}
+  ],
+  "execution_order": ["st-001", "st-002"],
+  "parallel_groups": [["st-001"], ["st-002", "st-003"]]
+}}
+
+RULES:
+1. Order subtasks by dependency (dependencies first)
+2. Group subtasks that can run in parallel
+3. Each criterion should be covered by at least one subtask
+4. Include setup tasks (database, dependencies) before implementation
+5. Include testing/verification as final subtask(s)
+"""
+
+
+def generate_plan(
+    feature: dict[str, Any],
+    spec: str | None = None,
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Generate an implementation plan for a feature.
+
+    The plan breaks down the feature into subtasks with dependencies,
+    enabling criterion-by-criterion execution.
+
+    Args:
+        feature: Feature dict with name, description, acceptance_criteria
+        spec: Optional spec document (from generate_spec)
+        agent_type: Which agent to use
+        model: Optional model override
+
+    Returns:
+        Plan dict with subtasks, execution_order, parallel_groups
+
+    Raises:
+        RuntimeError: If plan generation fails
+    """
+
+    agent = get_agent(agent_type, model)
+
+    # Format criteria list
+    criteria = feature.get("acceptance_criteria", [])
+    criteria_lines = []
+    for i, c in enumerate(criteria, 1):
+        status = "✓" if c.get("passes") else "○"
+        criteria_lines.append(
+            f"{i}. [{status}] ID: {c.get('id', f'ac-{i:03d}')} - {c.get('description', 'No description')}"
+        )
+
+    criteria_list = "\n".join(criteria_lines) if criteria_lines else "No criteria defined"
+
+    # Include spec if provided
+    spec_section = ""
+    if spec:
+        # Truncate spec if too long
+        truncated_spec = spec[:3000] + "..." if len(spec) > 3000 else spec
+        spec_section = f"\nSPECIFICATION (summarized):\n{truncated_spec}\n"
+
+    # Build the prompt
+    prompt = PLAN_GENERATION_PROMPT.format(
+        name=feature.get("name", "Unnamed Feature"),
+        category=feature.get("category", "general"),
+        description=feature.get("description", "No description provided"),
+        criteria_list=criteria_list,
+        spec_section=spec_section,
+    )
+
+    logger.info(f"Generating plan for feature: {feature.get('name')}")
+
+    try:
+        response = agent.generate(
+            prompt=prompt,
+            system="You are a technical project manager. Output ONLY valid JSON, no markdown or explanations.",
+            max_tokens=4096,
+            temperature=0.5,
+        )
+
+        # Parse JSON from response
+        plan = _parse_plan_json(response.content)
+
+        logger.info(
+            f"Plan generated: {len(plan.get('subtasks', []))} subtasks, "
+            f"{response.usage.get('output_tokens', 0)} tokens"
+        )
+
+        return plan
+
+    except Exception as e:
+        logger.error(f"Failed to generate plan: {e}")
+        raise RuntimeError(f"Plan generation failed: {e}") from e
+
+
+def _parse_plan_json(response_text: str) -> dict[str, Any]:
+    """Parse plan JSON from agent response.
+
+    Handles various response formats:
+    - Pure JSON
+    - JSON in markdown code blocks
+    - JSON with leading/trailing text
+    """
+    import json
+    import re
+
+    # Try direct JSON parse first
+    try:
+        return json.loads(response_text.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting from markdown code block
+    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_text)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding JSON object in text
+    json_match = re.search(r"\{[\s\S]*\}", response_text)
+    if json_match:
+        try:
+            return json.loads(json_match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    # Return minimal valid plan if parsing fails
+    logger.warning("Failed to parse plan JSON, returning minimal plan")
+    return {
+        "subtasks": [],
+        "execution_order": [],
+        "parallel_groups": [],
+        "parse_error": "Failed to parse agent response as JSON",
+        "raw_response": response_text[:500],
+    }
+
+
+def generate_plan_for_task(
+    feature: dict[str, Any],
+    task: dict[str, Any],
+    spec: str | None = None,
+    agent_type: AgentType = "gemini",
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Generate plan and return with metadata for task storage.
+
+    Args:
+        feature: Feature dict
+        task: Task dict (for context)
+        spec: Optional spec document
+        agent_type: Which agent to use
+        model: Optional model override
+
+    Returns:
+        Dict with plan_content and metadata
+    """
+    plan = generate_plan(feature, spec, agent_type, model)
+
+    return {
+        "plan_content": plan,
+        "generated_by": agent_type,
+        "feature_id": feature.get("feature_id"),
+        "subtask_count": len(plan.get("subtasks", [])),
     }
