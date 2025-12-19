@@ -3,6 +3,7 @@
 import { ReactNode, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { Group, Panel, Separator } from "react-resizable-panels";
+import { Terminal, ChevronDown } from "lucide-react";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 import { useIsMobile } from "@/lib/hooks/use-media-query";
 import { TerminalTabs } from "@/components/terminal/TerminalTabs";
@@ -29,7 +30,7 @@ function extractProjectId(pathname: string | null): string | undefined {
  */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const { isOpen, width, setWidth, isInitialized } = useTerminalState();
+  const { isOpen, width, setWidth, toggle, isInitialized } = useTerminalState();
   const isMobile = useIsMobile();
 
   // Extract project ID from URL for context-aware working directory
@@ -52,12 +53,44 @@ export function AppShell({ children }: AppShellProps) {
     );
   }
 
-  // Mobile: overlay mode (Phase 5 will add full implementation)
+  // Mobile: full-screen overlay mode
   if (isMobile) {
     return (
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto relative">
         {children}
-        {/* Mobile overlay will be added in Phase 5 */}
+
+        {/* Full-screen terminal overlay when open */}
+        {isOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col">
+            {/* Terminal content */}
+            <TerminalTabs
+              projectId={activeProjectId}
+              className="flex-1"
+            />
+
+            {/* Minimize pill button at bottom */}
+            <div className="flex justify-center pb-4 pt-2">
+              <button
+                onClick={toggle}
+                className="flex items-center gap-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-full text-sm text-slate-300 transition-colors"
+              >
+                <ChevronDown className="w-4 h-4" />
+                <span>Minimize</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Floating terminal FAB when closed */}
+        {!isOpen && (
+          <button
+            onClick={toggle}
+            className="fixed bottom-4 right-4 z-40 p-3 bg-phosphor-500 hover:bg-phosphor-400 rounded-full shadow-lg transition-colors"
+            aria-label="Open Terminal"
+          >
+            <Terminal className="w-5 h-5 text-slate-900" />
+          </button>
+        )}
       </div>
     );
   }
