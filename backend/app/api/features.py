@@ -958,6 +958,55 @@ async def update_feature_layer_result(
 
 
 # =========================================================================
+# Kanban Status Endpoints
+# =========================================================================
+
+
+class FeatureStatusUpdate(BaseModel):
+    """Request model for updating feature work status."""
+
+    status: str  # backlog, in_progress, review, done
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        valid = {"backlog", "in_progress", "review", "done"}
+        if v not in valid:
+            raise ValueError(f"Invalid status. Must be one of: {valid}")
+        return v
+
+
+@router.patch(
+    "/projects/{project_id}/features/{feature_id}/status", response_model=dict[str, Any]
+)
+async def update_feature_work_status(
+    project_id: str, feature_id: str, update: FeatureStatusUpdate
+) -> dict[str, Any]:
+    """Update the work status for a feature (Kanban board).
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        update: New status (backlog, in_progress, review, done)
+    """
+    from app.storage import features as feature_storage
+
+    success = feature_storage.update_feature_status(project_id, feature_id, update.status)
+
+    if not success:
+        raise HTTPException(
+            status_code=404, detail=f"Feature {feature_id} not found in project {project_id}"
+        )
+
+    return {
+        "status": "updated",
+        "project_id": project_id,
+        "feature_id": feature_id,
+        "work_status": update.status,
+    }
+
+
+# =========================================================================
 # Spec-Driven Endpoints (priority, acceptance criteria, vision goals)
 # =========================================================================
 
