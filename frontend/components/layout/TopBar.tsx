@@ -5,19 +5,18 @@ import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
-import { TerminalDrawer } from "@/components/terminal/TerminalDrawer";
+import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 
 // SummitFlow captures evidence for itself (dogfooding)
 const SUMMITFLOW_PROJECT_ID = "summitflow";
-const SUMMITFLOW_PROJECT_PATH = "/home/kasadis/summitflow";
 
 export function TopBar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const queryClient = useQueryClient();
+  const { isOpen, toggle } = useTerminalState();
 
   // Get current URL on client side
   useEffect(() => {
@@ -62,11 +61,15 @@ export function TopBar() {
             <Camera className="w-4 h-4" />
           </button>
 
-          {/* Terminal shortcut */}
+          {/* Terminal toggle */}
           <button
-            onClick={() => setTerminalOpen(true)}
-            className="btn-ghost p-2 rounded-lg hover:bg-phosphor-500/10 hover:text-phosphor-400 transition-colors"
-            title="Open Terminal"
+            onClick={toggle}
+            className={`btn-ghost p-2 rounded-lg transition-colors ${
+              isOpen
+                ? "bg-phosphor-500/20 text-phosphor-400"
+                : "hover:bg-phosphor-500/10 hover:text-phosphor-400"
+            }`}
+            title={isOpen ? "Close Terminal" : "Open Terminal"}
           >
             <Terminal className="w-4 h-4" />
           </button>
@@ -107,14 +110,6 @@ export function TopBar() {
         onCaptured={() => {
           setCaptureModalOpen(false);
         }}
-      />
-
-      {/* Terminal Drawer */}
-      <TerminalDrawer
-        open={terminalOpen}
-        onOpenChange={setTerminalOpen}
-        projectId={SUMMITFLOW_PROJECT_ID}
-        projectPath={SUMMITFLOW_PROJECT_PATH}
       />
     </>
   );
