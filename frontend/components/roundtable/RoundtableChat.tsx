@@ -28,9 +28,14 @@ import {
   FileText,
   Image as ImageIcon,
   File,
+  Wand2,
+  Zap,
+  CheckCircle,
+  ListChecks,
 } from "lucide-react";
 
 export type AgentType = "claude" | "gemini" | "user";
+export type RoundtableMode = "spec_driven" | "quick";
 
 export interface FileAttachment {
   id: string;
@@ -49,15 +54,26 @@ export interface ChatMessage {
   attachments?: FileAttachment[];
 }
 
+export interface GeneratedFeature {
+  feature_id: string;
+  name: string;
+  category: string;
+  priority: number;
+  acceptance_criteria: { id: string; description: string }[];
+}
+
 interface RoundtableChatProps {
   projectId: string;
   sessionId?: string;
   className?: string;
+  mode?: RoundtableMode;
+  onModeChange?: (mode: RoundtableMode) => void;
   onSendMessage?: (
     message: string,
     attachments?: FileAttachment[],
     targetAgent?: AgentType
   ) => Promise<void>;
+  onGenerateFeatures?: () => Promise<GeneratedFeature[]>;
   messages?: ChatMessage[];
   isLoading?: boolean;
   connected?: boolean;
@@ -270,11 +286,112 @@ function MessageBubble({
   );
 }
 
+function ModeSelector({
+  mode,
+  onModeChange,
+  disabled,
+}: {
+  mode: RoundtableMode;
+  onModeChange?: (mode: RoundtableMode) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex rounded-lg bg-slate-800 p-1 gap-1">
+      <button
+        type="button"
+        onClick={() => onModeChange?.("spec_driven")}
+        disabled={disabled}
+        className={clsx(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+          mode === "spec_driven"
+            ? "bg-phosphor-500 text-white"
+            : "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+        )}
+      >
+        <Wand2 className="w-3.5 h-3.5" />
+        Spec-Driven
+      </button>
+      <button
+        type="button"
+        onClick={() => onModeChange?.("quick")}
+        disabled={disabled}
+        className={clsx(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+          mode === "quick"
+            ? "bg-phosphor-500 text-white"
+            : "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+        )}
+      >
+        <Zap className="w-3.5 h-3.5" />
+        Quick
+      </button>
+    </div>
+  );
+}
+
+function GeneratedFeaturesList({
+  features,
+  onClose,
+}: {
+  features: GeneratedFeature[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="p-4 bg-phosphor-950/50 border border-phosphor-900 rounded-lg">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-phosphor-400" />
+          <h4 className="text-sm font-medium text-phosphor-200">
+            {features.length} Feature{features.length !== 1 ? "s" : ""} Generated
+          </h4>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-slate-400 hover:text-slate-200"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="space-y-2">
+        {features.map((feat) => (
+          <div
+            key={feat.feature_id}
+            className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-lg"
+          >
+            <ListChecks className="w-4 h-4 text-phosphor-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 mono">{feat.feature_id}</span>
+                <Badge variant="phosphor" className="text-[10px]">
+                  P{feat.priority}
+                </Badge>
+                <Badge variant="slate" className="text-[10px]">
+                  {feat.category}
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-200 mt-1">{feat.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {feat.acceptance_criteria.length} criteria
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-slate-500 mt-3">
+        Features added to your Kanban board in backlog.
+      </p>
+    </div>
+  );
+}
+
 export function RoundtableChat({
   projectId,
   sessionId,
   className,
+  mode = "quick",
+  onModeChange,
   onSendMessage,
+  onGenerateFeatures,
   messages = [],
   isLoading = false,
   connected = true,
@@ -282,8 +399,10 @@ export function RoundtableChat({
 }: RoundtableChatProps) {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -416,6 +535,17 @@ export function RoundtableChat({
     [handleSubmit]
   );
 
+  const handleGenerateFeatures = useCallback(async () => {
+    if (!onGenerateFeatures || isGenerating) return;
+    setIsGenerating(true);
+    try {
+      const features = await onGenerateFeatures();
+      setGeneratedFeatures(features);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [onGenerateFeatures, isGenerating]);
+
   return (
     <div
       className={clsx(
@@ -427,39 +557,48 @@ export function RoundtableChat({
       onDrop={handleDrop}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium text-slate-200">Roundtable</h3>
-          {sessionId && (
-            <Badge variant="slate" className="text-xs mono">
-              {sessionId}
-            </Badge>
-          )}
+      <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-medium text-slate-200">Roundtable</h3>
+            {sessionId && (
+              <Badge variant="slate" className="text-xs mono">
+                {sessionId.slice(0, 8)}
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Loading indicator */}
+            {(isLoading || isGenerating) && (
+              <div className="flex items-center gap-1.5 text-blue-400 text-xs">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{isGenerating ? "Generating..." : "Thinking..."}</span>
+              </div>
+            )}
+
+            {/* Connection status */}
+            {!connected && (
+              <div className="flex items-center gap-1.5 text-rose-400 text-xs">
+                <WifiOff className="w-3.5 h-3.5" />
+                <span>Disconnected</span>
+              </div>
+            )}
+            {connected && !isLoading && !isGenerating && (
+              <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
+                <CircleDot className="w-3.5 h-3.5" />
+                <span>Ready</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Loading indicator */}
-          {isLoading && (
-            <div className="flex items-center gap-1.5 text-blue-400 text-xs">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Thinking...</span>
-            </div>
-          )}
-
-          {/* Connection status */}
-          {!connected && (
-            <div className="flex items-center gap-1.5 text-rose-400 text-xs">
-              <WifiOff className="w-3.5 h-3.5" />
-              <span>Disconnected</span>
-            </div>
-          )}
-          {connected && !isLoading && (
-            <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
-              <CircleDot className="w-3.5 h-3.5" />
-              <span>Ready</span>
-            </div>
-          )}
-        </div>
+        {/* Mode selector */}
+        <ModeSelector
+          mode={mode}
+          onModeChange={onModeChange}
+          disabled={isLoading || isSending || messages.length > 0}
+        />
       </div>
 
       {/* Messages */}
@@ -504,6 +643,45 @@ export function RoundtableChat({
           </div>
         )}
       </ScrollArea>
+
+      {/* Generated features display */}
+      {generatedFeatures.length > 0 && (
+        <div className="px-4 py-3 border-t border-slate-800">
+          <GeneratedFeaturesList
+            features={generatedFeatures}
+            onClose={() => setGeneratedFeatures([])}
+          />
+        </div>
+      )}
+
+      {/* Generate Features button (Spec-Driven mode only) */}
+      {mode === "spec_driven" &&
+        messages.length >= 2 &&
+        generatedFeatures.length === 0 && (
+          <div className="px-4 py-3 border-t border-slate-800">
+            <Button
+              type="button"
+              onClick={handleGenerateFeatures}
+              disabled={isGenerating || isLoading || !connected}
+              className="w-full bg-phosphor-500 hover:bg-phosphor-600 text-white"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Extracting Features...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4 mr-2" />
+                  Generate Features from Discussion
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-slate-500 text-center mt-2">
+              AI will analyze the conversation and create features with acceptance criteria
+            </p>
+          </div>
+        )}
 
       {/* Error display */}
       {error && (
