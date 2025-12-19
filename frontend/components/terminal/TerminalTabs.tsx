@@ -3,13 +3,41 @@
 import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2 } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2 } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
+import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 
 interface TerminalTabsProps {
   projectId?: string;
   projectPath?: string;
   className?: string;
+}
+
+interface LayoutModeButtonProps {
+  mode: LayoutMode;
+  currentMode: LayoutMode;
+  onClick: (mode: LayoutMode) => void;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+}
+
+function LayoutModeButton({ mode, currentMode, onClick, icon: Icon, title }: LayoutModeButtonProps) {
+  const isActive = currentMode === mode;
+  return (
+    <button
+      onClick={() => onClick(mode)}
+      title={title}
+      className={clsx(
+        "p-1.5 rounded transition-colors",
+        isActive
+          ? "bg-slate-700 text-phosphor-400"
+          : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
+      )}
+    >
+      <Icon className="w-4 h-4" />
+    </button>
+  );
 }
 
 export function TerminalTabs({ projectId, projectPath, className }: TerminalTabsProps) {
@@ -23,6 +51,9 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     isLoading,
     isCreating,
   } = useTerminalSessions(projectId);
+
+  const { layoutMode, setLayoutMode } = useTerminalState();
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -188,6 +219,33 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             <Plus className="w-4 h-4" />
           )}
         </button>
+
+        {/* Layout mode buttons - hidden on mobile */}
+        {!isMobile && (
+          <div className="ml-auto flex items-center gap-0.5 border-l border-slate-700 pl-2">
+            <LayoutModeButton
+              mode="single"
+              currentMode={layoutMode}
+              onClick={setLayoutMode}
+              icon={Square}
+              title="Single pane"
+            />
+            <LayoutModeButton
+              mode="horizontal"
+              currentMode={layoutMode}
+              onClick={setLayoutMode}
+              icon={Rows2}
+              title="Horizontal split"
+            />
+            <LayoutModeButton
+              mode="vertical"
+              currentMode={layoutMode}
+              onClick={setLayoutMode}
+              icon={Columns2}
+              title="Vertical split"
+            />
+          </div>
+        )}
       </div>
 
       {/* Terminal panels */}
