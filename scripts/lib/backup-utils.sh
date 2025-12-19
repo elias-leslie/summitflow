@@ -314,8 +314,330 @@ verify_backup() {
     echo "{\"verified\":$verified,\"verified_at\":\"$(date -Iseconds)\",\"errors\":$errors,\"tree\":$tree_json,\"total_files\":$total_files,\"checksum\":\"sha256:$checksum\"}"
 }
 
-# Export functions
+# Get backup count from index
+get_backup_count() {
+    if [ -f "$BACKUP_INDEX" ]; then
+        jq '.backups | length' "$BACKUP_INDEX"
+    else
+        echo "0"
+    fi
+}
+
+# Remove oldest backup entry from index
+remove_oldest_from_index() {
+    local temp_file=$(mktemp)
+    jq 'del(.backups[-1])' "$BACKUP_INDEX" > "$temp_file"
+    mv "$temp_file" "$BACKUP_INDEX"
+}
+
+# Build manifest by scanning entire project (dynamic discovery)
+build_backup_manifest() {
+    local manifest_file="$1"
+
+    cd "$PROJECT_DIR"
+
+    # Build find exclusion args
+    local exclude_args=()
+    for ex in "${BACKUP_EXCLUDES[@]}"; do
+        if [[ "$ex" == *"*"* ]]; then
+            # Glob pattern (e.g., *.pyc)
+            exclude_args+=(-not -name "$ex")
+        else
+            # Directory/path pattern
+            exclude_args+=(-not -path "./$ex" -not -path "./$ex/*")
+        fi
+    done
+
+    # Discover all files (excluding above)
+    local all_files
+    all_files=$(find . -type f "${exclude_args[@]}" 2>/dev/null | sed 's|^\./||' | sort)
+
+    # Build tree: group by top-level directory
+    local manifest_json
+    manifest_json=$(cat <<EOF
+{"generated_at":"$(date -Iseconds)","total_files":0,"total_size":0,"tree":{}}
+EOF
+)
+
+    # Get unique top-level paths (first component of each path)
+    local top_levels
+    top_levels=$(echo "$all_files" | cut -d'/' -f1 | sort -u)
+
+    for path in $top_levels; do
+        local count size
+        if [ -d "$path" ]; then
+            count=$(echo "$all_files" | grep -c "^$path/" || echo 0)
+            # Calculate size excluding the exclusions
+            size=$(find "$path" -type f "${exclude_args[@]}" -exec stat -c%s {} + 2>/dev/null | awk '{s+=$1}END{print s+0}')
+        else
+            count=1
+            size=$(stat -c%s "$path" 2>/dev/null || echo 0)
+        fi
+
+        manifest_json=$(echo "$manifest_json" | jq --arg p "$path" \
+            --argjson c "$count" --argjson s "${size:-0}" \
+            '.tree[$p] = {"file_count": $c, "size_bytes": $s}')
+    done
+
+    # Add totals
+    local total_count total_size
+    total_count=$(echo "$all_files" | wc -l)
+    total_size=$(echo "$all_files" | tr '\n' '\0' | xargs -0 stat -c%s 2>/dev/null | awk '{s+=$1}END{print s+0}')
+
+    manifest_json=$(echo "$manifest_json" | jq \
+        --argjson tc "$total_count" --argjson ts "${total_size:-0}" \
+        '.total_files = $tc | .total_size = $ts')
+
+    echo "$manifest_json" > "$manifest_file"
+}
+
+# Pre-backup checkpoint hook for use by other commands
+backup_checkpoint() {
+    local description="${1:-pre-operation}"
+
+    log_info "Creating backup checkpoint: $description"
+
+    # Quick backup with existing DB dump
+    if bash "$PROJECT_DIR/scripts/backup.sh" --quick 2>&1 | tail -5; then
+        log_success "Checkpoint created"
+        return 0
+    else
+        log_warn "Checkpoint failed, continuing anyway"
+        return 1
+    fi
+}
+
+# Restore backup index from git if corrupted
+restore_index_from_git() {
+    log "Attempting to restore backup-index.json from git..."
+
+    cd "$PROJECT_DIR" || return 1
+
+    # Check if file is in git
+    if ! git ls-files --error-unmatch backup-index.json &>/dev/null; then
+        log_warn "backup-index.json not tracked in git"
+        return 1
+    fi
+
+    # Restore from HEAD
+    if git restore backup-index.json 2>/dev/null; then
+        log_success "Restored backup-index.json from git"
+        return 0
+    else
+        log_error "Failed to restore from git"
+        return 1
+    fi
+}
+
+# Validate that index file is valid JSON with expected structure
+validate_index() {
+    local index_file="${1:-$BACKUP_INDEX}"
+
+    if [ ! -f "$index_file" ]; then
+        return 1
+    fi
+
+    # Check file is not empty
+    if [ ! -s "$index_file" ]; then
+        log_error "Index file is empty"
+        return 1
+    fi
+
+    # Validate JSON structure
+    if ! jq -e '.backups and .retention' "$index_file" &>/dev/null; then
+        log_error "Index file has invalid JSON structure"
+        return 1
+    fi
+
+    return 0
+}
+
+# Sync local index with SMB - self-healing function
+# Adds missing backups, removes orphans, preserves existing verification data
+# Usage: sync_index_from_smb [--verify-missing]
+#   --verify-missing: Download and verify backups that lack verification data
+sync_index_from_smb() {
+    local verify_missing=false
+    if [ "$1" = "--verify-missing" ]; then
+        verify_missing=true
+    fi
+
+    log "Syncing backup index with SMB..."
+
+    # Check if index exists and is valid
+    if [ -f "$BACKUP_INDEX" ]; then
+        if ! validate_index; then
+            log_warn "Index is corrupted, attempting git restore..."
+            if restore_index_from_git; then
+                log_success "Index restored from git"
+            fi
+        fi
+    fi
+
+    # Ensure index exists (create if still missing after git restore attempt)
+    if [ ! -f "$BACKUP_INDEX" ] || ! validate_index; then
+        log "Creating fresh index..."
+        cat > "$BACKUP_INDEX" << EOF
+{
+  "version": 2,
+  "retention": $MAX_BACKUPS,
+  "destination": "//$SMB_HOST/$SMB_SHARE/$SMB_PATH",
+  "backups": [],
+  "last_updated": "$(date -Iseconds)"
+}
+EOF
+    fi
+
+    # Get list from SMB
+    local smb_backups
+    smb_backups=$(smb_list_backups)
+    if [ -z "$smb_backups" ]; then
+        log_warn "No backups found on SMB or connection failed"
+        return 1
+    fi
+
+    # Get list from index
+    local index_backups
+    index_backups=$(jq -r '.backups[].name' "$BACKUP_INDEX" 2>/dev/null)
+
+    local added=0
+    local removed=0
+
+    # Add missing backups (on SMB but not in index)
+    for backup in $smb_backups; do
+        if ! echo "$index_backups" | grep -q "^${backup}$"; then
+            log "Adding missing backup: $backup"
+
+            # Extract timestamp from filename (summitflow-YYYYMMDD-HHMMSS.tar.gz)
+            local ts_part=$(echo "$backup" | sed -n 's/summitflow-\([0-9]*\)-\([0-9]*\)\.tar\.gz/\1-\2/p')
+            local year=${ts_part:0:4}
+            local month=${ts_part:4:2}
+            local day=${ts_part:6:2}
+            local hour=${ts_part:9:2}
+            local min=${ts_part:11:2}
+            local sec=${ts_part:13:2}
+            local timestamp="${year}-${month}-${day}T${hour}:${min}:${sec}-05:00"
+
+            # Get file size from SMB
+            local size
+            size=$(smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+                -c "cd $SMB_PATH; ls $backup" 2>/dev/null | grep "$backup" | awk '{print $3}')
+            size=${size:-0}
+
+            # Add to index (will be sorted later) - atomic write
+            local temp_file=$(mktemp)
+            if jq --arg name "$backup" \
+               --arg ts "$timestamp" \
+               --argjson size "$size" \
+               '.backups += [{"name": $name, "timestamp": $ts, "size_bytes": $size, "db_size_bytes": 0, "status": "ok", "verification": null}]' \
+               "$BACKUP_INDEX" > "$temp_file" && validate_index "$temp_file"; then
+                mv "$temp_file" "$BACKUP_INDEX"
+                ((added++))
+            else
+                log_error "Failed to add $backup to index"
+                rm -f "$temp_file"
+            fi
+        fi
+    done
+
+    # Remove orphaned entries (in index but not on SMB)
+    for backup in $index_backups; do
+        if ! echo "$smb_backups" | grep -q "^${backup}$"; then
+            log "Removing orphaned entry: $backup"
+            local temp_file=$(mktemp)
+            if jq --arg name "$backup" '.backups = [.backups[] | select(.name != $name)]' \
+               "$BACKUP_INDEX" > "$temp_file" && validate_index "$temp_file"; then
+                mv "$temp_file" "$BACKUP_INDEX"
+                ((removed++))
+            else
+                log_error "Failed to remove orphan $backup"
+                rm -f "$temp_file"
+            fi
+        fi
+    done
+
+    # Sort by timestamp (newest first) and update last_updated - atomic write
+    local temp_file=$(mktemp)
+    local now_ts=$(date -Iseconds)
+    if jq --arg ts "$now_ts" '.backups = (.backups | sort_by(.timestamp) | reverse) | .last_updated = $ts' \
+       "$BACKUP_INDEX" > "$temp_file" && validate_index "$temp_file"; then
+        mv "$temp_file" "$BACKUP_INDEX"
+    else
+        log_error "Failed to sort/update index"
+        rm -f "$temp_file"
+    fi
+
+    if [ $added -gt 0 ] || [ $removed -gt 0 ]; then
+        log_success "Index synced: +$added added, -$removed removed"
+    else
+        log_success "Index already in sync"
+    fi
+
+    # Optionally verify backups missing verification data
+    if [ "$verify_missing" = true ]; then
+        log "Checking for backups missing verification..."
+
+        # Get current time and calculate 5-minute threshold
+        local now_epoch=$(date +%s)
+        local threshold=$((now_epoch - 300))  # 5 minutes ago
+
+        # Find backups missing verification that are older than 5 minutes
+        # This avoids race conditions with backups still being created
+        local missing_verification
+        missing_verification=$(jq -r --argjson threshold "$threshold" '
+            .backups[] |
+            select(.verification == null or .verification.total_files == null) |
+            select((.timestamp | sub("\\.[0-9]+"; "") | strptime("%Y-%m-%dT%H:%M:%S%z") | mktime) < $threshold) |
+            .name
+        ' "$BACKUP_INDEX" 2>/dev/null)
+
+        if [ -n "$missing_verification" ]; then
+            local verified=0
+            for backup in $missing_verification; do
+                log "Verifying: $backup"
+                local temp_file="/tmp/$backup"
+
+                # Download
+                if smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+                   -c "cd $SMB_PATH; get $backup $temp_file" &>/dev/null; then
+
+                    # Verify
+                    local verification
+                    verification=$(verify_backup "$temp_file")
+
+                    # Update index
+                    local index_temp=$(mktemp)
+                    if jq --arg name "$backup" --argjson v "$verification" \
+                       '(.backups[] | select(.name == $name)).verification = $v' \
+                       "$BACKUP_INDEX" > "$index_temp" && validate_index "$index_temp"; then
+                        mv "$index_temp" "$BACKUP_INDEX"
+                        ((verified++))
+                        log_success "Verified: $backup ($(echo "$verification" | jq -r '.total_files') files)"
+                    else
+                        rm -f "$index_temp"
+                        log_error "Failed to update verification for $backup"
+                    fi
+
+                    rm -f "$temp_file"
+                else
+                    log_error "Failed to download $backup for verification"
+                fi
+            done
+
+            if [ $verified -gt 0 ]; then
+                log_success "Verified $verified backup(s)"
+            fi
+        else
+            log_success "All backups have verification data"
+        fi
+    fi
+}
+
+# Export functions for subshells
 export -f log log_success log_warn log_error log_info
 export -f ensure_smb_credentials test_smb_connection
 export -f smb_upload smb_download smb_delete smb_list_backups
-export -f update_backup_index apply_retention verify_backup
+export -f update_backup_index get_backup_count remove_oldest_from_index
+export -f apply_retention backup_checkpoint
+export -f build_backup_manifest verify_backup
+export -f validate_index restore_index_from_git sync_index_from_smb

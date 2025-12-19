@@ -463,6 +463,39 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_project ON scanner_celery(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_health ON scanner_celery(health_status)")
 
+            # ============================================================
+            # Tasks Table - Agent execution state for features
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    feature_id INTEGER REFERENCES feature_capabilities(id) ON DELETE SET NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT DEFAULT 'pending',
+                    current_criterion_id TEXT,
+                    spec_content TEXT,
+                    plan_content JSONB,
+                    progress_log TEXT,
+                    error_message TEXT,
+                    branch_name TEXT,
+                    commits TEXT[] DEFAULT '{}',
+                    pull_request_url TEXT,
+                    total_sessions INTEGER DEFAULT 0,
+                    total_tokens_used INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    started_at TIMESTAMPTZ,
+                    completed_at TIMESTAMPTZ
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)")
+
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
             for column, table in [
