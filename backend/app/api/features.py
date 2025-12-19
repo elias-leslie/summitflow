@@ -95,7 +95,7 @@ class AcceptanceCriterion(BaseModel):
 
     id: str  # e.g., "ac-001"
     criterion: str  # What needs to be true
-    verification: str  # How to verify (curl command, screenshot, etc.)
+    verification: str | None = None  # How to verify (curl command, screenshot, etc.)
     type: str  # api, ui, db, backend, quality, content
     passed: bool | None = None  # null = not checked, true/false = result
     # Verification tracking fields (added for auto-verification)
