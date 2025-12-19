@@ -7,6 +7,7 @@ import {
   closestCorners,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
@@ -74,7 +75,7 @@ function DroppableColumn({ column, features, onFeatureClick, onStartClick }: Dro
   const colors = colorClasses[column.color] || colorClasses.slate;
 
   return (
-    <div className={`flex-1 min-w-[280px] max-w-[360px] flex flex-col rounded-lg border ${colors.border} bg-slate-900/30`}>
+    <div className={`flex-shrink-0 w-[85vw] sm:w-[320px] md:w-auto md:flex-1 md:min-w-[280px] md:max-w-[360px] flex flex-col rounded-lg border ${colors.border} bg-slate-900/30 snap-start md:snap-align-none`}>
       {/* Column Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <h3 className={`text-sm font-medium ${colors.header}`}>{column.title}</h3>
@@ -127,6 +128,12 @@ export function KanbanBoard({
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -221,7 +228,7 @@ export function KanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
         {COLUMNS.map((column) => (
           <DroppableColumn
             key={column.id}
