@@ -251,33 +251,45 @@ main() {
     # Setup SMB credentials if needed
     ensure_smb_credentials
 
-    # Test connection
-    if ! test_smb_connection; then
-        log_error "Cannot connect to SMB share. Check credentials and network."
-        exit 1
+    # Upload with retry and local fallback
+    if upload_with_retry "$archive_path" "$ARCHIVE_NAME" "summitflow"; then
+        # Apply retention policy (only if upload succeeded)
+        apply_retention
+
+        # Update backup index
+        update_backup_index "$ARCHIVE_NAME" "$archive_size" "$db_size" "ok" "$verification"
+
+        echo ""
+        echo "========================================"
+        log_success "Backup complete!"
+        echo "========================================"
+        echo ""
+        echo "  Archive: $ARCHIVE_NAME"
+        echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
+        echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        echo "  Location: //$SMB_HOST/$SMB_SHARE/$SMB_PATH/$ARCHIVE_NAME"
+        echo ""
+        echo "  Index updated: $BACKUP_INDEX"
+        echo ""
+    else
+        # Backup saved to pending - update index with pending status
+        update_backup_index "$ARCHIVE_NAME" "$archive_size" "$db_size" "pending" "$verification"
+
+        echo ""
+        echo "========================================"
+        log_warn "Backup saved locally (SMB unavailable)"
+        echo "========================================"
+        echo ""
+        echo "  Archive: $ARCHIVE_NAME"
+        echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
+        echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        echo "  Pending: $PENDING_BACKUP_DIR/$ARCHIVE_NAME"
+        echo ""
+        echo "  Will auto-upload when SMB is available"
+        echo ""
+        # Exit 0 - backup was created successfully, just not uploaded yet
+        exit 0
     fi
-
-    # Upload to remote
-    smb_upload "$archive_path" "$SMB_PATH" "$ARCHIVE_NAME"
-
-    # Apply retention policy
-    apply_retention
-
-    # Update backup index
-    update_backup_index "$ARCHIVE_NAME" "$archive_size" "$db_size" "ok" "$verification"
-
-    echo ""
-    echo "========================================"
-    log_success "Backup complete!"
-    echo "========================================"
-    echo ""
-    echo "  Archive: $ARCHIVE_NAME"
-    echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
-    echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
-    echo "  Location: //$SMB_HOST/$SMB_SHARE/$SMB_PATH/$ARCHIVE_NAME"
-    echo ""
-    echo "  Index updated: $BACKUP_INDEX"
-    echo ""
 }
 
 main "$@"
