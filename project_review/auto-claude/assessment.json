@@ -1,0 +1,710 @@
+{
+  "meta": {
+    "schema_version": "1.0.0",
+    "generated_at": "2025-12-18T19:10:00Z",
+    "generator": "project_review",
+    "target": "https://github.com/AndyMik90/Auto-Claude",
+    "analysis_passes": 3,
+    "total_files_analyzed": 928,
+    "total_lines_analyzed": 162628
+  },
+
+  "identity": {
+    "name": "Auto Claude",
+    "description": "A multi-agent autonomous coding framework that builds software through coordinated AI agent sessions. Uses Claude Code SDK to run agents in isolated workspaces with security controls. Provides both a Python CLI backend and an Electron desktop UI.",
+    "tagline": "Your AI coding companion. Build features, fix bugs, and ship faster — with autonomous agents that plan, code, and validate for you.",
+    "repository_url": "https://github.com/AndyMik90/Auto-Claude",
+    "homepage": null,
+    "demo_url": null,
+    "created_at": null,
+    "last_commit": "2025-12-19T00:15:24+0100",
+    "commit_frequency": "daily",
+    "license": "AGPL-3.0",
+    "license_type": "copyleft",
+    "primary_languages": ["Python", "TypeScript"],
+    "project_maturity": "production",
+    "contributor_count": 1,
+    "primary_contributor": "Andre Mikalsen",
+    "community": {
+      "discord": true,
+      "description": "Free Discord community for support, bug reports, and networking"
+    },
+    "github_stats": {
+      "stars": null,
+      "forks": null,
+      "open_issues": null,
+      "closed_issues": null
+    }
+  },
+
+  "concept": {
+    "problem_statement": "AI-assisted coding tools require constant human oversight and context switching. Developers spend time manually coordinating between planning, coding, and validation phases instead of focusing on high-level decisions.",
+    "target_audience": ["Software developers", "Vibe coders getting started", "Teams wanting to parallelize AI coding", "Developers seeking autonomous feature development"],
+    "value_proposition": "10x developer output by running autonomous agents that handle planning, coding, and validation in isolated git worktrees while maintaining code quality through self-validating QA loops.",
+    "competitive_alternatives": ["Claude Code CLI (manual)", "GitHub Copilot", "Cursor", "Devin", "Aider"],
+    "use_cases": ["Building new features autonomously", "Fixing bugs with AI assistance", "Running parallel AI coding agents", "Generating roadmaps and ideation", "AI-powered merge conflict resolution"],
+    "domain_vertical": "Developer Tools / AI Coding Assistants",
+    "keywords": ["autonomous coding", "multi-agent", "Claude Code", "AI coding", "git worktrees", "code generation", "QA automation"]
+  },
+
+  "architecture": {
+    "style": "modular_monolith",
+    "patterns": ["Clean", "Repository", "MVC", "Facade", "Strategy", "Factory"],
+    "directory_structure": "domain_based",
+    "api_style": ["none"],
+    "state_management": {
+      "frontend": "Zustand (15+ stores)",
+      "backend": "File-based (specs, plans, memory)"
+    },
+    "dependency_injection": false,
+    "configuration_management": "Environment variables + JSON config files",
+    "module_organization": "Domain-based with clear separation: agents, memory, merge, spec, security, integrations, analysis, prediction, context",
+    "separation_of_concerns_score": "excellent",
+    "backend_modules": {
+      "agents": "Core agent session logic (spec creation, coder, QA, recovery)",
+      "analysis": "Project analyzers (routes, ports, databases, services, auth, jobs, migrations)",
+      "context": "Context building (ContextBuilder, Orchestrator, RecoveryManager, PatternDiscovery)",
+      "merge": "Sophisticated merge (SemanticAnalyzer, ConflictDetector, AutoMerger, AIResolver, FileEvolutionTracker)",
+      "prediction": "Risk analysis (Predictor, RiskAnalyzer, PatternAnalyzer, ChecklistGenerator)",
+      "security": "Validators (Database, Filesystem, Git, Process, ScanSecrets, Hooks)",
+      "spec": "Spec pipeline (phases, validation, requirements, critique, complexity)",
+      "qa": "QA loop (reviewer, fixer, loop orchestrator, report)",
+      "runners": "CLI runners (spec, insights, roadmap, ideation, ai_analyzer)"
+    },
+    "frontend_services": {
+      "AgentManager": "Agent lifecycle and task routing",
+      "TerminalManager": "Terminal sessions with persistence",
+      "PythonEnvManager": "Python/venv detection and management",
+      "DockerService": "Docker and FalkorDB container management",
+      "ClaudeProfileManager": "Multi-profile OAuth and rate limits",
+      "RateLimitDetector": "Rate limit detection (session/weekly) and profile switching",
+      "TaskLogService": "Phase-based log streaming"
+    },
+    "notes": "Clean architecture with facade pattern for backward compatibility. Core logic in agents/ with re-exports. Memory system has dual-layer (file + Graphiti graph). Merge system has sophisticated 3-tier strategy (git auto-merge, conflict-only AI, full-file AI). Prediction system anticipates implementation risks. 7 project analyzers for comprehensive codebase understanding."
+  },
+
+  "frontend": {
+    "present": true,
+    "framework": "React",
+    "framework_version": "19.2.3",
+    "meta_framework": "Electron",
+    "meta_framework_version": "39.2.6",
+    "rendering_strategy": "CSR",
+    "styling": {
+      "approach": "Tailwind",
+      "version": "4.1.17",
+      "design_system": "Radix UI primitives + custom components"
+    },
+    "component_library": "Radix UI (comprehensive: dialog, dropdown, tabs, tooltip, etc.)",
+    "component_architecture": "feature_based",
+    "form_handling": "Native React state",
+    "data_fetching": "Electron IPC bridge",
+    "routing": {
+      "library": "Custom sidebar-based navigation",
+      "strategy": "manual"
+    },
+    "accessibility": {
+      "implemented": true,
+      "tools": ["Radix UI primitives (a11y by default)"],
+      "score": "good"
+    },
+    "i18n": {
+      "implemented": false,
+      "library": null,
+      "locales": []
+    },
+    "animations": "Motion (Framer Motion successor)",
+    "build_tool": "Electron Vite",
+    "bundle_analysis": {
+      "estimated_size": "large (Electron bundle)",
+      "code_splitting": true,
+      "lazy_loading": false,
+      "tree_shaking": true
+    },
+    "pwa_support": false,
+    "ui_design_quality": "production",
+    "kanban_workflow": ["Planning", "In Progress", "AI Review", "Human Review", "Done"],
+    "task_creation_wizard": {
+      "model_selector": "Claude Opus 4.5 (configurable)",
+      "thinking_levels": ["Ultra Think (extended reasoning for complex tasks)"],
+      "reference_images": "Drag-drop support, up to 10MB each, max 10 images",
+      "reference_files": "Project file tree browser with drag-to-add",
+      "human_review_toggle": "Optional checkpoint before coding phase"
+    },
+    "task_complexity_auto_assessment": {
+      "levels": ["simple", "medium", "complex"],
+      "confidence_reporting": true,
+      "example": "Identified as simple task with 90% confidence",
+      "impact": "Dictates spec depth, testing strategy, and resource allocation"
+    },
+    "terminal_grid": {
+      "layout": "2x3 grid (expandable up to 12 terminals)",
+      "features": ["Individual terminal headers with task context", "Status badges (STREAMING, Running)", "Real-time Claude Code output", "One-click task context injection", "Terminal renaming for context tracking", "Session restoring across app restarts"]
+    },
+    "roadmap_feature": {
+      "prioritization": "MoSCoW (Must Have, Should Have, Could Have, Won't Have)",
+      "ai_generated": true,
+      "impact_scoring": "High/Medium impact badges per feature",
+      "target_audience_analysis": true,
+      "phase_tracking": "Feature count per phase with skip tracking",
+      "upcoming_integration": "Canny for user feedback collection"
+    },
+    "ideation_feature": {
+      "categories": ["Security", "Performance", "Code Improvements"],
+      "description": "AI analyzes project to identify low-hanging fruits and quick wins"
+    },
+    "insights_feature": {
+      "description": "ChatGPT-style project conversations with chat history",
+      "use_cases": ["Investigating code", "Sparring partner discussions", "General project exploration"]
+    },
+    "changelog_github_integration": {
+      "changelog_sources": ["Git history", "Completed Auto Claude tasks"],
+      "github_releases": "Direct one-click GitHub release creation",
+      "emoji_support": true
+    },
+    "phase_visualization": {
+      "tabs": ["Plan", "Code", "QA"],
+      "status_badges": ["Planning", "Running", "Pending", "Completed"],
+      "progress_indicators": "Per-phase progress bars with percentage"
+    },
+    "notes": "Polished, production-grade desktop app comparable to commercial tools like Linear or Notion. Features 5-stage Kanban workflow with task progress bars, color-coded status badges, and time stamps. Task Creation Wizard includes model selection (Claude Opus 4.5), thinking levels (Ultra Think for extended reasoning), reference images via drag-drop (up to 10MB, max 10), reference files browser, and optional human review before coding. Agent Terminals display in 2x3 grid with streaming status badges and real-time output. Roadmap uses MoSCoW prioritization with AI-generated features, impact scoring, and target audience analysis. Phase visualization shows Plan/Code/QA tabs with progress indicators. Clean dark theme with good contrast and subtle gradients. Sidebar navigation includes: Kanban Board, Agent Terminals, Insights, Roadmap, Ideation, Changelog, Context, GitHub Issues, Worktrees. Uses Zustand for state, xterm.js for terminals, node-pty for native terminal support."
+  },
+
+  "backend": {
+    "present": true,
+    "runtime": "Python",
+    "runtime_version": "3.10+",
+    "framework": "Custom CLI framework",
+    "framework_version": null,
+    "api_structure": {
+      "organization": "flat",
+      "versioning": false,
+      "versioning_strategy": "none"
+    },
+    "middleware": [],
+    "authentication": {
+      "implemented": true,
+      "methods": ["OAuth"],
+      "providers": ["Claude Code OAuth"],
+      "library": "Custom (claude-agent-sdk)"
+    },
+    "authorization": {
+      "implemented": true,
+      "strategy": "custom",
+      "library": "Built-in security layer with command allowlisting"
+    },
+    "validation": {
+      "library": "Custom",
+      "approach": "schema_based"
+    },
+    "error_handling": {
+      "strategy": "distributed",
+      "custom_errors": true,
+      "error_tracking": null
+    },
+    "logging": {
+      "library": "Custom task_logger",
+      "structured": true,
+      "levels_configured": true
+    },
+    "background_jobs": {
+      "implemented": true,
+      "library": "Async Python (native asyncio)",
+      "queue": null
+    },
+    "file_handling": {
+      "uploads": false,
+      "storage": "local"
+    },
+    "rate_limiting": {
+      "implemented": true,
+      "library": "Custom handling for Claude API rate limits"
+    },
+    "caching": {
+      "implemented": true,
+      "strategy": "in_memory",
+      "library": "File-based spec/memory caching"
+    },
+    "notes": "Uses Claude Agent SDK (claude-agent-sdk) for LLM interactions. Multi-phase spec creation pipeline with 3-8 phases based on complexity. Sophisticated agent orchestration with planner, coder, QA reviewer, and QA fixer roles.",
+    "power_user_features": {
+      "multiple_claude_accounts": {
+        "description": "Configure multiple Claude Code Max subscriptions",
+        "benefit": "Swap between accounts for continuous background work",
+        "upcoming": "Auto-switching based on rate limit detection"
+      },
+      "github_issues_integration": {
+        "description": "GitHub issues flow directly into Auto Claude",
+        "workflow": "Create tasks from issues, auto-identify and fix problems in background"
+      }
+    },
+    "coming_soon": ["BMAD method for context engineering and AI coding validation", "Auto account switching based on rate limits", "Canny integration for user feedback"]
+  },
+
+  "database": {
+    "databases": [
+      {
+        "type": "FalkorDB",
+        "purpose": "cache",
+        "version": "latest"
+      }
+    ],
+    "orm": {
+      "library": "graphiti-core",
+      "version": "0.5.0+"
+    },
+    "query_builder": null,
+    "migrations": {
+      "tool": null,
+      "strategy": "timestamp"
+    },
+    "schema_design": "document_based",
+    "indexing_visible": false,
+    "connection_pooling": false,
+    "multi_tenancy": "none",
+    "seeding": {
+      "implemented": false,
+      "tool": null
+    },
+    "notes": "Optional graph database (FalkorDB) for cross-session memory via Graphiti. Primary storage is file-based (specs, plans, memory in JSON/Markdown). Docker Compose provided for FalkorDB setup."
+  },
+
+  "ai_ml": {
+    "present": true,
+    "llm_providers": ["Anthropic", "OpenAI", "Google", "local"],
+    "llm_models": ["claude-opus-4-5-20251101", "gpt-4o-mini"],
+    "ai_frameworks": ["LangChain"],
+    "vector_stores": ["FalkorDB"],
+    "embedding_models": ["text-embedding-3-small", "Voyage AI", "Ollama"],
+    "agent_architecture": {
+      "implemented": true,
+      "type": "multi",
+      "framework": "claude-agent-sdk",
+      "agent_count": 15,
+      "agent_types": {
+        "spec_creation": ["Discovery", "Requirements", "Research", "Context Discovery", "Spec Writer", "Spec Critic", "Planner", "Validation"],
+        "implementation": ["Coder", "Coder Recovery", "Followup Planner"],
+        "qa": ["QA Reviewer", "QA Fixer", "Loop Orchestrator"],
+        "analysis": ["Ideation Generator", "Roadmap Generator", "Insights", "Complexity Assessor"]
+      }
+    },
+    "extended_thinking": {
+      "implemented": true,
+      "usage": "Spec Critic uses extended thinking for self-critique on complex tasks"
+    },
+    "rag": {
+      "implemented": true,
+      "chunking_strategy": "Episode-based via Graphiti",
+      "retrieval_method": "Semantic search + graph traversal"
+    },
+    "prompt_management": {
+      "approach": "templates",
+      "library": "Custom Markdown files in prompts/",
+      "prompt_count": 26
+    },
+    "fine_tuning": false,
+    "ml_pipelines": false,
+    "prediction_system": {
+      "implemented": true,
+      "components": ["Predictor", "RiskAnalyzer", "PatternAnalyzer", "ChecklistGenerator", "MemoryLoader"],
+      "purpose": "Anticipates implementation risks based on historical patterns"
+    },
+    "project_analyzers": {
+      "implemented": true,
+      "analyzers": ["RouteDetector", "PortDetector", "DatabaseDetector", "ServiceAnalyzer", "AuthDetector", "JobsDetector", "MigrationsDetector"],
+      "purpose": "Comprehensive project understanding for context building"
+    },
+    "notes": "Sophisticated multi-agent system with 15+ agent types. Spec creation uses 3-8 phases based on complexity. Spec Critic uses extended thinking for self-critique. QA loop runs up to 50 iterations with recurring issue detection (3+ occurrences → human escalation). Prediction system anticipates risks. 7 project analyzers provide comprehensive codebase understanding. Supports MCP servers for external tools (Puppeteer, Linear, Context7).",
+    "cost_efficiency_claim": "Memory system improves with use - smarter context retrieval at smaller token usage over time, potentially making it cheaper than raw Claude Code"
+  },
+
+  "realtime": {
+    "websockets": {
+      "implemented": false,
+      "library": null
+    },
+    "sse": false,
+    "pubsub": {
+      "implemented": false,
+      "system": "none"
+    },
+    "notifications": {
+      "implemented": true,
+      "channels": ["in_app"]
+    },
+    "email": {
+      "provider": "none",
+      "templating": null
+    },
+    "notes": "Real-time updates via Electron IPC between main and renderer processes. File system watching with chokidar for spec/task changes."
+  },
+
+  "dependencies": {
+    "package_manager": "pnpm",
+    "lock_file_present": true,
+    "direct_dependencies": 50,
+    "dev_dependencies": 30,
+    "monorepo": {
+      "is_monorepo": false,
+      "tool": "none"
+    },
+    "notable_dependencies": [
+      {"name": "claude-agent-sdk", "version": ">=0.1.16", "purpose": "Core Claude Code SDK integration", "category": "core"},
+      {"name": "graphiti-core[falkordb]", "version": ">=0.5.0", "purpose": "Graph-based memory with FalkorDB", "category": "core"},
+      {"name": "electron", "version": "39.2.6", "purpose": "Desktop app framework", "category": "core"},
+      {"name": "react", "version": "19.2.3", "purpose": "UI library", "category": "ui"},
+      {"name": "zustand", "version": "5.0.9", "purpose": "State management", "category": "ui"},
+      {"name": "@xterm/xterm", "version": "5.5.0", "purpose": "Terminal emulation", "category": "ui"},
+      {"name": "node-pty", "version": "1.1.0-beta42", "purpose": "Native terminal support", "category": "core"},
+      {"name": "tailwindcss", "version": "4.1.17", "purpose": "CSS framework", "category": "ui"},
+      {"name": "@radix-ui/*", "version": "various", "purpose": "Accessible UI primitives", "category": "ui"},
+      {"name": "motion", "version": "12.23.26", "purpose": "Animations", "category": "ui"}
+    ],
+    "outdated_critical": [],
+    "security_vulnerabilities": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "last_audit": null
+    },
+    "duplicate_functionality": [],
+    "notes": "Well-maintained dependencies. Python dependencies are minimal (3 direct). Frontend uses modern stack with React 19, latest Electron. Native module (node-pty) requires platform-specific prebuilds."
+  },
+
+  "code_quality": {
+    "linting": {
+      "configured": true,
+      "tools": ["Ruff", "ESLint"],
+      "config_files": ["ruff.toml", "auto-claude-ui/eslint.config.mjs"]
+    },
+    "formatting": {
+      "configured": true,
+      "tools": ["Ruff (Python)", "Prettier (implicit via ESLint)"]
+    },
+    "type_safety": {
+      "language": "TypeScript",
+      "strictness": "strict",
+      "coverage_estimate": "high"
+    },
+    "complexity": {
+      "average_file_length": 200,
+      "max_file_length": 600,
+      "deeply_nested_files": ["conftest.py"]
+    },
+    "code_duplication": "low",
+    "dead_code": "minimal",
+    "naming_conventions": "consistent",
+    "comment_quality": "good",
+    "notes": "Pre-commit hooks enforce linting on both Python and TypeScript. Ruff configured with comprehensive rule sets (E, W, F, I, B, C4, UP). Python uses type hints. TypeScript strict mode enabled."
+  },
+
+  "testing": {
+    "unit_testing": {
+      "framework": "pytest",
+      "coverage_percentage": null,
+      "file_count": 48
+    },
+    "integration_testing": {
+      "implemented": true,
+      "framework": "pytest",
+      "file_count": 10
+    },
+    "e2e_testing": {
+      "implemented": true,
+      "framework": "Playwright",
+      "file_count": 1
+    },
+    "api_testing": {
+      "implemented": false,
+      "tools": []
+    },
+    "visual_regression": false,
+    "performance_testing": {
+      "implemented": false,
+      "tools": []
+    },
+    "test_organization": "separate",
+    "mocking": {
+      "strategy": "library_based",
+      "libraries": ["pytest fixtures", "vitest mocks"]
+    },
+    "fixtures_factories": true,
+    "ci_automated": true,
+    "overall_coverage_estimate": "good",
+    "notes": "Comprehensive Python test suite (48 test files) covering security, merging, QA, spec creation, and more. Frontend has Vitest setup. E2E via Playwright. Tests run on Python 3.11 and 3.12."
+  },
+
+  "devops": {
+    "ci_cd": {
+      "platform": "GitHub_Actions",
+      "config_files": ["ci.yml", "lint.yml", "test-on-tag.yml", "build-prebuilds.yml", "discord-release.yml"],
+      "stages": ["lint", "test", "build"]
+    },
+    "containerization": {
+      "dockerfile_present": false,
+      "docker_compose": true,
+      "optimization_level": "basic"
+    },
+    "orchestration": {
+      "tool": "none",
+      "config_present": false
+    },
+    "iac": {
+      "tool": "none",
+      "config_present": false
+    },
+    "deployment": {
+      "targets": ["self_hosted"],
+      "strategy": "manual",
+      "environments": ["development", "production"]
+    },
+    "environment_management": {
+      "env_example": true,
+      "secrets_management": "env_files"
+    },
+    "feature_flags": {
+      "implemented": false,
+      "provider": "none"
+    },
+    "deployment_strategy": "basic",
+    "notes": "GitHub Actions for CI (lint, test). Docker Compose for FalkorDB only. Native module prebuilds workflow for Windows. Discord webhook for release notifications. Desktop app distributed as standalone Electron build."
+  },
+
+  "security": {
+    "authentication_security": {
+      "password_hashing": "none",
+      "token_management": "secure"
+    },
+    "https_enforcement": false,
+    "cors": {
+      "configured": false,
+      "restrictive": false
+    },
+    "csp_headers": false,
+    "input_sanitization": true,
+    "sql_injection_prevention": "ORM",
+    "xss_prevention": "framework",
+    "csrf_protection": false,
+    "secrets_in_code": "none_found",
+    "security_headers": [],
+    "rate_limiting": true,
+    "audit_logging": true,
+    "security_score": "excellent",
+    "security_validators": {
+      "DatabaseValidators": "SQL injection prevention",
+      "FilesystemValidators": "Path traversal prevention",
+      "GitValidators": "Git operation safety",
+      "ProcessValidators": "Process execution safety",
+      "ScanSecrets": "Secret detection and prevention",
+      "Hooks": "Pre-execution validation",
+      "ValidatorRegistry": "Centralized validation rules"
+    },
+    "three_layer_model": {
+      "layer1": "OS Sandbox - Bash commands run in isolation",
+      "layer2": "Filesystem Permissions - Operations restricted to project directory",
+      "layer3": "Command Allowlist - Dynamic allowlist based on project stack analysis"
+    },
+    "notes": "Three-layer security model with 7 dedicated validator types. Security hooks validate all operations before execution. Agent-type-based tool filtering (QA agents get different tools than Coder). Secrets scanning with .secretsignore support. Security profile cached in .auto-claude-security.json."
+  },
+
+  "performance": {
+    "lazy_loading": true,
+    "code_splitting": true,
+    "image_optimization": {
+      "implemented": false,
+      "tools": []
+    },
+    "caching_headers": false,
+    "database_optimization": {
+      "indexes_visible": false,
+      "query_optimization": false
+    },
+    "cdn_usage": false,
+    "compression": "unknown",
+    "performance_monitoring": {
+      "implemented": false,
+      "tools": []
+    },
+    "estimated_performance": "good",
+    "notes": "Desktop app with efficient IPC. Terminal grid supports up to 12 concurrent agents. Parallel merge resolution for multiple conflict files. File-based caching for specs and memory."
+  },
+
+  "observability": {
+    "error_tracking": {
+      "implemented": false,
+      "service": "none"
+    },
+    "apm": {
+      "implemented": false,
+      "service": null
+    },
+    "metrics": {
+      "implemented": false,
+      "tools": []
+    },
+    "distributed_tracing": {
+      "implemented": false,
+      "tools": []
+    },
+    "health_checks": false,
+    "structured_logging": true,
+    "alerting": {
+      "configured": false,
+      "tools": []
+    },
+    "notes": "Custom task_logger provides structured logging per spec. No external observability tools. Progress tracked via build-progress.txt and implementation_plan.json."
+  },
+
+  "documentation": {
+    "readme": {
+      "present": true,
+      "quality": "excellent",
+      "sections": ["installation", "usage", "api", "examples", "contributing", "license"]
+    },
+    "api_docs": {
+      "present": false,
+      "format": "none",
+      "interactive": false
+    },
+    "architecture_docs": {
+      "present": true,
+      "adrs": false,
+      "diagrams": false
+    },
+    "code_comments": "good",
+    "changelog": true,
+    "docs_site": {
+      "present": false,
+      "tool": "none"
+    },
+    "onboarding_guide": true,
+    "overall_documentation_score": "good",
+    "notes": "Comprehensive README with Docker setup, CLI usage, architecture overview. CONTRIBUTING.md with detailed setup instructions. CLAUDE.md for Claude Code integration. guides/ folder with CLI usage and Docker setup docs."
+  },
+
+  "developer_experience": {
+    "setup_complexity": {
+      "steps_to_run": 5,
+      "estimated_time_minutes": 15,
+      "prerequisites": ["Node.js 18+", "Python 3.10+", "Docker Desktop", "Claude Code CLI", "Claude Pro/Max subscription", "Git repository"]
+    },
+    "dev_container": false,
+    "codespaces_support": false,
+    "hot_reload": true,
+    "debug_configuration": {
+      "present": false,
+      "ides": []
+    },
+    "ide_settings": {
+      "vscode": false,
+      "intellij": false,
+      "editorconfig": false
+    },
+    "pre_commit_hooks": {
+      "configured": true,
+      "tool": "pre_commit"
+    },
+    "task_runner": {
+      "present": true,
+      "tool": "npm_scripts"
+    },
+    "scripts_organization": "well_organized",
+    "dx_score": "good",
+    "notes": "Pre-commit hooks for linting. pnpm/npm scripts for frontend. Python CLI for backend. Electron dev mode with hot reload. Husky configured for git hooks."
+  },
+
+  "licensing_legal": {
+    "license_type": "AGPL-3.0",
+    "license_file_present": true,
+    "third_party_audit": false,
+    "notice_file": false,
+    "cla_required": false,
+    "license_compatibility": "potential_issues",
+    "notes": "AGPL-3.0 is copyleft - requires source code disclosure for network services. May limit commercial adoption. Commercial licensing mentioned for closed-source usage."
+  },
+
+  "community": {
+    "issue_templates": false,
+    "pr_templates": false,
+    "code_of_conduct": false,
+    "contributing_guide": true,
+    "governance_model": "bdfl",
+    "sponsorship": {
+      "enabled": false,
+      "platforms": []
+    },
+    "roadmap_visible": false,
+    "release_cadence": "regular",
+    "community_health_score": "fair",
+    "notes": "Active development with regular releases (v2.5.0). Discord community linked. Single primary contributor. CONTRIBUTING.md with detailed guidelines."
+  },
+
+  "summary": {
+    "strengths": [
+      "Sophisticated multi-agent architecture with 15+ agent types across 4 categories (spec, implementation, QA, analysis)",
+      "Three-layer security model with 7 dedicated validator types (Database, Filesystem, Git, Process, Secrets, Hooks, Registry)",
+      "Git worktree isolation for safe parallel development with 3-tier merge strategy",
+      "AI-powered merge conflict resolution with 98% prompt reduction via conflict-only prompting",
+      "Cross-session memory via Graphiti graph database with cost efficiency over time",
+      "Extended thinking integration for spec self-critique on complex tasks",
+      "Prediction system that anticipates implementation risks based on historical patterns",
+      "7 project analyzers for comprehensive codebase understanding (routes, ports, databases, services, auth, jobs, migrations)",
+      "QA loop with up to 50 iterations and recurring issue detection (3+ → human escalation)",
+      "Comprehensive test suite (48 Python test files)",
+      "Production-grade Electron UI with 15+ Zustand stores, comparable to Linear/Notion",
+      "Well-documented with excellent README and CONTRIBUTING guides"
+    ],
+    "weaknesses": [
+      "AGPL-3.0 license may limit commercial adoption",
+      "Heavy dependency on Claude Code CLI and subscription",
+      "No dedicated API documentation or OpenAPI spec",
+      "Limited observability/monitoring capabilities",
+      "Single contributor - bus factor of 1",
+      "No official releases/versioning visible on GitHub"
+    ],
+    "opportunities": [
+      "Add support for more LLM providers (Gemini, Mistral)",
+      "Create VS Code extension for integrated experience",
+      "Add web-based interface alternative to Electron",
+      "Implement distributed agent execution",
+      "Add team collaboration features",
+      "Create plugin/extension system for custom agents"
+    ],
+    "threats": [
+      "Rapid evolution of AI coding landscape (new competitors)",
+      "Dependency on Claude Code SDK (single vendor)",
+      "AGPL licensing may deter enterprise adoption",
+      "Complex setup requirements may limit adoption"
+    ],
+    "overall_quality_score": "B",
+    "recommendation": "Auto Claude is an impressive, well-architected autonomous coding framework that demonstrates sophisticated AI agent orchestration. The multi-agent pipeline with self-validating QA loops is particularly innovative. The codebase shows good engineering practices with comprehensive testing and proper separation of concerns. However, the AGPL license, single-contributor status, and Claude Code dependency are concerns for production adoption. Suitable for individual developers and teams comfortable with copyleft licensing who want to maximize AI-assisted coding productivity.",
+    "key_differentiators": [
+      "15+ specialized agent types across 4 categories (spec creation, implementation, QA, analysis)",
+      "Self-validating QA loop with up to 50 iterations and recurring issue detection (3+ → human escalation)",
+      "Extended thinking integration for spec self-critique on complex tasks",
+      "Prediction system that anticipates implementation risks based on historical patterns",
+      "7 project analyzers (routes, ports, databases, services, auth, jobs, migrations)",
+      "3-tier merge strategy: Git auto-merge → Conflict-only AI (~98% prompt reduction) → Full-file AI",
+      "Git worktree isolation for parallel agent work",
+      "Graph-based cross-session memory with cost efficiency over time",
+      "Dynamic complexity-based spec creation (3-8 phases) with confidence scoring",
+      "3-tier complexity model: SIMPLE (3 phases), STANDARD (6 phases), COMPLEX (8 phases)",
+      "7 security validators (Database, Filesystem, Git, Process, Secrets, Hooks, Registry)",
+      "Desktop UI with 15+ Zustand stores and up to 12 concurrent terminals (10-day session history)",
+      "Task Creation Wizard with model/thinking level selection and reference images",
+      "AI-generated product roadmap with competitor analysis and MoSCoW prioritization",
+      "Multiple Claude account support with rate limit detection (session/weekly) and profile switching",
+      "GitHub Issues integration for automated bug fixing",
+      "One-click GitHub release creation from changelogs",
+      "Full CLI interface with spec, build, insights, roadmap, and ideation runners"
+    ],
+    "similar_projects": ["Aider", "Continue", "Cursor", "Devin", "GPT Engineer", "Sweep"],
+    "confidence_level": "high",
+    "areas_needing_verification": [
+      "Actual GitHub statistics (stars, forks)",
+      "Production usage patterns and scale",
+      "Performance under heavy agent load",
+      "Memory consumption with many concurrent terminals"
+    ]
+  }
+}

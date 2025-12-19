@@ -1,0 +1,648 @@
+{
+  "meta": {
+    "schema_version": "1.0.0",
+    "generated_at": "2025-12-18T19:15:00Z",
+    "generator": "project_review",
+    "target": "/home/kasadis/summitflow",
+    "analysis_passes": 3,
+    "total_files_analyzed": 111,
+    "total_lines_analyzed": 21537
+  },
+
+  "identity": {
+    "name": "SummitFlow",
+    "description": "AI-assisted software development platform providing developer tooling for software projects including feature tracking, evidence capture, vision management, and codebase exploration.",
+    "tagline": "AI-assisted software development platform",
+    "repository_url": null,
+    "homepage": "https://dev.summitflow.dev",
+    "demo_url": "https://dev.summitflow.dev",
+    "created_at": null,
+    "last_commit": "2025-12-18",
+    "commit_frequency": "daily",
+    "license": null,
+    "license_type": "unlicensed",
+    "primary_languages": ["Python", "TypeScript"],
+    "project_maturity": "alpha",
+    "contributor_count": 1,
+    "github_stats": {
+      "stars": null,
+      "forks": null,
+      "open_issues": null,
+      "closed_issues": null
+    }
+  },
+
+  "concept": {
+    "problem_statement": "Software development lacks integrated tooling for tracking features, capturing verification evidence, managing project vision, and exploring codebases in a unified interface.",
+    "target_audience": ["Software developers", "Development teams", "AI-assisted development workflows"],
+    "value_proposition": "Unified developer tooling platform that tracks features with acceptance criteria, captures screenshot/console evidence for verification, manages project vision and goals, and provides codebase exploration across files, database, tasks, and endpoints.",
+    "competitive_alternatives": ["Jira", "Linear", "GitHub Projects", "Custom internal tooling"],
+    "use_cases": [
+      "Feature tracking with acceptance criteria verification",
+      "Visual evidence capture for feature verification",
+      "Project vision and goals management",
+      "Codebase exploration and health monitoring",
+      "Issue tracking with Beads CLI integration"
+    ],
+    "domain_vertical": "Developer Tools / DevOps",
+    "keywords": ["developer-tools", "feature-tracking", "evidence-capture", "codebase-explorer", "project-management", "ai-assisted"]
+  },
+
+  "architecture": {
+    "style": "modular_monolith",
+    "patterns": ["Repository", "MVC", "Clean"],
+    "directory_structure": "layer_based",
+    "api_style": ["REST"],
+    "state_management": {
+      "frontend": "TanStack Query (React Query)",
+      "backend": "PostgreSQL + in-memory state"
+    },
+    "dependency_injection": false,
+    "configuration_management": "Environment variables via .env.local",
+    "module_organization": "Layered: api/ services/ storage/ models/",
+    "separation_of_concerns_score": "good",
+    "notes": "Clean separation between API routes, business logic services, and storage layer. Explorer module follows documented architecture with base scanner pattern and type-specific implementations."
+  },
+
+  "frontend": {
+    "present": true,
+    "framework": "React",
+    "framework_version": "19.0.0",
+    "meta_framework": "Next.js",
+    "meta_framework_version": "15.3.0",
+    "rendering_strategy": "hybrid",
+    "styling": {
+      "approach": "Tailwind",
+      "version": "3.4.0",
+      "design_system": "Custom phosphor-green dark theme"
+    },
+    "component_library": "Radix UI primitives + custom components",
+    "component_architecture": "feature_based",
+    "form_handling": "Native React state",
+    "data_fetching": "TanStack React Query",
+    "routing": {
+      "library": "Next.js App Router",
+      "strategy": "file_based"
+    },
+    "accessibility": {
+      "implemented": true,
+      "tools": ["Radix UI"],
+      "score": "fair"
+    },
+    "i18n": {
+      "implemented": false,
+      "library": null,
+      "locales": []
+    },
+    "animations": "Framer Motion (motion library)",
+    "build_tool": "Next.js (Turbopack/webpack)",
+    "bundle_analysis": {
+      "estimated_size": null,
+      "code_splitting": true,
+      "lazy_loading": true,
+      "tree_shaking": true
+    },
+    "pwa_support": false,
+    "notes": "Modern React 19 + Next.js 15 stack with App Router. Uses TanStack Query for data fetching, Tailwind for styling with custom dark theme. Component library built on Radix UI primitives. ~6,450 lines in components."
+  },
+
+  "backend": {
+    "present": true,
+    "runtime": "Python",
+    "runtime_version": "3.12+",
+    "framework": "FastAPI",
+    "framework_version": "0.115.0+",
+    "api_structure": {
+      "organization": "resource_based",
+      "versioning": false,
+      "versioning_strategy": "none"
+    },
+    "middleware": ["CORS"],
+    "authentication": {
+      "implemented": false,
+      "methods": ["none"],
+      "providers": [],
+      "library": null
+    },
+    "authorization": {
+      "implemented": false,
+      "strategy": "none",
+      "library": null
+    },
+    "validation": {
+      "library": "Pydantic",
+      "approach": "schema_based"
+    },
+    "error_handling": {
+      "strategy": "distributed",
+      "custom_errors": false,
+      "error_tracking": null
+    },
+    "logging": {
+      "library": "Standard logging",
+      "structured": false,
+      "levels_configured": false
+    },
+    "background_jobs": {
+      "implemented": true,
+      "library": "Celery",
+      "queue": "Redis"
+    },
+    "file_handling": {
+      "uploads": true,
+      "storage": "local"
+    },
+    "rate_limiting": {
+      "implemented": false,
+      "library": null
+    },
+    "caching": {
+      "implemented": true,
+      "strategy": "redis",
+      "library": "Redis"
+    },
+    "notes": "FastAPI backend with ~10,792 lines. Clean layered architecture: API routers, services, storage. Uses psycopg3 for PostgreSQL. Celery for background tasks. Major modules: Explorer (codebase scanning), Evidence (screenshot capture), Features (tracking), Vision (goals)."
+  },
+
+  "database": {
+    "databases": [
+      {
+        "type": "PostgreSQL",
+        "purpose": "primary",
+        "version": "15+"
+      },
+      {
+        "type": "Redis",
+        "purpose": "queue",
+        "version": "5.0+"
+      }
+    ],
+    "orm": {
+      "library": "Raw SQL via psycopg",
+      "version": "3.2.0+"
+    },
+    "query_builder": null,
+    "migrations": {
+      "tool": "Manual schema init",
+      "strategy": "versioned"
+    },
+    "schema_design": "normalized",
+    "indexing_visible": true,
+    "connection_pooling": false,
+    "multi_tenancy": "row_based",
+    "seeding": {
+      "implemented": false,
+      "tool": null
+    },
+    "notes": "15+ tables including: projects, explorer_entries, feature_capabilities, artifacts, evidence, vision_goals, vision_content, sitemap_entries. Uses project_id for multi-tenancy. Proper indexes on common query paths. No ORM - raw SQL with psycopg."
+  },
+
+  "ai_ml": {
+    "present": false,
+    "llm_providers": [],
+    "llm_models": [],
+    "ai_frameworks": [],
+    "vector_stores": [],
+    "embedding_models": [],
+    "agent_architecture": {
+      "implemented": false,
+      "type": "none",
+      "framework": null
+    },
+    "rag": {
+      "implemented": false,
+      "chunking_strategy": null,
+      "retrieval_method": null
+    },
+    "prompt_management": {
+      "approach": "none",
+      "library": null
+    },
+    "fine_tuning": false,
+    "ml_pipelines": false,
+    "notes": "Despite being named 'AI-assisted', current codebase has no AI/ML integration. The AI assistance comes from external Claude Code integration via .claude/ configuration and Beads CLI workflow."
+  },
+
+  "realtime": {
+    "websockets": {
+      "implemented": false,
+      "library": null
+    },
+    "sse": false,
+    "pubsub": {
+      "implemented": true,
+      "system": "Redis"
+    },
+    "notifications": {
+      "implemented": false,
+      "channels": []
+    },
+    "email": {
+      "provider": "none",
+      "templating": null
+    },
+    "notes": "Redis used for Celery task queue but no real-time features exposed to UI. Polling used for scan status updates."
+  },
+
+  "dependencies": {
+    "package_manager": "pip",
+    "lock_file_present": false,
+    "direct_dependencies": 11,
+    "dev_dependencies": 4,
+    "monorepo": {
+      "is_monorepo": false,
+      "tool": "none"
+    },
+    "notable_dependencies": [
+      {
+        "name": "fastapi",
+        "version": "0.115.0+",
+        "purpose": "Web framework",
+        "category": "core"
+      },
+      {
+        "name": "next",
+        "version": "15.3.0",
+        "purpose": "React meta-framework",
+        "category": "core"
+      },
+      {
+        "name": "react",
+        "version": "19.0.0",
+        "purpose": "UI library",
+        "category": "core"
+      },
+      {
+        "name": "psycopg",
+        "version": "3.2.0+",
+        "purpose": "PostgreSQL driver",
+        "category": "core"
+      },
+      {
+        "name": "celery",
+        "version": "5.4.0+",
+        "purpose": "Task queue",
+        "category": "core"
+      },
+      {
+        "name": "@tanstack/react-query",
+        "version": "5.62.0",
+        "purpose": "Data fetching",
+        "category": "core"
+      },
+      {
+        "name": "tailwindcss",
+        "version": "3.4.0",
+        "purpose": "CSS framework",
+        "category": "ui"
+      },
+      {
+        "name": "lucide-react",
+        "version": "0.468.0",
+        "purpose": "Icons",
+        "category": "ui"
+      },
+      {
+        "name": "motion",
+        "version": "12.0.0",
+        "purpose": "Animations",
+        "category": "ui"
+      },
+      {
+        "name": "ruff",
+        "version": "0.8.0+",
+        "purpose": "Linting/formatting",
+        "category": "dev"
+      },
+      {
+        "name": "mypy",
+        "version": "1.13.0+",
+        "purpose": "Type checking",
+        "category": "dev"
+      },
+      {
+        "name": "pytest",
+        "version": "8.0.0+",
+        "purpose": "Testing",
+        "category": "test"
+      }
+    ],
+    "outdated_critical": [],
+    "security_vulnerabilities": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "last_audit": null
+    },
+    "duplicate_functionality": [],
+    "notes": "Lean dependency set. Using latest React 19, Next.js 15. No lock file for Python dependencies (should add). Frontend uses npm with package-lock.json."
+  },
+
+  "code_quality": {
+    "linting": {
+      "configured": true,
+      "tools": ["Ruff", "ESLint (via Next.js)"],
+      "config_files": ["pyproject.toml"]
+    },
+    "formatting": {
+      "configured": true,
+      "tools": ["Ruff"]
+    },
+    "type_safety": {
+      "language": "TypeScript",
+      "strictness": "strict",
+      "coverage_estimate": "high"
+    },
+    "complexity": {
+      "average_file_length": 193,
+      "max_file_length": 1386,
+      "deeply_nested_files": ["backend/app/api/features.py"]
+    },
+    "code_duplication": "low",
+    "dead_code": "minimal",
+    "naming_conventions": "consistent",
+    "comment_quality": "minimal",
+    "notes": "Good code quality with Ruff linting, mypy strict mode. TypeScript in frontend. Some large files (features.py at 1386 lines) could be split. Architecture doc enforces DRY and layer boundaries."
+  },
+
+  "testing": {
+    "unit_testing": {
+      "framework": "pytest",
+      "coverage_percentage": null,
+      "file_count": 3
+    },
+    "integration_testing": {
+      "implemented": false,
+      "framework": null,
+      "file_count": 0
+    },
+    "e2e_testing": {
+      "implemented": false,
+      "framework": "none",
+      "file_count": 0
+    },
+    "api_testing": {
+      "implemented": false,
+      "tools": []
+    },
+    "visual_regression": false,
+    "performance_testing": {
+      "implemented": false,
+      "tools": []
+    },
+    "test_organization": "separate",
+    "mocking": {
+      "strategy": "manual",
+      "libraries": []
+    },
+    "fixtures_factories": false,
+    "ci_automated": false,
+    "overall_coverage_estimate": "poor",
+    "notes": "Only 3 test files exist. No test coverage metrics. Testing is a major gap - most functionality is untested. pytest-asyncio configured for async testing."
+  },
+
+  "devops": {
+    "ci_cd": {
+      "platform": "none",
+      "config_files": [],
+      "stages": []
+    },
+    "containerization": {
+      "dockerfile_present": false,
+      "docker_compose": false,
+      "optimization_level": "none"
+    },
+    "orchestration": {
+      "tool": "none",
+      "config_present": false
+    },
+    "iac": {
+      "tool": "none",
+      "config_present": false
+    },
+    "deployment": {
+      "targets": ["self_hosted"],
+      "strategy": "manual",
+      "environments": ["production"]
+    },
+    "environment_management": {
+      "env_example": false,
+      "secrets_management": "env_files"
+    },
+    "feature_flags": {
+      "implemented": false,
+      "provider": "none"
+    },
+    "deployment_strategy": "basic",
+    "notes": "No CI/CD pipeline. Manual deployment via systemd user services. No Docker. Cloudflare Tunnel for HTTPS exposure. Service management via bash scripts."
+  },
+
+  "security": {
+    "authentication_security": {
+      "password_hashing": "none",
+      "token_management": "none"
+    },
+    "https_enforcement": true,
+    "cors": {
+      "configured": true,
+      "restrictive": true
+    },
+    "csp_headers": false,
+    "input_sanitization": true,
+    "sql_injection_prevention": "parameterized",
+    "xss_prevention": "framework",
+    "csrf_protection": false,
+    "secrets_in_code": "none_found",
+    "security_headers": [],
+    "rate_limiting": false,
+    "audit_logging": false,
+    "security_score": "fair",
+    "notes": "No authentication system - local/internal tool. HTTPS via Cloudflare Tunnel. CORS configured for specific origins. SQL injection prevented via parameterized queries. No rate limiting or audit logging."
+  },
+
+  "performance": {
+    "lazy_loading": true,
+    "code_splitting": true,
+    "image_optimization": {
+      "implemented": false,
+      "tools": []
+    },
+    "caching_headers": false,
+    "database_optimization": {
+      "indexes_visible": true,
+      "query_optimization": true
+    },
+    "cdn_usage": true,
+    "compression": "unknown",
+    "performance_monitoring": {
+      "implemented": false,
+      "tools": []
+    },
+    "estimated_performance": "good",
+    "notes": "Next.js handles code splitting and lazy loading. Database has proper indexes. Cloudflare provides CDN/caching. No APM or performance monitoring."
+  },
+
+  "observability": {
+    "error_tracking": {
+      "implemented": false,
+      "service": "none"
+    },
+    "apm": {
+      "implemented": false,
+      "service": null
+    },
+    "metrics": {
+      "implemented": false,
+      "tools": []
+    },
+    "distributed_tracing": {
+      "implemented": false,
+      "tools": []
+    },
+    "health_checks": true,
+    "structured_logging": false,
+    "alerting": {
+      "configured": false,
+      "tools": []
+    },
+    "notes": "Basic health check endpoint exists. Logs via journalctl. No structured logging, error tracking, or APM. Major observability gap."
+  },
+
+  "documentation": {
+    "readme": {
+      "present": true,
+      "quality": "fair",
+      "sections": ["installation", "usage", "api"]
+    },
+    "api_docs": {
+      "present": true,
+      "format": "OpenAPI",
+      "interactive": true
+    },
+    "architecture_docs": {
+      "present": true,
+      "adrs": false,
+      "diagrams": false
+    },
+    "code_comments": "minimal",
+    "changelog": false,
+    "docs_site": {
+      "present": false,
+      "tool": "none"
+    },
+    "onboarding_guide": true,
+    "overall_documentation_score": "good",
+    "notes": "Good CLAUDE.md and AGENTS.md for AI agent workflows. Explorer architecture doc is comprehensive. FastAPI auto-generates OpenAPI docs at /docs. .claude/rules/ contain detailed operational guidelines."
+  },
+
+  "developer_experience": {
+    "setup_complexity": {
+      "steps_to_run": 6,
+      "estimated_time_minutes": 15,
+      "prerequisites": ["Python 3.12+", "Node.js 20+", "PostgreSQL 15+", "Redis"]
+    },
+    "dev_container": false,
+    "codespaces_support": false,
+    "hot_reload": true,
+    "debug_configuration": {
+      "present": false,
+      "ides": []
+    },
+    "ide_settings": {
+      "vscode": false,
+      "intellij": false,
+      "editorconfig": false
+    },
+    "pre_commit_hooks": {
+      "configured": false,
+      "tool": "none"
+    },
+    "task_runner": {
+      "present": true,
+      "tool": "npm_scripts"
+    },
+    "scripts_organization": "well_organized",
+    "dx_score": "good",
+    "notes": "Good DX with hot reload, helper scripts for service management. Claude Code integration with .claude/ config. Beads CLI for issue tracking. Missing: pre-commit hooks, dev containers, IDE configs."
+  },
+
+  "licensing_legal": {
+    "license_type": "unlicensed",
+    "license_file_present": false,
+    "third_party_audit": false,
+    "notice_file": false,
+    "cla_required": false,
+    "license_compatibility": "unknown",
+    "notes": "No license file present. Appears to be internal/private project."
+  },
+
+  "community": {
+    "issue_templates": false,
+    "pr_templates": false,
+    "code_of_conduct": false,
+    "contributing_guide": false,
+    "governance_model": "bdfl",
+    "sponsorship": {
+      "enabled": false,
+      "platforms": []
+    },
+    "roadmap_visible": false,
+    "release_cadence": "irregular",
+    "community_health_score": "poor",
+    "notes": "Single-developer project. No community infrastructure. Uses Beads CLI for internal issue tracking instead of GitHub Issues."
+  },
+
+  "summary": {
+    "strengths": [
+      "Modern tech stack: React 19, Next.js 15, FastAPI, PostgreSQL",
+      "Clean layered architecture with documented patterns",
+      "Comprehensive AI agent integration via Claude Code",
+      "Feature-rich: Explorer, Evidence capture, Vision goals, Beads",
+      "Well-documented architecture (especially Explorer module)",
+      "Good code quality with strict typing (mypy strict, TypeScript)",
+      "Self-documenting with CLAUDE.md and AGENTS.md for AI workflows",
+      "Systemd service management for reliable deployment"
+    ],
+    "weaknesses": [
+      "Very poor test coverage (only 3 test files)",
+      "No CI/CD pipeline",
+      "No authentication/authorization system",
+      "No observability (APM, error tracking, structured logging)",
+      "No Docker containerization",
+      "Some large files need refactoring (features.py 1386 lines)",
+      "Missing pre-commit hooks",
+      "No i18n support"
+    ],
+    "opportunities": [
+      "Add comprehensive test suite to improve reliability",
+      "Implement CI/CD with GitHub Actions",
+      "Containerize with Docker for easier deployment",
+      "Add authentication for multi-user scenarios",
+      "Integrate actual AI/ML for 'AI-assisted' features",
+      "Add observability stack (Sentry, Prometheus)",
+      "Extract reusable components as npm/PyPI packages"
+    ],
+    "threats": [
+      "Technical debt from lack of testing could cause regressions",
+      "Single developer creates bus factor risk",
+      "No authentication limits deployment scenarios",
+      "Manual deployment is error-prone"
+    ],
+    "overall_quality_score": "B",
+    "recommendation": "SummitFlow is a well-architected alpha-stage developer tool with modern stack choices. The codebase demonstrates good separation of concerns and clean patterns. Priority improvements should focus on: (1) Adding test coverage, (2) Setting up CI/CD, (3) Adding authentication for broader use. The Claude Code integration and Beads workflow are innovative approaches to AI-assisted development.",
+    "key_differentiators": [
+      "Deep Claude Code integration via .claude/ config and rules",
+      "Beads CLI for AI-friendly issue tracking",
+      "Unified Explorer for files, database, tasks, endpoints",
+      "Evidence capture with screenshot verification workflow"
+    ],
+    "similar_projects": ["Backstage", "Port", "Cortex", "Roadie"],
+    "confidence_level": "high",
+    "areas_needing_verification": [
+      "Actual Celery task execution (Redis connection not tested)",
+      "Database table counts and data volume",
+      "Production performance metrics"
+    ]
+  }
+}
