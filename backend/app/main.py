@@ -13,6 +13,7 @@ from .api import (
     features,
     projects,
     tasks,
+    terminal,
     vision_content,
     vision_goals,
 )
@@ -57,6 +58,7 @@ app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
+app.include_router(terminal.router, tags=["terminal"])
 
 
 @app.get("/health")
