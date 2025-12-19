@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useMemo } from "react";
+import { usePathname } from "next/navigation";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 import { useIsMobile } from "@/lib/hooks/use-media-query";
@@ -8,8 +9,16 @@ import { TerminalTabs } from "@/components/terminal/TerminalTabs";
 
 interface AppShellProps {
   children: ReactNode;
-  /** Currently active project ID (from URL) */
-  activeProjectId?: string;
+}
+
+/**
+ * Extract project ID from URL path.
+ * Matches /projects/[id] and /projects/[id]/*
+ */
+function extractProjectId(pathname: string | null): string | undefined {
+  if (!pathname) return undefined;
+  const match = pathname.match(/^\/projects\/([^/]+)/);
+  return match?.[1];
 }
 
 /**
@@ -18,9 +27,13 @@ interface AppShellProps {
  * Desktop: Side-by-side panels with drag handle
  * Mobile: Full-screen overlay (handled in Phase 5)
  */
-export function AppShell({ children, activeProjectId }: AppShellProps) {
+export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
   const { isOpen, width, setWidth, isInitialized } = useTerminalState();
   const isMobile = useIsMobile();
+
+  // Extract project ID from URL for context-aware working directory
+  const activeProjectId = useMemo(() => extractProjectId(pathname), [pathname]);
 
   // Convert width percentage to min size in percentage
   // Minimum 300px, but we need percentage for PanelGroup
