@@ -237,3 +237,223 @@ def commit_changes(
     commit_sha = result.stdout.strip()
     logger.info("commit_created", sha=commit_sha[:8])
     return commit_sha
+
+
+def push_branch(
+    branch_name: str,
+    project_path: str | Path,
+    set_upstream: bool = True,
+) -> bool:
+    """Push a branch to remote origin.
+
+    Args:
+        branch_name: Name of the branch to push
+        project_path: Path to the git repository
+        set_upstream: Whether to set upstream tracking (default True)
+
+    Returns:
+        True if successful
+
+    Raises:
+        RuntimeError: If push fails
+    """
+    project_path = Path(project_path)
+
+    cmd = ["git", "push"]
+    if set_upstream:
+        cmd.extend(["-u", "origin", branch_name])
+    else:
+        cmd.extend(["origin", branch_name])
+
+    result = subprocess.run(
+        cmd,
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        logger.error("push_failed", branch=branch_name, error=result.stderr)
+        raise RuntimeError(f"Failed to push branch: {result.stderr}")
+
+    logger.info("branch_pushed", branch=branch_name)
+    return True
+
+
+def create_pull_request(
+    task: dict,
+    project_path: str | Path,
+    base_branch: str = "main",
+) -> str | None:
+    """Create a GitHub pull request for a task.
+
+    Uses the GitHub CLI (gh) to create a PR from the task's branch.
+
+    Args:
+        task: Task dict with branch_name and feature info
+        project_path: Path to the git repository
+        base_branch: Target branch for PR (default: main)
+
+    Returns:
+        The PR URL if successful, None if creation failed
+
+    Raises:
+        RuntimeError: If PR creation fails
+    """
+    from ..storage import features as feature_store
+
+    project_path = Path(project_path)
+
+    branch_name = task.get("branch_name")
+    if not branch_name:
+        logger.error("no_branch_for_pr", task_id=task.get("id"))
+        raise RuntimeError("Task has no branch_name, cannot create PR")
+
+    # Get feature info for PR content
+    feature = None
+    feature_id = task.get("feature_id")
+    if feature_id:
+        feature = feature_store.get_feature_by_db_id(feature_id)
+
+    # Build PR title
+    if feature:
+        pr_title = f"{feature.get('name', 'Feature')} [{task.get('id', 'task')}]"
+    else:
+        pr_title = task.get("title", f"Task {task.get('id', '')}")
+
+    # Build PR body with criteria checklist
+    pr_body = _build_pr_body(task, feature)
+
+    # Ensure branch is pushed to remote
+    try:
+        push_branch(branch_name, project_path)
+    except RuntimeError as e:
+        # Branch might already exist on remote, try to continue
+        if "already exists" not in str(e).lower():
+            logger.warning("push_warning", error=str(e))
+
+    # Create PR using gh CLI
+    result = subprocess.run(
+        [
+            "gh", "pr", "create",
+            "--title", pr_title,
+            "--body", pr_body,
+            "--base", base_branch,
+            "--head", branch_name,
+        ],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        # Check if PR already exists
+        if "already exists" in result.stderr.lower():
+            logger.info("pr_already_exists", branch=branch_name)
+            # Try to get existing PR URL
+            pr_url = _get_existing_pr_url(branch_name, project_path)
+            if pr_url:
+                _store_pr_url(task.get("id"), pr_url)
+                return pr_url
+        logger.error("pr_creation_failed", error=result.stderr)
+        raise RuntimeError(f"Failed to create PR: {result.stderr}")
+
+    # Extract PR URL from output
+    pr_url = result.stdout.strip()
+    logger.info("pr_created", url=pr_url)
+
+    # Store PR URL in task
+    _store_pr_url(task.get("id"), pr_url)
+
+    return pr_url
+
+
+def _build_pr_body(task: dict, feature: dict | None) -> str:
+    """Build the PR body with criteria checklist.
+
+    Args:
+        task: Task dict
+        feature: Feature dict (may be None)
+
+    Returns:
+        Formatted PR body as markdown
+    """
+    lines = ["## Summary\n"]
+
+    # Add feature description if available
+    if feature:
+        desc = feature.get("description", "")
+        if desc:
+            lines.append(f"{desc}\n")
+        else:
+            lines.append(f"Implementation of **{feature.get('name', 'feature')}**\n")
+    else:
+        desc = task.get("description", "")
+        if desc:
+            lines.append(f"{desc}\n")
+
+    # Add acceptance criteria checklist
+    if feature:
+        criteria = feature.get("acceptance_criteria", [])
+        if criteria:
+            lines.append("\n## Acceptance Criteria\n")
+            for c in criteria:
+                passes = c.get("passes", False)
+                checkbox = "[x]" if passes else "[ ]"
+                cid = c.get("id", "")
+                description = c.get("description", "No description")
+                lines.append(f"- {checkbox} **{cid}**: {description}")
+            lines.append("")
+
+    # Add task metadata
+    lines.append("\n## Task Info\n")
+    lines.append(f"- **Task ID:** `{task.get('id', 'N/A')}`")
+    if feature:
+        lines.append(f"- **Feature ID:** `{feature.get('feature_id', 'N/A')}`")
+    lines.append(f"- **Status:** {task.get('status', 'N/A')}")
+
+    # Add commits if any
+    commits = task.get("commits", [])
+    if commits:
+        lines.append(f"- **Commits:** {len(commits)}")
+
+    # Add footer
+    lines.append("\n---")
+    lines.append("🤖 Generated with [SummitFlow](https://dev.summitflow.dev)")
+
+    return "\n".join(lines)
+
+
+def _get_existing_pr_url(branch_name: str, project_path: str | Path) -> str | None:
+    """Get the URL of an existing PR for a branch.
+
+    Args:
+        branch_name: Branch to look for
+        project_path: Path to the git repository
+
+    Returns:
+        PR URL if found, None otherwise
+    """
+    project_path = Path(project_path)
+
+    result = subprocess.run(
+        ["gh", "pr", "view", branch_name, "--json", "url", "-q", ".url"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
+def _store_pr_url(task_id: str | None, pr_url: str) -> None:
+    """Store the PR URL in the task record.
+
+    Args:
+        task_id: Task ID to update
+        pr_url: PR URL to store
+    """
+    if task_id:
+        task_store.update_task(task_id, pull_request_url=pr_url)
