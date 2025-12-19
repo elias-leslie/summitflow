@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { TerminalComponent } from "./Terminal";
 import { Plus, X, Terminal as TerminalIcon, Loader2 } from "lucide-react";
@@ -18,10 +18,24 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     activeId,
     setActiveId,
     create,
+    update,
     remove,
     isLoading,
     isCreating,
   } = useTerminalSessions(projectId);
+
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
 
   // Create new terminal session
   const handleAddTab = useCallback(async () => {
@@ -38,6 +52,42 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
       await remove(sessionId);
     },
     [sessions.length, remove]
+  );
+
+  // Start editing tab name
+  const handleStartEdit = useCallback((sessionId: string, currentName: string) => {
+    setEditingId(sessionId);
+    setEditValue(currentName);
+  }, []);
+
+  // Save edited name
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingId || !editValue.trim()) {
+      setEditingId(null);
+      return;
+    }
+
+    await update(editingId, { name: editValue.trim() });
+    setEditingId(null);
+  }, [editingId, editValue, update]);
+
+  // Cancel editing
+  const handleCancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditValue("");
+  }, []);
+
+  // Handle keyboard events in edit mode
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSaveEdit();
+      } else if (e.key === "Escape") {
+        handleCancelEdit();
+      }
+    },
+    [handleSaveEdit, handleCancelEdit]
   );
 
   // Loading state
@@ -89,10 +139,29 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             )}
           >
             <TerminalIcon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate max-w-[120px]">
-              {session.name}
-              {!session.is_alive && " (dead)"}
-            </span>
+            {editingId === session.id ? (
+              <input
+                ref={editInputRef}
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={handleSaveEdit}
+                onKeyDown={handleEditKeyDown}
+                className="bg-slate-800 border border-slate-600 rounded px-1 py-0 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span
+                className="truncate max-w-[120px]"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  handleStartEdit(session.id, session.name);
+                }}
+              >
+                {session.name}
+                {!session.is_alive && " (dead)"}
+              </span>
+            )}
             {sessions.length > 1 && (
               <button
                 onClick={(e) => handleCloseTab(session.id, e)}
