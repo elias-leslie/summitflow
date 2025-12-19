@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, CircleDot, Compass } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, CircleDot, Compass, Kanban } from "lucide-react";
 import Link from "next/link";
 import { fetchProject, fetchProjectHealth } from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
@@ -11,8 +11,12 @@ import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 import { BeadsTab } from "@/components/beads/BeadsTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
+import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard";
+import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
+import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
+import type { Feature } from "@/lib/api";
 
-type TabId = "explorer" | "features" | "vision" | "evidence" | "beads";
+type TabId = "explorer" | "features" | "vision" | "evidence" | "beads" | "kanban";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -25,10 +29,14 @@ export default function ProjectDetailPage() {
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["explorer", "features", "vision", "evidence", "beads"].includes(urlTab)) {
+    if (urlTab && ["explorer", "features", "vision", "evidence", "beads", "kanban"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
+
+  // Kanban state
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -40,6 +48,27 @@ export default function ProjectDetailPage() {
     queryFn: () => fetchProjectHealth(projectId),
     refetchInterval: 30000,
   });
+
+  // Features for Kanban (only fetch when kanban tab is active)
+  const { data: featuresData } = useFeatures(projectId);
+  const features = featuresData?.features ?? [];
+  const updateStatus = useUpdateFeatureStatus(projectId);
+
+  // Kanban handlers
+  const handleStatusChange = (featureId: string, newStatus: KanbanStatus) => {
+    updateStatus.mutate({ featureId, newStatus });
+  };
+
+  const handleFeatureClick = (feature: Feature) => {
+    setSelectedFeature(feature);
+    setDrawerOpen(true);
+  };
+
+  const handleStartClick = (feature: Feature) => {
+    if (feature.status !== "in_progress") {
+      updateStatus.mutate({ featureId: feature.feature_id, newStatus: "in_progress" });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -209,6 +238,22 @@ export default function ProjectDetailPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("kanban")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "kanban"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Kanban className="w-4 h-4" />
+              Kanban
+            </div>
+            {activeTab === "kanban" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -219,6 +264,22 @@ export default function ProjectDetailPage() {
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
         {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
         {activeTab === "beads" && <BeadsTab projectId={projectId} />}
+        {activeTab === "kanban" && (
+          <>
+            <KanbanBoard
+              features={features}
+              onStatusChange={handleStatusChange}
+              onFeatureClick={handleFeatureClick}
+              onStartClick={handleStartClick}
+            />
+            <FeatureDetailDrawer
+              feature={selectedFeature}
+              open={drawerOpen}
+              onOpenChange={setDrawerOpen}
+              onStartClick={handleStartClick}
+            />
+          </>
+        )}
       </section>
     </div>
   );
