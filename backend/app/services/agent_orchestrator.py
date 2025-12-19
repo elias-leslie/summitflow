@@ -1045,11 +1045,23 @@ def execute_all_criteria(
             result["error"] = execution.get("error", "Unknown error")
 
             # Update task with error message on persistent failure
+            error_msg = f"Criterion {criterion_id} failed: {execution.get('error', 'Unknown error')}"
             task_storage.update_task_status(
                 task["id"],
                 "failed",
-                error_message=f"Criterion {criterion_id} failed: {execution.get('error', 'Unknown error')}",
+                error_message=error_msg,
                 validate_transition=False,  # Allow transition even if task is not running
+            )
+
+            # Create failure notification for escalation
+            from ..storage import notifications as notification_store
+
+            notification_store.create_task_failure_notification(
+                project_id=task["project_id"],
+                task_id=task["id"],
+                task_title=task.get("title", "Unknown Task"),
+                error_message=error_msg,
+                criterion_id=criterion_id,
             )
 
             if stop_on_failure:

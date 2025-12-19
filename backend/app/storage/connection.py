@@ -522,6 +522,32 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)")
 
+            # ============================================================
+            # Notifications table (for failure escalation alerts)
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+                    type VARCHAR(50) NOT NULL,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    severity VARCHAR(20) NOT NULL DEFAULT 'info',
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    metadata JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    read_at TIMESTAMPTZ,
+                    dismissed_at TIMESTAMPTZ
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_project ON notifications(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_status ON notifications(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_created ON notifications(created_at DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_task ON notifications(task_id)")
+
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
             for column, table in [
