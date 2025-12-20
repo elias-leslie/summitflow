@@ -12,11 +12,9 @@ Tools:
 
 from __future__ import annotations
 
-import fnmatch
 import logging
-import os
-import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -171,6 +169,110 @@ def get_project_structure_tool() -> dict[str, Any]:
 
 
 # =============================================================================
+# Write Tools (require permission)
+# =============================================================================
+
+
+def get_write_file_tool() -> dict[str, Any]:
+    """Write file tool definition."""
+    return {
+        "name": "write_file",
+        "description": (
+            "Create or overwrite a file with the given content. Use this to create "
+            "new files or completely replace existing file contents. REQUIRES WRITE "
+            "PERMISSION. Will fail if path is outside allowed directories."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to write",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content to write to the file",
+                },
+            },
+            "required": ["file_path", "content"],
+        },
+    }
+
+
+def get_edit_file_tool() -> dict[str, Any]:
+    """Edit file tool definition."""
+    return {
+        "name": "edit_file",
+        "description": (
+            "Make a targeted edit to an existing file by replacing specific text. "
+            "Use this for surgical edits without rewriting the entire file. The "
+            "old_string must match exactly (including whitespace). REQUIRES WRITE "
+            "PERMISSION."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to edit",
+                },
+                "old_string": {
+                    "type": "string",
+                    "description": "Exact text to replace (must match exactly)",
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "Text to replace it with",
+                },
+            },
+            "required": ["file_path", "old_string", "new_string"],
+        },
+    }
+
+
+def get_create_directory_tool() -> dict[str, Any]:
+    """Create directory tool definition."""
+    return {
+        "name": "create_directory",
+        "description": (
+            "Create a new directory (and parent directories if needed). REQUIRES "
+            "WRITE PERMISSION. Will fail if path is outside allowed directories."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the directory to create",
+                },
+            },
+            "required": ["path"],
+        },
+    }
+
+
+def get_delete_file_tool() -> dict[str, Any]:
+    """Delete file tool definition."""
+    return {
+        "name": "delete_file",
+        "description": (
+            "Delete a file. REQUIRES WRITE PERMISSION. Use with caution. Will fail "
+            "if file doesn't exist or path is outside allowed directories."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to delete",
+                },
+            },
+            "required": ["file_path"],
+        },
+    }
+
+
+# =============================================================================
 # Tool Categories
 # =============================================================================
 
@@ -198,9 +300,24 @@ READ_ONLY_TOOLS = ToolCategory(
     requires_permission=False,
 )
 
-# Future: Additional tool categories that require permission
-# WRITE_TOOLS = ToolCategory(...)
-# EXECUTE_TOOLS = ToolCategory(...)
+# Write tools (require explicit permission)
+WRITE_TOOLS = ToolCategory(
+    name="write",
+    description="Write access to codebase (create, edit, delete files)",
+    tools=[
+        get_write_file_tool(),
+        get_edit_file_tool(),
+        get_create_directory_tool(),
+        get_delete_file_tool(),
+    ],
+    requires_permission=True,
+)
+
+# All tool categories
+ALL_CATEGORIES = {
+    "read_only": READ_ONLY_TOOLS,
+    "write": WRITE_TOOLS,
+}
 
 
 # =============================================================================
@@ -231,13 +348,31 @@ class RoundtableToolExecutor:
     # Custom allowed paths (in addition to defaults)
     allowed_paths: list[str] = field(default_factory=list)
 
+    # YOLO mode - auto-approve all permission requests
+    yolo_mode: bool = False
+
     def get_available_tools(self) -> list[dict[str, Any]]:
         """Get all available tool definitions based on enabled categories."""
         tools = []
         if "read_only" in self.enabled_categories:
             tools.extend(READ_ONLY_TOOLS.tools)
-        # Future: Add more categories here
+        if "write" in self.enabled_categories:
+            tools.extend(WRITE_TOOLS.tools)
         return tools
+
+    def has_write_access(self) -> bool:
+        """Check if write access is enabled."""
+        return "write" in self.enabled_categories
+
+    def enable_write_access(self) -> None:
+        """Enable write access tools."""
+        if "write" not in self.enabled_categories:
+            self.enabled_categories.append("write")
+
+    def disable_write_access(self) -> None:
+        """Disable write access tools."""
+        if "write" in self.enabled_categories:
+            self.enabled_categories.remove("write")
 
     def execute(self, tool_name: str, parameters: dict[str, Any]) -> ToolResult:
         """Execute a tool with the given parameters.
@@ -249,11 +384,24 @@ class RoundtableToolExecutor:
         Returns:
             ToolResult with output or error
         """
+        # Check if tool requires write access
+        write_tools = {"write_file", "edit_file", "create_directory", "delete_file"}
+        if tool_name in write_tools and not self.has_write_access():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Tool '{tool_name}' requires write access. Enable write access to use this tool.",
+            )
+
         executors = {
             "read_file": self._execute_read_file,
             "search_code": self._execute_search_code,
             "list_files": self._execute_list_files,
             "get_project_structure": self._execute_get_project_structure,
+            "write_file": self._execute_write_file,
+            "edit_file": self._execute_edit_file,
+            "create_directory": self._execute_create_directory,
+            "delete_file": self._execute_delete_file,
         }
 
         executor = executors.get(tool_name)
@@ -533,6 +681,141 @@ class RoundtableToolExecutor:
         except Exception as e:
             return ToolResult(False, "", f"Failed to get structure: {e}")
 
+    # =========================================================================
+    # Write Tool Executors
+    # =========================================================================
+
+    def _execute_write_file(self, params: dict[str, Any]) -> ToolResult:
+        """Execute write_file tool."""
+        file_path = params.get("file_path", "")
+        content = params.get("content", "")
+
+        if not file_path:
+            return ToolResult(False, "", "file_path is required")
+
+        # Validate path
+        is_valid, result = self._validate_path(file_path)
+        if not is_valid:
+            return ToolResult(False, "", result)
+
+        path = Path(result)
+
+        try:
+            # Create parent directories if needed
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write file
+            path.write_text(content, encoding="utf-8")
+
+            return ToolResult(
+                True,
+                f"Successfully wrote {len(content)} bytes to {file_path}",
+            )
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to write file: {e}")
+
+    def _execute_edit_file(self, params: dict[str, Any]) -> ToolResult:
+        """Execute edit_file tool."""
+        file_path = params.get("file_path", "")
+        old_string = params.get("old_string", "")
+        new_string = params.get("new_string", "")
+
+        if not file_path:
+            return ToolResult(False, "", "file_path is required")
+        if not old_string:
+            return ToolResult(False, "", "old_string is required")
+
+        # Validate path
+        is_valid, result = self._validate_path(file_path)
+        if not is_valid:
+            return ToolResult(False, "", result)
+
+        path = Path(result)
+
+        if not path.exists():
+            return ToolResult(False, "", f"File not found: {file_path}")
+
+        if not path.is_file():
+            return ToolResult(False, "", f"Not a file: {file_path}")
+
+        try:
+            # Read current content
+            content = path.read_text(encoding="utf-8")
+
+            # Check if old_string exists
+            if old_string not in content:
+                return ToolResult(
+                    False,
+                    "",
+                    "old_string not found in file. Make sure it matches exactly.",
+                )
+
+            # Count occurrences
+            count = content.count(old_string)
+            if count > 1:
+                return ToolResult(
+                    False,
+                    "",
+                    f"old_string found {count} times. It must be unique for safe replacement.",
+                )
+
+            # Replace
+            new_content = content.replace(old_string, new_string, 1)
+            path.write_text(new_content, encoding="utf-8")
+
+            return ToolResult(
+                True,
+                f"Successfully edited {file_path}",
+            )
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to edit file: {e}")
+
+    def _execute_create_directory(self, params: dict[str, Any]) -> ToolResult:
+        """Execute create_directory tool."""
+        dir_path = params.get("path", "")
+
+        if not dir_path:
+            return ToolResult(False, "", "path is required")
+
+        # Validate path
+        is_valid, result = self._validate_path(dir_path)
+        if not is_valid:
+            return ToolResult(False, "", result)
+
+        path = Path(result)
+
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return ToolResult(True, f"Successfully created directory: {dir_path}")
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to create directory: {e}")
+
+    def _execute_delete_file(self, params: dict[str, Any]) -> ToolResult:
+        """Execute delete_file tool."""
+        file_path = params.get("file_path", "")
+
+        if not file_path:
+            return ToolResult(False, "", "file_path is required")
+
+        # Validate path
+        is_valid, result = self._validate_path(file_path)
+        if not is_valid:
+            return ToolResult(False, "", result)
+
+        path = Path(result)
+
+        if not path.exists():
+            return ToolResult(False, "", f"File not found: {file_path}")
+
+        if not path.is_file():
+            return ToolResult(False, "", f"Not a file (use rmdir for directories): {file_path}")
+
+        try:
+            path.unlink()
+            return ToolResult(True, f"Successfully deleted: {file_path}")
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to delete file: {e}")
+
 
 # =============================================================================
 # Helper Functions
@@ -561,3 +844,116 @@ def format_tool_results_for_prompt(results: list[tuple[str, ToolResult]]) -> str
             parts.append(f"=== {tool_name} ERROR ===\n{result.error}")
 
     return "\n\n".join(parts)
+
+
+# =============================================================================
+# SDK Format Converters
+# =============================================================================
+
+# Tool name sets for permission handling
+READ_TOOL_NAMES = {"read_file", "search_code", "list_files", "get_project_structure"}
+WRITE_TOOL_NAMES = {"write_file", "edit_file", "delete_file", "create_directory"}
+
+
+def get_tool_description(tool_name: str) -> str:
+    """Get the description for a tool by name.
+
+    Args:
+        tool_name: Name of the tool
+
+    Returns:
+        Tool description string, or empty string if not found
+    """
+    tool_getters = {
+        "read_file": get_read_file_tool,
+        "search_code": get_search_code_tool,
+        "list_files": get_list_files_tool,
+        "get_project_structure": get_project_structure_tool,
+        "write_file": get_write_file_tool,
+        "edit_file": get_edit_file_tool,
+        "create_directory": get_create_directory_tool,
+        "delete_file": get_delete_file_tool,
+    }
+
+    getter = tool_getters.get(tool_name)
+    if getter:
+        tool_def = getter()
+        return tool_def.get("description", "")
+    return ""
+
+
+def to_claude_sdk_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert tools to Claude SDK format.
+
+    Claude SDK uses the same format as Anthropic API, so this is mostly
+    a pass-through, but validates the structure.
+
+    Args:
+        tools: Tool definitions with name, description, input_schema
+
+    Returns:
+        Tools in Claude SDK format (same structure)
+    """
+    return [
+        {
+            "name": tool["name"],
+            "description": tool.get("description", ""),
+            "input_schema": tool.get("input_schema", {"type": "object", "properties": {}}),
+        }
+        for tool in tools
+    ]
+
+
+def create_tool_function(
+    tool_name: str,
+    executor: RoundtableToolExecutor,
+) -> Callable[..., dict[str, Any]]:
+    """Create an executable function for a tool.
+
+    Creates a callable that wraps RoundtableToolExecutor.execute() with
+    proper __name__ and __doc__ for ADK FunctionTool.
+
+    Args:
+        tool_name: Name of the tool
+        executor: Tool executor instance
+
+    Returns:
+        Callable that executes the tool and returns result dict
+    """
+
+    def tool_fn(**kwargs: Any) -> dict[str, Any]:
+        result = executor.execute(tool_name, kwargs)
+        return {
+            "success": result.success,
+            "output": result.output,
+            "error": result.error,
+        }
+
+    # Set proper function metadata for ADK
+    tool_fn.__name__ = tool_name
+    tool_fn.__doc__ = get_tool_description(tool_name)
+
+    return tool_fn
+
+
+def to_adk_function_tools(
+    tools: list[dict[str, Any]],
+    executor: RoundtableToolExecutor,
+) -> list[Callable[..., dict[str, Any]]]:
+    """Convert tools to Google ADK function format.
+
+    Creates callable functions from tool definitions that can be passed
+    to LlmAgent.tools parameter.
+
+    Args:
+        tools: Tool definitions with name, description, input_schema
+        executor: Tool executor to run the tools
+
+    Returns:
+        List of callable functions with proper __name__ and __doc__
+
+    Note:
+        ADK can use raw functions directly - it wraps them internally.
+        We don't need to use FunctionTool explicitly.
+    """
+    return [create_tool_function(tool["name"], executor) for tool in tools]
