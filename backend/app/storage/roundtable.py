@@ -480,3 +480,169 @@ def update_agent_config(
         conn.commit()
 
     return result is not None
+
+
+def update_sdk_session_ids(
+    session_id: str,
+    claude_sdk_session_id: str | None = None,
+    gemini_sdk_session_id: str | None = None,
+) -> bool:
+    """Update SDK session IDs for session resume.
+
+    Args:
+        session_id: Roundtable session ID
+        claude_sdk_session_id: Claude Agent SDK session ID for resume
+        gemini_sdk_session_id: Gemini session ID for resume
+
+    Returns:
+        True if session was updated, False if not found
+    """
+    # Build SET clause dynamically - only update provided fields
+    set_parts = ["updated_at = NOW()"]
+    params = []
+
+    if claude_sdk_session_id is not None:
+        set_parts.append("claude_sdk_session_id = %s")
+        params.append(claude_sdk_session_id)
+    if gemini_sdk_session_id is not None:
+        set_parts.append("gemini_sdk_session_id = %s")
+        params.append(gemini_sdk_session_id)
+
+    params.append(session_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE roundtable_sessions
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            RETURNING id
+            """,
+            params,
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
+
+
+def update_session_metadata(
+    session_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    status: str | None = None,
+    agent_mode: str | None = None,
+) -> dict[str, Any] | None:
+    """Update session metadata fields.
+
+    Args:
+        session_id: Session ID
+        title: Session title (optional)
+        description: Session description (optional)
+        status: Session status - active, archived (optional)
+        agent_mode: Agent mode - claude, gemini, both (optional)
+
+    Returns:
+        Updated session dict or None if not found
+    """
+    # Build SET clause dynamically based on provided fields
+    set_parts = ["updated_at = NOW()"]
+    params = []
+
+    if title is not None:
+        set_parts.append("title = %s")
+        params.append(title)
+    if description is not None:
+        set_parts.append("description = %s")
+        params.append(description)
+    if status is not None:
+        set_parts.append("status = %s")
+        params.append(status)
+    if agent_mode is not None:
+        set_parts.append("agent_mode = %s")
+        params.append(agent_mode)
+
+    params.append(session_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE roundtable_sessions
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            RETURNING id, project_id, title, description, status, agent_mode,
+                      mode, tools_enabled, claude_sdk_session_id, gemini_sdk_session_id,
+                      created_at, updated_at
+            """,
+            params,
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "title": row[2],
+        "description": row[3],
+        "status": row[4],
+        "agent_mode": row[5],
+        "mode": row[6],
+        "tools_enabled": row[7],
+        "claude_sdk_session_id": row[8],
+        "gemini_sdk_session_id": row[9],
+        "created_at": row[10],
+        "updated_at": row[11],
+    }
+
+
+def get_session_count(project_id: str) -> int:
+    """Get the number of roundtable sessions for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Number of sessions
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM roundtable_sessions WHERE project_id = %s",
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    return row[0] if row else 0
+
+
+def delete_oldest_session(project_id: str) -> str | None:
+    """Delete the oldest session for a project.
+
+    Used to enforce session limits (e.g., max 25 per project).
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Deleted session ID or None if no sessions exist
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM roundtable_sessions
+            WHERE id = (
+                SELECT id FROM roundtable_sessions
+                WHERE project_id = %s
+                ORDER BY updated_at ASC
+                LIMIT 1
+            )
+            RETURNING id
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return row[0] if row else None
