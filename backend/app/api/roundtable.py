@@ -131,6 +131,88 @@ class GenerateFeaturesResponse(BaseModel):
     session_id: str
 
 
+# Vision Generation Models
+class GenerateVisionRequest(BaseModel):
+    """Request to generate vision from conversation."""
+
+    agent: str = "gemini"  # "claude" or "gemini"
+
+
+class GeneratedNarrative(BaseModel):
+    """Narrative generated from conversation."""
+
+    id: str
+    title: str
+    content: str
+    category: str = "general"
+
+
+class GeneratedMission(BaseModel):
+    """Mission statement generated from conversation."""
+
+    statement: str
+    values: list[str] = []
+
+
+class GenerateVisionResponse(BaseModel):
+    """Response after generating vision."""
+
+    mission: GeneratedMission | None
+    narratives: list[GeneratedNarrative]
+    session_id: str
+
+
+class SaveVisionRequest(BaseModel):
+    """Request to save generated vision."""
+
+    mission: GeneratedMission | None = None
+    narratives: list[GeneratedNarrative] = []
+
+
+class SaveVisionResponse(BaseModel):
+    """Response after saving vision."""
+
+    status: str
+    project_id: str
+
+
+# Goals Generation Models
+class GenerateGoalsRequest(BaseModel):
+    """Request to generate goals from conversation."""
+
+    agent: str = "gemini"  # "claude" or "gemini"
+
+
+class GeneratedGoal(BaseModel):
+    """Goal generated from conversation."""
+
+    code: str
+    name: str
+    description: str
+    category: str = "general"
+
+
+class GenerateGoalsResponse(BaseModel):
+    """Response after generating goals."""
+
+    goals: list[GeneratedGoal]
+    session_id: str
+
+
+class SaveGoalsRequest(BaseModel):
+    """Request to save generated goals."""
+
+    goals: list[GeneratedGoal]
+
+
+class SaveGoalsResponse(BaseModel):
+    """Response after saving goals."""
+
+    status: str
+    project_id: str
+    goals_created: int
+
+
 class SessionInfo(BaseModel):
     """Session info for listing."""
 
