@@ -653,6 +653,7 @@ export async function fetchTasks(
     type?: TaskType;
     priority?: number;
     labels?: string;
+    include?: string;
     limit?: number;
     offset?: number;
   } = {}
@@ -662,6 +663,7 @@ export async function fetchTasks(
   if (options.type) params.append("type", options.type);
   if (options.priority !== undefined) params.append("priority", options.priority.toString());
   if (options.labels) params.append("labels", options.labels);
+  if (options.include) params.append("include", options.include);
   if (options.limit) params.append("limit", options.limit.toString());
   if (options.offset) params.append("offset", options.offset.toString());
 

@@ -26,9 +26,8 @@ import { TasksTab } from "@/components/tasks/TasksTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { GoalsList } from "@/components/goals/GoalsList";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
-import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard";
-import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
-import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
+import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
+import { TaskDetailDrawer } from "@/components/kanban/TaskDetailDrawer";
 import {
   RoundtableChat,
   type ChatMessage,
@@ -36,8 +35,8 @@ import {
   type FileAttachment,
 } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
-import { StartTaskDialog } from "@/components/tasks/StartTaskDialog";
-import type { Feature } from "@/lib/api";
+import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
+import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
 type TabId = "explorer" | "features" | "vision" | "goals" | "evidence" | "tasks" | "kanban" | "roundtable";
 
@@ -58,10 +57,9 @@ export default function ProjectDetailPage() {
   }, [urlTab]);
 
   // Kanban state
-  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [startDialogOpen, setStartDialogOpen] = useState(false);
-  const [startFeature, setStartFeature] = useState<Feature | null>(null);
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
 
   // Roundtable state
   const [roundtableSessionId, setRoundtableSessionId] = useState<string | null>(null);
@@ -148,24 +146,43 @@ export default function ProjectDetailPage() {
     refetchInterval: 30000,
   });
 
-  // Features for Kanban (only fetch when kanban tab is active)
-  const { data: featuresData } = useFeatures(projectId);
-  const features = featuresData?.features ?? [];
-  const updateStatus = useUpdateFeatureStatus(projectId);
+  // Tasks for Kanban (fetch with feature context)
+  const {
+    data: kanbanTasksData,
+    refetch: refetchKanbanTasks,
+  } = useQuery({
+    queryKey: ["tasks-kanban", projectId],
+    queryFn: () => fetchTasks(projectId, { include: "feature", limit: 500 }),
+    staleTime: 30000,
+    enabled: activeTab === "kanban",
+  });
+  const kanbanTasks = kanbanTasksData?.tasks ?? [];
 
   // Kanban handlers
-  const handleStatusChange = (featureId: string, newStatus: KanbanStatus) => {
-    updateStatus.mutate({ featureId, newStatus });
+  const handleTaskStatusChange = async (taskId: string, newStatus: TaskStatus) => {
+    try {
+      await updateTaskStatus(projectId, taskId, newStatus);
+      refetchKanbanTasks();
+    } catch (err) {
+      console.error("Failed to update task status:", err);
+    }
   };
 
-  const handleFeatureClick = (feature: Feature) => {
-    setSelectedFeature(feature);
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
     setDrawerOpen(true);
   };
 
-  const handleStartClick = (feature: Feature) => {
-    setStartFeature(feature);
-    setStartDialogOpen(true);
+  const handleNewTask = () => {
+    setCreateTaskDialogOpen(true);
+  };
+
+  const handleCreateDialogChange = (open: boolean) => {
+    setCreateTaskDialogOpen(open);
+    if (!open) {
+      // Refetch tasks when dialog closes (after create)
+      refetchKanbanTasks();
+    }
   };
 
   // Roundtable handlers
@@ -611,29 +628,25 @@ export default function ProjectDetailPage() {
         {activeTab === "tasks" && <TasksTab projectId={projectId} />}
         {activeTab === "kanban" && (
           <>
-            <KanbanBoard
-              features={features}
+            <TaskKanbanBoard
+              tasks={kanbanTasks}
               projectId={projectId}
-              projectName={project.name}
-              onStatusChange={handleStatusChange}
-              onFeatureClick={handleFeatureClick}
-              onStartClick={handleStartClick}
+              onStatusChange={handleTaskStatusChange}
+              onTaskClick={handleTaskClick}
+              onNewTask={handleNewTask}
             />
-            <FeatureDetailDrawer
-              feature={selectedFeature}
+            <TaskDetailDrawer
+              task={selectedTask}
               projectId={projectId}
               open={drawerOpen}
               onOpenChange={setDrawerOpen}
-              onStartClick={handleStartClick}
+              onStatusChange={handleTaskStatusChange}
             />
-            {startFeature && (
-              <StartTaskDialog
-                open={startDialogOpen}
-                onOpenChange={setStartDialogOpen}
-                projectId={projectId}
-                feature={startFeature}
-              />
-            )}
+            <CreateTaskDialog
+              open={createTaskDialogOpen}
+              onOpenChange={handleCreateDialogChange}
+              projectId={projectId}
+            />
           </>
         )}
         {activeTab === "roundtable" && (
