@@ -33,7 +33,9 @@ import {
   CheckCircle,
   ListChecks,
   Plus,
+  FolderCode,
 } from "lucide-react";
+import { Switch } from "../ui/switch";
 
 export type AgentType = "claude" | "gemini" | "user";
 export type RoundtableMode = "spec_driven" | "quick";
@@ -63,6 +65,19 @@ export interface GeneratedFeature {
   acceptance_criteria: { id: string; description: string }[];
 }
 
+export interface ToolStats {
+  total_calls: number;
+  files_read: number;
+  searches: number;
+  writes: number;
+}
+
+export interface ToolsSettings {
+  toolsEnabled: boolean;
+  writeEnabled: boolean;
+  yoloMode: boolean;
+}
+
 interface RoundtableChatProps {
   projectId: string;
   sessionId?: string;
@@ -81,6 +96,12 @@ interface RoundtableChatProps {
   streamingAgent?: "claude" | "gemini" | null;
   connected?: boolean;
   error?: string | null;
+  // Tools/codebase access props
+  toolsEnabled?: boolean;
+  writeEnabled?: boolean;
+  yoloMode?: boolean;
+  toolStats?: ToolStats;
+  onToolsChange?: (settings: Partial<ToolsSettings>) => void;
 }
 
 // Agent styling configuration
@@ -401,6 +422,11 @@ export function RoundtableChat({
   streamingAgent = null,
   connected = true,
   error = null,
+  toolsEnabled = true,
+  writeEnabled = false,
+  yoloMode = false,
+  toolStats,
+  onToolsChange,
 }: RoundtableChatProps) {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -622,12 +648,84 @@ export function RoundtableChat({
           </div>
         </div>
 
-        {/* Mode selector */}
-        <ModeSelector
-          mode={mode}
-          onModeChange={onModeChange}
-          disabled={isLoading || isSending || messages.length > 0}
-        />
+        {/* Mode selector and tools toggle */}
+        <div className="flex items-center justify-between gap-3">
+          <ModeSelector
+            mode={mode}
+            onModeChange={onModeChange}
+            disabled={isLoading || isSending || messages.length > 0}
+          />
+
+          {/* Tools/Codebase access toggles */}
+          <div className="flex items-center gap-4">
+            {/* Read access toggle */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="tools-toggle"
+                className={clsx(
+                  "flex items-center gap-1 text-xs cursor-pointer",
+                  toolsEnabled ? "text-phosphor-400" : "text-slate-500"
+                )}
+              >
+                <FolderCode className="w-3.5 h-3.5" />
+                <span>Read</span>
+              </label>
+              <Switch
+                id="tools-toggle"
+                checked={toolsEnabled}
+                onCheckedChange={(enabled) => onToolsChange?.({ toolsEnabled: enabled })}
+                disabled={isLoading || !!streamingAgent}
+              />
+            </div>
+
+            {/* Write access toggle */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="write-toggle"
+                className={clsx(
+                  "flex items-center gap-1 text-xs cursor-pointer",
+                  writeEnabled ? "text-amber-400" : "text-slate-500"
+                )}
+              >
+                <span>Write</span>
+              </label>
+              <Switch
+                id="write-toggle"
+                checked={writeEnabled}
+                onCheckedChange={(enabled) => onToolsChange?.({ writeEnabled: enabled })}
+                disabled={isLoading || !!streamingAgent || !toolsEnabled}
+              />
+            </div>
+
+            {/* YOLO mode toggle */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="yolo-toggle"
+                className={clsx(
+                  "flex items-center gap-1 text-xs cursor-pointer",
+                  yoloMode ? "text-rose-400" : "text-slate-500"
+                )}
+                title="Auto-approve all tool actions without prompts"
+              >
+                <span>YOLO</span>
+              </label>
+              <Switch
+                id="yolo-toggle"
+                checked={yoloMode}
+                onCheckedChange={(enabled) => onToolsChange?.({ yoloMode: enabled })}
+                disabled={isLoading || !!streamingAgent || !toolsEnabled}
+              />
+            </div>
+
+            {/* Tool stats badge */}
+            {toolStats && toolStats.total_calls > 0 && (
+              <Badge variant="slate" className="text-[10px]">
+                {toolStats.total_calls} calls
+                {toolStats.writes > 0 && ` (${toolStats.writes} writes)`}
+              </Badge>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Messages */}

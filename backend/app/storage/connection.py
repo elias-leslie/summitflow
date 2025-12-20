@@ -538,6 +538,8 @@ def init_schema() -> None:
                     id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     mode VARCHAR(20) NOT NULL DEFAULT 'quick',
+                    tools_enabled BOOLEAN DEFAULT TRUE,
+                    tool_stats JSONB DEFAULT '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb,
                     messages JSONB DEFAULT '[]'::jsonb,
                     generated_features JSONB DEFAULT '[]'::jsonb,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -586,6 +588,11 @@ def init_schema() -> None:
                 ("labels TEXT[] DEFAULT '{}'", "tasks"),
                 ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
                 ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
+                # Roundtable tools fields
+                ("tools_enabled BOOLEAN DEFAULT TRUE", "roundtable_sessions"),
+                ("write_enabled BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
+                ("yolo_mode BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
+                ("tool_stats JSONB DEFAULT '{\"total_calls\": 0, \"files_read\": 0, \"searches\": 0, \"writes\": 0}'::jsonb", "roundtable_sessions"),
             ]:
                 try:
                     col_name = column.split()[0]

@@ -18,6 +18,10 @@ def save_session(
     mode: Literal["spec_driven", "quick"],
     messages: list[dict[str, Any]],
     generated_features: list[dict[str, Any]] | None = None,
+    tools_enabled: bool | None = None,
+    write_enabled: bool | None = None,
+    yolo_mode: bool | None = None,
+    tool_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Save or update a roundtable session.
 
@@ -27,26 +31,63 @@ def save_session(
         mode: Session mode (spec_driven or quick)
         messages: List of message dicts
         generated_features: List of generated feature dicts (optional)
+        tools_enabled: Whether read tools are enabled (optional, preserves existing if None)
+        write_enabled: Whether write tools are enabled (optional, preserves existing if None)
+        yolo_mode: Whether YOLO mode is enabled (optional, preserves existing if None)
+        tool_stats: Tool usage statistics (optional, preserves existing if None)
 
     Returns:
         Saved session dict
     """
     features = generated_features or []
+    default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO roundtable_sessions
-                (id, project_id, mode, messages, generated_features, created_at, updated_at)
-            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, NOW(), NOW())
-            ON CONFLICT (id) DO UPDATE SET
-                messages = EXCLUDED.messages,
-                generated_features = EXCLUDED.generated_features,
-                updated_at = NOW()
-            RETURNING id, project_id, mode, messages, generated_features, created_at, updated_at
-            """,
-            (session_id, project_id, mode, json.dumps(messages), json.dumps(features)),
-        )
+        # Build dynamic update based on what's provided
+        if tools_enabled is not None or write_enabled is not None or yolo_mode is not None or tool_stats is not None:
+            # Full update including tools fields
+            cur.execute(
+                """
+                INSERT INTO roundtable_sessions
+                    (id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, NOW(), NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                    messages = EXCLUDED.messages,
+                    generated_features = COALESCE(NULLIF(EXCLUDED.generated_features, '[]'::jsonb), roundtable_sessions.generated_features),
+                    tools_enabled = COALESCE(EXCLUDED.tools_enabled, roundtable_sessions.tools_enabled),
+                    write_enabled = COALESCE(EXCLUDED.write_enabled, roundtable_sessions.write_enabled),
+                    yolo_mode = COALESCE(EXCLUDED.yolo_mode, roundtable_sessions.yolo_mode),
+                    tool_stats = COALESCE(EXCLUDED.tool_stats, roundtable_sessions.tool_stats),
+                    updated_at = NOW()
+                RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
+                """,
+                (
+                    session_id,
+                    project_id,
+                    mode,
+                    tools_enabled if tools_enabled is not None else True,
+                    write_enabled if write_enabled is not None else False,
+                    yolo_mode if yolo_mode is not None else False,
+                    json.dumps(tool_stats if tool_stats is not None else default_stats),
+                    json.dumps(messages),
+                    json.dumps(features),
+                ),
+            )
+        else:
+            # Original query for backwards compatibility
+            cur.execute(
+                """
+                INSERT INTO roundtable_sessions
+                    (id, project_id, mode, messages, generated_features, created_at, updated_at)
+                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, NOW(), NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                    messages = EXCLUDED.messages,
+                    generated_features = COALESCE(NULLIF(EXCLUDED.generated_features, '[]'::jsonb), roundtable_sessions.generated_features),
+                    updated_at = NOW()
+                RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
+                """,
+                (session_id, project_id, mode, json.dumps(messages), json.dumps(features)),
+            )
         row = cur.fetchone()
         conn.commit()
 
@@ -57,10 +98,14 @@ def save_session(
         "id": row[0],
         "project_id": row[1],
         "mode": row[2],
-        "messages": row[3] or [],
-        "generated_features": row[4] or [],
-        "created_at": row[5],
-        "updated_at": row[6],
+        "tools_enabled": row[3] if row[3] is not None else True,
+        "write_enabled": row[4] if row[4] is not None else False,
+        "yolo_mode": row[5] if row[5] is not None else False,
+        "tool_stats": row[6] or default_stats,
+        "messages": row[7] or [],
+        "generated_features": row[8] or [],
+        "created_at": row[9],
+        "updated_at": row[10],
     }
 
 
@@ -73,10 +118,12 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     Returns:
         Session dict or None if not found
     """
+    default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, mode, messages, generated_features, created_at, updated_at
+            SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
             FROM roundtable_sessions
             WHERE id = %s
             """,
@@ -91,10 +138,14 @@ def load_session(session_id: str) -> dict[str, Any] | None:
         "id": row[0],
         "project_id": row[1],
         "mode": row[2],
-        "messages": row[3] or [],
-        "generated_features": row[4] or [],
-        "created_at": row[5],
-        "updated_at": row[6],
+        "tools_enabled": row[3] if row[3] is not None else True,
+        "write_enabled": row[4] if row[4] is not None else False,
+        "yolo_mode": row[5] if row[5] is not None else False,
+        "tool_stats": row[6] or default_stats,
+        "messages": row[7] or [],
+        "generated_features": row[8] or [],
+        "created_at": row[9],
+        "updated_at": row[10],
     }
 
 
@@ -113,10 +164,12 @@ def list_sessions(
     Returns:
         List of session dicts (without full messages for performance)
     """
+    default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, mode,
+            SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
                    jsonb_array_length(messages) as message_count,
                    jsonb_array_length(generated_features) as feature_count,
                    created_at, updated_at
@@ -134,10 +187,14 @@ def list_sessions(
             "id": row[0],
             "project_id": row[1],
             "mode": row[2],
-            "message_count": row[3],
-            "feature_count": row[4],
-            "created_at": row[5],
-            "updated_at": row[6],
+            "tools_enabled": row[3] if row[3] is not None else True,
+            "write_enabled": row[4] if row[4] is not None else False,
+            "yolo_mode": row[5] if row[5] is not None else False,
+            "tool_stats": row[6] or default_stats,
+            "message_count": row[7],
+            "feature_count": row[8],
+            "created_at": row[9],
+            "updated_at": row[10],
         }
         for row in rows
     ]
@@ -217,6 +274,169 @@ def update_generated_features(
             """,
             (json.dumps(features), session_id),
         )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
+
+
+def update_tools_settings(
+    session_id: str,
+    tools_enabled: bool | None = None,
+    write_enabled: bool | None = None,
+    yolo_mode: bool | None = None,
+) -> dict[str, Any] | None:
+    """Update tools settings for a session.
+
+    Args:
+        session_id: Session ID
+        tools_enabled: Whether read tools should be enabled (optional)
+        write_enabled: Whether write tools should be enabled (optional)
+        yolo_mode: Whether YOLO mode should be enabled (optional)
+
+    Returns:
+        Updated session dict or None if not found
+    """
+    default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
+
+    # Build SET clause dynamically based on provided fields
+    set_parts = ["updated_at = NOW()"]
+    params = []
+
+    if tools_enabled is not None:
+        set_parts.append("tools_enabled = %s")
+        params.append(tools_enabled)
+    if write_enabled is not None:
+        set_parts.append("write_enabled = %s")
+        params.append(write_enabled)
+    if yolo_mode is not None:
+        set_parts.append("yolo_mode = %s")
+        params.append(yolo_mode)
+
+    params.append(session_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE roundtable_sessions
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, created_at, updated_at
+            """,
+            params,
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "mode": row[2],
+        "tools_enabled": row[3],
+        "write_enabled": row[4] if row[4] is not None else False,
+        "yolo_mode": row[5] if row[5] is not None else False,
+        "tool_stats": row[6] or default_stats,
+        "created_at": row[7],
+        "updated_at": row[8],
+    }
+
+
+# Backwards compatibility alias
+def update_tools_enabled(session_id: str, tools_enabled: bool) -> dict[str, Any] | None:
+    """Backwards compatible wrapper for update_tools_settings."""
+    return update_tools_settings(session_id, tools_enabled=tools_enabled)
+
+
+def update_tool_stats(
+    session_id: str,
+    tool_stats: dict[str, Any],
+) -> bool:
+    """Update tool usage statistics for a session.
+
+    Args:
+        session_id: Session ID
+        tool_stats: Tool usage statistics dict
+
+    Returns:
+        True if updated, False if session not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE roundtable_sessions
+            SET tool_stats = %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (json.dumps(tool_stats), session_id),
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
+
+
+def increment_tool_stats(
+    session_id: str,
+    tool_name: str,
+) -> bool:
+    """Increment tool usage statistics for a session.
+
+    Args:
+        session_id: Session ID
+        tool_name: Name of the tool that was called
+
+    Returns:
+        True if updated, False if session not found
+    """
+    # Map tool names to stat fields
+    stat_field = "total_calls"
+    if tool_name == "read_file":
+        additional_field = "files_read"
+    elif tool_name in ("search_code", "list_files"):
+        additional_field = "searches"
+    else:
+        additional_field = None
+
+    with get_connection() as conn, conn.cursor() as cur:
+        if additional_field:
+            cur.execute(
+                """
+                UPDATE roundtable_sessions
+                SET tool_stats = jsonb_set(
+                    jsonb_set(
+                        COALESCE(tool_stats, '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb),
+                        '{total_calls}',
+                        (COALESCE((tool_stats->>'total_calls')::int, 0) + 1)::text::jsonb
+                    ),
+                    %s::text[],
+                    (COALESCE((tool_stats->>%s)::int, 0) + 1)::text::jsonb
+                ),
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id
+                """,
+                ([additional_field], additional_field, session_id),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE roundtable_sessions
+                SET tool_stats = jsonb_set(
+                    COALESCE(tool_stats, '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb),
+                    '{total_calls}',
+                    (COALESCE((tool_stats->>'total_calls')::int, 0) + 1)::text::jsonb
+                ),
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (session_id,),
+            )
         result = cur.fetchone()
         conn.commit()
 
