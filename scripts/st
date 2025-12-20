@@ -97,7 +97,7 @@ OPTIONS:
     -d, --description <text>   Task description
     -p, --priority <0-4>       Priority (0=critical, 2=medium default, 4=backlog)
     -l, --labels <labels>      Comma-separated labels (complexity:small,domains:backend)
-    -t, --type <type>          Task type: task, bug, chore (default: task)
+    -t, --type <type>          Task type: feature, bug, task (default: task)
     --parent <task-id>         Parent task ID for subtasks
     --json                     Output as JSON
 EOF
@@ -210,7 +210,7 @@ USAGE:
 
 OPTIONS:
     -s, --status <status>      Filter by status (pending, running, completed, failed)
-    -t, --type <type>          Filter by type (task, bug, chore)
+    -t, --type <type>          Filter by type (feature, bug, task)
     -p, --priority <0-4>       Filter by priority
     -l, --labels <labels>      Filter by labels
     --limit <n>                Max results (default: 50)
@@ -445,7 +445,7 @@ OPTIONS:
     -s, --status <status>      New status (pending, running, paused, completed, failed)
     -p, --priority <0-4>       New priority
     -l, --labels <labels>      New labels (comma-separated)
-    -t, --type <type>          New type (task, bug, chore)
+    -t, --type <type>          New type (feature, bug, task)
     --title <title>            New title
     -d, --description <text>   New description
     --json                     Output as JSON
