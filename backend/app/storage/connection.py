@@ -133,6 +133,7 @@ def init_schema() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS vision_goals (
                     code TEXT PRIMARY KEY,
+                    project_id TEXT REFERENCES projects(id),
                     name TEXT NOT NULL,
                     description TEXT,
                     category TEXT,
@@ -142,6 +143,7 @@ def init_schema() -> None:
                 """
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goals_category ON vision_goals(category)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goals_project ON vision_goals(project_id)")
 
             # Vision goal details (objectives, features, success criteria)
             cur.execute(
@@ -593,6 +595,8 @@ def init_schema() -> None:
                 ("write_enabled BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
                 ("yolo_mode BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
                 ("tool_stats JSONB DEFAULT '{\"total_calls\": 0, \"files_read\": 0, \"searches\": 0, \"writes\": 0}'::jsonb", "roundtable_sessions"),
+                # Vision goals project scoping
+                ("project_id TEXT REFERENCES projects(id)", "vision_goals"),
             ]:
                 try:
                     col_name = column.split()[0]
