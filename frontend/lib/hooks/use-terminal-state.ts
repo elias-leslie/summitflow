@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY_OPEN = "terminal-open";
 const STORAGE_KEY_WIDTH = "terminal-width";
 const STORAGE_KEY_LAYOUT_MODE = "terminal-layout-mode";
 const STORAGE_KEY_PANE_SIZES = "terminal-pane-sizes";
@@ -52,19 +51,17 @@ export function useTerminalState() {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Read from localStorage on mount (client only)
+  // NOTE: isOpen is NOT restored - terminal always starts closed on page load
+  // Sessions persist on server, user clicks button to reveal them
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     try {
-      const storedOpen = localStorage.getItem(STORAGE_KEY_OPEN);
+      // Don't restore isOpen - always start closed
       const storedWidth = localStorage.getItem(STORAGE_KEY_WIDTH);
       const storedLayoutMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
       const storedPaneSizes = localStorage.getItem(STORAGE_KEY_PANE_SIZES);
       const storedPaneSessions = localStorage.getItem(STORAGE_KEY_PANE_SESSIONS);
-
-      if (storedOpen !== null) {
-        setIsOpenState(storedOpen === "true");
-      }
 
       if (storedWidth !== null) {
         const parsed = parseFloat(storedWidth);
@@ -99,14 +96,9 @@ export function useTerminalState() {
     setIsInitialized(true);
   }, []);
 
-  // Persist isOpen to localStorage
+  // Set open state (not persisted - terminal starts closed on page load)
   const setOpen = useCallback((open: boolean) => {
     setIsOpenState(open);
-    try {
-      localStorage.setItem(STORAGE_KEY_OPEN, String(open));
-    } catch {
-      // localStorage not available
-    }
   }, []);
 
   // Persist width to localStorage

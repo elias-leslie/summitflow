@@ -12,6 +12,19 @@ import { useMediaQuery } from "@/lib/hooks/use-media-query";
 // Maximum number of split panes
 const MAX_SPLIT_PANES = 4;
 
+// Helper to get next terminal name (Terminal 1, Terminal 2, etc.)
+function getNextTerminalName(sessions: Array<{ name: string }>): string {
+  // Find the highest "Terminal N" number
+  let maxNum = 0;
+  for (const session of sessions) {
+    const match = session.name.match(/^Terminal\s+(\d+)$/i);
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1], 10));
+    }
+  }
+  return `Terminal ${maxNum + 1}`;
+}
+
 interface TerminalTabsProps {
   projectId?: string;
   projectPath?: string;
@@ -40,11 +53,11 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const handleLayoutModeChange = useCallback(async (mode: LayoutMode) => {
     if (mode !== "single" && sessions.length === 1) {
       // Create a second terminal before switching to split
-      const name = `Terminal ${sessions.length + 1}`;
+      const name = getNextTerminalName(sessions);
       await create(name, projectPath);
     }
     setLayoutMode(mode);
-  }, [sessions.length, create, projectPath, setLayoutMode]);
+  }, [sessions, create, projectPath, setLayoutMode]);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,9 +74,9 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
   // Create new terminal session
   const handleAddTab = useCallback(async () => {
-    const name = `Terminal ${sessions.length + 1}`;
+    const name = getNextTerminalName(sessions);
     await create(name, projectPath);
-  }, [sessions.length, create, projectPath]);
+  }, [sessions, create, projectPath]);
 
   // Close terminal session
   const handleCloseTab = useCallback(
