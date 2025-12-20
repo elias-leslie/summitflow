@@ -75,12 +75,16 @@ export function AgentConfigPanel({
     }
   };
 
+  // Get display labels for current selections
+  const agentLabel = AGENTS.find(a => a.id === selectedAgent)?.label || selectedAgent;
+  const modelLabel = models.find(m => m.id === selectedModel)?.label || selectedModel;
+
   if (compact) {
     return (
       <div className={clsx("flex items-center gap-2", disabled && "opacity-50 pointer-events-none", className)}>
         <Select value={selectedAgent} onValueChange={handleAgentChange}>
           <SelectTrigger className="h-8 min-w-[100px] text-xs">
-            <SelectValue placeholder="Agent" />
+            <SelectValue>{agentLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {AGENTS.map((agent) => (
@@ -97,7 +101,7 @@ export function AgentConfigPanel({
         {selectedAgent !== "default" && (
           <Select value={selectedModel} onValueChange={handleModelChange}>
             <SelectTrigger className="h-8 min-w-[120px] text-xs">
-              <SelectValue placeholder="Model" />
+              <SelectValue>{modelLabel}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {models.map((model) => (

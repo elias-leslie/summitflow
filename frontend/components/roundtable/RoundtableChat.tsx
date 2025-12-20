@@ -805,12 +805,15 @@ export function RoundtableChat({
                 <AgentConfigPanel
                   agentOverride={agentOverride}
                   modelOverride={modelOverride}
-                  onAgentChange={(agent) =>
-                    onAgentConfigChange({ agentOverride: agent, modelOverride })
-                  }
-                  onModelChange={(model) =>
-                    onAgentConfigChange({ agentOverride, modelOverride: model })
-                  }
+                  onAgentChange={(agent) => {
+                    // When agent changes, also reset model if switching to "default"
+                    const newModel = agent === null ? null : modelOverride;
+                    onAgentConfigChange({ agentOverride: agent, modelOverride: newModel });
+                  }}
+                  onModelChange={(model) => {
+                    // Pass current agentOverride value explicitly
+                    onAgentConfigChange({ agentOverride: agentOverride, modelOverride: model });
+                  }}
                   disabled={isLoading || !!streamingAgent}
                   compact
                 />

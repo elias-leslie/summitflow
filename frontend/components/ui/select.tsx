@@ -69,11 +69,14 @@ export function SelectTrigger({ children, className }: SelectTriggerProps) {
 
 interface SelectValueProps {
   placeholder?: string;
+  children?: ReactNode;
 }
 
-export function SelectValue({ placeholder }: SelectValueProps) {
+export function SelectValue({ placeholder, children }: SelectValueProps) {
   const { value } = useSelect();
-  return <span className={!value ? "text-slate-500" : ""}>{value || placeholder}</span>;
+  // If children provided, use them as display; otherwise show value or placeholder
+  const displayValue = children ?? value;
+  return <span className={!value ? "text-slate-500" : ""}>{displayValue || placeholder}</span>;
 }
 
 interface SelectContentProps {
