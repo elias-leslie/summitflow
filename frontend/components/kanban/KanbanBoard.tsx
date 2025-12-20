@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -19,9 +20,11 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { Target, X } from "lucide-react";
 
 import type { Feature, FeatureStatus } from "@/lib/api";
 import { FeatureCard, DragOverlayCard } from "./FeatureCard";
+import { Button } from "@/components/ui/button";
 
 // ============================================================================
 // Types
@@ -123,6 +126,25 @@ export function KanbanBoard({
   onStartClick,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Goal filter from URL
+  const goalFilter = searchParams.get("goal");
+
+  // Filter features by goal if filter is active
+  const filteredFeatures = useMemo(() => {
+    if (!goalFilter) return features;
+    return features.filter((f) => f.vision_goals.includes(goalFilter));
+  }, [features, goalFilter]);
+
+  // Clear goal filter
+  const clearGoalFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("goal");
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -141,7 +163,7 @@ export function KanbanBoard({
     })
   );
 
-  // Group features by status
+  // Group features by status (using filtered features)
   const featuresByStatus = useMemo(() => {
     const grouped: Record<KanbanStatus, Feature[]> = {
       backlog: [],
@@ -150,7 +172,7 @@ export function KanbanBoard({
       done: [],
     };
 
-    for (const feature of features) {
+    for (const feature of filteredFeatures) {
       // Use status field from backend, default to backlog
       const status = (feature as Feature & { status?: string }).status as KanbanStatus | undefined;
       const column = status && status in grouped ? status : "backlog";
@@ -158,7 +180,7 @@ export function KanbanBoard({
     }
 
     return grouped;
-  }, [features]);
+  }, [filteredFeatures]);
 
   const activeFeature = useMemo(() => {
     if (!activeId) return null;
@@ -220,30 +242,56 @@ export function KanbanBoard({
   };
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-        {COLUMNS.map((column) => (
-          <DroppableColumn
-            key={column.id}
-            column={column}
-            features={featuresByStatus[column.id]}
-            onFeatureClick={onFeatureClick}
-            onStartClick={onStartClick}
-          />
-        ))}
-      </div>
+    <div className="space-y-4">
+      {/* Goal Filter Indicator */}
+      {goalFilter && (
+        <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-phosphor-500/10 border border-phosphor-500/30">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-phosphor-400" />
+            <span className="text-sm text-phosphor-400">
+              Showing features for <span className="font-mono font-medium">{goalFilter}</span>
+            </span>
+            <span className="text-xs text-slate-500">
+              ({filteredFeatures.length} of {features.length} features)
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearGoalFilter}
+            className="h-7 px-2 text-slate-400 hover:text-white"
+          >
+            <X className="h-4 w-4 mr-1" />
+            Clear filter
+          </Button>
+        </div>
+      )}
 
-      {/* Drag Overlay */}
-      <DragOverlay>
-        {activeFeature && <DragOverlayCard feature={activeFeature} />}
-      </DragOverlay>
-    </DndContext>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+          {COLUMNS.map((column) => (
+            <DroppableColumn
+              key={column.id}
+              column={column}
+              features={featuresByStatus[column.id]}
+              onFeatureClick={onFeatureClick}
+              onStartClick={onStartClick}
+            />
+          ))}
+        </div>
+
+        {/* Drag Overlay */}
+        <DragOverlay>
+          {activeFeature && <DragOverlayCard feature={activeFeature} />}
+        </DragOverlay>
+      </DndContext>
+    </div>
   );
 }
