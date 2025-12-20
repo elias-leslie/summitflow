@@ -16,8 +16,15 @@ import {
   Pause,
   Play,
   RefreshCw,
+  FileCode,
 } from "lucide-react";
 import { updateTaskStatus, startTask, TaskStatus, AgentType } from "@/lib/api";
+
+interface FeatureContext {
+  id: string;
+  name: string;
+  description?: string;
+}
 
 interface TaskLogViewerProps {
   projectId: string;
@@ -30,6 +37,8 @@ interface TaskLogViewerProps {
   model?: string;
   /** Whether delegation was enabled (optional, for resume) */
   allowDelegation?: boolean;
+  /** Optional feature context to display above the log */
+  feature?: FeatureContext;
 }
 
 interface SSEEvent {
@@ -53,6 +62,7 @@ export function TaskLogViewer({
   agentType = "gemini",
   model,
   allowDelegation,
+  feature,
 }: TaskLogViewerProps) {
   const [log, setLog] = useState<string>("");
   const [status, setStatus] = useState<TaskStatus>("pending");
@@ -191,6 +201,24 @@ export function TaskLogViewer({
 
   return (
     <div className={clsx("flex flex-col bg-slate-900 rounded-lg border border-slate-800", className)}>
+      {/* Feature Context (if provided) */}
+      {feature && (
+        <div className="px-4 py-3 border-b border-slate-800 bg-slate-800/30">
+          <div className="flex items-start gap-3">
+            <FileCode className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 mono">{feature.id}</span>
+              </div>
+              <h4 className="text-sm font-medium text-white truncate">{feature.name}</h4>
+              {feature.description && (
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{feature.description}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div className="flex items-center gap-3">
