@@ -73,13 +73,15 @@ async def get_vision_goals(project_id: str) -> list[VisionGoalWithStats]:
     """Get all vision goals with feature and criteria statistics for a project."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Get all vision goals (shared lookup table)
+            # Get vision goals scoped to this project
             cur.execute(
                 """
                 SELECT code, name, description, category, created_at, updated_at
                 FROM vision_goals
+                WHERE project_id = %s
                 ORDER BY code
-                """
+                """,
+                (project_id,),
             )
             goals = cur.fetchall()
 
@@ -159,8 +161,11 @@ async def get_vision_goals_summary(project_id: str) -> dict[str, Any]:
     """Get summary statistics for all vision goals in a project."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Get goal count
-            cur.execute("SELECT COUNT(*) FROM vision_goals")
+            # Get goal count for this project
+            cur.execute(
+                "SELECT COUNT(*) FROM vision_goals WHERE project_id = %s",
+                (project_id,),
+            )
             goal_count_row = cur.fetchone()
             goal_count = int(cast(int, goal_count_row[0])) if goal_count_row else 0
 
@@ -180,10 +185,11 @@ async def get_vision_goals_summary(project_id: str) -> dict[str, Any]:
                 FROM vision_goals vg
                 LEFT JOIN feature_capabilities fc
                     ON vg.code = ANY(fc.vision_goals) AND fc.project_id = %s
+                WHERE vg.project_id = %s
                 GROUP BY vg.code, vg.name
                 ORDER BY vg.code
                 """,
-                (project_id,),
+                (project_id, project_id),
             )
             stats = cur.fetchall()
 
@@ -221,14 +227,14 @@ async def get_vision_goal(project_id: str, code: str) -> dict[str, Any]:
     """Get a single vision goal with linked features for a project."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Get the goal
+            # Get the goal (scoped to project)
             cur.execute(
                 """
                 SELECT code, name, description, category, created_at, updated_at
                 FROM vision_goals
-                WHERE code = %s
+                WHERE code = %s AND project_id = %s
                 """,
-                (code,),
+                (code, project_id),
             )
             goal = cur.fetchone()
 
@@ -295,10 +301,10 @@ async def get_vision_goal_details(project_id: str, code: str) -> list[dict[str, 
     """Get detailed content for a vision goal (objectives, features, success criteria)."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Verify goal exists
+            # Verify goal exists and belongs to this project
             cur.execute(
-                "SELECT code FROM vision_goals WHERE code = %s",
-                (code,),
+                "SELECT code FROM vision_goals WHERE code = %s AND project_id = %s",
+                (code, project_id),
             )
             goal_check = cur.fetchone()
 
@@ -340,16 +346,16 @@ async def get_vision_goal_details(project_id: str, code: str) -> list[dict[str, 
 
 @router.post("", response_model=dict[str, Any])
 async def create_vision_goal(project_id: str, goal: VisionGoalCreate) -> dict[str, Any]:
-    """Create a new vision goal."""
+    """Create a new vision goal for this project."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO vision_goals (code, name, description, category)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO vision_goals (code, project_id, name, description, category)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING code, name, description, category
                 """,
-                (goal.code, goal.name, goal.description, goal.category),
+                (goal.code, project_id, goal.name, goal.description, goal.category),
             )
             result = cur.fetchone()
             conn.commit()
@@ -403,11 +409,12 @@ async def update_vision_goal(
 
             updates.append("updated_at = NOW()")
             values.append(code)
+            values.append(project_id)
 
             query = f"""
                 UPDATE vision_goals
                 SET {", ".join(updates)}
-                WHERE code = %s
+                WHERE code = %s AND project_id = %s
                 RETURNING code, name, description, category
             """
 
@@ -437,17 +444,25 @@ async def update_vision_goal(
 
 @router.delete("/{code}", response_model=dict[str, Any])
 async def delete_vision_goal(project_id: str, code: str) -> dict[str, Any]:
-    """Delete a vision goal (only if no features are linked in any project)."""
+    """Delete a vision goal (only if no features are linked in this project)."""
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Check if any features are linked (across all projects)
+            # Verify goal exists and belongs to this project
+            cur.execute(
+                "SELECT code FROM vision_goals WHERE code = %s AND project_id = %s",
+                (code, project_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail=f"Vision goal {code} not found")
+
+            # Check if any features are linked in this project
             cur.execute(
                 """
                 SELECT COUNT(*)
                 FROM feature_capabilities
-                WHERE %s = ANY(vision_goals)
+                WHERE project_id = %s AND %s = ANY(vision_goals)
                 """,
-                (code,),
+                (project_id, code),
             )
             linked_count_row = cur.fetchone()
 
@@ -465,10 +480,10 @@ async def delete_vision_goal(project_id: str, code: str) -> dict[str, Any]:
             cur.execute(
                 """
                 DELETE FROM vision_goals
-                WHERE code = %s
+                WHERE code = %s AND project_id = %s
                 RETURNING code
                 """,
-                (code,),
+                (code, project_id),
             )
             result = cur.fetchone()
             conn.commit()
