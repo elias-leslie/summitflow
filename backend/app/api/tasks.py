@@ -41,7 +41,7 @@ class TaskCreate(BaseModel):
     # Issue tracking fields
     priority: int = Field(default=2, ge=0, le=4, description="Priority 0-4 (0=critical, 4=backlog)")
     labels: list[str] = Field(default_factory=list, description="Labels (complexity:small, domains:backend)")
-    task_type: Literal["task", "bug", "chore"] = "task"
+    task_type: Literal["feature", "bug", "task"] = "task"
     parent_task_id: str | None = None
 
 
@@ -55,7 +55,7 @@ class TaskUpdate(BaseModel):
     # Issue tracking fields
     priority: int | None = Field(default=None, ge=0, le=4)
     labels: list[str] | None = None
-    task_type: Literal["task", "bug", "chore"] | None = None
+    task_type: Literal["feature", "bug", "task"] | None = None
     parent_task_id: str | None = None
 
 
@@ -162,7 +162,7 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
 async def list_tasks(
     project_id: str,
     status: str | None = Query(None, description="Filter by status"),
-    task_type: str | None = Query(None, alias="type", description="Filter by type (task, bug, chore)"),
+    task_type: str | None = Query(None, alias="type", description="Filter by type (feature, bug, task)"),
     priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
     labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
     orphans_only: bool = Query(False, description="Only return tasks not linked to a feature (issues)"),
@@ -173,10 +173,10 @@ async def list_tasks(
 
     Query params:
         - status: Filter by status (pending, running, paused, failed, completed)
-        - type: Filter by task type (task, bug, chore)
+        - type: Filter by task type (feature, bug, task)
         - priority: Filter by priority (0-4)
         - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
-        - orphans_only: Only return tasks not linked to a feature (issues/bugs/chores)
+        - orphans_only: Only return tasks not linked to a feature
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
