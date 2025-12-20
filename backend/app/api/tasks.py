@@ -91,6 +91,14 @@ class DependencyResponse(BaseModel):
     depends_on_status: str | None = None
 
 
+class AcceptanceCriterion(BaseModel):
+    """Acceptance criterion for a feature."""
+
+    id: str
+    description: str
+    passes: bool = False
+
+
 class FeatureContext(BaseModel):
     """Feature context for a task."""
 
@@ -99,6 +107,7 @@ class FeatureContext(BaseModel):
     name: str
     criteria_passed: int
     criteria_total: int
+    acceptance_criteria: list[AcceptanceCriterion] | None = None
 
 
 class BlockerInfo(BaseModel):
@@ -157,12 +166,24 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
     feature_context = None
     if task.get("feature") is not None:
         f = task["feature"]
+        # Parse acceptance criteria if present
+        criteria_list = None
+        if f.get("acceptance_criteria"):
+            criteria_list = [
+                AcceptanceCriterion(
+                    id=c.get("id", ""),
+                    description=c.get("description", ""),
+                    passes=c.get("passes", False),
+                )
+                for c in f["acceptance_criteria"]
+            ]
         feature_context = FeatureContext(
             id=f["id"],
             feature_id=f["feature_id"],
             name=f["name"],
             criteria_passed=f["criteria_passed"],
             criteria_total=f["criteria_total"],
+            acceptance_criteria=criteria_list,
         )
 
     # Handle optional blockers context

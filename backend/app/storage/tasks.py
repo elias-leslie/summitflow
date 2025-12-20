@@ -539,6 +539,7 @@ def _row_to_dict_with_feature(row: tuple) -> dict[str, Any]:
             "name": row[25],
             "criteria_passed": criteria_passed,
             "criteria_total": criteria_total,
+            "acceptance_criteria": criteria,  # Include full criteria array
         }
     else:
         task["feature"] = None
