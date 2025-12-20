@@ -41,12 +41,29 @@ ENVIRONMENT:
     ST_PROJECT_ID      Project ID (default: summitflow)
     ST_API_BASE        API base URL (default: http://localhost:8001/api)
 
+TASK TYPES:
+    feature    Feature implementation (validates criteria on close)
+    bug        Bug fix
+    task       General task
+
 EXAMPLES:
+    # Create tasks
     st create "Fix: login bug" -t bug -p 1 -l "complexity:small,domains:backend"
-    st list --status pending --type bug
-    st ready
-    st update task-123 --status running
-    st close task-123 --reason "Fixed in commit abc"
+    st create "Add auth" -t feature -p 2 -l "complexity:medium,domains:backend"
+
+    # Work with tasks
+    st ready                                    # Show unblocked tasks
+    st list --status pending --type bug         # Filter tasks
+    st update task-123 --status running         # Start working
+    st close task-123 --reason "Done"           # Complete task
+    st close task-123 --force                   # Bypass criteria validation
+
+    # Manage features
+    st feature list                             # List features
+    st feature show FEAT-001                    # Show feature details
+    st feature start FEAT-001 -p 1              # Create task for feature
+
+    # Dependencies
     st dep add task-456 task-123 --type blocks
 
 See 'st <command> --help' for command-specific help.
@@ -516,6 +533,26 @@ EOF
 
 # Close task
 cmd_close() {
+    # Check for help first
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        cat << 'EOF'
+st close - Close/complete a task
+
+USAGE:
+    st close <task-id> [options]
+
+OPTIONS:
+    -r, --reason <text>    Reason for closing (appended to description)
+    -f, --force            Bypass acceptance criteria validation
+    --json                 Output as JSON
+
+NOTE:
+    For feature-type tasks linked to a feature, all acceptance criteria
+    must be marked as passed before closing. Use --force to bypass.
+EOF
+        return 0
+    fi
+
     local task_id="$1"
     shift || true
 
