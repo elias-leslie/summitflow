@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..logging_config import get_logger
+from ..services.task_validation import ValidationResult, validate_task_ready
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
 
@@ -77,6 +78,14 @@ class DependencyCreate(BaseModel):
 
     depends_on_task_id: str
     dependency_type: Literal["blocks", "discovered-from"] = "blocks"
+
+
+class ValidationResultResponse(BaseModel):
+    """Response model for task validation result."""
+
+    ready: bool
+    issues: list[str]
+    suggestions: list[str]
 
 
 class DependencyResponse(BaseModel):
@@ -465,6 +474,36 @@ async def update_task_status(
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update task status")
     return _task_to_response(updated)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/validate-ready",
+    response_model=ValidationResultResponse,
+)
+async def validate_task_ready_endpoint(
+    project_id: str, task_id: str
+) -> ValidationResultResponse:
+    """Validate if a task is ready to be worked on.
+
+    Performs pre-work validation checks:
+    - Task is not already running or completed
+    - Task has no incomplete blocking dependencies
+    - For feature-type tasks: linked to feature with acceptance criteria
+    - Criteria quality warnings (specificity, action verbs)
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        ValidationResultResponse with ready status, issues, and suggestions.
+    """
+    result = validate_task_ready(task_id, project_id)
+    return ValidationResultResponse(
+        ready=result.ready,
+        issues=result.issues,
+        suggestions=result.suggestions,
+    )
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/log", response_model=dict[str, Any])
