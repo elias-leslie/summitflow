@@ -564,7 +564,7 @@ export async function closeBead(
 // ============================================================================
 
 export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
-export type TaskType = "task" | "bug" | "chore";
+export type TaskType = "feature" | "bug" | "task";
 
 export interface Task {
   id: string;

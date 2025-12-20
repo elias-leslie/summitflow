@@ -29,9 +29,9 @@ const PRIORITY_OPTIONS = [
 ];
 
 const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
-  { value: "task", label: "Task" },
+  { value: "feature", label: "Feature" },
   { value: "bug", label: "Bug" },
-  { value: "chore", label: "Chore" },
+  { value: "task", label: "Task" },
 ];
 
 export function CreateTaskDialog({

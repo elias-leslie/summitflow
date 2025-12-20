@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Bug,
-  Wrench,
+  Package,
   CheckSquare,
   Clock,
   Loader2,
@@ -42,20 +42,20 @@ const priorityConfig: Record<number, { label: string; className: string }> = {
 };
 
 const typeConfig: Record<TaskType, { icon: React.ReactNode; label: string; className: string }> = {
-  task: {
-    icon: <CheckSquare className="h-3.5 w-3.5" />,
-    label: "Task",
-    className: "text-blue-400",
+  feature: {
+    icon: <Package className="h-3.5 w-3.5" />,
+    label: "Feature",
+    className: "text-purple-400",
   },
   bug: {
     icon: <Bug className="h-3.5 w-3.5" />,
     label: "Bug",
     className: "text-rose-400",
   },
-  chore: {
-    icon: <Wrench className="h-3.5 w-3.5" />,
-    label: "Chore",
-    className: "text-amber-400",
+  task: {
+    icon: <CheckSquare className="h-3.5 w-3.5" />,
+    label: "Task",
+    className: "text-blue-400",
   },
 };
 
@@ -226,8 +226,8 @@ export function IssuesList({ projectId }: IssuesListProps) {
                 onChange={(e) => setIssueType(e.target.value as TaskType)}
                 className="px-3 py-2 rounded-md bg-slate-800 border border-slate-600 text-sm text-slate-200"
               >
+                <option value="feature">Feature</option>
                 <option value="bug">Bug</option>
-                <option value="chore">Chore</option>
                 <option value="task">Task</option>
               </select>
               <select

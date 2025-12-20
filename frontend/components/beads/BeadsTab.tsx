@@ -808,10 +808,9 @@ export function BeadsTab({ projectId }: BeadsTabProps) {
                     defaultValue="task"
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white"
                   >
-                    <option value="task">Task</option>
-                    <option value="bug">Bug</option>
                     <option value="feature">Feature</option>
-                    <option value="chore">Chore</option>
+                    <option value="bug">Bug</option>
+                    <option value="task">Task</option>
                   </select>
                 </div>
               </div>

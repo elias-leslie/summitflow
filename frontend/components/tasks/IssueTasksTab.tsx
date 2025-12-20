@@ -21,9 +21,9 @@ import {
   Clock,
   ListTodo,
   Loader2,
+  Package,
   Plus,
   RefreshCw,
-  Wrench,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,9 +64,9 @@ const statusConfig: Record<string, { label: string; icon: typeof Circle; color: 
 
 // Type icons
 const typeIcons: Record<string, typeof ListTodo> = {
-  task: ListTodo,
+  feature: Package,
   bug: Bug,
-  chore: Wrench,
+  task: ListTodo,
 };
 
 function formatDate(dateStr: string | null): string {
@@ -417,9 +417,9 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
                 className="px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded text-white"
               >
                 <option value="all">All Types</option>
-                <option value="task">Tasks</option>
+                <option value="feature">Features</option>
                 <option value="bug">Bugs</option>
-                <option value="chore">Chores</option>
+                <option value="task">Tasks</option>
               </select>
 
               {/* Refresh */}
