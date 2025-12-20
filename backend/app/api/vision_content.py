@@ -8,6 +8,9 @@ This module provides REST API endpoints for vision content:
 - GET /projects/{project_id}/vision/success-metrics - Get success metrics
 - GET /projects/{project_id}/vision/roadmap - Get roadmap phases
 - GET /projects/{project_id}/vision/examples - Get principles in practice examples
+- GET /projects/{project_id}/vision/context - Get full vision context for AI commands
+- POST /projects/{project_id}/vision/content - Create new vision content
+- DELETE /projects/{project_id}/vision/content/{content_key} - Delete content by key
 - PATCH /projects/{project_id}/vision/content/{content_key} - Update any content by key
 - PATCH /projects/{project_id}/vision/roadmap/{content_key} - Update roadmap phase status
 
@@ -16,6 +19,7 @@ Changes from source:
   - Added project_id path parameter to all endpoints
   - Uses get_connection() context manager
   - All queries filter by project_id
+  - Added POST/DELETE endpoints for vision content management
 """
 
 from __future__ import annotations
@@ -47,6 +51,17 @@ class VisionContent(BaseModel):
     metadata: dict[str, Any] | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class VisionContentCreate(BaseModel):
+    """Request model for creating vision content."""
+
+    content_type: str  # mission, vision, principle, success_metric, roadmap_phase, example, closing
+    content_key: str  # Unique key within project (e.g., "mission-statement", "principle-1")
+    title: str | None = None
+    content: str
+    order_num: int = 0
+    metadata: dict[str, Any] | None = None
 
 
 class VisionContentUpdate(BaseModel):
@@ -467,6 +482,148 @@ async def get_vision_context(project_id: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.error("get_vision_context_failed", project_id=project_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# =========================================================================
+# Create Endpoints
+# =========================================================================
+
+
+@router.post("/content", response_model=dict[str, Any])
+async def create_vision_content(
+    project_id: str, content: VisionContentCreate
+) -> dict[str, Any]:
+    """Create new vision content for a project."""
+    valid_types = {
+        "mission",
+        "vision",
+        "principle",
+        "success_metric",
+        "roadmap_phase",
+        "example",
+        "closing",
+    }
+    if content.content_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid content_type '{content.content_type}'. Must be one of: {valid_types}",
+        )
+
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            # Check if content_key already exists for this project
+            cur.execute(
+                "SELECT id FROM vision_content WHERE project_id = %s AND content_key = %s",
+                (project_id, content.content_key),
+            )
+            if cur.fetchone():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Content with key '{content.content_key}' already exists for this project",
+                )
+
+            # Insert new content
+            cur.execute(
+                """
+                INSERT INTO vision_content
+                    (project_id, content_type, content_key, title, content, order_num, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                RETURNING id, content_type, content_key, title, content, order_num, metadata,
+                          created_at, updated_at
+                """,
+                (
+                    project_id,
+                    content.content_type,
+                    content.content_key,
+                    content.title,
+                    content.content,
+                    content.order_num,
+                    json.dumps(content.metadata) if content.metadata else None,
+                ),
+            )
+            result = cur.fetchone()
+            conn.commit()
+
+            if not result:
+                raise HTTPException(status_code=500, detail="Failed to create content")
+
+            logger.info(
+                "vision_content_created",
+                project_id=project_id,
+                content_type=content.content_type,
+                content_key=content.content_key,
+            )
+
+            return {
+                "status": "created",
+                "id": result[0],
+                "content_type": result[1],
+                "content_key": result[2],
+                "title": result[3],
+                "content": result[4],
+                "order_num": result[5],
+                "metadata": result[6],
+                "created_at": cast(datetime, result[7]).isoformat() if result[7] else None,
+                "updated_at": cast(datetime, result[8]).isoformat() if result[8] else None,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "create_vision_content_failed",
+            project_id=project_id,
+            content_type=content.content_type,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/content/{content_key}", response_model=dict[str, Any])
+async def delete_vision_content(project_id: str, content_key: str) -> dict[str, Any]:
+    """Delete vision content by content_key."""
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM vision_content
+                WHERE project_id = %s AND content_key = %s
+                RETURNING id, content_type, content_key
+                """,
+                (project_id, content_key),
+            )
+            result = cur.fetchone()
+            conn.commit()
+
+            if not result:
+                raise HTTPException(
+                    status_code=404, detail=f"Content '{content_key}' not found"
+                )
+
+            logger.info(
+                "vision_content_deleted",
+                project_id=project_id,
+                content_key=content_key,
+                content_type=result[1],
+            )
+
+            return {
+                "status": "deleted",
+                "id": result[0],
+                "content_type": result[1],
+                "content_key": result[2],
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "delete_vision_content_failed",
+            project_id=project_id,
+            content_key=content_key,
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
