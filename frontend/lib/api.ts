@@ -566,6 +566,14 @@ export async function closeBead(
 export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
 export type TaskType = "feature" | "bug" | "task";
 
+export interface FeatureContext {
+  id: number;
+  feature_id: string;
+  name: string;
+  criteria_passed: number;
+  criteria_total: number;
+}
+
 export interface Task {
   id: string;
   project_id: string;
@@ -591,6 +599,8 @@ export interface Task {
   labels: string[];
   task_type: TaskType;
   parent_task_id: string | null;
+  // Optional feature context (when fetched with include=feature)
+  feature?: FeatureContext | null;
 }
 
 export interface TaskListResponse {
