@@ -1,24 +1,33 @@
-"""Gemini client using the official Google GenAI SDK.
+"""Gemini client using the official Google ADK.
 
-Uses native Python integration with google-genai.
+Uses google-adk agent framework with native tool support and callbacks.
 Authentication via GOOGLE_API_KEY or GEMINI_API_KEY.
+
+Supports native ADK tool calling with before_tool_callback for permission control.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import uuid
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 from .base import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
 
+# Tool categories for permission handling
+READ_TOOLS = {"read_file", "search_code", "list_files", "get_project_structure"}
+WRITE_TOOLS = {"write_file", "edit_file", "delete_file", "create_directory"}
+
 
 class GeminiClient(LLMClient):
     """Gemini client using the Google Agent Development Kit.
 
-    Uses native Python integration with proper tool support and streaming.
+    Uses google-adk agent framework with native tool support, callbacks,
+    and streaming. Supports before_tool_callback for permission control.
 
     To set up:
     1. Set GOOGLE_API_KEY environment variable, OR
@@ -31,13 +40,21 @@ class GeminiClient(LLMClient):
         - "gemini-1.5-pro": Previous generation
     """
 
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
+    def __init__(
+        self,
+        model: str = "gemini-2.0-flash",
+        permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+    ) -> None:
         """Initialize Gemini ADK client.
 
         Args:
             model: Model to use
+            permission_callback: Async callback for permission prompting.
+                Called with (tool_name, tool_args) when write tools need approval.
+                Returns True to allow, False to deny.
         """
         self.model = model
+        self._permission_callback = permission_callback
         self._has_credentials = self._check_credentials()
         logger.info(f"Gemini ADK client initialized (model={model})")
 
@@ -106,6 +123,7 @@ class GeminiClient(LLMClient):
             LLMResponse with Gemini's response
         """
         import time
+
         from google import genai
 
         start_time = time.time()
@@ -155,4 +173,142 @@ class GeminiClient(LLMClient):
 
         except Exception as e:
             logger.error(f"Gemini error: {e}")
-            raise RuntimeError(f"Gemini error: {e}")
+            raise RuntimeError(f"Gemini error: {e}") from e
+
+    def _create_before_tool_callback(
+        self,
+        write_enabled: bool,
+        yolo_mode: bool,
+    ) -> Callable[..., Any]:
+        """Create permission-aware before_tool_callback for ADK agent.
+
+        The callback runs before each tool execution and can:
+        - Return None to allow the tool to execute
+        - Return a dict to skip the tool and use that as the result
+
+        Args:
+            write_enabled: Whether write tools are enabled
+            yolo_mode: Auto-approve all write tool requests
+
+        Returns:
+            Callback function for LlmAgent.before_tool_callback
+        """
+        permission_callback = self._permission_callback
+
+        async def before_tool_callback(
+            tool: Any,  # BaseTool
+            args: dict[str, Any],
+            context: Any,  # ToolContext
+        ) -> dict[str, Any] | None:
+            """Permission-aware tool callback."""
+            # Get tool name from the tool object
+            tool_name = getattr(tool, "name", str(tool))
+
+            # Read tools always allowed
+            if tool_name in READ_TOOLS:
+                logger.debug(f"Auto-allowing read tool: {tool_name}")
+                return None  # Allow execution
+
+            # Write tools need permission
+            if tool_name in WRITE_TOOLS:
+                if not write_enabled:
+                    logger.info(f"Blocking write tool (disabled): {tool_name}")
+                    return {"error": "Write access not enabled"}
+
+                if yolo_mode:
+                    logger.info(f"Auto-allowing write tool (YOLO mode): {tool_name}")
+                    return None  # Allow execution
+
+                # Use permission callback if available
+                if permission_callback:
+                    try:
+                        approved = await permission_callback(tool_name, args)
+                        if approved:
+                            logger.info(f"Permission granted for {tool_name}")
+                            return None  # Allow execution
+                        else:
+                            logger.info(f"Permission denied for {tool_name}")
+                            return {"error": "Permission denied by user"}
+                    except Exception as e:
+                        logger.error(f"Permission callback error: {e}")
+                        return {"error": f"Permission callback error: {e}"}
+
+                # No callback configured - block for safety
+                logger.warning(f"Blocking write tool (no callback): {tool_name}")
+                return {"error": "Permission required but no callback configured"}
+
+            # Unknown tools - let them through
+            logger.debug(f"Allowing unknown tool: {tool_name}")
+            return None
+
+        return before_tool_callback
+
+    async def generate_with_tools_native(
+        self,
+        prompt: str,
+        tools: list[Callable[..., Any]],
+        system: str | None = None,
+        write_enabled: bool = False,
+        yolo_mode: bool = False,
+        working_dir: str | None = None,
+    ) -> AsyncGenerator[Any, None]:
+        """Generate using ADK's native agent framework with tool callbacks.
+
+        Uses google-adk's LlmAgent with before_tool_callback for permission
+        control instead of the custom JSON-based tool protocol.
+
+        Args:
+            prompt: User prompt
+            tools: List of callable tool functions (with proper __name__ and __doc__)
+            system: System prompt / instruction
+            write_enabled: Whether write tools are enabled
+            yolo_mode: Auto-approve all write tool requests
+            working_dir: Working directory (not used directly by ADK)
+
+        Yields:
+            ADK event objects as they stream in
+        """
+        from google.adk.agents import LlmAgent
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types
+
+        # Create agent with tools and permission callback
+        agent = LlmAgent(
+            name="gemini_roundtable",
+            model=self.model,
+            instruction=system or "You are a helpful assistant.",
+            tools=tools,
+            before_tool_callback=self._create_before_tool_callback(
+                write_enabled, yolo_mode
+            ),
+        )
+
+        # Create session service and runner
+        session_service = InMemorySessionService()
+        runner = Runner(
+            agent=agent,
+            app_name="roundtable",
+            session_service=session_service,
+        )
+
+        # Generate unique IDs for this invocation
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        session_id = f"session-{uuid.uuid4().hex[:8]}"
+
+        # Create the message content
+        message_content = types.Content(
+            role="user",
+            parts=[types.Part(text=prompt)],
+        )
+
+        try:
+            async for event in runner.run_async(
+                user_id=user_id,
+                session_id=session_id,
+                new_message=message_content,
+            ):
+                yield event
+        except Exception as e:
+            logger.error(f"Gemini ADK native tool error: {e}")
+            raise RuntimeError(f"Gemini ADK native tool error: {e}") from e
