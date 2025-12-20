@@ -124,6 +124,14 @@ class LLMClient(ABC):
     ) -> LLMResponse:
         """Generate with tool calling support (JSON-based protocol).
 
+        .. deprecated::
+            This method uses a custom JSON-based tool protocol and is deprecated.
+            Use ``generate_with_tools_native()`` instead, which uses SDK-native
+            tool calling with proper permission hooks.
+
+            This method is kept as a fallback for edge cases where native SDK
+            tool calling is unavailable.
+
         This method implements a JSON-based tool calling protocol that works
         with CLI providers that don't support native tool calling.
 
@@ -148,6 +156,14 @@ class LLMClient(ABC):
               - tool_calls: List of {"name": ..., "parameters": ...}
               - content: Raw response text
         """
+        # DEPRECATED: This method uses custom JSON protocol.
+        # Use generate_with_tools_native() for SDK-native tool calling.
+        # Kept for fallback/legacy compatibility only.
+        logger.warning(
+            "generate_with_tools() is deprecated. "
+            "Use generate_with_tools_native() for SDK-native tool calling."
+        )
+
         # Format system prompt with tool definitions
         system_with_tools = self._format_system_with_tools(system, tools)
 
