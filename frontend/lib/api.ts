@@ -319,6 +319,30 @@ export async function updateFeatureStatus(
 }
 
 // ============================================================================
+// Feature Tasks
+// ============================================================================
+
+export interface FeatureTask {
+  id: string;
+  title: string;
+  status: "pending" | "running" | "paused" | "completed" | "failed";
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+}
+
+export async function fetchFeatureTasks(
+  projectId: string,
+  featureId: string
+): Promise<FeatureTask[]> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/features/${featureId}/tasks`
+  );
+  if (!res.ok) throw new Error("Failed to fetch feature tasks");
+  return res.json();
+}
+
+// ============================================================================
 // Vision Types
 // ============================================================================
 

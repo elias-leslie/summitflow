@@ -601,6 +601,7 @@ export default function ProjectDetailPage() {
             />
             <FeatureDetailDrawer
               feature={selectedFeature}
+              projectId={projectId}
               open={drawerOpen}
               onOpenChange={setDrawerOpen}
               onStartClick={handleStartClick}

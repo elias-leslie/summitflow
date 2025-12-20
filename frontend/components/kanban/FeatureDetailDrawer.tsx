@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -10,7 +10,8 @@ import {
   X,
   Play,
   Clock,
-  GitBranch,
+  Loader2,
+  Pause,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } from "@/components/ui/sheet";
@@ -18,25 +19,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { Feature, AcceptanceCriterion } from "@/lib/api";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface Task {
-  id: string;
-  title: string;
-  status: "pending" | "running" | "completed" | "failed" | "paused";
-  created_at: string;
-  branch_name?: string;
-}
+import type { Feature, AcceptanceCriterion, FeatureTask } from "@/lib/api";
+import { fetchFeatureTasks } from "@/lib/api";
 
 interface FeatureDetailDrawerProps {
   feature: Feature | null;
+  projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tasks?: Task[];
   onStartClick?: (feature: Feature) => void;
   onFeatureUpdate?: (featureId: string, updates: Partial<Feature>) => void;
 }
@@ -89,29 +79,39 @@ function CriterionRow({ criterion }: { criterion: AcceptanceCriterion }) {
 // Task Row Component
 // ============================================================================
 
-function TaskRow({ task }: { task: Task }) {
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${mins}m`;
+}
+
+function TaskRow({ task }: { task: FeatureTask }) {
   const statusConfig: Record<string, { icon: React.ReactNode; color: string }> = {
     pending: { icon: <Clock className="h-3.5 w-3.5" />, color: "text-slate-400" },
-    running: { icon: <Play className="h-3.5 w-3.5" />, color: "text-blue-400" },
+    running: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, color: "text-blue-400" },
     completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "text-phosphor-400" },
     failed: { icon: <XCircle className="h-3.5 w-3.5" />, color: "text-rose-400" },
-    paused: { icon: <Clock className="h-3.5 w-3.5" />, color: "text-amber-400" },
+    paused: { icon: <Pause className="h-3.5 w-3.5" />, color: "text-amber-400" },
   };
 
   const config = statusConfig[task.status] || statusConfig.pending;
 
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-slate-800 last:border-0">
-      <div className="flex items-center gap-2">
-        <span className={config.color}>{config.icon}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className={`shrink-0 ${config.color}`}>{config.icon}</span>
         <span className="text-sm text-slate-300 truncate">{task.title}</span>
       </div>
-      {task.branch_name && (
-        <div className="flex items-center gap-1 text-xs text-slate-500">
-          <GitBranch className="h-3 w-3" />
-          <span className="mono truncate max-w-[120px]">{task.branch_name}</span>
-        </div>
-      )}
+      <div className="flex items-center gap-3 shrink-0 text-xs text-slate-500">
+        {task.started_at && (
+          <span>{new Date(task.started_at).toLocaleDateString()}</span>
+        )}
+        {task.duration_seconds !== null && (
+          <span className="mono">{formatDuration(task.duration_seconds)}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -122,15 +122,40 @@ function TaskRow({ task }: { task: Task }) {
 
 export function FeatureDetailDrawer({
   feature,
+  projectId,
   open,
   onOpenChange,
-  tasks = [],
   onStartClick,
   onFeatureUpdate,
 }: FeatureDetailDrawerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [tasks, setTasks] = useState<FeatureTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+
+  // Fetch tasks when feature changes
+  useEffect(() => {
+    if (!feature || !open) {
+      setTasks([]);
+      return;
+    }
+
+    const loadTasks = async () => {
+      setTasksLoading(true);
+      try {
+        const fetchedTasks = await fetchFeatureTasks(projectId, feature.feature_id);
+        setTasks(fetchedTasks);
+      } catch (error) {
+        console.error("Failed to fetch feature tasks:", error);
+        setTasks([]);
+      } finally {
+        setTasksLoading(false);
+      }
+    };
+
+    loadTasks();
+  }, [feature, projectId, open]);
 
   if (!feature) return null;
 
@@ -275,10 +300,10 @@ export function FeatureDetailDrawer({
             </div>
           </div>
 
-          {/* Linked Tasks */}
+          {/* Execution History */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-slate-400">Linked Tasks</h3>
+              <h3 className="text-sm font-medium text-slate-400">Execution History</h3>
               {tasks.length > 0 && (
                 <Badge variant="slate" className="text-xs">
                   {tasks.length}
@@ -287,7 +312,11 @@ export function FeatureDetailDrawer({
             </div>
 
             <div className="rounded-lg border border-slate-700 bg-slate-900/50">
-              {tasks.length > 0 ? (
+              {tasksLoading ? (
+                <div className="p-4 text-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-slate-500 mx-auto" />
+                </div>
+              ) : tasks.length > 0 ? (
                 <div className="divide-y divide-slate-800 p-3">
                   {tasks.map((task) => (
                     <TaskRow key={task.id} task={task} />
@@ -295,7 +324,7 @@ export function FeatureDetailDrawer({
                 </div>
               ) : (
                 <div className="p-4 text-center text-sm text-slate-500 italic">
-                  No tasks linked yet
+                  No tasks executed yet
                 </div>
               )}
             </div>

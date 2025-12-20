@@ -101,6 +101,7 @@ export default function KanbanPage() {
       {/* Feature Detail Drawer */}
       <FeatureDetailDrawer
         feature={selectedFeature}
+        projectId={projectId}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onStartClick={handleStartClick}
