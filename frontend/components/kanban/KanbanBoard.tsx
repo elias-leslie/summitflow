@@ -25,6 +25,7 @@ import { Target, X } from "lucide-react";
 import type { Feature, FeatureStatus } from "@/lib/api";
 import { FeatureCard, DragOverlayCard } from "./FeatureCard";
 import { Button } from "@/components/ui/button";
+import { ProjectBreadcrumb } from "@/components/ui/breadcrumb";
 
 // ============================================================================
 // Types
@@ -40,6 +41,8 @@ export interface KanbanColumn {
 
 interface KanbanBoardProps {
   features: Feature[];
+  projectId?: string;
+  projectName?: string;
   onStatusChange?: (featureId: string, newStatus: KanbanStatus) => void;
   onFeatureClick?: (feature: Feature) => void;
   onStartClick?: (feature: Feature) => void;
@@ -121,6 +124,8 @@ function DroppableColumn({ column, features, onFeatureClick, onStartClick }: Dro
 
 export function KanbanBoard({
   features,
+  projectId,
+  projectName,
   onStatusChange,
   onFeatureClick,
   onStartClick,
@@ -243,6 +248,16 @@ export function KanbanBoard({
 
   return (
     <div className="space-y-4">
+      {/* Breadcrumb Navigation */}
+      {goalFilter && projectId && (
+        <ProjectBreadcrumb
+          projectId={projectId}
+          projectName={projectName}
+          goalCode={goalFilter}
+          className="mb-2"
+        />
+      )}
+
       {/* Goal Filter Indicator */}
       {goalFilter && (
         <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-phosphor-500/10 border border-phosphor-500/30">

@@ -631,6 +631,8 @@ export default function ProjectDetailPage() {
           <>
             <KanbanBoard
               features={features}
+              projectId={projectId}
+              projectName={project.name}
               onStatusChange={handleStatusChange}
               onFeatureClick={handleFeatureClick}
               onStartClick={handleStartClick}
