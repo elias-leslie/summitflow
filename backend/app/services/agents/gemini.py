@@ -34,15 +34,15 @@ class GeminiClient(LLMClient):
     2. Run `gcloud auth application-default login`
 
     Models:
-        - "gemini-2.0-flash" (default): Latest fast model
-        - "gemini-2.5-pro": Most capable
-        - "gemini-2.5-flash": Fast and capable
-        - "gemini-1.5-pro": Previous generation
+        - "gemini-3-flash-preview" (default): Latest Gemini 3 Flash - fast and capable
+        - "gemini-3-pro-preview": Gemini 3 Pro - most capable reasoning model
+        - "gemini-2.5-flash": Previous generation fast model
+        - "gemini-2.5-pro": Previous generation pro model
     """
 
     def __init__(
         self,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3-flash-preview",
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
     ) -> None:
         """Initialize Gemini ADK client.

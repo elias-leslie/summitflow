@@ -42,26 +42,42 @@ class ClaudeClient(LLMClient):
     2. Run `claude` once to authenticate via browser
     3. Credentials are cached locally (~/.claude/)
 
-    Models:
-        - "sonnet" (default): Claude 3.5 Sonnet - fast and capable
-        - "opus": Claude 3 Opus - most capable
-        - "haiku": Claude 3 Haiku - fastest
+    Models (4.5 series - latest):
+        - "claude-sonnet-4-5" (default): Claude Sonnet 4.5 - best coding model
+        - "claude-opus-4-5": Claude Opus 4.5 - most capable reasoning
+        - "claude-haiku-4-5": Claude Haiku 4.5 - fastest, cost-efficient
+
+    Also accepts short names: "sonnet", "opus", "haiku" (mapped to 4.5 series)
     """
+
+    # Map full model IDs to SDK short names
+    MODEL_MAP = {
+        "claude-opus-4-5": "opus",
+        "claude-sonnet-4-5": "sonnet",
+        "claude-haiku-4-5": "haiku",
+        # Short names pass through
+        "opus": "opus",
+        "sonnet": "sonnet",
+        "haiku": "haiku",
+    }
 
     def __init__(
         self,
-        model: str = "sonnet",
+        model: str = "claude-sonnet-4-5",
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
     ) -> None:
         """Initialize Claude SDK client.
 
         Args:
-            model: Model to use ("sonnet", "opus", "haiku")
+            model: Model to use ("claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5")
+                   Also accepts short names: "sonnet", "opus", "haiku"
             permission_callback: Async callback for permission prompting.
                 Called with (tool_name, tool_args) when write tools need approval.
                 Returns True to allow, False to deny.
         """
-        self.model = model
+        # Map full model ID to SDK short name
+        self.model = self.MODEL_MAP.get(model, model)
+        self.model_id = model  # Keep original for display
         self._permission_callback = permission_callback
         self._cli_path = shutil.which("claude")
         if not self._cli_path:
@@ -69,7 +85,7 @@ class ClaudeClient(LLMClient):
                 "Claude CLI not found in PATH. "
                 "Install with: npm install -g @anthropic-ai/claude-code"
             )
-        logger.info(f"Claude SDK client initialized (model={model})")
+        logger.info(f"Claude SDK client initialized (model={self.model}, id={model})")
 
     def is_available(self) -> bool:
         """Check if Claude SDK is available."""

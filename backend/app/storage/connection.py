@@ -59,8 +59,8 @@ def init_schema() -> None:
                         "claude_enabled": true,
                         "gemini_enabled": true,
                         "default_agent": "gemini",
-                        "claude_model": "sonnet",
-                        "gemini_model": "gemini-2.5-flash"
+                        "claude_model": "claude-sonnet-4-5",
+                        "gemini_model": "gemini-3-flash-preview"
                     }'::jsonb,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
@@ -561,8 +561,8 @@ def init_schema() -> None:
                     project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                     primary_agent VARCHAR(50) DEFAULT 'claude',
                     secondary_agent VARCHAR(50) DEFAULT 'gemini',
-                    primary_model VARCHAR(100) DEFAULT 'claude-opus-4-5-20251101',
-                    secondary_model VARCHAR(100) DEFAULT 'gemini-exp-1206',
+                    primary_model VARCHAR(100) DEFAULT 'claude-sonnet-4-5',
+                    secondary_model VARCHAR(100) DEFAULT 'gemini-3-flash-preview',
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )

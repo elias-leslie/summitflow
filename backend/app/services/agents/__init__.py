@@ -36,9 +36,9 @@ def get_agent(
         RuntimeError: If CLI for agent is not available
     """
     if agent_type == "claude":
-        return ClaudeClient(model=model or "sonnet")
+        return ClaudeClient(model=model or "claude-sonnet-4-5")
     elif agent_type == "gemini":
-        return GeminiClient(model=model or "gemini-2.5-flash")
+        return GeminiClient(model=model or "gemini-3-flash-preview")
     else:
         raise ValueError(f"Unknown agent type: {agent_type}. Use 'claude' or 'gemini'.")
 
@@ -53,8 +53,8 @@ class DualProviderClient(LLMClient):
     def __init__(
         self,
         primary: AgentType = "gemini",
-        claude_model: str = "sonnet",
-        gemini_model: str = "gemini-2.5-flash",
+        claude_model: str = "claude-sonnet-4-5",
+        gemini_model: str = "gemini-3-flash-preview",
     ) -> None:
         """Initialize dual provider client.
 

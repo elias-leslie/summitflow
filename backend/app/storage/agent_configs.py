@@ -19,16 +19,16 @@ class AgentConfig(TypedDict, total=False):
     claude_enabled: bool
     gemini_enabled: bool
     default_agent: str  # "claude" or "gemini"
-    claude_model: str  # "sonnet", "opus", "haiku"
-    gemini_model: str  # "gemini-2.5-pro", "gemini-2.5-flash"
+    claude_model: str  # "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"
+    gemini_model: str  # "gemini-3-flash-preview", "gemini-3-pro-preview"
 
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
     "gemini_enabled": True,
     "default_agent": "gemini",
-    "claude_model": "opus",
-    "gemini_model": "gemini-exp-1206",
+    "claude_model": "claude-sonnet-4-5",
+    "gemini_model": "gemini-3-flash-preview",
 }
 
 

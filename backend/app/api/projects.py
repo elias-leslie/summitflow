@@ -319,13 +319,14 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
             )
         config_update["default_agent"] = update.default_agent
     if update.claude_model is not None:
-        if update.claude_model not in ("sonnet", "opus", "haiku"):
+        valid_claude_models = ("claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "sonnet", "opus", "haiku")
+        if update.claude_model not in valid_claude_models:
             raise HTTPException(
-                status_code=400, detail="claude_model must be 'sonnet', 'opus', or 'haiku'"
+                status_code=400, detail=f"claude_model must be one of: {valid_claude_models}"
             )
         config_update["claude_model"] = update.claude_model
     if update.gemini_model is not None:
-        valid_models = ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-exp-1206")
+        valid_models = ("gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash", "gemini-2.5-pro")
         if update.gemini_model not in valid_models:
             raise HTTPException(
                 status_code=400, detail=f"gemini_model must be one of: {valid_models}"

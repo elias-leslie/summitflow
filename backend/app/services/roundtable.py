@@ -156,7 +156,7 @@ class RoundtableSession:
             return self.agent_override  # type: ignore
         return default_agent
 
-    def get_effective_model(self, agent_type: AgentType, default_claude: str = "sonnet", default_gemini: str = "gemini-2.5-flash") -> str:
+    def get_effective_model(self, agent_type: AgentType, default_claude: str = "claude-sonnet-4-5", default_gemini: str = "gemini-3-flash-preview") -> str:
         """Get the effective model for this session.
 
         Uses session model_override if set, otherwise falls back to default.
@@ -225,8 +225,8 @@ Available tools: read_file, search_code, list_files, get_project_structure
 
     def __init__(
         self,
-        claude_model: str = "sonnet",
-        gemini_model: str = "gemini-2.5-flash",
+        claude_model: str = "claude-sonnet-4-5",
+        gemini_model: str = "gemini-3-flash-preview",
         permission_callback: PermissionCallback | None = None,
     ) -> None:
         """Initialize roundtable service with model configurations.

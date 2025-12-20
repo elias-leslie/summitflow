@@ -33,15 +33,16 @@ const AGENTS = [
 ];
 
 const CLAUDE_MODELS = [
-  { id: "default", label: "Default" },
-  { id: "claude-opus-4-5-20251101", label: "Opus 4.5" },
-  { id: "sonnet", label: "Sonnet" },
+  { id: "default", label: "Default (Claude Sonnet 4.5)" },
+  { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+  { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
 ];
 
 const GEMINI_MODELS = [
-  { id: "default", label: "Default" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { id: "gemini-exp-1206", label: "Gemini Exp 1206" },
+  { id: "default", label: "Default (Gemini 3 Flash)" },
+  { id: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+  { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
 ];
 
 export function AgentConfigPanel({
