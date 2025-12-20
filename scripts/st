@@ -29,7 +29,7 @@ COMMANDS:
     blocked            List blocked tasks
     show <id>          Show task details
     update <id>        Update task fields
-    close <id>         Close/complete a task
+    close <id>         Close/complete a task (--force to bypass criteria check)
     dep add            Add dependency
     dep list           List dependencies
     dep rm             Remove dependency
@@ -522,12 +522,17 @@ cmd_close() {
     fi
 
     local reason=""
+    local force=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             -r|--reason)
                 reason="$2"
                 shift 2
+                ;;
+            -f|--force)
+                force=true
+                shift
                 ;;
             --json)
                 JSON_OUTPUT=1
@@ -540,7 +545,7 @@ cmd_close() {
     done
 
     local json_data
-    json_data=$(jq -n '{status: "completed"}')
+    json_data=$(jq -n --argjson force "$force" '{status: "completed", force: $force}')
 
     local response
     response=$(curl -s -X PATCH "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/status" \

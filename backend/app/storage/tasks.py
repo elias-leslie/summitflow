@@ -626,3 +626,71 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
+
+
+def check_criteria_satisfied(task_id: str) -> dict[str, Any]:
+    """Check if all acceptance criteria for a task's linked feature are satisfied.
+
+    Args:
+        task_id: Task ID
+
+    Returns:
+        Dict with:
+        - satisfied: True if all criteria pass or no linked feature
+        - unsatisfied_criteria: List of criteria that haven't passed
+        - feature_id: Feature ID if linked, None otherwise
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get task and linked feature's acceptance criteria
+        cur.execute(
+            """
+            SELECT t.feature_id, f.feature_id as f_feature_id, f.acceptance_criteria
+            FROM tasks t
+            LEFT JOIN feature_capabilities f ON t.feature_id = f.id
+            WHERE t.id = %s
+            """,
+            (task_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        # Task not found
+        return {
+            "satisfied": True,
+            "unsatisfied_criteria": [],
+            "feature_id": None,
+        }
+
+    feature_db_id, feature_id, criteria = row
+
+    # No linked feature - no criteria to check
+    if feature_db_id is None:
+        return {
+            "satisfied": True,
+            "unsatisfied_criteria": [],
+            "feature_id": None,
+        }
+
+    # No criteria defined
+    if not criteria:
+        return {
+            "satisfied": True,
+            "unsatisfied_criteria": [],
+            "feature_id": feature_id,
+        }
+
+    # Check for unsatisfied criteria
+    unsatisfied = [
+        {
+            "id": c.get("id", "unknown"),
+            "description": c.get("description", ""),
+        }
+        for c in criteria
+        if not c.get("passes", False)
+    ]
+
+    return {
+        "satisfied": len(unsatisfied) == 0,
+        "unsatisfied_criteria": unsatisfied,
+        "feature_id": feature_id,
+    }
