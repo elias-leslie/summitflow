@@ -22,6 +22,8 @@ from .agents.gemini import GeminiClient
 from .roundtable_permissions import permission_manager
 from .roundtable_tools import (
     RoundtableToolExecutor,
+    ToolResult,
+    WRITE_TOOL_NAMES,
     format_tool_results_for_prompt,
     get_default_executor,
     to_adk_function_tools,
@@ -426,6 +428,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                 prompt=prompt,
                 system=system_prompt,
                 session=session,
+                session_id=session.id,
             )
 
         # No tools - simple generation
@@ -445,6 +448,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
         max_iterations: int = 30,
         max_tool_calls: int = 100,
         detect_duplicates: bool = True,
+        session_id: str | None = None,
     ) -> LLMResponse:
         """Send message with tool access, handling tool calls in a loop.
 
@@ -461,6 +465,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
             max_iterations: Maximum tool call rounds (default 30)
             max_tool_calls: Maximum total tool calls (default 100)
             detect_duplicates: Stop on repeated identical calls (default True)
+            session_id: Session ID for permission callbacks (optional)
 
         Returns:
             Final LLMResponse after all tool calls are complete
@@ -526,6 +531,66 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                     f"Executing tool [{total_tool_calls}/{max_tool_calls}]: "
                     f"{tool_name}"
                 )
+
+                # Check if this is a write tool that needs permission
+                if tool_name in WRITE_TOOL_NAMES:
+                    if not session.tool_executor.has_write_access():
+                        # Write access not enabled - block
+                        result = ToolResult(
+                            success=False,
+                            output="",
+                            error=f"Write access not enabled for {tool_name}",
+                        )
+                        tool_results.append((tool_name, result))
+                        continue
+
+                    if not session.tool_executor.yolo_mode:
+                        # Need to request permission
+                        effective_session_id = session_id or current_session_id.get()
+                        if effective_session_id and self._permission_callback:
+                            # Set the context for the permission callback
+                            current_session_id.set(effective_session_id)
+                            # Use asyncio to run the async permission callback
+                            try:
+                                import asyncio
+                                loop = asyncio.new_event_loop()
+                                approved = loop.run_until_complete(
+                                    self._permission_callback(tool_name, parameters)
+                                )
+                                loop.close()
+
+                                if not approved:
+                                    result = ToolResult(
+                                        success=False,
+                                        output="",
+                                        error=f"Permission denied for {tool_name}",
+                                    )
+                                    tool_results.append((tool_name, result))
+                                    logger.info(f"Permission denied for {tool_name}")
+                                    continue
+
+                                logger.info(f"Permission granted for {tool_name}")
+                            except Exception as e:
+                                logger.error(f"Permission callback error: {e}")
+                                result = ToolResult(
+                                    success=False,
+                                    output="",
+                                    error=f"Permission check failed: {e}",
+                                )
+                                tool_results.append((tool_name, result))
+                                continue
+                        else:
+                            # No session context or callback - deny for safety
+                            logger.warning(
+                                f"No permission callback for {tool_name}, denying"
+                            )
+                            result = ToolResult(
+                                success=False,
+                                output="",
+                                error=f"Permission required but no callback configured",
+                            )
+                            tool_results.append((tool_name, result))
+                            continue
 
                 result = session.tool_executor.execute(tool_name, parameters)
                 tool_results.append((tool_name, result))
