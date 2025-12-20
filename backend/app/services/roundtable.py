@@ -10,19 +10,26 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
 from .agents import AgentType, LLMResponse, get_agent
+from .agents.claude import ClaudeClient
+from .agents.gemini import GeminiClient
 from .roundtable_tools import (
     RoundtableToolExecutor,
     format_tool_results_for_prompt,
     get_default_executor,
+    to_adk_function_tools,
+    to_claude_sdk_tools,
 )
 
 logger = logging.getLogger(__name__)
+
+# Type alias for permission callback
+PermissionCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 
 TargetAgent = Literal["claude", "gemini", "both"]
 
@@ -146,11 +153,31 @@ Available tools: read_file, search_code, list_files, get_project_structure
         self,
         claude_model: str = "sonnet",
         gemini_model: str = "gemini-2.5-flash",
+        permission_callback: PermissionCallback | None = None,
     ) -> None:
-        """Initialize roundtable service with model configurations."""
+        """Initialize roundtable service with model configurations.
+
+        Args:
+            claude_model: Model for Claude agent
+            gemini_model: Model for Gemini agent
+            permission_callback: Async callback for write tool permission prompts.
+                Called with (tool_name, tool_args) when write tools need approval.
+                Returns True to allow, False to deny.
+        """
         self.claude_model = claude_model
         self.gemini_model = gemini_model
+        self._permission_callback = permission_callback
         self._sessions: dict[str, RoundtableSession] = {}
+
+        # Create agent clients with permission callback
+        self._claude_client = ClaudeClient(
+            model=claude_model,
+            permission_callback=permission_callback,
+        )
+        self._gemini_client = GeminiClient(
+            model=gemini_model,
+            permission_callback=permission_callback,
+        )
 
     def get_session(self, session_id: str) -> RoundtableSession | None:
         """Get an existing session by ID."""
@@ -160,9 +187,10 @@ Available tools: read_file, search_code, list_files, get_project_structure
         self,
         project_id: str,
         mode: Literal["spec_driven", "quick"] = "quick",
+        tools_enabled: bool = True,
     ) -> RoundtableSession:
         """Create a new roundtable session."""
-        session = RoundtableSession.create(project_id, mode)
+        session = RoundtableSession.create(project_id, mode, tools_enabled)
         self._sessions[session.id] = session
         return session
 
@@ -505,6 +533,129 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
             f"{total_tool_calls} tool calls made"
         )
         return response
+
+    async def _send_with_tools_native(
+        self,
+        agent_type: AgentType,
+        prompt: str,
+        system: str,
+        session: RoundtableSession,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Send message with native SDK tool calling.
+
+        Uses Claude SDK hooks or Google ADK callbacks for tool permission
+        control instead of custom JSON protocol.
+
+        Args:
+            agent_type: Which agent to use ("claude" or "gemini")
+            prompt: User prompt
+            system: System prompt
+            session: Session with tool executor
+
+        Yields:
+            Event dicts with message content and tool calls
+        """
+        tools = session.tool_executor.get_available_tools()
+        write_enabled = session.tool_executor.has_write_access()
+        yolo_mode = session.tool_executor.yolo_mode
+
+        if agent_type == "claude":
+            # Use Claude's native SDK with PreToolUse hooks
+            sdk_tools = to_claude_sdk_tools(tools)
+            async for event in self._claude_client.generate_with_tools_native(
+                prompt=prompt,
+                tools=sdk_tools,
+                system=system,
+                write_enabled=write_enabled,
+                yolo_mode=yolo_mode,
+            ):
+                yield {"agent": "claude", "event": event}
+
+        else:  # gemini
+            # Use Google ADK with before_tool_callback
+            adk_tools = to_adk_function_tools(tools, session.tool_executor)
+            async for event in self._gemini_client.generate_with_tools_native(
+                prompt=prompt,
+                tools=adk_tools,
+                system=system,
+                write_enabled=write_enabled,
+                yolo_mode=yolo_mode,
+            ):
+                yield {"agent": "gemini", "event": event}
+
+    async def route_message_with_native_tools(
+        self,
+        session: RoundtableSession,
+        message: str,
+        target: TargetAgent = "both",
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Route message using native SDK tool calling with permission callbacks.
+
+        This is the new SDK-native method that replaces the custom JSON protocol.
+        Uses Claude SDK hooks and Google ADK callbacks for tool permissions.
+
+        Args:
+            session: The roundtable session
+            message: User's message
+            target: Target agent ("claude", "gemini", or "both")
+
+        Yields:
+            Event dicts containing agent responses and tool calls
+        """
+        # Add user message to session
+        user_msg = RoundtableMessage.create("user", message)
+        session.add_message(user_msg)
+
+        # Build context and prompts
+        context = session.get_context()
+
+        # Build system prompt with identity
+        def build_system_prompt(agent_type: str) -> str:
+            agent_identity = {
+                "claude": "You are CLAUDE (Anthropic). In conversation logs, you are labeled as [CLAUDE].",
+                "gemini": "You are GEMINI (Google). In conversation logs, you are labeled as [GEMINI].",
+            }
+            tool_section = self.TOOL_GUIDANCE if session.tools_enabled else ""
+            return f"""{agent_identity.get(agent_type, "")}
+
+{self.ROUNDTABLE_SYSTEM}
+{tool_section}
+IMPORTANT: You are {agent_type.upper()}. Do NOT confuse yourself with the other AI assistant in this conversation."""
+
+        # Build prompt with context
+        def build_prompt(user_message: str) -> str:
+            if not context:
+                return user_message
+            return f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
+
+{context}
+
+The user's most recent message that you should respond to is: "{user_message}"
+
+Provide your unique perspective. Do not repeat what the other agent said - add new value."""
+
+        prompt = build_prompt(message)
+
+        if target in ("claude", "both"):
+            system = build_system_prompt("claude")
+            async for event in self._send_with_tools_native("claude", prompt, system, session):
+                yield event
+
+        if target in ("gemini", "both"):
+            # Update context if Claude already responded
+            if target == "both":
+                context_updated = session.get_context()
+                prompt = build_prompt(message) if context == context_updated else f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
+
+{context_updated}
+
+The user's most recent message that you should respond to is: "{message}"
+
+Provide your unique perspective. Do not repeat what the other agent said - add new value."""
+
+            system = build_system_prompt("gemini")
+            async for event in self._send_with_tools_native("gemini", prompt, system, session):
+                yield event
 
     async def get_parallel_responses(
         self,
