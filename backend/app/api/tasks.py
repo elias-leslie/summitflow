@@ -91,6 +91,16 @@ class DependencyResponse(BaseModel):
     depends_on_status: str | None = None
 
 
+class FeatureContext(BaseModel):
+    """Feature context for a task."""
+
+    id: int  # Database ID
+    feature_id: str  # String ID like FEAT-001
+    name: str
+    criteria_passed: int
+    criteria_total: int
+
+
 class TaskResponse(BaseModel):
     """Response model for a task."""
 
@@ -118,6 +128,8 @@ class TaskResponse(BaseModel):
     labels: list[str]
     task_type: str
     parent_task_id: str | None
+    # Optional feature context (when include=feature)
+    feature: FeatureContext | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -129,6 +141,18 @@ class TaskListResponse(BaseModel):
 
 def _task_to_response(task: dict[str, Any]) -> TaskResponse:
     """Convert task dict to response model."""
+    # Handle optional feature context
+    feature_context = None
+    if task.get("feature") is not None:
+        f = task["feature"]
+        feature_context = FeatureContext(
+            id=f["id"],
+            feature_id=f["feature_id"],
+            name=f["name"],
+            criteria_passed=f["criteria_passed"],
+            criteria_total=f["criteria_total"],
+        )
+
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
@@ -154,6 +178,8 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         labels=task.get("labels") or [],
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
+        # Optional feature context
+        feature=feature_context,
     )
 
 
@@ -166,6 +192,7 @@ async def list_tasks(
     priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
     labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
     orphans_only: bool = Query(False, description="Only return tasks not linked to a feature (issues)"),
+    include: str | None = Query(None, description="Include related data (e.g., 'feature' for feature context)"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ) -> TaskListResponse:
@@ -177,10 +204,14 @@ async def list_tasks(
         - priority: Filter by priority (0-4)
         - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
         - orphans_only: Only return tasks not linked to a feature
+        - include: Include related data (comma-separated, e.g., 'feature' for feature context)
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
     labels_list = labels.split(",") if labels else None
+    includes = include.split(",") if include else []
+    include_feature = "feature" in includes
+
     tasks = task_store.list_tasks(
         project_id,
         status_filter=status,
@@ -188,6 +219,7 @@ async def list_tasks(
         priority_filter=priority,
         labels_filter=labels_list,
         orphans_only=orphans_only,
+        include_feature=include_feature,
         limit=limit,
         offset=offset,
     )

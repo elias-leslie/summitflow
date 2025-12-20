@@ -202,6 +202,7 @@ def list_tasks(
     priority_filter: int | None = None,
     labels_filter: list[str] | None = None,
     orphans_only: bool = False,
+    include_feature: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -210,53 +211,76 @@ def list_tasks(
     Args:
         project_id: Project ID
         status_filter: Optional status filter (pending, running, paused, failed, completed)
-        task_type_filter: Optional type filter (task, bug, chore)
+        task_type_filter: Optional type filter (task, bug, feature)
         priority_filter: Optional priority filter (0-4)
         labels_filter: Optional labels filter (task must have ALL specified labels)
         orphans_only: If True, only return tasks with no linked feature (issues)
+        include_feature: If True, include linked feature context
         limit: Max results (default 50)
         offset: Result offset
 
     Returns:
-        List of task dicts.
+        List of task dicts. If include_feature=True, includes 'feature' object.
     """
-    conditions = ["project_id = %s"]
+    conditions = ["t.project_id = %s"]
     params: list[Any] = [project_id]
 
     if status_filter:
-        conditions.append("status = %s")
+        conditions.append("t.status = %s")
         params.append(status_filter)
     if task_type_filter:
-        conditions.append("task_type = %s")
+        conditions.append("t.task_type = %s")
         params.append(task_type_filter)
     if priority_filter is not None:
-        conditions.append("priority = %s")
+        conditions.append("t.priority = %s")
         params.append(priority_filter)
     if labels_filter:
         # Task must contain all specified labels
-        conditions.append("labels @> %s")
+        conditions.append("t.labels @> %s")
         params.append(labels_filter)
     if orphans_only:
-        conditions.append("feature_id IS NULL")
+        conditions.append("t.feature_id IS NULL")
 
     params.extend([limit, offset])
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT id, project_id, feature_id, title, description, status,
-                   current_criterion_id, spec_content, plan_content, progress_log,
-                   error_message, branch_name, commits, pull_request_url,
-                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                   priority, labels, task_type, parent_task_id
-            FROM tasks
-            WHERE {" AND ".join(conditions)}
-            ORDER BY priority ASC, created_at DESC
-            LIMIT %s OFFSET %s
-            """,
-            tuple(params),
-        )
-        rows = cur.fetchall()
+        if include_feature:
+            # Join with feature_capabilities to get feature context
+            cur.execute(
+                f"""
+                SELECT t.id, t.project_id, t.feature_id, t.title, t.description, t.status,
+                       t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+                       t.error_message, t.branch_name, t.commits, t.pull_request_url,
+                       t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+                       t.priority, t.labels, t.task_type, t.parent_task_id,
+                       f.id as f_db_id, f.feature_id as f_feature_id, f.name as f_name,
+                       f.acceptance_criteria as f_criteria
+                FROM tasks t
+                LEFT JOIN feature_capabilities f ON t.feature_id = f.id
+                WHERE {" AND ".join(conditions)}
+                ORDER BY t.priority ASC, t.created_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+            return [_row_to_dict_with_feature(row) for row in rows]
+        else:
+            cur.execute(
+                f"""
+                SELECT t.id, t.project_id, t.feature_id, t.title, t.description, t.status,
+                       t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+                       t.error_message, t.branch_name, t.commits, t.pull_request_url,
+                       t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+                       t.priority, t.labels, t.task_type, t.parent_task_id
+                FROM tasks t
+                WHERE {" AND ".join(conditions)}
+                ORDER BY t.priority ASC, t.created_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
 
@@ -495,6 +519,31 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "task_type": row[21],
         "parent_task_id": row[22],
     }
+
+
+def _row_to_dict_with_feature(row: tuple) -> dict[str, Any]:
+    """Convert a database row with feature JOIN to a task dict.
+
+    Row positions 0-22 are task columns, 23-26 are feature columns.
+    """
+    task = _row_to_dict(row)
+
+    # Feature columns: f_db_id(23), f_feature_id(24), f_name(25), f_criteria(26)
+    if row[23] is not None:
+        criteria = row[26] or []
+        criteria_passed = sum(1 for c in criteria if c.get("passes", False))
+        criteria_total = len(criteria)
+        task["feature"] = {
+            "id": row[23],
+            "feature_id": row[24],
+            "name": row[25],
+            "criteria_passed": criteria_passed,
+            "criteria_total": criteria_total,
+        }
+    else:
+        task["feature"] = None
+
+    return task
 
 
 def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
