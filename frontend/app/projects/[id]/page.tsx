@@ -12,9 +12,13 @@ import {
   getRoundtableSession,
   streamRoundtableMessage,
   generateFeaturesFromRoundtable,
+  updateRoundtableTools,
+  resolvePermission,
   type RoundtableMessage,
   type GeneratedFeature,
   type RoundtableSSEEvent,
+  type ToolStats,
+  type PermissionRequest,
 } from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
@@ -30,6 +34,7 @@ import {
   type RoundtableMode,
   type FileAttachment,
 } from "@/components/roundtable/RoundtableChat";
+import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { StartTaskDialog } from "@/components/tasks/StartTaskDialog";
 import type { Feature } from "@/lib/api";
 
@@ -66,6 +71,14 @@ export default function ProjectDetailPage() {
   const [roundtableError, setRoundtableError] = useState<string | null>(null);
   const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
   const [roundtableSessionLoaded, setRoundtableSessionLoaded] = useState(false);
+  const [toolsEnabled, setToolsEnabled] = useState(true);
+  const [writeEnabled, setWriteEnabled] = useState(false);
+  const [yoloMode, setYoloMode] = useState(false);
+  const [toolStats, setToolStats] = useState<ToolStats>({ total_calls: 0, files_read: 0, searches: 0, writes: 0 });
+
+  // Permission prompting state
+  const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
+  const [permissionLoading, setPermissionLoading] = useState(false);
 
   // Load roundtable session from localStorage on mount
   useEffect(() => {
@@ -78,6 +91,14 @@ export default function ProjectDetailPage() {
         .then((session) => {
           setRoundtableSessionId(session.id);
           setRoundtableMode(session.mode as RoundtableMode);
+
+          // Load tools settings
+          setToolsEnabled(session.tools_enabled ?? true);
+          setWriteEnabled(session.write_enabled ?? false);
+          setYoloMode(session.yolo_mode ?? false);
+          if (session.tool_stats) {
+            setToolStats(session.tool_stats);
+          }
 
           // Convert messages to ChatMessage format
           const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
@@ -157,9 +178,69 @@ export default function ProjectDetailPage() {
     setRoundtableMessages([]);
     setGeneratedFeatures([]);
     setRoundtableError(null);
+    // Reset tools state
+    setToolsEnabled(true);
+    setWriteEnabled(false);
+    setYoloMode(false);
+    setToolStats({ total_calls: 0, files_read: 0, searches: 0, writes: 0 });
     // Clear from localStorage
     const storageKey = `roundtable-session-${projectId}`;
     localStorage.removeItem(storageKey);
+  };
+
+  const handleToolsChange = async (settings: { toolsEnabled?: boolean; writeEnabled?: boolean; yoloMode?: boolean }) => {
+    // Optimistically update UI
+    const prevToolsEnabled = toolsEnabled;
+    const prevWriteEnabled = writeEnabled;
+    const prevYoloMode = yoloMode;
+
+    if (settings.toolsEnabled !== undefined) setToolsEnabled(settings.toolsEnabled);
+    if (settings.writeEnabled !== undefined) setWriteEnabled(settings.writeEnabled);
+    if (settings.yoloMode !== undefined) setYoloMode(settings.yoloMode);
+
+    // If we have a session, persist the change
+    if (roundtableSessionId) {
+      try {
+        const result = await updateRoundtableTools(projectId, roundtableSessionId, settings);
+        setToolsEnabled(result.tools_enabled);
+        setWriteEnabled(result.write_enabled);
+        setYoloMode(result.yolo_mode);
+        setToolStats(result.tool_stats);
+      } catch (err) {
+        // Revert on error
+        setToolsEnabled(prevToolsEnabled);
+        setWriteEnabled(prevWriteEnabled);
+        setYoloMode(prevYoloMode);
+        console.error("Failed to update tools settings:", err);
+      }
+    }
+  };
+
+  // Permission handlers
+  const handleApprovePermission = async () => {
+    if (!pendingPermission || !roundtableSessionId) return;
+    setPermissionLoading(true);
+    try {
+      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, true);
+      setPendingPermission(null);
+    } catch (error) {
+      console.error("Failed to approve permission:", error);
+    } finally {
+      setPermissionLoading(false);
+    }
+  };
+
+  const handleDenyPermission = async () => {
+    if (!pendingPermission || !roundtableSessionId) return;
+    setPermissionLoading(true);
+    try {
+      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, false);
+      setPendingPermission(null);
+    } catch (error) {
+      console.error("Failed to deny permission:", error);
+    } finally {
+      setPermissionLoading(false);
+    }
   };
 
   const handleSendMessage = async (
@@ -174,9 +255,17 @@ export default function ProjectDetailPage() {
       // Create session if needed
       let sessionId = roundtableSessionId;
       if (!sessionId) {
-        const session = await createRoundtableSession(projectId, roundtableMode);
+        const session = await createRoundtableSession(projectId, {
+          mode: roundtableMode,
+          toolsEnabled,
+          writeEnabled,
+          yoloMode,
+        });
         sessionId = session.session_id;
         setRoundtableSessionId(sessionId);
+        setToolsEnabled(session.tools_enabled);
+        setWriteEnabled(session.write_enabled);
+        setYoloMode(session.yolo_mode);
       }
 
       // Add user message to UI immediately
@@ -228,6 +317,19 @@ export default function ProjectDetailPage() {
 
           case "error":
             setRoundtableError(event.data.message || "An error occurred");
+            break;
+
+          case "permission_request":
+            // Agent needs permission for a write operation
+            if (event.data.permission_id && event.data.tool_name && event.data.agent) {
+              setPendingPermission({
+                permission_id: event.data.permission_id,
+                tool_name: event.data.tool_name,
+                params: event.data.params || {},
+                preview: event.data.preview,
+                agent: event.data.agent,
+              });
+            }
             break;
 
           case "done":
@@ -528,9 +630,23 @@ export default function ProjectDetailPage() {
             streamingAgent={streamingAgent}
             connected={true}
             error={roundtableError}
+            toolsEnabled={toolsEnabled}
+            writeEnabled={writeEnabled}
+            yoloMode={yoloMode}
+            toolStats={toolStats}
+            onToolsChange={handleToolsChange}
           />
         )}
       </section>
+
+      {/* Permission Dialog for write tool approval */}
+      <PermissionDialog
+        open={!!pendingPermission}
+        request={pendingPermission}
+        onApprove={handleApprovePermission}
+        onDeny={handleDenyPermission}
+        isLoading={permissionLoading}
+      />
     </div>
   );
 }
