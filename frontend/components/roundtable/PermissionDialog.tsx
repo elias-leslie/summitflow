@@ -1,9 +1,12 @@
 "use client";
 
-import { FileEdit, FilePlus, Trash2, FolderPlus, AlertTriangle, type LucideIcon } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { FileEdit, FilePlus, Trash2, FolderPlus, AlertTriangle, Clock, type LucideIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { PermissionRequest } from "@/lib/api";
+
+const TIMEOUT_SECONDS = 60;
 
 interface PermissionDialogProps {
   open: boolean;
@@ -34,6 +37,35 @@ export function PermissionDialog({
   onDeny,
   isLoading,
 }: PermissionDialogProps) {
+  const [countdown, setCountdown] = useState(TIMEOUT_SECONDS);
+  const lastPermissionIdRef = useRef<string | null>(null);
+
+  // Reset countdown when a new permission request arrives
+  useEffect(() => {
+    if (request?.permission_id && request.permission_id !== lastPermissionIdRef.current) {
+      lastPermissionIdRef.current = request.permission_id;
+      setCountdown(TIMEOUT_SECONDS);
+    }
+  }, [request?.permission_id]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!open || !request || isLoading) return;
+
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Auto-deny when countdown reaches 0
+          onDeny();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [open, request, isLoading, onDeny]);
+
   if (!request) return null;
 
   const Icon = TOOL_ICONS[request.tool_name] || AlertTriangle;
@@ -55,15 +87,30 @@ export function PermissionDialog({
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent className="w-full max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-slate-800 ${iconColorClass}`}>
-              <Icon className="w-5 h-5" />
+          <DialogTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg bg-slate-800 ${iconColorClass}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-white">{toolLabel}</span>
+                <span className="ml-2 text-xs text-slate-400 uppercase">
+                  {request.agent}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-white">{toolLabel}</span>
-              <span className="ml-2 text-xs text-slate-400 uppercase">
-                {request.agent}
-              </span>
+            {/* Countdown timer */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                countdown <= 10
+                  ? "bg-rose-900/30 text-rose-400 animate-pulse"
+                  : countdown <= 30
+                  ? "bg-amber-900/30 text-amber-400"
+                  : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{countdown}s</span>
             </div>
           </DialogTitle>
         </DialogHeader>
