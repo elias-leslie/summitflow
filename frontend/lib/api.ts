@@ -850,10 +850,21 @@ export interface RoundtableMessage {
   model?: string | null;
 }
 
+export interface ToolStats {
+  total_calls: number;
+  files_read: number;
+  searches: number;
+  writes: number;
+}
+
 export interface RoundtableSession {
   id: string;
   project_id: string;
   mode: "spec_driven" | "quick";
+  tools_enabled: boolean;
+  write_enabled: boolean;
+  yolo_mode: boolean;
+  tool_stats: ToolStats;
   messages: RoundtableMessage[];
   generated_features?: GeneratedFeature[];
   created_at: string;
@@ -864,6 +875,10 @@ export interface RoundtableSessionInfo {
   id: string;
   project_id: string;
   mode: string;
+  tools_enabled: boolean;
+  write_enabled: boolean;
+  yolo_mode: boolean;
+  tool_stats?: ToolStats;
   message_count: number;
   feature_count: number;
   created_at: string;
@@ -884,14 +899,42 @@ export interface SendMessageResponse {
   responses: RoundtableMessage[];
 }
 
+export interface CreateSessionResponse {
+  session_id: string;
+  project_id: string;
+  mode: string;
+  tools_enabled: boolean;
+  write_enabled: boolean;
+  yolo_mode: boolean;
+}
+
+export interface CreateSessionOptions {
+  mode?: "spec_driven" | "quick";
+  toolsEnabled?: boolean;
+  writeEnabled?: boolean;
+  yoloMode?: boolean;
+}
+
 export async function createRoundtableSession(
   projectId: string,
-  mode: "spec_driven" | "quick" = "quick"
-): Promise<{ session_id: string; project_id: string; mode: string }> {
+  options: CreateSessionOptions = {}
+): Promise<CreateSessionResponse> {
+  const {
+    mode = "quick",
+    toolsEnabled = true,
+    writeEnabled = false,
+    yoloMode = false,
+  } = options;
+
   const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode }),
+    body: JSON.stringify({
+      mode,
+      tools_enabled: toolsEnabled,
+      write_enabled: writeEnabled,
+      yolo_mode: yoloMode,
+    }),
   });
   if (!res.ok) throw new Error("Failed to create roundtable session");
   return res.json();
@@ -914,6 +957,42 @@ export async function deleteRoundtableSession(projectId: string, sessionId: stri
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete roundtable session");
+}
+
+export interface UpdateToolsResponse {
+  session_id: string;
+  tools_enabled: boolean;
+  write_enabled: boolean;
+  yolo_mode: boolean;
+  tool_stats: ToolStats;
+}
+
+export interface UpdateToolsOptions {
+  toolsEnabled?: boolean;
+  writeEnabled?: boolean;
+  yoloMode?: boolean;
+}
+
+export async function updateRoundtableTools(
+  projectId: string,
+  sessionId: string,
+  options: UpdateToolsOptions
+): Promise<UpdateToolsResponse> {
+  const body: Record<string, boolean> = {};
+  if (options.toolsEnabled !== undefined) body.tools_enabled = options.toolsEnabled;
+  if (options.writeEnabled !== undefined) body.write_enabled = options.writeEnabled;
+  if (options.yoloMode !== undefined) body.yolo_mode = options.yoloMode;
+
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/tools`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to update roundtable tools");
+  return res.json();
 }
 
 export async function sendRoundtableMessage(
@@ -950,7 +1029,8 @@ export type RoundtableSSEEventType =
   | "agent_complete"
   | "keepalive"
   | "done"
-  | "error";
+  | "error"
+  | "permission_request";
 
 export interface RoundtableSSEEvent {
   type: RoundtableSSEEventType;
@@ -964,7 +1044,46 @@ export interface RoundtableSSEEvent {
     session_id?: string;
     response_count?: number;
     message?: string; // for error events
+    // Permission request fields
+    permission_id?: string;
+    tool_name?: string;
+    params?: Record<string, unknown>;
+    preview?: string;
   };
+}
+
+/**
+ * Represents a pending permission request for write tool operations.
+ */
+export interface PermissionRequest {
+  permission_id: string;
+  tool_name: string;
+  params: Record<string, unknown>;
+  preview?: string;
+  agent: "claude" | "gemini";
+}
+
+/**
+ * Resolve a pending permission request (approve or deny).
+ */
+export async function resolvePermission(
+  projectId: string,
+  sessionId: string,
+  permissionId: string,
+  approved: boolean
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/permissions/${permissionId}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved }),
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to resolve permission" }));
+    throw new Error(error.detail || "Failed to resolve permission");
+  }
 }
 
 /**
