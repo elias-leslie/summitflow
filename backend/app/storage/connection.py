@@ -539,11 +539,17 @@ def init_schema() -> None:
                 CREATE TABLE IF NOT EXISTS roundtable_sessions (
                     id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    title VARCHAR(255),
+                    description TEXT,
+                    status VARCHAR(20) DEFAULT 'active',
+                    agent_mode VARCHAR(20) DEFAULT 'both',
                     mode VARCHAR(20) NOT NULL DEFAULT 'quick',
                     tools_enabled BOOLEAN DEFAULT TRUE,
                     tool_stats JSONB DEFAULT '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb,
                     messages JSONB DEFAULT '[]'::jsonb,
                     generated_features JSONB DEFAULT '[]'::jsonb,
+                    claude_sdk_session_id TEXT,
+                    gemini_sdk_session_id TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
@@ -551,6 +557,31 @@ def init_schema() -> None:
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_updated ON roundtable_sessions(updated_at DESC)")
+
+            # ============================================================
+            # Extraction Prompts - Customizable prompts per project
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS extraction_prompts (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    prompt_type VARCHAR(50) NOT NULL,
+                    prompt_text TEXT NOT NULL,
+                    primary_agent VARCHAR(50) DEFAULT 'claude',
+                    primary_model VARCHAR(100) DEFAULT 'claude-sonnet-4-5',
+                    verification_enabled BOOLEAN DEFAULT FALSE,
+                    verification_agent VARCHAR(50),
+                    verification_model VARCHAR(100),
+                    verification_prompt TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, prompt_type)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_extraction_prompts_project ON extraction_prompts(project_id)")
 
             # ============================================================
             # Project Agent Configuration - Default agents/models per project
@@ -615,6 +646,13 @@ def init_schema() -> None:
                 # Agent config override for per-session customization
                 ("agent_override VARCHAR(50)", "roundtable_sessions"),
                 ("model_override VARCHAR(100)", "roundtable_sessions"),
+                # Roundtable session enhancements (SDK sessions, multi-session)
+                ("title VARCHAR(255)", "roundtable_sessions"),
+                ("description TEXT", "roundtable_sessions"),
+                ("status VARCHAR(20) DEFAULT 'active'", "roundtable_sessions"),
+                ("agent_mode VARCHAR(20) DEFAULT 'both'", "roundtable_sessions"),
+                ("claude_sdk_session_id TEXT", "roundtable_sessions"),
+                ("gemini_sdk_session_id TEXT", "roundtable_sessions"),
                 # Vision goals project scoping
                 ("project_id TEXT REFERENCES projects(id)", "vision_goals"),
             ]:
