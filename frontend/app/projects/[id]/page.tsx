@@ -38,7 +38,7 @@ import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
-type TabId = "explorer" | "features" | "vision" | "goals" | "evidence" | "tasks" | "kanban" | "roundtable";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -47,11 +47,11 @@ export default function ProjectDetailPage() {
 
   // Get initial tab from URL query param
   const urlTab = searchParams.get("tab") as TabId | null;
-  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "explorer");
+  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "roundtable");
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["explorer", "features", "vision", "goals", "evidence", "tasks", "kanban", "roundtable"].includes(urlTab)) {
+    if (urlTab && ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -488,34 +488,18 @@ export default function ProjectDetailPage() {
       <nav className="border-b border-slate-700">
         <div className="flex gap-1">
           <button
-            onClick={() => setActiveTab("explorer")}
+            onClick={() => setActiveTab("roundtable")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "explorer"
+              activeTab === "roundtable"
                 ? "text-phosphor-400"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
             <div className="flex items-center gap-2">
-              <Compass className="w-4 h-4" />
-              Explorer
+              <MessageCircle className="w-4 h-4" />
+              Roundtable
             </div>
-            {activeTab === "explorer" && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("features")}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "features"
-                ? "text-phosphor-400"
-                : "text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <ListChecks className="w-4 h-4" />
-              Features
-            </div>
-            {activeTab === "features" && (
+            {activeTab === "roundtable" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -552,34 +536,18 @@ export default function ProjectDetailPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab("evidence")}
+            onClick={() => setActiveTab("features")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "evidence"
+              activeTab === "features"
                 ? "text-phosphor-400"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
             <div className="flex items-center gap-2">
-              <Camera className="w-4 h-4" />
-              Evidence
+              <ListChecks className="w-4 h-4" />
+              Features
             </div>
-            {activeTab === "evidence" && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("tasks")}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "tasks"
-                ? "text-phosphor-400"
-                : "text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <ListTodo className="w-4 h-4" />
-              Tasks
-            </div>
-            {activeTab === "tasks" && (
+            {activeTab === "features" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -600,18 +568,50 @@ export default function ProjectDetailPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab("roundtable")}
+            onClick={() => setActiveTab("tasks")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "roundtable"
+              activeTab === "tasks"
                 ? "text-phosphor-400"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
             <div className="flex items-center gap-2">
-              <MessageCircle className="w-4 h-4" />
-              Roundtable
+              <ListTodo className="w-4 h-4" />
+              Tasks
             </div>
-            {activeTab === "roundtable" && (
+            {activeTab === "tasks" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("evidence")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "evidence"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Camera className="w-4 h-4" />
+              Evidence
+            </div>
+            {activeTab === "evidence" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("explorer")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "explorer"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Compass className="w-4 h-4" />
+              Explorer
+            </div>
+            {activeTab === "explorer" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
             )}
           </button>
@@ -620,12 +620,31 @@ export default function ProjectDetailPage() {
 
       {/* Tab Content */}
       <section className="animate-fade-in">
-        {activeTab === "explorer" && <ExplorerTab projectId={projectId} />}
-        {activeTab === "features" && <FeaturesTab projectId={projectId} />}
+        {activeTab === "roundtable" && (
+          <RoundtableChat
+            projectId={projectId}
+            sessionId={roundtableSessionId ?? undefined}
+            className="h-[calc(100vh-320px)] min-h-[500px]"
+            mode={roundtableMode}
+            onModeChange={handleRoundtableModeChange}
+            onSendMessage={handleSendMessage}
+            onGenerateFeatures={handleGenerateFeatures}
+            onNewSession={handleNewRoundtableSession}
+            messages={roundtableMessages}
+            isLoading={roundtableLoading}
+            streamingAgent={streamingAgent}
+            connected={true}
+            error={roundtableError}
+            toolsEnabled={toolsEnabled}
+            writeEnabled={writeEnabled}
+            yoloMode={yoloMode}
+            toolStats={toolStats}
+            onToolsChange={handleToolsChange}
+          />
+        )}
         {activeTab === "vision" && <VisionOverview projectId={projectId} />}
         {activeTab === "goals" && <GoalsList projectId={projectId} />}
-        {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
-        {activeTab === "tasks" && <TasksTab projectId={projectId} />}
+        {activeTab === "features" && <FeaturesTab projectId={projectId} />}
         {activeTab === "kanban" && (
           <>
             <TaskKanbanBoard
@@ -649,28 +668,9 @@ export default function ProjectDetailPage() {
             />
           </>
         )}
-        {activeTab === "roundtable" && (
-          <RoundtableChat
-            projectId={projectId}
-            sessionId={roundtableSessionId ?? undefined}
-            className="h-[calc(100vh-320px)] min-h-[500px]"
-            mode={roundtableMode}
-            onModeChange={handleRoundtableModeChange}
-            onSendMessage={handleSendMessage}
-            onGenerateFeatures={handleGenerateFeatures}
-            onNewSession={handleNewRoundtableSession}
-            messages={roundtableMessages}
-            isLoading={roundtableLoading}
-            streamingAgent={streamingAgent}
-            connected={true}
-            error={roundtableError}
-            toolsEnabled={toolsEnabled}
-            writeEnabled={writeEnabled}
-            yoloMode={yoloMode}
-            toolStats={toolStats}
-            onToolsChange={handleToolsChange}
-          />
-        )}
+        {activeTab === "tasks" && <TasksTab projectId={projectId} />}
+        {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
+        {activeTab === "explorer" && <ExplorerTab projectId={projectId} />}
       </section>
 
       {/* Permission Dialog for write tool approval */}
