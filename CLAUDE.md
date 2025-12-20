@@ -27,12 +27,18 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Find work | `st ready` |
 | Claim work | `st update <id> --status running` |
 | Complete work | `st close <id> --reason "Done"` |
+| Force close | `st close <id> --force` (bypass criteria) |
+| List features | `st feature list` |
+| Show feature | `st feature show FEAT-001` |
+| Start feature | `st feature start FEAT-001` |
 | **End session** | See "Landing the Plane" in AGENTS.md |
 | Start services | `bash ~/summitflow/scripts/start.sh` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
 | Stop services | `bash ~/summitflow/scripts/shutdown.sh` |
 | Check status | `bash ~/summitflow/scripts/status.sh` |
 | Run tests | `cd ~/summitflow/backend && .venv/bin/pytest` |
+
+**Task Types:** `feature` (linked to feature, validates criteria), `bug`, `task`
 
 **Session End (NON-NEGOTIABLE):** Commit impl → `st close` → `git pull --rebase && git push` (see AGENTS.md for full checklist)
 
@@ -159,4 +165,4 @@ bash ~/summitflow/scripts/start.sh
 
 ---
 
-**Version**: 2.0.0 | **Updated**: 2025-12-19
+**Version**: 2.1.0 | **Updated**: 2025-12-20
