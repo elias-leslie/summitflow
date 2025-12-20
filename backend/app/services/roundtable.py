@@ -8,6 +8,7 @@ Agents have read-only access to the codebase via tools.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -18,6 +19,7 @@ from typing import Any, Literal
 from .agents import AgentType, LLMResponse, get_agent
 from .agents.claude import ClaudeClient
 from .agents.gemini import GeminiClient
+from .roundtable_permissions import permission_manager
 from .roundtable_tools import (
     RoundtableToolExecutor,
     format_tool_results_for_prompt,
@@ -30,6 +32,38 @@ logger = logging.getLogger(__name__)
 
 # Type alias for permission callback
 PermissionCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
+
+# Context variable for current session ID (used by permission callback)
+current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_session_id", default=None
+)
+
+
+async def default_permission_callback(tool_name: str, tool_args: dict[str, Any]) -> bool:
+    """Default permission callback that uses the PermissionManager.
+
+    Uses the session_id from the current context to register the permission
+    request and waits for user approval via the API.
+
+    Args:
+        tool_name: Name of the tool requesting permission
+        tool_args: Arguments passed to the tool
+
+    Returns:
+        True if approved, False if denied or timed out
+    """
+    session_id = current_session_id.get()
+    if session_id is None:
+        logger.warning(
+            "Permission callback called without session_id context, denying"
+        )
+        return False
+
+    return await permission_manager.request_permission(
+        session_id=session_id,
+        tool_name=tool_name,
+        tool_args=tool_args,
+    )
 
 TargetAgent = Literal["claude", "gemini", "both"]
 
@@ -857,8 +891,14 @@ _roundtable_service: RoundtableService | None = None
 
 
 def get_roundtable_service() -> RoundtableService:
-    """Get or create the roundtable service singleton."""
+    """Get or create the roundtable service singleton.
+
+    The singleton is created with the default permission callback that
+    uses the PermissionManager for user approval prompts.
+    """
     global _roundtable_service
     if _roundtable_service is None:
-        _roundtable_service = RoundtableService()
+        _roundtable_service = RoundtableService(
+            permission_callback=default_permission_callback,
+        )
     return _roundtable_service

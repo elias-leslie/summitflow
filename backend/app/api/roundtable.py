@@ -4,6 +4,7 @@ Provides REST endpoints for creating sessions, sending messages,
 and generating features from conversations.
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -13,7 +14,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..services.roundtable import get_roundtable_service, TargetAgent
+from ..services.roundtable import current_session_id, get_roundtable_service, TargetAgent
+from ..services.roundtable_permissions import permission_manager
 from ..storage import roundtable as roundtable_storage
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,9 @@ class CreateSessionRequest(BaseModel):
     """Request to create a new roundtable session."""
 
     mode: str = "quick"  # "spec_driven" or "quick"
+    tools_enabled: bool = True  # Enable codebase read access by default
+    write_enabled: bool = False  # Disable write access by default
+    yolo_mode: bool = False  # Disable YOLO mode by default
 
 
 class CreateSessionResponse(BaseModel):
@@ -38,6 +43,36 @@ class CreateSessionResponse(BaseModel):
     session_id: str
     project_id: str
     mode: str
+    tools_enabled: bool = True
+    write_enabled: bool = False
+    yolo_mode: bool = False
+
+
+class ToolStats(BaseModel):
+    """Tool usage statistics."""
+
+    total_calls: int = 0
+    files_read: int = 0
+    searches: int = 0
+    writes: int = 0
+
+
+class UpdateToolsRequest(BaseModel):
+    """Request to update tools settings."""
+
+    tools_enabled: bool | None = None  # Enable/disable read tools
+    write_enabled: bool | None = None  # Enable/disable write tools
+    yolo_mode: bool | None = None  # Enable/disable YOLO mode (auto-approve all)
+
+
+class UpdateToolsResponse(BaseModel):
+    """Response after updating tools settings."""
+
+    session_id: str
+    tools_enabled: bool
+    write_enabled: bool
+    yolo_mode: bool
+    tool_stats: ToolStats
 
 
 class MessageRequest(BaseModel):
@@ -102,10 +137,62 @@ class SessionInfo(BaseModel):
     id: str
     project_id: str
     mode: str
+    tools_enabled: bool = True
+    write_enabled: bool = False
+    yolo_mode: bool = False
+    tool_stats: ToolStats | None = None
     message_count: int
     feature_count: int
     created_at: str
     updated_at: str
+
+
+# ============================================================================
+# Permission Helpers
+# ============================================================================
+
+
+def _get_preview(tool_name: str, tool_args: dict[str, Any]) -> str:
+    """Generate a human-readable preview of a tool operation.
+
+    Returns a truncated preview (max 500 chars) suitable for display
+    in the permission dialog.
+
+    Args:
+        tool_name: Name of the tool being called
+        tool_args: Arguments passed to the tool
+
+    Returns:
+        Human-readable preview string
+    """
+    if tool_name == "write_file":
+        content = tool_args.get("content", "")
+        path = tool_args.get("file_path", "unknown")
+        preview = f"File: {path}\n\nContent:\n{content[:400]}"
+        if len(content) > 400:
+            preview += "..."
+        return preview[:500]
+
+    elif tool_name == "edit_file":
+        old = tool_args.get("old_string", "")[:150]
+        new = tool_args.get("new_string", "")[:150]
+        path = tool_args.get("file_path", "unknown")
+        preview = f"File: {path}\n\nReplace:\n{old}\n\nWith:\n{new}"
+        return preview[:500]
+
+    elif tool_name == "delete_file":
+        path = tool_args.get("file_path", "unknown")
+        return f"Delete file: {path}"
+
+    elif tool_name == "create_directory":
+        path = tool_args.get("path", "unknown")
+        return f"Create directory: {path}"
+
+    # Generic fallback
+    preview = str(tool_args)
+    if len(preview) > 500:
+        preview = preview[:497] + "..."
+    return preview
 
 
 # ============================================================================
@@ -123,7 +210,16 @@ async def create_session(
 ):
     """Create a new roundtable session."""
     service = get_roundtable_service()
-    session = service.create_session(project_id, mode=request.mode)
+    session = service.create_session(
+        project_id,
+        mode=request.mode,
+        tools_enabled=request.tools_enabled,
+    )
+
+    # Configure write access on the executor if enabled
+    if request.write_enabled:
+        session.tool_executor.enable_write_access()
+    session.tool_executor.yolo_mode = request.yolo_mode
 
     # Save to database for persistence
     roundtable_storage.save_session(
@@ -132,12 +228,18 @@ async def create_session(
         mode=request.mode,
         messages=[],
         generated_features=[],
+        tools_enabled=request.tools_enabled,
+        write_enabled=request.write_enabled,
+        yolo_mode=request.yolo_mode,
     )
 
     return CreateSessionResponse(
         session_id=session.id,
         project_id=project_id,
         mode=request.mode,
+        tools_enabled=request.tools_enabled,
+        write_enabled=request.write_enabled,
+        yolo_mode=request.yolo_mode,
     )
 
 
@@ -150,6 +252,10 @@ async def list_sessions(project_id: str) -> list[SessionInfo]:
             id=s["id"],
             project_id=s["project_id"],
             mode=s["mode"],
+            tools_enabled=s.get("tools_enabled", True),
+            write_enabled=s.get("write_enabled", False),
+            yolo_mode=s.get("yolo_mode", False),
+            tool_stats=ToolStats(**s.get("tool_stats", {})) if s.get("tool_stats") else None,
             message_count=s.get("message_count", 0),
             feature_count=s.get("feature_count", 0),
             created_at=s["created_at"].isoformat() if s.get("created_at") else "",
@@ -170,6 +276,10 @@ async def get_session(project_id: str, session_id: str):
         "id": session["id"],
         "project_id": session["project_id"],
         "mode": session["mode"],
+        "tools_enabled": session.get("tools_enabled", True),
+        "write_enabled": session.get("write_enabled", False),
+        "yolo_mode": session.get("yolo_mode", False),
+        "tool_stats": session.get("tool_stats", {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}),
         "messages": session.get("messages", []),
         "generated_features": session.get("generated_features", []),
         "created_at": session["created_at"].isoformat() if session.get("created_at") else None,
@@ -184,6 +294,56 @@ async def delete_session(project_id: str, session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True, "session_id": session_id}
+
+
+@router.patch(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/tools",
+    response_model=UpdateToolsResponse,
+)
+async def update_tools(
+    project_id: str,
+    session_id: str,
+    request: UpdateToolsRequest,
+):
+    """Update tools access settings for a roundtable session.
+
+    This allows enabling/disabling codebase access, write access, or YOLO mode mid-session.
+    The change takes effect immediately for subsequent messages.
+
+    - tools_enabled: Enable/disable read access (search, read files)
+    - write_enabled: Enable/disable write access (edit, create, delete files)
+    - yolo_mode: Enable/disable auto-approve mode (skip all permission prompts)
+    """
+    result = roundtable_storage.update_tools_settings(
+        session_id,
+        tools_enabled=request.tools_enabled,
+        write_enabled=request.write_enabled,
+        yolo_mode=request.yolo_mode,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Also update in-memory session if it exists
+    service = get_roundtable_service()
+    session = service.get_session(session_id)
+    if session:
+        if request.tools_enabled is not None:
+            session.tools_enabled = request.tools_enabled
+        if request.write_enabled is not None:
+            if request.write_enabled:
+                session.tool_executor.enable_write_access()
+            else:
+                session.tool_executor.disable_write_access()
+        if request.yolo_mode is not None:
+            session.tool_executor.yolo_mode = request.yolo_mode
+
+    return UpdateToolsResponse(
+        session_id=session_id,
+        tools_enabled=result["tools_enabled"],
+        write_enabled=result["write_enabled"],
+        yolo_mode=result["yolo_mode"],
+        tool_stats=ToolStats(**result.get("tool_stats", {})),
+    )
 
 
 @router.post(
@@ -436,7 +596,9 @@ async def stream_message(
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events for roundtable messages."""
-        import asyncio
+
+        # Set the session_id context for permission callbacks
+        current_session_id.set(session_id)
 
         logger.info("sse_roundtable_stream_started", extra={"session_id": session_id})
 
@@ -493,21 +655,60 @@ async def stream_message(
                     )
                     agent_task = loop.run_in_executor(None, agent_func)
 
-                    # Send keepalive pings while waiting
+                    # Track which permissions we've already emitted events for
+                    emitted_permissions: set[str] = set()
+
+                    # Send keepalive pings and check for permission requests while waiting
                     while True:
                         try:
                             llm_response = await asyncio.wait_for(
-                                asyncio.shield(agent_task), timeout=10.0
+                                asyncio.shield(agent_task), timeout=1.0
                             )
                             break  # Got response
                         except asyncio.TimeoutError:
-                            # Still waiting, send keepalive
-                            yield _sse_event("keepalive", {"agent": agent_type})
+                            # Check for pending permissions for this session
+                            pending = permission_manager.get_session_pending(session_id)
+                            for perm in pending:
+                                if perm.id not in emitted_permissions:
+                                    # Emit permission_request SSE event
+                                    yield _sse_event(
+                                        "permission_request",
+                                        {
+                                            "permission_id": perm.id,
+                                            "tool_name": perm.tool_name,
+                                            "params": perm.tool_args,
+                                            "preview": _get_preview(perm.tool_name, perm.tool_args),
+                                            "agent": agent_type,
+                                        },
+                                    )
+                                    emitted_permissions.add(perm.id)
+                                    logger.info(
+                                        "sse_permission_request_emitted",
+                                        extra={
+                                            "session_id": session_id,
+                                            "permission_id": perm.id,
+                                            "tool_name": perm.tool_name,
+                                        },
+                                    )
+
+                            # Send keepalive every 10 iterations (10 seconds)
+                            if len(emitted_permissions) == 0:
+                                # Only send keepalive if no permissions pending
+                                # (permission dialog shows its own activity)
+                                yield _sse_event("keepalive", {"agent": agent_type})
+
                             if await request.is_disconnected():
                                 logger.info(
                                     "sse_client_disconnected_during_agent",
                                     extra={"session_id": session_id, "agent": agent_type},
                                 )
+                                # Auto-deny any pending permissions for this session
+                                denied_count = permission_manager.deny_session_pending(session_id)
+                                if denied_count > 0:
+                                    logger.info(
+                                        "sse_permissions_auto_denied_on_disconnect",
+                                        extra={"session_id": session_id, "count": denied_count},
+                                    )
                                 return
 
                     # Create and store the message
