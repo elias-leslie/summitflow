@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle, Bug } from "lucide-react";
 import Link from "next/link";
 import {
   fetchProject,
@@ -24,6 +24,7 @@ import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 import { IssueTasksTab } from "@/components/tasks/IssueTasksTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
+import { IssuesList } from "@/components/issues/IssuesList";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard";
 import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
@@ -38,7 +39,7 @@ import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { StartTaskDialog } from "@/components/tasks/StartTaskDialog";
 import type { Feature } from "@/lib/api";
 
-type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "kanban" | "roundtable";
+type TabId = "explorer" | "features" | "vision" | "evidence" | "tasks" | "issues" | "kanban" | "roundtable";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -51,7 +52,7 @@ export default function ProjectDetailPage() {
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["explorer", "features", "vision", "evidence", "tasks", "kanban", "roundtable"].includes(urlTab)) {
+    if (urlTab && ["explorer", "features", "vision", "evidence", "tasks", "issues", "kanban", "roundtable"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -550,6 +551,22 @@ export default function ProjectDetailPage() {
             )}
           </button>
           <button
+            onClick={() => setActiveTab("issues")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "issues"
+                ? "text-phosphor-400"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Bug className="w-4 h-4" />
+              Issues
+            </div>
+            {activeTab === "issues" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-phosphor-500" />
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab("kanban")}
             className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
               activeTab === "kanban"
@@ -591,6 +608,7 @@ export default function ProjectDetailPage() {
         {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
         {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
         {activeTab === "tasks" && <IssueTasksTab projectId={projectId} />}
+        {activeTab === "issues" && <IssuesList projectId={projectId} />}
         {activeTab === "kanban" && (
           <>
             <KanbanBoard
