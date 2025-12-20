@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Bug,
   Wrench,
@@ -12,10 +13,13 @@ import {
   Pause,
   Play,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { type Task, type TaskStatus, type TaskType, type TaskListResponse } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { createTask, type Task, type TaskStatus, type TaskType, type TaskListResponse } from "@/lib/api";
 
 // ============================================================================
 // Types
@@ -148,6 +152,12 @@ async function fetchOrphanTasks(projectId: string): Promise<TaskListResponse> {
 }
 
 export function IssuesList({ projectId }: IssuesListProps) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [issueType, setIssueType] = useState<TaskType>("bug");
+  const [priority, setPriority] = useState(2);
+
   // Fetch orphan tasks
   const { data, error, isLoading } = useQuery<TaskListResponse>({
     queryKey: ["issues", projectId],
@@ -155,6 +165,28 @@ export function IssuesList({ projectId }: IssuesListProps) {
     enabled: !!projectId,
     staleTime: 1000 * 60, // 1 minute
   });
+
+  // Create issue mutation
+  const createMutation = useMutation({
+    mutationFn: () =>
+      createTask(projectId, {
+        title,
+        task_type: issueType,
+        priority,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
+      setTitle("");
+      setShowForm(false);
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (title.trim()) {
+      createMutation.mutate();
+    }
+  };
 
   if (isLoading) {
     return (
@@ -175,20 +207,93 @@ export function IssuesList({ projectId }: IssuesListProps) {
 
   const tasks = data?.tasks ?? [];
 
-  if (tasks.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-        <CheckCircle2 className="h-8 w-8 mb-2" />
-        <span className="text-sm">No issues found</span>
-        <span className="text-xs text-slate-600">All tasks are linked to features</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
-      <table className="w-full">
-        <thead>
+    <div className="space-y-4">
+      {/* Quick Create Form */}
+      <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+        {showForm ? (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Issue title..."
+                className="flex-1"
+                autoFocus
+              />
+              <select
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value as TaskType)}
+                className="px-3 py-2 rounded-md bg-slate-800 border border-slate-600 text-sm text-slate-200"
+              >
+                <option value="bug">Bug</option>
+                <option value="chore">Chore</option>
+                <option value="task">Task</option>
+              </select>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))}
+                className="px-3 py-2 rounded-md bg-slate-800 border border-slate-600 text-sm text-slate-200"
+              >
+                <option value={0}>P0 - Critical</option>
+                <option value={1}>P1 - High</option>
+                <option value={2}>P2 - Medium</option>
+                <option value={3}>P3 - Low</option>
+                <option value={4}>P4 - Backlog</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowForm(false);
+                  setTitle("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!title.trim() || createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Create Issue"
+                )}
+              </Button>
+            </div>
+            {createMutation.isError && (
+              <p className="text-xs text-rose-400">Failed to create issue</p>
+            )}
+          </form>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => setShowForm(true)}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Issue
+          </Button>
+        )}
+      </div>
+
+      {/* Issues Table */}
+      {tasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+          <CheckCircle2 className="h-8 w-8 mb-2" />
+          <span className="text-sm">No issues found</span>
+          <span className="text-xs text-slate-600">All tasks are linked to features</span>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
+          <table className="w-full">
+            <thead>
           <tr className="border-b border-slate-700 bg-slate-800/50">
             <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Priority</th>
             <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20">Type</th>
@@ -207,11 +312,13 @@ export function IssuesList({ projectId }: IssuesListProps) {
       </table>
 
       {/* Footer with count */}
-      <div className="px-4 py-2 border-t border-slate-700 bg-slate-800/30">
-        <span className="text-xs text-slate-500">
-          {tasks.length} issue{tasks.length !== 1 ? "s" : ""} (not linked to features)
-        </span>
-      </div>
+          <div className="px-4 py-2 border-t border-slate-700 bg-slate-800/30">
+            <span className="text-xs text-slate-500">
+              {tasks.length} issue{tasks.length !== 1 ? "s" : ""} (not linked to features)
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
