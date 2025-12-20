@@ -147,6 +147,19 @@ class SessionInfo(BaseModel):
     updated_at: str
 
 
+class PermissionResolution(BaseModel):
+    """Request to resolve a pending permission."""
+
+    approved: bool
+
+
+class PermissionResolutionResponse(BaseModel):
+    """Response after resolving a permission."""
+
+    status: str
+    approved: bool
+
+
 # ============================================================================
 # Permission Helpers
 # ============================================================================
@@ -343,6 +356,55 @@ async def update_tools(
         write_enabled=result["write_enabled"],
         yolo_mode=result["yolo_mode"],
         tool_stats=ToolStats(**result.get("tool_stats", {})),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/permissions/{permission_id}",
+    response_model=PermissionResolutionResponse,
+)
+async def resolve_permission(
+    project_id: str,
+    session_id: str,
+    permission_id: str,
+    request: PermissionResolution,
+):
+    """Resolve a pending permission request.
+
+    Called by the frontend when the user approves or denies a write tool operation.
+    The pending permission must exist and not have timed out.
+
+    Args:
+        project_id: Project ID (for URL consistency)
+        session_id: Session ID (for URL consistency)
+        permission_id: The ID of the pending permission to resolve
+        request: Contains the approval decision
+
+    Returns:
+        Success response with status and approved value
+
+    Raises:
+        HTTPException: 404 if permission not found or expired
+    """
+    success = permission_manager.resolve(permission_id, request.approved)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Permission request not found or expired",
+        )
+
+    logger.info(
+        "permission_resolved",
+        extra={
+            "permission_id": permission_id,
+            "session_id": session_id,
+            "approved": request.approved,
+        },
+    )
+
+    return PermissionResolutionResponse(
+        status="resolved",
+        approved=request.approved,
     )
 
 
