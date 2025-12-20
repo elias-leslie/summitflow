@@ -13,6 +13,7 @@ from .api import (
     features,
     notifications,
     projects,
+    roundtable,
     tasks,
     terminal,
     terminal_sessions,
@@ -64,6 +65,7 @@ app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(beads.router, prefix="/api", tags=["beads"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(terminal.router, tags=["terminal"])
 app.include_router(terminal_sessions.router, tags=["terminal"])
 

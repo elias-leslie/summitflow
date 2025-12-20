@@ -98,8 +98,8 @@ class ClaudeClient(LLMClient):
         Returns:
             LLMResponse with Claude's response
         """
-        # Run async code synchronously
-        return asyncio.get_event_loop().run_until_complete(
+        # Run async code synchronously - use asyncio.run() for thread safety
+        return asyncio.run(
             self._generate_async(prompt, system, working_dir)
         )
 

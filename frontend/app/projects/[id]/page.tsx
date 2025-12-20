@@ -5,7 +5,17 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import { fetchProject, fetchProjectHealth } from "@/lib/api";
+import {
+  fetchProject,
+  fetchProjectHealth,
+  createRoundtableSession,
+  getRoundtableSession,
+  streamRoundtableMessage,
+  generateFeaturesFromRoundtable,
+  type RoundtableMessage,
+  type GeneratedFeature,
+  type RoundtableSSEEvent,
+} from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
 import { IssueTasksTab } from "@/components/tasks/IssueTasksTab";
@@ -14,7 +24,12 @@ import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import { KanbanBoard, type KanbanStatus } from "@/components/kanban/KanbanBoard";
 import { FeatureDetailDrawer } from "@/components/kanban/FeatureDetailDrawer";
 import { useFeatures, useUpdateFeatureStatus } from "@/hooks/useFeatures";
-import { RoundtableChat } from "@/components/roundtable/RoundtableChat";
+import {
+  RoundtableChat,
+  type ChatMessage,
+  type RoundtableMode,
+  type FileAttachment,
+} from "@/components/roundtable/RoundtableChat";
 import { StartTaskDialog } from "@/components/tasks/StartTaskDialog";
 import type { Feature } from "@/lib/api";
 
@@ -41,6 +56,64 @@ export default function ProjectDetailPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [startFeature, setStartFeature] = useState<Feature | null>(null);
+
+  // Roundtable state
+  const [roundtableSessionId, setRoundtableSessionId] = useState<string | null>(null);
+  const [roundtableMode, setRoundtableMode] = useState<RoundtableMode>("spec_driven");
+  const [roundtableMessages, setRoundtableMessages] = useState<ChatMessage[]>([]);
+  const [roundtableLoading, setRoundtableLoading] = useState(false);
+  const [streamingAgent, setStreamingAgent] = useState<"claude" | "gemini" | null>(null);
+  const [roundtableError, setRoundtableError] = useState<string | null>(null);
+  const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
+  const [roundtableSessionLoaded, setRoundtableSessionLoaded] = useState(false);
+
+  // Load roundtable session from localStorage on mount
+  useEffect(() => {
+    const storageKey = `roundtable-session-${projectId}`;
+    const savedSessionId = localStorage.getItem(storageKey);
+
+    if (savedSessionId) {
+      // Load session data from backend
+      getRoundtableSession(projectId, savedSessionId)
+        .then((session) => {
+          setRoundtableSessionId(session.id);
+          setRoundtableMode(session.mode as RoundtableMode);
+
+          // Convert messages to ChatMessage format
+          const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
+            id: msg.id,
+            agent: msg.agent,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp),
+            tokensUsed: msg.tokens_used,
+          }));
+          setRoundtableMessages(messages);
+
+          // Load generated features if any
+          if (session.generated_features && session.generated_features.length > 0) {
+            setGeneratedFeatures(session.generated_features);
+          }
+        })
+        .catch((err) => {
+          console.warn("Failed to load saved session:", err);
+          // Clear invalid session
+          localStorage.removeItem(storageKey);
+        })
+        .finally(() => {
+          setRoundtableSessionLoaded(true);
+        });
+    } else {
+      setRoundtableSessionLoaded(true);
+    }
+  }, [projectId]);
+
+  // Save session ID to localStorage when it changes
+  useEffect(() => {
+    if (roundtableSessionId && roundtableSessionLoaded) {
+      const storageKey = `roundtable-session-${projectId}`;
+      localStorage.setItem(storageKey, roundtableSessionId);
+    }
+  }, [roundtableSessionId, projectId, roundtableSessionLoaded]);
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -71,6 +144,139 @@ export default function ProjectDetailPage() {
   const handleStartClick = (feature: Feature) => {
     setStartFeature(feature);
     setStartDialogOpen(true);
+  };
+
+  // Roundtable handlers
+  const handleRoundtableModeChange = (mode: RoundtableMode) => {
+    setRoundtableMode(mode);
+  };
+
+  const handleNewRoundtableSession = () => {
+    // Clear current session
+    setRoundtableSessionId(null);
+    setRoundtableMessages([]);
+    setGeneratedFeatures([]);
+    setRoundtableError(null);
+    // Clear from localStorage
+    const storageKey = `roundtable-session-${projectId}`;
+    localStorage.removeItem(storageKey);
+  };
+
+  const handleSendMessage = async (
+    message: string,
+    _attachments?: FileAttachment[],
+    _targetAgent?: "claude" | "gemini" | "user"
+  ) => {
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      // Create session if needed
+      let sessionId = roundtableSessionId;
+      if (!sessionId) {
+        const session = await createRoundtableSession(projectId, roundtableMode);
+        sessionId = session.session_id;
+        setRoundtableSessionId(sessionId);
+      }
+
+      // Add user message to UI immediately
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        agent: "user",
+        content: message,
+        timestamp: new Date(),
+      };
+      setRoundtableMessages((prev) => [...prev, userMessage]);
+
+      // Stream responses via SSE
+      const stream = streamRoundtableMessage(
+        projectId,
+        sessionId,
+        message,
+        "both" // Always send to both agents
+      );
+
+      for await (const event of stream) {
+        switch (event.type) {
+          case "agent_start":
+            // Show which agent is typing
+            if (event.data.agent) {
+              setStreamingAgent(event.data.agent);
+            }
+            break;
+
+          case "keepalive":
+            // Keepalive ping to prevent connection timeout
+            // Just ensures the streaming agent indicator stays visible
+            console.debug(`Keepalive from ${event.data.agent}`);
+            break;
+
+          case "agent_complete":
+            // Add agent response when complete
+            if (event.data.id && event.data.agent && event.data.content) {
+              const agentMessage: ChatMessage = {
+                id: event.data.id,
+                agent: event.data.agent,
+                content: event.data.content,
+                timestamp: event.data.timestamp ? new Date(event.data.timestamp) : new Date(),
+                tokensUsed: event.data.tokens_used,
+              };
+              setRoundtableMessages((prev) => [...prev, agentMessage]);
+            }
+            setStreamingAgent(null);
+            break;
+
+          case "error":
+            setRoundtableError(event.data.message || "An error occurred");
+            break;
+
+          case "done":
+            // Stream complete
+            break;
+        }
+      }
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setRoundtableLoading(false);
+      setStreamingAgent(null);
+    }
+  };
+
+  const handleGenerateFeatures = async (): Promise<GeneratedFeature[]> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return [];
+    }
+
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      const result = await generateFeaturesFromRoundtable(
+        projectId,
+        roundtableSessionId,
+        "gemini" // Use Gemini for faster extraction
+      );
+
+      // Convert to the format expected by the component
+      const features: GeneratedFeature[] = result.features.map((f) => ({
+        feature_id: f.feature_id,
+        name: f.name,
+        category: f.category,
+        priority: f.priority,
+        description: f.description,
+        acceptance_criteria: f.acceptance_criteria,
+      }));
+
+      setGeneratedFeatures(features);
+      return features;
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to generate features");
+      return [];
+    } finally {
+      setRoundtableLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -310,7 +516,18 @@ export default function ProjectDetailPage() {
         {activeTab === "roundtable" && (
           <RoundtableChat
             projectId={projectId}
+            sessionId={roundtableSessionId ?? undefined}
             className="h-[calc(100vh-320px)] min-h-[500px]"
+            mode={roundtableMode}
+            onModeChange={handleRoundtableModeChange}
+            onSendMessage={handleSendMessage}
+            onGenerateFeatures={handleGenerateFeatures}
+            onNewSession={handleNewRoundtableSession}
+            messages={roundtableMessages}
+            isLoading={roundtableLoading}
+            streamingAgent={streamingAgent}
+            connected={true}
+            error={roundtableError}
           />
         )}
       </section>

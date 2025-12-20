@@ -32,6 +32,7 @@ import {
   Zap,
   CheckCircle,
   ListChecks,
+  Plus,
 } from "lucide-react";
 
 export type AgentType = "claude" | "gemini" | "user";
@@ -74,8 +75,10 @@ interface RoundtableChatProps {
     targetAgent?: AgentType
   ) => Promise<void>;
   onGenerateFeatures?: () => Promise<GeneratedFeature[]>;
+  onNewSession?: () => void;
   messages?: ChatMessage[];
   isLoading?: boolean;
+  streamingAgent?: "claude" | "gemini" | null;
   connected?: boolean;
   error?: string | null;
 }
@@ -392,8 +395,10 @@ export function RoundtableChat({
   onModeChange,
   onSendMessage,
   onGenerateFeatures,
+  onNewSession,
   messages = [],
   isLoading = false,
+  streamingAgent = null,
   connected = true,
   error = null,
 }: RoundtableChatProps) {
@@ -566,11 +571,35 @@ export function RoundtableChat({
                 {sessionId.slice(0, 8)}
               </Badge>
             )}
+            {/* New Chat button - show when there are messages */}
+            {messages.length > 0 && onNewSession && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onNewSession}
+                disabled={isLoading || !!streamingAgent}
+                className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                New Chat
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Loading indicator */}
-            {(isLoading || isGenerating) && (
+            {/* Streaming indicator */}
+            {streamingAgent && (
+              <div className={clsx(
+                "flex items-center gap-1.5 text-xs",
+                streamingAgent === "claude" ? "text-amber-400" : "text-blue-400"
+              )}>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{streamingAgent === "claude" ? "Claude" : "Gemini"} is responding...</span>
+              </div>
+            )}
+            {/* Loading indicator (general) */}
+            {!streamingAgent && (isLoading || isGenerating) && (
               <div className="flex items-center gap-1.5 text-blue-400 text-xs">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>{isGenerating ? "Generating..." : "Thinking..."}</span>
@@ -584,7 +613,7 @@ export function RoundtableChat({
                 <span>Disconnected</span>
               </div>
             )}
-            {connected && !isLoading && !isGenerating && (
+            {connected && !isLoading && !isGenerating && !streamingAgent && (
               <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
                 <CircleDot className="w-3.5 h-3.5" />
                 <span>Ready</span>

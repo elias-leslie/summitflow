@@ -1,0 +1,617 @@
+"""Roundtable API endpoints for multi-agent collaboration.
+
+Provides REST endpoints for creating sessions, sending messages,
+and generating features from conversations.
+"""
+
+import json
+import logging
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from ..services.roundtable import get_roundtable_service, TargetAgent
+from ..storage import roundtable as roundtable_storage
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ============================================================================
+# Request/Response Models
+# ============================================================================
+
+
+class CreateSessionRequest(BaseModel):
+    """Request to create a new roundtable session."""
+
+    mode: str = "quick"  # "spec_driven" or "quick"
+
+
+class CreateSessionResponse(BaseModel):
+    """Response after creating a session."""
+
+    session_id: str
+    project_id: str
+    mode: str
+
+
+class MessageRequest(BaseModel):
+    """Request to send a message in a session."""
+
+    message: str
+    target: TargetAgent = "both"  # "claude", "gemini", or "both"
+
+
+class MessageResponse(BaseModel):
+    """Single message in response."""
+
+    id: str
+    agent: str
+    content: str
+    timestamp: str
+    tokens_used: int = 0
+    model: str | None = None
+
+
+class SendMessageResponse(BaseModel):
+    """Response after sending a message."""
+
+    user_message: MessageResponse
+    responses: list[MessageResponse]
+
+
+class GenerateFeaturesRequest(BaseModel):
+    """Request to generate features from conversation."""
+
+    agent: str = "gemini"  # "claude" or "gemini"
+
+
+class GeneratedCriterion(BaseModel):
+    """Acceptance criterion in generated feature."""
+
+    id: str
+    description: str
+
+
+class GeneratedFeature(BaseModel):
+    """Feature generated from conversation."""
+
+    feature_id: str
+    name: str
+    category: str
+    priority: int
+    description: str
+    acceptance_criteria: list[GeneratedCriterion]
+
+
+class GenerateFeaturesResponse(BaseModel):
+    """Response after generating features."""
+
+    features: list[GeneratedFeature]
+    session_id: str
+
+
+class SessionInfo(BaseModel):
+    """Session info for listing."""
+
+    id: str
+    project_id: str
+    mode: str
+    message_count: int
+    feature_count: int
+    created_at: str
+    updated_at: str
+
+
+# ============================================================================
+# Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions",
+    response_model=CreateSessionResponse,
+)
+async def create_session(
+    project_id: str,
+    request: CreateSessionRequest,
+):
+    """Create a new roundtable session."""
+    service = get_roundtable_service()
+    session = service.create_session(project_id, mode=request.mode)
+
+    # Save to database for persistence
+    roundtable_storage.save_session(
+        session_id=session.id,
+        project_id=project_id,
+        mode=request.mode,
+        messages=[],
+        generated_features=[],
+    )
+
+    return CreateSessionResponse(
+        session_id=session.id,
+        project_id=project_id,
+        mode=request.mode,
+    )
+
+
+@router.get("/projects/{project_id}/roundtable/sessions")
+async def list_sessions(project_id: str) -> list[SessionInfo]:
+    """List all roundtable sessions for a project."""
+    sessions = roundtable_storage.list_sessions(project_id)
+    return [
+        SessionInfo(
+            id=s["id"],
+            project_id=s["project_id"],
+            mode=s["mode"],
+            message_count=s.get("message_count", 0),
+            feature_count=s.get("feature_count", 0),
+            created_at=s["created_at"].isoformat() if s.get("created_at") else "",
+            updated_at=s["updated_at"].isoformat() if s.get("updated_at") else "",
+        )
+        for s in sessions
+    ]
+
+
+@router.get("/projects/{project_id}/roundtable/sessions/{session_id}")
+async def get_session(project_id: str, session_id: str):
+    """Get a roundtable session with all messages."""
+    session = roundtable_storage.load_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {
+        "id": session["id"],
+        "project_id": session["project_id"],
+        "mode": session["mode"],
+        "messages": session.get("messages", []),
+        "generated_features": session.get("generated_features", []),
+        "created_at": session["created_at"].isoformat() if session.get("created_at") else None,
+        "updated_at": session["updated_at"].isoformat() if session.get("updated_at") else None,
+    }
+
+
+@router.delete("/projects/{project_id}/roundtable/sessions/{session_id}")
+async def delete_session(project_id: str, session_id: str):
+    """Delete a roundtable session."""
+    deleted = roundtable_storage.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True, "session_id": session_id}
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/messages",
+    response_model=SendMessageResponse,
+)
+async def send_message(
+    project_id: str,
+    session_id: str,
+    request: MessageRequest,
+):
+    """Send a message in a roundtable session."""
+    service = get_roundtable_service()
+
+    # Get or recreate session
+    session = service.get_session(session_id)
+    if not session:
+        # Try to load from database
+        db_session = roundtable_storage.load_session(session_id)
+        if db_session:
+            # Recreate session in memory
+            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session.id = session_id
+            # Restore messages
+            for msg_data in db_session.get("messages", []):
+                from datetime import datetime
+                from ..services.roundtable import RoundtableMessage
+                msg = RoundtableMessage(
+                    id=msg_data.get("id", ""),
+                    agent=msg_data.get("agent", "user"),
+                    content=msg_data.get("content", ""),
+                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
+                    tokens_used=msg_data.get("tokens_used", 0),
+                    model=msg_data.get("model"),
+                )
+                session.messages.append(msg)
+            service._sessions[session_id] = session
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    # Route message to agents
+    responses = []
+    async for response in service.route_message_async(session, request.message, request.target):
+        responses.append(response)
+
+    # Get the user message (second to last in session)
+    user_msg = session.messages[-len(responses) - 1]
+
+    # Persist to database
+    messages_data = [
+        {
+            "id": m.id,
+            "agent": m.agent,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "tokens_used": m.tokens_used,
+            "model": m.model,
+        }
+        for m in session.messages
+    ]
+    roundtable_storage.save_session(
+        session_id=session_id,
+        project_id=project_id,
+        mode=session.mode,
+        messages=messages_data,
+        generated_features=None,  # Don't overwrite existing features
+    )
+
+    return SendMessageResponse(
+        user_message=MessageResponse(
+            id=user_msg.id,
+            agent=user_msg.agent,
+            content=user_msg.content,
+            timestamp=user_msg.timestamp.isoformat(),
+            tokens_used=user_msg.tokens_used,
+            model=user_msg.model,
+        ),
+        responses=[
+            MessageResponse(
+                id=r.id,
+                agent=r.agent,
+                content=r.content,
+                timestamp=r.timestamp.isoformat(),
+                tokens_used=r.tokens_used,
+                model=r.model,
+            )
+            for r in responses
+        ],
+    )
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-features",
+    response_model=GenerateFeaturesResponse,
+)
+async def generate_features(
+    project_id: str,
+    session_id: str,
+    request: GenerateFeaturesRequest,
+):
+    """Generate features from a roundtable conversation."""
+    service = get_roundtable_service()
+
+    # Get session
+    session = service.get_session(session_id)
+    if not session:
+        # Try to load from database
+        db_session = roundtable_storage.load_session(session_id)
+        if db_session:
+            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session.id = session_id
+            for msg_data in db_session.get("messages", []):
+                from datetime import datetime
+                from ..services.roundtable import RoundtableMessage
+                msg = RoundtableMessage(
+                    id=msg_data.get("id", ""),
+                    agent=msg_data.get("agent", "user"),
+                    content=msg_data.get("content", ""),
+                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
+                    tokens_used=msg_data.get("tokens_used", 0),
+                    model=msg_data.get("model"),
+                )
+                session.messages.append(msg)
+            service._sessions[session_id] = session
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    if len(session.messages) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 2 messages to generate features",
+        )
+
+    # Generate features
+    agent_type = request.agent if request.agent in ("claude", "gemini") else "gemini"
+    created_features = service.create_features_from_conversation(session, agent_type)
+
+    # Update session with generated features
+    features_data = [
+        {
+            "feature_id": f.get("id", ""),
+            "name": f.get("name", ""),
+            "category": f.get("category", ""),
+            "priority": f.get("priority", 3),
+            "description": f.get("description", ""),
+            "acceptance_criteria": f.get("acceptance_criteria", []),
+        }
+        for f in created_features
+    ]
+    roundtable_storage.update_generated_features(session_id, features_data)
+
+    return GenerateFeaturesResponse(
+        features=[
+            GeneratedFeature(
+                feature_id=f.get("id", ""),
+                name=f.get("name", ""),
+                category=f.get("category", ""),
+                priority=f.get("priority", 3),
+                description=f.get("description", ""),
+                acceptance_criteria=[
+                    GeneratedCriterion(
+                        id=c.get("id", ""),
+                        description=c.get("description", ""),
+                    )
+                    for c in f.get("acceptance_criteria", [])
+                ],
+            )
+            for f in created_features
+        ],
+        session_id=session_id,
+    )
+
+
+# ============================================================================
+# SSE Streaming Endpoint
+# ============================================================================
+
+
+def _sse_event(event_type: str, data: dict[str, Any]) -> str:
+    """Format an SSE event.
+
+    Args:
+        event_type: Event type (user_message, agent_start, agent_chunk, agent_complete, done, error)
+        data: Event data dict
+
+    Returns:
+        Formatted SSE event string
+    """
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/messages/stream",
+)
+async def stream_message(
+    project_id: str,
+    session_id: str,
+    request_body: MessageRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Send a message and stream agent responses via Server-Sent Events.
+
+    Events emitted:
+    - user_message: Confirms user message was received
+    - agent_start: Agent is about to respond (includes agent name)
+    - agent_complete: Agent response complete (includes full content)
+    - done: All agents have responded
+    - error: An error occurred
+
+    Args:
+        project_id: Project ID
+        session_id: Session ID
+        request_body: Message request with message and target
+        request: FastAPI request (for disconnect detection)
+
+    Returns:
+        StreamingResponse with text/event-stream content type
+    """
+    service = get_roundtable_service()
+
+    # Get or recreate session
+    session = service.get_session(session_id)
+    if not session:
+        # Try to load from database
+        db_session = roundtable_storage.load_session(session_id)
+        if db_session:
+            # Recreate session in memory
+            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session.id = session_id
+            # Restore messages
+            for msg_data in db_session.get("messages", []):
+                from datetime import datetime
+
+                from ..services.roundtable import RoundtableMessage
+
+                msg = RoundtableMessage(
+                    id=msg_data.get("id", ""),
+                    agent=msg_data.get("agent", "user"),
+                    content=msg_data.get("content", ""),
+                    timestamp=datetime.fromisoformat(
+                        msg_data.get("timestamp", datetime.utcnow().isoformat())
+                    ),
+                    tokens_used=msg_data.get("tokens_used", 0),
+                    model=msg_data.get("model"),
+                )
+                session.messages.append(msg)
+            service._sessions[session_id] = session
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Generate SSE events for roundtable messages."""
+        import asyncio
+
+        logger.info("sse_roundtable_stream_started", extra={"session_id": session_id})
+
+        try:
+            # First, add user message to session and emit confirmation
+            from datetime import datetime
+
+            from ..services.roundtable import RoundtableMessage
+
+            user_msg = RoundtableMessage.create("user", request_body.message)
+            session.add_message(user_msg)
+
+            yield _sse_event(
+                "user_message",
+                {
+                    "id": user_msg.id,
+                    "content": request_body.message,
+                    "timestamp": user_msg.timestamp.isoformat(),
+                },
+            )
+
+            responses = []
+            agents_to_query = []
+            if request_body.target in ("claude", "both"):
+                agents_to_query.append("claude")
+            if request_body.target in ("gemini", "both"):
+                agents_to_query.append("gemini")
+
+            context = session.get_context()
+
+            for agent_type in agents_to_query:
+                # Check for client disconnect
+                if await request.is_disconnected():
+                    logger.info("sse_client_disconnected", extra={"session_id": session_id})
+                    break
+
+                # Emit agent start
+                yield _sse_event("agent_start", {"agent": agent_type})
+
+                try:
+                    # Send keepalive ping while waiting for agent
+                    # Run agent call in background, send pings every 10 seconds
+                    import functools
+
+                    loop = asyncio.get_event_loop()
+
+                    # Use functools.partial to pass session as kwarg
+                    agent_func = functools.partial(
+                        service._send_to_agent,
+                        agent_type,
+                        request_body.message,
+                        context,
+                        session=session,
+                    )
+                    agent_task = loop.run_in_executor(None, agent_func)
+
+                    # Send keepalive pings while waiting
+                    while True:
+                        try:
+                            llm_response = await asyncio.wait_for(
+                                asyncio.shield(agent_task), timeout=10.0
+                            )
+                            break  # Got response
+                        except asyncio.TimeoutError:
+                            # Still waiting, send keepalive
+                            yield _sse_event("keepalive", {"agent": agent_type})
+                            if await request.is_disconnected():
+                                logger.info(
+                                    "sse_client_disconnected_during_agent",
+                                    extra={"session_id": session_id, "agent": agent_type},
+                                )
+                                return
+
+                    # Create and store the message
+                    msg = RoundtableMessage.create(
+                        agent_type,  # type: ignore
+                        llm_response.content,
+                        tokens_used=llm_response.usage.get("total_tokens", 0),
+                        model=llm_response.model,
+                    )
+                    session.add_message(msg)
+                    responses.append(msg)
+
+                    # Update context for next agent
+                    context = session.get_context()
+
+                    # Emit agent complete with full response
+                    yield _sse_event(
+                        "agent_complete",
+                        {
+                            "id": msg.id,
+                            "agent": msg.agent,
+                            "content": msg.content,
+                            "timestamp": msg.timestamp.isoformat(),
+                            "tokens_used": msg.tokens_used,
+                            "model": msg.model,
+                        },
+                    )
+
+                except Exception as agent_error:
+                    logger.error(
+                        "sse_agent_error",
+                        extra={
+                            "session_id": session_id,
+                            "agent": agent_type,
+                            "error": str(agent_error),
+                        },
+                    )
+                    # Create error message for this agent
+                    error_msg = RoundtableMessage.create(
+                        agent_type,  # type: ignore
+                        f"[Error: {agent_error!s}]",
+                    )
+                    session.add_message(error_msg)
+                    responses.append(error_msg)
+
+                    yield _sse_event(
+                        "agent_complete",
+                        {
+                            "id": error_msg.id,
+                            "agent": error_msg.agent,
+                            "content": error_msg.content,
+                            "timestamp": error_msg.timestamp.isoformat(),
+                            "tokens_used": 0,
+                            "model": None,
+                        },
+                    )
+                    # Continue to next agent even if this one failed
+
+            # Persist to database
+            messages_data = [
+                {
+                    "id": m.id,
+                    "agent": m.agent,
+                    "content": m.content,
+                    "timestamp": m.timestamp.isoformat(),
+                    "tokens_used": m.tokens_used,
+                    "model": m.model,
+                }
+                for m in session.messages
+            ]
+            roundtable_storage.save_session(
+                session_id=session_id,
+                project_id=project_id,
+                mode=session.mode,
+                messages=messages_data,
+                generated_features=None,
+            )
+
+            # Emit done event
+            yield _sse_event(
+                "done",
+                {
+                    "session_id": session_id,
+                    "response_count": len(responses),
+                },
+            )
+            logger.info(
+                "sse_roundtable_stream_completed",
+                extra={"session_id": session_id, "response_count": len(responses)},
+            )
+
+        except Exception as e:
+            logger.error(
+                "sse_roundtable_stream_error",
+                extra={"session_id": session_id, "error": str(e)},
+            )
+            yield _sse_event("error", {"message": str(e)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )

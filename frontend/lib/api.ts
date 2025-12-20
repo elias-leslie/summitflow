@@ -836,3 +836,230 @@ export async function dismissAllNotifications(projectId: string): Promise<{ dism
   if (!res.ok) throw new Error("Failed to dismiss all notifications");
   return res.json();
 }
+
+// =============================================================================
+// Roundtable API
+// =============================================================================
+
+export interface RoundtableMessage {
+  id: string;
+  agent: "user" | "claude" | "gemini";
+  content: string;
+  timestamp: string;
+  tokens_used?: number;
+  model?: string | null;
+}
+
+export interface RoundtableSession {
+  id: string;
+  project_id: string;
+  mode: "spec_driven" | "quick";
+  messages: RoundtableMessage[];
+  generated_features?: GeneratedFeature[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoundtableSessionInfo {
+  id: string;
+  project_id: string;
+  mode: string;
+  message_count: number;
+  feature_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GeneratedFeature {
+  feature_id: string;
+  name: string;
+  category: string;
+  priority: number;
+  description?: string;
+  acceptance_criteria: { id: string; description: string }[];
+}
+
+export interface SendMessageResponse {
+  user_message: RoundtableMessage;
+  responses: RoundtableMessage[];
+}
+
+export async function createRoundtableSession(
+  projectId: string,
+  mode: "spec_driven" | "quick" = "quick"
+): Promise<{ session_id: string; project_id: string; mode: string }> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error("Failed to create roundtable session");
+  return res.json();
+}
+
+export async function listRoundtableSessions(projectId: string): Promise<RoundtableSessionInfo[]> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`);
+  if (!res.ok) throw new Error("Failed to list roundtable sessions");
+  return res.json();
+}
+
+export async function getRoundtableSession(projectId: string, sessionId: string): Promise<RoundtableSession> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`);
+  if (!res.ok) throw new Error("Failed to get roundtable session");
+  return res.json();
+}
+
+export async function deleteRoundtableSession(projectId: string, sessionId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete roundtable session");
+}
+
+export async function sendRoundtableMessage(
+  projectId: string,
+  sessionId: string,
+  message: string,
+  target: "claude" | "gemini" | "both" = "both"
+): Promise<SendMessageResponse> {
+  // Use AbortController for timeout - AI responses can take 60+ seconds
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/messages`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, target }),
+        signal: controller.signal,
+      }
+    );
+    if (!res.ok) throw new Error("Failed to send roundtable message");
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// SSE event types for roundtable streaming
+export type RoundtableSSEEventType =
+  | "user_message"
+  | "agent_start"
+  | "agent_complete"
+  | "keepalive"
+  | "done"
+  | "error";
+
+export interface RoundtableSSEEvent {
+  type: RoundtableSSEEventType;
+  data: {
+    id?: string;
+    agent?: "claude" | "gemini";
+    content?: string;
+    timestamp?: string;
+    tokens_used?: number;
+    model?: string;
+    session_id?: string;
+    response_count?: number;
+    message?: string; // for error events
+  };
+}
+
+/**
+ * Stream roundtable messages via SSE.
+ * Returns an async generator that yields SSE events as they arrive.
+ */
+export async function* streamRoundtableMessage(
+  projectId: string,
+  sessionId: string,
+  message: string,
+  target: "claude" | "gemini" | "both" = "both",
+  signal?: AbortSignal
+): AsyncGenerator<RoundtableSSEEvent> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/messages/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, target }),
+      signal,
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to stream roundtable message");
+  }
+
+  if (!res.body) {
+    throw new Error("No response body for SSE stream");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events (separated by double newlines)
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || ""; // Keep incomplete event in buffer
+
+      for (const eventBlock of events) {
+        if (!eventBlock.trim()) continue;
+
+        const lines = eventBlock.split("\n");
+        let eventType: RoundtableSSEEventType = "done";
+        let eventData = {};
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7) as RoundtableSSEEventType;
+          } else if (line.startsWith("data: ")) {
+            try {
+              eventData = JSON.parse(line.slice(6));
+            } catch {
+              console.warn("Failed to parse SSE data:", line);
+            }
+          }
+        }
+
+        yield { type: eventType, data: eventData };
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function generateFeaturesFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  agent: "claude" | "gemini" = "gemini"
+): Promise<{ features: GeneratedFeature[]; session_id: string }> {
+  // Use AbortController for timeout - feature extraction can take time
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-features`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent }),
+        signal: controller.signal,
+      }
+    );
+    if (!res.ok) throw new Error("Failed to generate features from roundtable");
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

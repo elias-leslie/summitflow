@@ -2,6 +2,7 @@
 
 Routes messages between user and multiple AI agents (Claude, Gemini).
 Supports targeting specific agents or broadcasting to both.
+Agents have read-only access to the codebase via tools.
 """
 
 from __future__ import annotations
@@ -12,9 +13,14 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from .agents import AgentType, LLMResponse, get_agent
+from .roundtable_tools import (
+    RoundtableToolExecutor,
+    format_tool_results_for_prompt,
+    get_default_executor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,25 +59,33 @@ class RoundtableMessage:
 
 @dataclass
 class RoundtableSession:
-    """Active roundtable session with conversation history."""
+    """Active roundtable session with conversation history.
+
+    Agents have read-only codebase access via tools by default.
+    Additional tool permissions can be granted per session.
+    """
 
     id: str
     project_id: str
     messages: list[RoundtableMessage] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     mode: Literal["spec_driven", "quick"] = "quick"
+    tool_executor: RoundtableToolExecutor = field(default_factory=get_default_executor)
+    tools_enabled: bool = True  # Enable by default
 
     @classmethod
     def create(
         cls,
         project_id: str,
         mode: Literal["spec_driven", "quick"] = "quick",
+        tools_enabled: bool = True,
     ) -> RoundtableSession:
         """Create a new session with auto-generated ID."""
         return cls(
             id=str(uuid.uuid4()),
             project_id=project_id,
             mode=mode,
+            tools_enabled=tools_enabled,
         )
 
     def add_message(self, message: RoundtableMessage) -> None:
@@ -109,6 +123,23 @@ Guidelines:
 3. Be concise but thorough
 4. Focus on helping the user achieve their goals
 5. If the other AI has already addressed a point well, acknowledge it rather than repeating
+"""
+
+    # Tool access guidance (added when tools are enabled)
+    TOOL_GUIDANCE = """
+CODEBASE ACCESS:
+You have READ-ONLY access to the codebase via tools. Use them to:
+- Read specific files to understand existing patterns
+- Search for function definitions, classes, or patterns
+- Explore project structure to understand architecture
+
+When discussing code or features:
+1. USE TOOLS to verify your assumptions about the codebase
+2. Reference specific files and line numbers when relevant
+3. Base recommendations on actual code patterns, not generic advice
+4. If unsure, search the code first before making claims
+
+Available tools: read_file, search_code, list_files, get_project_structure
 """
 
     def __init__(
@@ -286,30 +317,194 @@ Guidelines:
         agent_type: AgentType,
         message: str,
         context: str,
+        session: RoundtableSession | None = None,
     ) -> LLMResponse:
-        """Send message to a specific agent with context."""
+        """Send message to a specific agent with context and optional tool access.
+
+        If session has tools_enabled=True, agents can use read-only codebase tools.
+        The agent may call tools multiple times before providing a final response.
+        """
         model = (
             self.claude_model if agent_type == "claude" else self.gemini_model
         )
         agent = get_agent(agent_type, model=model)
 
+        # Agent-specific identity
+        agent_identity = {
+            "claude": "You are CLAUDE (Anthropic). In conversation logs, you are labeled as [CLAUDE].",
+            "gemini": "You are GEMINI (Google). In conversation logs, you are labeled as [GEMINI].",
+        }
+
+        # Build system prompt with identity and optional tool guidance
+        tool_section = ""
+        if session and session.tools_enabled:
+            tool_section = self.TOOL_GUIDANCE
+
+        system_prompt = f"""{agent_identity.get(agent_type, "")}
+
+{self.ROUNDTABLE_SYSTEM}
+{tool_section}
+IMPORTANT: You are {agent_type.upper()}. Do NOT confuse yourself with the other AI assistant in this conversation."""
+
         # Build prompt with context
         prompt = message
         if context:
-            prompt = f"""Previous conversation:
+            prompt = f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
+
 {context}
 
-New message from user:
-{message}
+The user's most recent message that you should respond to is: "{message}"
 
-Respond to the user's latest message, taking into account the full conversation context."""
+Provide your unique perspective as {agent_type.upper()}. Do not repeat what the other agent said - add new value."""
 
+        # Check if tools are enabled
+        if session and session.tools_enabled:
+            return self._send_with_tools(
+                agent=agent,
+                prompt=prompt,
+                system=system_prompt,
+                session=session,
+            )
+
+        # No tools - simple generation
         return agent.generate(
             prompt=prompt,
-            system=self.ROUNDTABLE_SYSTEM,
+            system=system_prompt,
             max_tokens=4096,
             temperature=0.7,
         )
+
+    def _send_with_tools(
+        self,
+        agent: Any,
+        prompt: str,
+        system: str,
+        session: RoundtableSession,
+        max_iterations: int = 30,
+        max_tool_calls: int = 100,
+        detect_duplicates: bool = True,
+    ) -> LLMResponse:
+        """Send message with tool access, handling tool calls in a loop.
+
+        Uses multiple safeguards to prevent runaway agents:
+        - max_iterations: Maximum rounds of tool calls (safety net)
+        - max_tool_calls: Total tool calls allowed across all iterations
+        - detect_duplicates: Stop if agent calls same tool with same params
+
+        Args:
+            agent: LLM client to use
+            prompt: User prompt
+            system: System prompt
+            session: Session with tool executor
+            max_iterations: Maximum tool call rounds (default 30)
+            max_tool_calls: Maximum total tool calls (default 100)
+            detect_duplicates: Stop on repeated identical calls (default True)
+
+        Returns:
+            Final LLMResponse after all tool calls are complete
+        """
+        import json as json_module
+
+        tools = session.tool_executor.get_available_tools()
+        current_prompt = prompt
+        conversation_history: list[dict[str, Any]] = []
+
+        # Track tool usage for limits
+        total_tool_calls = 0
+        seen_calls: set[str] = set()
+
+        for iteration in range(max_iterations):
+            # Generate with tools
+            response = agent.generate_with_tools(
+                prompt=current_prompt,
+                tools=tools,
+                system=system,
+                conversation_history=conversation_history,
+                max_tokens=4096,
+                temperature=0.7,
+            )
+
+            # If no tool calls, we're done
+            if response.stop_reason != "tool_use" or not response.tool_calls:
+                logger.info(
+                    f"Agent completed after {iteration} iterations, "
+                    f"{total_tool_calls} total tool calls"
+                )
+                return response
+
+            # Execute tool calls with safety checks
+            tool_results = []
+            should_stop = False
+
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.get("name", "")
+                parameters = tool_call.get("parameters", {})
+
+                # Check for duplicate calls (agent confusion)
+                if detect_duplicates:
+                    call_key = f"{tool_name}:{json_module.dumps(parameters, sort_keys=True)}"
+                    if call_key in seen_calls:
+                        logger.warning(
+                            f"Duplicate tool call detected: {tool_name}, stopping"
+                        )
+                        should_stop = True
+                        break
+                    seen_calls.add(call_key)
+
+                # Check tool call budget
+                total_tool_calls += 1
+                if total_tool_calls > max_tool_calls:
+                    logger.warning(
+                        f"Tool call budget exhausted ({max_tool_calls} calls)"
+                    )
+                    should_stop = True
+                    break
+
+                logger.info(
+                    f"Executing tool [{total_tool_calls}/{max_tool_calls}]: "
+                    f"{tool_name}"
+                )
+
+                result = session.tool_executor.execute(tool_name, parameters)
+                tool_results.append((tool_name, result))
+
+                logger.info(
+                    f"Tool {tool_name} result: success={result.success}, "
+                    f"output_len={len(result.output)}"
+                )
+
+            # If we hit a limit, return current response
+            if should_stop:
+                return response
+
+            # Add to conversation history
+            conversation_history.append({
+                "role": "assistant",
+                "content": response.content,
+            })
+
+            # Format tool results for next prompt
+            results_text = format_tool_results_for_prompt(tool_results)
+            conversation_history.append({
+                "role": "user",
+                "content": f"Tool results:\n\n{results_text}\n\nContinue with your analysis.",
+            })
+
+            # Update prompt for next iteration
+            current_prompt = (
+                f"You called the following tools. Here are the results:\n\n"
+                f"{results_text}\n\n"
+                f"Based on these results, continue your analysis. "
+                f"If you need more information, call additional tools. "
+                f"When you have enough information, provide your final response as plain text."
+            )
+
+        # Max iterations reached
+        logger.warning(
+            f"Agent reached max iterations ({max_iterations}), "
+            f"{total_tool_calls} tool calls made"
+        )
+        return response
 
     async def get_parallel_responses(
         self,
