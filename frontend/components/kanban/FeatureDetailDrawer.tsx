@@ -12,6 +12,7 @@ import {
   Clock,
   Loader2,
   Pause,
+  FastForward,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } from "@/components/ui/sheet";
@@ -159,6 +160,10 @@ export function FeatureDetailDrawer({
 
   if (!feature) return null;
 
+  // Check for paused task
+  const pausedTask = tasks.find((t) => t.status === "paused");
+  const runningTask = tasks.find((t) => t.status === "running");
+
   const criteria = feature.acceptance_criteria ?? [];
   const passedCount = criteria.filter((c) => c.passed).length;
   const totalCount = criteria.length;
@@ -222,14 +227,35 @@ export function FeatureDetailDrawer({
         <SheetBody className="space-y-6">
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="flex-1 gap-2"
-              onClick={handleStartClick}
-            >
-              <Play className="h-4 w-4" />
-              Start Task
-            </Button>
+            {pausedTask ? (
+              <Button
+                variant="outline"
+                className="flex-1 gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                onClick={handleStartClick}
+                title={`Resume paused task: ${pausedTask.title}`}
+              >
+                <FastForward className="h-4 w-4" />
+                Continue Task
+              </Button>
+            ) : runningTask ? (
+              <Button
+                variant="outline"
+                className="flex-1 gap-2 border-blue-500/30 text-blue-400"
+                disabled
+              >
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Task Running
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="flex-1 gap-2"
+                onClick={handleStartClick}
+              >
+                <Play className="h-4 w-4" />
+                Start Task
+              </Button>
+            )}
             {isEditing ? (
               <>
                 <Button variant="outline" size="sm" onClick={handleEditCancel}>
