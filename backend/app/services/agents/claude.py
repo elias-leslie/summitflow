@@ -2,6 +2,8 @@
 
 Uses the same infrastructure that powers Claude Code.
 No API keys needed - uses OAuth via cached credentials.
+
+Supports native SDK tool calling with PreToolUse hooks for permission control.
 """
 
 from __future__ import annotations
@@ -9,9 +11,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
-from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, query
 from claude_agent_sdk.types import (
     AssistantMessage,
     ResultMessage,
@@ -22,12 +25,17 @@ from .base import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
 
+# Tool categories for permission handling
+READ_TOOLS = {"read_file", "search_code", "list_files", "get_project_structure"}
+WRITE_TOOLS = {"write_file", "edit_file", "delete_file", "create_directory"}
+
 
 class ClaudeClient(LLMClient):
     """Claude client using the official Agent SDK.
 
     Uses ClaudeSDKClient for proper streaming, session management,
-    and all Claude Code features.
+    and all Claude Code features. Supports native SDK tool calling
+    with PreToolUse hooks for permission control.
 
     To set up:
     1. Install Claude Code CLI
@@ -40,13 +48,21 @@ class ClaudeClient(LLMClient):
         - "haiku": Claude 3 Haiku - fastest
     """
 
-    def __init__(self, model: str = "sonnet") -> None:
+    def __init__(
+        self,
+        model: str = "sonnet",
+        permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+    ) -> None:
         """Initialize Claude SDK client.
 
         Args:
             model: Model to use ("sonnet", "opus", "haiku")
+            permission_callback: Async callback for permission prompting.
+                Called with (tool_name, tool_args) when write tools need approval.
+                Returns True to allow, False to deny.
         """
         self.model = model
+        self._permission_callback = permission_callback
         self._cli_path = shutil.which("claude")
         if not self._cli_path:
             raise RuntimeError(
@@ -141,11 +157,9 @@ class ClaudeClient(LLMClient):
                             if isinstance(block, TextBlock):
                                 content_parts.append(block.text)
 
-                    elif isinstance(msg, ResultMessage):
-                        # Extract usage from result
-                        if hasattr(msg, "total_cost_usd"):
-                            # Estimate tokens from cost (rough approximation)
-                            pass
+                    elif isinstance(msg, ResultMessage) and hasattr(msg, "total_cost_usd"):
+                        # Extract usage from result - estimate tokens from cost
+                        pass
 
             duration_ms = int((time.time() - start_time) * 1000)
             content = "".join(content_parts)
@@ -164,4 +178,137 @@ class ClaudeClient(LLMClient):
 
         except Exception as e:
             logger.error(f"Claude SDK error: {e}")
-            raise RuntimeError(f"Claude SDK error: {e}")
+            raise RuntimeError(f"Claude SDK error: {e}") from e
+
+    async def generate_with_tools_native(
+        self,
+        prompt: str,
+        tools: list[dict[str, Any]],
+        system: str | None = None,
+        write_enabled: bool = False,
+        yolo_mode: bool = False,
+        working_dir: str | None = None,
+    ) -> AsyncGenerator[Any, None]:
+        """Generate using SDK's native tool calling with PreToolUse hooks.
+
+        Uses Claude Agent SDK's hook system for permission control instead
+        of the custom JSON-based tool protocol.
+
+        Args:
+            prompt: User prompt
+            tools: Tool definitions in Anthropic API format
+            system: System prompt (optional)
+            write_enabled: Whether write tools are enabled
+            yolo_mode: Auto-approve all write tool requests
+            working_dir: Working directory for the agent
+
+        Yields:
+            SDK message objects as they stream in
+        """
+        # Capture instance variables for closure
+        permission_callback = self._permission_callback
+
+        async def permission_hook(
+            input_data: dict[str, Any],
+            tool_use_id: str | None,
+            context: Any,
+        ) -> dict[str, Any]:
+            """PreToolUse hook for permission control."""
+            tool_name = input_data.get("tool_name", "")
+            tool_input = input_data.get("tool_input", {})
+            hook_event_name = input_data.get("hook_event_name", "PreToolUse")
+
+            # Read tools always allowed
+            if tool_name in READ_TOOLS:
+                logger.debug(f"Auto-allowing read tool: {tool_name}")
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": hook_event_name,
+                        "permissionDecision": "allow",
+                    }
+                }
+
+            # Write tools need permission
+            if tool_name in WRITE_TOOLS:
+                if not write_enabled:
+                    logger.info(f"Denying write tool (disabled): {tool_name}")
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": hook_event_name,
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": "Write access not enabled",
+                        }
+                    }
+
+                if yolo_mode:
+                    logger.info(f"Auto-allowing write tool (YOLO mode): {tool_name}")
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": hook_event_name,
+                            "permissionDecision": "allow",
+                        }
+                    }
+
+                # Use permission callback if available
+                if permission_callback:
+                    try:
+                        approved = await permission_callback(tool_name, tool_input)
+                        decision = "allow" if approved else "deny"
+                        reason = None if approved else "Permission denied by user"
+                        logger.info(f"Permission callback for {tool_name}: {decision}")
+                        result: dict[str, Any] = {
+                            "hookSpecificOutput": {
+                                "hookEventName": hook_event_name,
+                                "permissionDecision": decision,
+                            }
+                        }
+                        if reason:
+                            result["hookSpecificOutput"]["permissionDecisionReason"] = reason
+                        return result
+                    except Exception as e:
+                        logger.error(f"Permission callback error: {e}")
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": hook_event_name,
+                                "permissionDecision": "deny",
+                                "permissionDecisionReason": f"Permission callback error: {e}",
+                            }
+                        }
+
+                # No callback configured - deny by default for safety
+                logger.warning(
+                    f"Denying write tool (no callback): {tool_name}"
+                )
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": hook_event_name,
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": "Permission required but no callback configured",
+                    }
+                }
+
+            # Unknown tools - let them through
+            logger.debug(f"Allowing unknown tool: {tool_name}")
+            return {}
+
+        # Build options with permission hook
+        options = ClaudeAgentOptions(
+            cwd=working_dir or ".",
+            cli_path=self._cli_path,
+            model=self.model,
+            hooks={
+                "PreToolUse": [HookMatcher(hooks=[permission_hook])]
+            },
+        )
+
+        # Combine system + prompt if system provided
+        full_prompt = prompt
+        if system:
+            full_prompt = f"{system}\n\n{prompt}"
+
+        try:
+            async for message in query(prompt=full_prompt, options=options):
+                yield message
+        except Exception as e:
+            logger.error(f"Claude SDK native tool error: {e}")
+            raise RuntimeError(f"Claude SDK native tool error: {e}") from e
