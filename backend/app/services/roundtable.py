@@ -835,10 +835,178 @@ If no features were discussed, return: {"features": []}
 CONVERSATION:
 """
 
+    # =========================================================================
+    # Vision Extraction
+    # =========================================================================
+
+    VISION_EXTRACTION_PROMPT = """Analyze the following Roundtable conversation and extract the project's vision, mission, and key narratives that were discussed.
+
+Extract:
+1. A mission statement - the core purpose and value proposition of the project
+2. Key values that emerged from the discussion (optional)
+3. Narratives - distinct vision themes or perspectives discussed (like "what the project is", "why it matters", "how it works")
+
+IMPORTANT: Return ONLY valid JSON in this exact format:
+{
+  "mission": {
+    "statement": "Clear, concise mission statement capturing the project's purpose",
+    "values": ["value1", "value2"]
+  },
+  "narratives": [
+    {
+      "id": "narrative-1",
+      "title": "Narrative Title",
+      "content": "Detailed narrative content capturing this aspect of the vision",
+      "category": "what|why|how|who|principles"
+    }
+  ]
+}
+
+Categories for narratives:
+- "what": What the project is/does
+- "why": Why it matters, problems it solves
+- "how": How it works, approach
+- "who": Target users, stakeholders
+- "principles": Core principles, values in action
+
+If no vision was discussed, return: {"mission": null, "narratives": []}
+
+CONVERSATION:
+"""
+
+    # =========================================================================
+    # Goals Extraction
+    # =========================================================================
+
+    GOALS_EXTRACTION_PROMPT = """Analyze the following Roundtable conversation and extract high-level strategic goals that were discussed for the project.
+
+Goals are high-level objectives that features can be linked to. They represent the "why" behind features.
+
+For each goal, provide:
+1. A unique code (format: VG-XXX where XXX is a short identifier like PERF, UX, SEC, AUTO)
+2. A clear, concise name
+3. A description explaining what achieving this goal means
+4. A category (e.g., "performance", "usability", "security", "automation", "scalability", "integration")
+
+IMPORTANT: Return ONLY valid JSON in this exact format:
+{
+  "goals": [
+    {
+      "code": "VG-PERF",
+      "name": "Performance Optimization",
+      "description": "Ensure the system responds quickly and handles load efficiently",
+      "category": "performance"
+    }
+  ]
+}
+
+If no goals were discussed, return: {"goals": []}
+
+CONVERSATION:
+"""
+
+    def extract_vision_from_conversation(
+        self,
+        session: RoundtableSession,
+        agent_type: AgentType = "claude",
+    ) -> dict:
+        """Extract vision (mission + narratives) from a Roundtable conversation.
+
+        Args:
+            session: The roundtable session to analyze
+            agent_type: Which agent to use for extraction
+
+        Returns:
+            Dict with 'mission' and 'narratives' keys
+        """
+        import json as json_module
+        import re
+
+        context = session.get_context(max_messages=50)
+
+        model = (
+            self.claude_model if agent_type == "claude" else self.gemini_model
+        )
+        agent = get_agent(agent_type, model=model)
+
+        prompt = self.VISION_EXTRACTION_PROMPT + context
+
+        try:
+            response = agent.generate(
+                prompt=prompt,
+                system="You are a vision and strategy analyst. Extract structured vision content from conversations.",
+                max_tokens=8192,
+                temperature=0.3,
+            )
+
+            content = response.content.strip()
+
+            # Try to extract JSON from markdown code blocks
+            json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+
+            data = json_module.loads(content)
+            return {
+                "mission": data.get("mission"),
+                "narratives": data.get("narratives", []),
+            }
+
+        except Exception as e:
+            logger.error(f"Vision extraction failed: {e}")
+            return {"mission": None, "narratives": []}
+
+    def extract_goals_from_conversation(
+        self,
+        session: RoundtableSession,
+        agent_type: AgentType = "claude",
+    ) -> list[dict]:
+        """Extract strategic goals from a Roundtable conversation.
+
+        Args:
+            session: The roundtable session to analyze
+            agent_type: Which agent to use for extraction
+
+        Returns:
+            List of extracted goal dicts
+        """
+        import json as json_module
+        import re
+
+        context = session.get_context(max_messages=50)
+
+        model = (
+            self.claude_model if agent_type == "claude" else self.gemini_model
+        )
+        agent = get_agent(agent_type, model=model)
+
+        prompt = self.GOALS_EXTRACTION_PROMPT + context
+
+        try:
+            response = agent.generate(
+                prompt=prompt,
+                system="You are a strategic planning analyst. Extract structured goals from conversations.",
+                max_tokens=4096,
+                temperature=0.3,
+            )
+
+            content = response.content.strip()
+
+            json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+
+            data = json_module.loads(content)
+            return data.get("goals", [])
+
+        except Exception as e:
+            logger.error(f"Goals extraction failed: {e}")
+            return []
+
     def extract_features_from_conversation(
         self,
         session: RoundtableSession,
-        agent_type: AgentType = "gemini",
+        agent_type: AgentType = "claude",
     ) -> list[dict]:
         """Extract features from a Roundtable conversation.
 

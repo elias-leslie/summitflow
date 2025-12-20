@@ -103,7 +103,7 @@ class SendMessageResponse(BaseModel):
 class GenerateFeaturesRequest(BaseModel):
     """Request to generate features from conversation."""
 
-    agent: str = "gemini"  # "claude" or "gemini"
+    agent: str = "claude"  # "claude" or "gemini"
 
 
 class GeneratedCriterion(BaseModel):
@@ -135,7 +135,7 @@ class GenerateFeaturesResponse(BaseModel):
 class GenerateVisionRequest(BaseModel):
     """Request to generate vision from conversation."""
 
-    agent: str = "gemini"  # "claude" or "gemini"
+    agent: str = "claude"  # "claude" or "gemini"
 
 
 class GeneratedNarrative(BaseModel):
@@ -180,7 +180,7 @@ class SaveVisionResponse(BaseModel):
 class GenerateGoalsRequest(BaseModel):
     """Request to generate goals from conversation."""
 
-    agent: str = "gemini"  # "claude" or "gemini"
+    agent: str = "claude"  # "claude" or "gemini"
 
 
 class GeneratedGoal(BaseModel):
@@ -659,6 +659,245 @@ async def generate_features(
         ],
         session_id=session_id,
     )
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-vision",
+    response_model=GenerateVisionResponse,
+)
+async def generate_vision(
+    project_id: str,
+    session_id: str,
+    request: GenerateVisionRequest,
+):
+    """Generate vision (mission + narratives) from a roundtable conversation."""
+    service = get_roundtable_service()
+
+    # Get session
+    session = service.get_session(session_id)
+    if not session:
+        db_session = roundtable_storage.load_session(session_id)
+        if db_session:
+            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session.id = session_id
+            for msg_data in db_session.get("messages", []):
+                from datetime import datetime
+                from ..services.roundtable import RoundtableMessage
+                msg = RoundtableMessage(
+                    id=msg_data.get("id", ""),
+                    agent=msg_data.get("agent", "user"),
+                    content=msg_data.get("content", ""),
+                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
+                    tokens_used=msg_data.get("tokens_used", 0),
+                    model=msg_data.get("model"),
+                )
+                session.messages.append(msg)
+            service._sessions[session_id] = session
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    if len(session.messages) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 2 messages to generate vision",
+        )
+
+    # Extract vision
+    agent_type = request.agent if request.agent in ("claude", "gemini") else "claude"
+    extracted = service.extract_vision_from_conversation(session, agent_type)
+
+    mission = None
+    if extracted.get("mission"):
+        mission = GeneratedMission(
+            statement=extracted["mission"].get("statement", ""),
+            values=extracted["mission"].get("values", []),
+        )
+
+    narratives = [
+        GeneratedNarrative(
+            id=n.get("id", f"narrative-{i+1}"),
+            title=n.get("title", ""),
+            content=n.get("content", ""),
+            category=n.get("category", "general"),
+        )
+        for i, n in enumerate(extracted.get("narratives", []))
+    ]
+
+    return GenerateVisionResponse(
+        mission=mission,
+        narratives=narratives,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/save-vision",
+    response_model=SaveVisionResponse,
+)
+async def save_vision(
+    project_id: str,
+    session_id: str,
+    request: SaveVisionRequest,
+):
+    """Save generated vision to the project's vision content."""
+    from ..storage.connection import get_connection
+
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            # Save mission if provided
+            if request.mission:
+                cur.execute(
+                    """
+                    INSERT INTO vision_content (project_id, content_type, content_key, title, content, order_num, metadata)
+                    VALUES (%s, 'mission', 'mission-statement', 'Mission Statement', %s, 0, %s)
+                    ON CONFLICT (project_id, content_type, content_key) DO UPDATE
+                    SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, updated_at = NOW()
+                    """,
+                    (
+                        project_id,
+                        request.mission.statement,
+                        json.dumps({"values": request.mission.values}),
+                    ),
+                )
+
+            # Save narratives
+            for i, narrative in enumerate(request.narratives):
+                cur.execute(
+                    """
+                    INSERT INTO vision_content (project_id, content_type, content_key, title, content, order_num, metadata)
+                    VALUES (%s, 'vision', %s, %s, %s, %s, %s)
+                    ON CONFLICT (project_id, content_type, content_key) DO UPDATE
+                    SET title = EXCLUDED.title, content = EXCLUDED.content, order_num = EXCLUDED.order_num,
+                        metadata = EXCLUDED.metadata, updated_at = NOW()
+                    """,
+                    (
+                        project_id,
+                        narrative.id,
+                        narrative.title,
+                        narrative.content,
+                        i + 1,
+                        json.dumps({"category": narrative.category}),
+                    ),
+                )
+
+            conn.commit()
+
+        return SaveVisionResponse(
+            status="saved",
+            project_id=project_id,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to save vision: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-goals",
+    response_model=GenerateGoalsResponse,
+)
+async def generate_goals(
+    project_id: str,
+    session_id: str,
+    request: GenerateGoalsRequest,
+):
+    """Generate strategic goals from a roundtable conversation."""
+    service = get_roundtable_service()
+
+    # Get session
+    session = service.get_session(session_id)
+    if not session:
+        db_session = roundtable_storage.load_session(session_id)
+        if db_session:
+            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session.id = session_id
+            for msg_data in db_session.get("messages", []):
+                from datetime import datetime
+                from ..services.roundtable import RoundtableMessage
+                msg = RoundtableMessage(
+                    id=msg_data.get("id", ""),
+                    agent=msg_data.get("agent", "user"),
+                    content=msg_data.get("content", ""),
+                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
+                    tokens_used=msg_data.get("tokens_used", 0),
+                    model=msg_data.get("model"),
+                )
+                session.messages.append(msg)
+            service._sessions[session_id] = session
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    if len(session.messages) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 2 messages to generate goals",
+        )
+
+    # Extract goals
+    agent_type = request.agent if request.agent in ("claude", "gemini") else "claude"
+    extracted = service.extract_goals_from_conversation(session, agent_type)
+
+    goals = [
+        GeneratedGoal(
+            code=g.get("code", f"VG-{i+1:03d}"),
+            name=g.get("name", ""),
+            description=g.get("description", ""),
+            category=g.get("category", "general"),
+        )
+        for i, g in enumerate(extracted)
+    ]
+
+    return GenerateGoalsResponse(
+        goals=goals,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/roundtable/sessions/{session_id}/save-goals",
+    response_model=SaveGoalsResponse,
+)
+async def save_goals(
+    project_id: str,
+    session_id: str,
+    request: SaveGoalsRequest,
+):
+    """Save generated goals to the project's vision goals."""
+    from ..storage.connection import get_connection
+
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            created = 0
+            for goal in request.goals:
+                cur.execute(
+                    """
+                    INSERT INTO vision_goals (code, project_id, name, description, category)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (code) DO UPDATE
+                    SET name = EXCLUDED.name, description = EXCLUDED.description,
+                        category = EXCLUDED.category, project_id = EXCLUDED.project_id, updated_at = NOW()
+                    """,
+                    (
+                        goal.code,
+                        project_id,
+                        goal.name,
+                        goal.description,
+                        goal.category,
+                    ),
+                )
+                created += 1
+
+            conn.commit()
+
+        return SaveGoalsResponse(
+            status="saved",
+            project_id=project_id,
+            goals_created=created,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to save goals: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ============================================================================
