@@ -325,7 +325,7 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
             )
         config_update["claude_model"] = update.claude_model
     if update.gemini_model is not None:
-        valid_models = ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro")
+        valid_models = ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-exp-1206")
         if update.gemini_model not in valid_models:
             raise HTTPException(
                 status_code=400, detail=f"gemini_model must be one of: {valid_models}"

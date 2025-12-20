@@ -27,8 +27,8 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
     "gemini_enabled": True,
     "default_agent": "gemini",
-    "claude_model": "sonnet",
-    "gemini_model": "gemini-2.5-flash",
+    "claude_model": "opus",
+    "gemini_model": "gemini-exp-1206",
 }
 
 

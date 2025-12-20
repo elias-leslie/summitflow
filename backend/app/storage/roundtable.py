@@ -170,6 +170,7 @@ def list_sessions(
         cur.execute(
             """
             SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
+                   agent_override, model_override,
                    jsonb_array_length(messages) as message_count,
                    jsonb_array_length(generated_features) as feature_count,
                    created_at, updated_at
@@ -191,10 +192,12 @@ def list_sessions(
             "write_enabled": row[4] if row[4] is not None else False,
             "yolo_mode": row[5] if row[5] is not None else False,
             "tool_stats": row[6] or default_stats,
-            "message_count": row[7],
-            "feature_count": row[8],
-            "created_at": row[9],
-            "updated_at": row[10],
+            "agent_override": row[7],
+            "model_override": row[8],
+            "message_count": row[9],
+            "feature_count": row[10],
+            "created_at": row[11],
+            "updated_at": row[12],
         }
         for row in rows
     ]
@@ -437,6 +440,39 @@ def increment_tool_stats(
                 """,
                 (session_id,),
             )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
+
+
+def update_agent_config(
+    session_id: str,
+    agent_override: str | None = None,
+    model_override: str | None = None,
+) -> bool:
+    """Update agent configuration override for a session.
+
+    Args:
+        session_id: Session ID
+        agent_override: Override agent type (claude/gemini) or None to clear
+        model_override: Override model ID or None to clear
+
+    Returns:
+        True if session was updated, False if not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE roundtable_sessions
+            SET agent_override = %s,
+                model_override = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (agent_override, model_override, session_id),
+        )
         result = cur.fetchone()
         conn.commit()
 

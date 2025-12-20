@@ -223,10 +223,26 @@ class SessionInfo(BaseModel):
     write_enabled: bool = False
     yolo_mode: bool = False
     tool_stats: ToolStats | None = None
+    agent_override: str | None = None
+    model_override: str | None = None
     message_count: int
     feature_count: int
     created_at: str
     updated_at: str
+
+
+class SessionAgentConfig(BaseModel):
+    """Agent configuration for a session."""
+
+    agent_override: str | None = None
+    model_override: str | None = None
+
+
+class UpdateSessionAgentRequest(BaseModel):
+    """Request to update session agent configuration."""
+
+    agent_override: str | None = None
+    model_override: str | None = None
 
 
 class PermissionResolution(BaseModel):
@@ -351,6 +367,8 @@ async def list_sessions(project_id: str) -> list[SessionInfo]:
             write_enabled=s.get("write_enabled", False),
             yolo_mode=s.get("yolo_mode", False),
             tool_stats=ToolStats(**s.get("tool_stats", {})) if s.get("tool_stats") else None,
+            agent_override=s.get("agent_override"),
+            model_override=s.get("model_override"),
             message_count=s.get("message_count", 0),
             feature_count=s.get("feature_count", 0),
             created_at=s["created_at"].isoformat() if s.get("created_at") else "",
@@ -375,6 +393,8 @@ async def get_session(project_id: str, session_id: str):
         "write_enabled": session.get("write_enabled", False),
         "yolo_mode": session.get("yolo_mode", False),
         "tool_stats": session.get("tool_stats", {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}),
+        "agent_override": session.get("agent_override"),
+        "model_override": session.get("model_override"),
         "messages": session.get("messages", []),
         "generated_features": session.get("generated_features", []),
         "created_at": session["created_at"].isoformat() if session.get("created_at") else None,
@@ -389,6 +409,53 @@ async def delete_session(project_id: str, session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True, "session_id": session_id}
+
+
+@router.get("/projects/{project_id}/roundtable/sessions/{session_id}/agent-config")
+async def get_session_agent_config(project_id: str, session_id: str) -> SessionAgentConfig:
+    """Get agent configuration override for a session."""
+    session = roundtable_storage.load_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionAgentConfig(
+        agent_override=session.get("agent_override"),
+        model_override=session.get("model_override"),
+    )
+
+
+@router.patch("/projects/{project_id}/roundtable/sessions/{session_id}/agent-config")
+async def update_session_agent_config(
+    project_id: str, session_id: str, request: UpdateSessionAgentRequest
+) -> SessionAgentConfig:
+    """Update agent configuration override for a session.
+
+    Set agent_override to override the project's default agent (claude/gemini).
+    Set model_override to override the default model for that agent.
+    Set to null to clear the override and use project defaults.
+    """
+    session = roundtable_storage.load_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Validate agent if provided
+    if request.agent_override is not None:
+        if request.agent_override not in ("claude", "gemini"):
+            raise HTTPException(
+                status_code=400, detail="agent_override must be 'claude' or 'gemini'"
+            )
+
+    # Update session with new values
+    roundtable_storage.update_agent_config(
+        session_id,
+        agent_override=request.agent_override,
+        model_override=request.model_override,
+    )
+
+    return SessionAgentConfig(
+        agent_override=request.agent_override,
+        model_override=request.model_override,
+    )
 
 
 @router.patch(
