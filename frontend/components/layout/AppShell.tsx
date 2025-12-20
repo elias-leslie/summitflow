@@ -121,7 +121,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <Group
       orientation="horizontal"
-      className="flex-1 h-full"
+      className="flex-1 h-full min-h-0"
       defaultLayout={{ main: 100 - width, terminal: width }}
       onLayoutChange={(layout) => {
         if (layout.terminal !== undefined) {
@@ -149,11 +149,11 @@ export function AppShell({ children }: AppShellProps) {
         id="terminal"
         minSize="15%"
         maxSize="70%"
-        className="bg-slate-900 flex flex-col h-full"
+        className="bg-slate-900 flex flex-col h-full min-h-0 overflow-hidden"
       >
         <TerminalTabs
           projectId={activeProjectId}
-          className="flex-1"
+          className="flex-1 min-h-0"
         />
       </Panel>
     </Group>
