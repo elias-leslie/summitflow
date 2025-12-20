@@ -72,9 +72,9 @@ None. Plan is implementation-ready.
 
 ### Should Do (During Implementation)
 
-- [ ] Use `backend/app/tasks/` directory instead of `backend/app/jobs/`
-- [ ] Add `session_id` property to `RoundtableToolExecutor`
-- [ ] Implement Redis pubsub for SSE observation notifications
+- [x] Use `backend/app/tasks/` directory instead of `backend/app/jobs/` ✓ Applied
+- [x] Add `session_id` property to `RoundtableToolExecutor` ✓ Applied
+- [x] Implement Redis pubsub for SSE observation notifications ✓ Applied
 
 ### Nice to Have (Future Enhancement)
 
@@ -127,6 +127,7 @@ None. Plan is implementation-ready.
 - [x] Gap analysis incorporated (`docs/context-memory-gap-analysis.md`)
 - [x] Session prompts ready (`docs/context-memory-prompts-v2.md`)
 - [x] Pre-implementation review complete (this document)
+- [x] Plan adjustments applied (2025-12-20)
 - [ ] **User approval** - Awaiting
 - [ ] Prerequisites verified (Phases 1-9)
 - [ ] Implementation begun
