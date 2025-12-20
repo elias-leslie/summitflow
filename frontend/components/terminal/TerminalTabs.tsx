@@ -158,9 +158,9 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   }
 
   return (
-    <div className={clsx("flex flex-col h-full", className)}>
+    <div className={clsx("flex flex-col h-full min-h-0", className)}>
       {/* Tab bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto">
+      <div className="flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto">
         {sessions.map((session) => (
           <button
             key={session.id}
@@ -267,8 +267,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
         )}
       </div>
 
-      {/* Terminal panels */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}
+      <div className="flex-1 min-h-0 relative overflow-hidden">
         {layoutMode === "single" ? (
           // Single pane - show active session
           sessions.map((session) => (
@@ -328,7 +328,7 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: Spli
         id={session.id}
         defaultSize={defaultSize}
         minSize={minSize}
-        className="flex flex-col h-full overflow-hidden"
+        className="flex flex-col h-full min-h-0 overflow-hidden"
       >
         {/* Small header showing terminal name */}
         <div className="flex-shrink-0 flex items-center px-2 py-0.5 bg-slate-800/50 border-b border-slate-700">
@@ -336,7 +336,7 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: Spli
           <span className="text-xs text-slate-400 truncate">{session.name}</span>
           {!session.is_alive && <span className="text-xs text-red-400 ml-1">(dead)</span>}
         </div>
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <TerminalComponent
             sessionId={session.id}
             workingDir={session.working_dir || projectPath}
