@@ -575,8 +575,13 @@ async def send_message(
         # Try to load from database
         db_session = roundtable_storage.load_session(session_id)
         if db_session:
-            # Recreate session in memory
-            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            # Recreate session in memory with agent config
+            session = service.create_session(
+                project_id,
+                mode=db_session.get("mode", "quick"),
+                agent_override=db_session.get("agent_override"),
+                model_override=db_session.get("model_override"),
+            )
             session.id = session_id
             # Restore messages
             for msg_data in db_session.get("messages", []):
@@ -664,7 +669,12 @@ async def generate_features(
         # Try to load from database
         db_session = roundtable_storage.load_session(session_id)
         if db_session:
-            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session = service.create_session(
+                project_id,
+                mode=db_session.get("mode", "quick"),
+                agent_override=db_session.get("agent_override"),
+                model_override=db_session.get("model_override"),
+            )
             session.id = session_id
             for msg_data in db_session.get("messages", []):
                 from datetime import datetime
@@ -745,7 +755,12 @@ async def generate_vision(
     if not session:
         db_session = roundtable_storage.load_session(session_id)
         if db_session:
-            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session = service.create_session(
+                project_id,
+                mode=db_session.get("mode", "quick"),
+                agent_override=db_session.get("agent_override"),
+                model_override=db_session.get("model_override"),
+            )
             session.id = session_id
             for msg_data in db_session.get("messages", []):
                 from datetime import datetime
@@ -876,7 +891,12 @@ async def generate_goals(
     if not session:
         db_session = roundtable_storage.load_session(session_id)
         if db_session:
-            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            session = service.create_session(
+                project_id,
+                mode=db_session.get("mode", "quick"),
+                agent_override=db_session.get("agent_override"),
+                model_override=db_session.get("model_override"),
+            )
             session.id = session_id
             for msg_data in db_session.get("messages", []):
                 from datetime import datetime
@@ -1020,8 +1040,13 @@ async def stream_message(
         # Try to load from database
         db_session = roundtable_storage.load_session(session_id)
         if db_session:
-            # Recreate session in memory
-            session = service.create_session(project_id, mode=db_session.get("mode", "quick"))
+            # Recreate session in memory with agent config
+            session = service.create_session(
+                project_id,
+                mode=db_session.get("mode", "quick"),
+                agent_override=db_session.get("agent_override"),
+                model_override=db_session.get("model_override"),
+            )
             session.id = session_id
             # Restore messages
             for msg_data in db_session.get("messages", []):

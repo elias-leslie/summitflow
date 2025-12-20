@@ -115,6 +115,8 @@ class RoundtableSession:
     mode: Literal["spec_driven", "quick"] = "quick"
     tool_executor: RoundtableToolExecutor = field(default_factory=get_default_executor)
     tools_enabled: bool = True  # Enable by default
+    agent_override: str | None = None  # Override agent type (claude/gemini)
+    model_override: str | None = None  # Override model ID
 
     @classmethod
     def create(
@@ -122,6 +124,8 @@ class RoundtableSession:
         project_id: str,
         mode: Literal["spec_driven", "quick"] = "quick",
         tools_enabled: bool = True,
+        agent_override: str | None = None,
+        model_override: str | None = None,
     ) -> RoundtableSession:
         """Create a new session with auto-generated ID."""
         return cls(
@@ -129,11 +133,45 @@ class RoundtableSession:
             project_id=project_id,
             mode=mode,
             tools_enabled=tools_enabled,
+            agent_override=agent_override,
+            model_override=model_override,
         )
 
     def add_message(self, message: RoundtableMessage) -> None:
         """Add a message to the session."""
         self.messages.append(message)
+
+    def get_effective_agent(self, default_agent: AgentType = "claude") -> AgentType:
+        """Get the effective agent type for this session.
+
+        Uses session agent_override if set, otherwise falls back to default.
+
+        Args:
+            default_agent: Default agent type to use if no override
+
+        Returns:
+            Effective agent type
+        """
+        if self.agent_override and self.agent_override in ("claude", "gemini"):
+            return self.agent_override  # type: ignore
+        return default_agent
+
+    def get_effective_model(self, agent_type: AgentType, default_claude: str = "sonnet", default_gemini: str = "gemini-2.5-flash") -> str:
+        """Get the effective model for this session.
+
+        Uses session model_override if set, otherwise falls back to default.
+
+        Args:
+            agent_type: The agent type to get model for
+            default_claude: Default Claude model
+            default_gemini: Default Gemini model
+
+        Returns:
+            Effective model identifier
+        """
+        if self.model_override:
+            return self.model_override
+        return default_claude if agent_type == "claude" else default_gemini
 
     def get_context(self, max_messages: int = 20) -> str:
         """Build context string from recent messages for agent prompts."""
@@ -912,9 +950,11 @@ CONVERSATION:
     ) -> dict:
         """Extract vision (mission + narratives) from a Roundtable conversation.
 
+        Uses session's agent_override if set, otherwise uses provided agent_type.
+
         Args:
             session: The roundtable session to analyze
-            agent_type: Which agent to use for extraction
+            agent_type: Which agent to use for extraction (default, may be overridden)
 
         Returns:
             Dict with 'mission' and 'narratives' keys
@@ -924,10 +964,13 @@ CONVERSATION:
 
         context = session.get_context(max_messages=50)
 
-        model = (
-            self.claude_model if agent_type == "claude" else self.gemini_model
+        # Use session override if set, otherwise use provided agent_type
+        effective_agent = session.get_effective_agent(agent_type)
+        effective_model = session.get_effective_model(
+            effective_agent, self.claude_model, self.gemini_model
         )
-        agent = get_agent(agent_type, model=model)
+        agent = get_agent(effective_agent, model=effective_model)
+        logger.info(f"Vision extraction using agent={effective_agent}, model={effective_model}")
 
         prompt = self.VISION_EXTRACTION_PROMPT + context
 
@@ -963,9 +1006,11 @@ CONVERSATION:
     ) -> list[dict]:
         """Extract strategic goals from a Roundtable conversation.
 
+        Uses session's agent_override if set, otherwise uses provided agent_type.
+
         Args:
             session: The roundtable session to analyze
-            agent_type: Which agent to use for extraction
+            agent_type: Which agent to use for extraction (default, may be overridden)
 
         Returns:
             List of extracted goal dicts
@@ -975,10 +1020,13 @@ CONVERSATION:
 
         context = session.get_context(max_messages=50)
 
-        model = (
-            self.claude_model if agent_type == "claude" else self.gemini_model
+        # Use session override if set, otherwise use provided agent_type
+        effective_agent = session.get_effective_agent(agent_type)
+        effective_model = session.get_effective_model(
+            effective_agent, self.claude_model, self.gemini_model
         )
-        agent = get_agent(agent_type, model=model)
+        agent = get_agent(effective_agent, model=effective_model)
+        logger.info(f"Goals extraction using agent={effective_agent}, model={effective_model}")
 
         prompt = self.GOALS_EXTRACTION_PROMPT + context
 
@@ -1013,9 +1061,11 @@ CONVERSATION:
         Uses an AI agent to analyze the conversation and identify
         features with their acceptance criteria.
 
+        Uses session's agent_override if set, otherwise uses provided agent_type.
+
         Args:
             session: The roundtable session to analyze
-            agent_type: Which agent to use for extraction
+            agent_type: Which agent to use for extraction (default, may be overridden)
 
         Returns:
             List of extracted feature dicts ready for creation
@@ -1026,10 +1076,13 @@ CONVERSATION:
         # Build conversation transcript
         context = session.get_context(max_messages=50)
 
-        model = (
-            self.claude_model if agent_type == "claude" else self.gemini_model
+        # Use session override if set, otherwise use provided agent_type
+        effective_agent = session.get_effective_agent(agent_type)
+        effective_model = session.get_effective_model(
+            effective_agent, self.claude_model, self.gemini_model
         )
-        agent = get_agent(agent_type, model=model)
+        agent = get_agent(effective_agent, model=effective_model)
+        logger.info(f"Feature extraction using agent={effective_agent}, model={effective_model}")
 
         prompt = self.FEATURE_EXTRACTION_PROMPT + context
 

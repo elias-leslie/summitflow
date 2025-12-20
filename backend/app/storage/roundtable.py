@@ -123,7 +123,8 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
+            SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
+                   agent_override, model_override, messages, generated_features, created_at, updated_at
             FROM roundtable_sessions
             WHERE id = %s
             """,
@@ -142,10 +143,12 @@ def load_session(session_id: str) -> dict[str, Any] | None:
         "write_enabled": row[4] if row[4] is not None else False,
         "yolo_mode": row[5] if row[5] is not None else False,
         "tool_stats": row[6] or default_stats,
-        "messages": row[7] or [],
-        "generated_features": row[8] or [],
-        "created_at": row[9],
-        "updated_at": row[10],
+        "agent_override": row[7],
+        "model_override": row[8],
+        "messages": row[9] or [],
+        "generated_features": row[10] or [],
+        "created_at": row[11],
+        "updated_at": row[12],
     }
 
 
