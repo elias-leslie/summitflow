@@ -165,6 +165,7 @@ async def list_tasks(
     task_type: str | None = Query(None, alias="type", description="Filter by type (task, bug, chore)"),
     priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
     labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
+    orphans_only: bool = Query(False, description="Only return tasks not linked to a feature (issues)"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ) -> TaskListResponse:
@@ -175,6 +176,7 @@ async def list_tasks(
         - type: Filter by task type (task, bug, chore)
         - priority: Filter by priority (0-4)
         - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
+        - orphans_only: Only return tasks not linked to a feature (issues/bugs/chores)
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
@@ -185,6 +187,7 @@ async def list_tasks(
         task_type_filter=task_type,
         priority_filter=priority,
         labels_filter=labels_list,
+        orphans_only=orphans_only,
         limit=limit,
         offset=offset,
     )
