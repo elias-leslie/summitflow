@@ -21,7 +21,7 @@ import {
   type PermissionRequest,
 } from "@/lib/api";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
-import { VisionGoalsTab } from "@/components/vision/VisionGoalsTab";
+import { VisionOverview } from "@/components/vision/VisionOverview";
 import { IssueTasksTab } from "@/components/tasks/IssueTasksTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { IssuesList } from "@/components/issues/IssuesList";
@@ -622,7 +622,7 @@ export default function ProjectDetailPage() {
       <section className="animate-fade-in">
         {activeTab === "explorer" && <ExplorerTab projectId={projectId} />}
         {activeTab === "features" && <FeaturesTab projectId={projectId} />}
-        {activeTab === "vision" && <VisionGoalsTab projectId={projectId} />}
+        {activeTab === "vision" && <VisionOverview projectId={projectId} />}
         {activeTab === "goals" && <GoalsList projectId={projectId} />}
         {activeTab === "evidence" && <EvidenceTab projectId={projectId} />}
         {activeTab === "tasks" && <IssueTasksTab projectId={projectId} />}
