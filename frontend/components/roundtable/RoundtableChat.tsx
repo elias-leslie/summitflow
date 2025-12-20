@@ -34,7 +34,12 @@ import {
   ListChecks,
   Plus,
   FolderCode,
+  Eye,
+  Target,
+  ChevronDown,
 } from "lucide-react";
+import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
+import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
 import { Switch } from "../ui/switch";
 
 export type AgentType = "claude" | "gemini" | "user";
@@ -78,6 +83,11 @@ export interface ToolsSettings {
   yoloMode: boolean;
 }
 
+export interface GeneratedVision {
+  mission: GeneratedMission | null;
+  narratives: GeneratedNarrative[];
+}
+
 interface RoundtableChatProps {
   projectId: string;
   sessionId?: string;
@@ -90,6 +100,10 @@ interface RoundtableChatProps {
     targetAgent?: AgentType
   ) => Promise<void>;
   onGenerateFeatures?: () => Promise<GeneratedFeature[]>;
+  onGenerateVision?: () => Promise<GeneratedVision>;
+  onGenerateGoals?: () => Promise<GeneratedGoal[]>;
+  onSaveVision?: (mission: GeneratedMission | null, narratives: GeneratedNarrative[]) => Promise<void>;
+  onSaveGoals?: (goals: GeneratedGoal[]) => Promise<void>;
   onNewSession?: () => void;
   messages?: ChatMessage[];
   isLoading?: boolean;
@@ -416,6 +430,10 @@ export function RoundtableChat({
   onModeChange,
   onSendMessage,
   onGenerateFeatures,
+  onGenerateVision,
+  onGenerateGoals,
+  onSaveVision,
+  onSaveGoals,
   onNewSession,
   messages = [],
   isLoading = false,
@@ -431,9 +449,14 @@ export function RoundtableChat({
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingVision, setIsGeneratingVision] = useState(false);
+  const [isGeneratingGoals, setIsGeneratingGoals] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
+  const [generatedVision, setGeneratedVision] = useState<GeneratedVision | null>(null);
+  const [generatedGoals, setGeneratedGoals] = useState<GeneratedGoal[]>([]);
+  const [showGenerateMenu, setShowGenerateMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -569,6 +592,7 @@ export function RoundtableChat({
   const handleGenerateFeatures = useCallback(async () => {
     if (!onGenerateFeatures || isGenerating) return;
     setIsGenerating(true);
+    setShowGenerateMenu(false);
     try {
       const features = await onGenerateFeatures();
       setGeneratedFeatures(features);
@@ -576,6 +600,47 @@ export function RoundtableChat({
       setIsGenerating(false);
     }
   }, [onGenerateFeatures, isGenerating]);
+
+  const handleGenerateVision = useCallback(async () => {
+    if (!onGenerateVision || isGeneratingVision) return;
+    setIsGeneratingVision(true);
+    setShowGenerateMenu(false);
+    try {
+      const vision = await onGenerateVision();
+      setGeneratedVision(vision);
+    } finally {
+      setIsGeneratingVision(false);
+    }
+  }, [onGenerateVision, isGeneratingVision]);
+
+  const handleGenerateGoals = useCallback(async () => {
+    if (!onGenerateGoals || isGeneratingGoals) return;
+    setIsGeneratingGoals(true);
+    setShowGenerateMenu(false);
+    try {
+      const goals = await onGenerateGoals();
+      setGeneratedGoals(goals);
+    } finally {
+      setIsGeneratingGoals(false);
+    }
+  }, [onGenerateGoals, isGeneratingGoals]);
+
+  const handleSaveVision = useCallback(async (
+    mission: GeneratedMission | null,
+    narratives: GeneratedNarrative[]
+  ) => {
+    if (!onSaveVision) return;
+    await onSaveVision(mission, narratives);
+    setGeneratedVision(null);
+  }, [onSaveVision]);
+
+  const handleSaveGoals = useCallback(async (goals: GeneratedGoal[]) => {
+    if (!onSaveGoals) return;
+    await onSaveGoals(goals);
+    setGeneratedGoals([]);
+  }, [onSaveGoals]);
+
+  const isAnyGenerating = isGenerating || isGeneratingVision || isGeneratingGoals;
 
   return (
     <div
@@ -771,7 +836,7 @@ export function RoundtableChat({
         )}
       </ScrollArea>
 
-      {/* Generated features display */}
+      {/* Generated content displays */}
       {generatedFeatures.length > 0 && (
         <div className="px-4 py-3 border-t border-slate-800">
           <GeneratedFeaturesList
@@ -781,31 +846,99 @@ export function RoundtableChat({
         </div>
       )}
 
-      {/* Generate Features button (Spec-Driven mode only) */}
+      {generatedVision && (
+        <div className="px-4 py-3 border-t border-slate-800">
+          <VisionPreview
+            mission={generatedVision.mission}
+            narratives={generatedVision.narratives}
+            onSave={handleSaveVision}
+            onClose={() => setGeneratedVision(null)}
+          />
+        </div>
+      )}
+
+      {generatedGoals.length > 0 && (
+        <div className="px-4 py-3 border-t border-slate-800">
+          <GoalsPreview
+            goals={generatedGoals}
+            onSave={handleSaveGoals}
+            onClose={() => setGeneratedGoals([])}
+          />
+        </div>
+      )}
+
+      {/* Generate menu (Spec-Driven mode only) */}
       {mode === "spec_driven" &&
         messages.length >= 2 &&
-        generatedFeatures.length === 0 && (
+        !generatedFeatures.length &&
+        !generatedVision &&
+        !generatedGoals.length && (
           <div className="px-4 py-3 border-t border-slate-800">
-            <Button
-              type="button"
-              onClick={handleGenerateFeatures}
-              disabled={isGenerating || isLoading || !connected}
-              className="w-full bg-phosphor-500 hover:bg-phosphor-600 text-white"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Extracting Features...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="w-4 h-4 mr-2" />
-                  Generate Features from Discussion
-                </>
+            <div className="relative">
+              <Button
+                type="button"
+                onClick={() => setShowGenerateMenu(!showGenerateMenu)}
+                disabled={isAnyGenerating || isLoading || !connected}
+                className="w-full bg-phosphor-500 hover:bg-phosphor-600 text-white"
+              >
+                {isAnyGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {isGenerating ? "Extracting Features..." :
+                     isGeneratingVision ? "Extracting Vision..." :
+                     "Extracting Goals..."}
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-4 h-4 mr-2" />
+                    Generate from Discussion
+                    <ChevronDown className="w-4 h-4 ml-2" />
+                  </>
+                )}
+              </Button>
+              {showGenerateMenu && !isAnyGenerating && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate-800 border border-slate-700 rounded-lg shadow-lg overflow-hidden z-10">
+                  <button
+                    type="button"
+                    onClick={handleGenerateFeatures}
+                    disabled={!onGenerateFeatures}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ListChecks className="w-4 h-4 text-phosphor-400" />
+                    <div>
+                      <div className="font-medium">Generate Features</div>
+                      <div className="text-xs text-slate-400">Extract features with acceptance criteria</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateVision}
+                    disabled={!onGenerateVision}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed border-t border-slate-700"
+                  >
+                    <Eye className="w-4 h-4 text-purple-400" />
+                    <div>
+                      <div className="font-medium">Generate Vision</div>
+                      <div className="text-xs text-slate-400">Extract mission and narratives</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateGoals}
+                    disabled={!onGenerateGoals}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed border-t border-slate-700"
+                  >
+                    <Target className="w-4 h-4 text-green-400" />
+                    <div>
+                      <div className="font-medium">Generate Goals</div>
+                      <div className="text-xs text-slate-400">Extract strategic goals</div>
+                    </div>
+                  </button>
+                </div>
               )}
-            </Button>
+            </div>
             <p className="text-xs text-slate-500 text-center mt-2">
-              AI will analyze the conversation and create features with acceptance criteria
+              AI will analyze the conversation and extract structured content
             </p>
           </div>
         )}

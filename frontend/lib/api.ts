@@ -1213,7 +1213,7 @@ export async function* streamRoundtableMessage(
 export async function generateFeaturesFromRoundtable(
   projectId: string,
   sessionId: string,
-  agent: "claude" | "gemini" = "gemini"
+  agent: "claude" | "gemini" = "claude"
 ): Promise<{ features: GeneratedFeature[]; session_id: string }> {
   // Use AbortController for timeout - feature extraction can take time
   const controller = new AbortController();
@@ -1234,4 +1234,120 @@ export async function generateFeaturesFromRoundtable(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+// Vision/Goals types for roundtable generation
+export interface GeneratedMission {
+  statement: string;
+  values: string[];
+}
+
+export interface GeneratedNarrative {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+}
+
+export interface GeneratedGoal {
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+}
+
+export interface GenerateVisionResponse {
+  mission: GeneratedMission | null;
+  narratives: GeneratedNarrative[];
+  session_id: string;
+}
+
+export interface GenerateGoalsResponse {
+  goals: GeneratedGoal[];
+  session_id: string;
+}
+
+export async function generateVisionFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  agent: "claude" | "gemini" = "claude"
+): Promise<GenerateVisionResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-vision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent }),
+        signal: controller.signal,
+      }
+    );
+    if (!res.ok) throw new Error("Failed to generate vision from roundtable");
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function saveVisionFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  mission: GeneratedMission | null,
+  narratives: GeneratedNarrative[]
+): Promise<{ status: string; project_id: string }> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/save-vision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mission, narratives }),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to save vision");
+  return res.json();
+}
+
+export async function generateGoalsFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  agent: "claude" | "gemini" = "claude"
+): Promise<GenerateGoalsResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-goals`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent }),
+        signal: controller.signal,
+      }
+    );
+    if (!res.ok) throw new Error("Failed to generate goals from roundtable");
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function saveGoalsFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  goals: GeneratedGoal[]
+): Promise<{ status: string; project_id: string; goals_created: number }> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/save-goals`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goals }),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to save goals");
+  return res.json();
 }

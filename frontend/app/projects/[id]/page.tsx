@@ -12,10 +12,17 @@ import {
   getRoundtableSession,
   streamRoundtableMessage,
   generateFeaturesFromRoundtable,
+  generateVisionFromRoundtable,
+  generateGoalsFromRoundtable,
+  saveVisionFromRoundtable,
+  saveGoalsFromRoundtable,
   updateRoundtableTools,
   resolvePermission,
   type RoundtableMessage,
   type GeneratedFeature,
+  type GeneratedMission,
+  type GeneratedNarrative,
+  type GeneratedGoal,
   type RoundtableSSEEvent,
   type ToolStats,
   type PermissionRequest,
@@ -33,6 +40,7 @@ import {
   type ChatMessage,
   type RoundtableMode,
   type FileAttachment,
+  type GeneratedVision,
 } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
@@ -399,6 +407,88 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleGenerateVision = async (): Promise<GeneratedVision> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return { mission: null, narratives: [] };
+    }
+
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      const result = await generateVisionFromRoundtable(
+        projectId,
+        roundtableSessionId,
+        "claude"
+      );
+
+      return {
+        mission: result.mission,
+        narratives: result.narratives,
+      };
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to generate vision");
+      return { mission: null, narratives: [] };
+    } finally {
+      setRoundtableLoading(false);
+    }
+  };
+
+  const handleGenerateGoals = async (): Promise<GeneratedGoal[]> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return [];
+    }
+
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      const result = await generateGoalsFromRoundtable(
+        projectId,
+        roundtableSessionId,
+        "claude"
+      );
+
+      return result.goals;
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to generate goals");
+      return [];
+    } finally {
+      setRoundtableLoading(false);
+    }
+  };
+
+  const handleSaveVision = async (
+    mission: GeneratedMission | null,
+    narratives: GeneratedNarrative[]
+  ): Promise<void> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return;
+    }
+
+    try {
+      await saveVisionFromRoundtable(projectId, roundtableSessionId, mission, narratives);
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to save vision");
+    }
+  };
+
+  const handleSaveGoals = async (goals: GeneratedGoal[]): Promise<void> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return;
+    }
+
+    try {
+      await saveGoalsFromRoundtable(projectId, roundtableSessionId, goals);
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to save goals");
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -629,6 +719,10 @@ export default function ProjectDetailPage() {
             onModeChange={handleRoundtableModeChange}
             onSendMessage={handleSendMessage}
             onGenerateFeatures={handleGenerateFeatures}
+            onGenerateVision={handleGenerateVision}
+            onGenerateGoals={handleGenerateGoals}
+            onSaveVision={handleSaveVision}
+            onSaveGoals={handleSaveGoals}
             onNewSession={handleNewRoundtableSession}
             messages={roundtableMessages}
             isLoading={roundtableLoading}
