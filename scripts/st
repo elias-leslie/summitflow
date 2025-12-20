@@ -33,6 +33,9 @@ COMMANDS:
     dep add            Add dependency
     dep list           List dependencies
     dep rm             Remove dependency
+    feature list       List features
+    feature show <id>  Show feature details
+    feature start <id> Create task for feature
 
 ENVIRONMENT:
     ST_PROJECT_ID      Project ID (default: summitflow)
@@ -747,6 +750,251 @@ cmd_dep_rm() {
     fi
 }
 
+# Feature commands
+cmd_feature() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_feature_list "$@"
+            ;;
+        show|get)
+            cmd_feature_show "$@"
+            ;;
+        start)
+            cmd_feature_start "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st feature - Manage features
+
+USAGE:
+    st feature <subcommand> [options]
+
+SUBCOMMANDS:
+    list                   List features
+    show <feature-id>      Show feature details
+    start <feature-id>     Create a task for the feature
+
+EXAMPLES:
+    st feature list
+    st feature show FEAT-001
+    st feature start FEAT-001 -p 1
+EOF
+            ;;
+    esac
+}
+
+cmd_feature_list() {
+    local category=""
+    local limit=50
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--category)
+                category="$2"
+                shift 2
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st feature list - List features
+
+USAGE:
+    st feature list [options]
+
+OPTIONS:
+    -c, --category <cat>   Filter by category
+    --limit <n>            Max results (default: 50)
+    --json                 Output as JSON
+EOF
+                return 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local query="limit=$limit"
+    [[ -n "$category" ]] && query="$query&category=$category"
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/features?$query")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq '.features | length')
+        echo -e "${BLUE}Features ($count):${NC}\n"
+
+        echo "$response" | jq -r '.features[] |
+            "\(.feature_id) [\(.status // "active")] \(.name)"
+            + (if .category then " (\(.category))" else "" end)
+            + "\n      Criteria: \(.criteria_passed // 0)/\(.criteria_total // 0) passed"' | \
+        while IFS= read -r line; do
+            echo "$line"
+        done
+    fi
+}
+
+cmd_feature_show() {
+    local feature_id="$1"
+    shift || true
+
+    if [[ -z "$feature_id" ]]; then
+        echo -e "${RED}Error: Feature ID required (e.g., FEAT-001)${NC}" >&2
+        return 1
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/features/${feature_id}")
+
+    # Check for error
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Feature: $(echo "$response" | jq -r '.feature_id')${NC}"
+        echo "$response" | jq -r '"
+Name:        \(.name)
+Category:    \(.category // "(none)")
+Status:      \(.status // "active")
+Priority:    \(.priority // 5)
+Description: \(.description // "(none)")
+
+Acceptance Criteria (\(.criteria_passed // 0)/\(.criteria_total // 0) passed):"'
+
+        # List criteria
+        echo "$response" | jq -r '.acceptance_criteria // [] | to_entries[] |
+            "  [\(if .value.passes then "✓" else " " end)] AC-\(.key + 1): \(.value.description)"'
+    fi
+}
+
+cmd_feature_start() {
+    local feature_id="$1"
+    shift || true
+
+    if [[ -z "$feature_id" ]]; then
+        echo -e "${RED}Error: Feature ID required (e.g., FEAT-001)${NC}" >&2
+        return 1
+    fi
+
+    local priority=2
+    local title=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p|--priority)
+                priority="$2"
+                shift 2
+                ;;
+            -t|--title)
+                title="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st feature start - Create a task for a feature
+
+USAGE:
+    st feature start <feature-id> [options]
+
+OPTIONS:
+    -p, --priority <0-4>   Task priority (default: 2)
+    -t, --title <title>    Custom task title (default: "Implement: <feature-name>")
+    --json                 Output as JSON
+EOF
+                return 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Get feature details first
+    local feature_response
+    feature_response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/features/${feature_id}")
+
+    if echo "$feature_response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$feature_response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    # Extract feature info
+    local db_id feature_name
+    db_id=$(echo "$feature_response" | jq -r '.id')
+    feature_name=$(echo "$feature_response" | jq -r '.name')
+
+    # Default title if not provided
+    [[ -z "$title" ]] && title="Implement: $feature_name"
+
+    # Create task linked to feature
+    local json_data
+    json_data=$(jq -n \
+        --arg title "$title" \
+        --argjson priority "$priority" \
+        --argjson feature_id "$db_id" \
+        '{
+            title: $title,
+            priority: $priority,
+            task_type: "feature",
+            feature_id: $feature_id,
+            labels: ["complexity:medium", "domains:backend"]
+        }')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tasks" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local task_id
+        task_id=$(echo "$response" | jq -r '.id')
+        echo -e "${GREEN}Created task:${NC} $task_id"
+        echo -e "  Title:    $title"
+        echo -e "  Feature:  $feature_id"
+        echo -e "  Priority: P$priority"
+    fi
+}
+
 # Main entry point
 main() {
     local cmd="${1:-}"
@@ -776,6 +1024,9 @@ main() {
             ;;
         dep|dependency)
             cmd_dep "$@"
+            ;;
+        feature|feat)
+            cmd_feature "$@"
             ;;
         -h|--help|help|"")
             show_help
