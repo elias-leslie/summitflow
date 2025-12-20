@@ -553,6 +553,23 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)")
 
             # ============================================================
+            # Project Agent Configuration - Default agents/models per project
+            # ============================================================
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_agent_config (
+                    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                    primary_agent VARCHAR(50) DEFAULT 'claude',
+                    secondary_agent VARCHAR(50) DEFAULT 'gemini',
+                    primary_model VARCHAR(100) DEFAULT 'claude-opus-4-5-20251101',
+                    secondary_model VARCHAR(100) DEFAULT 'gemini-exp-1206',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+
+            # ============================================================
             # Notifications table (for failure escalation alerts)
             # ============================================================
             cur.execute(
@@ -595,6 +612,9 @@ def init_schema() -> None:
                 ("write_enabled BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
                 ("yolo_mode BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
                 ("tool_stats JSONB DEFAULT '{\"total_calls\": 0, \"files_read\": 0, \"searches\": 0, \"writes\": 0}'::jsonb", "roundtable_sessions"),
+                # Agent config override for per-session customization
+                ("agent_override VARCHAR(50)", "roundtable_sessions"),
+                ("model_override VARCHAR(100)", "roundtable_sessions"),
                 # Vision goals project scoping
                 ("project_id TEXT REFERENCES projects(id)", "vision_goals"),
             ]:
