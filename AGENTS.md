@@ -240,8 +240,51 @@ git status  # Should show: "nothing to commit, working tree clean"
 
 | Task | Command |
 |------|---------|
-| Find work | `bd ready --json` |
+| Find work | `st ready` |
+| Start work | `st update <id> --status running` |
+| Complete work | `st close <id> --reason "Done"` |
+| Force close | `st close <id> --force` (bypass criteria) |
+| List features | `st feature list` |
+| Start feature | `st feature start FEAT-001` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
 | Check health | `bash ~/summitflow/scripts/status.sh` |
 | Run tests | `cd backend && pytest tests/ -v` |
 | Check types | `cd backend && mypy app/` |
+
+---
+
+## SummitFlow Tasks (st CLI)
+
+The `st` CLI is the primary task management interface for SummitFlow projects.
+
+### Task Types
+| Type | Purpose |
+|------|---------|
+| `feature` | Feature implementation (validates criteria on close) |
+| `bug` | Bug fix |
+| `task` | General task |
+
+### Pre-Work Validation
+Before starting a task, validate readiness:
+```bash
+curl -X POST localhost:8001/api/projects/summitflow/tasks/<task-id>/validate-ready
+```
+
+Checks:
+- Task not already running/completed
+- No incomplete blocking dependencies
+- Feature-type tasks have linked feature with ≥1 criterion
+
+### Close Validation (Criteria Enforcement)
+For feature-type tasks linked to a feature, closing requires all acceptance criteria to pass:
+```bash
+st close <id> --reason "Done"    # Fails if criteria unsatisfied
+st close <id> --force            # Bypass validation
+```
+
+### Feature Workflow
+```bash
+st feature list                  # List all features
+st feature show FEAT-001         # Show feature with criteria
+st feature start FEAT-001 -p 1   # Create task linked to feature
+```
