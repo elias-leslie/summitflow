@@ -222,7 +222,7 @@ export function TerminalComponent({
   }, [handleResize]);
 
   return (
-    <div className={clsx("relative", className)}>
+    <div className={clsx("relative overflow-hidden", className)}>
       {/* Status indicator */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
         <span
@@ -239,13 +239,12 @@ export function TerminalComponent({
         </span>
       </div>
 
-      {/* Terminal container */}
+      {/* Terminal container - no min-height to prevent overflow */}
       <div
         ref={containerRef}
         className={clsx(
-          "w-full h-full min-h-[300px]",
-          "bg-slate-900 rounded-lg overflow-hidden",
-          "border border-slate-700"
+          "w-full h-full",
+          "bg-slate-900 overflow-hidden"
         )}
       />
     </div>

@@ -268,14 +268,14 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
       </div>
 
       {/* Terminal panels */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden">
         {layoutMode === "single" ? (
           // Single pane - show active session
           sessions.map((session) => (
             <div
               key={session.id}
               className={clsx(
-                "absolute inset-0",
+                "absolute inset-0 overflow-hidden",
                 session.id === activeId ? "z-10 visible" : "z-0 invisible"
               )}
             >
@@ -320,7 +320,7 @@ interface SplitPaneProps {
 
 function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: SplitPaneProps) {
   const defaultSize = 100 / paneCount;
-  const minSize = Math.max(10, 100 / (paneCount * 2)); // Dynamic min size
+  const minSize = `${Math.max(10, 100 / (paneCount * 2))}%`; // String percentage for proper sizing
 
   return (
     <>
@@ -328,15 +328,15 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: Spli
         id={session.id}
         defaultSize={defaultSize}
         minSize={minSize}
-        className="flex flex-col"
+        className="flex flex-col h-full overflow-hidden"
       >
         {/* Small header showing terminal name */}
-        <div className="flex items-center px-2 py-0.5 bg-slate-800/50 border-b border-slate-700">
+        <div className="flex-shrink-0 flex items-center px-2 py-0.5 bg-slate-800/50 border-b border-slate-700">
           <TerminalIcon className="w-3 h-3 text-slate-500 mr-1.5" />
           <span className="text-xs text-slate-400 truncate">{session.name}</span>
           {!session.is_alive && <span className="text-xs text-red-400 ml-1">(dead)</span>}
         </div>
-        <div className="flex-1">
+        <div className="flex-1 overflow-hidden">
           <TerminalComponent
             sessionId={session.id}
             workingDir={session.working_dir || projectPath}
