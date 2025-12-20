@@ -101,6 +101,15 @@ class FeatureContext(BaseModel):
     criteria_total: int
 
 
+class BlockerInfo(BaseModel):
+    """Information about a blocking task."""
+
+    id: str
+    title: str
+    status: str
+    priority: int
+
+
 class TaskResponse(BaseModel):
     """Response model for a task."""
 
@@ -130,6 +139,9 @@ class TaskResponse(BaseModel):
     parent_task_id: str | None
     # Optional feature context (when include=feature)
     feature: FeatureContext | None = None
+    # Optional blockers context (when include=blockers)
+    blockers: list[BlockerInfo] | None = None
+    blocked_by_incomplete: bool | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -152,6 +164,21 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
             criteria_passed=f["criteria_passed"],
             criteria_total=f["criteria_total"],
         )
+
+    # Handle optional blockers context
+    blockers_list = None
+    blocked_by_incomplete = None
+    if task.get("blockers") is not None:
+        blockers_list = [
+            BlockerInfo(
+                id=b["id"],
+                title=b["title"],
+                status=b["status"],
+                priority=b["priority"],
+            )
+            for b in task["blockers"]
+        ]
+        blocked_by_incomplete = len(blockers_list) > 0
 
     return TaskResponse(
         id=task["id"],
@@ -180,6 +207,9 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         parent_task_id=task.get("parent_task_id"),
         # Optional feature context
         feature=feature_context,
+        # Optional blockers context
+        blockers=blockers_list,
+        blocked_by_incomplete=blocked_by_incomplete,
     )
 
 
@@ -192,7 +222,7 @@ async def list_tasks(
     priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
     labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
     orphans_only: bool = Query(False, description="Only return tasks not linked to a feature (issues)"),
-    include: str | None = Query(None, description="Include related data (e.g., 'feature' for feature context)"),
+    include: str | None = Query(None, description="Include related data (e.g., 'feature,blockers')"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ) -> TaskListResponse:
@@ -204,13 +234,14 @@ async def list_tasks(
         - priority: Filter by priority (0-4)
         - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
         - orphans_only: Only return tasks not linked to a feature
-        - include: Include related data (comma-separated, e.g., 'feature' for feature context)
+        - include: Include related data (comma-separated: 'feature' for feature context, 'blockers' for blocking tasks)
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
     labels_list = labels.split(",") if labels else None
     includes = include.split(",") if include else []
     include_feature = "feature" in includes
+    include_blockers = "blockers" in includes
 
     tasks = task_store.list_tasks(
         project_id,
@@ -223,6 +254,13 @@ async def list_tasks(
         limit=limit,
         offset=offset,
     )
+
+    # Add blockers info if requested
+    if include_blockers:
+        for task in tasks:
+            blockers = dep_store.get_blocking_tasks(task["id"])
+            task["blockers"] = blockers
+
     return TaskListResponse(
         tasks=[_task_to_response(t) for t in tasks],
         total=len(tasks),  # TODO: Add proper total count
