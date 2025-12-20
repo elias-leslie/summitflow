@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
 
 const STORAGE_KEY_WIDTH = "terminal-width";
 const STORAGE_KEY_LAYOUT_MODE = "terminal-layout-mode";
@@ -14,34 +14,28 @@ export type LayoutMode = "single" | "horizontal" | "vertical";
 const DEFAULT_LAYOUT_MODE: LayoutMode = "single";
 const DEFAULT_PANE_SIZES = [50, 50]; // Equal split for two panes
 
+// Context type
+interface TerminalStateContextType {
+  isOpen: boolean;
+  width: number;
+  layoutMode: LayoutMode;
+  paneSizes: number[];
+  paneSessions: string[];
+  setOpen: (open: boolean) => void;
+  setWidth: (width: number) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
+  setPaneSizes: (sizes: number[]) => void;
+  setPaneSessions: (sessions: string[]) => void;
+  toggle: () => void;
+  isInitialized: boolean;
+}
+
+const TerminalStateContext = createContext<TerminalStateContextType | null>(null);
+
 /**
- * Hook for managing terminal panel UI state with localStorage persistence.
- *
- * State is persisted to localStorage so it survives page navigation and refresh.
- * SSR-safe: reads from localStorage only on client.
- *
- * @returns Terminal state and setters
- *
- * @example
- * ```tsx
- * const { isOpen, width, toggle, setWidth } = useTerminalState();
- *
- * return (
- *   <PanelGroup>
- *     <Panel>{children}</Panel>
- *     {isOpen && (
- *       <>
- *         <PanelResizeHandle />
- *         <Panel defaultSize={width} onResize={setWidth}>
- *           <TerminalTabs />
- *         </Panel>
- *       </>
- *     )}
- *   </PanelGroup>
- * );
- * ```
+ * Provider for terminal state. Wrap your app with this to share terminal state.
  */
-export function useTerminalState() {
+export function TerminalStateProvider({ children }: { children: ReactNode }) {
   // Default to closed on initial render (SSR-safe)
   const [isOpen, setIsOpenState] = useState(false);
   const [width, setWidthState] = useState(DEFAULT_WIDTH);
@@ -52,12 +46,10 @@ export function useTerminalState() {
 
   // Read from localStorage on mount (client only)
   // NOTE: isOpen is NOT restored - terminal always starts closed on page load
-  // Sessions persist on server, user clicks button to reveal them
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     try {
-      // Don't restore isOpen - always start closed
       const storedWidth = localStorage.getItem(STORAGE_KEY_WIDTH);
       const storedLayoutMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
       const storedPaneSizes = localStorage.getItem(STORAGE_KEY_PANE_SIZES);
@@ -113,8 +105,8 @@ export function useTerminalState() {
 
   // Toggle open state
   const toggle = useCallback(() => {
-    setOpen(!isOpen);
-  }, [isOpen, setOpen]);
+    setIsOpenState((prev) => !prev);
+  }, []);
 
   // Persist layoutMode to localStorage
   const setLayoutMode = useCallback((mode: LayoutMode) => {
@@ -146,7 +138,7 @@ export function useTerminalState() {
     }
   }, []);
 
-  return {
+  const value: TerminalStateContextType = {
     isOpen,
     width,
     layoutMode,
@@ -158,7 +150,24 @@ export function useTerminalState() {
     setPaneSizes,
     setPaneSessions,
     toggle,
-    /** True once state has been read from localStorage */
     isInitialized,
   };
+
+  return (
+    <TerminalStateContext.Provider value={value}>
+      {children}
+    </TerminalStateContext.Provider>
+  );
+}
+
+/**
+ * Hook for accessing terminal panel UI state.
+ * Must be used within a TerminalStateProvider.
+ */
+export function useTerminalState(): TerminalStateContextType {
+  const context = useContext(TerminalStateContext);
+  if (!context) {
+    throw new Error("useTerminalState must be used within a TerminalStateProvider");
+  }
+  return context;
 }

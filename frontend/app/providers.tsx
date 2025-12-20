@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { useState } from "react";
+import { TerminalStateProvider } from "@/lib/hooks/use-terminal-state";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,7 +20,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
+      <TerminalStateProvider>
+        {children}
+      </TerminalStateProvider>
       <Toaster
         position="bottom-right"
         toastOptions={{
