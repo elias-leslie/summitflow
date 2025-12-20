@@ -1526,6 +1526,80 @@ async def verify_feature(project_id: str, feature_id: str) -> dict[str, Any]:
 
 
 # =========================================================================
+# Feature Tasks Endpoint
+# =========================================================================
+
+
+class FeatureTaskResponse(BaseModel):
+    """Response model for a task linked to a feature."""
+
+    id: str
+    title: str
+    status: str
+    started_at: str | None
+    completed_at: str | None
+    duration_seconds: int | None = None
+
+
+@router.get(
+    "/projects/{project_id}/features/{feature_id}/tasks",
+    response_model=list[FeatureTaskResponse],
+)
+async def get_feature_tasks(project_id: str, feature_id: str) -> list[FeatureTaskResponse]:
+    """Get all tasks linked to a feature.
+
+    Returns execution history for the feature including status, timestamps, and duration.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get the feature's database ID first
+        cur.execute(
+            "SELECT id FROM feature_capabilities WHERE project_id = %s AND feature_id = %s",
+            (project_id, feature_id),
+        )
+        feature_row = cur.fetchone()
+
+        if not feature_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Feature {feature_id} not found in project {project_id}",
+            )
+
+        # Get tasks linked to this feature
+        cur.execute(
+            """
+            SELECT id, title, status, started_at, completed_at
+            FROM tasks
+            WHERE feature_id = %s
+            ORDER BY created_at DESC
+            """,
+            (feature_row[0],),
+        )
+        rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        started_at = row[3]
+        completed_at = row[4]
+        duration_seconds = None
+
+        if started_at and completed_at:
+            duration_seconds = int((completed_at - started_at).total_seconds())
+
+        result.append(
+            FeatureTaskResponse(
+                id=row[0],
+                title=row[1],
+                status=row[2],
+                started_at=started_at.isoformat() if started_at else None,
+                completed_at=completed_at.isoformat() if completed_at else None,
+                duration_seconds=duration_seconds,
+            )
+        )
+
+    return result
+
+
+# =========================================================================
 # Evidence Linking Endpoints
 # =========================================================================
 
