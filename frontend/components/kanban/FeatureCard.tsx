@@ -2,10 +2,40 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Play } from "lucide-react";
+import { GripVertical, Play, Loader2, Pause, Check, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Feature } from "@/lib/api";
+
+// ============================================================================
+// Task Status Types and Colors
+// ============================================================================
+
+export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+
+const taskStatusConfig: Record<TaskStatus, { icon: React.ReactNode; className: string; title: string }> = {
+  pending: { icon: null, className: "", title: "" },
+  running: {
+    icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+    className: "text-blue-400",
+    title: "Task running",
+  },
+  paused: {
+    icon: <Pause className="h-3.5 w-3.5" />,
+    className: "text-yellow-400",
+    title: "Task paused",
+  },
+  completed: {
+    icon: <Check className="h-3.5 w-3.5" />,
+    className: "text-green-400",
+    title: "Task completed",
+  },
+  failed: {
+    icon: <X className="h-3.5 w-3.5" />,
+    className: "text-red-400",
+    title: "Task failed",
+  },
+};
 
 // ============================================================================
 // Types
@@ -15,6 +45,7 @@ interface FeatureCardProps {
   feature: Feature;
   onClick?: () => void;
   onStartClick?: (feature: Feature) => void;
+  taskStatus?: TaskStatus;
 }
 
 // ============================================================================
@@ -33,7 +64,7 @@ const priorityColors: Record<number, string> = {
 // Feature Card Component
 // ============================================================================
 
-export function FeatureCard({ feature, onClick, onStartClick }: FeatureCardProps) {
+export function FeatureCard({ feature, onClick, onStartClick, taskStatus }: FeatureCardProps) {
   const {
     attributes,
     listeners,
@@ -83,7 +114,7 @@ export function FeatureCard({ feature, onClick, onStartClick }: FeatureCardProps
 
       {/* Card Content */}
       <div className="pl-4">
-        {/* Header: ID + Priority */}
+        {/* Header: ID + Priority + Task Status */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-2">
             <span className="text-xs mono text-slate-500">{feature.feature_id}</span>
@@ -92,6 +123,15 @@ export function FeatureCard({ feature, onClick, onStartClick }: FeatureCardProps
             >
               P{priority}
             </span>
+            {/* Task Status Indicator */}
+            {taskStatus && taskStatus !== "pending" && taskStatusConfig[taskStatus]?.icon && (
+              <span
+                className={`flex items-center ${taskStatusConfig[taskStatus].className}`}
+                title={taskStatusConfig[taskStatus].title}
+              >
+                {taskStatusConfig[taskStatus].icon}
+              </span>
+            )}
           </div>
 
           {/* Start Button - always visible */}
