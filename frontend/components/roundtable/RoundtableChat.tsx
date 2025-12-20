@@ -41,6 +41,7 @@ import {
 import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
 import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
 import { Switch } from "../ui/switch";
+import { AgentConfigPanel, AgentConfig } from "../settings/AgentConfigPanel";
 
 export type AgentType = "claude" | "gemini" | "user";
 export type RoundtableMode = "spec_driven" | "quick";
@@ -116,6 +117,10 @@ interface RoundtableChatProps {
   yoloMode?: boolean;
   toolStats?: ToolStats;
   onToolsChange?: (settings: Partial<ToolsSettings>) => void;
+  // Agent configuration props
+  agentOverride?: string | null;
+  modelOverride?: string | null;
+  onAgentConfigChange?: (config: AgentConfig) => void;
 }
 
 // Agent styling configuration
@@ -445,6 +450,9 @@ export function RoundtableChat({
   yoloMode = false,
   toolStats,
   onToolsChange,
+  agentOverride = null,
+  modelOverride = null,
+  onAgentConfigChange,
 }: RoundtableChatProps) {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -788,6 +796,25 @@ export function RoundtableChat({
                 {toolStats.total_calls} calls
                 {toolStats.writes > 0 && ` (${toolStats.writes} writes)`}
               </Badge>
+            )}
+
+            {/* Agent config (for generation) */}
+            {mode === "spec_driven" && onAgentConfigChange && (
+              <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3 ml-1">
+                <span className="text-xs text-slate-500">Gen:</span>
+                <AgentConfigPanel
+                  agentOverride={agentOverride}
+                  modelOverride={modelOverride}
+                  onAgentChange={(agent) =>
+                    onAgentConfigChange({ agentOverride: agent, modelOverride })
+                  }
+                  onModelChange={(model) =>
+                    onAgentConfigChange({ agentOverride, modelOverride: model })
+                  }
+                  disabled={isLoading || !!streamingAgent}
+                  compact
+                />
+              </div>
             )}
           </div>
         </div>

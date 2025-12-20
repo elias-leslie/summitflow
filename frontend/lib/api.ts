@@ -918,6 +918,8 @@ export interface RoundtableSession {
   write_enabled: boolean;
   yolo_mode: boolean;
   tool_stats: ToolStats;
+  agent_override: string | null;
+  model_override: string | null;
   messages: RoundtableMessage[];
   generated_features?: GeneratedFeature[];
   created_at: string;
@@ -1045,6 +1047,33 @@ export async function updateRoundtableTools(
     }
   );
   if (!res.ok) throw new Error("Failed to update roundtable tools");
+  return res.json();
+}
+
+export interface AgentConfigUpdate {
+  agent_override: string | null;
+  model_override: string | null;
+}
+
+export interface AgentConfigResponse {
+  agent_override: string | null;
+  model_override: string | null;
+}
+
+export async function updateRoundtableAgentConfig(
+  projectId: string,
+  sessionId: string,
+  config: AgentConfigUpdate
+): Promise<AgentConfigResponse> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/agent-config`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to update agent config");
   return res.json();
 }
 

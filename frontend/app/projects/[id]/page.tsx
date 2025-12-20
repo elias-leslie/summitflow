@@ -17,6 +17,7 @@ import {
   saveVisionFromRoundtable,
   saveGoalsFromRoundtable,
   updateRoundtableTools,
+  updateRoundtableAgentConfig,
   resolvePermission,
   type RoundtableMessage,
   type GeneratedFeature,
@@ -27,6 +28,7 @@ import {
   type ToolStats,
   type PermissionRequest,
 } from "@/lib/api";
+import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionOverview } from "@/components/vision/VisionOverview";
 import { TasksTab } from "@/components/tasks/TasksTab";
@@ -82,6 +84,8 @@ export default function ProjectDetailPage() {
   const [writeEnabled, setWriteEnabled] = useState(false);
   const [yoloMode, setYoloMode] = useState(false);
   const [toolStats, setToolStats] = useState<ToolStats>({ total_calls: 0, files_read: 0, searches: 0, writes: 0 });
+  const [agentOverride, setAgentOverride] = useState<string | null>(null);
+  const [modelOverride, setModelOverride] = useState<string | null>(null);
 
   // Permission prompting state
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
@@ -106,6 +110,10 @@ export default function ProjectDetailPage() {
           if (session.tool_stats) {
             setToolStats(session.tool_stats);
           }
+
+          // Load agent config
+          setAgentOverride(session.agent_override ?? null);
+          setModelOverride(session.model_override ?? null);
 
           // Convert messages to ChatMessage format
           const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
@@ -238,6 +246,33 @@ export default function ProjectDetailPage() {
         setWriteEnabled(prevWriteEnabled);
         setYoloMode(prevYoloMode);
         console.error("Failed to update tools settings:", err);
+      }
+    }
+  };
+
+  // Agent config handler
+  const handleAgentConfigChange = async (config: AgentConfig) => {
+    // Optimistically update UI
+    const prevAgentOverride = agentOverride;
+    const prevModelOverride = modelOverride;
+
+    setAgentOverride(config.agentOverride);
+    setModelOverride(config.modelOverride);
+
+    // If we have a session, persist the change
+    if (roundtableSessionId) {
+      try {
+        const result = await updateRoundtableAgentConfig(projectId, roundtableSessionId, {
+          agent_override: config.agentOverride,
+          model_override: config.modelOverride,
+        });
+        setAgentOverride(result.agent_override);
+        setModelOverride(result.model_override);
+      } catch (err) {
+        // Revert on error
+        setAgentOverride(prevAgentOverride);
+        setModelOverride(prevModelOverride);
+        console.error("Failed to update agent config:", err);
       }
     }
   };
@@ -734,6 +769,9 @@ export default function ProjectDetailPage() {
             yoloMode={yoloMode}
             toolStats={toolStats}
             onToolsChange={handleToolsChange}
+            agentOverride={agentOverride}
+            modelOverride={modelOverride}
+            onAgentConfigChange={handleAgentConfigChange}
           />
         )}
         {activeTab === "vision" && <VisionOverview projectId={projectId} />}
