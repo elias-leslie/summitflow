@@ -4,9 +4,10 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2 } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
+import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 
 // Maximum number of split panes
@@ -44,7 +45,9 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   } = useTerminalSessions(projectId);
 
   const { layoutMode, setLayoutMode, setOpen } = useTerminalState();
+  const { fontId, fontSize, fontFamily, setFontId, setFontSize } = useTerminalSettings();
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const [showSettings, setShowSettings] = useState(false);
 
   // Number of panes to show in split mode (1:1 with sessions, capped)
   const splitPaneCount = Math.min(sessions.length, MAX_SPLIT_PANES);
@@ -82,11 +85,13 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const handleCloseTab = useCallback(
     async (sessionId: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      // Don't close the last session
-      if (sessions.length <= 1) return;
       await remove(sessionId);
+      // If closing the last session, close the terminal panel
+      if (sessions.length <= 1) {
+        setOpen(false);
+      }
     },
-    [sessions.length, remove]
+    [sessions.length, remove, setOpen]
   );
 
   // Start editing tab name
@@ -135,32 +140,10 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     );
   }
 
-  // No sessions - show create button
-  if (sessions.length === 0) {
-    return (
-      <div className={clsx("flex flex-col h-full items-center justify-center", className)}>
-        <TerminalIcon className="w-12 h-12 text-slate-600 mb-4" />
-        <p className="text-slate-400 mb-4">No terminal sessions</p>
-        <button
-          onClick={handleAddTab}
-          disabled={isCreating}
-          className="flex items-center gap-2 px-4 py-2 bg-phosphor-500 hover:bg-phosphor-400 text-slate-900 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {isCreating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Plus className="w-4 h-4" />
-          )}
-          <span>New Terminal</span>
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className={clsx("flex flex-col h-full min-h-0", className)}>
+    <div className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}>
       {/* Tab bar */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto">
+      <div className="flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto overflow-y-visible">
         {sessions.map((session) => (
           <button
             key={session.id}
@@ -197,17 +180,16 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 {!session.is_alive && " (dead)"}
               </span>
             )}
-            {sessions.length > 1 && (
-              <button
-                onClick={(e) => handleCloseTab(session.id, e)}
-                className={clsx(
-                  "p-0.5 rounded hover:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity",
-                  session.id === activeId && "opacity-100"
-                )}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
+            <button
+              onClick={(e) => handleCloseTab(session.id, e)}
+              className={clsx(
+                "p-0.5 rounded hover:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity",
+                session.id === activeId && "opacity-100"
+              )}
+              title="Close terminal"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </button>
         ))}
 
@@ -266,6 +248,16 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           </div>
         )}
 
+        {/* Settings button */}
+        <SettingsDropdown
+          fontId={fontId}
+          fontSize={fontSize}
+          setFontId={setFontId}
+          setFontSize={setFontSize}
+          showSettings={showSettings}
+          setShowSettings={setShowSettings}
+        />
+
         {/* Close terminal button */}
         <button
           onClick={() => setOpen(false)}
@@ -278,7 +270,12 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
       {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
-        {layoutMode === "single" ? (
+        {sessions.length === 0 ? (
+          // Empty state - just show hint text
+          <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+            Click <Plus className="w-4 h-4 mx-1 inline" /> to start a terminal
+          </div>
+        ) : layoutMode === "single" ? (
           // Single pane - show active session
           sessions.map((session) => (
             <div
@@ -292,6 +289,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 sessionId={session.id}
                 workingDir={session.working_dir || projectPath}
                 className="h-full"
+                fontFamily={fontFamily}
+                fontSize={fontSize}
               />
             </div>
           ))
@@ -309,6 +308,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 layoutMode={layoutMode}
                 isLast={index === splitPaneCount - 1}
                 paneCount={splitPaneCount}
+                fontFamily={fontFamily}
+                fontSize={fontSize}
               />
             ))}
           </Group>
@@ -325,9 +326,11 @@ interface SplitPaneProps {
   layoutMode: LayoutMode;
   isLast: boolean;
   paneCount: number;
+  fontFamily: string;
+  fontSize: number;
 }
 
-function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: SplitPaneProps) {
+function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize }: SplitPaneProps) {
   const defaultSize = 100 / paneCount;
   const minSize = `${Math.max(10, 100 / (paneCount * 2))}%`; // String percentage for proper sizing
 
@@ -350,6 +353,8 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: Spli
             sessionId={session.id}
             workingDir={session.working_dir || projectPath}
             className="h-full"
+            fontFamily={fontFamily}
+            fontSize={fontSize}
           />
         </div>
       </Panel>
@@ -364,5 +369,117 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount }: Spli
         />
       )}
     </>
+  );
+}
+
+// Settings dropdown component with fixed positioning to escape overflow containers
+interface SettingsDropdownProps {
+  fontId: TerminalFontId;
+  fontSize: TerminalFontSize;
+  setFontId: (id: TerminalFontId) => void;
+  setFontSize: (size: TerminalFontSize) => void;
+  showSettings: boolean;
+  setShowSettings: (show: boolean) => void;
+}
+
+function SettingsDropdown({
+  fontId,
+  fontSize,
+  setFontId,
+  setFontSize,
+  showSettings,
+  setShowSettings,
+}: SettingsDropdownProps) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showSettings) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target as Node) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowSettings(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSettings, setShowSettings]);
+
+  // Calculate dropdown position
+  const getDropdownStyle = (): React.CSSProperties => {
+    if (!buttonRef.current) return {};
+    const rect = buttonRef.current.getBoundingClientRect();
+    return {
+      position: "fixed",
+      right: window.innerWidth - rect.right,
+      bottom: window.innerHeight - rect.top + 4,
+      zIndex: 9999,
+    };
+  };
+
+  return (
+    <div className="relative ml-2">
+      <button
+        ref={buttonRef}
+        onClick={() => setShowSettings(!showSettings)}
+        title="Terminal settings"
+        className={clsx(
+          "p-1.5 rounded transition-colors",
+          showSettings
+            ? "bg-slate-700 text-phosphor-400"
+            : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+        )}
+      >
+        <Settings2 className="w-4 h-4" />
+      </button>
+
+      {/* Settings dropdown - fixed position to escape overflow */}
+      {showSettings && (
+        <div
+          ref={dropdownRef}
+          style={getDropdownStyle()}
+          className="bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3 min-w-[200px]"
+        >
+          {/* Font family */}
+          <div className="mb-3">
+            <label className="block text-xs text-slate-400 mb-1">Font</label>
+            <select
+              value={fontId}
+              onChange={(e) => setFontId(e.target.value as TerminalFontId)}
+              className="w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-phosphor-500"
+            >
+              {TERMINAL_FONTS.map((font) => (
+                <option key={font.id} value={font.id}>
+                  {font.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Font size */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Size</label>
+            <select
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value) as TerminalFontSize)}
+              className="w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-phosphor-500"
+            >
+              {TERMINAL_FONT_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}px
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

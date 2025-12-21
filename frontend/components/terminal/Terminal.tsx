@@ -13,6 +13,8 @@ interface TerminalProps {
   workingDir?: string;
   className?: string;
   onDisconnect?: () => void;
+  fontFamily?: string;
+  fontSize?: number;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead";
@@ -22,6 +24,8 @@ export function TerminalComponent({
   workingDir,
   className,
   onDisconnect,
+  fontFamily = "'JetBrains Mono', monospace",
+  fontSize = 14,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<InstanceType<typeof Terminal> | null>(null);
@@ -29,17 +33,21 @@ export function TerminalComponent({
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
-  // Handle resize
+  // Handle resize - always fit the terminal, send dims only if WS connected
   const handleResize = useCallback(() => {
-    if (fitAddonRef.current && terminalRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+    if (fitAddonRef.current && terminalRef.current) {
       fitAddonRef.current.fit();
-      const dims = fitAddonRef.current.proposeDimensions();
-      if (dims) {
-        wsRef.current.send(
-          JSON.stringify({
-            resize: { cols: dims.cols, rows: dims.rows },
-          })
-        );
+
+      // Only send resize to backend if WS is connected
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const dims = fitAddonRef.current.proposeDimensions();
+        if (dims) {
+          wsRef.current.send(
+            JSON.stringify({
+              resize: { cols: dims.cols, rows: dims.rows },
+            })
+          );
+        }
       }
     }
   }, []);
@@ -65,8 +73,8 @@ export function TerminalComponent({
       // Create terminal
       const term = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontSize: fontSize,
+        fontFamily: fontFamily,
         theme: {
           background: "#0f172a", // slate-900
           foreground: "#e2e8f0", // slate-200
@@ -101,10 +109,17 @@ export function TerminalComponent({
 
       // Open terminal in container
       term.open(containerRef.current);
-      fitAddon.fit();
 
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
+
+      // Fit immediately and again after a short delay to ensure proper sizing
+      fitAddon.fit();
+      setTimeout(() => {
+        if (mounted && fitAddonRef.current) {
+          fitAddonRef.current.fit();
+        }
+      }, 100);
 
       // Connect to WebSocket
       // WebSocket needs to connect directly to backend, not through Next.js
@@ -220,6 +235,18 @@ export function TerminalComponent({
       resizeObserver.disconnect();
     };
   }, [handleResize]);
+
+  // Update font settings when they change
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontFamily = fontFamily;
+      terminalRef.current.options.fontSize = fontSize;
+      // Refit after font change
+      if (fitAddonRef.current) {
+        fitAddonRef.current.fit();
+      }
+    }
+  }, [fontFamily, fontSize]);
 
   return (
     <div className={clsx("relative overflow-hidden", className)}>

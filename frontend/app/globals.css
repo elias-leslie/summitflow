@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Fira+Code:wght@400;500&family=Source+Code+Pro:wght@400;500&family=Roboto+Mono:wght@400;500&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import '@xterm/xterm/css/xterm.css';
 
 @tailwind base;
@@ -365,4 +365,28 @@ body::before {
     rgba(255, 0, 102, 0.5) 80%,
     transparent 100%
   );
+}
+
+/* ============================================================================
+   xterm Terminal Overrides
+   ============================================================================ */
+
+/* Prevent xterm from being stretched by flex layouts */
+.xterm {
+  height: 100% !important;
+}
+
+/* Ensure the viewport doesn't stretch the content */
+.xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* Ensure screen and canvas maintain proper sizing */
+.xterm-screen {
+  width: 100% !important;
+}
+
+/* The canvas should not be stretched - let FitAddon handle sizing */
+.xterm-screen canvas {
+  /* Remove any forced dimensions that could cause stretching */
 }

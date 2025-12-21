@@ -16,12 +16,16 @@ const SUMMITFLOW_PROJECT_ID = "summitflow";
 
 // Logo dimensions
 const LOGO_WIDE_WIDTH = 200;
-const LOGO_SQUARE_SIZE = 56;
 const LOGO_HEIGHT = 56;
+const LOGO_SQUARE_SIZE = 56;
 
-// Cinematic zoom settings - the wide logo zooms from this scale to 1
-// Higher = more zoomed in initially (showing just the sun/center)
-const ZOOM_SCALE = 3.2;
+// Fixed container width - must fit: expanded logo centered, or collapsed logo + text
+const LOGO_CONTAINER_WIDTH = 220;
+
+// In the 200px wide logo, the sun is at x=100 (center)
+// To show a 56px square centered on the sun when collapsed:
+// Shift left by: 100 - (56/2) = 72px
+const LOGO_SHIFT_COLLAPSED = 72;
 
 export function TopBar() {
   const router = useRouter();
@@ -31,8 +35,8 @@ export function TopBar() {
   const { isOpen, toggle } = useTerminalState();
   const selectedProjectId = useSelectedProject();
 
-  // Logo state - starts with square + text, transitions to wide panoramic
-  const [isWideView, setIsWideView] = useState(false);
+  // Logo animation state
+  const [isExpanded, setIsExpanded] = useState(false);
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get current URL on client side
@@ -40,11 +44,11 @@ export function TopBar() {
     setCurrentUrl(window.location.href);
   }, []);
 
-  // Auto-return to default (logo + text) after 3.5 seconds
+  // Auto-collapse after 3.5 seconds
   useEffect(() => {
-    if (isWideView) {
+    if (isExpanded) {
       collapseTimeoutRef.current = setTimeout(() => {
-        setIsWideView(false);
+        setIsExpanded(false);
       }, 3500);
     }
 
@@ -53,134 +57,106 @@ export function TopBar() {
         clearTimeout(collapseTimeoutRef.current);
       }
     };
-  }, [isWideView]);
+  }, [isExpanded]);
 
   const handleLogoClick = () => {
-    // Always navigate to dashboard
     router.push("/");
-
-    // Trigger the cinematic wide view
-    if (!isWideView) {
-      setIsWideView(true);
+    if (!isExpanded) {
+      setIsExpanded(true);
     }
   };
 
   return (
     <>
       <header className="h-20 flex-shrink-0 bg-slate-900 border-b border-slate-700/50 flex items-center px-6 gap-6">
-        {/* Logo - Cinematic "driving into sunset" animation */}
+        {/* Logo Container - FIXED WIDTH to prevent layout shift */}
         <button
           onClick={handleLogoClick}
-          className="flex items-center flex-shrink-0 group focus:outline-none relative"
+          className="flex items-center flex-shrink-0 group focus:outline-none"
           aria-label="Go to dashboard"
-          style={{ height: LOGO_HEIGHT }}
+          style={{
+            width: LOGO_CONTAINER_WIDTH,
+            height: LOGO_HEIGHT,
+          }}
         >
-          {/* Logo container - animates width for the reveal */}
+          {/* Inner flex container - centers content when expanded */}
           <div
-            className="relative overflow-hidden"
+            className="flex items-center"
             style={{
-              width: isWideView ? LOGO_WIDE_WIDTH : LOGO_SQUARE_SIZE,
-              height: LOGO_HEIGHT,
-              transition: 'width 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              // When expanded: center the logo within the container
+              // When collapsed: align left (logo + text side by side)
+              justifyContent: isExpanded ? "center" : "flex-start",
+              width: "100%",
+              transition: "justify-content 0.3s ease-out",
             }}
           >
-            {/* Wide panoramic logo - the "full scene" that zooms out */}
+            {/* Logo wrapper - width animates between square and wide */}
             <div
-              className="absolute inset-0"
+              className="relative flex-shrink-0 overflow-hidden"
               style={{
-                // Transform origin set to where the sun is in the wide logo (~55% from left)
-                transformOrigin: '55% 50%',
-                // Start zoomed in, animate to full view
-                transform: isWideView ? 'scale(1)' : `scale(${ZOOM_SCALE})`,
-                opacity: isWideView ? 1 : 0,
-                transition: `transform 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease-out ${isWideView ? '0s' : '0.3s'}`,
-                filter: isWideView
-                  ? 'drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.2))'
-                  : 'drop-shadow(0 0 10px rgba(255,102,0,0.2))',
+                width: isExpanded ? LOGO_WIDE_WIDTH : LOGO_SQUARE_SIZE,
+                height: LOGO_HEIGHT,
+                transition: "width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
               }}
             >
+              {/* Wide logo - shifts to show center when collapsed */}
               <Image
-                src="/logo-wide.svg"
+                src="/logo-wide-v4.svg"
                 alt="SummitFlow"
                 width={LOGO_WIDE_WIDTH}
                 height={LOGO_HEIGHT}
-                className="w-full h-full object-cover"
+                className="h-full"
+                style={{
+                  width: LOGO_WIDE_WIDTH,
+                  minWidth: LOGO_WIDE_WIDTH,
+                  // Shift left when collapsed to center the sun in the 56px window
+                  transform: isExpanded
+                    ? "translateX(0)"
+                    : `translateX(-${LOGO_SHIFT_COLLAPSED}px)`,
+                  transition: "transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                  filter: isExpanded
+                    ? "drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.2))"
+                    : "drop-shadow(0 0 12px rgba(255,102,0,0.3)) drop-shadow(0 0 24px rgba(255,0,102,0.15))",
+                }}
                 priority
               />
             </div>
 
-            {/* Square focused logo - fades out as we "drive into" the scene */}
+            {/* Text - collapses via max-width, NO opacity fade */}
             <div
-              className="absolute inset-0 flex items-center justify-center"
+              className="overflow-hidden flex-shrink-0"
               style={{
-                opacity: isWideView ? 0 : 1,
-                transform: isWideView ? 'scale(0.8)' : 'scale(1)',
-                transition: `opacity 0.5s ease-out, transform 0.5s ease-out`,
-                filter: 'drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.25))',
+                maxWidth: isExpanded ? 0 : 140,
+                marginLeft: isExpanded ? 0 : 12,
+                transition:
+                  "max-width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
               }}
             >
-              <Image
-                src="/logo.svg"
-                alt="SummitFlow"
-                width={LOGO_SQUARE_SIZE}
-                height={LOGO_SQUARE_SIZE}
-                className="w-full h-full object-contain"
-              />
+              <span
+                className="font-semibold text-xl tracking-tight whitespace-nowrap block"
+                style={{
+                  background:
+                    "linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                  // Slide left as it collapses
+                  transform: isExpanded ? "translateX(-20px)" : "translateX(0)",
+                  transition: "transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                }}
+              >
+                SummitFlow
+              </span>
             </div>
-
-            {/* Cinematic light flare during transition */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: 'radial-gradient(ellipse at 55% 40%, rgba(255,200,100,0.4) 0%, transparent 50%)',
-                opacity: isWideView ? 0 : 0,
-                animation: isWideView ? 'cinematicFlare 1.2s ease-out forwards' : 'none',
-              }}
-            />
-
-            {/* Horizon glow that intensifies during the "drive" */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: 'linear-gradient(to top, rgba(255,0,102,0.15) 0%, transparent 40%)',
-                opacity: isWideView ? 1 : 0,
-                transition: 'opacity 0.8s ease-out 0.3s',
-              }}
-            />
-          </div>
-
-          {/* Text container - slides away as we enter the wide view */}
-          <div
-            className="overflow-hidden"
-            style={{
-              maxWidth: isWideView ? '0px' : '200px',
-              marginLeft: isWideView ? '0px' : '16px',
-              opacity: isWideView ? 0 : 1,
-              transition: `max-width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease-out`,
-            }}
-          >
-            <span
-              className="display font-semibold text-xl tracking-tight whitespace-nowrap block"
-              style={{
-                background: 'linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                textShadow: '0 0 40px rgba(255,102,0,0.5), 0 0 80px rgba(255,0,102,0.3)',
-                transform: isWideView ? 'translateX(-40px) scale(0.9)' : 'translateX(0) scale(1)',
-                transition: 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              }}
-            >
-              SummitFlow
-            </span>
           </div>
 
           {/* Subtle hover glow */}
           <div
-            className="absolute inset-0 pointer-events-none rounded opacity-0 group-hover:opacity-100"
+            className="absolute inset-0 pointer-events-none rounded-lg opacity-0 group-hover:opacity-100"
             style={{
-              boxShadow: '0 0 30px rgba(255,102,0,0.08), 0 0 60px rgba(255,0,102,0.05)',
-              transition: 'opacity 0.3s ease-out',
+              boxShadow:
+                "0 0 30px rgba(255,102,0,0.08), 0 0 60px rgba(255,0,102,0.05)",
+              transition: "opacity 0.3s ease-out",
             }}
           />
         </button>
@@ -204,8 +180,9 @@ export function TopBar() {
         {/* Search */}
         <div className="hidden md:block">
           <div
-            className={`relative transition-all duration-300 ${isSearchFocused ? "scale-[1.02]" : ""
-              }`}
+            className={`relative transition-all duration-300 ${
+              isSearchFocused ? "scale-[1.02]" : ""
+            }`}
           >
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
             <input
@@ -222,10 +199,11 @@ export function TopBar() {
           {/* Terminal toggle */}
           <button
             onClick={toggle}
-            className={`p-3 rounded-lg transition-all duration-200 ${isOpen
+            className={`p-3 rounded-lg transition-all duration-200 ${
+              isOpen
                 ? "bg-outrun-500/20 text-outrun-400 shadow-outrun-sm"
                 : "text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400"
-              }`}
+            }`}
             title={isOpen ? "Close Terminal" : "Open Terminal"}
           >
             <Terminal className="w-5 h-5" />
@@ -270,24 +248,6 @@ export function TopBar() {
           setCaptureModalOpen(false);
         }}
       />
-
-      {/* Keyframe animations for cinematic effects */}
-      <style jsx global>{`
-        @keyframes cinematicFlare {
-          0% {
-            opacity: 0;
-            transform: scale(0.8);
-          }
-          30% {
-            opacity: 0.6;
-            transform: scale(1.1);
-          }
-          100% {
-            opacity: 0;
-            transform: scale(1.5);
-          }
-        }
-      `}</style>
     </>
   );
 }
