@@ -57,6 +57,20 @@ const config: Config = {
           600: "#00d4dd", // Darker cyan
           700: "#00b3bb", // Darkest cyan
         },
+        // Semantic priority colors
+        priority: {
+          critical: "#ff0066", // outrun-500
+          high: "#ff6600", // sunset-orange
+          medium: "#f59e0b", // amber-500
+          low: "#64748b", // slate-500
+        },
+        // Semantic status colors
+        status: {
+          success: "#00f5ff", // phosphor-500
+          warning: "#f59e0b", // amber-500
+          error: "#f43f5e", // rose-500
+          info: "#3b82f6", // blue-500
+        },
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', '"Fira Code"', "monospace"],
