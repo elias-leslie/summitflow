@@ -57,8 +57,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
         router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=bug`);
         break;
       case "blocked":
-        // TODO: Blocked filter needs backend support - for now show active tasks
-        router.push(`/projects/${project.id}?tab=tasks&status=active`);
+        // Show blocked tasks (have incomplete dependencies)
+        router.push(`/projects/${project.id}?tab=tasks&status=blocked`);
         break;
     }
   };

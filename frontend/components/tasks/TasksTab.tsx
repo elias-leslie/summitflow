@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   fetchTasks,
+  fetchBlockedTasks,
   fetchFeatures,
   updateTaskStatus,
   type Task,
@@ -288,12 +289,32 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const {
     data: tasksData,
     isLoading: tasksLoading,
-    refetch,
+    refetch: refetchTasks,
   } = useQuery({
     queryKey: ["tasks", projectId, "all"],
     queryFn: () => fetchTasks(projectId, { limit: 500 }),
     staleTime: 30000,
   });
+
+  // Fetch blocked tasks (separate query since it's a different endpoint)
+  const {
+    data: blockedTasksData,
+    isLoading: blockedLoading,
+    refetch: refetchBlocked,
+  } = useQuery({
+    queryKey: ["tasks", projectId, "blocked"],
+    queryFn: () => fetchBlockedTasks(projectId, 500),
+    staleTime: 30000,
+    enabled: filters.status === "blocked", // Only fetch when filter is blocked
+  });
+
+  // Unified refetch function
+  const refetch = () => {
+    refetchTasks();
+    if (filters.status === "blocked") {
+      refetchBlocked();
+    }
+  };
 
   // Fetch features for linking
   const { data: featuresData } = useQuery({
@@ -330,15 +351,19 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
   // Apply client-side filters
   const filteredTasks = useMemo(() => {
-    const tasks = tasksData?.tasks || [];
+    // For "blocked" status, use the blocked tasks endpoint data
+    const tasks = filters.status === "blocked"
+      ? (blockedTasksData?.tasks || [])
+      : (tasksData?.tasks || []);
+
     return tasks.filter((task) => {
       // Type filter
       if (filters.type !== "all" && task.task_type !== filters.type) {
         return false;
       }
 
-      // Status filter
-      if (filters.status !== "all") {
+      // Status filter (skip for "blocked" since we already fetched blocked tasks)
+      if (filters.status !== "all" && filters.status !== "blocked") {
         if (filters.status === "active") {
           if (task.status === "completed" || task.status === "failed") {
             return false;
@@ -365,9 +390,10 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
       return true;
     });
-  }, [tasksData, filters]);
+  }, [tasksData, blockedTasksData, filters]);
 
   const isUpdating = statusMutation.isPending;
+  const isLoading = filters.status === "blocked" ? blockedLoading : tasksLoading;
 
   return (
     <div className="space-y-4">
@@ -383,9 +409,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
             size="sm"
             variant="outline"
             onClick={() => refetch()}
-            disabled={tasksLoading}
+            disabled={isLoading}
           >
-            <RefreshCw className={cn("w-4 h-4", tasksLoading && "animate-spin")} />
+            <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
           </Button>
           <Button size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="w-4 h-4 mr-1" />
@@ -396,7 +422,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
       {/* Tasks Table */}
       <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
-        {tasksLoading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
           </div>

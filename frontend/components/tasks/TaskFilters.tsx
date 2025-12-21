@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 export interface TaskFilterValues {
   type: TaskType | "all";
-  status: TaskStatus | "all" | "active";
+  status: TaskStatus | "all" | "active" | "blocked";
   priority: number | "all";
   featureId: number | "all";
   standaloneOnly: boolean;
@@ -23,6 +23,7 @@ interface TaskFiltersProps {
 const STATUS_OPTIONS = [
   { value: "all", label: "All Status" },
   { value: "active", label: "Active" },
+  { value: "blocked", label: "Blocked" },
   { value: "pending", label: "Pending" },
   { value: "running", label: "Running" },
   { value: "completed", label: "Completed" },

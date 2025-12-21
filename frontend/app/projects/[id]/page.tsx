@@ -80,7 +80,7 @@ export default function ProjectDetailPage() {
   const urlTaskStatus = searchParams.get("status");
   const urlTaskType = searchParams.get("taskType");
   const taskInitialFilters: Partial<TaskFilterValues> = {};
-  if (urlTaskStatus && ["all", "active", "pending", "running", "completed", "failed"].includes(urlTaskStatus)) {
+  if (urlTaskStatus && ["all", "active", "blocked", "pending", "running", "completed", "failed"].includes(urlTaskStatus)) {
     taskInitialFilters.status = urlTaskStatus as TaskFilterValues["status"];
   }
   if (urlTaskType && ["all", "feature", "bug", "task"].includes(urlTaskType)) {
