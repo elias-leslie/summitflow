@@ -12,7 +12,7 @@ import logging
 import os
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import LLMClient, LLMResponse
 
@@ -39,6 +39,10 @@ class GeminiClient(LLMClient):
         - "gemini-2.5-flash": Previous generation fast model
         - "gemini-2.5-pro": Previous generation pro model
     """
+
+    # Class-level session storage for persistence across calls
+    _session_service: ClassVar[Any] = None  # InMemorySessionService instance
+    _active_sessions: ClassVar[dict[str, str]] = {}  # Maps our session IDs to ADK session IDs
 
     def __init__(
         self,
@@ -251,7 +255,8 @@ class GeminiClient(LLMClient):
         write_enabled: bool = False,
         yolo_mode: bool = False,
         working_dir: str | None = None,
-    ) -> AsyncGenerator[Any, None]:
+        session_id: str | None = None,
+    ) -> AsyncGenerator[tuple[Any, str], None]:
         """Generate using ADK's native agent framework with tool callbacks.
 
         Uses google-adk's LlmAgent with before_tool_callback for permission
@@ -264,9 +269,11 @@ class GeminiClient(LLMClient):
             write_enabled: Whether write tools are enabled
             yolo_mode: Auto-approve all write tool requests
             working_dir: Working directory (not used directly by ADK)
+            session_id: Gemini session ID to resume (optional)
 
         Yields:
-            ADK event objects as they stream in
+            Tuple of (ADK event object, gemini_session_id).
+            gemini_session_id is the same for all yields in a session.
         """
         from google.adk.agents import LlmAgent
         from google.adk.runners import Runner
@@ -284,17 +291,28 @@ class GeminiClient(LLMClient):
             ),
         )
 
-        # Create session service and runner
-        session_service = InMemorySessionService()
+        # Initialize class-level session service if needed
+        if GeminiClient._session_service is None:
+            GeminiClient._session_service = InMemorySessionService()
+
+        # Use the shared session service for persistence
         runner = Runner(
             agent=agent,
             app_name="roundtable",
-            session_service=session_service,
+            session_service=GeminiClient._session_service,
         )
 
-        # Generate unique IDs for this invocation
-        user_id = f"user-{uuid.uuid4().hex[:8]}"
-        session_id = f"session-{uuid.uuid4().hex[:8]}"
+        # Reuse existing session ID or generate new one
+        if session_id and session_id in GeminiClient._active_sessions:
+            gemini_session_id = session_id
+            logger.info(f"Resuming Gemini session: {gemini_session_id}")
+        else:
+            gemini_session_id = f"gemini-{uuid.uuid4().hex[:12]}"
+            GeminiClient._active_sessions[gemini_session_id] = gemini_session_id
+            logger.info(f"Created new Gemini session: {gemini_session_id}")
+
+        # Use a consistent user ID for the session
+        user_id = f"user-{gemini_session_id[:8]}"
 
         # Create the message content
         message_content = types.Content(
@@ -305,10 +323,10 @@ class GeminiClient(LLMClient):
         try:
             async for event in runner.run_async(
                 user_id=user_id,
-                session_id=session_id,
+                session_id=gemini_session_id,
                 new_message=message_content,
             ):
-                yield event
+                yield (event, gemini_session_id)
         except Exception as e:
             logger.error(f"Gemini ADK native tool error: {e}")
             raise RuntimeError(f"Gemini ADK native tool error: {e}") from e
