@@ -3,11 +3,13 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
 
 const STORAGE_KEY_WIDTH = "terminal-width";
+const STORAGE_KEY_HEIGHT = "terminal-height";
 const STORAGE_KEY_LAYOUT_MODE = "terminal-layout-mode";
 const STORAGE_KEY_PANE_SIZES = "terminal-pane-sizes";
 const STORAGE_KEY_PANE_SESSIONS = "terminal-pane-sessions";
 
 const DEFAULT_WIDTH = 40; // 40% default width
+const DEFAULT_HEIGHT = 30; // 30% default height for bottom panel
 
 export type LayoutMode = "single" | "horizontal" | "vertical";
 
@@ -18,11 +20,13 @@ const DEFAULT_PANE_SIZES = [50, 50]; // Equal split for two panes
 interface TerminalStateContextType {
   isOpen: boolean;
   width: number;
+  height: number;
   layoutMode: LayoutMode;
   paneSizes: number[];
   paneSessions: string[];
   setOpen: (open: boolean) => void;
   setWidth: (width: number) => void;
+  setHeight: (height: number) => void;
   setLayoutMode: (mode: LayoutMode) => void;
   setPaneSizes: (sizes: number[]) => void;
   setPaneSessions: (sessions: string[]) => void;
@@ -39,6 +43,7 @@ export function TerminalStateProvider({ children }: { children: ReactNode }) {
   // Default to closed on initial render (SSR-safe)
   const [isOpen, setIsOpenState] = useState(false);
   const [width, setWidthState] = useState(DEFAULT_WIDTH);
+  const [height, setHeightState] = useState(DEFAULT_HEIGHT);
   const [layoutMode, setLayoutModeState] = useState<LayoutMode>(DEFAULT_LAYOUT_MODE);
   const [paneSizes, setPaneSizesState] = useState<number[]>(DEFAULT_PANE_SIZES);
   const [paneSessions, setPaneSessionsState] = useState<string[]>([]);
@@ -51,6 +56,7 @@ export function TerminalStateProvider({ children }: { children: ReactNode }) {
 
     try {
       const storedWidth = localStorage.getItem(STORAGE_KEY_WIDTH);
+      const storedHeight = localStorage.getItem(STORAGE_KEY_HEIGHT);
       const storedLayoutMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
       const storedPaneSizes = localStorage.getItem(STORAGE_KEY_PANE_SIZES);
       const storedPaneSessions = localStorage.getItem(STORAGE_KEY_PANE_SESSIONS);
@@ -59,6 +65,13 @@ export function TerminalStateProvider({ children }: { children: ReactNode }) {
         const parsed = parseFloat(storedWidth);
         if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
           setWidthState(parsed);
+        }
+      }
+
+      if (storedHeight !== null) {
+        const parsed = parseFloat(storedHeight);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+          setHeightState(parsed);
         }
       }
 
@@ -103,6 +116,16 @@ export function TerminalStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Persist height to localStorage
+  const setHeight = useCallback((newHeight: number) => {
+    setHeightState(newHeight);
+    try {
+      localStorage.setItem(STORAGE_KEY_HEIGHT, String(newHeight));
+    } catch {
+      // localStorage not available
+    }
+  }, []);
+
   // Toggle open state
   const toggle = useCallback(() => {
     setIsOpenState((prev) => !prev);
@@ -141,11 +164,13 @@ export function TerminalStateProvider({ children }: { children: ReactNode }) {
   const value: TerminalStateContextType = {
     isOpen,
     width,
+    height,
     layoutMode,
     paneSizes,
     paneSessions,
     setOpen,
     setWidth,
+    setHeight,
     setLayoutMode,
     setPaneSizes,
     setPaneSessions,

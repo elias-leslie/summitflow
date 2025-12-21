@@ -25,14 +25,14 @@ function extractProjectId(pathname: string | null): string | undefined {
 }
 
 /**
- * Application shell with resizable terminal panel.
+ * Application shell with resizable terminal panel at bottom.
  *
- * Desktop: Side-by-side panels with drag handle
- * Mobile: Full-screen overlay (handled in Phase 5)
+ * Desktop: Vertical panels with drag handle
+ * Mobile: Full-screen overlay
  */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const { isOpen, width, setWidth, toggle, isInitialized } = useTerminalState();
+  const { isOpen, height, setHeight, toggle, isInitialized } = useTerminalState();
   const isMobile = useIsMobile();
 
   // Extract project ID from URL for context-aware working directory
@@ -48,13 +48,6 @@ export function AppShell({ children }: AppShellProps) {
 
   // Use project root_path, fallback to home directory
   const projectPath = project?.root_path ?? "/home/kasadis";
-
-  // Convert width percentage to min size in percentage
-  // Minimum 300px, but we need percentage for PanelGroup
-  // Assuming typical screen width of 1920px, 300px ≈ 15.6%
-  // We'll use a fixed minSize of 15 and maxSize of 70
-  const MIN_SIZE = 15;
-  const MAX_SIZE = 70;
 
   // Don't render terminal panel until state is initialized from localStorage
   // This prevents flash of default state
@@ -109,7 +102,7 @@ export function AppShell({ children }: AppShellProps) {
     );
   }
 
-  // Desktop: side-by-side resizable panels
+  // Desktop: terminal closed - full content area
   if (!isOpen) {
     return (
       <div className="flex-1 overflow-auto">
@@ -118,14 +111,16 @@ export function AppShell({ children }: AppShellProps) {
     );
   }
 
+  // Desktop: vertical panels with terminal at bottom
   return (
     <Group
-      orientation="horizontal"
+      orientation="vertical"
       className="flex-1 h-full min-h-0"
-      defaultLayout={{ main: 100 - width, terminal: width }}
-      onLayoutChange={(layout) => {
+      defaultLayout={{ main: 100 - height, terminal: height }}
+      onLayoutChange={(layout: { main?: number; terminal?: number }) => {
+        // terminal is the terminal panel size
         if (layout.terminal !== undefined) {
-          setWidth(layout.terminal);
+          setHeight(layout.terminal);
         }
       }}
     >
@@ -133,8 +128,8 @@ export function AppShell({ children }: AppShellProps) {
       <Panel
         id="main"
         minSize="30%"
-        maxSize="85%"
-        className="overflow-auto h-full"
+        maxSize="90%"
+        className="overflow-auto"
       >
         <div className="h-full w-full overflow-auto">
           {children}
@@ -142,17 +137,18 @@ export function AppShell({ children }: AppShellProps) {
       </Panel>
 
       {/* Resize handle */}
-      <Separator className="w-1 bg-slate-700 hover:bg-slate-600 active:bg-phosphor-500 cursor-col-resize transition-colors" />
+      <Separator className="h-1 bg-slate-800 hover:bg-slate-600 active:bg-phosphor-500 cursor-ns-resize transition-colors" />
 
       {/* Terminal panel */}
       <Panel
         id="terminal"
-        minSize="15%"
-        maxSize="70%"
-        className="bg-slate-900 flex flex-col h-full min-h-0 overflow-hidden"
+        minSize="10%"
+        maxSize="50%"
+        className="bg-slate-900 flex flex-col min-h-0 overflow-hidden"
       >
         <TerminalTabs
           projectId={activeProjectId}
+          projectPath={projectPath}
           className="flex-1 min-h-0"
         />
       </Panel>
