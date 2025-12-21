@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Projects - SummitFlow</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --slate-950: #0a0c0f;
+      --slate-900: #0f1115;
+      --slate-850: #14171c;
+      --slate-800: #1a1e24;
+      --slate-750: #21262d;
+      --slate-700: #2d333b;
+      --slate-600: #3d444d;
+      --slate-500: #545d68;
+      --slate-400: #7d8590;
+      --slate-300: #a8b1bb;
+      --slate-200: #d0d7de;
+      --phosphor-500: #00c853;
+      --phosphor-400: #00e676;
+      --phosphor-600: #00a344;
+      --amber-500: #f59e0b;
+      --amber-400: #fbbf24;
+      --rose-500: #f43f5e;
+      --rose-400: #fb7185;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      background: var(--slate-950);
+      color: var(--slate-300);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .display { font-family: 'Space Grotesk', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* TopBar */
+    .topbar {
+      height: 56px;
+      background: var(--slate-900);
+      border-bottom: 1px solid var(--slate-800);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: white;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--phosphor-500), var(--phosphor-600));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 12px rgba(0, 200, 83, 0.3);
+    }
+
+    .logo-text { font-weight: 600; font-size: 16px; }
+    .divider { width: 1px; height: 24px; background: var(--slate-700); }
+
+    .project-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: var(--slate-800);
+      border: 1px solid var(--slate-700);
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--slate-200);
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+
+    .project-selector:hover { border-color: var(--slate-600); }
+
+    .health-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--phosphor-500);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--phosphor-500);
+    }
+
+    .health-dot.warning { background: var(--amber-500); box-shadow: 0 0 8px var(--amber-500); }
+    .health-dot.error { background: var(--rose-500); box-shadow: 0 0 8px var(--rose-500); }
+    .health-dot.unknown { background: var(--slate-500); box-shadow: none; }
+
+    .nav-pills { display: flex; align-items: center; gap: 4px; margin-left: 16px; }
+
+    .nav-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: var(--slate-400);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .nav-pill:hover { background: var(--slate-800); color: var(--slate-200); }
+    .nav-pill.active { background: rgba(0, 200, 83, 0.12); color: var(--phosphor-400); }
+    .nav-pill svg { width: 14px; height: 14px; }
+
+    .topbar-right { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--slate-850);
+      border: 1px solid var(--slate-700);
+      border-radius: 8px;
+      max-width: 280px;
+      flex: 1;
+    }
+
+    .search-box input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--slate-300);
+      font-size: 13px;
+      width: 100%;
+    }
+
+    .search-box input::placeholder { color: var(--slate-500); }
+    .search-box svg { color: var(--slate-500); width: 14px; height: 14px; flex-shrink: 0; }
+
+    .kbd {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--slate-800);
+      border: 1px solid var(--slate-700);
+      border-radius: 4px;
+      color: var(--slate-500);
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      color: var(--slate-400);
+      cursor: pointer;
+      transition: all 0.15s;
+      background: none;
+      border: none;
+    }
+
+    .icon-btn:hover { background: var(--slate-800); color: var(--slate-200); }
+    .icon-btn svg { width: 18px; height: 18px; }
+
+    /* Main Content */
+    .main-wrapper { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .main-content { flex: 1; overflow: auto; padding: 24px; }
+
+    /* Page Header */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .page-header-left h1 { font-size: 24px; font-weight: 600; color: white; margin-bottom: 4px; }
+    .page-header-left p { color: var(--slate-400); font-size: 14px; }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--phosphor-500);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary:hover { background: var(--phosphor-400); }
+    .btn-primary svg { width: 16px; height: 16px; }
+
+    /* Projects Grid */
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 16px;
+    }
+
+    .project-card {
+      background: linear-gradient(135deg, var(--slate-850), var(--slate-900));
+      border: 1px solid var(--slate-750);
+      border-radius: 12px;
+      padding: 20px;
+      transition: all 0.2s;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .project-card:hover { border-color: var(--phosphor-500); transform: translateY(-2px); }
+
+    .project-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .project-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .project-info { flex: 1; min-width: 0; }
+    .project-name { color: white; font-weight: 600; font-size: 16px; margin-bottom: 4px; }
+    .project-url { color: var(--slate-500); font-size: 12px; word-break: break-all; }
+
+    .project-health {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      background: var(--slate-800);
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    .project-health.healthy { color: var(--phosphor-400); }
+    .project-health.warning { color: var(--amber-400); }
+    .project-health.error { color: var(--rose-400); }
+
+    .project-card-stats {
+      display: flex;
+      gap: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--slate-800);
+    }
+
+    .project-stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .project-stat-value { color: var(--slate-200); font-weight: 500; font-size: 14px; }
+    .project-stat-label { color: var(--slate-500); font-size: 12px; }
+
+    .project-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--slate-800);
+    }
+
+    .project-date { color: var(--slate-500); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .project-date svg { width: 14px; height: 14px; }
+
+    .project-actions { display: flex; gap: 4px; }
+
+    .project-action {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      color: var(--slate-400);
+      cursor: pointer;
+      transition: all 0.15s;
+      background: none;
+      border: none;
+    }
+
+    .project-action:hover { background: var(--slate-700); color: var(--slate-200); }
+    .project-action svg { width: 16px; height: 16px; }
+
+    /* Empty State */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 20px;
+      text-align: center;
+    }
+
+    .empty-state-icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      background: var(--slate-850);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .empty-state-icon svg { width: 40px; height: 40px; color: var(--slate-600); }
+    .empty-state h3 { color: var(--slate-200); font-size: 18px; margin-bottom: 8px; }
+    .empty-state p { color: var(--slate-500); font-size: 14px; margin-bottom: 24px; }
+
+    /* Terminal */
+    .resize-handle {
+      height: 4px;
+      background: var(--slate-800);
+      cursor: ns-resize;
+      transition: background 0.15s;
+    }
+
+    .resize-handle:hover { background: var(--phosphor-500); }
+
+    .terminal-panel {
+      background: var(--slate-950);
+      border-top: 1px solid var(--slate-800);
+      height: 180px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: var(--slate-900);
+      border-bottom: 1px solid var(--slate-800);
+    }
+
+    .terminal-tabs { display: flex; gap: 4px; }
+
+    .terminal-tab {
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--slate-400);
+      border-radius: 4px;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+
+    .terminal-tab.active { background: var(--slate-800); color: var(--slate-200); }
+
+    .terminal-body {
+      flex: 1;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--slate-400);
+      overflow: auto;
+    }
+
+    .terminal-line { margin-bottom: 4px; }
+    .terminal-prompt { color: var(--phosphor-500); }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+
+    @media (max-width: 768px) {
+      .nav-pills, .logo-text { display: none; }
+      .projects-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- TopBar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="dashboard.html" class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" width="16" height="16">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <span class="logo-text display">SummitFlow</span>
+      </a>
+
+      <div class="divider"></div>
+
+      <button class="project-selector">
+        <div class="health-dot"></div>
+        <span>All Projects</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+
+      <nav class="nav-pills">
+        <a href="dashboard.html" class="nav-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          Dashboard
+        </a>
+        <a href="explorer.html" class="nav-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10"/><path d="M2 12h20"/>
+          </svg>
+          Explorer
+        </a>
+        <a href="project-detail.html" class="nav-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+          </svg>
+          Features
+        </a>
+        <a href="kanban.html" class="nav-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Tasks
+        </a>
+      </nav>
+    </div>
+
+    <div class="topbar-right">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" placeholder="Search projects, features, files...">
+        <span class="kbd mono">⌘K</span>
+      </div>
+      <button class="icon-btn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+      <button class="icon-btn" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="main-wrapper">
+    <main class="main-content">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="display">Projects</h1>
+          <p>Manage your registered development projects</p>
+        </div>
+        <button class="btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Project
+        </button>
+      </div>
+
+      <div class="projects-grid">
+        <!-- Project 1 -->
+        <a href="project-detail.html" class="project-card">
+          <div class="project-card-header">
+            <div class="project-avatar" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">P</div>
+            <div class="project-info">
+              <div class="project-name">Portfolio-AI</div>
+              <div class="project-url mono">https://portfolio-ai.dev</div>
+            </div>
+            <div class="project-health healthy">
+              <div class="health-dot"></div>
+              <span>Healthy</span>
+            </div>
+          </div>
+
+          <div class="project-card-stats">
+            <div class="project-stat">
+              <span class="project-stat-value">12</span>
+              <span class="project-stat-label">features</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">8</span>
+              <span class="project-stat-label">tasks</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">156</span>
+              <span class="project-stat-label">files tracked</span>
+            </div>
+          </div>
+
+          <div class="project-card-footer">
+            <div class="project-date">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Created Dec 1, 2024
+            </div>
+            <div class="project-actions">
+              <button class="project-action" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </button>
+              <button class="project-action" title="Open">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </a>
+
+        <!-- Project 2 -->
+        <a href="project-detail.html" class="project-card">
+          <div class="project-card-header">
+            <div class="project-avatar" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">S</div>
+            <div class="project-info">
+              <div class="project-name">SummitFlow</div>
+              <div class="project-url mono">https://dev.summitflow.dev</div>
+            </div>
+            <div class="project-health healthy">
+              <div class="health-dot"></div>
+              <span>Healthy</span>
+            </div>
+          </div>
+
+          <div class="project-card-stats">
+            <div class="project-stat">
+              <span class="project-stat-value">8</span>
+              <span class="project-stat-label">features</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">15</span>
+              <span class="project-stat-label">tasks</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">234</span>
+              <span class="project-stat-label">files tracked</span>
+            </div>
+          </div>
+
+          <div class="project-card-footer">
+            <div class="project-date">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Created Nov 15, 2024
+            </div>
+            <div class="project-actions">
+              <button class="project-action" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </button>
+              <button class="project-action" title="Open">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </a>
+
+        <!-- Project 3 - Warning state -->
+        <a href="project-detail.html" class="project-card">
+          <div class="project-card-header">
+            <div class="project-avatar" style="background: linear-gradient(135deg, #f59e0b, #d97706);">T</div>
+            <div class="project-info">
+              <div class="project-name">Trading Bot</div>
+              <div class="project-url mono">https://trade.example.com</div>
+            </div>
+            <div class="project-health warning">
+              <div class="health-dot warning"></div>
+              <span>Degraded</span>
+            </div>
+          </div>
+
+          <div class="project-card-stats">
+            <div class="project-stat">
+              <span class="project-stat-value">4</span>
+              <span class="project-stat-label">features</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">3</span>
+              <span class="project-stat-label">tasks</span>
+            </div>
+            <div class="project-stat">
+              <span class="project-stat-value">42</span>
+              <span class="project-stat-label">files tracked</span>
+            </div>
+          </div>
+
+          <div class="project-card-footer">
+            <div class="project-date">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Created Dec 10, 2024
+            </div>
+            <div class="project-actions">
+              <button class="project-action" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </button>
+              <button class="project-action" title="Open">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </a>
+      </div>
+    </main>
+
+    <div class="resize-handle"></div>
+
+    <div class="terminal-panel">
+      <div class="terminal-header">
+        <div class="terminal-tabs">
+          <button class="terminal-tab active mono">Terminal 1</button>
+          <button class="terminal-tab mono">+ New</button>
+        </div>
+        <button class="icon-btn" style="width: 28px; height: 28px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="terminal-body mono">
+        <div class="terminal-line"><span class="terminal-prompt">~ $</span> st project list</div>
+        <div class="terminal-line" style="color: var(--slate-300);">3 projects registered:</div>
+        <div class="terminal-line">  portfolio-ai    <span style="color: var(--phosphor-400);">●</span> healthy    https://portfolio-ai.dev</div>
+        <div class="terminal-line">  summitflow      <span style="color: var(--phosphor-400);">●</span> healthy    https://dev.summitflow.dev</div>
+        <div class="terminal-line">  trading-bot     <span style="color: var(--amber-400);">●</span> degraded   https://trade.example.com</div>
+        <div class="terminal-line" style="margin-top: 8px;"><span class="terminal-prompt">~ $</span> <span style="animation: blink 1s infinite;">▋</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
