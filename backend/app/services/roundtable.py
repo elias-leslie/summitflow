@@ -867,6 +867,56 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
         return responses
 
     # =========================================================================
+    # Prompt Configuration
+    # =========================================================================
+
+    def get_effective_prompt(
+        self, project_id: str, prompt_type: str
+    ) -> dict[str, Any]:
+        """Get the effective prompt for a project (custom or default).
+
+        Args:
+            project_id: Project ID
+            prompt_type: Type of prompt (feature_extraction, vision_extraction, goals_extraction)
+
+        Returns:
+            Prompt configuration dict with prompt_text, primary_agent, primary_model, etc.
+        """
+        from app.storage import extraction_prompts
+
+        prompt = extraction_prompts.get_extraction_prompt(project_id, prompt_type)
+        if prompt:
+            return prompt
+
+        # Fallback to class-level defaults (legacy)
+        if prompt_type == "feature_extraction":
+            return {
+                "prompt_text": self.FEATURE_EXTRACTION_PROMPT,
+                "primary_agent": "gemini",
+                "primary_model": "gemini-3-flash-preview",
+                "verification_enabled": False,
+                "is_default": True,
+            }
+        elif prompt_type == "vision_extraction":
+            return {
+                "prompt_text": self.VISION_EXTRACTION_PROMPT,
+                "primary_agent": "claude",
+                "primary_model": "claude-sonnet-4-5",
+                "verification_enabled": False,
+                "is_default": True,
+            }
+        elif prompt_type == "goals_extraction":
+            return {
+                "prompt_text": self.GOALS_EXTRACTION_PROMPT,
+                "primary_agent": "claude",
+                "primary_model": "claude-sonnet-4-5",
+                "verification_enabled": False,
+                "is_default": True,
+            }
+
+        return {"prompt_text": "", "primary_agent": "claude", "is_default": True}
+
+    # =========================================================================
     # Spec-Driven Mode: Feature Extraction
     # =========================================================================
 
@@ -977,7 +1027,8 @@ CONVERSATION:
     ) -> dict:
         """Extract vision (mission + narratives) from a Roundtable conversation.
 
-        Uses session's agent_override if set, otherwise uses provided agent_type.
+        Uses configurable prompts from DB if available. Falls back to defaults.
+        Uses session's agent_override if set, otherwise uses prompt's primary_agent.
 
         Args:
             session: The roundtable session to analyze
@@ -991,15 +1042,23 @@ CONVERSATION:
 
         context = session.get_context(max_messages=50)
 
-        # Use session override if set, otherwise use provided agent_type
-        effective_agent = session.get_effective_agent(agent_type)
+        # Get effective prompt config (custom or default)
+        prompt_config = self.get_effective_prompt(session.project_id, "vision_extraction")
+        prompt_text = prompt_config.get("prompt_text", self.VISION_EXTRACTION_PROMPT)
+
+        # Use session override > prompt config > provided agent_type
+        if session.agent_override:
+            effective_agent = session.agent_override
+        else:
+            effective_agent = prompt_config.get("primary_agent", agent_type)
+
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
         )
         agent = get_agent(effective_agent, model=effective_model)
         logger.info(f"Vision extraction using agent={effective_agent}, model={effective_model}")
 
-        prompt = self.VISION_EXTRACTION_PROMPT + context
+        prompt = prompt_text + "\n\nCONVERSATION:\n" + context
 
         try:
             response = agent.generate(
@@ -1033,7 +1092,8 @@ CONVERSATION:
     ) -> list[dict]:
         """Extract strategic goals from a Roundtable conversation.
 
-        Uses session's agent_override if set, otherwise uses provided agent_type.
+        Uses configurable prompts from DB if available. Falls back to defaults.
+        Uses session's agent_override if set, otherwise uses prompt's primary_agent.
 
         Args:
             session: The roundtable session to analyze
@@ -1047,15 +1107,23 @@ CONVERSATION:
 
         context = session.get_context(max_messages=50)
 
-        # Use session override if set, otherwise use provided agent_type
-        effective_agent = session.get_effective_agent(agent_type)
+        # Get effective prompt config (custom or default)
+        prompt_config = self.get_effective_prompt(session.project_id, "goals_extraction")
+        prompt_text = prompt_config.get("prompt_text", self.GOALS_EXTRACTION_PROMPT)
+
+        # Use session override > prompt config > provided agent_type
+        if session.agent_override:
+            effective_agent = session.agent_override
+        else:
+            effective_agent = prompt_config.get("primary_agent", agent_type)
+
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
         )
         agent = get_agent(effective_agent, model=effective_model)
         logger.info(f"Goals extraction using agent={effective_agent}, model={effective_model}")
 
-        prompt = self.GOALS_EXTRACTION_PROMPT + context
+        prompt = prompt_text + "\n\nCONVERSATION:\n" + context
 
         try:
             response = agent.generate(
@@ -1085,10 +1153,8 @@ CONVERSATION:
     ) -> list[dict]:
         """Extract features from a Roundtable conversation.
 
-        Uses an AI agent to analyze the conversation and identify
-        features with their acceptance criteria.
-
-        Uses session's agent_override if set, otherwise uses provided agent_type.
+        Uses configurable prompts from DB if available. Falls back to defaults.
+        Uses session's agent_override if set, otherwise uses prompt's primary_agent.
 
         Args:
             session: The roundtable session to analyze
@@ -1103,15 +1169,23 @@ CONVERSATION:
         # Build conversation transcript
         context = session.get_context(max_messages=50)
 
-        # Use session override if set, otherwise use provided agent_type
-        effective_agent = session.get_effective_agent(agent_type)
+        # Get effective prompt config (custom or default)
+        prompt_config = self.get_effective_prompt(session.project_id, "feature_extraction")
+        prompt_text = prompt_config.get("prompt_text", self.FEATURE_EXTRACTION_PROMPT)
+
+        # Use session override > prompt config > provided agent_type
+        if session.agent_override:
+            effective_agent = session.agent_override
+        else:
+            effective_agent = prompt_config.get("primary_agent", agent_type)
+
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
         )
         agent = get_agent(effective_agent, model=effective_model)
         logger.info(f"Feature extraction using agent={effective_agent}, model={effective_model}")
 
-        prompt = self.FEATURE_EXTRACTION_PROMPT + context
+        prompt = prompt_text + "\n\nCONVERSATION:\n" + context
 
         try:
             response = agent.generate(
