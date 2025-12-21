@@ -30,20 +30,18 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
     queryFn: fetchProjects,
   });
 
-  // Detect project from URL
+  // Detect project from URL - clear selection when not on a project page
   useEffect(() => {
     const urlProjectId = params.id as string | undefined;
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId);
       localStorage.setItem("summitflow_selected_project", urlProjectId);
-    } else {
-      // Try to restore from localStorage
-      const stored = localStorage.getItem("summitflow_selected_project");
-      if (stored && projects?.some(p => p.id === stored)) {
-        setSelectedProjectId(stored);
-      }
+    } else if (pathname === "/projects" || pathname === "/") {
+      // On projects list or dashboard - clear selection
+      setSelectedProjectId(null);
+      localStorage.removeItem("summitflow_selected_project");
     }
-  }, [params.id, projects]);
+  }, [params.id, pathname]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -167,17 +165,18 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
 // Export hook for getting current project ID
 export function useSelectedProject() {
   const params = useParams();
+  const pathname = usePathname();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     const urlProjectId = params.id as string | undefined;
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId);
-    } else {
-      const stored = localStorage.getItem("summitflow_selected_project");
-      setSelectedProjectId(stored);
+    } else if (pathname === "/projects" || pathname === "/") {
+      // On projects list or dashboard - no project selected
+      setSelectedProjectId(null);
     }
-  }, [params.id]);
+  }, [params.id, pathname]);
 
   return selectedProjectId;
 }
