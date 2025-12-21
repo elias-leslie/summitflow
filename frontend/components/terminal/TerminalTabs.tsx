@@ -4,7 +4,7 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2 } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
@@ -43,7 +43,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     isCreating,
   } = useTerminalSessions(projectId);
 
-  const { layoutMode, setLayoutMode } = useTerminalState();
+  const { layoutMode, setLayoutMode, setOpen } = useTerminalState();
   const isMobile = useMediaQuery("(max-width: 767px)");
 
   // Number of panes to show in split mode (1:1 with sessions, capped)
@@ -265,6 +265,15 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             </button>
           </div>
         )}
+
+        {/* Close terminal button */}
+        <button
+          onClick={() => setOpen(false)}
+          title="Close terminal"
+          className="ml-2 p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}
