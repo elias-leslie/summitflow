@@ -62,11 +62,11 @@ const priorityConfig: Record<number, { label: string; color: string; bgColor: st
   4: { label: "P4", color: "text-priority-low", bgColor: "bg-priority-low/20" },
 };
 
-// Status colors
+// Status colors - using semantic tokens
 const statusConfig: Record<string, { label: string; icon: typeof Circle; color: string; bgColor: string }> = {
-  open: { label: "Open", icon: Circle, color: "text-blue-500", bgColor: "bg-blue-500/10" },
-  in_progress: { label: "In Progress", icon: Loader2, color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
-  closed: { label: "Closed", icon: CheckCircle2, color: "text-green-500", bgColor: "bg-green-500/10" },
+  open: { label: "Open", icon: Circle, color: "text-status-info", bgColor: "bg-status-info/10" },
+  in_progress: { label: "In Progress", icon: Loader2, color: "text-status-warning", bgColor: "bg-status-warning/10" },
+  closed: { label: "Closed", icon: CheckCircle2, color: "text-status-success", bgColor: "bg-status-success/10" },
 };
 
 // Type icons
