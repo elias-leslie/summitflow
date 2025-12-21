@@ -80,6 +80,13 @@ const config: Config = {
       fontSize: {
         "2xs": ["0.625rem", { lineHeight: "0.875rem" }], // 10px text
       },
+      spacing: {
+        "indent-1": "0.5rem", // 8px
+        "indent-2": "1rem", // 16px
+        "indent-3": "1.5rem", // 24px
+        "indent-4": "2rem", // 32px
+        "indent-5": "2.5rem", // 40px
+      },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "scan": "scan 8s linear infinite",
