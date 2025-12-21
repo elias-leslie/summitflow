@@ -77,6 +77,9 @@ const config: Config = {
         display: ['"Space Grotesk"', "system-ui", "sans-serif"],
         body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
       },
+      fontSize: {
+        "2xs": ["0.625rem", { lineHeight: "0.875rem" }], // 10px text
+      },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "scan": "scan 8s linear infinite",
