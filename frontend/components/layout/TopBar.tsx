@@ -1,11 +1,13 @@
 "use client";
 
-import { Search, RefreshCw, Terminal, Camera } from "lucide-react";
+import Link from "next/link";
+import { Search, Terminal, Camera, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
+import { ProjectSelector, useSelectedProject } from "./ProjectSelector";
+import { NavPills } from "./NavPills";
 
 // SummitFlow captures evidence for itself (dogfooding)
 const SUMMITFLOW_PROJECT_ID = "summitflow";
@@ -14,9 +16,8 @@ export function TopBar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const queryClient = useQueryClient();
   const { isOpen, toggle } = useTerminalState();
+  const selectedProjectId = useSelectedProject();
 
   // Get current URL on client side
   useEffect(() => {
@@ -25,9 +26,43 @@ export function TopBar() {
 
   return (
     <>
-      <header className="h-14 flex-shrink-0 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6">
+      <header className="h-14 flex-shrink-0 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 flex items-center px-4 gap-4">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-phosphor-500 to-phosphor-600 flex items-center justify-center glow-phosphor-sm">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              className="w-4 h-4 text-white"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+          </div>
+          <span className="display font-semibold text-white tracking-tight hidden sm:inline">
+            SummitFlow
+          </span>
+        </Link>
+
+        {/* Vertical divider */}
+        <div className="w-px h-6 bg-slate-700 flex-shrink-0" />
+
+        {/* Project Selector */}
+        <ProjectSelector />
+
+        {/* Nav Pills (only when project selected) */}
+        {selectedProjectId && (
+          <NavPills projectId={selectedProjectId} className="flex-shrink-0" />
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
         {/* Search */}
-        <div className="flex-1 max-w-xl">
+        <div className="max-w-xs hidden md:block">
           <div
             className={`relative transition-all duration-300 ${
               isSearchFocused ? "scale-[1.02]" : ""
@@ -36,8 +71,8 @@ export function TopBar() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
               type="text"
-              placeholder="Search projects, features, files..."
-              className="input pl-10 pr-16 py-2 text-sm bg-slate-850"
+              placeholder="Search..."
+              className="input pl-10 pr-12 py-1.5 text-sm bg-slate-850 w-48"
               onFocus={() => setIsSearchFocused(true)}
               onBlur={() => setIsSearchFocused(false)}
             />
@@ -48,19 +83,7 @@ export function TopBar() {
         </div>
 
         {/* Right side actions */}
-        <div className="flex items-center gap-2 ml-6">
-          {/* Capture Evidence */}
-          <button
-            onClick={() => {
-              setCurrentUrl(window.location.href);
-              setCaptureModalOpen(true);
-            }}
-            className="btn-ghost p-2 rounded-lg hover:bg-phosphor-500/10 hover:text-phosphor-400 transition-colors"
-            title="Capture Evidence (Screenshot)"
-          >
-            <Camera className="w-4 h-4" />
-          </button>
-
+        <div className="flex items-center gap-1 flex-shrink-0">
           {/* Terminal toggle */}
           <button
             onClick={toggle}
@@ -74,30 +97,29 @@ export function TopBar() {
             <Terminal className="w-4 h-4" />
           </button>
 
-          {/* Refresh */}
+          {/* Capture Evidence */}
           <button
-            onClick={async () => {
-              setIsRefreshing(true);
-              await queryClient.invalidateQueries();
-              setTimeout(() => setIsRefreshing(false), 500);
+            onClick={() => {
+              setCurrentUrl(window.location.href);
+              setCaptureModalOpen(true);
             }}
-            className="btn-ghost p-2 rounded-lg"
-            title="Refresh Data"
-            disabled={isRefreshing}
+            className="btn-ghost p-2 rounded-lg hover:bg-phosphor-500/10 hover:text-phosphor-400 transition-colors"
+            title="Capture Evidence (Screenshot)"
           >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            <Camera className="w-4 h-4" />
           </button>
+
+          {/* Settings */}
+          <Link
+            href="/settings"
+            className="btn-ghost p-2 rounded-lg hover:bg-phosphor-500/10 hover:text-phosphor-400 transition-colors"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
 
           {/* Notifications */}
           <NotificationBell projectId={SUMMITFLOW_PROJECT_ID} />
-
-          {/* Separator */}
-          <div className="w-px h-6 bg-slate-700 mx-2" />
-
-          {/* Current time - terminal style */}
-          <div className="mono text-xs text-slate-500 tabular-nums">
-            <CurrentTime />
-          </div>
         </div>
       </header>
 
@@ -112,38 +134,5 @@ export function TopBar() {
         }}
       />
     </>
-  );
-}
-
-function CurrentTime() {
-  const [time, setTime] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Set initial time on client only
-    setTime(new Date().toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }));
-
-    // Update time every second
-    const interval = setInterval(() => {
-      setTime(new Date().toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <span className="flex items-center gap-1">
-      <span className="text-phosphor-500">▸</span>
-      <span suppressHydrationWarning>{time ?? "--:--:--"}</span>
-    </span>
   );
 }
