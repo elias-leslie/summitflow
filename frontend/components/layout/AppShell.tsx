@@ -115,20 +115,13 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <Group
       orientation="vertical"
-      className="flex-1 h-full min-h-0"
-      defaultLayout={{ main: 100 - height, terminal: height }}
-      onLayoutChange={(layout: { main?: number; terminal?: number }) => {
-        // terminal is the terminal panel size
-        if (layout.terminal !== undefined) {
-          setHeight(layout.terminal);
-        }
-      }}
+      className="flex-1"
     >
       {/* Main content panel */}
       <Panel
         id="main"
+        defaultSize={100 - height}
         minSize="30%"
-        maxSize="90%"
         className="overflow-auto"
       >
         <div className="h-full w-full overflow-auto">
@@ -137,14 +130,22 @@ export function AppShell({ children }: AppShellProps) {
       </Panel>
 
       {/* Resize handle */}
-      <Separator className="h-1 bg-slate-800 hover:bg-slate-600 active:bg-phosphor-500 cursor-ns-resize transition-colors" />
+      <Separator className="h-1.5 bg-slate-800 hover:bg-phosphor-500/50 active:bg-phosphor-500 cursor-ns-resize transition-colors flex items-center justify-center group">
+        <div className="w-12 h-1 rounded-full bg-slate-600 group-hover:bg-phosphor-400 transition-colors" />
+      </Separator>
 
       {/* Terminal panel */}
       <Panel
         id="terminal"
-        minSize="10%"
-        maxSize="50%"
-        className="bg-slate-900 flex flex-col min-h-0 overflow-hidden"
+        defaultSize={height}
+        minSize="15%"
+        maxSize="70%"
+        className="bg-slate-900 flex flex-col overflow-hidden"
+        onResize={(size) => {
+          if (typeof size === 'number') {
+            setHeight(size);
+          }
+        }}
       >
         <TerminalTabs
           projectId={activeProjectId}
