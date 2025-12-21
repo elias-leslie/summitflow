@@ -91,7 +91,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
           className={clsx(
             "w-2 h-2 rounded-full flex-shrink-0",
             selectedProject?.health_status === "healthy"
-              ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+              ? "bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]"
               : selectedProject
                 ? "bg-slate-500"
                 : "bg-slate-600"
@@ -114,7 +114,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
           {/* All Projects link */}
           <button
             onClick={handleViewAllProjects}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-phosphor-400 hover:bg-slate-800 transition-colors border-b border-slate-700"
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-outrun-400 hover:bg-slate-800 transition-colors border-b border-slate-700"
           >
             <LayoutGrid className="w-4 h-4" />
             <span className="font-medium">All Projects</span>
@@ -134,7 +134,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
                   className={clsx(
                     "w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors cursor-pointer",
                     selectedProjectId === project.id
-                      ? "bg-phosphor-500/15 text-white"
+                      ? "bg-outrun-500/15 text-white"
                       : "text-slate-300 hover:bg-slate-800 hover:text-white"
                   )}
                 >
@@ -143,14 +143,14 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
                       className={clsx(
                         "w-2 h-2 rounded-full flex-shrink-0",
                         project.health_status === "healthy"
-                          ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+                          ? "bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]"
                           : "bg-slate-500"
                       )}
                     />
                     <span className="truncate">{project.name}</span>
                   </div>
                   {selectedProjectId === project.id && (
-                    <Check className="w-4 h-4 text-phosphor-400 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-outrun-400 flex-shrink-0" />
                   )}
                 </button>
               ))

@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" width="360" height="100">
+  <!-- Version 3: Higher sun, road-like grid, subtle sunset glow on peaks only -->
+
+  <rect width="360" height="100" fill="#000000"/>
+
+  <defs>
+    <!-- Sun gradient -->
+    <linearGradient id="outrunSun" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff200"/>
+      <stop offset="50%" style="stop-color:#ff6600"/>
+      <stop offset="100%" style="stop-color:#ff0066"/>
+    </linearGradient>
+
+    <!-- Subtle sunset glow - smaller, less intense -->
+    <radialGradient id="sunsetGlow" cx="180" cy="42" r="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" style="stop-color:#ff6600; stop-opacity:0.15"/>
+      <stop offset="60%" style="stop-color:#ff0066; stop-opacity:0.08"/>
+      <stop offset="100%" style="stop-color:#ff0066; stop-opacity:0"/>
+    </radialGradient>
+
+    <!-- Mountain edge glow - subtle -->
+    <filter id="peakGlow" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+      <feFlood flood-color="#ff6600" flood-opacity="0.25" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Mask to fade glow at edges -->
+    <linearGradient id="edgeFade" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:black; stop-opacity:0"/>
+      <stop offset="15%" style="stop-color:white; stop-opacity:1"/>
+      <stop offset="85%" style="stop-color:white; stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:black; stop-opacity:0"/>
+    </linearGradient>
+
+    <mask id="glowMask">
+      <rect x="0" y="0" width="360" height="70" fill="url(#edgeFade)"/>
+    </mask>
+
+    <!-- Clip to keep glow above ground only -->
+    <clipPath id="aboveGround">
+      <rect x="0" y="0" width="360" height="70"/>
+    </clipPath>
+  </defs>
+
+  <!-- Subtle sunset ambient glow (behind sun, above ground only) -->
+  <ellipse cx="180" cy="50" rx="80" ry="35" fill="url(#sunsetGlow)" clip-path="url(#aboveGround)"/>
+
+  <!-- Sun - raised to cy=42 -->
+  <circle cx="180" cy="42" r="25" fill="url(#outrunSun)"/>
+
+  <!-- Sun scanlines -->
+  <g fill="#000000">
+    <rect x="155" y="32" width="50" height="1.5"/>
+    <rect x="155" y="37" width="50" height="2"/>
+    <rect x="155" y="43" width="50" height="2.5"/>
+    <rect x="155" y="49" width="50" height="3"/>
+    <rect x="155" y="56" width="50" height="4"/>
+  </g>
+
+  <!-- Mountain range with glow - masked to fade at edges, clipped above ground -->
+  <g clip-path="url(#aboveGround)" mask="url(#glowMask)">
+    <polygon points="
+      0,70
+      30,65
+      70,58
+      100,45
+      130,55
+      150,48
+      180,25
+      210,48
+      230,55
+      260,42
+      300,55
+      330,62
+      360,70
+      360,70
+      0,70"
+      fill="#1a0a2e"
+      filter="url(#peakGlow)"/>
+  </g>
+
+  <!-- Mountain range solid (no glow) - ensures clean edges -->
+  <polygon points="
+    0,70
+    30,65
+    70,58
+    100,45
+    130,55
+    150,48
+    180,25
+    210,48
+    230,55
+    260,42
+    300,55
+    330,62
+    360,70
+    360,70
+    0,70"
+    fill="#1a0a2e"/>
+
+  <!-- Ground - horizontal perspective lines (no glow) -->
+  <g stroke="#ff0066" stroke-width="0.6">
+    <line x1="0" y1="72" x2="360" y2="72"/>
+    <line x1="0" y1="78" x2="360" y2="78"/>
+    <line x1="0" y1="86" x2="360" y2="86"/>
+    <line x1="0" y1="96" x2="360" y2="96"/>
+  </g>
+
+  <!-- Road - converging to vanishing point at (180, 70) -->
+  <g stroke="#ff0066" fill="none">
+    <!-- Road edges -->
+    <line x1="180" y1="70" x2="100" y2="100" stroke-width="0.8"/>
+    <line x1="180" y1="70" x2="260" y2="100" stroke-width="0.8"/>
+
+    <!-- Center dashed line -->
+    <line x1="180" y1="72" x2="180" y2="100" stroke-width="0.6" stroke-dasharray="6,4"/>
+
+    <!-- Lane markers - subtle -->
+    <line x1="180" y1="70" x2="140" y2="100" stroke-width="0.4" opacity="0.5"/>
+    <line x1="180" y1="70" x2="220" y2="100" stroke-width="0.4" opacity="0.5"/>
+  </g>
+</svg>

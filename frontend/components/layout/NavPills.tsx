@@ -11,10 +11,11 @@ import {
   ListTodo,
   Camera,
   Compass,
+  Settings2,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -24,6 +25,7 @@ interface TabConfig {
   inactiveClasses: string;
   iconActiveClasses: string;
   iconInactiveClasses: string;
+  isSettings?: boolean;
 }
 
 const tabs: TabConfig[] = [
@@ -99,6 +101,16 @@ const tabs: TabConfig[] = [
     iconActiveClasses: "text-teal-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-teal-400",
   },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: Settings2,
+    activeClasses: "bg-slate-500/15 text-slate-300",
+    inactiveClasses: "text-slate-500 hover:bg-slate-500/10 hover:text-slate-300",
+    iconActiveClasses: "text-slate-300",
+    iconInactiveClasses: "text-slate-500 group-hover:text-slate-300",
+    isSettings: true,
+  },
 ];
 
 interface NavPillsProps {
@@ -116,8 +128,8 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
   return (
     <nav
       className={clsx(
-        "flex items-center gap-0.5 overflow-x-auto scrollbar-hide",
-        "max-w-[calc(100vw-400px)] lg:max-w-none",
+        "flex items-center gap-1 overflow-x-auto scrollbar-hide",
+        "max-w-[calc(100vw-500px)] lg:max-w-none",
         className
       )}
     >
@@ -125,12 +137,17 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
         const isActive = activeTab === tab.id;
         const Icon = tab.icon;
 
+        // Settings links to a different page
+        const href = tab.isSettings
+          ? `/projects/${projectId}/settings`
+          : `/projects/${projectId}?tab=${tab.id}`;
+
         return (
           <Link
             key={tab.id}
-            href={`/projects/${projectId}?tab=${tab.id}`}
+            href={href}
             className={clsx(
-              "group flex items-center px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ease-out flex-shrink-0",
+              "group flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ease-out flex-shrink-0",
               isActive ? tab.activeClasses : tab.inactiveClasses
             )}
             title={tab.label}
