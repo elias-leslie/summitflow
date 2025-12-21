@@ -20,17 +20,85 @@ interface TabConfig {
   id: TabId;
   label: string;
   icon: React.ElementType;
+  activeClasses: string;
+  inactiveClasses: string;
+  iconActiveClasses: string;
+  iconInactiveClasses: string;
 }
 
 const tabs: TabConfig[] = [
-  { id: "roundtable", label: "Roundtable", icon: MessageCircle },
-  { id: "vision", label: "Vision", icon: Target },
-  { id: "goals", label: "Goals", icon: Flag },
-  { id: "features", label: "Features", icon: ListChecks },
-  { id: "kanban", label: "Kanban", icon: Kanban },
-  { id: "tasks", label: "Tasks", icon: ListTodo },
-  { id: "evidence", label: "Evidence", icon: Camera },
-  { id: "explorer", label: "Explorer", icon: Compass },
+  {
+    id: "roundtable",
+    label: "Roundtable",
+    icon: MessageCircle,
+    activeClasses: "bg-emerald-500/15 text-emerald-400",
+    inactiveClasses: "text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400",
+    iconActiveClasses: "text-emerald-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-emerald-400",
+  },
+  {
+    id: "vision",
+    label: "Vision",
+    icon: Target,
+    activeClasses: "bg-violet-500/15 text-violet-400",
+    inactiveClasses: "text-slate-500 hover:bg-violet-500/10 hover:text-violet-400",
+    iconActiveClasses: "text-violet-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-violet-400",
+  },
+  {
+    id: "goals",
+    label: "Goals",
+    icon: Flag,
+    activeClasses: "bg-amber-500/15 text-amber-400",
+    inactiveClasses: "text-slate-500 hover:bg-amber-500/10 hover:text-amber-400",
+    iconActiveClasses: "text-amber-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-amber-400",
+  },
+  {
+    id: "features",
+    label: "Features",
+    icon: ListChecks,
+    activeClasses: "bg-blue-500/15 text-blue-400",
+    inactiveClasses: "text-slate-500 hover:bg-blue-500/10 hover:text-blue-400",
+    iconActiveClasses: "text-blue-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-blue-400",
+  },
+  {
+    id: "kanban",
+    label: "Kanban",
+    icon: Kanban,
+    activeClasses: "bg-cyan-500/15 text-cyan-400",
+    inactiveClasses: "text-slate-500 hover:bg-cyan-500/10 hover:text-cyan-400",
+    iconActiveClasses: "text-cyan-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-cyan-400",
+  },
+  {
+    id: "tasks",
+    label: "Tasks",
+    icon: ListTodo,
+    activeClasses: "bg-orange-500/15 text-orange-400",
+    inactiveClasses: "text-slate-500 hover:bg-orange-500/10 hover:text-orange-400",
+    iconActiveClasses: "text-orange-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-orange-400",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    icon: Camera,
+    activeClasses: "bg-pink-500/15 text-pink-400",
+    inactiveClasses: "text-slate-500 hover:bg-pink-500/10 hover:text-pink-400",
+    iconActiveClasses: "text-pink-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-pink-400",
+  },
+  {
+    id: "explorer",
+    label: "Explorer",
+    icon: Compass,
+    activeClasses: "bg-teal-500/15 text-teal-400",
+    inactiveClasses: "text-slate-500 hover:bg-teal-500/10 hover:text-teal-400",
+    iconActiveClasses: "text-teal-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-teal-400",
+  },
 ];
 
 interface NavPillsProps {
@@ -48,7 +116,7 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
   return (
     <nav
       className={clsx(
-        "flex items-center gap-1 overflow-x-auto scrollbar-hide",
+        "flex items-center gap-0.5 overflow-x-auto scrollbar-hide",
         "max-w-[calc(100vw-400px)] lg:max-w-none",
         className
       )}
@@ -62,15 +130,23 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
             key={tab.id}
             href={`/projects/${projectId}?tab=${tab.id}`}
             className={clsx(
-              "flex items-center gap-2 px-2 lg:px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex-shrink-0",
-              isActive
-                ? "bg-phosphor-500/12 text-phosphor-400"
-                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              "group flex items-center px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ease-out flex-shrink-0",
+              isActive ? tab.activeClasses : tab.inactiveClasses
             )}
             title={tab.label}
           >
-            <Icon className="w-4 h-4" />
-            <span className="hidden xl:inline">{tab.label}</span>
+            <Icon className={clsx(
+              "w-4 h-4 flex-shrink-0 transition-colors duration-200",
+              isActive ? tab.iconActiveClasses : tab.iconInactiveClasses
+            )} />
+            <span className={clsx(
+              "overflow-hidden transition-all duration-300 ease-out whitespace-nowrap",
+              isActive
+                ? "max-w-24 ml-2 opacity-100"
+                : "max-w-0 ml-0 opacity-0 group-hover:max-w-24 group-hover:ml-2 group-hover:opacity-100"
+            )}>
+              {tab.label}
+            </span>
           </Link>
         );
       })}

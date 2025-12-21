@@ -6,6 +6,7 @@ import {
   FolderKanban,
   ChevronDown,
   Check,
+  LayoutGrid,
 } from "lucide-react";
 import clsx from "clsx";
 import { useState, useEffect, useRef } from "react";
@@ -72,13 +73,18 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
     onProjectChange?.(projectId);
   };
 
+  const handleViewAllProjects = () => {
+    setIsDropdownOpen(false);
+    router.push("/projects");
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
         className={clsx(
-          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
-          "bg-slate-800 border border-slate-700 hover:border-slate-600",
+          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all cursor-pointer",
+          "bg-slate-800 border border-slate-700 hover:border-slate-500 hover:bg-slate-750",
           selectedProject ? "text-white" : "text-slate-400"
         )}
       >
@@ -98,7 +104,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
         </span>
         <ChevronDown
           className={clsx(
-            "w-4 h-4 flex-shrink-0 text-slate-500 transition-transform",
+            "w-4 h-4 flex-shrink-0 text-slate-500 transition-transform duration-200",
             isDropdownOpen && "rotate-180"
           )}
         />
@@ -106,53 +112,52 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
 
       {/* Dropdown */}
       {isDropdownOpen && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-          {/* Clear selection */}
+        <div className="absolute top-full left-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-[100] max-h-80 overflow-y-auto">
+          {/* All Projects link */}
           <button
-            onClick={() => handleSelectProject(null)}
-            className={clsx(
-              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-slate-700/50 transition-colors",
-              !selectedProjectId && "bg-slate-700/30"
-            )}
+            onClick={handleViewAllProjects}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-phosphor-400 hover:bg-slate-800 transition-colors border-b border-slate-700"
           >
-            <span className="text-slate-400">No project selected</span>
+            <LayoutGrid className="w-4 h-4" />
+            <span className="font-medium">All Projects</span>
           </button>
 
-          {/* Divider */}
-          <div className="border-t border-slate-700 my-1" />
-
-          {/* Projects */}
-          {projects?.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-slate-500">
-              No projects yet
-            </div>
-          ) : (
-            projects?.map((project) => (
-              <button
-                key={project.id}
-                onClick={() => handleSelectProject(project.id)}
-                className={clsx(
-                  "w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-slate-700/50 transition-colors",
-                  selectedProjectId === project.id && "bg-phosphor-500/10"
-                )}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <div
-                    className={clsx(
-                      "w-2 h-2 rounded-full flex-shrink-0",
-                      project.health_status === "healthy"
-                        ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
-                        : "bg-slate-500"
-                    )}
-                  />
-                  <span className="truncate text-slate-200">{project.name}</span>
-                </div>
-                {selectedProjectId === project.id && (
-                  <Check className="w-4 h-4 text-phosphor-400 flex-shrink-0" />
-                )}
-              </button>
-            ))
-          )}
+          {/* Projects list */}
+          <div className="py-1">
+            {projects?.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-slate-500 text-center">
+                No projects yet
+              </div>
+            ) : (
+              projects?.map((project) => (
+                <button
+                  key={project.id}
+                  onClick={() => handleSelectProject(project.id)}
+                  className={clsx(
+                    "w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors cursor-pointer",
+                    selectedProjectId === project.id
+                      ? "bg-phosphor-500/15 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <div
+                      className={clsx(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        project.health_status === "healthy"
+                          ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+                          : "bg-slate-500"
+                      )}
+                    />
+                    <span className="truncate">{project.name}</span>
+                  </div>
+                  {selectedProjectId === project.id && (
+                    <Check className="w-4 h-4 text-phosphor-400 flex-shrink-0" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

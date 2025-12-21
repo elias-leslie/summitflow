@@ -62,23 +62,20 @@ export function TopBar() {
         <div className="flex-1" />
 
         {/* Search */}
-        <div className="max-w-xs hidden md:block">
+        <div className="hidden md:block">
           <div
             className={`relative transition-all duration-300 ${
               isSearchFocused ? "scale-[1.02]" : ""
             }`}
           >
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search..."
-              className="input pl-10 pr-12 py-1.5 text-sm bg-slate-850 w-48"
+              placeholder="Search projects, features..."
+              className="input pl-11 pr-4 py-2 text-sm bg-slate-800 border-slate-700 w-64 focus:w-80 transition-all duration-300"
               onFocus={() => setIsSearchFocused(true)}
               onBlur={() => setIsSearchFocused(false)}
             />
-            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] mono text-slate-500 bg-slate-800 rounded border border-slate-700">
-              ⌘K
-            </kbd>
           </div>
         </div>
 
