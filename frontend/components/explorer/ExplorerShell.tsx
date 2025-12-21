@@ -31,6 +31,7 @@ interface ExplorerShellProps {
   initialType?: ExplorerType;
   className?: string;
   children?: (props: ExplorerChildProps) => React.ReactNode;
+  onTypeChange?: (type: ExplorerType) => void;
 }
 
 export interface ExplorerChildProps {
@@ -74,6 +75,7 @@ export function ExplorerShell({
   initialType = "files",
   className,
   children,
+  onTypeChange: onTypeChangeProp,
 }: ExplorerShellProps) {
   // Explorer state
   const [activeType, setActiveType] = useState<ExplorerType>(initialType);
@@ -134,7 +136,8 @@ export function ExplorerShell({
     setExpandedIds(new Set()); // Reset expansion on type change
     setSortField("name");
     setSortDir("asc");
-  }, []);
+    onTypeChangeProp?.(type); // Notify parent of type change
+  }, [onTypeChangeProp]);
 
   const handleFilterChange = useCallback((filter: HealthStatus | "all") => {
     setActiveFilter(filter);

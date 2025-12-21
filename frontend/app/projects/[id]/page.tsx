@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
@@ -35,6 +35,7 @@ import { TasksTab } from "@/components/tasks/TasksTab";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { GoalsList } from "@/components/goals/GoalsList";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
+import type { ExplorerType } from "@/components/explorer/types";
 import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
 import { TaskDetailDrawer } from "@/components/kanban/TaskDetailDrawer";
 import {
@@ -51,21 +52,76 @@ import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/
 
 type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer";
 
+const VALID_EXPLORER_TYPES: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
+const VALID_TABS: TabId[] = ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer"];
+
+// localStorage key for remembering last tab per project
+const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`;
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const projectId = params.id as string;
 
   // Get initial tab from URL query param
   const urlTab = searchParams.get("tab") as TabId | null;
   const [activeTab, setActiveTab] = useState<TabId>(urlTab || "roundtable");
+  const [hasRestoredTab, setHasRestoredTab] = useState(false);
+
+  // Get explorer type from URL (for context preservation)
+  const urlExplorerType = searchParams.get("type") as ExplorerType | null;
+  const [explorerType, setExplorerType] = useState<ExplorerType>(
+    urlExplorerType && VALID_EXPLORER_TYPES.includes(urlExplorerType) ? urlExplorerType : "files"
+  );
+
+  // Restore last tab from localStorage on mount (if no URL tab specified)
+  useEffect(() => {
+    if (!urlTab && !hasRestoredTab) {
+      const lastTab = localStorage.getItem(getLastTabKey(projectId)) as TabId | null;
+      if (lastTab && VALID_TABS.includes(lastTab)) {
+        setActiveTab(lastTab);
+        // Also restore explorer type if it was the explorer tab
+        if (lastTab === "explorer") {
+          const lastType = localStorage.getItem(`${getLastTabKey(projectId)}_explorer_type`) as ExplorerType | null;
+          if (lastType && VALID_EXPLORER_TYPES.includes(lastType)) {
+            setExplorerType(lastType);
+          }
+        }
+      }
+      setHasRestoredTab(true);
+    }
+  }, [projectId, urlTab, hasRestoredTab]);
 
   // Sync with URL changes
   useEffect(() => {
-    if (urlTab && ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer"].includes(urlTab)) {
+    if (urlTab && VALID_TABS.includes(urlTab)) {
       setActiveTab(urlTab);
     }
-  }, [urlTab]);
+    // Sync explorer type from URL
+    if (urlExplorerType && VALID_EXPLORER_TYPES.includes(urlExplorerType)) {
+      setExplorerType(urlExplorerType);
+    }
+  }, [urlTab, urlExplorerType]);
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    if (hasRestoredTab) {
+      localStorage.setItem(getLastTabKey(projectId), activeTab);
+      // Also save explorer type if on explorer tab
+      if (activeTab === "explorer") {
+        localStorage.setItem(`${getLastTabKey(projectId)}_explorer_type`, explorerType);
+      }
+    }
+  }, [activeTab, explorerType, projectId, hasRestoredTab]);
+
+  // Update URL when explorer type changes (without full navigation)
+  const handleExplorerTypeChange = (type: ExplorerType) => {
+    setExplorerType(type);
+    // Update URL to preserve context
+    const newUrl = `/projects/${projectId}?tab=explorer&type=${type}`;
+    router.replace(newUrl, { scroll: false });
+  };
 
   // Kanban state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -694,7 +750,11 @@ export default function ProjectDetailPage() {
         )}
         {activeTab === "explorer" && (
           <div className="h-full overflow-auto p-4">
-            <ExplorerTab projectId={projectId} />
+            <ExplorerTab
+              projectId={projectId}
+              initialType={explorerType}
+              onTypeChange={handleExplorerTypeChange}
+            />
           </div>
         )}
       </section>

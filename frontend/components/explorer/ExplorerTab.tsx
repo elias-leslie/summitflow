@@ -24,13 +24,15 @@ import type { ExplorerEntry } from "@/lib/api/explorer";
 interface ExplorerTabProps {
   projectId: string;
   initialType?: ExplorerType;
+  onTypeChange?: (type: ExplorerType) => void;
 }
 
-export function ExplorerTab({ projectId, initialType = "files" }: ExplorerTabProps) {
+export function ExplorerTab({ projectId, initialType = "files", onTypeChange }: ExplorerTabProps) {
   return (
     <ExplorerShell
       projectId={projectId}
       initialType={initialType}
+      onTypeChange={onTypeChange}
       className="h-[calc(100vh-280px)] min-h-[500px]"
     >
       {(props) => (

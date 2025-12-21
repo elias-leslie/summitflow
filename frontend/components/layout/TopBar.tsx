@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Search, Terminal, Camera, Settings } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
@@ -164,14 +164,18 @@ export function TopBar() {
         {/* Vertical divider */}
         <div className="w-px h-10 bg-gradient-to-b from-transparent via-slate-600 to-transparent flex-shrink-0" />
 
-        {/* Project Selector */}
+        {/* Project Selector - wrapped in Suspense for useSearchParams */}
         <div className="relative z-20 flex-shrink-0">
-          <ProjectSelector />
+          <Suspense fallback={<div className="w-40 h-9 bg-slate-800 rounded-lg animate-pulse" />}>
+            <ProjectSelector />
+          </Suspense>
         </div>
 
-        {/* Nav Pills (only when project selected) */}
+        {/* Nav Pills (only when project selected) - wrapped in Suspense for useSearchParams */}
         {selectedProjectId && (
-          <NavPills projectId={selectedProjectId} className="flex-shrink-0 z-10" />
+          <Suspense fallback={<div className="w-64 h-9 bg-slate-800/50 rounded-lg animate-pulse" />}>
+            <NavPills projectId={selectedProjectId} className="flex-shrink-0 z-10" />
+          </Suspense>
         )}
 
         {/* Spacer */}

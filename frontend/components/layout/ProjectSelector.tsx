@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useParams, useRouter } from "next/navigation";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   FolderKanban,
@@ -20,6 +20,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
   const pathname = usePathname();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -62,7 +63,19 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
       localStorage.setItem("summitflow_selected_project", projectId);
       // Navigate to project page if not already there
       if (!pathname.startsWith(`/projects/${projectId}`)) {
-        router.push(`/projects/${projectId}`);
+        // Preserve current tab and sub-context when switching projects
+        const currentTab = searchParams.get("tab");
+        const currentType = searchParams.get("type"); // Explorer type context
+
+        let targetUrl = `/projects/${projectId}`;
+        if (currentTab) {
+          targetUrl += `?tab=${currentTab}`;
+          // Preserve explorer type if on explorer tab
+          if (currentTab === "explorer" && currentType) {
+            targetUrl += `&type=${currentType}`;
+          }
+        }
+        router.push(targetUrl);
       }
     } else {
       localStorage.removeItem("summitflow_selected_project");
