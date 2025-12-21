@@ -200,6 +200,15 @@ export function TopBar() {
 
         {/* Right side actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* About - first for discoverability */}
+          <Link
+            href="/about"
+            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
+            title="About SummitFlow"
+          >
+            <Info className="w-5 h-5" />
+          </Link>
+
           {/* Terminal toggle */}
           <button
             onClick={toggle}
@@ -224,15 +233,6 @@ export function TopBar() {
           >
             <Camera className="w-5 h-5" />
           </button>
-
-          {/* About */}
-          <Link
-            href="/about"
-            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
-            title="About SummitFlow"
-          >
-            <Info className="w-5 h-5" />
-          </Link>
 
           {/* Settings */}
           <Link
