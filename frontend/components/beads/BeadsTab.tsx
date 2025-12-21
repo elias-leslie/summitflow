@@ -78,6 +78,16 @@ const typeIcons: Record<string, typeof ListTodo> = {
   chore: Clock,
 };
 
+// Indent-based padding classes for hierarchy view (8 + indent * 16)
+const indentPadding: Record<number, string> = {
+  0: "pl-2", // 8px
+  1: "pl-6", // 24px
+  2: "pl-10", // 40px
+  3: "pl-14", // 56px
+  4: "pl-[72px]",
+  5: "pl-[88px]",
+};
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "-";
   const date = new Date(dateStr);
@@ -268,7 +278,7 @@ function BeadRow({
         onClick={onToggle}
       >
         {/* Expand */}
-        <td className="w-8 px-2 py-2" style={{ paddingLeft: `${8 + indent * 16}px` }}>
+        <td className={cn("w-8 py-2 pr-2", indentPadding[Math.min(indent, 5)] || indentPadding[0])}>
           <div className="flex items-center gap-1">
             {hasChildren && (
               <GitBranch className="w-3 h-3 text-slate-500 mr-1" />
