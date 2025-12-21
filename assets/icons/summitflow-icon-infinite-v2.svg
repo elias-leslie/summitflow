@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="peakGradV2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Infinite stacked peaks - clean lines, no background -->
+
+  <!-- Vanishing point peaks (far) -->
+  <path d="M50,18 L54,24 L46,24 Z" fill="#7c3aed" opacity="0.2"/>
+  <path d="M50,22 L56,30 L44,30 Z" fill="#7c3aed" opacity="0.3"/>
+  <path d="M50,27 L60,38 L40,38 Z" fill="#7c3aed" opacity="0.4"/>
+  <path d="M50,33 L66,48 L34,48 Z" fill="#8b5cf6" opacity="0.55"/>
+  <path d="M50,40 L74,60 L26,60 Z" fill="#06b6d4" opacity="0.7"/>
+  <path d="M50,48 L84,74 L16,74 Z" fill="#06b6d4" opacity="0.85"/>
+  <path d="M50,58 L95,90 L5,90 Z" fill="#0891b2"/>
+</svg>
