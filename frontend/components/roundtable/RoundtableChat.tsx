@@ -215,7 +215,7 @@ function FilePreview({
       >
         <X className="w-3 h-3" />
       </button>
-      <span className="absolute -bottom-5 left-0 right-0 text-[9px] text-slate-500 truncate text-center">
+      <span className="absolute -bottom-5 left-0 right-0 text-2xs text-slate-500 truncate text-center">
         {attachment.file.name}
       </span>
     </div>
