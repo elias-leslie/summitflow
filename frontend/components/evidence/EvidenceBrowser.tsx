@@ -301,7 +301,7 @@ export function EvidenceBrowser({
               </div>
 
               {/* Content area */}
-              <div className="flex-1 relative bg-white">
+              <div className="flex-1 relative bg-slate-900">
                 {loadError ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-slate-400">
                     <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
