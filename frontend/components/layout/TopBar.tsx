@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, Terminal, Camera, Settings } from "lucide-react";
+import { Search, Terminal, Camera, Settings, Info } from "lucide-react";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
@@ -224,6 +224,15 @@ export function TopBar() {
           >
             <Camera className="w-5 h-5" />
           </button>
+
+          {/* About */}
+          <Link
+            href="/about"
+            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
+            title="About SummitFlow"
+          >
+            <Info className="w-5 h-5" />
+          </Link>
 
           {/* Settings */}
           <Link
