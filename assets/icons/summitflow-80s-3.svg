@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="vaporSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff71ce"/>
+      <stop offset="50%" style="stop-color:#01cdfe"/>
+      <stop offset="100%" style="stop-color:#05ffa1"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="100" height="100" fill="url(#vaporSky)"/>
+
+  <!-- Layered mountains - vaporwave palette -->
+  <polygon points="20,40 50,75 0,75 0,55" fill="#b967ff" opacity="0.9"/>
+  <polygon points="50,25 90,75 10,75" fill="#05ffa1" opacity="0.7"/>
+  <polygon points="80,35 100,75 50,75" fill="#01cdfe" opacity="0.8"/>
+
+  <!-- Center focal peak -->
+  <polygon points="50,18 75,65 25,65" fill="#fffb96" opacity="0.9"/>
+  <polygon points="50,18 75,65 25,65" fill="none" stroke="#ff71ce" stroke-width="2"/>
+
+  <!-- Retro sun rays -->
+  <g stroke="#fffb96" stroke-width="1" opacity="0.4">
+    <line x1="50" y1="0" x2="50" y2="18"/>
+    <line x1="35" y1="5" x2="45" y2="20"/>
+    <line x1="65" y1="5" x2="55" y2="20"/>
+  </g>
+</svg>

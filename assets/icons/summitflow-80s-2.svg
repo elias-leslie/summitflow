@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="synthSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0c29"/>
+      <stop offset="50%" style="stop-color:#302b63"/>
+      <stop offset="100%" style="stop-color:#24243e"/>
+    </linearGradient>
+    <linearGradient id="neonPink" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f953c6"/>
+      <stop offset="100%" style="stop-color:#b91d73"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="100" height="100" fill="url(#synthSky)"/>
+
+  <!-- Chrome/metallic mountain -->
+  <polygon points="50,15 88,72 12,72" fill="#24243e" stroke="url(#neonPink)" stroke-width="2"/>
+
+  <!-- Horizontal chrome lines on mountain -->
+  <g stroke="#f953c6" stroke-width="0.8" opacity="0.7">
+    <line x1="26" y1="55" x2="74" y2="55"/>
+    <line x1="32" y1="45" x2="68" y2="45"/>
+    <line x1="38" y1="35" x2="62" y2="35"/>
+    <line x1="44" y1="25" x2="56" y2="25"/>
+  </g>
+
+  <!-- Grid perspective -->
+  <g stroke="#00ffff" stroke-width="0.4" opacity="0.5">
+    <line x1="0" y1="80" x2="100" y2="80"/>
+    <line x1="0" y1="88" x2="100" y2="88"/>
+    <line x1="0" y1="96" x2="100" y2="96"/>
+  </g>
+
+  <!-- Stars -->
+  <g fill="#ffffff">
+    <circle cx="15" cy="20" r="1"/>
+    <circle cx="85" cy="15" r="0.8"/>
+    <circle cx="25" cy="8" r="0.6"/>
+    <circle cx="78" cy="28" r="0.7"/>
+    <circle cx="8" cy="35" r="0.5"/>
+  </g>
+</svg>

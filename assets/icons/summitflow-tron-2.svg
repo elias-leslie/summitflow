@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <filter id="glow2">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="100" height="100" fill="#050510"/>
+
+  <!-- Magenta/cyan dual glow peaks -->
+  <g filter="url(#glow2)">
+    <!-- Back peak - magenta -->
+    <polygon points="30,25 55,70 5,70" fill="none" stroke="#ff00ff" stroke-width="1.5"/>
+    <!-- Front peak - cyan -->
+    <polygon points="70,30 95,70 45,70" fill="none" stroke="#00ffff" stroke-width="2"/>
+    <!-- Center peak - white -->
+    <polygon points="50,12 80,70 20,70" fill="none" stroke="#ffffff" stroke-width="1"/>
+  </g>
+
+  <!-- Circuit lines -->
+  <g stroke="#00ffff" stroke-width="0.5" opacity="0.4" filter="url(#glow2)">
+    <line x1="50" y1="12" x2="50" y2="0"/>
+    <line x1="50" y1="70" x2="50" y2="85"/>
+    <line x1="20" y1="70" x2="10" y2="80"/>
+    <line x1="80" y1="70" x2="90" y2="80"/>
+  </g>
+</svg>
