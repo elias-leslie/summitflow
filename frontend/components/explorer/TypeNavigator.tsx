@@ -132,7 +132,7 @@ export function TypeNavigator({
                   className={cn(
                     "absolute -top-1 -right-1 min-w-[18px] h-[18px]",
                     "flex items-center justify-center",
-                    "text-[10px] font-bold rounded-full",
+                    "text-2xs font-bold rounded-full",
                     isActive
                       ? "bg-slate-900 text-slate-300"
                       : "bg-slate-700 text-slate-400"

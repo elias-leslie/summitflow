@@ -314,11 +314,11 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   </span>
                   <StatusBadge status={evidence.qualityStatus} />
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <div className="flex items-center justify-between text-2xs text-slate-500">
                   <span>{evidence.criterionId}</span>
                   <span>v{evidence.version}</span>
                 </div>
-                <div className="text-[10px] text-slate-500">
+                <div className="text-2xs text-slate-500">
                   {formatDate(evidence.capturedAt)}
                 </div>
               </div>

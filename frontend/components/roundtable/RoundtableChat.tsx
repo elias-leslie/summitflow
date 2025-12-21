@@ -203,7 +203,7 @@ function FilePreview({
       ) : (
         <div className="w-16 h-16 rounded-lg bg-slate-700 border border-slate-600 flex flex-col items-center justify-center gap-1">
           <Icon className="w-5 h-5 text-slate-400" />
-          <span className="text-[10px] text-slate-400 truncate max-w-[56px] px-1">
+          <span className="text-2xs text-slate-400 truncate max-w-[56px] px-1">
             {attachment.file.name.split(".").pop()?.toUpperCase()}
           </span>
         </div>
@@ -405,10 +405,10 @@ function GeneratedFeaturesList({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 mono">{feat.feature_id}</span>
-                <Badge variant="phosphor" className="text-[10px]">
+                <Badge variant="phosphor" className="text-2xs">
                   P{feat.priority}
                 </Badge>
-                <Badge variant="slate" className="text-[10px]">
+                <Badge variant="slate" className="text-2xs">
                   {feat.category}
                 </Badge>
               </div>
@@ -792,7 +792,7 @@ export function RoundtableChat({
 
             {/* Tool stats badge */}
             {toolStats && toolStats.total_calls > 0 && (
-              <Badge variant="slate" className="text-[10px]">
+              <Badge variant="slate" className="text-2xs">
                 {toolStats.total_calls} calls
                 {toolStats.writes > 0 && ` (${toolStats.writes} writes)`}
               </Badge>

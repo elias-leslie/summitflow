@@ -57,7 +57,7 @@ export function EndpointRow({ entry }: EndpointRowProps) {
           {entry.path}
         </ColumnValue>
         {consoleErrors > 0 && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-400">
+          <span className="px-1.5 py-0.5 rounded text-2xs font-medium bg-red-500/20 text-red-400">
             {consoleErrors} error{consoleErrors > 1 ? "s" : ""}
           </span>
         )}
@@ -66,7 +66,7 @@ export function EndpointRow({ entry }: EndpointRowProps) {
       {/* Method badge */}
       <span
         className={cn(
-          "w-[70px] text-center px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+          "w-[70px] text-center px-2 py-0.5 rounded text-2xs font-bold uppercase",
           methodColors[method] || "bg-slate-700/50 text-slate-400"
         )}
       >

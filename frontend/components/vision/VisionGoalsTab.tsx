@@ -266,7 +266,7 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
                           {features.map((f, i) => (
                             <span
                               key={i}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400"
+                              className="text-2xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400"
                             >
                               {f}
                             </span>
