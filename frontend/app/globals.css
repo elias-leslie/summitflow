@@ -298,6 +298,15 @@ body::before {
   animation: status-pulse 2s ease-in-out infinite;
 }
 
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Resize handle for vertical panel layout */
 .resize-handle-horizontal {
   @apply h-1 cursor-ns-resize;

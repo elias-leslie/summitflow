@@ -46,7 +46,13 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
   const activeTab = currentTab || (searchParams.get("tab") as TabId) || "roundtable";
 
   return (
-    <nav className={clsx("flex items-center gap-1", className)}>
+    <nav
+      className={clsx(
+        "flex items-center gap-1 overflow-x-auto scrollbar-hide",
+        "max-w-[calc(100vw-400px)] lg:max-w-none",
+        className
+      )}
+    >
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         const Icon = tab.icon;
@@ -56,14 +62,15 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
             key={tab.id}
             href={`/projects/${projectId}?tab=${tab.id}`}
             className={clsx(
-              "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200",
+              "flex items-center gap-2 px-2 lg:px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex-shrink-0",
               isActive
                 ? "bg-phosphor-500/12 text-phosphor-400"
                 : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
             )}
+            title={tab.label}
           >
             <Icon className="w-4 h-4" />
-            <span className="hidden lg:inline">{tab.label}</span>
+            <span className="hidden xl:inline">{tab.label}</span>
           </Link>
         );
       })}
