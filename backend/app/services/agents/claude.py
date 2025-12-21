@@ -12,7 +12,7 @@ import asyncio
 import logging
 import shutil
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, query
 from claude_agent_sdk.types import (
@@ -51,7 +51,7 @@ class ClaudeClient(LLMClient):
     """
 
     # Map full model IDs to SDK short names
-    MODEL_MAP = {
+    MODEL_MAP: ClassVar[dict[str, str]] = {
         "claude-opus-4-5": "opus",
         "claude-sonnet-4-5": "sonnet",
         "claude-haiku-4-5": "haiku",
@@ -204,7 +204,8 @@ class ClaudeClient(LLMClient):
         write_enabled: bool = False,
         yolo_mode: bool = False,
         working_dir: str | None = None,
-    ) -> AsyncGenerator[Any, None]:
+        session_id: str | None = None,
+    ) -> AsyncGenerator[tuple[Any, str | None], None]:
         """Generate using SDK's native tool calling with PreToolUse hooks.
 
         Uses Claude Agent SDK's hook system for permission control instead
@@ -217,9 +218,12 @@ class ClaudeClient(LLMClient):
             write_enabled: Whether write tools are enabled
             yolo_mode: Auto-approve all write tool requests
             working_dir: Working directory for the agent
+            session_id: SDK session ID to resume (optional)
 
         Yields:
-            SDK message objects as they stream in
+            Tuple of (SDK message object, sdk_session_id).
+            sdk_session_id is populated from the init message and included
+            with each yield so the caller can capture it.
         """
         # Capture instance variables for closure
         permission_callback = self._permission_callback
@@ -307,7 +311,7 @@ class ClaudeClient(LLMClient):
             logger.debug(f"Allowing unknown tool: {tool_name}")
             return {}
 
-        # Build options with permission hook
+        # Build options with permission hook and optional session resume
         options = ClaudeAgentOptions(
             cwd=working_dir or ".",
             cli_path=self._cli_path,
@@ -317,14 +321,32 @@ class ClaudeClient(LLMClient):
             },
         )
 
+        # Add resume option if session_id provided
+        if session_id:
+            options.resume = session_id
+            logger.info(f"Resuming Claude session: {session_id}")
+
         # Combine system + prompt if system provided
         full_prompt = prompt
         if system:
             full_prompt = f"{system}\n\n{prompt}"
 
+        # Track the SDK session ID from init message
+        sdk_session_id: str | None = None
+
         try:
             async for message in query(prompt=full_prompt, options=options):
-                yield message
+                # Capture session ID from init message
+                if (
+                    hasattr(message, "subtype")
+                    and message.subtype == "init"
+                    and hasattr(message, "data")
+                ):
+                    sdk_session_id = message.data.get("session_id")
+                    if sdk_session_id:
+                        logger.info(f"Claude SDK session ID: {sdk_session_id}")
+
+                yield (message, sdk_session_id)
         except Exception as e:
             logger.error(f"Claude SDK native tool error: {e}")
             raise RuntimeError(f"Claude SDK native tool error: {e}") from e
