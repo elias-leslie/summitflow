@@ -26,7 +26,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="h-14 flex-shrink-0 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 flex items-center px-4 gap-4">
+      <header className="h-14 flex-shrink-0 bg-slate-900 border-b border-slate-800 flex items-center px-4 gap-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-phosphor-500 to-phosphor-600 flex items-center justify-center glow-phosphor-sm">
@@ -51,11 +51,13 @@ export function TopBar() {
         <div className="w-px h-6 bg-slate-700 flex-shrink-0" />
 
         {/* Project Selector */}
-        <ProjectSelector />
+        <div className="relative z-20 flex-shrink-0">
+          <ProjectSelector />
+        </div>
 
         {/* Nav Pills (only when project selected) */}
         {selectedProjectId && (
-          <NavPills projectId={selectedProjectId} className="flex-shrink-0" />
+          <NavPills projectId={selectedProjectId} className="flex-shrink-0 z-10" />
         )}
 
         {/* Spacer */}
