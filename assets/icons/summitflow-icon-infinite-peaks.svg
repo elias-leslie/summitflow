@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e3a5f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100" height="100" fill="url(#skyGrad)"/>
+
+  <!-- Far distant peaks (smallest, most faded) -->
+  <polygon points="50,28 56,38 44,38" fill="#06b6d4" opacity="0.15"/>
+
+  <!-- Distance layer 5 -->
+  <polygon points="50,30 58,42 42,42" fill="#06b6d4" opacity="0.25"/>
+
+  <!-- Distance layer 4 -->
+  <polygon points="50,33 62,48 38,48" fill="#06b6d4" opacity="0.35"/>
+
+  <!-- Distance layer 3 -->
+  <polygon points="50,37 68,56 32,56" fill="#06b6d4" opacity="0.50"/>
+
+  <!-- Distance layer 2 -->
+  <polygon points="50,42 76,66 24,66" fill="#06b6d4" opacity="0.70"/>
+
+  <!-- Front peak (largest, full opacity) -->
+  <polygon points="50,48 88,80 12,80" fill="#06b6d4" opacity="0.90"/>
+
+  <!-- Foreground peak -->
+  <polygon points="50,56 100,95 0,95" fill="#0891b2"/>
+</svg>
