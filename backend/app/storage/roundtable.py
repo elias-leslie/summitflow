@@ -124,7 +124,8 @@ def load_session(session_id: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
-                   agent_override, model_override, messages, generated_features, created_at, updated_at
+                   agent_override, model_override, messages, generated_features, created_at, updated_at,
+                   claude_sdk_session_id, gemini_sdk_session_id
             FROM roundtable_sessions
             WHERE id = %s
             """,
@@ -149,6 +150,8 @@ def load_session(session_id: str) -> dict[str, Any] | None:
         "generated_features": row[10] or [],
         "created_at": row[11],
         "updated_at": row[12],
+        "claude_sdk_session_id": row[13],
+        "gemini_sdk_session_id": row[14],
     }
 
 

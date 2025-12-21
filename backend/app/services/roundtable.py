@@ -21,9 +21,9 @@ from .agents.claude import ClaudeClient
 from .agents.gemini import GeminiClient
 from .roundtable_permissions import permission_manager
 from .roundtable_tools import (
+    WRITE_TOOL_NAMES,
     RoundtableToolExecutor,
     ToolResult,
-    WRITE_TOOL_NAMES,
     format_tool_results_for_prompt,
     get_default_executor,
     to_adk_function_tools,
@@ -117,6 +117,9 @@ class RoundtableSession:
     tools_enabled: bool = True  # Enable by default
     agent_override: str | None = None  # Override agent type (claude/gemini)
     model_override: str | None = None  # Override model ID
+    # SDK session IDs for resuming sessions with context
+    claude_sdk_session_id: str | None = None
+    gemini_sdk_session_id: str | None = None
 
     @classmethod
     def create(
@@ -625,7 +628,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                             result = ToolResult(
                                 success=False,
                                 output="",
-                                error=f"Permission required but no callback configured",
+                                error="Permission required but no callback configured",
                             )
                             tool_results.append((tool_name, result))
                             continue
@@ -690,35 +693,59 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
             session: Session with tool executor
 
         Yields:
-            Event dicts with message content and tool calls
+            Event dicts with message content, tool calls, and captured SDK session IDs
         """
+        from app.storage import roundtable as roundtable_storage
+
         tools = session.tool_executor.get_available_tools()
         write_enabled = session.tool_executor.has_write_access()
         yolo_mode = session.tool_executor.yolo_mode
 
         if agent_type == "claude":
             # Use Claude's native SDK with PreToolUse hooks
+            # Pass existing session ID for resume if available
             sdk_tools = to_claude_sdk_tools(tools)
-            async for event in self._claude_client.generate_with_tools_native(
+            async for event, sdk_session_id in self._claude_client.generate_with_tools_native(
                 prompt=prompt,
                 tools=sdk_tools,
                 system=system,
                 write_enabled=write_enabled,
                 yolo_mode=yolo_mode,
+                session_id=session.claude_sdk_session_id,
             ):
-                yield {"agent": "claude", "event": event}
+                # Capture and persist SDK session ID if we got a new one
+                if sdk_session_id and sdk_session_id != session.claude_sdk_session_id:
+                    session.claude_sdk_session_id = sdk_session_id
+                    roundtable_storage.update_sdk_session_ids(
+                        session_id=session.id,
+                        claude_sdk_session_id=sdk_session_id,
+                    )
+                    logger.info(f"Persisted Claude SDK session ID: {sdk_session_id}")
+
+                yield {"agent": "claude", "event": event, "sdk_session_id": sdk_session_id}
 
         else:  # gemini
             # Use Google ADK with before_tool_callback
+            # Pass existing session ID for resume if available
             adk_tools = to_adk_function_tools(tools, session.tool_executor)
-            async for event in self._gemini_client.generate_with_tools_native(
+            async for event, gemini_session_id in self._gemini_client.generate_with_tools_native(
                 prompt=prompt,
                 tools=adk_tools,
                 system=system,
                 write_enabled=write_enabled,
                 yolo_mode=yolo_mode,
+                session_id=session.gemini_sdk_session_id,
             ):
-                yield {"agent": "gemini", "event": event}
+                # Capture and persist Gemini session ID if we got a new one
+                if gemini_session_id and gemini_session_id != session.gemini_sdk_session_id:
+                    session.gemini_sdk_session_id = gemini_session_id
+                    roundtable_storage.update_sdk_session_ids(
+                        session_id=session.id,
+                        gemini_sdk_session_id=gemini_session_id,
+                    )
+                    logger.info(f"Persisted Gemini SDK session ID: {gemini_session_id}")
+
+                yield {"agent": "gemini", "event": event, "sdk_session_id": gemini_session_id}
 
     async def route_message_with_native_tools(
         self,

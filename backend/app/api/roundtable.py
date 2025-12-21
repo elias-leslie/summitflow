@@ -14,11 +14,73 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..services.roundtable import current_session_id, get_roundtable_service, TargetAgent
+from ..services.roundtable import (
+    RoundtableMessage,
+    RoundtableService,
+    RoundtableSession,
+    TargetAgent,
+    current_session_id,
+    get_roundtable_service,
+)
 from ..services.roundtable_permissions import permission_manager
 from ..storage import roundtable as roundtable_storage
 
 logger = logging.getLogger(__name__)
+
+
+def _restore_session_from_db(
+    service: RoundtableService,
+    session_id: str,
+    project_id: str,
+) -> RoundtableSession | None:
+    """Load a session from DB and restore it in memory with all state.
+
+    Helper to avoid duplicating session restoration logic across endpoints.
+    Restores messages, agent config, and SDK session IDs.
+
+    Args:
+        service: RoundtableService instance
+        session_id: Session ID to load
+        project_id: Project ID for validation
+
+    Returns:
+        Restored RoundtableSession or None if not found
+    """
+    from datetime import datetime
+
+    db_session = roundtable_storage.load_session(session_id)
+    if not db_session:
+        return None
+
+    # Create session in memory with agent config
+    session = service.create_session(
+        project_id,
+        mode=db_session.get("mode", "quick"),
+    )
+    session.id = session_id
+    session.agent_override = db_session.get("agent_override")
+    session.model_override = db_session.get("model_override")
+
+    # Restore SDK session IDs for context resume
+    session.claude_sdk_session_id = db_session.get("claude_sdk_session_id")
+    session.gemini_sdk_session_id = db_session.get("gemini_sdk_session_id")
+
+    # Restore messages
+    for msg_data in db_session.get("messages", []):
+        msg = RoundtableMessage(
+            id=msg_data.get("id", ""),
+            agent=msg_data.get("agent", "user"),
+            content=msg_data.get("content", ""),
+            timestamp=datetime.fromisoformat(
+                msg_data.get("timestamp", datetime.utcnow().isoformat())
+            ),
+            tokens_used=msg_data.get("tokens_used", 0),
+            model=msg_data.get("model"),
+        )
+        session.messages.append(msg)
+
+    service._sessions[session_id] = session
+    return session
 
 router = APIRouter()
 
@@ -572,32 +634,8 @@ async def send_message(
     # Get or recreate session
     session = service.get_session(session_id)
     if not session:
-        # Try to load from database
-        db_session = roundtable_storage.load_session(session_id)
-        if db_session:
-            # Recreate session in memory with agent config
-            session = service.create_session(
-                project_id,
-                mode=db_session.get("mode", "quick"),
-                agent_override=db_session.get("agent_override"),
-                model_override=db_session.get("model_override"),
-            )
-            session.id = session_id
-            # Restore messages
-            for msg_data in db_session.get("messages", []):
-                from datetime import datetime
-                from ..services.roundtable import RoundtableMessage
-                msg = RoundtableMessage(
-                    id=msg_data.get("id", ""),
-                    agent=msg_data.get("agent", "user"),
-                    content=msg_data.get("content", ""),
-                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
-                    tokens_used=msg_data.get("tokens_used", 0),
-                    model=msg_data.get("model"),
-                )
-                session.messages.append(msg)
-            service._sessions[session_id] = session
-        else:
+        session = _restore_session_from_db(service, session_id, project_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
     # Route message to agents
@@ -666,30 +704,8 @@ async def generate_features(
     # Get session
     session = service.get_session(session_id)
     if not session:
-        # Try to load from database
-        db_session = roundtable_storage.load_session(session_id)
-        if db_session:
-            session = service.create_session(
-                project_id,
-                mode=db_session.get("mode", "quick"),
-                agent_override=db_session.get("agent_override"),
-                model_override=db_session.get("model_override"),
-            )
-            session.id = session_id
-            for msg_data in db_session.get("messages", []):
-                from datetime import datetime
-                from ..services.roundtable import RoundtableMessage
-                msg = RoundtableMessage(
-                    id=msg_data.get("id", ""),
-                    agent=msg_data.get("agent", "user"),
-                    content=msg_data.get("content", ""),
-                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
-                    tokens_used=msg_data.get("tokens_used", 0),
-                    model=msg_data.get("model"),
-                )
-                session.messages.append(msg)
-            service._sessions[session_id] = session
-        else:
+        session = _restore_session_from_db(service, session_id, project_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
     if len(session.messages) < 2:
@@ -753,29 +769,8 @@ async def generate_vision(
     # Get session
     session = service.get_session(session_id)
     if not session:
-        db_session = roundtable_storage.load_session(session_id)
-        if db_session:
-            session = service.create_session(
-                project_id,
-                mode=db_session.get("mode", "quick"),
-                agent_override=db_session.get("agent_override"),
-                model_override=db_session.get("model_override"),
-            )
-            session.id = session_id
-            for msg_data in db_session.get("messages", []):
-                from datetime import datetime
-                from ..services.roundtable import RoundtableMessage
-                msg = RoundtableMessage(
-                    id=msg_data.get("id", ""),
-                    agent=msg_data.get("agent", "user"),
-                    content=msg_data.get("content", ""),
-                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
-                    tokens_used=msg_data.get("tokens_used", 0),
-                    model=msg_data.get("model"),
-                )
-                session.messages.append(msg)
-            service._sessions[session_id] = session
-        else:
+        session = _restore_session_from_db(service, session_id, project_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
     if len(session.messages) < 2:
@@ -889,29 +884,8 @@ async def generate_goals(
     # Get session
     session = service.get_session(session_id)
     if not session:
-        db_session = roundtable_storage.load_session(session_id)
-        if db_session:
-            session = service.create_session(
-                project_id,
-                mode=db_session.get("mode", "quick"),
-                agent_override=db_session.get("agent_override"),
-                model_override=db_session.get("model_override"),
-            )
-            session.id = session_id
-            for msg_data in db_session.get("messages", []):
-                from datetime import datetime
-                from ..services.roundtable import RoundtableMessage
-                msg = RoundtableMessage(
-                    id=msg_data.get("id", ""),
-                    agent=msg_data.get("agent", "user"),
-                    content=msg_data.get("content", ""),
-                    timestamp=datetime.fromisoformat(msg_data.get("timestamp", datetime.utcnow().isoformat())),
-                    tokens_used=msg_data.get("tokens_used", 0),
-                    model=msg_data.get("model"),
-                )
-                session.messages.append(msg)
-            service._sessions[session_id] = session
-        else:
+        session = _restore_session_from_db(service, session_id, project_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
     if len(session.messages) < 2:
@@ -1037,36 +1011,8 @@ async def stream_message(
     # Get or recreate session
     session = service.get_session(session_id)
     if not session:
-        # Try to load from database
-        db_session = roundtable_storage.load_session(session_id)
-        if db_session:
-            # Recreate session in memory with agent config
-            session = service.create_session(
-                project_id,
-                mode=db_session.get("mode", "quick"),
-                agent_override=db_session.get("agent_override"),
-                model_override=db_session.get("model_override"),
-            )
-            session.id = session_id
-            # Restore messages
-            for msg_data in db_session.get("messages", []):
-                from datetime import datetime
-
-                from ..services.roundtable import RoundtableMessage
-
-                msg = RoundtableMessage(
-                    id=msg_data.get("id", ""),
-                    agent=msg_data.get("agent", "user"),
-                    content=msg_data.get("content", ""),
-                    timestamp=datetime.fromisoformat(
-                        msg_data.get("timestamp", datetime.utcnow().isoformat())
-                    ),
-                    tokens_used=msg_data.get("tokens_used", 0),
-                    model=msg_data.get("model"),
-                )
-                session.messages.append(msg)
-            service._sessions[session_id] = session
-        else:
+        session = _restore_session_from_db(service, session_id, project_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -1079,7 +1025,6 @@ async def stream_message(
 
         try:
             # First, add user message to session and emit confirmation
-            from datetime import datetime
 
             from ..services.roundtable import RoundtableMessage
 
@@ -1140,7 +1085,7 @@ async def stream_message(
                                 asyncio.shield(agent_task), timeout=1.0
                             )
                             break  # Got response
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             # Check for pending permissions for this session
                             pending = permission_manager.get_session_pending(session_id)
                             for perm in pending:
