@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { AppShell } from "@/components/layout/AppShell";
 
@@ -19,19 +18,16 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="antialiased">
         <Providers>
-          <div className="flex h-screen overflow-hidden">
-            {/* Sidebar */}
-            <Sidebar />
+          <div className="flex flex-col h-screen overflow-hidden">
+            {/* Top navigation bar */}
+            <TopBar />
 
-            {/* Main content area */}
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <TopBar />
-              <AppShell>
-                <main className="flex-1 overflow-auto bg-grid">
-                  {children}
-                </main>
-              </AppShell>
-            </div>
+            {/* Main content area with terminal */}
+            <AppShell>
+              <main className="flex-1 overflow-auto bg-grid">
+                {children}
+              </main>
+            </AppShell>
           </div>
         </Providers>
       </body>
