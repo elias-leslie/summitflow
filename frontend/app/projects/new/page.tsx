@@ -89,11 +89,11 @@ export default function NewProjectPage() {
       {/* Header */}
       <header className="animate-in">
         <Link
-          href="/projects"
+          href="/"
           className="text-xs text-slate-500 hover:text-phosphor-400 flex items-center gap-1 mb-3 transition-colors"
         >
           <ArrowLeft className="w-3 h-3" />
-          Back to Projects
+          Back to Dashboard
         </Link>
 
         <div className="flex items-center gap-4">
@@ -193,7 +193,7 @@ export default function NewProjectPage() {
               </>
             )}
           </button>
-          <Link href="/projects" className="btn-secondary text-sm">
+          <Link href="/" className="btn-secondary text-sm">
             Cancel
           </Link>
         </div>

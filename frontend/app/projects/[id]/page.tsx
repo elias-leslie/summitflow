@@ -646,8 +646,8 @@ export default function ProjectDetailPage() {
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
           <h2 className="display text-lg font-semibold text-white mb-2">Project Not Found</h2>
           <p className="text-slate-400 mb-6">The project you're looking for doesn't exist or couldn't be loaded.</p>
-          <Link href="/projects" className="btn-primary inline-flex items-center gap-2">
-            View All Projects
+          <Link href="/" className="btn-primary inline-flex items-center gap-2">
+            Back to Dashboard
           </Link>
         </div>
       </div>

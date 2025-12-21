@@ -37,8 +37,8 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId);
       localStorage.setItem("summitflow_selected_project", urlProjectId);
-    } else if (pathname === "/projects" || pathname === "/") {
-      // On projects list or dashboard - clear selection
+    } else if (pathname === "/") {
+      // On dashboard - clear selection
       setSelectedProjectId(null);
       localStorage.removeItem("summitflow_selected_project");
     }
@@ -84,9 +84,9 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
     onProjectChange?.(projectId);
   };
 
-  const handleViewAllProjects = () => {
+  const handleViewDashboard = () => {
     setIsDropdownOpen(false);
-    router.push("/projects");
+    router.push("/");
   };
 
   return (
@@ -124,13 +124,13 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
       {/* Dropdown */}
       {isDropdownOpen && (
         <div className="absolute top-full left-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-[100] max-h-80 overflow-y-auto">
-          {/* All Projects link */}
+          {/* Dashboard link */}
           <button
-            onClick={handleViewAllProjects}
+            onClick={handleViewDashboard}
             className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-outrun-400 hover:bg-slate-800 transition-colors border-b border-slate-700"
           >
             <LayoutGrid className="w-4 h-4" />
-            <span className="font-medium">All Projects</span>
+            <span className="font-medium">Dashboard</span>
           </button>
 
           {/* Projects list */}
@@ -185,8 +185,8 @@ export function useSelectedProject() {
     const urlProjectId = params.id as string | undefined;
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId);
-    } else if (pathname === "/projects" || pathname === "/") {
-      // On projects list or dashboard - no project selected
+    } else if (pathname === "/") {
+      // On dashboard - no project selected
       setSelectedProjectId(null);
     }
   }, [params.id, pathname]);

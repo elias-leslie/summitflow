@@ -100,8 +100,8 @@ export default function ProjectSettingsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-slate-400">Project not found</p>
-        <Link href="/projects" className="text-blue-400 hover:text-blue-300">
-          Back to projects
+        <Link href="/" className="text-blue-400 hover:text-blue-300">
+          Back to dashboard
         </Link>
       </div>
     );

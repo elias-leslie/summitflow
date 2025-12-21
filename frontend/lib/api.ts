@@ -15,6 +15,30 @@ export interface Project {
   root_path?: string;
 }
 
+export interface ProjectStats {
+  features: number;
+  tasks: number;
+  bugs: number;
+  blocked: number;
+}
+
+export interface ProjectWithStats {
+  id: string;
+  name: string;
+  base_url: string;
+  health_endpoint: string;
+  root_path?: string;
+  logo_url?: string;
+  created_at: string;
+  health_status?: string;
+  stats: ProjectStats;
+}
+
+export interface ProjectsWithStatsResponse {
+  projects: ProjectWithStats[];
+  total: number;
+}
+
 export interface ProjectHealth {
   project_id: string;
   healthy: boolean;
@@ -27,6 +51,12 @@ export interface ProjectHealth {
 export async function fetchProjects(): Promise<Project[]> {
   const res = await fetch(`${getApiBase()}/api/projects`);
   if (!res.ok) throw new Error("Failed to fetch projects");
+  return res.json();
+}
+
+export async function fetchProjectsWithStats(): Promise<ProjectsWithStatsResponse> {
+  const res = await fetch(`${getApiBase()}/api/projects/with-stats`);
+  if (!res.ok) throw new Error("Failed to fetch projects with stats");
   return res.json();
 }
 

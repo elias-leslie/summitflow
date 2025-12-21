@@ -90,6 +90,36 @@ async def create_project(
     )
 
 
+class ProjectStats(BaseModel):
+    """Stats for a single project."""
+
+    features: int = 0
+    tasks: int = 0
+    bugs: int = 0
+    blocked: int = 0
+
+
+class ProjectWithStats(BaseModel):
+    """Project with aggregated stats."""
+
+    id: str
+    name: str
+    base_url: str
+    health_endpoint: str
+    root_path: str | None = None
+    logo_url: str | None = None
+    created_at: datetime
+    health_status: str | None = None
+    stats: ProjectStats
+
+
+class ProjectsWithStatsResponse(BaseModel):
+    """Response for projects list with stats."""
+
+    projects: list[ProjectWithStats]
+    total: int
+
+
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
@@ -114,6 +144,108 @@ async def list_projects() -> list[ProjectResponse]:
         )
         for row in rows
     ]
+
+
+@router.get("/with-stats", response_model=ProjectsWithStatsResponse)
+async def list_projects_with_stats() -> ProjectsWithStatsResponse:
+    """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get all projects
+        # Note: logo_url column may not exist yet, so we don't select it
+        cur.execute(
+            """
+            SELECT id, name, base_url, health_endpoint, root_path, created_at
+            FROM projects
+            ORDER BY created_at DESC
+            """
+        )
+        projects = cur.fetchall()
+
+        if not projects:
+            return ProjectsWithStatsResponse(projects=[], total=0)
+
+        project_ids = [p[0] for p in projects]
+
+        # Get feature counts per project
+        cur.execute(
+            """
+            SELECT project_id, COUNT(*) as count
+            FROM feature_capabilities
+            WHERE project_id = ANY(%s)
+            GROUP BY project_id
+            """,
+            (project_ids,),
+        )
+        feature_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Get task counts per project (non-bug, active tasks only)
+        cur.execute(
+            """
+            SELECT project_id, COUNT(*) as count
+            FROM tasks
+            WHERE project_id = ANY(%s)
+              AND task_type != 'bug'
+              AND status NOT IN ('completed', 'failed')
+            GROUP BY project_id
+            """,
+            (project_ids,),
+        )
+        task_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Get bug counts per project (active bugs only)
+        cur.execute(
+            """
+            SELECT project_id, COUNT(*) as count
+            FROM tasks
+            WHERE project_id = ANY(%s)
+              AND task_type = 'bug'
+              AND status NOT IN ('completed', 'failed')
+            GROUP BY project_id
+            """,
+            (project_ids,),
+        )
+        bug_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Get blocked task counts per project
+        # A task is blocked if it has incomplete dependencies
+        cur.execute(
+            """
+            SELECT t.project_id, COUNT(DISTINCT t.id) as count
+            FROM tasks t
+            INNER JOIN task_dependencies td ON t.id = td.task_id
+            INNER JOIN tasks dep ON td.depends_on_task_id = dep.id
+            WHERE t.project_id = ANY(%s)
+              AND t.status NOT IN ('completed', 'failed')
+              AND td.dependency_type = 'blocks'
+              AND dep.status NOT IN ('completed', 'failed')
+            GROUP BY t.project_id
+            """,
+            (project_ids,),
+        )
+        blocked_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+    result = []
+    for row in projects:
+        project_id = row[0]
+        result.append(
+            ProjectWithStats(
+                id=project_id,
+                name=row[1],
+                base_url=row[2],
+                health_endpoint=row[3],
+                root_path=row[4],
+                logo_url=None,  # Logo support will be added later
+                created_at=row[5],
+                stats=ProjectStats(
+                    features=feature_counts.get(project_id, 0),
+                    tasks=task_counts.get(project_id, 0),
+                    bugs=bug_counts.get(project_id, 0),
+                    blocked=blocked_counts.get(project_id, 0),
+                ),
+            )
+        )
+
+    return ProjectsWithStatsResponse(projects=result, total=len(result))
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
