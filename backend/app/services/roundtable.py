@@ -493,6 +493,12 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
     ) -> LLMResponse:
         """Send message with tool access, handling tool calls in a loop.
 
+        .. deprecated::
+            This method uses the legacy JSON-based tool protocol. For new code,
+            use `_send_with_tools_native()` which uses Claude SDK hooks and
+            Google ADK callbacks for native tool support and better session
+            management.
+
         Uses multiple safeguards to prevent runaway agents:
         - max_iterations: Maximum rounds of tool calls (safety net)
         - max_tool_calls: Total tool calls allowed across all iterations
@@ -511,6 +517,13 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
         Returns:
             Final LLMResponse after all tool calls are complete
         """
+        import warnings
+        warnings.warn(
+            "_send_with_tools() uses the legacy JSON protocol. "
+            "Use _send_with_tools_native() for SDK-native tool support.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         import json as json_module
 
         tools = session.tool_executor.get_available_tools()
