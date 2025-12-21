@@ -7,9 +7,30 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRight, ChevronDown } from "lucide-react";
+
+// Depth-based padding classes for tree indentation
+// Maps depth to Tailwind classes (depth * 20 + 12 for row, depth * 20 + 24 for detail)
+const depthRowPadding: Record<number, string> = {
+  0: "pl-3", // 12px
+  1: "pl-8", // 32px
+  2: "pl-[52px]",
+  3: "pl-[72px]",
+  4: "pl-[92px]",
+  5: "pl-[112px]",
+};
+
+const depthDetailMargin: Record<number, string> = {
+  0: "ml-6", // 24px
+  1: "ml-11", // 44px
+  2: "ml-[64px]",
+  3: "ml-[84px]",
+  4: "ml-[104px]",
+  5: "ml-[124px]",
+};
+
 import { StatusBorder } from "./StatusIndicator";
 import type { HealthStatus } from "./types";
 
@@ -60,13 +81,13 @@ export function DataRow({
           onClick={handleClick}
           onKeyDown={handleKeyDown}
           className={cn(
-            "flex items-center gap-2 px-3 py-2.5",
+            "flex items-center gap-2 py-2.5",
             "cursor-pointer select-none",
             "transition-colors duration-100",
             "hover:bg-slate-800/40",
-            isExpanded && "bg-slate-800/30"
+            isExpanded && "bg-slate-800/30",
+            depthRowPadding[Math.min(depth, 5)] || depthRowPadding[0]
           )}
-          style={{ paddingLeft: depth * 20 + 12 }}
         >
           {/* Expand/collapse chevron */}
           {hasChildren || renderDetail ? (
@@ -107,11 +128,11 @@ export function DataRow({
           <div className="overflow-hidden">
             <div
               className={cn(
-                "mx-3 mb-2 p-4 rounded-lg",
+                "mr-3 mb-2 p-4 rounded-lg",
                 "bg-slate-900/50 border border-slate-700/50",
-                "animate-in fade-in-0 slide-in-from-top-1 duration-200"
+                "animate-in fade-in-0 slide-in-from-top-1 duration-200",
+                depthDetailMargin[Math.min(depth, 5)] || depthDetailMargin[0]
               )}
-              style={{ marginLeft: depth * 20 + 24 }}
             >
               {renderDetail()}
             </div>
