@@ -53,13 +53,13 @@ interface BeadsTabProps {
   projectId: string;
 }
 
-// Priority colors and labels
+// Priority colors and labels - using semantic tokens
 const priorityConfig: Record<number, { label: string; color: string; bgColor: string }> = {
-  0: { label: "P0", color: "text-red-600", bgColor: "bg-red-100 dark:bg-red-900" },
-  1: { label: "P1", color: "text-orange-600", bgColor: "bg-orange-100 dark:bg-orange-900" },
-  2: { label: "P2", color: "text-yellow-600", bgColor: "bg-yellow-100 dark:bg-yellow-900" },
-  3: { label: "P3", color: "text-blue-600", bgColor: "bg-blue-100 dark:bg-blue-900" },
-  4: { label: "P4", color: "text-slate-500", bgColor: "bg-slate-100 dark:bg-slate-800" },
+  0: { label: "P0", color: "text-priority-critical", bgColor: "bg-priority-critical/20" },
+  1: { label: "P1", color: "text-priority-high", bgColor: "bg-priority-high/20" },
+  2: { label: "P2", color: "text-priority-medium", bgColor: "bg-priority-medium/20" },
+  3: { label: "P3", color: "text-status-info", bgColor: "bg-status-info/20" },
+  4: { label: "P4", color: "text-priority-low", bgColor: "bg-priority-low/20" },
 };
 
 // Status colors
