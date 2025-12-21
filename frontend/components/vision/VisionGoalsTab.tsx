@@ -92,12 +92,12 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
   };
   const defaultColor = "bg-zinc-500/10 text-zinc-400 border-zinc-500/30";
 
-  // Get pass rate color
-  const getPassRateColor = (rate: number) => {
-    if (rate >= 0.8) return "#4ade80"; // green
-    if (rate >= 0.5) return "#facc15"; // yellow
-    if (rate > 0) return "#f97316"; // orange
-    return "#71717a"; // gray
+  // Get pass rate color class
+  const getPassRateColorClass = (rate: number) => {
+    if (rate >= 0.8) return "text-green-400";
+    if (rate >= 0.5) return "text-yellow-400";
+    if (rate > 0) return "text-orange-400";
+    return "text-zinc-500";
   };
 
   // Get roadmap status icon
@@ -166,8 +166,7 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
         </div>
         <div className="card p-4">
           <div
-            className="text-2xl font-bold"
-            style={{ color: getPassRateColor(overallPassRate) }}
+            className={`text-2xl font-bold ${getPassRateColorClass(overallPassRate)}`}
           >
             {Math.round(overallPassRate * 100)}%
           </div>
@@ -363,8 +362,7 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
                             className="h-2 w-20"
                           />
                           <span
-                            className="text-xs font-medium"
-                            style={{ color: getPassRateColor(goal.pass_rate) }}
+                            className={`text-xs font-medium ${getPassRateColorClass(goal.pass_rate)}`}
                           >
                             {Math.round(goal.pass_rate * 100)}%
                           </span>
