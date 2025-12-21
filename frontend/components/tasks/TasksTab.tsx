@@ -35,6 +35,7 @@ import { TaskLogViewer } from "./TaskLogViewer";
 
 interface TasksTabProps {
   projectId: string;
+  initialFilters?: Partial<TaskFilterValues>;
 }
 
 // Priority config
@@ -274,9 +275,12 @@ function TaskRow({
   );
 }
 
-export function TasksTab({ projectId }: TasksTabProps) {
+export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<TaskFilterValues>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<TaskFilterValues>({
+    ...DEFAULT_FILTERS,
+    ...initialFilters,
+  });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 

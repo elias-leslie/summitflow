@@ -32,6 +32,7 @@ import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
 import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionOverview } from "@/components/vision/VisionOverview";
 import { TasksTab } from "@/components/tasks/TasksTab";
+import { type TaskFilterValues } from "@/components/tasks/TaskFilters";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { GoalsList } from "@/components/goals/GoalsList";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
@@ -74,6 +75,17 @@ export default function ProjectDetailPage() {
   const [explorerType, setExplorerType] = useState<ExplorerType>(
     urlExplorerType && VALID_EXPLORER_TYPES.includes(urlExplorerType) ? urlExplorerType : "files"
   );
+
+  // Get task filter params from URL
+  const urlTaskStatus = searchParams.get("status");
+  const urlTaskType = searchParams.get("taskType");
+  const taskInitialFilters: Partial<TaskFilterValues> = {};
+  if (urlTaskStatus && ["all", "active", "pending", "running", "completed", "failed"].includes(urlTaskStatus)) {
+    taskInitialFilters.status = urlTaskStatus as TaskFilterValues["status"];
+  }
+  if (urlTaskType && ["all", "feature", "bug", "task"].includes(urlTaskType)) {
+    taskInitialFilters.type = urlTaskType as TaskFilterValues["type"];
+  }
 
   // Restore last tab from localStorage on mount (if no URL tab specified)
   useEffect(() => {
@@ -740,7 +752,7 @@ export default function ProjectDetailPage() {
         )}
         {activeTab === "tasks" && (
           <div className="h-full overflow-auto p-4">
-            <TasksTab projectId={projectId} />
+            <TasksTab projectId={projectId} initialFilters={taskInitialFilters} />
           </div>
         )}
         {activeTab === "evidence" && (

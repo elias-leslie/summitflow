@@ -49,13 +49,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
         router.push(`/projects/${project.id}?tab=features`);
         break;
       case "tasks":
-        router.push(`/projects/${project.id}?tab=tasks`);
+        // Show active non-bug tasks (matches dashboard count)
+        router.push(`/projects/${project.id}?tab=tasks&status=active`);
         break;
       case "bugs":
-        router.push(`/projects/${project.id}?tab=tasks&type=bug`);
+        // Show active bugs only (matches dashboard count)
+        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=bug`);
         break;
       case "blocked":
-        router.push(`/projects/${project.id}?tab=tasks&blocked=true`);
+        // TODO: Blocked filter needs backend support - for now show active tasks
+        router.push(`/projects/${project.id}?tab=tasks&status=active`);
         break;
     }
   };
