@@ -93,7 +93,9 @@ router = APIRouter()
 class CreateSessionRequest(BaseModel):
     """Request to create a new roundtable session."""
 
+    title: str | None = None  # Optional session title
     mode: str = "quick"  # "spec_driven" or "quick"
+    agent_mode: str = "both"  # "claude", "gemini", or "both"
     tools_enabled: bool = True  # Enable codebase read access by default
     write_enabled: bool = False  # Disable write access by default
     yolo_mode: bool = False  # Disable YOLO mode by default
@@ -104,7 +106,10 @@ class CreateSessionResponse(BaseModel):
 
     session_id: str
     project_id: str
+    title: str | None = None
     mode: str
+    agent_mode: str = "both"
+    status: str = "active"
     tools_enabled: bool = True
     write_enabled: bool = False
     yolo_mode: bool = False
@@ -280,7 +285,10 @@ class SessionInfo(BaseModel):
 
     id: str
     project_id: str
+    title: str | None = None
+    status: str = "active"
     mode: str
+    agent_mode: str = "both"
     tools_enabled: bool = True
     write_enabled: bool = False
     yolo_mode: bool = False
@@ -290,6 +298,25 @@ class SessionInfo(BaseModel):
     message_count: int
     feature_count: int
     created_at: str
+    updated_at: str
+
+
+class UpdateSessionRequest(BaseModel):
+    """Request to update a session's metadata."""
+
+    title: str | None = None
+    status: str | None = None  # "active" or "archived"
+    agent_mode: str | None = None  # "claude", "gemini", or "both"
+
+
+class UpdateSessionResponse(BaseModel):
+    """Response after updating a session."""
+
+    id: str
+    project_id: str
+    title: str | None = None
+    status: str
+    agent_mode: str
     updated_at: str
 
 
@@ -373,6 +400,9 @@ def _get_preview(tool_name: str, tool_args: dict[str, Any]) -> str:
 # ============================================================================
 
 
+MAX_SESSIONS_PER_PROJECT = 25
+
+
 @router.post(
     "/projects/{project_id}/roundtable/sessions",
     response_model=CreateSessionResponse,
@@ -381,8 +411,20 @@ async def create_session(
     project_id: str,
     request: CreateSessionRequest,
 ):
-    """Create a new roundtable session."""
+    """Create a new roundtable session.
+
+    Enforces a limit of 25 sessions per project. When the limit is reached,
+    the oldest session (by updated_at) is automatically deleted.
+    """
     service = get_roundtable_service()
+
+    # Enforce session limit - delete oldest if at limit
+    session_count = roundtable_storage.get_session_count(project_id)
+    if session_count >= MAX_SESSIONS_PER_PROJECT:
+        deleted_id = roundtable_storage.delete_oldest_session(project_id)
+        if deleted_id:
+            logger.info(f"Deleted oldest session {deleted_id} to make room")
+
     session = service.create_session(
         project_id,
         mode=request.mode,
@@ -394,7 +436,7 @@ async def create_session(
         session.tool_executor.enable_write_access()
     session.tool_executor.yolo_mode = request.yolo_mode
 
-    # Save to database for persistence
+    # Save to database for persistence with new fields
     roundtable_storage.save_session(
         session_id=session.id,
         project_id=project_id,
@@ -404,12 +446,17 @@ async def create_session(
         tools_enabled=request.tools_enabled,
         write_enabled=request.write_enabled,
         yolo_mode=request.yolo_mode,
+        title=request.title,
+        agent_mode=request.agent_mode,
     )
 
     return CreateSessionResponse(
         session_id=session.id,
         project_id=project_id,
+        title=request.title,
         mode=request.mode,
+        agent_mode=request.agent_mode,
+        status="active",
         tools_enabled=request.tools_enabled,
         write_enabled=request.write_enabled,
         yolo_mode=request.yolo_mode,
@@ -417,14 +464,22 @@ async def create_session(
 
 
 @router.get("/projects/{project_id}/roundtable/sessions")
-async def list_sessions(project_id: str) -> list[SessionInfo]:
-    """List all roundtable sessions for a project."""
-    sessions = roundtable_storage.list_sessions(project_id)
+async def list_sessions(project_id: str, status: str | None = None) -> list[SessionInfo]:
+    """List all roundtable sessions for a project.
+
+    Args:
+        project_id: Project ID
+        status: Optional filter by status ("active", "archived")
+    """
+    sessions = roundtable_storage.list_sessions(project_id, status=status)
     return [
         SessionInfo(
             id=s["id"],
             project_id=s["project_id"],
+            title=s.get("title"),
+            status=s.get("status", "active"),
             mode=s["mode"],
+            agent_mode=s.get("agent_mode", "both"),
             tools_enabled=s.get("tools_enabled", True),
             write_enabled=s.get("write_enabled", False),
             yolo_mode=s.get("yolo_mode", False),
@@ -471,6 +526,46 @@ async def delete_session(project_id: str, session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True, "session_id": session_id}
+
+
+@router.patch(
+    "/projects/{project_id}/roundtable/sessions/{session_id}",
+    response_model=UpdateSessionResponse,
+)
+async def update_session(
+    project_id: str, session_id: str, request: UpdateSessionRequest
+) -> UpdateSessionResponse:
+    """Update a session's metadata (title, status, agent_mode)."""
+    # Validate agent_mode if provided
+    if request.agent_mode is not None and request.agent_mode not in ("claude", "gemini", "both"):
+        raise HTTPException(
+            status_code=400, detail="agent_mode must be 'claude', 'gemini', or 'both'"
+        )
+
+    # Validate status if provided
+    if request.status is not None and request.status not in ("active", "archived"):
+        raise HTTPException(
+            status_code=400, detail="status must be 'active' or 'archived'"
+        )
+
+    result = roundtable_storage.update_session_metadata(
+        session_id=session_id,
+        title=request.title,
+        status=request.status,
+        agent_mode=request.agent_mode,
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return UpdateSessionResponse(
+        id=result["id"],
+        project_id=result["project_id"],
+        title=result.get("title"),
+        status=result.get("status", "active"),
+        agent_mode=result.get("agent_mode", "both"),
+        updated_at=result["updated_at"].isoformat() if result.get("updated_at") else "",
+    )
 
 
 @router.get("/projects/{project_id}/roundtable/sessions/{session_id}/agent-config")

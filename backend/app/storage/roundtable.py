@@ -22,6 +22,8 @@ def save_session(
     write_enabled: bool | None = None,
     yolo_mode: bool | None = None,
     tool_stats: dict[str, Any] | None = None,
+    title: str | None = None,
+    agent_mode: str | None = None,
 ) -> dict[str, Any]:
     """Save or update a roundtable session.
 
@@ -35,6 +37,8 @@ def save_session(
         write_enabled: Whether write tools are enabled (optional, preserves existing if None)
         yolo_mode: Whether YOLO mode is enabled (optional, preserves existing if None)
         tool_stats: Tool usage statistics (optional, preserves existing if None)
+        title: Session title (optional)
+        agent_mode: Agent mode - claude, gemini, both (optional)
 
     Returns:
         Saved session dict
@@ -49,8 +53,8 @@ def save_session(
             cur.execute(
                 """
                 INSERT INTO roundtable_sessions
-                    (id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, NOW(), NOW())
+                    (id, project_id, mode, title, agent_mode, status, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, 'active', %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, NOW(), NOW())
                 ON CONFLICT (id) DO UPDATE SET
                     messages = EXCLUDED.messages,
                     generated_features = COALESCE(NULLIF(EXCLUDED.generated_features, '[]'::jsonb), roundtable_sessions.generated_features),
@@ -59,12 +63,14 @@ def save_session(
                     yolo_mode = COALESCE(EXCLUDED.yolo_mode, roundtable_sessions.yolo_mode),
                     tool_stats = COALESCE(EXCLUDED.tool_stats, roundtable_sessions.tool_stats),
                     updated_at = NOW()
-                RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
+                RETURNING id, project_id, mode, title, status, agent_mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
                 """,
                 (
                     session_id,
                     project_id,
                     mode,
+                    title,
+                    agent_mode or "both",
                     tools_enabled if tools_enabled is not None else True,
                     write_enabled if write_enabled is not None else False,
                     yolo_mode if yolo_mode is not None else False,
@@ -78,15 +84,15 @@ def save_session(
             cur.execute(
                 """
                 INSERT INTO roundtable_sessions
-                    (id, project_id, mode, messages, generated_features, created_at, updated_at)
-                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, NOW(), NOW())
+                    (id, project_id, mode, title, agent_mode, status, messages, generated_features, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, 'active', %s::jsonb, %s::jsonb, NOW(), NOW())
                 ON CONFLICT (id) DO UPDATE SET
                     messages = EXCLUDED.messages,
                     generated_features = COALESCE(NULLIF(EXCLUDED.generated_features, '[]'::jsonb), roundtable_sessions.generated_features),
                     updated_at = NOW()
-                RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
+                RETURNING id, project_id, mode, title, status, agent_mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
                 """,
-                (session_id, project_id, mode, json.dumps(messages), json.dumps(features)),
+                (session_id, project_id, mode, title, agent_mode or "both", json.dumps(messages), json.dumps(features)),
             )
         row = cur.fetchone()
         conn.commit()
@@ -98,14 +104,17 @@ def save_session(
         "id": row[0],
         "project_id": row[1],
         "mode": row[2],
-        "tools_enabled": row[3] if row[3] is not None else True,
-        "write_enabled": row[4] if row[4] is not None else False,
-        "yolo_mode": row[5] if row[5] is not None else False,
-        "tool_stats": row[6] or default_stats,
-        "messages": row[7] or [],
-        "generated_features": row[8] or [],
-        "created_at": row[9],
-        "updated_at": row[10],
+        "title": row[3],
+        "status": row[4] or "active",
+        "agent_mode": row[5] or "both",
+        "tools_enabled": row[6] if row[6] is not None else True,
+        "write_enabled": row[7] if row[7] is not None else False,
+        "yolo_mode": row[8] if row[8] is not None else False,
+        "tool_stats": row[9] or default_stats,
+        "messages": row[10] or [],
+        "generated_features": row[11] or [],
+        "created_at": row[12],
+        "updated_at": row[13],
     }
 
 
@@ -159,6 +168,7 @@ def list_sessions(
     project_id: str,
     limit: int = 20,
     offset: int = 0,
+    status: str | None = None,
 ) -> list[dict[str, Any]]:
     """List roundtable sessions for a project.
 
@@ -166,6 +176,7 @@ def list_sessions(
         project_id: Project ID
         limit: Maximum number of sessions to return
         offset: Number of sessions to skip
+        status: Filter by status ("active", "archived") or None for all
 
     Returns:
         List of session dicts (without full messages for performance)
@@ -173,37 +184,46 @@ def list_sessions(
     default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
+        query = """
+            SELECT id, project_id, title, status, mode, agent_mode,
+                   tools_enabled, write_enabled, yolo_mode, tool_stats,
                    agent_override, model_override,
                    jsonb_array_length(messages) as message_count,
                    jsonb_array_length(generated_features) as feature_count,
                    created_at, updated_at
             FROM roundtable_sessions
             WHERE project_id = %s
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-            """,
-            (project_id, limit, offset),
-        )
+        """
+        params = [project_id]
+
+        if status:
+            query += " AND status = %s"
+            params.append(status)
+
+        query += " ORDER BY updated_at DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        cur.execute(query, params)
         rows = cur.fetchall()
 
     return [
         {
             "id": row[0],
             "project_id": row[1],
-            "mode": row[2],
-            "tools_enabled": row[3] if row[3] is not None else True,
-            "write_enabled": row[4] if row[4] is not None else False,
-            "yolo_mode": row[5] if row[5] is not None else False,
-            "tool_stats": row[6] or default_stats,
-            "agent_override": row[7],
-            "model_override": row[8],
-            "message_count": row[9],
-            "feature_count": row[10],
-            "created_at": row[11],
-            "updated_at": row[12],
+            "title": row[2],
+            "status": row[3] or "active",
+            "mode": row[4],
+            "agent_mode": row[5] or "both",
+            "tools_enabled": row[6] if row[6] is not None else True,
+            "write_enabled": row[7] if row[7] is not None else False,
+            "yolo_mode": row[8] if row[8] is not None else False,
+            "tool_stats": row[9] or default_stats,
+            "agent_override": row[10],
+            "model_override": row[11],
+            "message_count": row[12],
+            "feature_count": row[13],
+            "created_at": row[14],
+            "updated_at": row[15],
         }
         for row in rows
     ]
