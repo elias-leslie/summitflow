@@ -929,11 +929,16 @@ export interface RoundtableSession {
 export interface RoundtableSessionInfo {
   id: string;
   project_id: string;
+  title: string | null;
+  status: "active" | "archived";
   mode: string;
+  agent_mode: "claude" | "gemini" | "both";
   tools_enabled: boolean;
   write_enabled: boolean;
   yolo_mode: boolean;
   tool_stats?: ToolStats;
+  agent_override: string | null;
+  model_override: string | null;
   message_count: number;
   feature_count: number;
   created_at: string;
@@ -957,17 +962,37 @@ export interface SendMessageResponse {
 export interface CreateSessionResponse {
   session_id: string;
   project_id: string;
+  title: string | null;
   mode: string;
+  agent_mode: "claude" | "gemini" | "both";
+  status: "active" | "archived";
   tools_enabled: boolean;
   write_enabled: boolean;
   yolo_mode: boolean;
 }
 
 export interface CreateSessionOptions {
+  title?: string;
   mode?: "spec_driven" | "quick";
+  agentMode?: "claude" | "gemini" | "both";
   toolsEnabled?: boolean;
   writeEnabled?: boolean;
   yoloMode?: boolean;
+}
+
+export interface UpdateSessionRequest {
+  title?: string;
+  status?: "active" | "archived";
+  agentMode?: "claude" | "gemini" | "both";
+}
+
+export interface UpdateSessionResponse {
+  id: string;
+  project_id: string;
+  title: string | null;
+  status: "active" | "archived";
+  agent_mode: "claude" | "gemini" | "both";
+  updated_at: string;
 }
 
 export async function createRoundtableSession(
@@ -975,7 +1000,9 @@ export async function createRoundtableSession(
   options: CreateSessionOptions = {}
 ): Promise<CreateSessionResponse> {
   const {
+    title,
     mode = "quick",
+    agentMode = "both",
     toolsEnabled = true,
     writeEnabled = false,
     yoloMode = false,
@@ -985,7 +1012,9 @@ export async function createRoundtableSession(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      title,
       mode,
+      agent_mode: agentMode,
       tools_enabled: toolsEnabled,
       write_enabled: writeEnabled,
       yolo_mode: yoloMode,
@@ -995,9 +1024,38 @@ export async function createRoundtableSession(
   return res.json();
 }
 
-export async function listRoundtableSessions(projectId: string): Promise<RoundtableSessionInfo[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`);
+export async function listRoundtableSessions(
+  projectId: string,
+  status?: "active" | "archived"
+): Promise<RoundtableSessionInfo[]> {
+  const url = new URL(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`);
+  if (status) {
+    url.searchParams.set("status", status);
+  }
+  const res = await fetch(url.toString());
   if (!res.ok) throw new Error("Failed to list roundtable sessions");
+  return res.json();
+}
+
+export async function updateRoundtableSession(
+  projectId: string,
+  sessionId: string,
+  updates: UpdateSessionRequest
+): Promise<UpdateSessionResponse> {
+  const body: Record<string, unknown> = {};
+  if (updates.title !== undefined) body.title = updates.title;
+  if (updates.status !== undefined) body.status = updates.status;
+  if (updates.agentMode !== undefined) body.agent_mode = updates.agentMode;
+
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to update roundtable session");
   return res.json();
 }
 
