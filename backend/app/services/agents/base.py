@@ -159,9 +159,13 @@ class LLMClient(ABC):
         # DEPRECATED: This method uses custom JSON protocol.
         # Use generate_with_tools_native() for SDK-native tool calling.
         # Kept for fallback/legacy compatibility only.
-        logger.warning(
-            "generate_with_tools() is deprecated. "
-            "Use generate_with_tools_native() for SDK-native tool calling."
+        import warnings
+        warnings.warn(
+            "generate_with_tools() is deprecated and uses a custom JSON protocol. "
+            "Use generate_with_tools_native() for SDK-native tool calling with "
+            "proper permission hooks and session management.",
+            DeprecationWarning,
+            stacklevel=2,
         )
 
         # Format system prompt with tool definitions
