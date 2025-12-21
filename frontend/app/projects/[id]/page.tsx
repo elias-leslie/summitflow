@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle, Flag } from "lucide-react";
+import { ArrowLeft, AlertCircle, Clock, Globe, ListChecks, Target, Camera, ListTodo, Compass, Kanban, MessageCircle, Flag, Settings2 } from "lucide-react";
 import Link from "next/link";
 import {
   fetchProject,
@@ -625,25 +625,34 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
-          {/* Health status */}
-          <div className="flex items-center gap-3">
-            {health ? (
-              <>
-                <div
-                  className={`status-dot ${health.healthy ? "healthy" : "error"}`}
-                />
-                <span className="text-sm text-slate-400">
-                  {health.healthy ? "Healthy" : "Unhealthy"}
-                </span>
-                {health.response_time_ms && (
-                  <span className="mono text-xs text-slate-500 tabular-nums">
-                    {Math.round(health.response_time_ms)}ms
+          {/* Health status and Settings */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {health ? (
+                <>
+                  <div
+                    className={`status-dot ${health.healthy ? "healthy" : "error"}`}
+                  />
+                  <span className="text-sm text-slate-400">
+                    {health.healthy ? "Healthy" : "Unhealthy"}
                   </span>
-                )}
-              </>
-            ) : (
-              <div className="status-dot unknown" />
-            )}
+                  {health.response_time_ms && (
+                    <span className="mono text-xs text-slate-500 tabular-nums">
+                      {Math.round(health.response_time_ms)}ms
+                    </span>
+                  )}
+                </>
+              ) : (
+                <div className="status-dot unknown" />
+              )}
+            </div>
+            <Link
+              href={`/projects/${projectId}/settings`}
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700 rounded-md transition-colors"
+              title="Project Settings"
+            >
+              <Settings2 className="w-5 h-5" />
+            </Link>
           </div>
         </div>
 
