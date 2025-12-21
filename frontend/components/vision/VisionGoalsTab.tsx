@@ -73,24 +73,24 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
     });
   };
 
-  // Category color mapping - SummitFlow phosphor-green theme
-  const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
-    Intelligence: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80", border: "rgba(34, 197, 94, 0.3)" },
-    Automation: { bg: "rgba(139, 92, 246, 0.1)", text: "#a78bfa", border: "rgba(139, 92, 246, 0.3)" },
-    Experience: { bg: "rgba(6, 182, 212, 0.1)", text: "#22d3ee", border: "rgba(6, 182, 212, 0.3)" },
-    Reliability: { bg: "rgba(16, 185, 129, 0.1)", text: "#34d399", border: "rgba(16, 185, 129, 0.3)" },
-    Transparency: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", border: "rgba(245, 158, 11, 0.3)" },
-    Adaptability: { bg: "rgba(236, 72, 153, 0.1)", text: "#f472b6", border: "rgba(236, 72, 153, 0.3)" },
-    Integration: { bg: "rgba(99, 102, 241, 0.1)", text: "#818cf8", border: "rgba(99, 102, 241, 0.3)" },
-    intelligence: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80", border: "rgba(34, 197, 94, 0.3)" },
-    automation: { bg: "rgba(139, 92, 246, 0.1)", text: "#a78bfa", border: "rgba(139, 92, 246, 0.3)" },
-    experience: { bg: "rgba(6, 182, 212, 0.1)", text: "#22d3ee", border: "rgba(6, 182, 212, 0.3)" },
-    reliability: { bg: "rgba(16, 185, 129, 0.1)", text: "#34d399", border: "rgba(16, 185, 129, 0.3)" },
-    validation: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", border: "rgba(245, 158, 11, 0.3)" },
-    quality: { bg: "rgba(236, 72, 153, 0.1)", text: "#f472b6", border: "rgba(236, 72, 153, 0.3)" },
-    portfolio: { bg: "rgba(99, 102, 241, 0.1)", text: "#818cf8", border: "rgba(99, 102, 241, 0.3)" },
+  // Category color mapping - using Tailwind opacity modifiers
+  const categoryColors: Record<string, string> = {
+    Intelligence: "bg-green-500/10 text-green-400 border-green-500/30",
+    Automation: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+    Experience: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+    Reliability: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    Transparency: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    Adaptability: "bg-pink-500/10 text-pink-400 border-pink-500/30",
+    Integration: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+    intelligence: "bg-green-500/10 text-green-400 border-green-500/30",
+    automation: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+    experience: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+    reliability: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    validation: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    quality: "bg-pink-500/10 text-pink-400 border-pink-500/30",
+    portfolio: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
   };
-  const defaultColor = { bg: "rgba(113, 113, 122, 0.1)", text: "#a1a1aa", border: "rgba(113, 113, 122, 0.3)" };
+  const defaultColor = "bg-zinc-500/10 text-zinc-400 border-zinc-500/30";
 
   // Get pass rate color
   const getPassRateColor = (rate: number) => {
@@ -300,7 +300,7 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
             <TableBody>
               {goals.map((goal) => {
                 const isExpanded = expandedGoals.has(goal.code);
-                const colors = goal.category
+                const colorClasses = goal.category
                   ? categoryColors[goal.category] || defaultColor
                   : defaultColor;
 
@@ -333,12 +333,7 @@ export function VisionGoalsTab({ projectId }: VisionGoalsTabProps) {
                       <TableCell className="px-2 py-2">
                         {goal.category && (
                           <span
-                            className="text-xs px-1.5 py-0.5 rounded border"
-                            style={{
-                              backgroundColor: colors.bg,
-                              color: colors.text,
-                              borderColor: colors.border,
-                            }}
+                            className={`text-xs px-1.5 py-0.5 rounded border ${colorClasses}`}
                           >
                             {goal.category}
                           </span>
