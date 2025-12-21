@@ -50,6 +50,13 @@ const config: Config = {
           cyan: "#00f5ff",
           purple: "#bf00ff",
         },
+        // Phosphor - neon cyan accent scale
+        phosphor: {
+          400: "#33f7ff", // Lighter cyan
+          500: "#00f5ff", // Base neon cyan
+          600: "#00d4dd", // Darker cyan
+          700: "#00b3bb", // Darkest cyan
+        },
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', '"Fira Code"', "monospace"],
