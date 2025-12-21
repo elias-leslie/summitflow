@@ -1438,3 +1438,111 @@ export async function saveGoalsFromRoundtable(
   if (!res.ok) throw new Error("Failed to save goals");
   return res.json();
 }
+
+// =============================================================================
+// Extraction Prompts API
+// =============================================================================
+
+export type ExtractionPromptType =
+  | "feature_extraction"
+  | "vision_extraction"
+  | "goals_extraction";
+
+export interface ExtractionPrompt {
+  prompt_type: ExtractionPromptType;
+  prompt_text: string;
+  primary_agent: "claude" | "gemini";
+  primary_model: string;
+  verification_enabled: boolean;
+  verification_agent: "claude" | "gemini" | null;
+  verification_model: string | null;
+  verification_prompt: string | null;
+  is_default: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ExtractionPromptUpdate {
+  prompt_text: string;
+  primary_agent?: "claude" | "gemini";
+  primary_model?: string;
+  verification_enabled?: boolean;
+  verification_agent?: "claude" | "gemini" | null;
+  verification_model?: string | null;
+  verification_prompt?: string | null;
+}
+
+export interface ExtractionPromptsExport {
+  project_id: string;
+  exported_at: string;
+  prompts: ExtractionPrompt[];
+}
+
+export async function getExtractionPrompts(
+  projectId: string
+): Promise<ExtractionPrompt[]> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts`
+  );
+  if (!res.ok) throw new Error("Failed to fetch extraction prompts");
+  return res.json();
+}
+
+export async function getExtractionPrompt(
+  projectId: string,
+  promptType: ExtractionPromptType
+): Promise<ExtractionPrompt> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch extraction prompt");
+  return res.json();
+}
+
+export async function updateExtractionPrompt(
+  projectId: string,
+  promptType: ExtractionPromptType,
+  config: ExtractionPromptUpdate
+): Promise<ExtractionPrompt> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt_text: config.prompt_text,
+        primary_agent: config.primary_agent ?? "claude",
+        primary_model: config.primary_model ?? "claude-sonnet-4-5",
+        verification_enabled: config.verification_enabled ?? false,
+        verification_agent: config.verification_agent ?? null,
+        verification_model: config.verification_model ?? null,
+        verification_prompt: config.verification_prompt ?? null,
+      }),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to update extraction prompt");
+  return res.json();
+}
+
+export async function deleteExtractionPrompt(
+  projectId: string,
+  promptType: ExtractionPromptType
+): Promise<{ deleted: boolean; reverted_to_default: boolean; prompt_type: string }> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error("Failed to delete extraction prompt");
+  return res.json();
+}
+
+export async function exportExtractionPrompts(
+  projectId: string,
+  format: "json" = "json"
+): Promise<ExtractionPromptsExport> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/export?format=${format}`
+  );
+  if (!res.ok) throw new Error("Failed to export extraction prompts");
+  return res.json();
+}
