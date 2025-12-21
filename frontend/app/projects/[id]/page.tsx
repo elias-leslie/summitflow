@@ -45,6 +45,7 @@ import {
   type GeneratedVision,
 } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
+import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
@@ -220,6 +221,56 @@ export default function ProjectDetailPage() {
     // Clear from localStorage
     const storageKey = `roundtable-session-${projectId}`;
     localStorage.removeItem(storageKey);
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    // Don't reload if already selected
+    if (sessionId === roundtableSessionId) return;
+
+    try {
+      const session = await getRoundtableSession(projectId, sessionId);
+      setRoundtableSessionId(session.id);
+      setRoundtableMode(session.mode as RoundtableMode);
+
+      // Load tools settings
+      setToolsEnabled(session.tools_enabled ?? true);
+      setWriteEnabled(session.write_enabled ?? false);
+      setYoloMode(session.yolo_mode ?? false);
+      if (session.tool_stats) {
+        setToolStats(session.tool_stats);
+      }
+
+      // Load agent config
+      setAgentOverride(session.agent_override ?? null);
+      setModelOverride(session.model_override ?? null);
+
+      // Convert messages to ChatMessage format
+      const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
+        id: msg.id,
+        agent: msg.agent,
+        content: msg.content,
+        timestamp: new Date(msg.timestamp),
+        tokensUsed: msg.tokens_used,
+      }));
+      setRoundtableMessages(messages);
+
+      // Load generated features if any
+      if (session.generated_features && session.generated_features.length > 0) {
+        setGeneratedFeatures(session.generated_features);
+      } else {
+        setGeneratedFeatures([]);
+      }
+
+      // Clear any errors
+      setRoundtableError(null);
+
+      // Save to localStorage for persistence
+      const storageKey = `roundtable-session-${projectId}`;
+      localStorage.setItem(storageKey, sessionId);
+    } catch (err) {
+      console.error("Failed to load session:", err);
+      setRoundtableError("Failed to load session");
+    }
   };
 
   const handleToolsChange = async (settings: { toolsEnabled?: boolean; writeEnabled?: boolean; yoloMode?: boolean }) => {
@@ -746,33 +797,46 @@ export default function ProjectDetailPage() {
       {/* Tab Content */}
       <section className="animate-fade-in">
         {activeTab === "roundtable" && (
-          <RoundtableChat
-            projectId={projectId}
-            sessionId={roundtableSessionId ?? undefined}
-            className="h-[calc(100vh-320px)] min-h-[500px]"
-            mode={roundtableMode}
-            onModeChange={handleRoundtableModeChange}
-            onSendMessage={handleSendMessage}
-            onGenerateFeatures={handleGenerateFeatures}
-            onGenerateVision={handleGenerateVision}
-            onGenerateGoals={handleGenerateGoals}
-            onSaveVision={handleSaveVision}
-            onSaveGoals={handleSaveGoals}
-            onNewSession={handleNewRoundtableSession}
-            messages={roundtableMessages}
-            isLoading={roundtableLoading}
-            streamingAgent={streamingAgent}
-            connected={true}
-            error={roundtableError}
-            toolsEnabled={toolsEnabled}
-            writeEnabled={writeEnabled}
-            yoloMode={yoloMode}
-            toolStats={toolStats}
-            onToolsChange={handleToolsChange}
-            agentOverride={agentOverride}
-            modelOverride={modelOverride}
-            onAgentConfigChange={handleAgentConfigChange}
-          />
+          <div className="flex gap-4">
+            {/* Session List Panel */}
+            <div className="w-72 flex-shrink-0">
+              <SessionList
+                projectId={projectId}
+                currentSessionId={roundtableSessionId ?? undefined}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewRoundtableSession}
+              />
+            </div>
+
+            {/* Chat Panel */}
+            <RoundtableChat
+              projectId={projectId}
+              sessionId={roundtableSessionId ?? undefined}
+              className="flex-1 h-[calc(100vh-320px)] min-h-[500px]"
+              mode={roundtableMode}
+              onModeChange={handleRoundtableModeChange}
+              onSendMessage={handleSendMessage}
+              onGenerateFeatures={handleGenerateFeatures}
+              onGenerateVision={handleGenerateVision}
+              onGenerateGoals={handleGenerateGoals}
+              onSaveVision={handleSaveVision}
+              onSaveGoals={handleSaveGoals}
+              onNewSession={handleNewRoundtableSession}
+              messages={roundtableMessages}
+              isLoading={roundtableLoading}
+              streamingAgent={streamingAgent}
+              connected={true}
+              error={roundtableError}
+              toolsEnabled={toolsEnabled}
+              writeEnabled={writeEnabled}
+              yoloMode={yoloMode}
+              toolStats={toolStats}
+              onToolsChange={handleToolsChange}
+              agentOverride={agentOverride}
+              modelOverride={modelOverride}
+              onAgentConfigChange={handleAgentConfigChange}
+            />
+          </div>
         )}
         {activeTab === "vision" && <VisionOverview projectId={projectId} />}
         {activeTab === "goals" && <GoalsList projectId={projectId} />}
