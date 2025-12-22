@@ -248,17 +248,15 @@ async def run_single_test(project_id: str, test_id: str) -> TestRunResponse:
     if not test:
         raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
 
-    # Import test runner service (lazy import to avoid circular deps)
-    try:
-        from ..services.test_runner import run_test
-        result = await run_test(project_id, test_id)
-        return TestRunResponse(**result)
-    except ImportError:
-        # Test runner not yet implemented - return stub
-        raise HTTPException(
-            status_code=501,
-            detail="Test runner service not yet implemented (Phase 4)",
-        )
+    from ..services.test_runner import run_test
+    result = await run_test(project_id, test_id)
+    return TestRunResponse(
+        test_id=test_id,
+        result="passed" if result.passed else "failed",
+        duration_ms=result.duration_ms,
+        output=result.output,
+        error=result.error,
+    )
 
 
 @router.post("/{project_id}/tests/run", response_model=list[TestRunResult])
@@ -268,18 +266,62 @@ async def run_multiple_tests(project_id: str, body: TestRunRequest) -> list[Test
     If test_ids provided, run those specific tests.
     If tier provided, run all tests matching that tier.
     """
-    # Import test runner service (lazy import to avoid circular deps)
+    from ..services.test_runner import run_tests
+    results = await run_tests(
+        project_id,
+        test_ids=body.test_ids,
+        tier=body.tier,
+    )
+    return [TestRunResult(**r) for r in results]
+
+
+# ============================================================
+# Test Import
+# ============================================================
+
+
+class ImportTestsRequest(BaseModel):
+    """Request for importing tests."""
+
+    source_type: str = "all"  # pytest, vitest, playwright, all
+    discover: bool = True
+
+
+class ImportTestsResponse(BaseModel):
+    """Response for test import."""
+
+    imported_count: int
+    skipped_count: int
+    tests: list[TestResponse]
+    errors: list[str]
+
+
+@router.post("/{project_id}/tests/import", response_model=ImportTestsResponse)
+async def import_tests_endpoint(
+    project_id: str,
+    body: ImportTestsRequest,
+) -> ImportTestsResponse:
+    """Import tests from a project by discovering existing test files.
+
+    Supports:
+    - pytest: Discovers tests via pytest --collect-only
+    - vitest: Discovers .test.ts/.tsx files
+    - playwright: Discovers .spec.ts E2E tests
+    - all: Discovers all supported test types
+    """
+    from ..services.test_importer import import_tests
+
     try:
-        from ..services.test_runner import run_tests_batch
-        results = await run_tests_batch(
+        result = await import_tests(
             project_id,
-            test_ids=body.test_ids,
-            tier=body.tier,
+            source_type=body.source_type,
+            discover=body.discover,
         )
-        return [TestRunResult(**r) for r in results]
-    except ImportError:
-        # Test runner not yet implemented - return stub
-        raise HTTPException(
-            status_code=501,
-            detail="Test runner service not yet implemented (Phase 4)",
+        return ImportTestsResponse(
+            imported_count=result.imported_count,
+            skipped_count=result.skipped_count,
+            tests=[TestResponse(**t) for t in result.tests],
+            errors=result.errors,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
