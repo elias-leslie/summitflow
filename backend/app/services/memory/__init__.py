@@ -6,6 +6,7 @@ from .diary_service import DiaryService
 from .observation_extractor import ObservationExtractor
 from .observation_queue import ObservationQueue
 from .pattern_service import PatternService
+from .reflection_service import ReflectionService
 
 __all__ = [
     "ObservationQueue",
@@ -14,4 +15,5 @@ __all__ = [
     "CheckpointService",
     "DiaryService",
     "PatternService",
+    "ReflectionService",
 ]
