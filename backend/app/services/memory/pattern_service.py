@@ -151,10 +151,9 @@ class PatternService:
             pattern_type=pattern_type,
             title=title,
             content=content,
-            status="pending",
             action=action,
             rationale=rationale,
-            source_entry_ids=source_entry_ids,
+            source_diary_ids=source_entry_ids,
             confidence=confidence,
         )
 
@@ -249,11 +248,12 @@ class PatternService:
                 f"Valid: {valid_transitions.get(current, [])}"
             )
 
-        return memory_storage.update_pattern_status(
+        memory_storage.update_pattern_status(
             pattern_id=pattern_id,
             status=new_status,
-            status_reason=reason,
+            reviewed_by=reason,  # Use reviewed_by for the reason
         )
+        return self.get_pattern(pattern_id)
 
     def apply_pattern(
         self,

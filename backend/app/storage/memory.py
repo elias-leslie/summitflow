@@ -562,6 +562,7 @@ def list_patterns(
     project_id: str,
     status: str | None = None,
     action: str | None = None,
+    pattern_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -575,6 +576,9 @@ def list_patterns(
     if action:
         conditions.append("action = %s")
         params.append(action)
+    if pattern_type:
+        conditions.append("pattern_type = %s")
+        params.append(pattern_type)
 
     params.extend([limit, offset])
 
