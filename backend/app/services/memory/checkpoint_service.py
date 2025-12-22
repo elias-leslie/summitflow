@@ -86,10 +86,7 @@ class CheckpointService:
         )
 
         logger.info(
-            "checkpoint_created",
-            checkpoint_id=checkpoint["id"],
-            session_id=session_id,
-            agent_type=agent_type,
+            f"checkpoint_created: id={checkpoint['id']} session={session_id} agent={agent_type}"
         )
 
         return checkpoint
