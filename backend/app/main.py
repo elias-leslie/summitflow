@@ -10,12 +10,14 @@ from .api import (
     celery_endpoints,
     checkpoints,
     context,
+    diary,
     evidence,
     explorer,
     features,
     hooks,
     notifications,
     observations,
+    patterns,
     projects,
     roundtable,
     tasks,
@@ -76,6 +78,8 @@ app.include_router(observations.router, prefix="/api/projects", tags=["observati
 app.include_router(context.router, prefix="/api/projects", tags=["context"])
 app.include_router(checkpoints.router, prefix="/api/projects", tags=["checkpoints"])
 app.include_router(hooks.router, prefix="/api", tags=["hooks"])
+app.include_router(diary.router, prefix="/api/projects", tags=["learning"])
+app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 
 
 @app.get("/health")
