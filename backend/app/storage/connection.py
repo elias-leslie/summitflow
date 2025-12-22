@@ -578,6 +578,41 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_component ON capabilities(component_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_status ON capabilities(status)")
 
+            # Tests - Centralized test registry (how we verify)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tests (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    test_id VARCHAR(100) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    test_type VARCHAR(50) NOT NULL,
+                    command TEXT,
+                    script TEXT,
+                    config JSONB DEFAULT '{}'::jsonb,
+                    working_dir TEXT,
+                    timeout_seconds INTEGER DEFAULT 60,
+                    -- Result tracking
+                    last_run_at TIMESTAMPTZ,
+                    last_result VARCHAR(20),
+                    last_duration_ms INTEGER,
+                    last_output TEXT,
+                    last_error TEXT,
+                    -- Statistics
+                    run_count INTEGER DEFAULT 0,
+                    pass_count INTEGER DEFAULT 0,
+                    fail_count INTEGER DEFAULT 0,
+                    flaky_score FLOAT DEFAULT 0.0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, test_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_type ON tests(test_type)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_result ON tests(last_result)")
+
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
