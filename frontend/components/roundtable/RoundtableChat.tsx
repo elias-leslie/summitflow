@@ -40,7 +40,12 @@ import {
 } from "lucide-react";
 import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
 import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
+import { SpecPreview, GeneratedSpec, SpecComponent, SpecCapability, SpecTest } from "./SpecPreview";
+
+// Re-export spec types for consumers
+export type { GeneratedSpec, SpecComponent, SpecCapability, SpecTest };
 import { Switch } from "../ui/switch";
+import { Layers } from "lucide-react";
 import { AgentConfigPanel, AgentConfig } from "../settings/AgentConfigPanel";
 
 export type AgentType = "claude" | "gemini" | "user";
@@ -103,9 +108,13 @@ interface RoundtableChatProps {
   onGenerateFeatures?: () => Promise<GeneratedFeature[]>;
   onGenerateVision?: () => Promise<GeneratedVision>;
   onGenerateGoals?: () => Promise<GeneratedGoal[]>;
+  onGenerateSpec?: () => Promise<GeneratedSpec>;
   onSaveVision?: (mission: GeneratedMission | null, narratives: GeneratedNarrative[]) => Promise<void>;
   onSaveGoals?: (goals: GeneratedGoal[]) => Promise<void>;
+  onAcceptSpec?: () => Promise<void>;
   onNewSession?: () => void;
+  // External spec (fetched from API)
+  generatedSpec?: GeneratedSpec | null;
   messages?: ChatMessage[];
   isLoading?: boolean;
   streamingAgent?: "claude" | "gemini" | null;
@@ -437,9 +446,12 @@ export function RoundtableChat({
   onGenerateFeatures,
   onGenerateVision,
   onGenerateGoals,
+  onGenerateSpec,
   onSaveVision,
   onSaveGoals,
+  onAcceptSpec,
   onNewSession,
+  generatedSpec = null,
   messages = [],
   isLoading = false,
   streamingAgent = null,
@@ -459,6 +471,8 @@ export function RoundtableChat({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingVision, setIsGeneratingVision] = useState(false);
   const [isGeneratingGoals, setIsGeneratingGoals] = useState(false);
+  const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
+  const [showSpecPreview, setShowSpecPreview] = useState(true);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
@@ -648,7 +662,29 @@ export function RoundtableChat({
     setGeneratedGoals([]);
   }, [onSaveGoals]);
 
-  const isAnyGenerating = isGenerating || isGeneratingVision || isGeneratingGoals;
+  const handleGenerateSpec = useCallback(async () => {
+    if (!onGenerateSpec || isGeneratingSpec) return;
+    setIsGeneratingSpec(true);
+    setShowGenerateMenu(false);
+    try {
+      await onGenerateSpec();
+      setShowSpecPreview(true);
+    } finally {
+      setIsGeneratingSpec(false);
+    }
+  }, [onGenerateSpec, isGeneratingSpec]);
+
+  const handleAcceptSpec = useCallback(async () => {
+    if (!onAcceptSpec) return;
+    await onAcceptSpec();
+    setShowSpecPreview(false);
+  }, [onAcceptSpec]);
+
+  const handleContinueDiscussion = useCallback(() => {
+    setShowSpecPreview(false);
+  }, []);
+
+  const isAnyGenerating = isGenerating || isGeneratingVision || isGeneratingGoals || isGeneratingSpec;
 
   return (
     <div
@@ -897,12 +933,24 @@ export function RoundtableChat({
         </div>
       )}
 
+      {/* Spec Preview - shown when spec exists and user hasn't dismissed it */}
+      {generatedSpec && showSpecPreview && (
+        <div className="px-4 py-3 border-t border-slate-800">
+          <SpecPreview
+            spec={generatedSpec}
+            onAccept={handleAcceptSpec}
+            onContinue={handleContinueDiscussion}
+          />
+        </div>
+      )}
+
       {/* Generate menu (Spec-Driven mode only) */}
       {mode === "spec_driven" &&
         messages.length >= 2 &&
         !generatedFeatures.length &&
         !generatedVision &&
-        !generatedGoals.length && (
+        !generatedGoals.length &&
+        !(generatedSpec && showSpecPreview) && (
           <div className="px-4 py-3 border-t border-slate-800">
             <div className="relative">
               <Button
@@ -916,7 +964,8 @@ export function RoundtableChat({
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     {isGenerating ? "Extracting Features..." :
                      isGeneratingVision ? "Extracting Vision..." :
-                     "Extracting Goals..."}
+                     isGeneratingGoals ? "Extracting Goals..." :
+                     "Extracting Spec..."}
                   </>
                 ) : (
                   <>
@@ -962,6 +1011,18 @@ export function RoundtableChat({
                     <div>
                       <div className="font-medium">Generate Goals</div>
                       <div className="text-xs text-slate-400">Extract strategic goals</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateSpec}
+                    disabled={!onGenerateSpec}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed border-t border-slate-700"
+                  >
+                    <Layers className="w-4 h-4 text-phosphor-400" />
+                    <div>
+                      <div className="font-medium">Generate Spec (TDD)</div>
+                      <div className="text-xs text-slate-400">Extract components, capabilities, and tests</div>
                     </div>
                   </button>
                 </div>
