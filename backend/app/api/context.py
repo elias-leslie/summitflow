@@ -42,6 +42,7 @@ class ContextIndexResponse(BaseModel):
     index_tokens: int
     full_tokens: int
     reduction_pct: float
+    from_cache: bool = False
     instructions: str
 
 

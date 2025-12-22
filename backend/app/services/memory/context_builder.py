@@ -14,9 +14,20 @@ import json
 import logging
 from typing import Any
 
+import redis
+
 from app.storage import memory as memory_storage
 
 logger = logging.getLogger(__name__)
+
+# Redis for caching
+REDIS_URL = "redis://localhost:6379/1"
+CACHE_TTL = 3600  # 1 hour TTL
+
+
+def get_redis() -> redis.Redis:
+    """Get Redis connection for caching."""
+    return redis.from_url(REDIS_URL, decode_responses=True)
 
 
 def estimate_tokens(text: str | None) -> int:
@@ -45,15 +56,73 @@ class ContextBuilder:
     - This achieves ~87% token reduction vs loading everything
     """
 
-    def __init__(self, project_id: str, session_id: str | None = None):
+    def __init__(self, project_id: str, session_id: str | None = None, use_cache: bool = True):
         """Initialize the context builder.
 
         Args:
             project_id: The project to build context for.
             session_id: Optional session filter for recent context.
+            use_cache: Whether to use Redis caching (default True).
         """
         self.project_id = project_id
         self.session_id = session_id
+        self.use_cache = use_cache
+
+    def _cache_key(self, suffix: str = "") -> str:
+        """Generate cache key for this project/session."""
+        key = f"context:{self.project_id}"
+        if self.session_id:
+            key += f":{self.session_id}"
+        if suffix:
+            key += f":{suffix}"
+        return key
+
+    def _get_cached_index(self) -> dict[str, Any] | None:
+        """Try to get cached context index."""
+        if not self.use_cache:
+            return None
+        try:
+            r = get_redis()
+            cached = r.get(self._cache_key("index"))
+            if cached:
+                logger.debug(f"Cache HIT for {self._cache_key('index')}")
+                return json.loads(cached)
+            logger.debug(f"Cache MISS for {self._cache_key('index')}")
+        except redis.RedisError as e:
+            logger.warning(f"Redis error during cache get: {e}")
+        return None
+
+    def _cache_index(self, index: dict[str, Any]) -> None:
+        """Cache the context index."""
+        if not self.use_cache:
+            return
+        try:
+            r = get_redis()
+            r.setex(self._cache_key("index"), CACHE_TTL, json.dumps(index))
+            logger.debug(f"Cached index for {self._cache_key('index')}")
+        except redis.RedisError as e:
+            logger.warning(f"Redis error during cache set: {e}")
+
+    @staticmethod
+    def invalidate_cache(project_id: str, session_id: str | None = None) -> None:
+        """Invalidate context cache for a project.
+
+        Call this when new observations are created or patterns change.
+
+        Args:
+            project_id: The project to invalidate cache for.
+            session_id: Optional session to invalidate specifically.
+        """
+        try:
+            r = get_redis()
+            # Delete both project-level and session-specific caches
+            pattern = f"context:{project_id}*"
+            keys = list(r.scan_iter(pattern))
+            if keys:
+                r.delete(*keys)
+                logger.debug(f"Invalidated {len(keys)} cache keys for {project_id}")
+        except redis.RedisError as e:
+            logger.warning(f"Redis error during cache invalidation: {e}")
 
     def build_index(
         self,
@@ -76,6 +145,12 @@ class ContextBuilder:
         Returns:
             Context index with items, token estimates, and metadata.
         """
+        # Try cache first
+        cached = self._get_cached_index()
+        if cached:
+            cached["from_cache"] = True
+            return cached
+
         index_items: list[dict[str, Any]] = []
         total_full_tokens = 0
 
@@ -157,7 +232,7 @@ class ContextBuilder:
         if total_full_tokens > 0:
             reduction_pct = ((total_full_tokens - index_tokens) / total_full_tokens) * 100
 
-        return {
+        result = {
             "project_id": self.project_id,
             "session_id": self.session_id,
             "items": index_items,
@@ -165,11 +240,17 @@ class ContextBuilder:
             "index_tokens": index_tokens,
             "full_tokens": total_full_tokens,
             "reduction_pct": round(reduction_pct, 1),
+            "from_cache": False,
             "instructions": (
                 "This is a context index. Each item has an 'id' you can use with "
                 "expand_entity(id) to get full content. Only expand what you need."
             ),
         }
+
+        # Cache the result
+        self._cache_index(result)
+
+        return result
 
     def expand_entity(self, entity_id: str) -> dict[str, Any]:
         """Expand an entity from the index to get full content.

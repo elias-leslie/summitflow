@@ -13,7 +13,7 @@ import redis
 from celery import shared_task
 
 from ..logging_config import get_logger
-from ..services.memory import ObservationExtractor
+from ..services.memory import ContextBuilder, ObservationExtractor
 from ..storage import memory as memory_storage
 
 logger = get_logger(__name__)
@@ -129,6 +129,9 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
 
                 # Publish event for SSE
                 _publish_observation_event(item["project_id"], obs)
+
+                # Invalidate context cache (new observation changes context)
+                ContextBuilder.invalidate_cache(item["project_id"])
 
                 processed += 1
                 logger.info(
