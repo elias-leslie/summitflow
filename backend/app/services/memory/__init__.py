@@ -5,6 +5,7 @@ from .context_builder import ContextBuilder
 from .diary_service import DiaryService
 from .observation_extractor import ObservationExtractor
 from .observation_queue import ObservationQueue
+from .pattern_service import PatternService
 
 __all__ = [
     "ObservationQueue",
@@ -12,4 +13,5 @@ __all__ = [
     "ContextBuilder",
     "CheckpointService",
     "DiaryService",
+    "PatternService",
 ]
