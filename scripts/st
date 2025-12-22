@@ -36,6 +36,15 @@ COMMANDS:
     feature list       List features
     feature show <id>  Show feature details
     feature start <id> Create task for feature
+    component list     List components
+    component show     Show component details
+    capability list    List capabilities
+    capability show    Show capability details
+    test list          List tests
+    test run           Run tests
+    test import        Import tests
+    session list       List agent sessions
+    session recent     Show recent sessions
 
 ENVIRONMENT:
     ST_PROJECT_ID      Project ID (default: summitflow)
@@ -1032,6 +1041,696 @@ EOF
     fi
 }
 
+# Component commands
+cmd_component() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_component_list "$@"
+            ;;
+        show|get)
+            cmd_component_show "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st component - Manage components
+
+USAGE:
+    st component <subcommand> [options]
+
+SUBCOMMANDS:
+    list                   List components
+    show <component-id>    Show component details
+
+EXAMPLES:
+    st component list
+    st component show comp-001
+EOF
+            ;;
+    esac
+}
+
+cmd_component_list() {
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/components")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq 'length')
+        echo -e "${BLUE}Components ($count):${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.component_id) [\(.status // "pending")] \(.name)"
+            + "\n      Capabilities: \(.capability_count // 0)"'
+    fi
+}
+
+cmd_component_show() {
+    local component_id="$1"
+    shift || true
+
+    if [[ -z "$component_id" ]]; then
+        echo -e "${RED}Error: Component ID required${NC}" >&2
+        return 1
+    fi
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/components/${component_id}")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Component: $(echo "$response" | jq -r '.component_id')${NC}"
+        echo "$response" | jq -r '"
+Name:        \(.name)
+Status:      \(.status // "pending")
+Priority:    \(.priority // 0)
+Description: \(.description // "(none)")
+"'
+    fi
+}
+
+# Capability commands
+cmd_capability() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_capability_list "$@"
+            ;;
+        show|get)
+            cmd_capability_show "$@"
+            ;;
+        lock)
+            cmd_capability_lock "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st capability - Manage capabilities
+
+USAGE:
+    st capability <subcommand> [options]
+
+SUBCOMMANDS:
+    list                    List capabilities
+    show <capability-id>    Show capability details
+    lock <capability-id>    Lock a capability
+
+EXAMPLES:
+    st capability list
+    st capability list --component comp-001
+    st capability show cap-001
+    st capability lock cap-001
+EOF
+            ;;
+    esac
+}
+
+cmd_capability_list() {
+    local component=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--component)
+                component="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local query=""
+    [[ -n "$component" ]] && query="?component=$component"
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/capabilities${query}")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq 'length')
+        echo -e "${BLUE}Capabilities ($count):${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.capability_id) [\(.status // "pending")] \(.name)"
+            + (if .locked_at then " [LOCKED]" else "" end)
+            + "\n      Component: \(.component_id // "none")"'
+    fi
+}
+
+cmd_capability_show() {
+    local capability_id="$1"
+    shift || true
+
+    if [[ -z "$capability_id" ]]; then
+        echo -e "${RED}Error: Capability ID required${NC}" >&2
+        return 1
+    fi
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/capabilities/${capability_id}")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Capability: $(echo "$response" | jq -r '.capability_id')${NC}"
+        echo "$response" | jq -r '"
+Name:        \(.name)
+Component:   \(.component_id // "none")
+Status:      \(.status // "pending")
+Priority:    \(.priority // 0)
+Locked:      \(.locked_at // "no")
+Description: \(.description // "(none)")
+
+Linked Tests: \(.linked_tests | length // 0)"'
+
+        # Show linked tests if any
+        echo "$response" | jq -r '.linked_tests // [] | .[] |
+            "  - \(.test_id): \(.name) [\(.last_result // "not run")]"'
+    fi
+}
+
+cmd_capability_lock() {
+    local capability_id="$1"
+    shift || true
+
+    if [[ -z "$capability_id" ]]; then
+        echo -e "${RED}Error: Capability ID required${NC}" >&2
+        return 1
+    fi
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/capabilities/${capability_id}/lock")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    echo -e "${GREEN}Locked capability: $capability_id${NC}"
+}
+
+# Test commands
+cmd_test() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_test_list "$@"
+            ;;
+        show|get)
+            cmd_test_show "$@"
+            ;;
+        run)
+            cmd_test_run "$@"
+            ;;
+        import)
+            cmd_test_import "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st test - Manage tests
+
+USAGE:
+    st test <subcommand> [options]
+
+SUBCOMMANDS:
+    list                List tests
+    show <test-id>      Show test details
+    run [options]       Run tests
+    import              Import tests from project
+
+EXAMPLES:
+    st test list
+    st test list --type pytest
+    st test run --all
+    st test run --test test-001
+    st test import --from pytest
+EOF
+            ;;
+    esac
+}
+
+cmd_test_list() {
+    local test_type=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--type)
+                test_type="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local query=""
+    [[ -n "$test_type" ]] && query="?type=$test_type"
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tests${query}")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq 'length')
+        echo -e "${BLUE}Tests ($count):${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.test_id) [\(.test_type)] \(.name)"
+            + "\n      Last: \(.last_result // "never") (\(.last_duration_ms // 0)ms)"'
+    fi
+}
+
+cmd_test_show() {
+    local test_id="$1"
+    shift || true
+
+    if [[ -z "$test_id" ]]; then
+        echo -e "${RED}Error: Test ID required${NC}" >&2
+        return 1
+    fi
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/tests/${test_id}")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Test: $(echo "$response" | jq -r '.test_id')${NC}"
+        echo "$response" | jq -r '"
+Name:        \(.name)
+Type:        \(.test_type)
+Command:     \(.command // "(none)")
+Last Run:    \(.last_run_at // "never")
+Last Result: \(.last_result // "never")
+Duration:    \(.last_duration_ms // 0)ms
+Run Count:   \(.run_count // 0) (pass: \(.pass_count // 0), fail: \(.fail_count // 0))
+"'
+    fi
+}
+
+cmd_test_run() {
+    local test_id=""
+    local tier=""
+    local all=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--test)
+                test_id="$2"
+                shift 2
+                ;;
+            --tier)
+                tier="$2"
+                shift 2
+                ;;
+            -a|--all)
+                all=true
+                shift
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -n "$test_id" ]]; then
+        # Run single test
+        local response
+        response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tests/${test_id}/run")
+
+        if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+            echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+            return 1
+        fi
+
+        if [[ -n "${JSON_OUTPUT:-}" ]]; then
+            echo "$response" | jq '.'
+        else
+            local result
+            result=$(echo "$response" | jq -r '.result')
+            local duration
+            duration=$(echo "$response" | jq -r '.duration_ms')
+
+            if [[ "$result" == "passed" ]]; then
+                echo -e "${GREEN}PASSED${NC} $test_id (${duration}ms)"
+            else
+                echo -e "${RED}FAILED${NC} $test_id (${duration}ms)"
+                echo "$response" | jq -r '.output // ""' | head -10
+            fi
+        fi
+    else
+        # Run multiple tests
+        local json_data="{}"
+        [[ -n "$tier" ]] && json_data=$(echo "$json_data" | jq --arg t "$tier" '. + {tier: $t}')
+
+        local response
+        response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tests/run" \
+            -H "Content-Type: application/json" \
+            -d "$json_data")
+
+        if [[ -n "${JSON_OUTPUT:-}" ]]; then
+            echo "$response" | jq '.'
+        else
+            local passed failed
+            passed=$(echo "$response" | jq '[.[] | select(.result == "passed")] | length')
+            failed=$(echo "$response" | jq '[.[] | select(.result != "passed")] | length')
+
+            echo -e "${BLUE}Test Results:${NC}"
+            echo -e "  ${GREEN}Passed:${NC} $passed"
+            echo -e "  ${RED}Failed:${NC} $failed"
+        fi
+    fi
+}
+
+cmd_test_import() {
+    local source_type="all"
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--from)
+                source_type="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local json_data
+    json_data=$(jq -n --arg s "$source_type" '{source_type: $s, discover: true}')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tests/import" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local imported skipped
+        imported=$(echo "$response" | jq -r '.imported_count')
+        skipped=$(echo "$response" | jq -r '.skipped_count')
+
+        echo -e "${GREEN}Imported:${NC} $imported tests"
+        echo -e "${YELLOW}Skipped:${NC} $skipped (already exist)"
+
+        local errors
+        errors=$(echo "$response" | jq -r '.errors | length')
+        if [[ "$errors" -gt 0 ]]; then
+            echo -e "${RED}Errors:${NC} $errors"
+            echo "$response" | jq -r '.errors[]' | head -5
+        fi
+    fi
+}
+
+# Session commands
+cmd_session() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_session_list "$@"
+            ;;
+        recent)
+            cmd_session_recent "$@"
+            ;;
+        show|get)
+            cmd_session_show "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st session - Manage agent sessions
+
+USAGE:
+    st session <subcommand> [options]
+
+SUBCOMMANDS:
+    list                List sessions
+    recent              Show recent sessions
+    show <session-id>   Show session details
+
+EXAMPLES:
+    st session list
+    st session recent
+    st session show session-001
+EOF
+            ;;
+    esac
+}
+
+cmd_session_list() {
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/sessions")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local count
+        count=$(echo "$response" | jq 'length')
+        echo -e "${BLUE}Sessions ($count):${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.session_id) [\(.status)] \(.agent_type)"
+            + "\n      Tests: \(.tests_passed // 0)/\(.tests_run // 0)"'
+    fi
+}
+
+cmd_session_recent() {
+    local limit=3
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -n|--limit)
+                limit="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/sessions/recent?limit=$limit")
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Recent Sessions:${NC}\n"
+
+        echo "$response" | jq -r '.[] |
+            "\(.session_id) [\(.status)] \(.agent_type)"
+            + "\n      Started: \(.started_at)"
+            + "\n      Tests: \(.tests_passed // 0)/\(.tests_run // 0)"
+            + "\n      Notes: \(.notes // "(none)")"
+            + "\n"'
+    fi
+}
+
+cmd_session_show() {
+    local session_id="$1"
+    shift || true
+
+    if [[ -z "$session_id" ]]; then
+        echo -e "${RED}Error: Session ID required${NC}" >&2
+        return 1
+    fi
+
+    local response
+    response=$(curl -s "${API_BASE}/projects/${PROJECT_ID}/sessions/${session_id}")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        echo -e "${BLUE}Session: $(echo "$response" | jq -r '.session_id')${NC}"
+        echo "$response" | jq -r '"
+Agent:       \(.agent_type)
+Status:      \(.status)
+Started:     \(.started_at)
+Ended:       \(.ended_at // "running")
+Tests Run:   \(.tests_run // 0)
+Passed:      \(.tests_passed // 0)
+Failed:      \(.tests_failed // 0)
+Git Commit:  \(.git_commit_sha // "(none)")
+Notes:       \(.notes // "(none)")
+"'
+    fi
+}
+
+# Build commands
+cmd_build() {
+    local subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        status)
+            cmd_build_status "$@"
+            ;;
+        *)
+            cat << 'EOF'
+st build - Build orchestration
+
+USAGE:
+    st build <subcommand> [options]
+
+SUBCOMMANDS:
+    status              Show build status
+
+NOTE: Build start/stop not yet implemented (Phase 10)
+EOF
+            ;;
+    esac
+}
+
+cmd_build_status() {
+    echo -e "${YELLOW}Build status not yet implemented (Phase 10)${NC}"
+}
+
+# Bug command
+cmd_bug() {
+    local capability_id=""
+    local reason=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--capability)
+                capability_id="$2"
+                shift 2
+                ;;
+            -r|--reason)
+                reason="$2"
+                shift 2
+                ;;
+            --json)
+                JSON_OUTPUT=1
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+st bug - Create a bug task linked to capability
+
+USAGE:
+    st bug create --capability <cap-id> --reason "description"
+
+OPTIONS:
+    -c, --capability <id>  Capability ID
+    -r, --reason <text>    Bug description
+    --json                 Output as JSON
+
+EXAMPLE:
+    st bug create --capability cap-001 --reason "Test failure in login flow"
+EOF
+                return 0
+                ;;
+            create)
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$capability_id" || -z "$reason" ]]; then
+        echo -e "${RED}Error: --capability and --reason required${NC}" >&2
+        return 1
+    fi
+
+    # Create bug task linked to capability
+    local json_data
+    json_data=$(jq -n \
+        --arg title "Bug: $reason" \
+        --arg desc "Linked to capability: $capability_id" \
+        '{
+            title: $title,
+            description: $desc,
+            priority: 2,
+            task_type: "bug",
+            labels: ["complexity:small", "domains:backend"]
+        }')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tasks" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local task_id
+        task_id=$(echo "$response" | jq -r '.id')
+        echo -e "${GREEN}Created bug task:${NC} $task_id"
+        echo -e "  Capability: $capability_id"
+        echo -e "  Reason: $reason"
+    fi
+}
+
 # Main entry point
 main() {
     local cmd="${1:-}"
@@ -1064,6 +1763,24 @@ main() {
             ;;
         feature|feat)
             cmd_feature "$@"
+            ;;
+        component|comp)
+            cmd_component "$@"
+            ;;
+        capability|cap)
+            cmd_capability "$@"
+            ;;
+        test|tests)
+            cmd_test "$@"
+            ;;
+        session|sessions)
+            cmd_session "$@"
+            ;;
+        build)
+            cmd_build "$@"
+            ;;
+        bug)
+            cmd_bug "$@"
             ;;
         -h|--help|help|"")
             show_help
