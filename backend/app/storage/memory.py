@@ -354,6 +354,32 @@ def create_diary_entry(
     return _diary_row_to_dict(row)
 
 
+def get_diary_entry(entry_id: str) -> dict[str, Any] | None:
+    """Get a diary entry by ID.
+
+    Returns:
+        The diary entry or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, session_id, task_id, agent_type,
+                   duration_seconds, tokens_used, discovery_tokens, outcome,
+                   observation_type, concepts, what_worked, what_failed,
+                   user_corrections, patterns_used, reflected_at,
+                   reflection_notes, patterns_generated, created_at
+            FROM session_diary
+            WHERE id = %s
+            """,
+            (entry_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return _diary_row_to_dict(row)
+
+
 def list_diary_entries(
     project_id: str,
     outcome: str | None = None,
