@@ -7,6 +7,13 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { ScrollArea } from "../ui/scroll-area";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import {
   Brain,
   ChevronDown,
   ChevronUp,
@@ -17,6 +24,8 @@ import {
   Tag,
   FileCode,
   AlertCircle,
+  Filter,
+  X,
 } from "lucide-react";
 
 // Observation types from the plan
@@ -84,6 +93,27 @@ const CONCEPT_COLORS: Record<ConceptType, string> = {
   "trade-off": "bg-purple-500/10 text-purple-400",
 };
 
+// All observation types for filtering
+const OBSERVATION_TYPES: ObservationType[] = [
+  "bugfix",
+  "feature",
+  "refactor",
+  "change",
+  "discovery",
+  "decision",
+];
+
+// All concept types for filtering
+const CONCEPT_TYPES: ConceptType[] = [
+  "how-it-works",
+  "why-it-exists",
+  "what-changed",
+  "problem-solution",
+  "gotcha",
+  "pattern",
+  "trade-off",
+];
+
 export function MemoryStreamPanel({
   projectId,
   sessionId,
@@ -97,6 +127,11 @@ export function MemoryStreamPanel({
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Filtering state
+  const [typeFilter, setTypeFilter] = useState<ObservationType | "all">("all");
+  const [conceptFilters, setConceptFilters] = useState<Set<ConceptType>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
 
   // Connect to SSE stream
   const connect = useCallback(() => {
@@ -218,6 +253,47 @@ export function MemoryStreamPanel({
     return Math.ceil(text.length / 4);
   };
 
+  // Toggle concept filter
+  const toggleConceptFilter = (concept: ConceptType) => {
+    setConceptFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(concept)) {
+        next.delete(concept);
+      } else {
+        next.add(concept);
+      }
+      return next;
+    });
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setTypeFilter("all");
+    setConceptFilters(new Set());
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = typeFilter !== "all" || conceptFilters.size > 0;
+
+  // Filter observations
+  const filteredObservations = observations.filter((obs) => {
+    // Type filter
+    if (typeFilter !== "all" && obs.observation_type !== typeFilter) {
+      return false;
+    }
+
+    // Concept filter (if any concept filters selected, at least one must match)
+    if (conceptFilters.size > 0) {
+      const obsConcepts = obs.concepts || [];
+      const hasMatchingConcept = obsConcepts.some((c) => conceptFilters.has(c));
+      if (!hasMatchingConcept) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
   return (
     <div className={clsx("flex flex-col h-full", className)}>
       {/* Header */}
@@ -225,8 +301,24 @@ export function MemoryStreamPanel({
         <div className="flex items-center gap-2">
           <Brain className="h-4 w-4 text-purple-500" />
           <span className="text-sm font-medium">Memory Stream</span>
+          {hasActiveFilters && (
+            <Badge variant="secondary" className="text-xs">
+              {filteredObservations.length}/{observations.length}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+            className={clsx(
+              "h-7 w-7 p-0",
+              hasActiveFilters && "text-purple-500"
+            )}
+          >
+            <Filter className="h-3.5 w-3.5" />
+          </Button>
           {connected ? (
             <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 text-xs">
               <Zap className="h-3 w-3 mr-1" />
@@ -246,6 +338,70 @@ export function MemoryStreamPanel({
         </div>
       </div>
 
+      {/* Filters panel */}
+      {showFilters && (
+        <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-3">
+          {/* Type filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 w-12">Type:</span>
+            <Select
+              value={typeFilter}
+              onValueChange={(value) => setTypeFilter(value as ObservationType | "all")}
+            >
+              <SelectTrigger className="h-7 text-xs w-32">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {OBSERVATION_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Concept filter chips */}
+          <div className="space-y-1">
+            <span className="text-xs text-slate-500">Concepts:</span>
+            <div className="flex flex-wrap gap-1">
+              {CONCEPT_TYPES.map((concept) => {
+                const isActive = conceptFilters.has(concept);
+                return (
+                  <Badge
+                    key={concept}
+                    variant="outline"
+                    className={clsx(
+                      "text-xs cursor-pointer transition-colors",
+                      isActive
+                        ? CONCEPT_COLORS[concept]
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    )}
+                    onClick={() => toggleConceptFilter(concept)}
+                  >
+                    {concept}
+                  </Badge>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="h-6 text-xs text-slate-500"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear filters
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Error message */}
       {error && (
         <div className="p-2 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
@@ -262,9 +418,15 @@ export function MemoryStreamPanel({
             <p>No observations yet</p>
             <p className="text-xs mt-1">Tool executions will appear here</p>
           </div>
+        ) : filteredObservations.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">
+            <Filter className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No matching observations</p>
+            <p className="text-xs mt-1">Try adjusting your filters</p>
+          </div>
         ) : (
           <div className="space-y-2">
-            {observations.map((obs) => (
+            {filteredObservations.map((obs) => (
               <ObservationCard
                 key={obs.id}
                 observation={obs}

@@ -9,6 +9,7 @@ interface BadgeProps {
   variant?: BadgeVariant;
   children: ReactNode;
   className?: string;
+  onClick?: () => void;
 }
 
 const variants: Record<BadgeVariant, string> = {
@@ -21,14 +22,16 @@ const variants: Record<BadgeVariant, string> = {
   secondary: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700",
 };
 
-export function Badge({ variant = "default", children, className }: BadgeProps) {
+export function Badge({ variant = "default", children, className, onClick }: BadgeProps) {
   return (
     <span
       className={clsx(
         "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mono",
         variants[variant],
+        onClick && "cursor-pointer",
         className
       )}
+      onClick={onClick}
     >
       {children}
     </span>
