@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Brain, PanelRightClose, PanelRightOpen } from "lucide-react";
 import Link from "next/link";
 import {
   fetchProject,
@@ -50,6 +50,7 @@ import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { LearningDashboard } from "@/components/learning/LearningDashboard";
+import { MemoryStreamPanel } from "@/components/memory/MemoryStreamPanel";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
 type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "learning";
@@ -160,6 +161,19 @@ export default function ProjectDetailPage() {
   // Permission prompting state
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const [permissionLoading, setPermissionLoading] = useState(false);
+
+  // Memory stream panel state
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(`summitflow_memory_panel_${projectId}`) === "true";
+    }
+    return false;
+  });
+
+  // Persist memory panel state
+  useEffect(() => {
+    localStorage.setItem(`summitflow_memory_panel_${projectId}`, String(memoryPanelOpen));
+  }, [memoryPanelOpen, projectId]);
 
   // Load roundtable session from localStorage on mount
   useEffect(() => {
@@ -684,33 +698,61 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Chat Panel */}
-            <RoundtableChat
-              projectId={projectId}
-              sessionId={roundtableSessionId ?? undefined}
-              className="flex-1"
-              mode={roundtableMode}
-              onModeChange={handleRoundtableModeChange}
-              onSendMessage={handleSendMessage}
-              onGenerateFeatures={handleGenerateFeatures}
-              onGenerateVision={handleGenerateVision}
-              onGenerateGoals={handleGenerateGoals}
-              onSaveVision={handleSaveVision}
-              onSaveGoals={handleSaveGoals}
-              onNewSession={handleNewRoundtableSession}
-              messages={roundtableMessages}
-              isLoading={roundtableLoading}
-              streamingAgent={streamingAgent}
-              connected={true}
-              error={roundtableError}
-              toolsEnabled={toolsEnabled}
-              writeEnabled={writeEnabled}
-              yoloMode={yoloMode}
-              toolStats={toolStats}
-              onToolsChange={handleToolsChange}
-              agentOverride={agentOverride}
-              modelOverride={modelOverride}
-              onAgentConfigChange={handleAgentConfigChange}
-            />
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* Memory panel toggle in header */}
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => setMemoryPanelOpen(!memoryPanelOpen)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-slate-400 hover:text-purple-400 hover:bg-slate-800 rounded-md transition-colors"
+                  title={memoryPanelOpen ? "Hide Memory Panel" : "Show Memory Panel"}
+                >
+                  <Brain className="h-3.5 w-3.5" />
+                  {memoryPanelOpen ? (
+                    <PanelRightClose className="h-3.5 w-3.5" />
+                  ) : (
+                    <PanelRightOpen className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+              <RoundtableChat
+                projectId={projectId}
+                sessionId={roundtableSessionId ?? undefined}
+                className="flex-1"
+                mode={roundtableMode}
+                onModeChange={handleRoundtableModeChange}
+                onSendMessage={handleSendMessage}
+                onGenerateFeatures={handleGenerateFeatures}
+                onGenerateVision={handleGenerateVision}
+                onGenerateGoals={handleGenerateGoals}
+                onSaveVision={handleSaveVision}
+                onSaveGoals={handleSaveGoals}
+                onNewSession={handleNewRoundtableSession}
+                messages={roundtableMessages}
+                isLoading={roundtableLoading}
+                streamingAgent={streamingAgent}
+                connected={true}
+                error={roundtableError}
+                toolsEnabled={toolsEnabled}
+                writeEnabled={writeEnabled}
+                yoloMode={yoloMode}
+                toolStats={toolStats}
+                onToolsChange={handleToolsChange}
+                agentOverride={agentOverride}
+                modelOverride={modelOverride}
+                onAgentConfigChange={handleAgentConfigChange}
+              />
+            </div>
+
+            {/* Memory Stream Panel - Collapsible sidebar */}
+            {memoryPanelOpen && (
+              <div className="w-80 flex-shrink-0 bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
+                <MemoryStreamPanel
+                  projectId={projectId}
+                  sessionId={roundtableSessionId ?? undefined}
+                  className="h-full"
+                />
+              </div>
+            )}
           </div>
         )}
         {activeTab === "vision" && (
