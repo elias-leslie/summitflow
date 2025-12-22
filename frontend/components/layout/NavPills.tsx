@@ -12,10 +12,11 @@ import {
   Camera,
   Compass,
   Settings2,
+  Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "settings";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "learning" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -100,6 +101,15 @@ const tabs: TabConfig[] = [
     inactiveClasses: "text-slate-500 hover:bg-teal-500/10 hover:text-teal-400",
     iconActiveClasses: "text-teal-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-teal-400",
+  },
+  {
+    id: "learning",
+    label: "Learning",
+    icon: Sparkles,
+    activeClasses: "bg-fuchsia-500/15 text-fuchsia-400",
+    inactiveClasses: "text-slate-500 hover:bg-fuchsia-500/10 hover:text-fuchsia-400",
+    iconActiveClasses: "text-fuchsia-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-fuchsia-400",
   },
   {
     id: "settings",

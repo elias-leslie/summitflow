@@ -49,12 +49,13 @@ import {
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
+import { LearningDashboard } from "@/components/learning/LearningDashboard";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "learning";
 
 const VALID_EXPLORER_TYPES: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
-const VALID_TABS: TabId[] = ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer"];
+const VALID_TABS: TabId[] = ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer", "learning"];
 
 // localStorage key for remembering last tab per project
 const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`;
@@ -766,6 +767,14 @@ export default function ProjectDetailPage() {
               projectId={projectId}
               initialType={explorerType}
               onTypeChange={handleExplorerTypeChange}
+            />
+          </div>
+        )}
+        {activeTab === "learning" && (
+          <div className="h-full overflow-auto p-4">
+            <LearningDashboard
+              projectId={projectId}
+              projectPath={project.path}
             />
           </div>
         )}
