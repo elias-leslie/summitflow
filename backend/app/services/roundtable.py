@@ -654,6 +654,17 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                     f"output_len={len(result.output)}"
                 )
 
+                # Capture observation (fire-and-forget)
+                if result.success:
+                    self._capture_observation(
+                        project_id=session.project_id,
+                        session_id=session.id,
+                        agent_type=session.agent_override or "unknown",
+                        tool_name=tool_name,
+                        tool_input=parameters,
+                        tool_output=result.output,
+                    )
+
             # If we hit a limit, return current response
             if should_stop:
                 return response
@@ -878,6 +889,48 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
             responses.append(msg)
 
         return responses
+
+    # =========================================================================
+    # Observation Capture
+    # =========================================================================
+
+    def _capture_observation(
+        self,
+        project_id: str,
+        session_id: str,
+        agent_type: str,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        tool_output: str,
+    ) -> None:
+        """Fire-and-forget observation capture for tool executions.
+
+        Enqueues tool execution for async observation extraction.
+        Does not block on failure - logs errors but continues.
+        """
+        try:
+            from .memory import ObservationQueue
+
+            queue = ObservationQueue()
+
+            # Run async enqueue in a new event loop (we're in sync context)
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    queue.enqueue(
+                        project_id=project_id,
+                        session_id=session_id,
+                        agent_type=agent_type,
+                        tool_name=tool_name,
+                        tool_input=tool_input,
+                        tool_output=tool_output,
+                    )
+                )
+            finally:
+                loop.close()
+        except Exception as e:
+            # Don't break roundtable for observation capture failures
+            logger.warning(f"Failed to capture observation: {e}")
 
     # =========================================================================
     # Prompt Configuration

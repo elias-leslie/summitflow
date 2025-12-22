@@ -65,6 +65,7 @@ class ClaudeClient(LLMClient):
         self,
         model: str = "claude-sonnet-4-5",
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+        after_tool_callback: Callable[[str, dict[str, Any], str], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize Claude SDK client.
 
@@ -74,11 +75,15 @@ class ClaudeClient(LLMClient):
             permission_callback: Async callback for permission prompting.
                 Called with (tool_name, tool_args) when write tools need approval.
                 Returns True to allow, False to deny.
+            after_tool_callback: Async callback after tool execution.
+                Called with (tool_name, tool_input, tool_output) for observation capture.
+                Non-blocking - errors are logged but don't interrupt execution.
         """
         # Map full model ID to SDK short name
         self.model = self.MODEL_MAP.get(model, model)
         self.model_id = model  # Keep original for display
         self._permission_callback = permission_callback
+        self._after_tool_callback = after_tool_callback
         self._cli_path = shutil.which("claude")
         if not self._cli_path:
             raise RuntimeError(
@@ -311,14 +316,42 @@ class ClaudeClient(LLMClient):
             logger.debug(f"Allowing unknown tool: {tool_name}")
             return {}
 
-        # Build options with permission hook and optional session resume
+        # Capture after_tool_callback for closure
+        after_tool_callback = self._after_tool_callback
+
+        async def post_tool_hook(
+            input_data: dict[str, Any],
+            tool_use_id: str | None,
+            context: Any,
+        ) -> dict[str, Any]:
+            """PostToolUse hook for observation capture."""
+            if not after_tool_callback:
+                return {}
+
+            tool_name = input_data.get("tool_name", "")
+            tool_input = input_data.get("tool_input", {})
+            tool_output = input_data.get("tool_output", "")
+
+            try:
+                await after_tool_callback(tool_name, tool_input, tool_output)
+            except Exception as e:
+                logger.warning(f"After tool callback error: {e}")
+
+            return {}
+
+        # Build hooks dict
+        hooks: dict[str, list[HookMatcher]] = {
+            "PreToolUse": [HookMatcher(hooks=[permission_hook])]
+        }
+        if after_tool_callback:
+            hooks["PostToolUse"] = [HookMatcher(hooks=[post_tool_hook])]
+
+        # Build options with hooks and optional session resume
         options = ClaudeAgentOptions(
             cwd=working_dir or ".",
             cli_path=self._cli_path,
             model=self.model,
-            hooks={
-                "PreToolUse": [HookMatcher(hooks=[permission_hook])]
-            },
+            hooks=hooks,
         )
 
         # Add resume option if session_id provided

@@ -48,6 +48,7 @@ class GeminiClient(LLMClient):
         self,
         model: str = "gemini-3-flash-preview",
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+        after_tool_callback: Callable[[str, dict[str, Any], str], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize Gemini ADK client.
 
@@ -56,9 +57,13 @@ class GeminiClient(LLMClient):
             permission_callback: Async callback for permission prompting.
                 Called with (tool_name, tool_args) when write tools need approval.
                 Returns True to allow, False to deny.
+            after_tool_callback: Async callback after tool execution.
+                Called with (tool_name, tool_input, tool_output) for observation capture.
+                Non-blocking - errors are logged but don't interrupt execution.
         """
         self.model = model
         self._permission_callback = permission_callback
+        self._after_tool_callback = after_tool_callback
         self._has_credentials = self._check_credentials()
         logger.info(f"Gemini ADK client initialized (model={model})")
 
@@ -247,6 +252,38 @@ class GeminiClient(LLMClient):
 
         return before_tool_callback
 
+    def _create_after_tool_callback(self) -> Callable[..., Any] | None:
+        """Create after_tool_callback for observation capture.
+
+        The callback runs after each tool execution for fire-and-forget capture.
+
+        Returns:
+            Callback function for LlmAgent.after_tool_callback, or None if no callback.
+        """
+        after_tool_callback = self._after_tool_callback
+        if not after_tool_callback:
+            return None
+
+        async def after_tool_cb(
+            tool: Any,  # BaseTool
+            args: dict[str, Any],
+            context: Any,  # ToolContext
+            result: dict[str, Any],
+        ) -> dict[str, Any] | None:
+            """After tool callback for observation capture."""
+            tool_name = getattr(tool, "name", str(tool))
+            # Convert result to string for observation
+            tool_output = str(result.get("output", result.get("error", str(result))))
+
+            try:
+                await after_tool_callback(tool_name, args, tool_output)
+            except Exception as e:
+                logger.warning(f"After tool callback error: {e}")
+
+            return None  # Don't modify result
+
+        return after_tool_cb
+
     async def generate_with_tools_native(
         self,
         prompt: str,
@@ -280,7 +317,8 @@ class GeminiClient(LLMClient):
         from google.adk.sessions import InMemorySessionService
         from google.genai import types
 
-        # Create agent with tools and permission callback
+        # Create agent with tools and callbacks
+        after_tool_cb = self._create_after_tool_callback()
         agent = LlmAgent(
             name="gemini_roundtable",
             model=self.model,
@@ -289,6 +327,7 @@ class GeminiClient(LLMClient):
             before_tool_callback=self._create_before_tool_callback(
                 write_enabled, yolo_mode
             ),
+            after_tool_callback=after_tool_cb,
         )
 
         # Initialize class-level session service if needed

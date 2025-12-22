@@ -12,6 +12,7 @@ from .api import (
     explorer,
     features,
     notifications,
+    observations,
     projects,
     roundtable,
     tasks,
@@ -68,6 +69,7 @@ app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(terminal.router, tags=["terminal"])
 app.include_router(terminal_sessions.router, tags=["terminal"])
+app.include_router(observations.router, prefix="/api/projects", tags=["observations"])
 
 
 @app.get("/health")
