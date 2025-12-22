@@ -288,6 +288,155 @@ def delete_test(project_id: str, test_id: str) -> bool:
     return deleted
 
 
+# ============================================================
+# Capability-Test Linking Functions
+# ============================================================
+
+
+def link_test_to_capability(
+    capability_db_id: int,
+    test_db_id: int,
+    is_primary: bool = False,
+) -> dict[str, Any]:
+    """Link a test to a capability.
+
+    Args:
+        capability_db_id: Database ID of the capability
+        test_db_id: Database ID of the test
+        is_primary: Whether this is the primary test for the capability
+
+    Returns:
+        Dict with capability_id, test_id, is_primary, created_at
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO capability_tests (capability_id, test_id, is_primary)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (capability_id, test_id) DO UPDATE
+            SET is_primary = EXCLUDED.is_primary
+            RETURNING capability_id, test_id, is_primary, created_at
+            """,
+            (capability_db_id, test_db_id, is_primary),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return {
+        "capability_id": row[0],
+        "test_id": row[1],
+        "is_primary": row[2],
+        "created_at": row[3].isoformat() if row[3] else None,
+    }
+
+
+def unlink_test_from_capability(capability_db_id: int, test_db_id: int) -> bool:
+    """Unlink a test from a capability.
+
+    Returns:
+        True if unlinked, False if link didn't exist.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM capability_tests
+            WHERE capability_id = %s AND test_id = %s
+            RETURNING capability_id
+            """,
+            (capability_db_id, test_db_id),
+        )
+        deleted = cur.fetchone() is not None
+        conn.commit()
+
+    return deleted
+
+
+def get_tests_for_capability(
+    project_id: str,
+    capability_id: str,
+) -> list[dict[str, Any]]:
+    """Get all tests linked to a capability.
+
+    Args:
+        project_id: Project ID
+        capability_id: Capability ID (not database ID)
+
+    Returns:
+        List of test dicts with is_primary flag added.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.id, t.project_id, t.test_id, t.name, t.test_type, t.command, t.script,
+                   t.config, t.working_dir, t.timeout_seconds, t.last_run_at, t.last_result,
+                   t.last_duration_ms, t.last_output, t.last_error, t.run_count, t.pass_count,
+                   t.fail_count, t.flaky_score, t.created_at, t.updated_at, ct.is_primary
+            FROM tests t
+            INNER JOIN capability_tests ct ON t.id = ct.test_id
+            INNER JOIN capabilities c ON ct.capability_id = c.id
+            WHERE c.project_id = %s AND c.capability_id = %s
+            ORDER BY ct.is_primary DESC, t.name ASC
+            """,
+            (project_id, capability_id),
+        )
+        rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        test_dict = _row_to_dict(row[:21])
+        test_dict["is_primary"] = row[21]
+        result.append(test_dict)
+    return result
+
+
+def get_capabilities_for_test(
+    project_id: str,
+    test_id: str,
+) -> list[dict[str, Any]]:
+    """Get all capabilities linked to a test.
+
+    Args:
+        project_id: Project ID
+        test_id: Test ID (not database ID)
+
+    Returns:
+        List of capability dicts with is_primary flag added.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
+                   c.priority, c.status, c.locked_at, c.created_at, c.updated_at, ct.is_primary
+            FROM capabilities c
+            INNER JOIN capability_tests ct ON c.id = ct.capability_id
+            INNER JOIN tests t ON ct.test_id = t.id
+            WHERE t.project_id = %s AND t.test_id = %s
+            ORDER BY c.name ASC
+            """,
+            (project_id, test_id),
+        )
+        rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        cap_dict = {
+            "id": row[0],
+            "project_id": row[1],
+            "component_id": row[2],
+            "capability_id": row[3],
+            "name": row[4],
+            "description": row[5],
+            "priority": row[6],
+            "status": row[7],
+            "locked_at": row[8].isoformat() if row[8] else None,
+            "created_at": row[9].isoformat() if row[9] else None,
+            "updated_at": row[10].isoformat() if row[10] else None,
+            "is_primary": row[11],
+        }
+        result.append(cap_dict)
+    return result
+
+
 def _row_to_dict(row: tuple | None) -> dict[str, Any]:
     """Convert a database row to a dict."""
     if row is None:
