@@ -170,3 +170,80 @@ async def list_patterns_global(
         limit=limit,
         offset=offset,
     )
+
+
+class BulkPatternRequest(BaseModel):
+    """Request body for bulk pattern operations."""
+
+    pattern_ids: list[str]
+    reason: str | None = None
+
+
+class BulkPatternResponse(BaseModel):
+    """Response for bulk pattern operations."""
+
+    updated: int
+    failed: int
+    errors: list[str]
+
+
+@router.post("/patterns/bulk-approve", response_model=BulkPatternResponse)
+async def bulk_approve_patterns(
+    request: BulkPatternRequest,
+) -> BulkPatternResponse:
+    """Bulk approve multiple patterns.
+
+    Transitions patterns from 'pending' to 'approved'.
+    """
+    updated = 0
+    failed = 0
+    errors = []
+
+    for pattern_id in request.pattern_ids:
+        try:
+            success = memory_storage.update_pattern_status(
+                pattern_id=pattern_id,
+                status="approved",
+                reviewed_by=request.reason or "bulk-approve",
+            )
+            if success:
+                updated += 1
+            else:
+                failed += 1
+                errors.append(f"Pattern {pattern_id} not found")
+        except Exception as e:
+            failed += 1
+            errors.append(f"Pattern {pattern_id}: {str(e)}")
+
+    return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
+
+
+@router.post("/patterns/bulk-reject", response_model=BulkPatternResponse)
+async def bulk_reject_patterns(
+    request: BulkPatternRequest,
+) -> BulkPatternResponse:
+    """Bulk reject multiple patterns.
+
+    Transitions patterns from 'pending' to 'rejected'.
+    """
+    updated = 0
+    failed = 0
+    errors = []
+
+    for pattern_id in request.pattern_ids:
+        try:
+            success = memory_storage.update_pattern_status(
+                pattern_id=pattern_id,
+                status="rejected",
+                reviewed_by=request.reason or "bulk-reject",
+            )
+            if success:
+                updated += 1
+            else:
+                failed += 1
+                errors.append(f"Pattern {pattern_id} not found")
+        except Exception as e:
+            failed += 1
+            errors.append(f"Pattern {pattern_id}: {str(e)}")
+
+    return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
