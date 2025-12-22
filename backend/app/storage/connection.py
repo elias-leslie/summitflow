@@ -555,6 +555,29 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_components_status ON components(status)")
 
+            # Capabilities - What must work (5-15 per component)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS capabilities (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    component_id INTEGER NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+                    capability_id VARCHAR(50) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    priority INTEGER DEFAULT 2,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    locked_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, capability_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_project ON capabilities(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_component ON capabilities(component_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_status ON capabilities(status)")
+
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
