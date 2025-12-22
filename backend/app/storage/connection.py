@@ -835,6 +835,10 @@ def init_schema() -> None:
                 ("agent_mode VARCHAR(20) DEFAULT 'both'", "roundtable_sessions"),
                 ("claude_sdk_session_id TEXT", "roundtable_sessions"),
                 ("gemini_sdk_session_id TEXT", "roundtable_sessions"),
+                # TDD spec generation - ephemeral working storage during roundtable
+                ("generated_spec JSONB", "roundtable_sessions"),
+                # TDD capability linkage - link tasks to capabilities instead of features
+                ("capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL", "tasks"),
                 # Vision goals project scoping
                 ("project_id TEXT REFERENCES projects(id)", "vision_goals"),
             ]:
