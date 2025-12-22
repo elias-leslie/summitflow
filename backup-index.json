@@ -4,6 +4,88 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20251222-130047.tar.gz",
+      "timestamp": "2025-12-22T13:01:00-05:00",
+      "size_bytes": 227242465,
+      "db_size_bytes": 200861,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2025-12-22T13:00:58-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 101
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 50
+          },
+          "scripts": {
+            "count": 18
+          },
+          ".summitflow": {
+            "count": 8
+          },
+          "frontend": {
+            "count": 142
+          },
+          ".beads": {
+            "count": 15
+          },
+          ".claude": {
+            "count": 546
+          },
+          "tasks": {
+            "count": 19
+          },
+          "data": {
+            "count": 2837
+          },
+          "mocks": {
+            "count": 6
+          },
+          "mockups": {
+            "count": 1
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "AGENTS.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          },
+          ".gitattributes": {
+            "count": 1
+          }
+        },
+        "total_files": 3791,
+        "checksum": "sha256:da81318638cacbb64d061581c339fd390ba4ea52ab64327df73321db3174735a"
+      }
+    },
+    {
       "name": "summitflow-20251222-060906.tar.gz",
       "timestamp": "2025-12-22T06:09:19-05:00",
       "size_bytes": 227211788,
@@ -911,5 +993,5 @@
       }
     }
   ],
-  "last_updated": "2025-12-22T06:09:19-05:00"
+  "last_updated": "2025-12-22T13:01:00-05:00"
 }

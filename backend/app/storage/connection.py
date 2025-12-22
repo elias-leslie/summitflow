@@ -532,6 +532,30 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)")
 
             # ============================================================
+            # TDD Architecture Tables - Components, Capabilities, Tests
+            # ============================================================
+
+            # Components - Major parts of the system (3-8 per project)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS components (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    component_id VARCHAR(50) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    priority INTEGER DEFAULT 2,
+                    status VARCHAR(20) DEFAULT 'planned',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(project_id, component_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_components_status ON components(status)")
+
+            # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
             cur.execute(
