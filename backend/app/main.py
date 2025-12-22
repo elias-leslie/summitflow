@@ -11,6 +11,7 @@ from .api import (
     evidence,
     explorer,
     features,
+    hooks,
     notifications,
     observations,
     projects,
@@ -70,6 +71,7 @@ app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(terminal.router, tags=["terminal"])
 app.include_router(terminal_sessions.router, tags=["terminal"])
 app.include_router(observations.router, prefix="/api/projects", tags=["observations"])
+app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 
 
 @app.get("/health")
