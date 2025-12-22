@@ -12,10 +12,11 @@ import {
   Camera,
   Compass,
   Settings2,
+  FlaskConical,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "settings";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "tests" | "evidence" | "explorer" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -26,6 +27,7 @@ interface TabConfig {
   iconActiveClasses: string;
   iconInactiveClasses: string;
   isSettings?: boolean;
+  isRoute?: boolean;
 }
 
 const tabs: TabConfig[] = [
@@ -84,6 +86,16 @@ const tabs: TabConfig[] = [
     iconInactiveClasses: "text-slate-500 group-hover:text-orange-400",
   },
   {
+    id: "tests",
+    label: "Tests",
+    icon: FlaskConical,
+    activeClasses: "bg-phosphor-500/15 text-phosphor-400",
+    inactiveClasses: "text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400",
+    iconActiveClasses: "text-phosphor-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-phosphor-400",
+    isRoute: true,
+  },
+  {
     id: "evidence",
     label: "Evidence",
     icon: Camera,
@@ -137,9 +149,11 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
         const isActive = activeTab === tab.id;
         const Icon = tab.icon;
 
-        // Settings links to a different page
+        // Settings and some tabs link to different pages
         const href = tab.isSettings
           ? `/projects/${projectId}/settings`
+          : tab.isRoute
+          ? `/projects/${projectId}/${tab.id}`
           : `/projects/${projectId}?tab=${tab.id}`;
 
         return (
