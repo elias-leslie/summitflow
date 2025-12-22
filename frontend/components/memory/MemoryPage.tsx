@@ -65,6 +65,24 @@ interface Pattern {
   reflected_by?: string;
 }
 
+interface DiaryEntry {
+  id: string;
+  project_id: string;
+  session_id: string;
+  task_id: string | null;
+  agent_type: string;
+  duration_seconds: number | null;
+  tokens_used: number | null;
+  discovery_tokens: number | null;
+  outcome: 'success' | 'failure' | 'partial' | 'neutral';
+  observation_type: string | null;
+  concepts: string[];
+  what_worked: string[] | null;
+  what_failed: string[] | null;
+  user_corrections: string[] | null;
+  created_at: string;
+}
+
 // Metrics Card Component
 function MetricCard({
   label,
@@ -342,11 +360,162 @@ function PatternRow({
   );
 }
 
+// Diary Row Component
+function DiaryRow({ entry }: { entry: DiaryEntry }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const outcomeConfig = {
+    success: { color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: 'Success', barColor: 'bg-emerald-500' },
+    failure: { color: 'bg-rose-500/15 text-rose-400 border-rose-500/30', label: 'Failed', barColor: 'bg-rose-500' },
+    partial: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', label: 'Partial', barColor: 'bg-amber-500' },
+    neutral: { color: 'bg-slate-500/15 text-slate-400 border-slate-500/30', label: 'Neutral', barColor: 'bg-slate-500' },
+  };
+
+  const config = outcomeConfig[entry.outcome] || outcomeConfig.neutral;
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return null;
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+
+  const formatTokens = (tokens: number | null) => {
+    if (!tokens) return null;
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
+    return tokens.toString();
+  };
+
+  const formatTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  return (
+    <div
+      className={clsx(
+        'bg-slate-800/50 border rounded-xl overflow-hidden transition-all duration-200',
+        expanded ? 'border-slate-600' : 'border-slate-700/50 hover:border-slate-600'
+      )}
+    >
+      <div
+        className="flex items-center gap-3 px-5 py-4 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {/* Outcome indicator bar */}
+        <div className={clsx('w-1 h-10 rounded-full', config.barColor)} />
+
+        {/* Outcome badge */}
+        <span className={clsx('text-[11px] font-semibold uppercase px-2.5 py-1 rounded border', config.color)}>
+          {config.label}
+        </span>
+
+        {/* Agent badge */}
+        <span className="text-[11px] font-medium px-2 py-1 rounded bg-slate-700/50 text-slate-400">
+          {entry.agent_type}
+        </span>
+
+        {/* Summary */}
+        <span className="flex-1 text-sm font-medium text-slate-200 truncate">
+          {entry.concepts.length > 0 ? entry.concepts.slice(0, 2).join(', ') : 'Session entry'}
+        </span>
+
+        {/* Meta info */}
+        <div className="flex items-center gap-4 text-slate-500 text-[12px]">
+          {entry.tokens_used && (
+            <span className="font-mono">{formatTokens(entry.tokens_used)} tok</span>
+          )}
+          {entry.duration_seconds && (
+            <span>{formatDuration(entry.duration_seconds)}</span>
+          )}
+          <span>{formatTime(entry.created_at)}</span>
+        </div>
+
+        <ChevronDown
+          className={clsx(
+            'w-5 h-5 text-slate-500 transition-transform duration-200',
+            expanded && 'rotate-180'
+          )}
+        />
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="border-t border-slate-700/50 bg-slate-900/50"
+          >
+            <div className="px-5 py-4 space-y-4">
+              {/* What worked */}
+              {entry.what_worked && entry.what_worked.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-500 mb-2">
+                    What Worked
+                  </div>
+                  <ul className="space-y-1">
+                    {entry.what_worked.map((item, i) => (
+                      <li key={i} className="text-sm text-slate-300 pl-4 relative before:absolute before:left-0 before:content-['•'] before:text-emerald-500">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* What failed */}
+              {entry.what_failed && entry.what_failed.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-rose-500 mb-2">
+                    What Failed
+                  </div>
+                  <ul className="space-y-1">
+                    {entry.what_failed.map((item, i) => (
+                      <li key={i} className="text-sm text-slate-300 pl-4 relative before:absolute before:left-0 before:content-['•'] before:text-rose-500">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* User corrections */}
+              {entry.user_corrections && entry.user_corrections.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-500 mb-2">
+                    User Corrections
+                  </div>
+                  <ul className="space-y-1">
+                    {entry.user_corrections.map((item, i) => (
+                      <li key={i} className="text-sm text-slate-300 pl-4 relative before:absolute before:left-0 before:content-['•'] before:text-amber-500">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Session ID */}
+              <div className="text-[12px] text-slate-500">
+                Session: {entry.session_id.slice(0, 8)}...
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // Main Memory Page Component
 export default function MemoryPage() {
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [observations, setObservations] = useState<Observation[]>([]);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('observations');
@@ -384,6 +553,16 @@ export default function MemoryPage() {
         if (patRes.ok) {
           const patData = await patRes.json();
           setPatterns(patData);
+        }
+
+        // Fetch diary entries (global or filtered)
+        const diaryUrl = selectedProject
+          ? `/api/diary?project_id=${selectedProject}`
+          : '/api/diary';
+        const diaryRes = await fetch(diaryUrl);
+        if (diaryRes.ok) {
+          const diaryData = await diaryRes.json();
+          setDiaryEntries(diaryData);
         }
 
         // Fetch projects for filter
@@ -627,11 +806,24 @@ export default function MemoryPage() {
 
           {/* Diary Tab */}
           <TabsContent value="diary">
-            <div className="text-center py-16 text-slate-500">
-              <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
-              <h3 className="text-lg font-medium text-slate-400 mb-2">Diary coming soon</h3>
-              <p className="text-sm">Session summaries will appear here</p>
-            </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-slate-500">
+                <Activity className="w-5 h-5 animate-spin mr-2" />
+                Loading diary entries...
+              </div>
+            ) : diaryEntries.length === 0 ? (
+              <div className="text-center py-16 text-slate-500">
+                <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
+                <h3 className="text-lg font-medium text-slate-400 mb-2">No diary entries yet</h3>
+                <p className="text-sm">Session summaries will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {diaryEntries.map((entry) => (
+                  <DiaryRow key={entry.id} entry={entry} />
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

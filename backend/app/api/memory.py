@@ -247,3 +247,23 @@ async def bulk_reject_patterns(
             errors.append(f"Pattern {pattern_id}: {str(e)}")
 
     return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
+
+
+@router.get("/diary")
+async def list_diary_global(
+    project_id: str | None = Query(None, description="Filter by project"),
+    outcome: str | None = Query(None, description="Filter by outcome"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    """List diary entries across all projects.
+
+    Use project_id query param to filter to a specific project.
+    Returns diary entries sorted by created_at descending (newest first).
+    """
+    return memory_storage.list_diary_entries(
+        project_id=project_id,
+        outcome=outcome,
+        limit=limit,
+        offset=offset,
+    )

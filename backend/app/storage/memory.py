@@ -414,16 +414,19 @@ def get_diary_entry(entry_id: str) -> dict[str, Any] | None:
 
 
 def list_diary_entries(
-    project_id: str,
+    project_id: str | None = None,
     outcome: str | None = None,
     unreflected_only: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """List diary entries with optional filters."""
-    conditions = ["project_id = %s"]
-    params: list[Any] = [project_id]
+    conditions: list[str] = []
+    params: list[Any] = []
 
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
     if outcome:
         conditions.append("outcome = %s")
         params.append(outcome)
@@ -431,6 +434,8 @@ def list_diary_entries(
         conditions.append("reflected_at IS NULL")
 
     params.extend([limit, offset])
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -441,7 +446,7 @@ def list_diary_entries(
                    user_corrections, patterns_used, reflected_at,
                    reflection_notes, patterns_generated, created_at
             FROM session_diary
-            WHERE {" AND ".join(conditions)}
+            {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """,
