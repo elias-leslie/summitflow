@@ -51,6 +51,7 @@ import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { LearningDashboard } from "@/components/learning/LearningDashboard";
 import { MemoryStreamPanel } from "@/components/memory/MemoryStreamPanel";
+import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
 type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer" | "learning";
@@ -699,8 +700,12 @@ export default function ProjectDetailPage() {
 
             {/* Chat Panel */}
             <div className="flex-1 flex flex-col min-w-0">
-              {/* Memory panel toggle in header */}
-              <div className="flex justify-end mb-2">
+              {/* Memory indicator and panel toggle in header */}
+              <div className="flex items-center justify-end gap-2 mb-2">
+                {/* Memory capture status indicator */}
+                <MemoryCaptureIndicator projectId={projectId} />
+
+                {/* Memory panel toggle button */}
                 <button
                   onClick={() => setMemoryPanelOpen(!memoryPanelOpen)}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-slate-400 hover:text-purple-400 hover:bg-slate-800 rounded-md transition-colors"
