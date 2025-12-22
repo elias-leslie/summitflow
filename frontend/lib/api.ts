@@ -1470,6 +1470,103 @@ export async function saveGoalsFromRoundtable(
 }
 
 // =============================================================================
+// TDD Spec Generation API
+// =============================================================================
+
+export interface SpecTest {
+  type: string;
+  name: string;
+  command?: string;
+}
+
+export interface SpecCapability {
+  id: string;
+  name: string;
+  description?: string;
+  tests: SpecTest[];
+}
+
+export interface SpecComponent {
+  id: string;
+  name: string;
+  description?: string;
+  priority?: number;
+  capabilities: SpecCapability[];
+}
+
+export interface GeneratedSpec {
+  components: SpecComponent[];
+}
+
+export interface GenerateSpecResponse {
+  session_id: string;
+  spec: GeneratedSpec;
+  components_count: number;
+  capabilities_count: number;
+  tests_count: number;
+}
+
+export interface AcceptSpecResponse {
+  spec_id: number;
+  components_created: number;
+  capabilities_created: number;
+  tests_created: number;
+}
+
+export async function generateSpecFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  agent: "claude" | "gemini" = "gemini"
+): Promise<GenerateSpecResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-spec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_type: agent }),
+        signal: controller.signal,
+      }
+    );
+    if (!res.ok) throw new Error("Failed to generate spec");
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function getSpecFromRoundtable(
+  projectId: string,
+  sessionId: string
+): Promise<{ session_id: string; spec: GeneratedSpec | null }> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/spec`
+  );
+  if (!res.ok) throw new Error("Failed to get spec");
+  return res.json();
+}
+
+export async function acceptSpecFromRoundtable(
+  projectId: string,
+  sessionId: string,
+  acceptedBy: string = "user"
+): Promise<AcceptSpecResponse> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/accept-spec`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accepted_by: acceptedBy }),
+    }
+  );
+  if (!res.ok) throw new Error("Failed to accept spec");
+  return res.json();
+}
+
+// =============================================================================
 // Extraction Prompts API
 // =============================================================================
 

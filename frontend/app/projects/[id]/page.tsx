@@ -14,6 +14,9 @@ import {
   generateFeaturesFromRoundtable,
   generateVisionFromRoundtable,
   generateGoalsFromRoundtable,
+  generateSpecFromRoundtable,
+  getSpecFromRoundtable,
+  acceptSpecFromRoundtable,
   saveVisionFromRoundtable,
   saveGoalsFromRoundtable,
   updateRoundtableTools,
@@ -24,6 +27,7 @@ import {
   type GeneratedMission,
   type GeneratedNarrative,
   type GeneratedGoal,
+  type GeneratedSpec,
   type RoundtableSSEEvent,
   type ToolStats,
   type PermissionRequest,
@@ -149,6 +153,7 @@ export default function ProjectDetailPage() {
   const [streamingAgent, setStreamingAgent] = useState<"claude" | "gemini" | null>(null);
   const [roundtableError, setRoundtableError] = useState<string | null>(null);
   const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
+  const [generatedSpec, setGeneratedSpec] = useState<GeneratedSpec | null>(null);
   const [roundtableSessionLoaded, setRoundtableSessionLoaded] = useState(false);
   const [toolsEnabled, setToolsEnabled] = useState(true);
   const [writeEnabled, setWriteEnabled] = useState(false);
@@ -199,6 +204,17 @@ export default function ProjectDetailPage() {
           if (session.generated_features && session.generated_features.length > 0) {
             setGeneratedFeatures(session.generated_features);
           }
+
+          // Load generated spec if any (using the separate spec endpoint)
+          getSpecFromRoundtable(projectId, session.id)
+            .then((specData) => {
+              if (specData.spec) {
+                setGeneratedSpec(specData.spec);
+              }
+            })
+            .catch((err) => {
+              console.warn("Failed to load spec:", err);
+            });
         })
         .catch((err) => {
           console.warn("Failed to load saved session:", err);
@@ -281,6 +297,7 @@ export default function ProjectDetailPage() {
     setRoundtableSessionId(null);
     setRoundtableMessages([]);
     setGeneratedFeatures([]);
+    setGeneratedSpec(null);
     setRoundtableError(null);
     // Reset tools state
     setToolsEnabled(true);
@@ -328,6 +345,14 @@ export default function ProjectDetailPage() {
         setGeneratedFeatures(session.generated_features);
       } else {
         setGeneratedFeatures([]);
+      }
+
+      // Load generated spec if any
+      try {
+        const specData = await getSpecFromRoundtable(projectId, sessionId);
+        setGeneratedSpec(specData.spec);
+      } catch {
+        setGeneratedSpec(null);
       }
 
       // Clear any errors
@@ -644,6 +669,56 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleGenerateSpec = async (): Promise<GeneratedSpec> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return { components: [] };
+    }
+
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      const result = await generateSpecFromRoundtable(
+        projectId,
+        roundtableSessionId,
+        "gemini" // Use Gemini for faster extraction
+      );
+
+      setGeneratedSpec(result.spec);
+      return result.spec;
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to generate spec");
+      return { components: [] };
+    } finally {
+      setRoundtableLoading(false);
+    }
+  };
+
+  const handleAcceptSpec = async (): Promise<void> => {
+    if (!roundtableSessionId) {
+      setRoundtableError("No active session");
+      return;
+    }
+
+    setRoundtableLoading(true);
+    setRoundtableError(null);
+
+    try {
+      const result = await acceptSpecFromRoundtable(projectId, roundtableSessionId, "user");
+      // Clear spec after acceptance
+      setGeneratedSpec(null);
+      // Show success message (could be toast, for now just log)
+      console.log(
+        `Spec accepted: ${result.components_created} components, ${result.capabilities_created} capabilities, ${result.tests_created} tests`
+      );
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : "Failed to accept spec");
+    } finally {
+      setRoundtableLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
@@ -699,8 +774,11 @@ export default function ProjectDetailPage() {
                 onGenerateFeatures={handleGenerateFeatures}
                 onGenerateVision={handleGenerateVision}
                 onGenerateGoals={handleGenerateGoals}
+                onGenerateSpec={handleGenerateSpec}
                 onSaveVision={handleSaveVision}
                 onSaveGoals={handleSaveGoals}
+                onAcceptSpec={handleAcceptSpec}
+                generatedSpec={generatedSpec}
                 onNewSession={handleNewRoundtableSession}
                 messages={roundtableMessages}
                 isLoading={roundtableLoading}
