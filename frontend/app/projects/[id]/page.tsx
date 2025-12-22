@@ -33,12 +33,11 @@ import {
   type PermissionRequest,
 } from "@/lib/api";
 import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
-import { FeaturesTab } from "@/components/features/FeaturesTab";
 import { VisionOverview } from "@/components/vision/VisionOverview";
 import { TasksTab } from "@/components/tasks/TasksTab";
 import { type TaskFilterValues } from "@/components/tasks/TaskFilters";
 import { EvidenceTab } from "@/components/evidence/EvidenceTab";
-import { GoalsList } from "@/components/goals/GoalsList";
+import { ComponentsTab } from "@/components/tdd-components/ComponentsTab";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import type { ExplorerType } from "@/components/explorer/types";
 import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
@@ -56,10 +55,10 @@ import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "evidence" | "explorer";
+type TabId = "roundtable" | "vision" | "components" | "kanban" | "tasks" | "evidence" | "explorer";
 
 const VALID_EXPLORER_TYPES: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
-const VALID_TABS: TabId[] = ["roundtable", "vision", "goals", "features", "kanban", "tasks", "evidence", "explorer"];
+const VALID_TABS: TabId[] = ["roundtable", "vision", "components", "kanban", "tasks", "evidence", "explorer"];
 
 // localStorage key for remembering last tab per project
 const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`;
@@ -802,14 +801,9 @@ export default function ProjectDetailPage() {
             <VisionOverview projectId={projectId} />
           </div>
         )}
-        {activeTab === "goals" && (
+        {activeTab === "components" && (
           <div className="h-full overflow-auto p-4">
-            <GoalsList projectId={projectId} />
-          </div>
-        )}
-        {activeTab === "features" && (
-          <div className="h-full overflow-auto p-4">
-            <FeaturesTab projectId={projectId} />
+            <ComponentsTab projectId={projectId} />
           </div>
         )}
         {activeTab === "kanban" && (

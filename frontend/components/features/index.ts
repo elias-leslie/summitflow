@@ -1,1 +1,0 @@
-export { FeaturesTab } from "./FeaturesTab";
