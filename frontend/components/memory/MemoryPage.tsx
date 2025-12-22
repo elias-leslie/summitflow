@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { fetchProjects, type Project } from '@/lib/api';
+import { BulkActionsBar } from './BulkActionsBar';
 
 // Types
 interface MemoryStats {
@@ -590,15 +591,36 @@ export default function MemoryPage() {
                 <p className="text-sm">Patterns will appear here for review after reflection</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {pendingPatterns.map((pattern) => (
-                  <PatternRow
-                    key={pattern.id}
-                    pattern={pattern}
-                    onApprove={handleApprovePattern}
-                    onReject={handleRejectPattern}
-                  />
-                ))}
+              <div className="space-y-4">
+                <BulkActionsBar
+                  patterns={pendingPatterns}
+                  onBulkApprove={async (patternIds) => {
+                    try {
+                      const res = await fetch('/api/patterns/bulk-approve', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pattern_ids: patternIds, reason: 'bulk-approved' }),
+                      });
+                      if (res.ok) {
+                        setPatterns(patterns.map(p =>
+                          patternIds.includes(p.id) ? { ...p, status: 'approved' } : p
+                        ));
+                      }
+                    } catch (error) {
+                      console.error('Failed to bulk approve patterns:', error);
+                    }
+                  }}
+                />
+                <div className="space-y-2">
+                  {pendingPatterns.map((pattern) => (
+                    <PatternRow
+                      key={pattern.id}
+                      pattern={pattern}
+                      onApprove={handleApprovePattern}
+                      onReject={handleRejectPattern}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </TabsContent>
