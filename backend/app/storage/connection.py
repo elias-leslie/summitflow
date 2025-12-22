@@ -786,6 +786,18 @@ def init_schema() -> None:
                 ("backend_dir TEXT", "projects"),
                 ("browser_scripts_dir TEXT", "projects"),
                 ("data_dir TEXT", "projects"),
+                # TDD test configuration for projects
+                ("""test_config JSONB DEFAULT '{
+                    "backend_root": "backend",
+                    "frontend_root": "frontend",
+                    "pytest_path": ".venv/bin/pytest",
+                    "node_path": "npx",
+                    "test_patterns": {
+                        "pytest": "tests/**/*.py",
+                        "vitest": "**/*.test.{ts,tsx}",
+                        "playwright": "tests/e2e/**/*.spec.ts"
+                    }
+                }'::jsonb""", "projects"),
                 # Issue tracking fields for tasks (beads migration)
                 ("priority INTEGER DEFAULT 2", "tasks"),
                 ("labels TEXT[] DEFAULT '{}'", "tasks"),
