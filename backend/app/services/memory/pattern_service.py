@@ -262,6 +262,12 @@ class PatternService:
     ) -> dict[str, Any] | None:
         """Apply a pattern by writing to .claude/rules/.
 
+        Handles different actions:
+        - add: Append to rules file
+        - update: Find and replace existing pattern
+        - remove: Remove pattern from rules file
+        - merge: Apply merged content and mark originals
+
         Args:
             pattern_id: The pattern ID.
             rules_file: Name of the rules file to write to.
@@ -284,27 +290,117 @@ class PatternService:
         if not self.project_path:
             raise ValueError("project_path not set - cannot write rules")
 
-        # Write to .claude/rules/
         rules_dir = Path(self.project_path) / ".claude" / "rules"
         rules_dir.mkdir(parents=True, exist_ok=True)
-
         rules_path = rules_dir / rules_file
-        pattern_entry = self._format_pattern_for_rules(pattern)
 
-        # Append to file
-        with open(rules_path, "a") as f:
-            f.write("\n\n" + pattern_entry)
+        action = pattern.get("action", "add")
 
-        logger.info(
-            f"pattern_applied: id={pattern_id} file={rules_path}"
-        )
+        if action == "remove":
+            # Remove the pattern from rules file
+            self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
+            logger.info(
+                f"pattern_removed: id={pattern_id} target={pattern['target_pattern_id']}"
+            )
+
+        elif action == "update":
+            # Update existing pattern in rules file
+            if pattern.get("target_pattern_id"):
+                self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
+            pattern_entry = self._format_pattern_for_rules(pattern)
+            with open(rules_path, "a") as f:
+                f.write("\n\n" + pattern_entry)
+            logger.info(
+                f"pattern_updated: id={pattern_id} target={pattern.get('target_pattern_id')}"
+            )
+
+        elif action == "merge":
+            # Remove source patterns and add merged version
+            source_ids = pattern.get("source_diary_ids") or []
+            for source_id in source_ids:
+                self._remove_pattern_from_file(rules_path, source_id)
+            pattern_entry = self._format_pattern_for_rules(pattern)
+            with open(rules_path, "a") as f:
+                f.write("\n\n" + pattern_entry)
+            logger.info(
+                f"pattern_merged: id={pattern_id} sources={source_ids}"
+            )
+
+        else:  # add
+            pattern_entry = self._format_pattern_for_rules(pattern)
+            with open(rules_path, "a") as f:
+                f.write("\n\n" + pattern_entry)
+            logger.info(
+                f"pattern_applied: id={pattern_id} file={rules_path}"
+            )
 
         # Update status
-        return memory_storage.update_pattern_status(
-            pattern_id=pattern_id,
-            status="applied",
-            applied_at=datetime.now(),
-        )
+        memory_storage.mark_pattern_applied(pattern_id)
+        return self.get_pattern(pattern_id)
+
+    def _remove_pattern_from_file(self, rules_path: Path, pattern_id: str | None) -> bool:
+        """Remove a pattern from the rules file by its ID.
+
+        Args:
+            rules_path: Path to the rules file.
+            pattern_id: The pattern ID to remove.
+
+        Returns:
+            True if pattern was found and removed.
+        """
+        if not pattern_id or not rules_path.exists():
+            return False
+
+        try:
+            content = rules_path.read_text()
+
+            # Find and remove the pattern section
+            # Pattern sections are marked with <!-- Pattern ID: xxx -->
+            pattern_marker = f"<!-- Pattern ID: {pattern_id}"
+
+            if pattern_marker not in content:
+                return False
+
+            # Find the pattern section boundaries
+            # Patterns start with "## title" and end before next "## " or end of file
+            lines = content.split("\n")
+            new_lines = []
+            skip_until_next_section = False
+            found_pattern = False
+
+            for line in lines:
+                # Check if this line contains the pattern marker we're looking for
+                if pattern_marker in line:
+                    # Find the start of this section (go back to the ## heading)
+                    j = len(new_lines) - 1
+                    while j >= 0 and not new_lines[j].startswith("## "):
+                        j -= 1
+                    # Remove from the heading onwards
+                    if j >= 0:
+                        new_lines = new_lines[:j]
+                    skip_until_next_section = True
+                    found_pattern = True
+                    continue
+
+                if skip_until_next_section:
+                    if line.startswith("## "):
+                        skip_until_next_section = False
+                        new_lines.append(line)
+                    continue
+
+                new_lines.append(line)
+
+            if found_pattern:
+                # Clean up extra blank lines
+                cleaned = "\n".join(new_lines).strip()
+                rules_path.write_text(cleaned + "\n")
+                logger.info(f"pattern_removed_from_file: id={pattern_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to remove pattern from file: {e}")
+
+        return False
 
     def _format_pattern_for_rules(self, pattern: dict[str, Any]) -> str:
         """Format a pattern as markdown for rules file."""
