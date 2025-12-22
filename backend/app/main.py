@@ -24,6 +24,7 @@ from .api import (
     projects,
     roundtable,
     tasks,
+    tdd_tests,
     terminal,
     terminal_sessions,
     vision_content,
@@ -86,6 +87,7 @@ app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
 app.include_router(components.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(capabilities.router, prefix="/api/projects", tags=["tdd"])
+app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 
 
 @app.get("/health")
