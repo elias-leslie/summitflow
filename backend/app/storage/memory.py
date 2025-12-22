@@ -594,17 +594,32 @@ def get_pattern(pattern_id: str) -> dict[str, Any] | None:
 
 
 def list_patterns(
-    project_id: str,
+    project_id: str | None = None,
     status: str | None = None,
     action: str | None = None,
     pattern_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """List patterns with optional filters."""
-    conditions = ["project_id = %s"]
-    params: list[Any] = [project_id]
+    """List patterns with optional filters.
 
+    Args:
+        project_id: Filter by project (None = all projects)
+        status: Filter by status
+        action: Filter by action type
+        pattern_type: Filter by pattern type
+        limit: Maximum results
+        offset: Pagination offset
+
+    Returns:
+        List of patterns sorted by created_at descending.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
     if status:
         conditions.append("status = %s")
         params.append(status)
@@ -617,6 +632,8 @@ def list_patterns(
 
     params.extend([limit, offset])
 
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -625,7 +642,7 @@ def list_patterns(
                    status, confidence, usage_count, last_used_at, superseded_by,
                    applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             FROM learned_patterns
-            WHERE {" AND ".join(conditions)}
+            {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """,

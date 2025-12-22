@@ -146,3 +146,27 @@ async def list_observations_global(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/patterns")
+async def list_patterns_global(
+    project_id: str | None = Query(None, description="Filter by project"),
+    status: str | None = Query(None, description="Filter by status"),
+    action: str | None = Query(None, description="Filter by action type"),
+    pattern_type: str | None = Query(None, description="Filter by pattern type"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    """List patterns across all projects.
+
+    Use project_id query param to filter to a specific project.
+    Returns patterns sorted by created_at descending (newest first).
+    """
+    return memory_storage.list_patterns(
+        project_id=project_id,
+        status=status,
+        action=action,
+        pattern_type=pattern_type,
+        limit=limit,
+        offset=offset,
+    )
