@@ -18,7 +18,6 @@ from .api import (
     diary,
     evidence,
     explorer,
-    features,
     hooks,
     memory,
     notifications,
@@ -30,8 +29,6 @@ from .api import (
     tdd_tests,
     terminal,
     terminal_sessions,
-    vision_content,
-    vision_goals,
 )
 from .services import terminal_lifecycle
 from .storage.connection import init_schema
@@ -69,10 +66,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(features.router, prefix="/api", tags=["features"])
 app.include_router(evidence.router, prefix="/api", tags=["evidence"])
-app.include_router(vision_goals.router, prefix="/api", tags=["vision"])
-app.include_router(vision_content.router, prefix="/api", tags=["vision"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
