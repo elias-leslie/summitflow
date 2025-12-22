@@ -433,6 +433,7 @@ class ReflectionService:
             source_entry_ids=suggestion.source_diary_ids,
             confidence=suggestion.confidence,
             validate=True,  # Enforce conciseness validation
+            reflected_by=self.model,
         )
 
     def should_trigger_reflection(

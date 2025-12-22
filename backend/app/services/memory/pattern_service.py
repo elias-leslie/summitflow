@@ -122,6 +122,7 @@ class PatternService:
         source_entry_ids: list[str] | None = None,
         confidence: float = 0.5,
         validate: bool = True,
+        reflected_by: str | None = None,
     ) -> dict[str, Any]:
         """Create a new pattern.
 
@@ -134,6 +135,7 @@ class PatternService:
             source_entry_ids: Diary entry IDs that led to this pattern.
             confidence: Confidence score 0-1.
             validate: Whether to validate conciseness.
+            reflected_by: Model that generated this pattern.
 
         Returns:
             The created pattern.
@@ -155,6 +157,7 @@ class PatternService:
             rationale=rationale,
             source_diary_ids=source_entry_ids,
             confidence=confidence,
+            reflected_by=reflected_by,
         )
 
         logger.info(

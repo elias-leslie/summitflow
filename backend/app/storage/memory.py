@@ -524,6 +524,7 @@ def create_pattern(
     source_observation_ids: list[str] | None = None,
     target_pattern_id: str | None = None,
     confidence: float | None = None,
+    reflected_by: str | None = None,
 ) -> dict[str, Any]:
     """Create a learned pattern.
 
@@ -535,17 +536,18 @@ def create_pattern(
             """
             INSERT INTO learned_patterns
                 (project_id, pattern_type, title, content, action, rationale,
-                 source_diary_ids, source_observation_ids, target_pattern_id, confidence)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 source_diary_ids, source_observation_ids, target_pattern_id, confidence,
+                 reflected_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, pattern_type, title, content, rationale,
                       source_diary_ids, source_observation_ids, action, target_pattern_id,
                       status, confidence, usage_count, last_used_at, superseded_by,
-                      applied_to_rules_at, created_at, reviewed_at, reviewed_by
+                      applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             """,
             (project_id, pattern_type, title, content, action, rationale,
              json.dumps(source_diary_ids) if source_diary_ids else "[]",
              json.dumps(source_observation_ids) if source_observation_ids else "[]",
-             target_pattern_id, confidence),
+             target_pattern_id, confidence, reflected_by),
         )
         row = cur.fetchone()
         conn.commit()
@@ -561,7 +563,7 @@ def get_pattern(pattern_id: str) -> dict[str, Any] | None:
             SELECT id, project_id, pattern_type, title, content, rationale,
                    source_diary_ids, source_observation_ids, action, target_pattern_id,
                    status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by
+                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             FROM learned_patterns
             WHERE id = %s
             """,
@@ -604,7 +606,7 @@ def list_patterns(
             SELECT id, project_id, pattern_type, title, content, rationale,
                    source_diary_ids, source_observation_ids, action, target_pattern_id,
                    status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by
+                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             FROM learned_patterns
             WHERE {" AND ".join(conditions)}
             ORDER BY created_at DESC
@@ -625,7 +627,7 @@ def get_stale_patterns(project_id: str, days: int = 30) -> list[dict[str, Any]]:
             SELECT id, project_id, pattern_type, title, content, rationale,
                    source_diary_ids, source_observation_ids, action, target_pattern_id,
                    status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by
+                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             FROM learned_patterns
             WHERE project_id = %s
               AND status = 'applied'
@@ -707,12 +709,15 @@ def increment_pattern_usage(pattern_id: str) -> bool:
 
 
 def _pattern_row_to_dict(row: tuple) -> dict[str, Any]:
-    """Convert pattern row to dict."""
+    """Convert pattern row to dict.
+
+    Handles both old 19-column rows and new 20-column rows with reflected_by.
+    """
     confidence = row[11]
     if isinstance(confidence, Decimal):
         confidence = float(confidence)
 
-    return {
+    result = {
         "id": str(row[0]),
         "project_id": row[1],
         "pattern_type": row[2],
@@ -733,6 +738,12 @@ def _pattern_row_to_dict(row: tuple) -> dict[str, Any]:
         "reviewed_at": row[17].isoformat() if row[17] else None,
         "reviewed_by": row[18],
     }
+    # Handle both old (19 cols) and new (20 cols with reflected_by) row formats
+    if len(row) >= 20:
+        result["reflected_by"] = row[19]
+    else:
+        result["reflected_by"] = None
+    return result
 
 
 # =============================================================================
