@@ -24,6 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CheckpointViewer, type Checkpoint } from "@/components/tasks/CheckpointViewer";
 import type { Task, TaskType, TaskStatus, AcceptanceCriterion } from "@/lib/api";
 
 interface TaskDetailDrawerProps {
@@ -33,6 +34,8 @@ interface TaskDetailDrawerProps {
   onOpenChange: (open: boolean) => void;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => void;
+  /** Checkpoint for this task's session, if available */
+  checkpoint?: Checkpoint | null;
 }
 
 // ============================================================================
@@ -114,6 +117,7 @@ export function TaskDetailDrawer({
   onOpenChange,
   onStatusChange,
   onTaskUpdate,
+  checkpoint,
 }: TaskDetailDrawerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -335,6 +339,17 @@ export function TaskDetailDrawer({
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Checkpoint (if available) */}
+          {checkpoint && (
+            <CheckpointViewer
+              checkpoint={checkpoint}
+              onResume={(prompt) => {
+                // Could navigate to a resume page or open a dialog
+                console.log("Resume prompt copied:", prompt.substring(0, 100) + "...");
+              }}
+            />
           )}
 
           {/* Metadata */}
