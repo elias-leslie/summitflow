@@ -9,6 +9,7 @@ from .api import (
     beads,
     celery_endpoints,
     checkpoints,
+    components,
     context,
     diary,
     evidence,
@@ -82,6 +83,7 @@ app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 app.include_router(diary.router, prefix="/api/projects", tags=["learning"])
 app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
+app.include_router(components.router, prefix="/api/projects", tags=["tdd"])
 
 
 @app.get("/health")
