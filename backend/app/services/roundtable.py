@@ -1338,6 +1338,96 @@ CONVERSATION:
 
         return created_features
 
+    # =========================================================================
+    # Session Lifecycle
+    # =========================================================================
+
+    def end_session(
+        self,
+        session: RoundtableSession,
+        summary: str | None = None,
+        completed_steps: list[str] | None = None,
+        remaining_steps: list[str] | None = None,
+        create_checkpoint: bool = True,
+    ) -> dict[str, Any] | None:
+        """End a session and optionally create a checkpoint.
+
+        Args:
+            session: The session to end
+            summary: Summary of what was accomplished
+            completed_steps: Steps that were completed
+            remaining_steps: Steps still remaining
+            create_checkpoint: Whether to create a checkpoint (default True)
+
+        Returns:
+            Created checkpoint if create_checkpoint=True, else None
+        """
+        from .memory import CheckpointService
+
+        checkpoint = None
+
+        if create_checkpoint:
+            # Calculate tokens used from messages
+            total_tokens = sum(msg.tokens_used for msg in session.messages)
+
+            # Extract files modified from conversation (if any)
+            files_modified = self._extract_files_from_session(session)
+
+            # Build conversation summary if not provided
+            if not summary and session.messages:
+                summary = self._build_session_summary(session)
+
+            # Create checkpoint
+            checkpoint_service = CheckpointService(session.project_id)
+            checkpoint = checkpoint_service.create_from_session_end(
+                session_id=session.id,
+                agent_type=session.get_effective_agent(),
+                summary=summary or "Session ended",
+                completed=completed_steps,
+                remaining=remaining_steps,
+                files=files_modified,
+                tokens=total_tokens,
+            )
+
+            logger.info(
+                f"Session {session.id} ended with checkpoint {checkpoint['id']}"
+            )
+
+        # Remove from active sessions
+        if session.id in self._sessions:
+            del self._sessions[session.id]
+
+        return checkpoint
+
+    def _extract_files_from_session(self, session: RoundtableSession) -> list[str]:
+        """Extract file paths mentioned in session messages.
+
+        Simple extraction of file paths from conversation.
+        """
+        import re
+
+        files = set()
+        for msg in session.messages:
+            # Match common file path patterns
+            # e.g., /path/to/file.py, ./relative/path.ts
+            matches = re.findall(
+                r'(?:^|[\s"`\'(])([./][\w./\-]+\.\w{1,10})(?:[\s"`\'):]|$)',
+                msg.content
+            )
+            files.update(matches)
+        return list(files)[:20]  # Limit to 20 files
+
+    def _build_session_summary(self, session: RoundtableSession, max_messages: int = 10) -> str:
+        """Build a brief summary of the session from recent messages."""
+        recent = session.messages[-max_messages:]
+        parts = []
+        for msg in recent:
+            speaker = msg.agent.upper() if msg.agent != "user" else "USER"
+            # Truncate long messages
+            content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+            parts.append(f"[{speaker}]: {content}")
+        return "\n".join(parts)
+
 
 # Module-level singleton for convenience
 _roundtable_service: RoundtableService | None = None

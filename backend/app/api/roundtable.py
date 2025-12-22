@@ -566,6 +566,70 @@ async def delete_session(project_id: str, session_id: str):
     return {"deleted": True, "session_id": session_id}
 
 
+class EndSessionRequest(BaseModel):
+    """Request to end a session with optional checkpoint."""
+
+    summary: str | None = None
+    completed_steps: list[str] | None = None
+    remaining_steps: list[str] | None = None
+    create_checkpoint: bool = True
+
+
+class EndSessionResponse(BaseModel):
+    """Response after ending a session."""
+
+    session_id: str
+    status: str
+    checkpoint_id: str | None = None
+    checkpoint_created: bool = False
+
+
+@router.post("/projects/{project_id}/roundtable/sessions/{session_id}/end")
+async def end_session(
+    project_id: str,
+    session_id: str,
+    request: EndSessionRequest,
+) -> EndSessionResponse:
+    """End a roundtable session and optionally create a checkpoint.
+
+    Creates a checkpoint to save the session state for later resumption.
+    Updates session status to 'ended'.
+    """
+    service = get_roundtable_service()
+
+    # Try to get session from memory first
+    session = service.get_session(session_id)
+
+    # If not in memory, try to restore from DB
+    if session is None:
+        session = _restore_session_from_db(service, session_id, project_id)
+
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # End the session (creates checkpoint if requested)
+    checkpoint = service.end_session(
+        session=session,
+        summary=request.summary,
+        completed_steps=request.completed_steps,
+        remaining_steps=request.remaining_steps,
+        create_checkpoint=request.create_checkpoint,
+    )
+
+    # Update session status in DB
+    roundtable_storage.update_session_metadata(
+        session_id=session_id,
+        status="ended",
+    )
+
+    return EndSessionResponse(
+        session_id=session_id,
+        status="ended",
+        checkpoint_id=checkpoint["id"] if checkpoint else None,
+        checkpoint_created=checkpoint is not None,
+    )
+
+
 @router.patch(
     "/projects/{project_id}/roundtable/sessions/{session_id}",
     response_model=UpdateSessionResponse,
