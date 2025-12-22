@@ -12,7 +12,7 @@ from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.agents import AgentType, get_agent
-from ..storage import features, tasks, capabilities, tests
+from ..storage import tasks, capabilities, tests
 
 logger = get_logger(__name__)
 
@@ -82,23 +82,23 @@ def run_agent_task(
         return {"status": "error", "error": f"Task not found: {task_id}"}
 
     project_id = task["project_id"]
-    feature_db_id = task.get("feature_id")
+    capability_id = task.get("capability_id")
 
     # 2. Update task status to running
     tasks.update_task_status(task_id, "running")
     tasks.append_progress_log(task_id, f"Starting agent execution with {agent_type}")
 
     try:
-        # 3. Load feature if linked
-        feature = None
-        criteria = []
-        if feature_db_id:
-            feature = features.get_feature_by_db_id(feature_db_id)
-            if feature:
-                criteria = feature.get("acceptance_criteria", [])
+        # 3. Load capability if linked
+        capability = None
+        linked_tests: list[dict[str, Any]] = []
+        if capability_id:
+            capability = capabilities.get_capability_by_id(capability_id)
+            if capability:
+                linked_tests = tests.get_tests_for_capability(project_id, capability["id"])
                 tasks.append_progress_log(
                     task_id,
-                    f"Loaded feature: {feature['name']} with {len(criteria)} criteria",
+                    f"Loaded capability: {capability['name']} with {len(linked_tests)} tests",
                 )
 
         # 4. Initialize agent
@@ -116,8 +116,8 @@ def run_agent_task(
             return {"status": "error", "error": f"Agent init failed: {e}"}
 
         # 5. Build context prompt
-        context = _build_agent_context(task, feature, criteria)
-        tasks.append_progress_log(task_id, "Built feature context for agent")
+        context = _build_agent_context(task, capability, linked_tests)
+        tasks.append_progress_log(task_id, "Built capability context for agent")
 
         # 6. Execute agent
         tasks.append_progress_log(task_id, "Sending prompt to agent...")
@@ -194,15 +194,15 @@ def run_agent_task(
 
 def _build_agent_context(
     task: dict[str, Any],
-    feature: dict[str, Any] | None,
-    criteria: list[dict[str, Any]],
+    capability: dict[str, Any] | None,
+    linked_tests: list[dict[str, Any]],
 ) -> str:
     """Build the context prompt for the agent.
 
     Args:
         task: Task dict from database
-        feature: Feature dict (optional)
-        criteria: List of acceptance criteria
+        capability: Capability dict (optional)
+        linked_tests: List of tests linked to the capability
 
     Returns:
         Formatted context string for the agent
@@ -212,21 +212,20 @@ def _build_agent_context(
     if task.get("description"):
         parts.append(f"\n## Description\n{task['description']}")
 
-    if feature:
-        parts.append(f"\n## Feature: {feature['name']}")
-        if feature.get("description"):
-            parts.append(f"\n{feature['description']}")
-        if feature.get("category"):
-            parts.append(f"\n**Category:** {feature['category']}")
+    if capability:
+        parts.append(f"\n## Capability: {capability['name']}")
+        if capability.get("description"):
+            parts.append(f"\n{capability['description']}")
+        parts.append(f"\nPriority: P{capability.get('priority', 2)}")
+        parts.append(f"Status: {capability.get('status', 'pending')}")
 
-    if criteria:
-        parts.append("\n## Acceptance Criteria")
-        for i, c in enumerate(criteria, 1):
-            status = "PASS" if c.get("passes") else "PENDING"
-            desc = c.get("description") or c.get("criterion", "No description")
-            parts.append(f"\n{i}. [{status}] {desc}")
-            if c.get("type"):
-                parts.append(f"   Type: {c['type']}")
+    if linked_tests:
+        parts.append("\n## Linked Tests")
+        for test in linked_tests:
+            status = "PASS" if test.get("last_result") == "passed" else "PENDING"
+            parts.append(f"\n- [{status}] {test['name']} ({test['test_type']})")
+            if test.get("command"):
+                parts.append(f"  Command: `{test['command']}`")
 
     if task.get("spec_content"):
         parts.append(f"\n## Specification\n{task['spec_content']}")
@@ -241,8 +240,8 @@ def _build_agent_context(
 
     parts.append(
         "\n## Instructions\n"
-        "Analyze the feature and acceptance criteria above. "
-        "For each pending criterion, outline the steps needed to implement it. "
+        "Analyze the capability and linked tests above. "
+        "Implement the code changes needed to make all tests pass. "
         "Focus on concrete, actionable implementation details."
     )
 
@@ -411,7 +410,11 @@ def _build_tdd_context(
             parts.append("\n### Test Failure")
             if result.get("output"):
                 # Truncate very long output
-                output = result["output"][:1500] if len(result.get("output", "")) > 1500 else result["output"]
+                output = (
+                    result["output"][:1500]
+                    if len(result.get("output", "")) > 1500
+                    else result["output"]
+                )
                 parts.append(f"\n```\n{output}\n```")
             if result.get("error"):
                 parts.append(f"\nError: {result['error']}")
