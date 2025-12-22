@@ -167,16 +167,16 @@ class ContextBuilder:
                 full_tokens = self._observation_full_tokens(obs)
                 total_full_tokens += full_tokens
 
+                # Compact index entry - minimize token count
+                # Truncate title to 60 chars for index
+                title = obs["title"][:60] + "..." if len(obs["title"]) > 60 else obs["title"]
                 index_items.append({
                     "id": f"obs:{obs['id']}",
-                    "type": "observation",
-                    "observation_type": obs["observation_type"],
-                    "title": obs["title"],
-                    "subtitle": obs.get("subtitle"),
-                    "concepts": obs.get("concepts", []),
-                    "files_modified": obs.get("files_modified", [])[:3],  # Limit for brevity
-                    "created_at": obs["created_at"],
-                    "token_estimate": full_tokens,
+                    "t": "obs",  # Short type key
+                    "ot": obs["observation_type"][:3],  # First 3 chars of type
+                    "title": title,
+                    "c": obs.get("concepts", [])[:2],  # Limit concepts
+                    "tok": full_tokens,
                 })
 
         # Recent checkpoints (for resume context)
@@ -190,16 +190,16 @@ class ContextBuilder:
                 full_tokens = self._checkpoint_full_tokens(cp)
                 total_full_tokens += full_tokens
 
+                # Compact index entry
+                action = cp.get("current_action", "")[:40] + "..." if len(cp.get("current_action", "") or "") > 40 else cp.get("current_action")
                 index_items.append({
                     "id": f"cp:{cp['id']}",
-                    "type": "checkpoint",
-                    "agent_type": cp["agent_type"],
-                    "current_action": cp.get("current_action"),
-                    "question": cp.get("question")[:100] if cp.get("question") else None,
-                    "completed_count": len(cp.get("completed_steps") or []),
-                    "remaining_count": len(cp.get("remaining_steps") or []),
-                    "created_at": cp["created_at"],
-                    "token_estimate": full_tokens,
+                    "t": "cp",
+                    "a": cp["agent_type"],
+                    "act": action,
+                    "done": len(cp.get("completed_steps") or []),
+                    "left": len(cp.get("remaining_steps") or []),
+                    "tok": full_tokens,
                 })
 
         # Applied patterns (project-specific rules)
@@ -214,14 +214,15 @@ class ContextBuilder:
                 full_tokens = self._pattern_full_tokens(pattern)
                 total_full_tokens += full_tokens
 
+                # Compact index entry
+                title = pattern["title"][:50] + "..." if len(pattern["title"]) > 50 else pattern["title"]
                 index_items.append({
                     "id": f"pat:{pattern['id']}",
-                    "type": "pattern",
-                    "pattern_type": pattern["pattern_type"],
-                    "title": pattern["title"],
-                    "usage_count": pattern.get("usage_count", 0),
-                    "last_used_at": pattern.get("last_used_at"),
-                    "token_estimate": full_tokens,
+                    "t": "pat",
+                    "pt": pattern["pattern_type"][:3],
+                    "title": title,
+                    "use": pattern.get("usage_count", 0),
+                    "tok": full_tokens,
                 })
 
         # Calculate index token count
