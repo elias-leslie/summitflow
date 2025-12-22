@@ -684,6 +684,23 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)")
 
+            # Accepted specs - Permanent storage for accepted spec definitions
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS accepted_specs (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    spec_json JSONB NOT NULL,
+                    accepted_at TIMESTAMPTZ DEFAULT NOW(),
+                    accepted_by VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_accepted_specs_project ON accepted_specs(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_accepted_specs_accepted ON accepted_specs(accepted_at DESC)")
+
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
