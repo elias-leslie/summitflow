@@ -774,7 +774,7 @@ export default function ProjectDetailPage() {
           <div className="h-full overflow-auto p-4">
             <LearningDashboard
               projectId={projectId}
-              projectPath={project.path}
+              projectPath={project.root_path}
             />
           </div>
         )}

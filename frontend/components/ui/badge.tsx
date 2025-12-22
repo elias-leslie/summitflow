@@ -3,7 +3,7 @@
 import { type ReactNode } from "react";
 import { clsx } from "clsx";
 
-type BadgeVariant = "default" | "phosphor" | "amber" | "rose" | "slate" | "outline";
+type BadgeVariant = "default" | "phosphor" | "amber" | "rose" | "slate" | "outline" | "secondary";
 
 interface BadgeProps {
   variant?: BadgeVariant;
@@ -18,6 +18,7 @@ const variants: Record<BadgeVariant, string> = {
   rose: "bg-rose-500/15 text-rose-400 border border-rose-500/30",
   slate: "bg-slate-800 text-slate-400 border border-slate-700",
   outline: "bg-transparent text-slate-400 border border-slate-600",
+  secondary: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700",
 };
 
 export function Badge({ variant = "default", children, className }: BadgeProps) {
