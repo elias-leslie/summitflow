@@ -90,6 +90,7 @@ class ExtractedObservation:
     discovery_tokens: int = 0
     skipped: bool = False
     skip_reason: str | None = None
+    extracted_by: str | None = None  # Model that performed extraction
 
 
 class ObservationExtractor:
@@ -205,6 +206,7 @@ class ObservationExtractor:
                     skipped=True,
                     skip_reason=observation.get("reason", "Trivial execution"),
                     discovery_tokens=discovery_tokens,
+                    extracted_by=self.model,
                 )
 
             # Validate and build observation
@@ -225,6 +227,7 @@ class ObservationExtractor:
                 files_read=observation.get("files_read"),
                 files_modified=observation.get("files_modified"),
                 discovery_tokens=discovery_tokens,
+                extracted_by=self.model,
             )
 
         except Exception as e:
@@ -236,6 +239,7 @@ class ObservationExtractor:
                 concepts=["debugging"],
                 narrative=f"Failed to extract observation: {str(e)}",
                 discovery_tokens=0,
+                extracted_by=self.model,
             )
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:

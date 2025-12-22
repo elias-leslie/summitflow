@@ -151,6 +151,7 @@ def create_observation(
     tool_name: str | None = None,
     tool_input: dict[str, Any] | None = None,
     discovery_tokens: int = 0,
+    extracted_by: str | None = None,
 ) -> dict[str, Any]:
     """Create an observation from extracted tool execution data.
 
@@ -170,16 +171,18 @@ def create_observation(
             INSERT INTO observations
                 (project_id, session_id, agent_type, observation_type, title,
                  concepts, subtitle, narrative, facts, files_read, files_modified,
-                 tool_name, tool_input, discovery_tokens)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 tool_name, tool_input, discovery_tokens, extracted_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, session_id, agent_type, observation_type,
                       concepts, title, subtitle, narrative, facts, files_read,
-                      files_modified, tool_name, tool_input, discovery_tokens, created_at
+                      files_modified, tool_name, tool_input, discovery_tokens,
+                      extracted_by, created_at
             """,
             (project_id, session_id, agent_type, observation_type, title,
              concepts, subtitle, narrative, json.dumps(facts) if facts else None,
              files_read, files_modified, tool_name,
-             json.dumps(tool_input) if tool_input else None, discovery_tokens),
+             json.dumps(tool_input) if tool_input else None, discovery_tokens,
+             extracted_by),
         )
         row = cur.fetchone()
         conn.commit()
@@ -194,7 +197,8 @@ def get_observation(observation_id: str) -> dict[str, Any] | None:
             """
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens, created_at
+                   files_modified, tool_name, tool_input, discovery_tokens,
+                   extracted_by, created_at
             FROM observations
             WHERE id = %s
             """,
@@ -236,7 +240,8 @@ def list_observations(
             f"""
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens, created_at
+                   files_modified, tool_name, tool_input, discovery_tokens,
+                   extracted_by, created_at
             FROM observations
             WHERE {" AND ".join(conditions)}
             ORDER BY created_at DESC
@@ -260,7 +265,8 @@ def search_observations_fts(
             """
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens, created_at,
+                   files_modified, tool_name, tool_input, discovery_tokens,
+                   extracted_by, created_at,
                    ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
             FROM observations
             WHERE project_id = %s
@@ -272,13 +278,16 @@ def search_observations_fts(
         )
         rows = cur.fetchall()
 
-    # Exclude rank from result
-    return [_observation_row_to_dict(row[:16]) for row in rows]
+    # Exclude rank from result (row has 18 cols now: 17 + rank)
+    return [_observation_row_to_dict(row[:17]) for row in rows]
 
 
 def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
-    """Convert observation row to dict."""
-    return {
+    """Convert observation row to dict.
+
+    Handles both old 16-column rows and new 17-column rows with extracted_by.
+    """
+    result = {
         "id": str(row[0]),
         "project_id": row[1],
         "session_id": row[2],
@@ -294,8 +303,15 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         "tool_name": row[12],
         "tool_input": row[13],
         "discovery_tokens": row[14],
-        "created_at": row[15].isoformat() if row[15] else None,
     }
+    # Handle both old (16 cols) and new (17 cols with extracted_by) row formats
+    if len(row) >= 17:
+        result["extracted_by"] = row[15]
+        result["created_at"] = row[16].isoformat() if row[16] else None
+    else:
+        result["extracted_by"] = None
+        result["created_at"] = row[15].isoformat() if row[15] else None
+    return result
 
 
 # =============================================================================

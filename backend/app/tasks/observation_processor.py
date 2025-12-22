@@ -122,6 +122,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
                     tool_name=item["tool_name"],
                     tool_input=item["tool_input"],
                     discovery_tokens=observation.discovery_tokens,
+                    extracted_by=observation.extracted_by,
                 )
 
                 # Mark queue item as processed
