@@ -1,7 +1,9 @@
-"""Memory API - Memory system statistics and health.
+"""Memory API - Memory system statistics, health, and global queries.
 
 This module provides REST API endpoints for memory system monitoring:
 - GET /api/memory/stats - System-wide memory statistics
+- GET /api/observations - Global observations (all projects)
+- GET /api/patterns - Global patterns (all projects)
 """
 
 from __future__ import annotations
@@ -9,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from ..storage import memory as memory_storage
@@ -119,4 +121,28 @@ async def get_memory_stats() -> MemoryStats:
         token_spend_24h=token_spend_24h,
         health=health,
         health_details=health_details if health_details else None,
+    )
+
+
+@router.get("/observations")
+async def list_observations_global(
+    project_id: str | None = Query(None, description="Filter by project"),
+    agent_type: str | None = Query(None, description="Filter by agent type"),
+    observation_type: str | None = Query(None, description="Filter by observation type"),
+    session_id: str | None = Query(None, description="Filter by session ID"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    """List observations across all projects.
+
+    Use project_id query param to filter to a specific project.
+    Returns observations sorted by created_at descending (newest first).
+    """
+    return memory_storage.list_observations(
+        project_id=project_id,
+        agent_type=agent_type,
+        observation_type=observation_type,
+        session_id=session_id,
+        limit=limit,
+        offset=offset,
     )

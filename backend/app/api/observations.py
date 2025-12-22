@@ -72,7 +72,7 @@ async def capture_observation(
 
 
 @router.get("/{project_id}/observations")
-async def list_observations(
+async def list_project_observations(
     project_id: str,
     agent_type: str | None = Query(None, description="Filter by agent type"),
     observation_type: str | None = Query(None, description="Filter by observation type"),
@@ -80,7 +80,7 @@ async def list_observations(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[dict[str, Any]]:
-    """List observations with optional filters.
+    """List observations for a specific project.
 
     Returns observations sorted by created_at descending (newest first).
     """

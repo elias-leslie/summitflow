@@ -212,17 +212,32 @@ def get_observation(observation_id: str) -> dict[str, Any] | None:
 
 
 def list_observations(
-    project_id: str,
+    project_id: str | None = None,
     agent_type: str | None = None,
     observation_type: str | None = None,
     session_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """List observations with optional filters."""
-    conditions = ["project_id = %s"]
-    params: list[Any] = [project_id]
+    """List observations with optional filters.
 
+    Args:
+        project_id: Filter by project (None = all projects)
+        agent_type: Filter by agent type
+        observation_type: Filter by observation type
+        session_id: Filter by session ID
+        limit: Maximum results
+        offset: Pagination offset
+
+    Returns:
+        List of observations sorted by created_at descending.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
     if agent_type:
         conditions.append("agent_type = %s")
         params.append(agent_type)
@@ -235,6 +250,8 @@ def list_observations(
 
     params.extend([limit, offset])
 
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -243,7 +260,7 @@ def list_observations(
                    files_modified, tool_name, tool_input, discovery_tokens,
                    extracted_by, created_at
             FROM observations
-            WHERE {" AND ".join(conditions)}
+            {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """,
