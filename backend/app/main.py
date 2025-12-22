@@ -15,6 +15,7 @@ from .api import (
     explorer,
     features,
     hooks,
+    memory,
     notifications,
     observations,
     patterns,
@@ -80,6 +81,7 @@ app.include_router(checkpoints.router, prefix="/api/projects", tags=["checkpoint
 app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 app.include_router(diary.router, prefix="/api/projects", tags=["learning"])
 app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
+app.include_router(memory.router, prefix="/api", tags=["memory"])
 
 
 @app.get("/health")
