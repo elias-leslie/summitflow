@@ -628,6 +628,30 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_capability ON capability_tests(capability_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_test ON capability_tests(test_id)")
 
+            # Test runs - Historical test execution records
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS test_runs (
+                    id SERIAL PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    test_id INTEGER NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+                    run_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+                    result VARCHAR(20) NOT NULL,
+                    duration_ms INTEGER,
+                    output TEXT,
+                    error TEXT,
+                    evidence_path TEXT,
+                    triggered_by VARCHAR(100),
+                    session_id TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_test ON test_runs(test_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_result ON test_runs(result)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)")
+
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
