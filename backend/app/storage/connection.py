@@ -613,6 +613,21 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_type ON tests(test_type)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_result ON tests(last_result)")
 
+            # Capability-Tests junction table (many-to-many)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS capability_tests (
+                    capability_id INTEGER NOT NULL REFERENCES capabilities(id) ON DELETE CASCADE,
+                    test_id INTEGER NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+                    is_primary BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (capability_id, test_id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_capability ON capability_tests(capability_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_test ON capability_tests(test_id)")
+
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
             # ============================================================
