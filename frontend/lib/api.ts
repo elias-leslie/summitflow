@@ -1712,3 +1712,95 @@ export async function importTddTests(
   if (!res.ok) throw new Error("Failed to import tests");
   return res.json();
 }
+
+// =============================================================================
+// TDD Components API
+// =============================================================================
+
+export interface TddComponent {
+  id: number;
+  project_id: string;
+  component_id: string;
+  name: string;
+  description: string | null;
+  priority: number;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TddCapability {
+  id: number;
+  project_id: string;
+  component_id: number;
+  capability_id: string;
+  name: string;
+  description: string | null;
+  priority: number;
+  status: string;
+  locked_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TddCapabilityWithTests extends TddCapability {
+  tests: {
+    id: number;
+    test_id: string;
+    name: string;
+    test_type: string;
+    last_result: string | null;
+    is_primary: boolean;
+  }[];
+}
+
+export async function fetchTddComponents(projectId: string): Promise<TddComponent[]> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components`);
+  if (!res.ok) throw new Error("Failed to fetch components");
+  return res.json();
+}
+
+export async function fetchTddComponent(
+  projectId: string,
+  componentId: string
+): Promise<TddComponent> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components/${componentId}`);
+  if (!res.ok) throw new Error("Failed to fetch component");
+  return res.json();
+}
+
+export async function fetchTddCapabilities(
+  projectId: string,
+  componentDbId?: number
+): Promise<TddCapability[]> {
+  const params = new URLSearchParams();
+  if (componentDbId !== undefined) params.append("component", componentDbId.toString());
+
+  const queryString = params.toString();
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/capabilities${queryString ? `?${queryString}` : ""}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch capabilities");
+  return res.json();
+}
+
+export async function fetchTddCapability(
+  projectId: string,
+  capabilityId: string
+): Promise<TddCapabilityWithTests> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/capabilities/${capabilityId}`);
+  if (!res.ok) throw new Error("Failed to fetch capability");
+  return res.json();
+}
+
+export async function lockTddCapability(
+  projectId: string,
+  capabilityId: string
+): Promise<TddCapability> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/capabilities/${capabilityId}/lock`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to lock capability");
+  return res.json();
+}

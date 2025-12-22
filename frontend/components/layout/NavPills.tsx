@@ -13,10 +13,11 @@ import {
   Compass,
   Settings2,
   FlaskConical,
+  Package,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "tests" | "evidence" | "explorer" | "settings";
+type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "tests" | "components" | "evidence" | "explorer" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -93,6 +94,16 @@ const tabs: TabConfig[] = [
     inactiveClasses: "text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400",
     iconActiveClasses: "text-phosphor-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-phosphor-400",
+    isRoute: true,
+  },
+  {
+    id: "components",
+    label: "Components",
+    icon: Package,
+    activeClasses: "bg-indigo-500/15 text-indigo-400",
+    inactiveClasses: "text-slate-500 hover:bg-indigo-500/10 hover:text-indigo-400",
+    iconActiveClasses: "text-indigo-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-indigo-400",
     isRoute: true,
   },
   {
