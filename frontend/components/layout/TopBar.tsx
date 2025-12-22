@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, Terminal, Camera, Settings, Info } from "lucide-react";
+import { Search, Terminal, Camera, Settings, Info, Brain } from "lucide-react";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
@@ -221,6 +221,15 @@ export function TopBar() {
           >
             <Terminal className="w-5 h-5" />
           </button>
+
+          {/* Memory - link to global Memory page */}
+          <Link
+            href="/memory"
+            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
+            title="Memory"
+          >
+            <Brain className="w-5 h-5" />
+          </Link>
 
           {/* Capture Evidence */}
           <button
