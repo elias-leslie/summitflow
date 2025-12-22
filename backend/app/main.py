@@ -9,6 +9,7 @@ from .api import (
     accepted_specs,
     agent_sessions,
     beads,
+    build,
     capabilities,
     celery_endpoints,
     checkpoints,
@@ -92,6 +93,7 @@ app.include_router(capabilities.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(accepted_specs.router, prefix="/api/projects", tags=["tdd"])
+app.include_router(build.router, prefix="/api", tags=["build"])
 
 
 @app.get("/health")
