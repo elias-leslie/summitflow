@@ -979,6 +979,14 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
                 "verification_enabled": False,
                 "is_default": True,
             }
+        elif prompt_type == "spec_extraction":
+            return {
+                "prompt_text": self.SPEC_EXTRACTION_PROMPT,
+                "primary_agent": "gemini",
+                "primary_model": "gemini-3-flash-preview",
+                "verification_enabled": False,
+                "is_default": True,
+            }
 
         return {"prompt_text": "", "primary_agent": "claude", "is_default": True}
 
@@ -1085,6 +1093,257 @@ If no goals were discussed, return: {"goals": []}
 
 CONVERSATION:
 """
+
+    # =========================================================================
+    # TDD Spec Extraction - Components, Capabilities, Tests
+    # =========================================================================
+
+    SPEC_EXTRACTION_PROMPT = """Analyze the following Roundtable conversation and extract a TDD (Test-Driven Development) specification.
+
+The spec should define:
+1. Components - logical groupings of functionality (e.g., "Authentication", "User Management", "API Gateway")
+2. Capabilities - specific features within each component (e.g., "Login with email/password", "Password reset flow")
+3. Tests - verification steps for each capability
+
+For each component, provide:
+- A unique ID (format: COMP-XXX)
+- A clear name
+- A description
+
+For each capability, provide:
+- A unique ID (format: CAP-XXX)
+- A clear name
+- A description
+- Priority (1=critical, 2=high, 3=medium, 4=low)
+
+For each test, provide:
+- Test type: "pytest" (backend unit/integration), "vitest" (frontend unit), "playwright" (e2e browser), "api" (HTTP endpoint), "ui" (visual/manual)
+- A descriptive name
+- The command to run it OR manual verification steps
+
+IMPORTANT: Return ONLY valid JSON in this exact format:
+{
+  "components": [
+    {
+      "id": "COMP-AUTH",
+      "name": "Authentication",
+      "description": "User authentication and authorization",
+      "capabilities": [
+        {
+          "id": "CAP-LOGIN",
+          "name": "Email/Password Login",
+          "description": "Users can log in with email and password",
+          "priority": 1,
+          "tests": [
+            {
+              "type": "pytest",
+              "name": "test_login_success",
+              "command": "pytest tests/auth/test_login.py::test_login_success"
+            },
+            {
+              "type": "playwright",
+              "name": "Login form submission",
+              "command": "npx playwright test tests/e2e/auth.spec.ts --grep 'login form'"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+If no spec can be derived, return: {"components": []}
+
+CONVERSATION:
+"""
+
+    def extract_spec_from_conversation(
+        self,
+        session: RoundtableSession,
+        agent_type: AgentType = "gemini",
+    ) -> dict:
+        """Extract TDD spec (components, capabilities, tests) from a Roundtable conversation.
+
+        Args:
+            session: The roundtable session to analyze
+            agent_type: Which agent to use for extraction
+
+        Returns:
+            Dict with 'components' key containing the spec structure
+        """
+        import json as json_module
+        import re
+
+        from app.storage import roundtable as roundtable_storage
+
+        # Build conversation transcript
+        context = session.get_context(max_messages=50)
+
+        # Get effective prompt config (custom or default)
+        prompt_config = self.get_effective_prompt(session.project_id, "spec_extraction")
+        prompt_text = prompt_config.get("prompt_text", self.SPEC_EXTRACTION_PROMPT)
+
+        # Use session override > prompt config > provided agent_type
+        if session.agent_override:
+            effective_agent = session.agent_override
+        else:
+            effective_agent = prompt_config.get("primary_agent", agent_type)
+
+        effective_model = session.get_effective_model(
+            effective_agent, self.claude_model, self.gemini_model
+        )
+        agent = get_agent(effective_agent, model=effective_model)
+        logger.info(f"Spec extraction using agent={effective_agent}, model={effective_model}")
+
+        prompt = prompt_text + "\n\nCONVERSATION:\n" + context
+
+        try:
+            response = agent.generate(
+                prompt=prompt,
+                system="You are a TDD spec extraction specialist. Extract structured component/capability/test definitions from conversations.",
+                max_tokens=16384,
+                temperature=0.3,
+            )
+
+            # Parse JSON from response
+            content = response.content.strip()
+
+            # Try to extract JSON from markdown code blocks
+            json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+
+            spec = json_module.loads(content)
+
+            # Store the spec in the session for review
+            roundtable_storage.update_generated_spec(session.id, spec)
+
+            return spec
+
+        except Exception as e:
+            logger.error(f"Spec extraction failed: {e}")
+            return {"components": []}
+
+    def accept_spec(
+        self,
+        project_id: str,
+        session_id: str,
+        accepted_by: str = "user",
+    ) -> dict:
+        """Accept the generated spec and create permanent entities.
+
+        This converts the ephemeral generated_spec into permanent:
+        - accepted_specs record (permanent spec record)
+        - tdd_components
+        - tdd_capabilities
+        - tdd_tests (with test_capability_links)
+
+        Args:
+            project_id: Project ID
+            session_id: Roundtable session ID containing the spec
+            accepted_by: Who accepted (user or agent name)
+
+        Returns:
+            Dict with spec_id and creation counts
+        """
+        from app.storage import roundtable as roundtable_storage
+        from app.storage import components as components_storage
+        from app.storage import capabilities as capabilities_storage
+        from app.storage import tests as tests_storage
+        from app.storage import accepted_specs as specs_storage
+
+        # Get the generated spec from the session
+        spec = roundtable_storage.get_generated_spec(session_id)
+        if not spec:
+            raise ValueError(f"No generated spec found for session {session_id}")
+
+        components_list = spec.get("components", [])
+        if not components_list:
+            raise ValueError("Spec has no components")
+
+        # Save to accepted_specs table (permanent record)
+        spec_record = specs_storage.create_accepted_spec(
+            project_id=project_id,
+            session_id=session_id,
+            spec_content=spec,
+            accepted_by=accepted_by,
+        )
+
+        # Track creation counts
+        components_created = 0
+        capabilities_created = 0
+        tests_created = 0
+
+        # Create entities from spec
+        for comp_data in components_list:
+            # Create component
+            try:
+                component = components_storage.create_component(
+                    project_id=project_id,
+                    component_id=comp_data["id"],
+                    name=comp_data["name"],
+                    description=comp_data.get("description"),
+                    priority=comp_data.get("priority", 2),
+                )
+                components_created += 1
+                component_db_id = component["id"]
+
+                # Create capabilities for this component
+                for cap_data in comp_data.get("capabilities", []):
+                    try:
+                        capability = capabilities_storage.create_capability(
+                            project_id=project_id,
+                            component_id=component_db_id,
+                            capability_id=cap_data["id"],
+                            name=cap_data["name"],
+                            description=cap_data.get("description"),
+                            priority=cap_data.get("priority", 2),
+                        )
+                        capabilities_created += 1
+                        capability_db_id = capability["id"]
+
+                        # Create tests for this capability
+                        for test_data in cap_data.get("tests", []):
+                            try:
+                                test = tests_storage.create_test(
+                                    project_id=project_id,
+                                    test_id=f"{cap_data['id']}-{test_data.get('name', 'test').replace(' ', '-').lower()[:20]}",
+                                    name=test_data["name"],
+                                    test_type=test_data["type"],
+                                    command=test_data.get("command"),
+                                )
+                                tests_created += 1
+
+                                # Link test to capability
+                                tests_storage.link_test_to_capability(
+                                    test_id=test["id"],
+                                    capability_id=capability_db_id,
+                                    is_primary=True,
+                                )
+
+                            except Exception as e:
+                                logger.warning(f"Failed to create test: {e}")
+
+                    except Exception as e:
+                        logger.warning(f"Failed to create capability: {e}")
+
+            except Exception as e:
+                logger.warning(f"Failed to create component: {e}")
+
+        # Clear the generated spec from session after acceptance
+        roundtable_storage.update_generated_spec(session_id, None)
+
+        logger.info(
+            f"Accepted spec {spec_record['id']}: "
+            f"{components_created} components, {capabilities_created} capabilities, {tests_created} tests"
+        )
+
+        return {
+            "spec_id": spec_record["id"],
+            "components_created": components_created,
+            "capabilities_created": capabilities_created,
+            "tests_created": tests_created,
+        }
 
     def extract_vision_from_conversation(
         self,

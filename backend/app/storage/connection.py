@@ -718,6 +718,7 @@ def init_schema() -> None:
                     tool_stats JSONB DEFAULT '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb,
                     messages JSONB DEFAULT '[]'::jsonb,
                     generated_features JSONB DEFAULT '[]'::jsonb,
+                    generated_spec JSONB DEFAULT NULL,
                     claude_sdk_session_id TEXT,
                     gemini_sdk_session_id TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW(),

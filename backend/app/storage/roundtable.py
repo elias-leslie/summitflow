@@ -134,7 +134,7 @@ def load_session(session_id: str) -> dict[str, Any] | None:
             """
             SELECT id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats,
                    agent_override, model_override, messages, generated_features, created_at, updated_at,
-                   claude_sdk_session_id, gemini_sdk_session_id
+                   claude_sdk_session_id, gemini_sdk_session_id, generated_spec
             FROM roundtable_sessions
             WHERE id = %s
             """,
@@ -161,6 +161,7 @@ def load_session(session_id: str) -> dict[str, Any] | None:
         "updated_at": row[12],
         "claude_sdk_session_id": row[13],
         "gemini_sdk_session_id": row[14],
+        "generated_spec": row[15],
     }
 
 
@@ -619,6 +620,58 @@ def update_session_metadata(
         "created_at": row[10],
         "updated_at": row[11],
     }
+
+
+def update_generated_spec(
+    session_id: str,
+    spec: dict[str, Any] | None,
+) -> bool:
+    """Update the generated spec for a session.
+
+    Args:
+        session_id: Session ID
+        spec: Spec dict with components, capabilities, tests structure or None to clear
+
+    Returns:
+        True if updated, False if session not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE roundtable_sessions
+            SET generated_spec = %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (json.dumps(spec) if spec else None, session_id),
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
+
+
+def get_generated_spec(session_id: str) -> dict[str, Any] | None:
+    """Get the generated spec for a session.
+
+    Args:
+        session_id: Session ID
+
+    Returns:
+        Spec dict or None if not found or no spec exists
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT generated_spec FROM roundtable_sessions WHERE id = %s",
+            (session_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row[0]:
+        return None
+
+    return row[0]
 
 
 def get_session_count(project_id: str) -> int:
