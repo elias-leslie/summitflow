@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import (
     beads,
     celery_endpoints,
+    context,
     evidence,
     explorer,
     features,
@@ -71,6 +72,7 @@ app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(terminal.router, tags=["terminal"])
 app.include_router(terminal_sessions.router, tags=["terminal"])
 app.include_router(observations.router, prefix="/api/projects", tags=["observations"])
+app.include_router(context.router, prefix="/api/projects", tags=["context"])
 app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 
 
