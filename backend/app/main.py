@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     beads,
+    capabilities,
     celery_endpoints,
     checkpoints,
     components,
@@ -84,6 +85,7 @@ app.include_router(diary.router, prefix="/api/projects", tags=["learning"])
 app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
 app.include_router(components.router, prefix="/api/projects", tags=["tdd"])
+app.include_router(capabilities.router, prefix="/api/projects", tags=["tdd"])
 
 
 @app.get("/health")
