@@ -1393,11 +1393,75 @@ CONVERSATION:
                 f"Session {session.id} ended with checkpoint {checkpoint['id']}"
             )
 
+        # Create diary entry for the session
+        self._create_diary_entry(session, summary, completed_steps)
+
         # Remove from active sessions
         if session.id in self._sessions:
             del self._sessions[session.id]
 
         return checkpoint
+
+    def _create_diary_entry(
+        self,
+        session: RoundtableSession,
+        summary: str | None = None,
+        completed_steps: list[str] | None = None,
+    ) -> None:
+        """Create a diary entry for the session and check reflection trigger.
+
+        Args:
+            session: The session that ended
+            summary: Session summary
+            completed_steps: Steps that were completed
+        """
+        from .memory import DiaryService
+
+        try:
+            # Calculate tokens and duration
+            total_tokens = sum(msg.tokens_used for msg in session.messages)
+            duration = None
+            if session.messages:
+                first_msg = session.messages[0].timestamp
+                last_msg = session.messages[-1].timestamp
+                duration = int((last_msg - first_msg).total_seconds())
+
+            # Determine outcome based on completed steps
+            outcome = "neutral"
+            if completed_steps:
+                outcome = "success"
+
+            # Create diary entry
+            diary_service = DiaryService(session.project_id)
+            entry = diary_service.create_from_session_end(
+                session_id=session.id,
+                agent_type=session.get_effective_agent(),
+                outcome=outcome,
+                tokens=total_tokens,
+                duration=duration,
+            )
+
+            logger.info(
+                f"Diary entry created: {entry['id']} for session {session.id}"
+            )
+
+            # Check if reflection should be triggered
+            self._check_reflection_trigger(session.project_id)
+
+        except Exception as e:
+            # Don't fail session end if diary creation fails
+            logger.warning(f"Failed to create diary entry: {e}")
+
+    def _check_reflection_trigger(self, project_id: str) -> None:
+        """Check if reflection should be triggered and schedule if needed."""
+        try:
+            from ..tasks.reflection_processor import check_reflection_trigger
+
+            # Fire and forget - don't wait for result
+            check_reflection_trigger.delay(project_id=project_id)
+            logger.debug(f"Reflection trigger check scheduled for {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to schedule reflection check: {e}")
 
     def _extract_files_from_session(self, session: RoundtableSession) -> list[str]:
         """Extract file paths mentioned in session messages.
