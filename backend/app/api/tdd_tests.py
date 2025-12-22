@@ -204,3 +204,82 @@ async def unlink_test_from_capability(
         )
 
     return {"status": "unlinked", "test_id": test_id, "capability_id": capability_id}
+
+
+# ============================================================
+# Test Execution
+# ============================================================
+
+
+class TestRunRequest(BaseModel):
+    """Request for running tests."""
+
+    test_ids: list[str] | None = None
+    tier: str | None = None  # smoke, unit, integration, full
+
+
+class TestRunResult(BaseModel):
+    """Result of a single test run."""
+
+    test_id: str
+    result: str  # passed, failed, error, timeout
+    duration_ms: int
+    output: str | None = None
+    error: str | None = None
+
+
+class TestRunResponse(BaseModel):
+    """Response for test run."""
+
+    test_id: str
+    result: str
+    duration_ms: int
+    output: str | None = None
+    error: str | None = None
+
+
+@router.post("/{project_id}/tests/{test_id}/run", response_model=TestRunResponse)
+async def run_single_test(project_id: str, test_id: str) -> TestRunResponse:
+    """Run a single test and return the result.
+
+    This endpoint executes the test and stores the result in test_runs table.
+    """
+    test = storage.get_test(project_id, test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
+
+    # Import test runner service (lazy import to avoid circular deps)
+    try:
+        from ..services.test_runner import run_test
+        result = await run_test(project_id, test_id)
+        return TestRunResponse(**result)
+    except ImportError:
+        # Test runner not yet implemented - return stub
+        raise HTTPException(
+            status_code=501,
+            detail="Test runner service not yet implemented (Phase 4)",
+        )
+
+
+@router.post("/{project_id}/tests/run", response_model=list[TestRunResult])
+async def run_multiple_tests(project_id: str, body: TestRunRequest) -> list[TestRunResult]:
+    """Run multiple tests and return results.
+
+    If test_ids provided, run those specific tests.
+    If tier provided, run all tests matching that tier.
+    """
+    # Import test runner service (lazy import to avoid circular deps)
+    try:
+        from ..services.test_runner import run_tests_batch
+        results = await run_tests_batch(
+            project_id,
+            test_ids=body.test_ids,
+            tier=body.tier,
+        )
+        return [TestRunResult(**r) for r in results]
+    except ImportError:
+        # Test runner not yet implemented - return stub
+        raise HTTPException(
+            status_code=501,
+            detail="Test runner service not yet implemented (Phase 4)",
+        )
