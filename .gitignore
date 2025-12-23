@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+!backend/app/services/build/
 
 # Node
 node_modules/
