@@ -322,7 +322,7 @@ def accept_spec(
     )
 
     return {
-        "spec_id": spec_record["id"],
+        "spec_id": str(spec_record["id"]),
         "components_created": components_created,
         "capabilities_created": capabilities_created,
         "tests_created": tests_created,
