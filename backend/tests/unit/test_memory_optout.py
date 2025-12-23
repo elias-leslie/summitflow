@@ -1,8 +1,7 @@
 """Unit tests for memory opt-out functionality."""
 
+import contextlib
 from unittest.mock import patch
-
-import pytest
 
 
 class TestIsMemoryFeatureEnabled:
@@ -116,7 +115,7 @@ class TestGetMemoryConfig:
 class TestStorageGuards:
     """Tests for storage layer guards returning None when disabled."""
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_create_queue_item_returns_none_when_disabled(self, mock_enabled):
         """create_queue_item returns None when observations disabled."""
         from app.storage.memory import create_queue_item
@@ -133,7 +132,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_create_observation_returns_none_when_disabled(self, mock_enabled):
         """create_observation returns None when observations disabled."""
         from app.storage.memory import create_observation
@@ -150,7 +149,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_create_diary_entry_returns_none_when_disabled(self, mock_enabled):
         """create_diary_entry returns None when diary disabled."""
         from app.storage.memory import create_diary_entry
@@ -166,7 +165,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_create_pattern_returns_none_when_disabled(self, mock_enabled):
         """create_pattern returns None when patterns disabled."""
         from app.storage.memory import create_pattern
@@ -182,7 +181,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_create_checkpoint_returns_none_when_disabled(self, mock_enabled):
         """create_checkpoint returns None when checkpoints disabled."""
         from app.storage.memory import create_checkpoint
@@ -201,7 +200,7 @@ class TestStorageGuards:
 class TestSkipMemoryCheckBypass:
     """Tests for skip_memory_check parameter bypassing guards."""
 
-    @patch("app.storage.agent_configs.is_memory_feature_enabled")
+    @patch("app.storage.memory.is_memory_feature_enabled")
     def test_skip_flag_bypasses_guard(self, mock_enabled):
         """skip_memory_check=True bypasses the feature check (verified by mock not called)."""
         from app.storage.memory import create_queue_item
@@ -217,7 +216,7 @@ class TestSkipMemoryCheckBypass:
         mock_enabled.reset_mock()
 
         # This will fail at DB layer, but that's OK - we're testing the guard bypass
-        try:
+        with contextlib.suppress(Exception):
             create_queue_item(
                 project_id="test",
                 session_id="session-123",
@@ -225,9 +224,6 @@ class TestSkipMemoryCheckBypass:
                 tool_name="Write",
                 skip_memory_check=True,  # Should bypass
             )
-        except Exception:
-            # Expected to fail at DB layer
-            pass
 
         # Key assertion: is_memory_feature_enabled should NOT have been called
         mock_enabled.assert_not_called()
