@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..services.memory import ContextBuilder
+from ..storage.agent_configs import is_memory_feature_enabled
 
 router = APIRouter()
 
@@ -102,3 +103,81 @@ async def expand_entity(
         raise HTTPException(status_code=404, detail=str(e))
 
     return ExpandResponse(**result)
+
+
+class SessionStartContextResponse(BaseModel):
+    """Response model for session-start context injection."""
+
+    context_block: str
+    token_estimate: int
+    items_included: int
+
+
+@router.get("/{project_id}/context/session-start", response_model=SessionStartContextResponse)
+async def get_session_start_context(
+    project_id: str,
+    limit: int = Query(10, ge=1, le=20, description="Max items to include"),
+) -> SessionStartContextResponse:
+    """Get context for automatic session-start injection.
+
+    Called by SessionStart hook to inject recent context at the start
+    of new Claude Code sessions. Returns empty block if context injection
+    is disabled for the project.
+
+    Returns:
+        context_block: Plain text formatted for injection
+        token_estimate: Estimated tokens in the block
+        items_included: Number of items included
+    """
+    # Check if context injection is enabled for this project
+    if not is_memory_feature_enabled(project_id, "context_injection"):
+        return SessionStartContextResponse(
+            context_block="",
+            token_estimate=0,
+            items_included=0,
+        )
+
+    builder = ContextBuilder(project_id=project_id)
+    index = builder.build_index(
+        limit=limit,
+        include_observations=True,
+        include_checkpoints=True,
+        include_patterns=True,
+    )
+
+    # Return empty if no items
+    if not index.get("items"):
+        return SessionStartContextResponse(
+            context_block="",
+            token_estimate=0,
+            items_included=0,
+        )
+
+    # Format as plain text for injection
+    lines = ["## Recent Project Context", ""]
+    for item in index["items"]:
+        item_type = item.get("type", "unknown")
+        title = item.get("title", item.get("summary", "No title"))
+        created = item.get("created_at", "")[:10] if item.get("created_at") else ""
+
+        if item_type == "observation":
+            obs_type = item.get("observation_type", "general")
+            lines.append(f"- [{obs_type}] {title} ({created})")
+        elif item_type == "checkpoint":
+            lines.append(f"- [checkpoint] {title} ({created})")
+        elif item_type == "pattern":
+            lines.append(f"- [pattern] {title}")
+        else:
+            lines.append(f"- {title}")
+
+    lines.append("")
+    lines.append("Use /projects/{project_id}/context/expand for full details.")
+
+    context_block = "\n".join(lines)
+    token_estimate = len(context_block) // 4  # Rough estimate
+
+    return SessionStartContextResponse(
+        context_block=context_block,
+        token_estimate=token_estimate,
+        items_included=len(index["items"]),
+    )
