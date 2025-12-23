@@ -477,22 +477,6 @@ async def update_task_status(
             status_code=404, detail=f"Task {task_id} not found in project {project_id}"
         )
 
-    # Check criteria satisfaction for feature-type tasks being completed
-    if update.status == "completed" and existing.get("task_type") == "feature" and not update.force:
-        criteria_result = task_store.check_criteria_satisfied(task_id)
-        if not criteria_result["satisfied"]:
-            unsatisfied = criteria_result["unsatisfied_criteria"]
-            [c["id"] for c in unsatisfied]
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": f"Cannot complete: {len(unsatisfied)} acceptance criteria not satisfied",
-                    "feature_id": criteria_result["feature_id"],
-                    "unsatisfied_criteria": unsatisfied,
-                    "hint": "Mark all criteria as passed or use force=true to bypass",
-                },
-            )
-
     try:
         updated = task_store.update_task_status(
             task_id, update.status, error_message=update.error_message

@@ -307,14 +307,13 @@ def init_schema() -> None:
         )
 
         # ============================================================
-        # Tasks Table - Agent execution state for features
+        # Tasks Table - Issue tracking and agent execution state
         # ============================================================
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    feature_id INTEGER REFERENCES feature_capabilities(id) ON DELETE SET NULL,
                     title TEXT NOT NULL,
                     description TEXT,
                     status TEXT DEFAULT 'pending',
@@ -340,7 +339,6 @@ def init_schema() -> None:
                 """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)")
