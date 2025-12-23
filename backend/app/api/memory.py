@@ -31,6 +31,17 @@ class FilteringMetrics(BaseModel):
     filter_effectiveness: float  # Percentage of tools filtered
 
 
+class LifecycleStats(BaseModel):
+    """Lifecycle health metrics for memory system."""
+
+    failed_queue_count: int  # Queue items in failed status
+    stuck_queue_count: int  # Queue items stuck in processing > 1 hour
+    oldest_pending_age_minutes: int | None  # Age of oldest pending queue item
+    unreflected_diary_count: int  # Diary entries never reflected
+    stale_patterns_count: int  # Applied patterns unused for 30+ days
+    pattern_status_breakdown: dict[str, int]  # Count by status (pending, approved, etc.)
+
+
 class MemoryStats(BaseModel):
     """Memory system statistics."""
 
@@ -42,6 +53,7 @@ class MemoryStats(BaseModel):
     health: str  # 'healthy', 'degraded', 'unhealthy'
     health_details: dict[str, Any] | None = None
     filtering: FilteringMetrics | None = None
+    lifecycle: LifecycleStats | None = None
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
