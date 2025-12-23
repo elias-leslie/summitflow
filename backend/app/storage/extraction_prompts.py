@@ -1,68 +1,19 @@
 """Storage layer for extraction prompts.
 
-Manages customizable prompts used for extracting features, vision, and goals
-from roundtable conversations. Each project can have custom prompts that
-override the defaults.
+Manages customizable prompts used for extracting TDD specs from roundtable
+conversations. Each project can have custom prompts that override the defaults.
+
+Note: Default TDD spec extraction prompts are defined in roundtable service.
+This module handles custom prompt storage/retrieval only.
 """
 
 from typing import Any
 
 from .connection import get_connection
 
-# Default prompts - used when no custom prompt is configured
-DEFAULT_PROMPTS = {
-    "feature_extraction": {
-        "prompt_type": "feature_extraction",
-        "prompt_text": """Analyze this conversation and extract features.
-For each feature, provide:
-- feature_id: A unique identifier (e.g., FEAT-001)
-- name: A concise feature name
-- category: One of: core, ux, integration, analytics, admin
-- priority: 1 (critical), 2 (high), 3 (medium), 4 (low)
-- description: Clear description of the feature
-- acceptance_criteria: List of testable criteria
-
-Return as JSON array of features.""",
-        "primary_agent": "gemini",
-        "primary_model": "gemini-3-flash-preview",
-        "verification_enabled": False,
-        "verification_agent": None,
-        "verification_model": None,
-        "verification_prompt": None,
-    },
-    "vision_extraction": {
-        "prompt_type": "vision_extraction",
-        "prompt_text": """Analyze this conversation and extract the project vision.
-Return JSON with:
-- mission: { statement: string, values: string[] }
-- narratives: [{ id: string, title: string, content: string, category: string }]
-
-Categories for narratives: technical, business, user, product.""",
-        "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
-        "verification_agent": None,
-        "verification_model": None,
-        "verification_prompt": None,
-    },
-    "goals_extraction": {
-        "prompt_type": "goals_extraction",
-        "prompt_text": """Analyze this conversation and extract strategic goals.
-For each goal, provide:
-- code: A unique code (e.g., VG-001)
-- name: A concise goal name
-- description: Clear description
-- category: One of: growth, quality, efficiency, innovation
-
-Return as JSON array of goals.""",
-        "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
-        "verification_agent": None,
-        "verification_model": None,
-        "verification_prompt": None,
-    },
-}
+# Default prompts - empty after Vision/Goals/Features removal.
+# TDD spec extraction prompts are defined in roundtable service.
+DEFAULT_PROMPTS: dict[str, dict[str, Any]] = {}
 
 
 def get_default_prompts() -> dict[str, dict[str, Any]]:
