@@ -148,6 +148,7 @@ def create_observation(
     concepts: list[str] | None = None,
     priority: str = "medium",
     confidence: float = 0.50,
+    entities: list[dict[str, str]] | None = None,
     subtitle: str | None = None,
     narrative: str | None = None,
     facts: dict[str, Any] | None = None,
@@ -176,11 +177,11 @@ def create_observation(
             """
             INSERT INTO observations
                 (project_id, session_id, agent_type, observation_type, title,
-                 concepts, priority, confidence, subtitle, narrative, facts, files_read, files_modified,
+                 concepts, priority, confidence, entities, subtitle, narrative, facts, files_read, files_modified,
                  tool_name, tool_input, discovery_tokens, extracted_by, raw_excerpt)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, session_id, agent_type, observation_type,
-                      concepts, priority, confidence, title, subtitle, narrative, facts, files_read,
+                      concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                       files_modified, tool_name, tool_input, discovery_tokens,
                       extracted_by, raw_excerpt, created_at
             """,
@@ -193,6 +194,7 @@ def create_observation(
                 concepts,
                 priority,
                 confidence,
+                json.dumps(entities) if entities else "[]",
                 subtitle,
                 narrative,
                 json.dumps(facts) if facts else None,
@@ -217,7 +219,7 @@ def get_observation(observation_id: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, title, subtitle, narrative, facts, files_read,
+                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
                    extracted_by, raw_excerpt, created_at
             FROM observations
@@ -277,7 +279,7 @@ def list_observations(
         cur.execute(
             f"""
             SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, title, subtitle, narrative, facts, files_read,
+                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
                    extracted_by, raw_excerpt, created_at
             FROM observations
@@ -302,7 +304,7 @@ def search_observations_fts(
         cur.execute(
             """
             SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, title, subtitle, narrative, facts, files_read,
+                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
                    extracted_by, raw_excerpt, created_at,
                    ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
@@ -316,15 +318,16 @@ def search_observations_fts(
         )
         rows = cur.fetchall()
 
-    # Exclude rank from result (row has 21 cols now: 20 + rank)
-    return [_observation_row_to_dict(row[:20]) for row in rows]
+    # Exclude rank from result (row has 22 cols now: 21 + rank)
+    return [_observation_row_to_dict(row[:21]) for row in rows]
 
 
 def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
     """Convert observation row to dict.
 
     Handles row formats with varying columns:
-    - 20 cols: with priority, confidence, extracted_by, raw_excerpt (current)
+    - 21 cols: with priority, confidence, entities, extracted_by, raw_excerpt (current)
+    - 20 cols: with priority, confidence, no entities
     - 19 cols: with priority, raw_excerpt but no confidence
     - 18 cols: with priority and extracted_by, no raw_excerpt
     - 17 cols: with extracted_by, no priority (legacy)
@@ -341,13 +344,34 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         "concepts": row[5] or [],
     }
 
-    # Current format with confidence (20 cols)
-    if len(row) >= 20:
+    # Current format with entities (21 cols)
+    if len(row) >= 21:
         result["priority"] = row[6] or "medium"
         confidence = row[7]
         result["confidence"] = (
             float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
         )
+        result["entities"] = row[8] or []
+        result["title"] = row[9]
+        result["subtitle"] = row[10]
+        result["narrative"] = row[11]
+        result["facts"] = row[12]
+        result["files_read"] = row[13] or []
+        result["files_modified"] = row[14] or []
+        result["tool_name"] = row[15]
+        result["tool_input"] = row[16]
+        result["discovery_tokens"] = row[17]
+        result["extracted_by"] = row[18]
+        result["raw_excerpt"] = row[19]
+        result["created_at"] = row[20].isoformat() if row[20] else None
+    # Previous format with confidence, no entities (20 cols)
+    elif len(row) >= 20:
+        result["priority"] = row[6] or "medium"
+        confidence = row[7]
+        result["confidence"] = (
+            float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
+        )
+        result["entities"] = []
         result["title"] = row[8]
         result["subtitle"] = row[9]
         result["narrative"] = row[10]
@@ -364,6 +388,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
     elif len(row) >= 19:
         result["priority"] = row[6] or "medium"
         result["confidence"] = 0.50  # Default for legacy
+        result["entities"] = []
         result["title"] = row[7]
         result["subtitle"] = row[8]
         result["narrative"] = row[9]
@@ -380,6 +405,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
     elif len(row) >= 18:
         result["priority"] = row[6] or "medium"
         result["confidence"] = 0.50
+        result["entities"] = []
         result["title"] = row[7]
         result["subtitle"] = row[8]
         result["narrative"] = row[9]
@@ -396,6 +422,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
     elif len(row) >= 17:
         result["priority"] = "medium"  # Default for legacy data
         result["confidence"] = 0.50
+        result["entities"] = []
         result["title"] = row[6]
         result["subtitle"] = row[7]
         result["narrative"] = row[8]
@@ -412,6 +439,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         # Oldest format (16 cols)
         result["priority"] = "medium"
         result["confidence"] = 0.50
+        result["entities"] = []
         result["title"] = row[6]
         result["subtitle"] = row[7]
         result["narrative"] = row[8]
@@ -678,7 +706,7 @@ def get_observations_by_session(
         cur.execute(
             """
             SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, title, subtitle, narrative, facts,
+                   concepts, priority, confidence, entities, title, subtitle, narrative, facts,
                    files_read, files_modified, tool_name, tool_input,
                    discovery_tokens, extracted_by, raw_excerpt, created_at
             FROM observations

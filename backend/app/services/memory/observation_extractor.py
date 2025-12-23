@@ -47,6 +47,7 @@ For each item, return a JSON object with:
 - "priority": <one of: high, medium, low>
 - "confidence": <float 0.0-1.0, how certain you are about this extraction>
 - "concepts": [<list from: debugging, code_patterns, dependencies, security, performance, testing, configuration>]
+- "entities": [<list of {{"type": <type>, "value": <value>}}>] - types: project, file, error_type, tool, concept
 - "title": <concise title, 5-10 words>
 - "subtitle": <optional one-line clarification or null>
 - "narrative": <2-3 sentences explaining significance>
@@ -65,11 +66,12 @@ Rules:
 - MEDIUM priority: pattern, architecture - significant learnings
 - LOW priority: constraint - routine observations, skip unless exceptional
 - confidence: 0.9+ for clear/explicit info, 0.6-0.8 for inferred, 0.3-0.5 for uncertain
+- entities: extract named items like files, error types (ImportError, TypeError), tools (pytest, git), concepts (authentication, caching)
 - Include index for every result to match back to items
 
 Example response format:
 [
-  {{"index": 0, "observation_type": "error", "priority": "high", "confidence": 0.95, "concepts": ["debugging"], "title": "...", ...}},
+  {{"index": 0, "observation_type": "error", "priority": "high", "confidence": 0.95, "concepts": ["debugging"], "entities": [{{"type": "error_type", "value": "ImportError"}}, {{"type": "file", "value": "auth.py"}}], "title": "...", ...}},
   {{"index": 1, "skip": true, "reason": "trivial file read"}},
   ...
 ]"""
@@ -128,6 +130,7 @@ class ExtractedObservation:
     concepts: list[str]
     priority: str = "medium"  # high, medium, low
     confidence: float = 0.50  # 0.0-1.0 confidence score
+    entities: list[dict[str, str]] | None = None  # [{type: "file", value: "auth.py"}]
     subtitle: str | None = None
     narrative: str | None = None
     facts: dict[str, Any] | None = None
@@ -471,6 +474,20 @@ class ObservationExtractor:
                 concepts = result.get("concepts", [])
                 concepts = [c for c in concepts if c in CONCEPT_TAGS]
 
+                # Validate entities format
+                entities = result.get("entities", [])
+                if not isinstance(entities, list):
+                    entities = []
+                # Filter to valid entity dicts with type and value
+                valid_entity_types = {"project", "file", "error_type", "tool", "concept"}
+                entities = [
+                    e
+                    for e in entities
+                    if isinstance(e, dict)
+                    and e.get("type") in valid_entity_types
+                    and e.get("value")
+                ]
+
                 observations.append(
                     ExtractedObservation(
                         observation_type=obs_type,
@@ -478,6 +495,7 @@ class ObservationExtractor:
                         concepts=concepts,
                         priority=priority,
                         confidence=confidence,
+                        entities=entities or None,
                         subtitle=result.get("subtitle"),
                         narrative=result.get("narrative"),
                         facts=result.get("facts"),
