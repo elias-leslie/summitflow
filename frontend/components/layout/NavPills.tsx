@@ -11,10 +11,11 @@ import {
   Settings2,
   FlaskConical,
   Package,
+  FileCode,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "kanban" | "tasks" | "tests" | "components" | "evidence" | "explorer" | "settings";
+type TabId = "roundtable" | "kanban" | "tasks" | "tests" | "components" | "prompts" | "evidence" | "explorer" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -74,6 +75,16 @@ const tabs: TabConfig[] = [
     inactiveClasses: "text-slate-500 hover:bg-indigo-500/10 hover:text-indigo-400",
     iconActiveClasses: "text-indigo-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-indigo-400",
+    isRoute: true,
+  },
+  {
+    id: "prompts",
+    label: "Prompts",
+    icon: FileCode,
+    activeClasses: "bg-amber-500/15 text-amber-400",
+    inactiveClasses: "text-slate-500 hover:bg-amber-500/10 hover:text-amber-400",
+    iconActiveClasses: "text-amber-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-amber-400",
     isRoute: true,
   },
   {
