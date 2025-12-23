@@ -22,6 +22,13 @@ from ..storage import agent_sessions as sessions_storage
 from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
 from .agents import get_agent
+from .recovery import (
+    FailureType,
+    RecoveryManager,
+    RecoveryStrategy,
+    classify_failure,
+    rollback_to_commit,
+)
 from .test_runner import TestResult, get_project_config, run_test
 
 logger = logging.getLogger(__name__)
@@ -200,6 +207,10 @@ async def build_capability(
     smoke_tests = [t for t in tests if t["test_type"] in SMOKE_TEST_TYPES]
     full_tests = tests
 
+    # Initialize recovery manager
+    recovery = RecoveryManager(project_id, session_id)
+    failure_info = None
+
     # TDD Loop
     for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
         logger.info(f"Building {capability_id}: attempt {attempt}/{MAX_RETRY_ATTEMPTS}")
@@ -216,6 +227,10 @@ async def build_capability(
                 caps_storage.update_capability(project_id, capability_id, status="passing")
                 sessions_storage.mark_capability_passed(project_id, session_id, capability_id)
 
+                # Mark current commit as good
+                recovery.mark_good_commit(_get_current_commit(project_id))
+                recovery.clear_attempt_history()
+
                 if session_id in _active_builds:
                     _active_builds[session_id].capabilities_completed += 1
 
@@ -227,14 +242,42 @@ async def build_capability(
                     "tests_passed": full_results["tests_passed"],
                 }
 
-        # Tests failed - call agent to fix
+        # Tests failed - extract failure info
         failure_info = _get_failure_info(
             smoke_results if not smoke_results["all_passed"] else full_results
         )
 
-        logger.info(
-            f"Capability {capability_id} attempt {attempt} failed: {failure_info['summary']}"
+        # Classify the failure
+        error_text = "\n".join(
+            t.get("error", "") + t.get("output", "")
+            for t in failure_info.get("failed_tests", [])
         )
+        failure_type = classify_failure(error_text=error_text)
+
+        # Record the attempt
+        recovery.record_attempt(
+            capability_id=capability_id,
+            failure_type=failure_type,
+            error_text=error_text,
+            commit_sha=_get_current_commit(project_id),
+        )
+
+        # Get recovery strategy
+        strategy = recovery.get_recovery_strategy(failure_type, error_text)
+        logger.info(
+            f"Capability {capability_id} attempt {attempt} failed: "
+            f"{failure_info['summary']} - strategy: {strategy.value}"
+        )
+
+        # Apply recovery strategy
+        if strategy == RecoveryStrategy.ESCALATE:
+            logger.warning(f"Escalating {capability_id} - circular fix detected")
+            break
+
+        if strategy == RecoveryStrategy.ROLLBACK and recovery.last_good_commit:
+            logger.info(f"Rolling back to {recovery.last_good_commit}")
+            await rollback_to_commit(project_id, recovery.last_good_commit)
+            # Continue loop to try agent fix from clean state
 
         # Call agent to fix the failures
         agent_result = await call_agent_for_fix(
@@ -245,16 +288,12 @@ async def build_capability(
         )
 
         if not agent_result["success"]:
-            # Agent call failed - record error and continue to next attempt
             logger.error(f"Agent fix failed: {agent_result.get('error', 'unknown')}")
             continue
 
-        # Agent provided a fix - log and continue to re-run tests
         logger.info(
             f"Agent fix attempt {attempt}: received {len(agent_result.get('response', ''))} chars"
         )
-        # The actual code changes would be applied by the agent tool calls
-        # For now, we just log and continue - tests will be re-run on next iteration
 
     # All attempts exhausted - mark as failing
     caps_storage.update_capability(project_id, capability_id, status="failing")
@@ -379,6 +418,47 @@ async def call_agent_for_fix(
             "changes_made": False,
             "error": str(e),
         }
+
+
+def _get_current_commit(project_id: str) -> str | None:
+    """Get the current git commit SHA for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Commit SHA or None if unavailable.
+    """
+    import subprocess
+
+    from ..storage.connection import get_connection
+
+    # Get project root path
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT root_path FROM projects WHERE id = %s",
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row[0]:
+        return None
+
+    project_root = row[0]
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", project_root, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    return None
 
 
 def _get_failure_info(batch_result: dict[str, Any]) -> dict[str, Any]:
