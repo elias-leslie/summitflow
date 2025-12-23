@@ -60,15 +60,19 @@ if [ -z "$CWD" ]; then
     CWD="$(pwd)"
 fi
 
-# Detect project ID from working directory
+# Detect project ID from git root (most reliable)
+# Server-side validates against registered projects in database
 if [ -n "${SUMMITFLOW_PROJECT_ID:-}" ]; then
     PROJECT_ID="$SUMMITFLOW_PROJECT_ID"
-elif [ -d "$CWD/.git" ]; then
-    # Use git repo name as project ID
-    PROJECT_ID=$(cd "$CWD" && basename "$(git rev-parse --show-toplevel 2>/dev/null)" | tr '[:upper:]' '[:lower:]')
 else
-    # Use current directory name
-    PROJECT_ID=$(basename "$CWD" | tr '[:upper:]' '[:lower:]')
+    # Find git root and use repo name as project ID
+    GIT_ROOT=$(cd "$CWD" && git rev-parse --show-toplevel 2>/dev/null)
+    if [ -n "$GIT_ROOT" ]; then
+        PROJECT_ID=$(basename "$GIT_ROOT" | tr '[:upper:]' '[:lower:]')
+    else
+        # Not in a git repo - skip capture (can't reliably identify project)
+        exit 0
+    fi
 fi
 
 # Build request payload
@@ -87,17 +91,45 @@ PAYLOAD=$(jq -n \
     }'
 )
 
-# Send to SummitFlow API (fire-and-forget)
-(
-    curl -s -X POST \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD" \
-        "${SUMMITFLOW_API_URL}/hooks/tool-use" \
-        --connect-timeout 2 \
-        --max-time 5 \
-        > /dev/null 2>&1 || \
-    echo "[$(date -Iseconds)] Failed to send to SummitFlow: $TOOL_NAME" >> "$LOG_FILE"
-) &
+# Send to SummitFlow API and check response
+# Run synchronously but with tight timeouts to minimize CLI blocking
+RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    "${SUMMITFLOW_API_URL}/hooks/tool-use" \
+    --connect-timeout 1 \
+    --max-time 3 \
+    2>/dev/null) || RESPONSE=""
 
-# Exit immediately (don't block Claude Code)
+# Check if observation was skipped (unknown project)
+if [ -n "$RESPONSE" ]; then
+    QUEUED=$(echo "$RESPONSE" | jq -r '.queued // true')
+    QUEUE_ID=$(echo "$RESPONSE" | jq -r '.queue_item_id // ""')
+
+    if [ "$QUEUED" = "false" ] && [ "$QUEUE_ID" = "skipped-unknown-project" ]; then
+        # Rate limit CLI warnings - one per project per 10 minutes
+        WARN_FILE="$HOME/.claude/hooks/.warned-$PROJECT_ID"
+        WARN_COOLDOWN=600  # 10 minutes
+
+        SHOULD_WARN=true
+        if [ -f "$WARN_FILE" ]; then
+            LAST_WARN=$(cat "$WARN_FILE" 2>/dev/null || echo 0)
+            NOW=$(date +%s)
+            if [ $((NOW - LAST_WARN)) -lt $WARN_COOLDOWN ]; then
+                SHOULD_WARN=false
+            fi
+        fi
+
+        if [ "$SHOULD_WARN" = "true" ]; then
+            # Output warning to stderr so it's visible in CLI
+            echo "⚠️  SummitFlow: Project '$PROJECT_ID' not registered. Observations not captured." >&2
+            echo "[$(date -Iseconds)] Unknown project skipped: $PROJECT_ID" >> "$LOG_FILE"
+            date +%s > "$WARN_FILE"
+        fi
+    fi
+elif [ -z "$RESPONSE" ]; then
+    # API request failed - log but don't warn (might just be offline)
+    echo "[$(date -Iseconds)] API request failed for: $TOOL_NAME" >> "$LOG_FILE"
+fi
+
 exit 0

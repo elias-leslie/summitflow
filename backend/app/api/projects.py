@@ -68,7 +68,14 @@ async def create_project(
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id, name, base_url, health_endpoint, root_path, created_at
                 """,
-                (project.id, project.name, project.base_url, project.health_endpoint, project.root_path, now),
+                (
+                    project.id,
+                    project.name,
+                    project.base_url,
+                    project.health_endpoint,
+                    project.root_path,
+                    now,
+                ),
             )
             row = cur.fetchone()
             conn.commit()
@@ -166,11 +173,11 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
 
         project_ids = [p[0] for p in projects]
 
-        # Get feature counts per project
+        # Get capability counts per project (new TDD schema uses capabilities table)
         cur.execute(
             """
             SELECT project_id, COUNT(*) as count
-            FROM feature_capabilities
+            FROM capabilities
             WHERE project_id = ANY(%s)
             GROUP BY project_id
             """,
@@ -355,7 +362,7 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
         params.append(project_id)
         cur.execute(
             f"""
-                UPDATE projects SET {', '.join(updates)}
+                UPDATE projects SET {", ".join(updates)}
                 WHERE id = %s
                 RETURNING id, name, base_url, health_endpoint, root_path, created_at
                 """,
@@ -451,14 +458,26 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
             )
         config_update["default_agent"] = update.default_agent
     if update.claude_model is not None:
-        valid_claude_models = ("claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "sonnet", "opus", "haiku")
+        valid_claude_models = (
+            "claude-sonnet-4-5",
+            "claude-opus-4-5",
+            "claude-haiku-4-5",
+            "sonnet",
+            "opus",
+            "haiku",
+        )
         if update.claude_model not in valid_claude_models:
             raise HTTPException(
                 status_code=400, detail=f"claude_model must be one of: {valid_claude_models}"
             )
         config_update["claude_model"] = update.claude_model
     if update.gemini_model is not None:
-        valid_models = ("gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash", "gemini-2.5-pro")
+        valid_models = (
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+        )
         if update.gemini_model not in valid_models:
             raise HTTPException(
                 status_code=400, detail=f"gemini_model must be one of: {valid_models}"

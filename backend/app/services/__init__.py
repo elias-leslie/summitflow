@@ -1,9 +1,7 @@
 """SummitFlow services.
 
-Phase 3.3 services extracted from portfolio-ai:
+Services:
 - evidence_manager: Evidence/artifact storage and management
-- verification_engine: Auto-verification engine for acceptance criteria
-- feature_scanner: Feature capability scanner and validation
 """
 
 from .evidence_manager import (
@@ -25,14 +23,8 @@ from .evidence_manager import (
     update_ai_review,
     update_user_review,
 )
-from .feature_scanner import FeatureScanner
-from .verification_engine import VerificationEngine
 
 __all__ = [
-    # Feature scanner
-    "FeatureScanner",
-    # Verification engine
-    "VerificationEngine",
     # Evidence manager
     "capture_evidence",
     "cleanup_old_versions",

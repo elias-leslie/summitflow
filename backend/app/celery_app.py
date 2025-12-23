@@ -71,12 +71,6 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 6,  # Every 6 hours
         "kwargs": {"dry_run": False},
     },
-    # Evidence capture - refresh expired evidence every 6 hours
-    "capture-scheduled-evidence": {
-        "task": "summitflow.capture_scheduled_evidence",
-        "schedule": 60 * 60 * 6,  # Every 6 hours
-        "kwargs": {"dry_run": False},
-    },
     # Debug cleanup - daily at 3 AM UTC
     "cleanup-debug-captures": {
         "task": "summitflow.cleanup_debug_captures",
