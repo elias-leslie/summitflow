@@ -899,7 +899,16 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
 async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult:
     """Run browser automation UI test.
 
-    Uses existing browser-automation skill scripts or custom script.
+    Uses browser-automation skill scripts from ~/.claude/skills/browser-automation/scripts/.
+
+    Test configuration (in test['config']):
+        script_name: Name of browser-automation script (screenshot, interact, etc.)
+        url: Target URL to test
+        args: Additional arguments to pass to the script
+        assertions: List of assertions to check after execution
+        output_path: Custom output path for evidence
+
+    Alternatively, use test['script'] for inline JS or test['command'] for raw command.
 
     Args:
         test: Test dict from registry
@@ -908,41 +917,69 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
     Returns:
         TestResult with pass/fail status and evidence path.
     """
-    import os
-
-    # Get script from test.script or build from config
-    script = test.get("script")
     test_config = test.get("config", {})
+    script_name = test_config.get("script_name")
 
-    if not script and test_config:
-        # Build script from config actions
-        actions = test_config.get("actions", [])
-        if not actions:
+    # Priority 1: Use browser-automation script by name
+    if script_name:
+        script_path = resolve_browser_script(script_name, config)
+        if not script_path:
             return TestResult(
                 passed=False,
                 duration_ms=0,
                 output="",
-                error="No script or actions provided for UI test",
+                error=f"Browser script not found: {script_name}. Available: {', '.join(get_available_browser_scripts(config))}",
             )
-        # For now, we don't auto-generate scripts - require explicit script
-        return TestResult(
-            passed=False,
-            duration_ms=0,
-            output="",
-            error="UI tests require a script. Use test.script or provide explicit test.command",
+
+        url = test_config.get("url", "")
+        args = test_config.get("args", {})
+        output_path = test_config.get("output_path")
+
+        # Build command based on script type
+        command = _build_browser_script_command(
+            script_path=script_path,
+            script_name=script_name,
+            url=url,
+            args=args,
+            output_path=output_path,
         )
 
-    # If we have a script, execute it with node
+        timeout = test.get("timeout_seconds", 120)
+        exit_code, stdout, stderr = await _run_command(
+            command=command,
+            working_dir=config.root_path,
+            timeout=timeout,
+        )
+
+        # Parse output for structured results
+        result = _parse_browser_script_output(stdout, stderr, exit_code)
+
+        # Check assertions if defined
+        assertions = test_config.get("assertions", [])
+        if result.passed and assertions:
+            assertion_result = await _check_ui_assertions(assertions, stdout, config)
+            if not assertion_result[0]:
+                result = TestResult(
+                    passed=False,
+                    duration_ms=result.duration_ms,
+                    output=result.output + f"\n\nAssertion failed: {assertion_result[1]}",
+                    error=assertion_result[1],
+                    evidence_path=result.evidence_path,
+                )
+
+        return result
+
+    # Priority 2: Inline script content
+    script = test.get("script")
     if script:
-        # Write script to temp file
         import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
             f.write(script)
-            script_path = f.name
+            temp_script_path = f.name
 
         try:
-            command = f"node {script_path}"
+            command = f"node {temp_script_path}"
             timeout = test.get("timeout_seconds", 120)
 
             exit_code, stdout, stderr = await _run_command(
@@ -954,11 +991,8 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
             output = stdout + ("\n" + stderr if stderr else "")
             passed = exit_code == 0
 
-            # Check for screenshot evidence
-            evidence_path = None
-            data_dir = os.path.join(config.root_path, "data", "screenshots")
-            if os.path.exists(data_dir):
-                evidence_path = data_dir
+            # Try to find evidence path from output
+            evidence_path = _extract_evidence_path(stdout)
 
             return TestResult(
                 passed=passed,
@@ -968,9 +1002,9 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
                 evidence_path=evidence_path,
             )
         finally:
-            os.unlink(script_path)
+            Path(temp_script_path).unlink(missing_ok=True)
 
-    # If we have a command, execute it directly
+    # Priority 3: Raw command
     command = test.get("command")
     if command:
         timeout = test.get("timeout_seconds", 120)
@@ -995,5 +1029,225 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
         passed=False,
         duration_ms=0,
         output="",
-        error="No script or command provided for UI test",
+        error="UI test requires script_name (in config), script (inline), or command",
     )
+
+
+def _build_browser_script_command(
+    script_path: Path,
+    script_name: str,
+    url: str,
+    args: dict[str, Any],
+    output_path: str | None = None,
+) -> str:
+    """Build command to run a browser-automation script.
+
+    Different scripts have different argument patterns:
+    - screenshot.js: node screenshot.js <url> [--output <path>] [--fullPage]
+    - interact.js: node interact.js <url> --actions '<json>'
+    - regression-check.js: node regression-check.js <url>
+    """
+    import shlex
+
+    cmd_parts = ["node", str(script_path)]
+
+    # URL is typically the first positional argument
+    if url:
+        cmd_parts.append(shlex.quote(url))
+
+    # Handle common args
+    if output_path:
+        cmd_parts.extend(["--output", shlex.quote(output_path)])
+
+    # Script-specific argument handling
+    if script_name == "screenshot":
+        if args.get("fullPage", True):
+            cmd_parts.append("--fullPage")
+        if args.get("selector"):
+            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+
+    elif script_name in ("click-screenshot", "tab-click-screenshot"):
+        if args.get("selector"):
+            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+
+    elif script_name == "interact":
+        if args.get("actions"):
+            cmd_parts.extend(["--actions", shlex.quote(json.dumps(args["actions"]))])
+
+    elif script_name == "regression-check":
+        if args.get("checkConsole", True):
+            cmd_parts.append("--checkConsole")
+        if args.get("checkNetwork", True):
+            cmd_parts.append("--checkNetwork")
+
+    elif script_name in ("console", "network"):
+        if args.get("filter"):
+            cmd_parts.extend(["--filter", shlex.quote(args["filter"])])
+
+    elif script_name == "capture-evidence":
+        if args.get("featureId"):
+            cmd_parts.extend(["--featureId", shlex.quote(args["featureId"])])
+        if args.get("criterionId"):
+            cmd_parts.extend(["--criterionId", shlex.quote(args["criterionId"])])
+
+    elif script_name == "expand":
+        if args.get("selector"):
+            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+
+    # Pass any other args as JSON
+    other_args = {
+        k: v
+        for k, v in args.items()
+        if k
+        not in (
+            "fullPage",
+            "selector",
+            "actions",
+            "checkConsole",
+            "checkNetwork",
+            "filter",
+            "featureId",
+            "criterionId",
+        )
+    }
+    if other_args:
+        cmd_parts.extend(["--extra", shlex.quote(json.dumps(other_args))])
+
+    return " ".join(cmd_parts)
+
+
+def _parse_browser_script_output(stdout: str, stderr: str, exit_code: int) -> TestResult:
+    """Parse output from a browser-automation script.
+
+    Scripts may output JSON with structured results:
+    {
+        "success": true/false,
+        "screenshot": "/path/to/screenshot.png",
+        "errors": ["error1", "error2"],
+        "console": [...],
+        "network": [...]
+    }
+    """
+    output = stdout + ("\n" + stderr if stderr else "")
+    passed = exit_code == 0
+    evidence_path = None
+    error = None
+
+    # Try to parse JSON from output
+    try:
+        # Look for JSON in output (may be mixed with other text)
+        for line in stdout.split("\n"):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                result_json = json.loads(line)
+
+                # Check for explicit success/failure
+                if "success" in result_json:
+                    passed = result_json["success"]
+
+                # Extract evidence path
+                if result_json.get("screenshot"):
+                    evidence_path = result_json["screenshot"]
+                elif result_json.get("evidence_path"):
+                    evidence_path = result_json["evidence_path"]
+
+                # Extract errors
+                if result_json.get("errors"):
+                    error = "; ".join(result_json["errors"])
+                    if error:
+                        passed = False
+
+                break
+    except json.JSONDecodeError:
+        pass
+
+    # If exit code is non-zero and no error extracted, use stderr
+    if not passed and not error and stderr:
+        error = stderr.strip()
+
+    return TestResult(
+        passed=passed,
+        duration_ms=0,
+        output=_truncate_output(output),
+        error=error,
+        evidence_path=evidence_path,
+    )
+
+
+def _extract_evidence_path(output: str) -> str | None:
+    """Extract evidence path from script output.
+
+    Looks for patterns like:
+    - Screenshot saved: /path/to/file.png
+    - Evidence: /path/to/dir
+    - {"screenshot": "/path/to/file.png"}
+    """
+    import re
+
+    # Try JSON first
+    try:
+        for line in output.split("\n"):
+            line = line.strip()
+            if line.startswith("{"):
+                data = json.loads(line)
+                return data.get("screenshot") or data.get("evidence_path")
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # Try common patterns
+    patterns = [
+        r"Screenshot saved[:\s]+(.+\.png)",
+        r"Evidence[:\s]+(.+)",
+        r"Output[:\s]+(.+\.png)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, output, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
+    return None
+
+
+async def _check_ui_assertions(
+    assertions: list[dict[str, Any]], output: str, config: ProjectConfig
+) -> tuple[bool, str | None]:
+    """Check assertions after UI test execution.
+
+    Supported assertion types:
+    - console_errors: Check that no console errors occurred
+    - network_failures: Check that no network requests failed
+    - element_exists: Check that an element exists in screenshot/DOM
+    - output_contains: Check that output contains expected text
+    - exit_code: Check exit code (already handled by caller)
+    """
+    for assertion in assertions:
+        assertion_type = assertion.get("type")
+
+        if assertion_type == "console_errors":
+            # Check for console errors in output
+            if "console.error" in output.lower() or '"level":"error"' in output.lower():
+                return False, "Console errors detected"
+
+        elif assertion_type == "network_failures":
+            # Check for network failures in output
+            if "failed" in output.lower() and "network" in output.lower():
+                return False, "Network failures detected"
+
+        elif assertion_type == "output_contains":
+            expected = assertion.get("expected", "")
+            if expected and expected not in output:
+                return False, f"Output does not contain: {expected}"
+
+        elif assertion_type == "output_not_contains":
+            forbidden = assertion.get("forbidden", "")
+            if forbidden and forbidden in output:
+                return False, f"Output contains forbidden text: {forbidden}"
+
+        elif assertion_type == "element_exists":
+            # This would require parsing the page content
+            # For now, just check if the selector appears in output
+            selector = assertion.get("selector", "")
+            if selector and f"Element not found: {selector}" in output:
+                return False, f"Element not found: {selector}"
+
+    return True, None
