@@ -45,6 +45,7 @@ For each item, return a JSON object with:
 - "index": <the item index for matching>
 - "observation_type": <one of: pattern, decision, error, constraint, architecture, user_preference>
 - "priority": <one of: high, medium, low>
+- "confidence": <float 0.0-1.0, how certain you are about this extraction>
 - "concepts": [<list from: debugging, code_patterns, dependencies, security, performance, testing, configuration>]
 - "title": <concise title, 5-10 words>
 - "subtitle": <optional one-line clarification or null>
@@ -63,11 +64,12 @@ Rules:
 - HIGH priority: error, decision, user_preference - always extract, critical insights
 - MEDIUM priority: pattern, architecture - significant learnings
 - LOW priority: constraint - routine observations, skip unless exceptional
+- confidence: 0.9+ for clear/explicit info, 0.6-0.8 for inferred, 0.3-0.5 for uncertain
 - Include index for every result to match back to items
 
 Example response format:
 [
-  {{"index": 0, "observation_type": "error", "priority": "high", "concepts": ["debugging"], "title": "...", ...}},
+  {{"index": 0, "observation_type": "error", "priority": "high", "confidence": 0.95, "concepts": ["debugging"], "title": "...", ...}},
   {{"index": 1, "skip": true, "reason": "trivial file read"}},
   ...
 ]"""
@@ -125,6 +127,7 @@ class ExtractedObservation:
     title: str
     concepts: list[str]
     priority: str = "medium"  # high, medium, low
+    confidence: float = 0.50  # 0.0-1.0 confidence score
     subtitle: str | None = None
     narrative: str | None = None
     facts: dict[str, Any] | None = None
@@ -457,6 +460,14 @@ class ObservationExtractor:
                 if priority not in PRIORITY_VALUES:
                     priority = "medium"
 
+                # Validate and normalize confidence (0.0-1.0)
+                confidence = result.get("confidence", 0.50)
+                try:
+                    confidence = float(confidence)
+                    confidence = max(0.0, min(1.0, confidence))  # Clamp to 0-1
+                except (TypeError, ValueError):
+                    confidence = 0.50
+
                 concepts = result.get("concepts", [])
                 concepts = [c for c in concepts if c in CONCEPT_TAGS]
 
@@ -466,6 +477,7 @@ class ObservationExtractor:
                         title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
                         concepts=concepts,
                         priority=priority,
+                        confidence=confidence,
                         subtitle=result.get("subtitle"),
                         narrative=result.get("narrative"),
                         facts=result.get("facts"),

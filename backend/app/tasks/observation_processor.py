@@ -108,6 +108,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
                     title=observation.title,
                     concepts=observation.concepts,
                     priority=observation.priority,
+                    confidence=observation.confidence,
                     subtitle=observation.subtitle,
                     narrative=observation.narrative,
                     facts=observation.facts,
