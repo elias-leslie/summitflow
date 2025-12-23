@@ -122,6 +122,16 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
         f"errors={error_count}, decisions={decision_count}"
     )
 
+    # Trigger reflection check after diary entry created
+    from .reflection_processor import check_reflection_trigger
+
+    try:
+        check_reflection_trigger.delay(project_id=project_id)
+        logger.debug(f"reflection_trigger_check_scheduled: project={project_id}")
+    except Exception as e:
+        # Don't fail diary aggregation for reflection trigger failures
+        logger.warning(f"reflection_trigger_check_failed: {e}")
+
     return {
         "status": "created",
         "entry_id": entry["id"],
