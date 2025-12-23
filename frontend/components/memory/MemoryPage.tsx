@@ -598,6 +598,11 @@ export default function MemoryPage() {
   const [patternsPage, setPatternsPage] = useState(1);
   const [diaryPage, setDiaryPage] = useState(1);
 
+  // Total counts from API
+  const [observationsTotal, setObservationsTotal] = useState(0);
+  const [patternsTotal, setPatternsTotal] = useState(0);
+  const [diaryTotal, setDiaryTotal] = useState(0);
+
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
@@ -611,34 +616,40 @@ export default function MemoryPage() {
           setStats(statsData);
         }
 
-        // Fetch observations (global or filtered)
+        // Fetch observations (global or filtered) - use offset-based pagination
+        const obsOffset = (observationsPage - 1) * ITEMS_PER_PAGE;
         const obsUrl = selectedProject
-          ? `/api/observations?project_id=${selectedProject}`
-          : '/api/observations';
+          ? `/api/observations?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${obsOffset}`
+          : `/api/observations?limit=${ITEMS_PER_PAGE}&offset=${obsOffset}`;
         const obsRes = await fetch(obsUrl);
         if (obsRes.ok) {
           const obsData = await obsRes.json();
-          setObservations(obsData);
+          setObservations(obsData.items || []);
+          setObservationsTotal(obsData.total || 0);
         }
 
         // Fetch patterns (global or filtered)
+        const patOffset = (patternsPage - 1) * ITEMS_PER_PAGE;
         const patUrl = selectedProject
-          ? `/api/patterns?project_id=${selectedProject}`
-          : '/api/patterns';
+          ? `/api/patterns?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${patOffset}`
+          : `/api/patterns?limit=${ITEMS_PER_PAGE}&offset=${patOffset}`;
         const patRes = await fetch(patUrl);
         if (patRes.ok) {
           const patData = await patRes.json();
-          setPatterns(patData);
+          setPatterns(patData.items || []);
+          setPatternsTotal(patData.total || 0);
         }
 
         // Fetch diary entries (global or filtered)
+        const diaryOffset = (diaryPage - 1) * ITEMS_PER_PAGE;
         const diaryUrl = selectedProject
-          ? `/api/diary?project_id=${selectedProject}`
-          : '/api/diary';
+          ? `/api/diary?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${diaryOffset}`
+          : `/api/diary?limit=${ITEMS_PER_PAGE}&offset=${diaryOffset}`;
         const diaryRes = await fetch(diaryUrl);
         if (diaryRes.ok) {
           const diaryData = await diaryRes.json();
-          setDiaryEntries(diaryData);
+          setDiaryEntries(diaryData.items || []);
+          setDiaryTotal(diaryData.total || 0);
         }
 
         // Fetch projects for filter
@@ -652,7 +663,7 @@ export default function MemoryPage() {
     };
 
     fetchData();
-  }, [selectedProject]);
+  }, [selectedProject, observationsPage, patternsPage, diaryPage]);
 
   const handleApprovePattern = async (patternId: string) => {
     try {
@@ -692,20 +703,6 @@ export default function MemoryPage() {
   };
 
   const pendingPatterns = patterns.filter(p => p.status === 'pending');
-
-  // Paginated data
-  const paginatedObservations = observations.slice(
-    (observationsPage - 1) * ITEMS_PER_PAGE,
-    observationsPage * ITEMS_PER_PAGE
-  );
-  const paginatedPatterns = pendingPatterns.slice(
-    (patternsPage - 1) * ITEMS_PER_PAGE,
-    patternsPage * ITEMS_PER_PAGE
-  );
-  const paginatedDiary = diaryEntries.slice(
-    (diaryPage - 1) * ITEMS_PER_PAGE,
-    diaryPage * ITEMS_PER_PAGE
-  );
 
   // Reset pagination when project changes
   useEffect(() => {
@@ -812,7 +809,7 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'observations' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {observations.length}
+                {observationsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="patterns" className="gap-2">
@@ -822,7 +819,7 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'patterns' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {pendingPatterns.length}
+                {patternsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="diary" className="gap-2">
@@ -832,7 +829,7 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'diary' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {diaryEntries.length}
+                {diaryTotal}
               </span>
             </TabsTrigger>
           </TabsList>
@@ -844,7 +841,7 @@ export default function MemoryPage() {
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading observations...
               </div>
-            ) : observations.length === 0 ? (
+            ) : observationsTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <FileText className="w-10 h-10 mx-auto mb-4 opacity-30" />
                 <h3 className="text-lg font-medium text-slate-400 mb-2">No observations yet</h3>
@@ -853,13 +850,13 @@ export default function MemoryPage() {
             ) : (
               <div>
                 <div className="space-y-2">
-                  {paginatedObservations.map((obs) => (
+                  {observations.map((obs) => (
                     <ObservationRow key={obs.id} observation={obs} />
                   ))}
                 </div>
                 <Pagination
                   currentPage={observationsPage}
-                  totalItems={observations.length}
+                  totalItems={observationsTotal}
                   onPageChange={setObservationsPage}
                 />
               </div>
@@ -873,7 +870,7 @@ export default function MemoryPage() {
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading patterns...
               </div>
-            ) : pendingPatterns.length === 0 ? (
+            ) : patternsTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <Lightbulb className="w-10 h-10 mx-auto mb-4 opacity-30" />
                 <h3 className="text-lg font-medium text-slate-400 mb-2">No pending patterns</h3>
@@ -901,7 +898,7 @@ export default function MemoryPage() {
                   }}
                 />
                 <div className="space-y-2 mt-4">
-                  {paginatedPatterns.map((pattern) => (
+                  {pendingPatterns.map((pattern) => (
                     <PatternRow
                       key={pattern.id}
                       pattern={pattern}
@@ -912,7 +909,7 @@ export default function MemoryPage() {
                 </div>
                 <Pagination
                   currentPage={patternsPage}
-                  totalItems={pendingPatterns.length}
+                  totalItems={patternsTotal}
                   onPageChange={setPatternsPage}
                 />
               </div>
@@ -926,7 +923,7 @@ export default function MemoryPage() {
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading diary entries...
               </div>
-            ) : diaryEntries.length === 0 ? (
+            ) : diaryTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
                 <h3 className="text-lg font-medium text-slate-400 mb-2">No diary entries yet</h3>
@@ -935,13 +932,13 @@ export default function MemoryPage() {
             ) : (
               <div>
                 <div className="space-y-2">
-                  {paginatedDiary.map((entry) => (
+                  {diaryEntries.map((entry) => (
                     <DiaryRow key={entry.id} entry={entry} />
                   ))}
                 </div>
                 <Pagination
                   currentPage={diaryPage}
-                  totalItems={diaryEntries.length}
+                  totalItems={diaryTotal}
                   onPageChange={setDiaryPage}
                 />
               </div>

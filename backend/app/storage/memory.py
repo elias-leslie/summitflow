@@ -314,6 +314,49 @@ def list_observations(
     return [_observation_row_to_dict(row) for row in rows]
 
 
+def count_observations(
+    project_id: str | None = None,
+    agent_type: str | None = None,
+    observation_type: str | None = None,
+    session_id: str | None = None,
+) -> int:
+    """Count observations with optional filters.
+
+    Args:
+        project_id: Filter by project (None = all projects)
+        agent_type: Filter by agent type
+        observation_type: Filter by observation type
+        session_id: Filter by session ID
+
+    Returns:
+        Total count of matching observations.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
+    if agent_type:
+        conditions.append("agent_type = %s")
+        params.append(agent_type)
+    if observation_type:
+        conditions.append("observation_type = %s")
+        params.append(observation_type)
+    if session_id:
+        conditions.append("session_id = %s")
+        params.append(session_id)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) FROM observations {where_clause}",
+            params,
+        )
+        return cur.fetchone()[0]
+
+
 def search_observations_fts(
     project_id: str,
     query: str,
@@ -659,6 +702,39 @@ def list_diary_entries(
     return [_diary_row_to_dict(row) for row in rows]
 
 
+def count_diary_entries(
+    project_id: str | None = None,
+    outcome: str | None = None,
+) -> int:
+    """Count diary entries with optional filters.
+
+    Args:
+        project_id: Filter by project (None = all projects)
+        outcome: Filter by outcome
+
+    Returns:
+        Total count of matching diary entries.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
+    if outcome:
+        conditions.append("outcome = %s")
+        params.append(outcome)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) FROM session_diary {where_clause}",
+            params,
+        )
+        return cur.fetchone()[0]
+
+
 def get_unreflected_diary_count(project_id: str) -> int:
     """Get count of diary entries since last reflection."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -932,6 +1008,49 @@ def list_patterns(
         rows = cur.fetchall()
 
     return [_pattern_row_to_dict(row) for row in rows]
+
+
+def count_patterns(
+    project_id: str | None = None,
+    status: str | None = None,
+    action: str | None = None,
+    pattern_type: str | None = None,
+) -> int:
+    """Count patterns with optional filters.
+
+    Args:
+        project_id: Filter by project (None = all projects)
+        status: Filter by status
+        action: Filter by action type
+        pattern_type: Filter by pattern type
+
+    Returns:
+        Total count of matching patterns.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if project_id:
+        conditions.append("project_id = %s")
+        params.append(project_id)
+    if status:
+        conditions.append("status = %s")
+        params.append(status)
+    if action:
+        conditions.append("action = %s")
+        params.append(action)
+    if pattern_type:
+        conditions.append("pattern_type = %s")
+        params.append(pattern_type)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) FROM learned_patterns {where_clause}",
+            params,
+        )
+        return cur.fetchone()[0]
 
 
 def get_stale_patterns(project_id: str, days: int = 30) -> list[dict[str, Any]]:

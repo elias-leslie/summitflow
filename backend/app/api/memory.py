@@ -138,21 +138,30 @@ async def get_memory_stats() -> MemoryStats:
     )
 
 
-@router.get("/observations")
+class PaginatedResponse(BaseModel):
+    """Generic paginated response with total count."""
+
+    items: list[dict[str, Any]]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("/observations", response_model=PaginatedResponse)
 async def list_observations_global(
     project_id: str | None = Query(None, description="Filter by project"),
     agent_type: str | None = Query(None, description="Filter by agent type"),
     observation_type: str | None = Query(None, description="Filter by observation type"),
     session_id: str | None = Query(None, description="Filter by session ID"),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> list[dict[str, Any]]:
+) -> PaginatedResponse:
     """List observations across all projects.
 
     Use project_id query param to filter to a specific project.
     Returns observations sorted by created_at descending (newest first).
     """
-    return memory_storage.list_observations(
+    items = memory_storage.list_observations(
         project_id=project_id,
         agent_type=agent_type,
         observation_type=observation_type,
@@ -160,23 +169,30 @@ async def list_observations_global(
         limit=limit,
         offset=offset,
     )
+    total = memory_storage.count_observations(
+        project_id=project_id,
+        agent_type=agent_type,
+        observation_type=observation_type,
+        session_id=session_id,
+    )
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/patterns")
+@router.get("/patterns", response_model=PaginatedResponse)
 async def list_patterns_global(
     project_id: str | None = Query(None, description="Filter by project"),
     status: str | None = Query(None, description="Filter by status"),
     action: str | None = Query(None, description="Filter by action type"),
     pattern_type: str | None = Query(None, description="Filter by pattern type"),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> list[dict[str, Any]]:
+) -> PaginatedResponse:
     """List patterns across all projects.
 
     Use project_id query param to filter to a specific project.
     Returns patterns sorted by created_at descending (newest first).
     """
-    return memory_storage.list_patterns(
+    items = memory_storage.list_patterns(
         project_id=project_id,
         status=status,
         action=action,
@@ -184,6 +200,13 @@ async def list_patterns_global(
         limit=limit,
         offset=offset,
     )
+    total = memory_storage.count_patterns(
+        project_id=project_id,
+        status=status,
+        action=action,
+        pattern_type=pattern_type,
+    )
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 class BulkPatternRequest(BaseModel):
@@ -263,21 +286,26 @@ async def bulk_reject_patterns(
     return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
 
 
-@router.get("/diary")
+@router.get("/diary", response_model=PaginatedResponse)
 async def list_diary_global(
     project_id: str | None = Query(None, description="Filter by project"),
     outcome: str | None = Query(None, description="Filter by outcome"),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> list[dict[str, Any]]:
+) -> PaginatedResponse:
     """List diary entries across all projects.
 
     Use project_id query param to filter to a specific project.
     Returns diary entries sorted by created_at descending (newest first).
     """
-    return memory_storage.list_diary_entries(
+    items = memory_storage.list_diary_entries(
         project_id=project_id,
         outcome=outcome,
         limit=limit,
         offset=offset,
     )
+    total = memory_storage.count_diary_entries(
+        project_id=project_id,
+        outcome=outcome,
+    )
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
