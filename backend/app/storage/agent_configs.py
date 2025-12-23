@@ -175,3 +175,65 @@ def get_enabled_agents(project_id: str) -> list[str]:
     if config.get("gemini_enabled", True):
         enabled.append("gemini")
     return enabled
+
+
+# Valid memory feature names for is_memory_feature_enabled
+MEMORY_FEATURES = frozenset(
+    ["observations", "diary", "patterns", "checkpoints", "context_injection"]
+)
+
+
+def is_memory_feature_enabled(project_id: str, feature: str) -> bool:
+    """Check if a specific memory feature is enabled for a project.
+
+    Uses master switch pattern: if memory_enabled=false, all features are disabled.
+    Otherwise, checks the feature-specific flag.
+
+    Args:
+        project_id: Project ID
+        feature: One of 'observations', 'diary', 'patterns', 'checkpoints', 'context_injection'
+
+    Returns:
+        True if the feature is enabled, False otherwise
+    """
+    if feature not in MEMORY_FEATURES:
+        logger.warning(f"Unknown memory feature: {feature}")
+        return True  # Default to enabled for unknown features
+
+    config = get_agent_config(project_id)
+
+    # Master switch check
+    if not config.get("memory_enabled", True):
+        return False
+
+    # Feature-specific check
+    feature_key = f"{feature}_enabled"
+    return config.get(feature_key, True)
+
+
+def get_memory_config(project_id: str) -> dict[str, bool]:
+    """Get all memory configuration flags for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Dict with all memory flags:
+        {
+            'memory_enabled': bool,
+            'observations_enabled': bool,
+            'diary_enabled': bool,
+            'patterns_enabled': bool,
+            'checkpoints_enabled': bool,
+            'context_injection_enabled': bool
+        }
+    """
+    config = get_agent_config(project_id)
+    return {
+        "memory_enabled": config.get("memory_enabled", True),
+        "observations_enabled": config.get("observations_enabled", True),
+        "diary_enabled": config.get("diary_enabled", True),
+        "patterns_enabled": config.get("patterns_enabled", True),
+        "checkpoints_enabled": config.get("checkpoints_enabled", True),
+        "context_injection_enabled": config.get("context_injection_enabled", True),
+    }
