@@ -56,9 +56,7 @@ async def default_permission_callback(tool_name: str, tool_args: dict[str, Any])
     """
     session_id = current_session_id.get()
     if session_id is None:
-        logger.warning(
-            "Permission callback called without session_id context, denying"
-        )
+        logger.warning("Permission callback called without session_id context, denying")
         return False
 
     return await permission_manager.request_permission(
@@ -66,6 +64,7 @@ async def default_permission_callback(tool_name: str, tool_args: dict[str, Any])
         tool_name=tool_name,
         tool_args=tool_args,
     )
+
 
 TargetAgent = Literal["claude", "gemini", "both"]
 
@@ -159,7 +158,12 @@ class RoundtableSession:
             return self.agent_override  # type: ignore
         return default_agent
 
-    def get_effective_model(self, agent_type: AgentType, default_claude: str = "claude-sonnet-4-5", default_gemini: str = "gemini-3-flash-preview") -> str:
+    def get_effective_model(
+        self,
+        agent_type: AgentType,
+        default_claude: str = "claude-sonnet-4-5",
+        default_gemini: str = "gemini-3-flash-preview",
+    ) -> str:
         """Get the effective model for this session.
 
         Uses session model_override if set, otherwise falls back to default.
@@ -309,9 +313,7 @@ Available tools: read_file, search_code, list_files, get_project_structure
                 responses.append(msg)
             except Exception as e:
                 logger.error(f"Claude error: {e}")
-                error_msg = RoundtableMessage.create(
-                    "claude", f"[Error: {e!s}]"
-                )
+                error_msg = RoundtableMessage.create("claude", f"[Error: {e!s}]")
                 session.add_message(error_msg)
                 responses.append(error_msg)
 
@@ -332,9 +334,7 @@ Available tools: read_file, search_code, list_files, get_project_structure
                 responses.append(msg)
             except Exception as e:
                 logger.error(f"Gemini error: {e}")
-                error_msg = RoundtableMessage.create(
-                    "gemini", f"[Error: {e!s}]"
-                )
+                error_msg = RoundtableMessage.create("gemini", f"[Error: {e!s}]")
                 session.add_message(error_msg)
                 responses.append(error_msg)
 
@@ -386,9 +386,7 @@ Available tools: read_file, search_code, list_files, get_project_structure
                 context = session.get_context()
             except Exception as e:
                 logger.error(f"Claude error: {e}")
-                error_msg = RoundtableMessage.create(
-                    "claude", f"[Error: {e!s}]"
-                )
+                error_msg = RoundtableMessage.create("claude", f"[Error: {e!s}]")
                 session.add_message(error_msg)
                 yield error_msg
 
@@ -411,9 +409,7 @@ Available tools: read_file, search_code, list_files, get_project_structure
                 yield msg
             except Exception as e:
                 logger.error(f"Gemini error: {e}")
-                error_msg = RoundtableMessage.create(
-                    "gemini", f"[Error: {e!s}]"
-                )
+                error_msg = RoundtableMessage.create("gemini", f"[Error: {e!s}]")
                 session.add_message(error_msg)
                 yield error_msg
 
@@ -429,9 +425,7 @@ Available tools: read_file, search_code, list_files, get_project_structure
         If session has tools_enabled=True, agents can use read-only codebase tools.
         The agent may call tools multiple times before providing a final response.
         """
-        model = (
-            self.claude_model if agent_type == "claude" else self.gemini_model
-        )
+        model = self.claude_model if agent_type == "claude" else self.gemini_model
         agent = get_agent(agent_type, model=model)
 
         # Agent-specific identity
@@ -518,6 +512,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
             Final LLMResponse after all tool calls are complete
         """
         import warnings
+
         warnings.warn(
             "_send_with_tools() uses the legacy JSON protocol. "
             "Use _send_with_tools_native() for SDK-native tool support.",
@@ -565,9 +560,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                 if detect_duplicates:
                     call_key = f"{tool_name}:{json_module.dumps(parameters, sort_keys=True)}"
                     if call_key in seen_calls:
-                        logger.warning(
-                            f"Duplicate tool call detected: {tool_name}, stopping"
-                        )
+                        logger.warning(f"Duplicate tool call detected: {tool_name}, stopping")
                         should_stop = True
                         break
                     seen_calls.add(call_key)
@@ -575,16 +568,11 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                 # Check tool call budget
                 total_tool_calls += 1
                 if total_tool_calls > max_tool_calls:
-                    logger.warning(
-                        f"Tool call budget exhausted ({max_tool_calls} calls)"
-                    )
+                    logger.warning(f"Tool call budget exhausted ({max_tool_calls} calls)")
                     should_stop = True
                     break
 
-                logger.info(
-                    f"Executing tool [{total_tool_calls}/{max_tool_calls}]: "
-                    f"{tool_name}"
-                )
+                logger.info(f"Executing tool [{total_tool_calls}/{max_tool_calls}]: {tool_name}")
 
                 # Check if this is a write tool that needs permission
                 if tool_name in WRITE_TOOL_NAMES:
@@ -607,6 +595,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                             # Use asyncio to run the async permission callback
                             try:
                                 import asyncio
+
                                 loop = asyncio.new_event_loop()
                                 approved = loop.run_until_complete(
                                     self._permission_callback(tool_name, parameters)
@@ -635,9 +624,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                                 continue
                         else:
                             # No session context or callback - deny for safety
-                            logger.warning(
-                                f"No permission callback for {tool_name}, denying"
-                            )
+                            logger.warning(f"No permission callback for {tool_name}, denying")
                             result = ToolResult(
                                 success=False,
                                 output="",
@@ -670,17 +657,21 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
                 return response
 
             # Add to conversation history
-            conversation_history.append({
-                "role": "assistant",
-                "content": response.content,
-            })
+            conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
 
             # Format tool results for next prompt
             results_text = format_tool_results_for_prompt(tool_results)
-            conversation_history.append({
-                "role": "user",
-                "content": f"Tool results:\n\n{results_text}\n\nContinue with your analysis.",
-            })
+            conversation_history.append(
+                {
+                    "role": "user",
+                    "content": f"Tool results:\n\n{results_text}\n\nContinue with your analysis.",
+                }
+            )
 
             # Update prompt for next iteration
             current_prompt = (
@@ -693,8 +684,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
 
         # Max iterations reached
         logger.warning(
-            f"Agent reached max iterations ({max_iterations}), "
-            f"{total_tool_calls} tool calls made"
+            f"Agent reached max iterations ({max_iterations}), {total_tool_calls} tool calls made"
         )
         return response
 
@@ -833,13 +823,17 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
             # Update context if Claude already responded
             if target == "both":
                 context_updated = session.get_context()
-                prompt = build_prompt(message) if context == context_updated else f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
+                prompt = (
+                    build_prompt(message)
+                    if context == context_updated
+                    else f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
 
 {context_updated}
 
 The user's most recent message that you should respond to is: "{message}"
 
 Provide your unique perspective. Do not repeat what the other agent said - add new value."""
+                )
 
             system = build_system_prompt("gemini")
             async for event in self._send_with_tools_native("gemini", prompt, system, session):
@@ -862,12 +856,8 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
         loop = asyncio.get_event_loop()
 
         # Run both agents in parallel
-        claude_task = loop.run_in_executor(
-            None, self._send_to_agent, "claude", message, context
-        )
-        gemini_task = loop.run_in_executor(
-            None, self._send_to_agent, "gemini", message, context
-        )
+        claude_task = loop.run_in_executor(None, self._send_to_agent, "claude", message, context)
+        gemini_task = loop.run_in_executor(None, self._send_to_agent, "gemini", message, context)
 
         results = await asyncio.gather(claude_task, gemini_task, return_exceptions=True)
         responses: list[RoundtableMessage] = []
@@ -936,9 +926,7 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
     # Prompt Configuration
     # =========================================================================
 
-    def get_effective_prompt(
-        self, project_id: str, prompt_type: str
-    ) -> dict[str, Any]:
+    def get_effective_prompt(self, project_id: str, prompt_type: str) -> dict[str, Any]:
         """Get the effective prompt for a project (custom or default).
 
         Args:
@@ -1184,10 +1172,7 @@ CONVERSATION:
         prompt_text = prompt_config.get("prompt_text", self.SPEC_EXTRACTION_PROMPT)
 
         # Use session override > prompt config > provided agent_type
-        if session.agent_override:
-            effective_agent = session.agent_override
-        else:
-            effective_agent = prompt_config.get("primary_agent", agent_type)
+        effective_agent = session.agent_override or prompt_config.get("primary_agent", agent_type)
 
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
@@ -1246,11 +1231,11 @@ CONVERSATION:
         Returns:
             Dict with spec_id and creation counts
         """
-        from app.storage import roundtable as roundtable_storage
-        from app.storage import components as components_storage
-        from app.storage import capabilities as capabilities_storage
-        from app.storage import tests as tests_storage
         from app.storage import accepted_specs as specs_storage
+        from app.storage import capabilities as capabilities_storage
+        from app.storage import components as components_storage
+        from app.storage import roundtable as roundtable_storage
+        from app.storage import tests as tests_storage
 
         # Get the generated spec from the session
         spec = roundtable_storage.get_generated_spec(session_id)
@@ -1372,10 +1357,7 @@ CONVERSATION:
         prompt_text = prompt_config.get("prompt_text", self.VISION_EXTRACTION_PROMPT)
 
         # Use session override > prompt config > provided agent_type
-        if session.agent_override:
-            effective_agent = session.agent_override
-        else:
-            effective_agent = prompt_config.get("primary_agent", agent_type)
+        effective_agent = session.agent_override or prompt_config.get("primary_agent", agent_type)
 
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
@@ -1437,10 +1419,7 @@ CONVERSATION:
         prompt_text = prompt_config.get("prompt_text", self.GOALS_EXTRACTION_PROMPT)
 
         # Use session override > prompt config > provided agent_type
-        if session.agent_override:
-            effective_agent = session.agent_override
-        else:
-            effective_agent = prompt_config.get("primary_agent", agent_type)
+        effective_agent = session.agent_override or prompt_config.get("primary_agent", agent_type)
 
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
@@ -1499,10 +1478,7 @@ CONVERSATION:
         prompt_text = prompt_config.get("prompt_text", self.FEATURE_EXTRACTION_PROMPT)
 
         # Use session override > prompt config > provided agent_type
-        if session.agent_override:
-            effective_agent = session.agent_override
-        else:
-            effective_agent = prompt_config.get("primary_agent", agent_type)
+        effective_agent = session.agent_override or prompt_config.get("primary_agent", agent_type)
 
         effective_model = session.get_effective_model(
             effective_agent, self.claude_model, self.gemini_model
@@ -1570,7 +1546,7 @@ CONVERSATION:
             criteria = []
             for i, crit in enumerate(feat.get("acceptance_criteria", [])):
                 criterion = {
-                    "id": crit.get("id", f"ac-{i+1:03d}"),
+                    "id": crit.get("id", f"ac-{i + 1:03d}"),
                     "description": crit.get("description", ""),
                     "passes": False,
                     "verified_at": None,
@@ -1648,9 +1624,7 @@ CONVERSATION:
                 tokens=total_tokens,
             )
 
-            logger.info(
-                f"Session {session.id} ended with checkpoint {checkpoint['id']}"
-            )
+            logger.info(f"Session {session.id} ended with checkpoint {checkpoint['id']}")
 
         # Create diary entry for the session
         self._create_diary_entry(session, summary, completed_steps)
@@ -1700,9 +1674,7 @@ CONVERSATION:
                 duration=duration,
             )
 
-            logger.info(
-                f"Diary entry created: {entry['id']} for session {session.id}"
-            )
+            logger.info(f"Diary entry created: {entry['id']} for session {session.id}")
 
             # Check if reflection should be triggered
             self._check_reflection_trigger(session.project_id)
@@ -1734,8 +1706,7 @@ CONVERSATION:
             # Match common file path patterns
             # e.g., /path/to/file.py, ./relative/path.ts
             matches = re.findall(
-                r'(?:^|[\s"`\'(])([./][\w./\-]+\.\w{1,10})(?:[\s"`\'):]|$)',
-                msg.content
+                r'(?:^|[\s"`\'(])([./][\w./\-]+\.\w{1,10})(?:[\s"`\'):]|$)', msg.content
             )
             files.update(matches)
         return list(files)[:20]  # Limit to 20 files

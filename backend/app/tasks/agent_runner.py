@@ -12,7 +12,7 @@ from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.agents import AgentType, get_agent
-from ..storage import features, tasks, capabilities, tests
+from ..storage import capabilities, features, tasks, tests
 
 logger = get_logger(__name__)
 
@@ -411,7 +411,11 @@ def _build_tdd_context(
             parts.append("\n### Test Failure")
             if result.get("output"):
                 # Truncate very long output
-                output = result["output"][:1500] if len(result.get("output", "")) > 1500 else result["output"]
+                output = (
+                    result["output"][:1500]
+                    if len(result.get("output", "")) > 1500
+                    else result["output"]
+                )
                 parts.append(f"\n```\n{output}\n```")
             if result.get("error"):
                 parts.append(f"\nError: {result['error']}")

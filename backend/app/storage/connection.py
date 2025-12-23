@@ -114,15 +114,27 @@ def init_schema() -> None:
             )
 
             # Indexes for sitemap_entries
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_project ON sitemap_entries(project_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sitemap_project ON sitemap_entries(project_id)"
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_port ON sitemap_entries(port)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_health ON sitemap_entries(health_status)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_entry_type ON sitemap_entries(entry_type)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_last_checked ON sitemap_entries(last_checked_at)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sitemap_health ON sitemap_entries(health_status)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sitemap_entry_type ON sitemap_entries(entry_type)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sitemap_last_checked ON sitemap_entries(last_checked_at)"
+            )
 
             # Indexes for sitemap_health_history
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_health_history_entry ON sitemap_health_history(sitemap_entry_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_health_history_checked ON sitemap_health_history(checked_at)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_health_history_entry ON sitemap_health_history(sitemap_entry_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_health_history_checked ON sitemap_health_history(checked_at)"
+            )
 
             # ============================================================
             # Phase 3: Features, Vision, Artifacts Tables
@@ -142,8 +154,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goals_category ON vision_goals(category)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goals_project ON vision_goals(project_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_goals_category ON vision_goals(category)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_goals_project ON vision_goals(project_id)"
+            )
 
             # Vision goal details (objectives, features, success criteria)
             cur.execute(
@@ -160,8 +176,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goal_details_code ON vision_goal_details(goal_code)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_goal_details_type ON vision_goal_details(detail_type)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_goal_details_code ON vision_goal_details(goal_code)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_goal_details_type ON vision_goal_details(detail_type)"
+            )
 
             # Vision content (mission, vision, principles, roadmap)
             cur.execute(
@@ -181,8 +201,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_content_project ON vision_content(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_vision_content_type ON vision_content(content_type)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_content_project ON vision_content(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vision_content_type ON vision_content(content_type)"
+            )
 
             # Feature capabilities - main features table
             cur.execute(
@@ -214,10 +238,18 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_project ON feature_capabilities(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_category ON feature_capabilities(category)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_passes ON feature_capabilities(passes)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_status ON feature_capabilities(status)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_project ON feature_capabilities(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_category ON feature_capabilities(category)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_passes ON feature_capabilities(passes)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_status ON feature_capabilities(status)"
+            )
 
             # Feature tasks - subtasks for features
             cur.execute(
@@ -242,8 +274,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_tasks_feature ON feature_tasks(feature_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_tasks_completed ON feature_tasks(completed)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_tasks_feature ON feature_tasks(feature_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_tasks_completed ON feature_tasks(completed)"
+            )
 
             # Feature dependencies
             cur.execute(
@@ -260,8 +296,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_deps_feature ON feature_dependencies(feature_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_deps_depends ON feature_dependencies(depends_on_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_deps_feature ON feature_dependencies(feature_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_deps_depends ON feature_dependencies(depends_on_id)"
+            )
 
             # Feature vision goal mappings (junction table)
             cur.execute(
@@ -276,8 +316,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_fvgm_feature ON feature_vision_goal_mappings(feature_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_fvgm_vision ON feature_vision_goal_mappings(vision_code)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fvgm_feature ON feature_vision_goal_mappings(feature_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fvgm_vision ON feature_vision_goal_mappings(vision_code)"
+            )
 
             # Artifacts - evidence storage for verification
             cur.execute(
@@ -312,9 +356,15 @@ def init_schema() -> None:
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_feature ON artifacts(feature_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_criterion ON artifacts(criterion_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_quality ON artifacts(quality_status)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_current ON artifacts(is_current) WHERE is_current = TRUE")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_artifacts_criterion ON artifacts(criterion_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_artifacts_quality ON artifacts(quality_status)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_artifacts_current ON artifacts(is_current) WHERE is_current = TRUE"
+            )
 
             # Evidence table (same structure as artifacts, renamed for clarity)
             # Used by evidence_manager service
@@ -350,9 +400,15 @@ def init_schema() -> None:
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_feature ON evidence(feature_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE"
+            )
 
             # File audit table - stores file scan results per project
             cur.execute(
@@ -377,9 +433,13 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_project ON file_audit(project_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_audit_project ON file_audit(project_id)"
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_path ON file_audit(path)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_audit_bloat ON file_audit(bloat_level) WHERE bloat_level IS NOT NULL")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_audit_bloat ON file_audit(bloat_level) WHERE bloat_level IS NOT NULL"
+            )
 
             # ============================================================
             # Scanner Tables (Database, API, Celery introspection)
@@ -413,8 +473,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_db_project ON scanner_database(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_db_health ON scanner_database(health_status)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_db_project ON scanner_database(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_db_health ON scanner_database(health_status)"
+            )
 
             # API scanner - static route analysis results
             cur.execute(
@@ -437,8 +501,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_api_project ON scanner_api(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_api_health ON scanner_api(health_status)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_api_project ON scanner_api(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_api_health ON scanner_api(health_status)"
+            )
 
             # Celery scanner - task introspection results
             cur.execute(
@@ -469,8 +537,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_project ON scanner_celery(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_celery_health ON scanner_celery(health_status)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_celery_project ON scanner_celery(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scanner_celery_health ON scanner_celery(health_status)"
+            )
 
             # ============================================================
             # Tasks Table - Agent execution state for features
@@ -528,8 +600,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)"
+            )
 
             # ============================================================
             # TDD Architecture Tables - Components, Capabilities, Tests
@@ -552,7 +628,9 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)"
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_components_status ON components(status)")
 
             # Capabilities - What must work (5-15 per component)
@@ -574,9 +652,15 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_project ON capabilities(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_component ON capabilities(component_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_status ON capabilities(status)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_capabilities_project ON capabilities(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_capabilities_component ON capabilities(component_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_capabilities_status ON capabilities(status)"
+            )
 
             # Tests - Centralized test registry (how we verify)
             cur.execute(
@@ -625,8 +709,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_capability ON capability_tests(capability_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_capability_tests_test ON capability_tests(test_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_capability_tests_capability ON capability_tests(capability_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_capability_tests_test ON capability_tests(test_id)"
+            )
 
             # Test runs - Historical test execution records
             cur.execute(
@@ -650,7 +738,9 @@ def init_schema() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_test ON test_runs(test_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_result ON test_runs(result)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)"
+            )
 
             # Agent sessions - Track agent build sessions
             cur.execute(
@@ -680,9 +770,15 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_project ON agent_sessions(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project ON agent_sessions(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)"
+            )
 
             # Accepted specs - Permanent storage for accepted spec definitions
             cur.execute(
@@ -698,8 +794,12 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_accepted_specs_project ON accepted_specs(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_accepted_specs_accepted ON accepted_specs(accepted_at DESC)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_accepted_specs_project ON accepted_specs(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_accepted_specs_accepted ON accepted_specs(accepted_at DESC)"
+            )
 
             # ============================================================
             # Roundtable Sessions - Multi-agent chat persistence
@@ -726,9 +826,15 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_roundtable_updated ON roundtable_sessions(updated_at DESC)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roundtable_updated ON roundtable_sessions(updated_at DESC)"
+            )
 
             # ============================================================
             # Extraction Prompts - Customizable prompts per project
@@ -752,7 +858,9 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_extraction_prompts_project ON extraction_prompts(project_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_extraction_prompts_project ON extraction_prompts(project_id)"
+            )
 
             # ============================================================
             # Project Agent Configuration - Default agents/models per project
@@ -792,10 +900,18 @@ def init_schema() -> None:
                 )
                 """
             )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_project ON notifications(project_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_status ON notifications(status)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_created ON notifications(created_at DESC)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_task ON notifications(task_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notification_project ON notifications(project_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notification_status ON notifications(status)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notification_created ON notifications(created_at DESC)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notification_task ON notifications(task_id)"
+            )
 
             # Add new columns to existing tables if they don't exist
             # This allows running init_schema() on existing databases
@@ -805,7 +921,8 @@ def init_schema() -> None:
                 ("browser_scripts_dir TEXT", "projects"),
                 ("data_dir TEXT", "projects"),
                 # TDD test configuration for projects
-                ("""test_config JSONB DEFAULT '{
+                (
+                    """test_config JSONB DEFAULT '{
                     "backend_root": "backend",
                     "frontend_root": "frontend",
                     "pytest_path": ".venv/bin/pytest",
@@ -815,7 +932,9 @@ def init_schema() -> None:
                         "vitest": "**/*.test.{ts,tsx}",
                         "playwright": "tests/e2e/**/*.spec.ts"
                     }
-                }'::jsonb""", "projects"),
+                }'::jsonb""",
+                    "projects",
+                ),
                 # Issue tracking fields for tasks (beads migration)
                 ("priority INTEGER DEFAULT 2", "tasks"),
                 ("labels TEXT[] DEFAULT '{}'", "tasks"),
@@ -825,7 +944,10 @@ def init_schema() -> None:
                 ("tools_enabled BOOLEAN DEFAULT TRUE", "roundtable_sessions"),
                 ("write_enabled BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
                 ("yolo_mode BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
-                ("tool_stats JSONB DEFAULT '{\"total_calls\": 0, \"files_read\": 0, \"searches\": 0, \"writes\": 0}'::jsonb", "roundtable_sessions"),
+                (
+                    'tool_stats JSONB DEFAULT \'{"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}\'::jsonb',
+                    "roundtable_sessions",
+                ),
                 # Agent config override for per-session customization
                 ("agent_override VARCHAR(50)", "roundtable_sessions"),
                 ("model_override VARCHAR(100)", "roundtable_sessions"),
@@ -844,7 +966,7 @@ def init_schema() -> None:
                 ("project_id TEXT REFERENCES projects(id)", "vision_goals"),
             ]:
                 try:
-                    col_name = column.split()[0]
+                    column.split()[0]
                     cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
                 except Exception:
                     pass  # Column already exists

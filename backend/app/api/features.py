@@ -39,8 +39,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from ..storage.connection import get_connection
 from ..storage import features as storage_features
+from ..storage.connection import get_connection
 
 router = APIRouter()
 
@@ -980,9 +980,7 @@ class FeatureStatusUpdate(BaseModel):
         return v
 
 
-@router.patch(
-    "/projects/{project_id}/features/{feature_id}/status", response_model=dict[str, Any]
-)
+@router.patch("/projects/{project_id}/features/{feature_id}/status", response_model=dict[str, Any])
 async def update_feature_work_status(
     project_id: str, feature_id: str, update: FeatureStatusUpdate
 ) -> dict[str, Any]:

@@ -335,11 +335,17 @@ def create_pull_request(
     # Create PR using gh CLI
     result = subprocess.run(
         [
-            "gh", "pr", "create",
-            "--title", pr_title,
-            "--body", pr_body,
-            "--base", base_branch,
-            "--head", branch_name,
+            "gh",
+            "pr",
+            "create",
+            "--title",
+            pr_title,
+            "--body",
+            pr_body,
+            "--base",
+            base_branch,
+            "--head",
+            branch_name,
         ],
         cwd=project_path,
         capture_output=True,

@@ -491,9 +491,7 @@ async def get_vision_context(project_id: str) -> dict[str, Any]:
 
 
 @router.post("/content", response_model=dict[str, Any])
-async def create_vision_content(
-    project_id: str, content: VisionContentCreate
-) -> dict[str, Any]:
+async def create_vision_content(project_id: str, content: VisionContentCreate) -> dict[str, Any]:
     """Create new vision content for a project."""
     valid_types = {
         "mission",
@@ -597,9 +595,7 @@ async def delete_vision_content(project_id: str, content_key: str) -> dict[str, 
             conn.commit()
 
             if not result:
-                raise HTTPException(
-                    status_code=404, detail=f"Content '{content_key}' not found"
-                )
+                raise HTTPException(status_code=404, detail=f"Content '{content_key}' not found")
 
             logger.info(
                 "vision_content_deleted",
