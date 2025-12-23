@@ -7,10 +7,12 @@ to capture tool executions for observation extraction.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import redis
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -20,6 +22,102 @@ from ..storage.connection import get_connection
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Redis for filtering metrics
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+METRICS_KEY_PREFIX = "obs_filter_metrics"
+METRICS_TTL = 86400 * 7  # 7 days
+
+
+def _get_metrics_redis() -> redis.Redis | None:
+    """Get Redis connection for metrics tracking."""
+    try:
+        r = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)
+        r.ping()
+        return r
+    except redis.RedisError as e:
+        logger.warning(f"Redis unavailable for metrics: {e}")
+        return None
+
+
+def _increment_metric(metric: str, skip_reason: str | None = None) -> None:
+    """Increment a filtering metric in Redis.
+
+    Metrics tracked:
+    - tools_received: Total tools received
+    - tools_queued: Tools that passed filter and were queued
+    - tools_skipped: Tools that were skipped by filter
+    - skip_reasons:{reason}: Breakdown by skip reason
+    """
+    r = _get_metrics_redis()
+    if r is None:
+        return
+
+    try:
+        pipe = r.pipeline()
+        # Increment total count
+        pipe.incr(f"{METRICS_KEY_PREFIX}:{metric}")
+        pipe.expire(f"{METRICS_KEY_PREFIX}:{metric}", METRICS_TTL)
+
+        # Track skip reason breakdown
+        if skip_reason:
+            pipe.hincrby(f"{METRICS_KEY_PREFIX}:skip_reasons", skip_reason, 1)
+            pipe.expire(f"{METRICS_KEY_PREFIX}:skip_reasons", METRICS_TTL)
+
+        pipe.execute()
+    except redis.RedisError as e:
+        logger.warning(f"Failed to increment metric: {e}")
+
+
+def get_filtering_metrics() -> dict[str, Any]:
+    """Get filtering metrics from Redis.
+
+    Returns:
+        Dict with tools_received, tools_queued, tools_skipped, skip_reasons, filter_effectiveness
+    """
+    r = _get_metrics_redis()
+    if r is None:
+        return {
+            "tools_received": 0,
+            "tools_queued": 0,
+            "tools_skipped": 0,
+            "skip_reasons": {},
+            "filter_effectiveness": 0.0,
+        }
+
+    try:
+        pipe = r.pipeline()
+        pipe.get(f"{METRICS_KEY_PREFIX}:tools_received")
+        pipe.get(f"{METRICS_KEY_PREFIX}:tools_queued")
+        pipe.get(f"{METRICS_KEY_PREFIX}:tools_skipped")
+        pipe.hgetall(f"{METRICS_KEY_PREFIX}:skip_reasons")
+        results = pipe.execute()
+
+        received = int(results[0] or 0)
+        queued = int(results[1] or 0)
+        skipped = int(results[2] or 0)
+        skip_reasons = {k: int(v) for k, v in (results[3] or {}).items()}
+
+        # Calculate filter effectiveness (% of tools filtered)
+        effectiveness = (skipped / received * 100) if received > 0 else 0.0
+
+        return {
+            "tools_received": received,
+            "tools_queued": queued,
+            "tools_skipped": skipped,
+            "skip_reasons": skip_reasons,
+            "filter_effectiveness": round(effectiveness, 1),
+        }
+    except redis.RedisError as e:
+        logger.warning(f"Failed to get metrics: {e}")
+        return {
+            "tools_received": 0,
+            "tools_queued": 0,
+            "tools_skipped": 0,
+            "skip_reasons": {},
+            "filter_effectiveness": 0.0,
+        }
+
 
 # ============================================================================
 # Tool Filtering - Skip trivial tools that have no learning value
@@ -170,6 +268,9 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
     This endpoint is called by PostToolUse hooks installed in
     ~/.claude/hooks/ or similar CLI hook directories.
     """
+    # Track all tools received
+    _increment_metric("tools_received")
+
     # Skip if project doesn't exist (no auto-creation)
     if not _ensure_project_exists(request.project_id):
         # Create notification if not recently alerted (rate-limited)
@@ -202,6 +303,7 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
             except Exception as e:
                 logger.error(f"Failed to create notification for unknown project: {e}")
 
+        _increment_metric("tools_skipped", "unknown_project")
         return HookResponse(
             status="skipped",
             queued=False,
@@ -218,6 +320,7 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
 
     if not should_queue:
         logger.info(f"observation_skipped: tool={request.tool_name}, reason={reason}")
+        _increment_metric("tools_skipped", reason)
         return HookResponse(
             status="skipped",
             queued=False,
@@ -238,6 +341,7 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
     )
 
     logger.debug(f"observation_queued: tool={request.tool_name}, id={item['id']}")
+    _increment_metric("tools_queued")
     return HookResponse(
         status="queued",
         queued=True,

@@ -14,10 +14,21 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from ..api.hooks import get_filtering_metrics
 from ..storage import memory as memory_storage
 from ..storage.connection import get_connection
 
 router = APIRouter()
+
+
+class FilteringMetrics(BaseModel):
+    """Tool filtering metrics."""
+
+    tools_received: int
+    tools_queued: int
+    tools_skipped: int
+    skip_reasons: dict[str, int]
+    filter_effectiveness: float  # Percentage of tools filtered
 
 
 class MemoryStats(BaseModel):
@@ -30,6 +41,7 @@ class MemoryStats(BaseModel):
     token_spend_24h: int
     health: str  # 'healthy', 'degraded', 'unhealthy'
     health_details: dict[str, Any] | None = None
+    filtering: FilteringMetrics | None = None
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
@@ -111,6 +123,9 @@ async def get_memory_stats() -> MemoryStats:
         health = "unhealthy"
         health_details["success_rate"] = f"Critical success rate: {success_rate:.1f}%"
 
+    # Get filtering metrics from Redis
+    filter_metrics = get_filtering_metrics()
+
     return MemoryStats(
         queue_depth=queue_depth,
         queue_pending=pending,
@@ -119,6 +134,7 @@ async def get_memory_stats() -> MemoryStats:
         token_spend_24h=token_spend_24h,
         health=health,
         health_details=health_details if health_details else None,
+        filtering=FilteringMetrics(**filter_metrics),
     )
 
 
