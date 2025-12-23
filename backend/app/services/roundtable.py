@@ -1105,9 +1105,25 @@ For each capability, provide:
 - Priority (1=critical, 2=high, 3=medium, 4=low)
 
 For each test, provide:
-- Test type: "pytest" (backend unit/integration), "vitest" (frontend unit), "playwright" (e2e browser), "api" (HTTP endpoint), "ui" (visual/manual)
+- Test type: "pytest" (backend unit/integration), "vitest" (frontend unit), "api" (HTTP endpoint), "ui" (browser automation)
 - A descriptive name
-- The command to run it OR manual verification steps
+- For pytest/vitest/api: provide "command" field
+- For ui tests: provide "config" field with browser-automation settings
+
+UI test config schema (for type: "ui"):
+- script_name: Browser script to use (required). Available scripts:
+  * screenshot - Take full-page screenshot
+  * click-screenshot - Click element and take screenshot
+  * tab-click-screenshot - Click tab and take screenshot
+  * interact - Perform user interactions (click, fill, hover)
+  * regression-check - All-in-one regression testing
+  * console - Capture console messages
+  * network - Monitor network requests
+  * capture-evidence - Comprehensive evidence capture
+- url: Target URL to test (required)
+- args: Script-specific arguments (optional)
+- assertions: List of assertions to check (optional)
+  * type: console_errors, network_failures, output_contains, output_not_contains
 
 IMPORTANT: Return ONLY valid JSON in this exact format:
 {
@@ -1129,9 +1145,29 @@ IMPORTANT: Return ONLY valid JSON in this exact format:
               "command": "pytest tests/auth/test_login.py::test_login_success"
             },
             {
-              "type": "playwright",
+              "type": "ui",
+              "name": "Login form visual check",
+              "config": {
+                "script_name": "screenshot",
+                "url": "https://example.com/login",
+                "args": {"fullPage": true},
+                "assertions": [{"type": "console_errors"}]
+              }
+            },
+            {
+              "type": "ui",
               "name": "Login form submission",
-              "command": "npx playwright test tests/e2e/auth.spec.ts --grep 'login form'"
+              "config": {
+                "script_name": "interact",
+                "url": "https://example.com/login",
+                "args": {
+                  "actions": [
+                    {"type": "fill", "selector": "#email", "value": "test@example.com"},
+                    {"type": "fill", "selector": "#password", "value": "password123"},
+                    {"type": "click", "selector": "button[type=submit]"}
+                  ]
+                }
+              }
             }
           ]
         }
