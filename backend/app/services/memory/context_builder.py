@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC
 from typing import Any
 
 import redis
@@ -170,14 +171,16 @@ class ContextBuilder:
                 # Compact index entry - minimize token count
                 # Truncate title to 60 chars for index
                 title = obs["title"][:60] + "..." if len(obs["title"]) > 60 else obs["title"]
-                index_items.append({
-                    "id": f"obs:{obs['id']}",
-                    "t": "obs",  # Short type key
-                    "ot": obs["observation_type"][:3],  # First 3 chars of type
-                    "title": title,
-                    "c": obs.get("concepts", [])[:2],  # Limit concepts
-                    "tok": full_tokens,
-                })
+                index_items.append(
+                    {
+                        "id": f"obs:{obs['id']}",
+                        "t": "obs",  # Short type key
+                        "ot": obs["observation_type"][:3],  # First 3 chars of type
+                        "title": title,
+                        "c": obs.get("concepts", [])[:2],  # Limit concepts
+                        "tok": full_tokens,
+                    }
+                )
 
         # Recent checkpoints (for resume context)
         if include_checkpoints:
@@ -191,16 +194,22 @@ class ContextBuilder:
                 total_full_tokens += full_tokens
 
                 # Compact index entry
-                action = cp.get("current_action", "")[:40] + "..." if len(cp.get("current_action", "") or "") > 40 else cp.get("current_action")
-                index_items.append({
-                    "id": f"cp:{cp['id']}",
-                    "t": "cp",
-                    "a": cp["agent_type"],
-                    "act": action,
-                    "done": len(cp.get("completed_steps") or []),
-                    "left": len(cp.get("remaining_steps") or []),
-                    "tok": full_tokens,
-                })
+                action = (
+                    cp.get("current_action", "")[:40] + "..."
+                    if len(cp.get("current_action", "") or "") > 40
+                    else cp.get("current_action")
+                )
+                index_items.append(
+                    {
+                        "id": f"cp:{cp['id']}",
+                        "t": "cp",
+                        "a": cp["agent_type"],
+                        "act": action,
+                        "done": len(cp.get("completed_steps") or []),
+                        "left": len(cp.get("remaining_steps") or []),
+                        "tok": full_tokens,
+                    }
+                )
 
         # Applied patterns (project-specific rules)
         if include_patterns:
@@ -215,15 +224,21 @@ class ContextBuilder:
                 total_full_tokens += full_tokens
 
                 # Compact index entry
-                title = pattern["title"][:50] + "..." if len(pattern["title"]) > 50 else pattern["title"]
-                index_items.append({
-                    "id": f"pat:{pattern['id']}",
-                    "t": "pat",
-                    "pt": pattern["pattern_type"][:3],
-                    "title": title,
-                    "use": pattern.get("usage_count", 0),
-                    "tok": full_tokens,
-                })
+                title = (
+                    pattern["title"][:50] + "..."
+                    if len(pattern["title"]) > 50
+                    else pattern["title"]
+                )
+                index_items.append(
+                    {
+                        "id": f"pat:{pattern['id']}",
+                        "t": "pat",
+                        "pt": pattern["pattern_type"][:3],
+                        "title": title,
+                        "use": pattern.get("usage_count", 0),
+                        "tok": full_tokens,
+                    }
+                )
 
         # Calculate index token count
         index_tokens = estimate_tokens(json.dumps(index_items))
@@ -357,3 +372,84 @@ class ContextBuilder:
         tokens += estimate_tokens(pattern.get("content"))
         tokens += estimate_tokens(pattern.get("rationale"))
         return tokens
+
+    @staticmethod
+    def rank_observation(
+        obs: dict[str, Any],
+        fts_score: float = 0.0,
+        query_types: list[str] | None = None,
+    ) -> float:
+        """Compute multi-signal ranking score for an observation.
+
+        Combines multiple signals:
+        - FTS score (60%): Full-text search relevance
+        - Recency (10%): Exponential decay with 30-day half-life
+        - Confidence (15%): LLM extraction confidence
+        - Usage (10%): Capped at 10 uses
+        - Type boost (5%): Query-aware type boosting
+
+        Args:
+            obs: Observation dict with created_at, confidence, etc.
+            fts_score: Normalized FTS score (0-1), from ts_rank
+            query_types: Optional list of observation types to boost
+
+        Returns:
+            Combined score from 0.0 to 1.0
+        """
+        import math
+        from datetime import datetime
+
+        # Weight configuration
+        w_fts = 0.60
+        w_recency = 0.10
+        w_confidence = 0.15
+        w_usage = 0.10
+        w_type = 0.05
+
+        # 1. FTS score (already 0-1, or normalize if needed)
+        fts_norm = min(1.0, max(0.0, fts_score))
+
+        # 2. Recency decay: exp(-age_days / 30) => 30-day half-life
+        recency_score = 0.5  # Default for missing created_at
+        created_at = obs.get("created_at")
+        if created_at:
+            try:
+                if isinstance(created_at, str):
+                    # Parse ISO timestamp
+                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                else:
+                    created_dt = created_at
+                now = datetime.now(UTC)
+                age_days = (now - created_dt).total_seconds() / 86400
+                recency_score = math.exp(-age_days / 30)
+            except (ValueError, TypeError):
+                pass
+
+        # 3. Confidence score (already 0-1)
+        confidence = obs.get("confidence", 0.5)
+        confidence_score = min(1.0, max(0.0, confidence))
+
+        # 4. Usage frequency (capped at 10)
+        usage = obs.get("usage_count", 0)
+        usage_score = min(1.0, usage / 10.0)
+
+        # 5. Type boost (if query prefers certain types)
+        type_score = 0.0
+        if query_types:
+            obs_type = obs.get("observation_type", "")
+            if obs_type in query_types:
+                type_score = 1.0
+            # Boost errors and decisions by default
+            elif obs_type in ("error", "decision", "user_preference"):
+                type_score = 0.5
+
+        # Combine signals
+        combined = (
+            w_fts * fts_norm
+            + w_recency * recency_score
+            + w_confidence * confidence_score
+            + w_usage * usage_score
+            + w_type * type_score
+        )
+
+        return round(combined, 4)

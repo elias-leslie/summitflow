@@ -298,8 +298,21 @@ def search_observations_fts(
     project_id: str,
     query: str,
     limit: int = 20,
+    use_multi_signal: bool = True,
+    query_types: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Full-text search observations."""
+    """Full-text search observations with optional multi-signal ranking.
+
+    Args:
+        project_id: Project to search in
+        query: Search query string
+        limit: Max results
+        use_multi_signal: If True, apply multi-signal ranking (recency, confidence, etc.)
+        query_types: Optional observation types to boost
+
+    Returns:
+        List of observations sorted by relevance.
+    """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -314,12 +327,39 @@ def search_observations_fts(
             ORDER BY rank DESC
             LIMIT %s
             """,
-            (query, project_id, query, limit),
+            (
+                query,
+                project_id,
+                query,
+                limit * 2 if use_multi_signal else limit,
+            ),  # Fetch more for re-ranking
         )
         rows = cur.fetchall()
 
-    # Exclude rank from result (row has 22 cols now: 21 + rank)
-    return [_observation_row_to_dict(row[:21]) for row in rows]
+    if not use_multi_signal:
+        # Original behavior - just FTS ranking
+        return [_observation_row_to_dict(row[:21]) for row in rows]
+
+    # Multi-signal ranking
+    from app.services.memory.context_builder import ContextBuilder
+
+    results = []
+    # Get max rank for normalization
+    max_rank = max((row[21] for row in rows), default=1.0) or 1.0
+
+    for row in rows:
+        obs = _observation_row_to_dict(row[:21])
+        fts_score = row[21] / max_rank  # Normalize FTS score to 0-1
+        obs["fts_score"] = round(fts_score, 4)
+        obs["combined_score"] = ContextBuilder.rank_observation(
+            obs, fts_score=fts_score, query_types=query_types
+        )
+        results.append(obs)
+
+    # Sort by combined score descending
+    results.sort(key=lambda x: x["combined_score"], reverse=True)
+
+    return results[:limit]
 
 
 def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
