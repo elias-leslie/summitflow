@@ -77,6 +77,22 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24,  # Every 24 hours
         "kwargs": {"max_age_days": 7, "max_files": 20},
     },
+    # Memory lifecycle cleanup tasks
+    "cleanup-failed-queue-items": {
+        "task": "summitflow.cleanup_failed_queue_items",
+        "schedule": 60 * 60 * 24,  # Daily (every 24 hours)
+        "kwargs": {"max_age_days": 14},
+    },
+    "cleanup-old-checkpoints": {
+        "task": "summitflow.cleanup_old_checkpoints",
+        "schedule": 60 * 60 * 24 * 7,  # Weekly (every 7 days)
+        "kwargs": {"max_age_days": 30},
+    },
+    "reset-stuck-queue-items": {
+        "task": "summitflow.reset_stuck_queue_items",
+        "schedule": 60 * 60,  # Hourly
+        "kwargs": {"threshold_minutes": 60},
+    },
 }
 
 
@@ -114,6 +130,7 @@ from app.tasks import (  # noqa: F401, E402
     agent_runner,
     evidence_tasks,
     explorer_tasks,
+    lifecycle_cleanup,
     observation_processor,
     reflection_processor,
 )
