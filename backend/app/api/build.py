@@ -12,6 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..services.build import get_escalations
 from ..services.build_orchestrator import (
     build_capability,
     get_build_status,
@@ -183,3 +184,24 @@ async def api_run_full_build(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class EscalationResponse(BaseModel):
+    """An escalation record."""
+
+    capability_id: str | None
+    reason: str | None
+    escalated_at: str | None
+
+
+@router.get("/escalations", response_model=list[EscalationResponse])
+async def api_get_escalations(
+    project_id: str,
+    session_id: str,
+):
+    """Get escalations for a build session.
+
+    Returns list of escalated capabilities and their reasons.
+    """
+    escalations = get_escalations(project_id, session_id)
+    return [EscalationResponse(**e) for e in escalations]
