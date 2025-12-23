@@ -5,6 +5,7 @@ import {
   Brain,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Activity,
   Zap,
   Clock,
@@ -510,6 +511,76 @@ function DiaryRow({ entry }: { entry: DiaryEntry }) {
   );
 }
 
+// Pagination Component
+const ITEMS_PER_PAGE = 10;
+
+function Pagination({
+  currentPage,
+  totalItems,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className={clsx(
+          'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors',
+          currentPage === 1
+            ? 'text-slate-600 cursor-not-allowed'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+        )}
+      >
+        <ChevronLeft className="w-4 h-4" />
+        Prev
+      </button>
+
+      <div className="flex items-center gap-1">
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+          <button
+            key={page}
+            onClick={() => onPageChange(page)}
+            className={clsx(
+              'w-8 h-8 text-sm rounded-lg transition-colors',
+              page === currentPage
+                ? 'bg-outrun-500/20 text-outrun-400 font-medium'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            )}
+          >
+            {page}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className={clsx(
+          'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors',
+          currentPage === totalPages
+            ? 'text-slate-600 cursor-not-allowed'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+        )}
+      >
+        Next
+        <ChevronRight className="w-4 h-4" />
+      </button>
+
+      <span className="ml-2 text-xs text-slate-500">
+        {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, totalItems)} of {totalItems}
+      </span>
+    </div>
+  );
+}
+
 // Main Memory Page Component
 export default function MemoryPage() {
   const [stats, setStats] = useState<MemoryStats | null>(null);
@@ -521,6 +592,11 @@ export default function MemoryPage() {
   const [activeTab, setActiveTab] = useState('observations');
   const [loading, setLoading] = useState(true);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+
+  // Pagination state
+  const [observationsPage, setObservationsPage] = useState(1);
+  const [patternsPage, setPatternsPage] = useState(1);
+  const [diaryPage, setDiaryPage] = useState(1);
 
   // Fetch data
   useEffect(() => {
@@ -616,6 +692,27 @@ export default function MemoryPage() {
   };
 
   const pendingPatterns = patterns.filter(p => p.status === 'pending');
+
+  // Paginated data
+  const paginatedObservations = observations.slice(
+    (observationsPage - 1) * ITEMS_PER_PAGE,
+    observationsPage * ITEMS_PER_PAGE
+  );
+  const paginatedPatterns = pendingPatterns.slice(
+    (patternsPage - 1) * ITEMS_PER_PAGE,
+    patternsPage * ITEMS_PER_PAGE
+  );
+  const paginatedDiary = diaryEntries.slice(
+    (diaryPage - 1) * ITEMS_PER_PAGE,
+    diaryPage * ITEMS_PER_PAGE
+  );
+
+  // Reset pagination when project changes
+  useEffect(() => {
+    setObservationsPage(1);
+    setPatternsPage(1);
+    setDiaryPage(1);
+  }, [selectedProject]);
 
   return (
     <div className="min-h-screen bg-slate-950 p-8">
@@ -731,6 +828,12 @@ export default function MemoryPage() {
             <TabsTrigger value="diary" className="gap-2">
               <BookOpen className="w-4 h-4" />
               Diary
+              <span className={clsx(
+                'text-[11px] font-semibold px-2 py-0.5 rounded-full',
+                activeTab === 'diary' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
+              )}>
+                {diaryEntries.length}
+              </span>
             </TabsTrigger>
           </TabsList>
 
@@ -748,10 +851,17 @@ export default function MemoryPage() {
                 <p className="text-sm">Observations will appear here as agents work</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {observations.map((obs) => (
-                  <ObservationRow key={obs.id} observation={obs} />
-                ))}
+              <div>
+                <div className="space-y-2">
+                  {paginatedObservations.map((obs) => (
+                    <ObservationRow key={obs.id} observation={obs} />
+                  ))}
+                </div>
+                <Pagination
+                  currentPage={observationsPage}
+                  totalItems={observations.length}
+                  onPageChange={setObservationsPage}
+                />
               </div>
             )}
           </TabsContent>
@@ -770,7 +880,7 @@ export default function MemoryPage() {
                 <p className="text-sm">Patterns will appear here for review after reflection</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div>
                 <BulkActionsBar
                   patterns={pendingPatterns}
                   onBulkApprove={async (patternIds) => {
@@ -790,8 +900,8 @@ export default function MemoryPage() {
                     }
                   }}
                 />
-                <div className="space-y-2">
-                  {pendingPatterns.map((pattern) => (
+                <div className="space-y-2 mt-4">
+                  {paginatedPatterns.map((pattern) => (
                     <PatternRow
                       key={pattern.id}
                       pattern={pattern}
@@ -800,6 +910,11 @@ export default function MemoryPage() {
                     />
                   ))}
                 </div>
+                <Pagination
+                  currentPage={patternsPage}
+                  totalItems={pendingPatterns.length}
+                  onPageChange={setPatternsPage}
+                />
               </div>
             )}
           </TabsContent>
@@ -818,10 +933,17 @@ export default function MemoryPage() {
                 <p className="text-sm">Session summaries will appear here</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {diaryEntries.map((entry) => (
-                  <DiaryRow key={entry.id} entry={entry} />
-                ))}
+              <div>
+                <div className="space-y-2">
+                  {paginatedDiary.map((entry) => (
+                    <DiaryRow key={entry.id} entry={entry} />
+                  ))}
+                </div>
+                <Pagination
+                  currentPage={diaryPage}
+                  totalItems={diaryEntries.length}
+                  onPageChange={setDiaryPage}
+                />
               </div>
             )}
           </TabsContent>
