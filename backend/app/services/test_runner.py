@@ -493,7 +493,6 @@ async def run_test(
         "mypy": run_mypy,
         "ruff": run_ruff,
         "vitest": run_vitest,
-        "playwright": run_playwright,
         "api": run_api_test,
         "ui": run_ui_test,
     }
@@ -585,7 +584,7 @@ async def run_tests(
         elif tier == "unit":
             tests = [t for t in all_tests if t["test_type"] in ("pytest", "vitest")]
         elif tier == "integration":
-            tests = [t for t in all_tests if t["test_type"] in ("playwright", "api")]
+            tests = [t for t in all_tests if t["test_type"] in ("ui", "api")]
         else:
             tests = all_tests
 
@@ -773,52 +772,6 @@ async def run_vitest(test: dict[str, Any], config: ProjectConfig) -> TestResult:
         duration_ms=0,
         output=_truncate_output(output),
         error=stderr if not passed and stderr else None,
-    )
-
-
-async def run_playwright(test: dict[str, Any], config: ProjectConfig) -> TestResult:
-    """Run playwright E2E tests.
-
-    Args:
-        test: Test dict from registry
-        config: Project configuration
-
-    Returns:
-        TestResult with pass/fail status and evidence path.
-    """
-    import os
-
-    working_dir = os.path.join(config.root_path, config.frontend_root)
-
-    # Use test command if specified, otherwise use test name as path
-    test_path = test["command"] or test["name"]
-    command = f"{config.node_path} playwright test --reporter=line {test_path}"
-
-    timeout = test.get("timeout_seconds", 300)  # E2E tests can be slow
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-    output = stdout + ("\n" + stderr if stderr else "")
-    passed = exit_code == 0
-
-    # Check for screenshot evidence on failure
-    evidence_path = None
-    if not passed:
-        # Playwright stores screenshots in test-results/ by default
-        evidence_dir = os.path.join(working_dir, "test-results")
-        if os.path.exists(evidence_dir):
-            evidence_path = evidence_dir
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,
-        output=_truncate_output(output),
-        error=stderr if not passed and stderr else None,
-        evidence_path=evidence_path,
     )
 
 

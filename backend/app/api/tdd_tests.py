@@ -308,7 +308,7 @@ async def run_multiple_tests(project_id: str, body: TestRunRequest) -> list[Test
 class ImportTestsRequest(BaseModel):
     """Request for importing tests."""
 
-    source_type: str = "all"  # pytest, vitest, playwright, all
+    source_type: str = "all"  # pytest, vitest, all
     discover: bool = True
 
 

@@ -23,7 +23,7 @@ interface ImportTestsDialogProps {
   projectId: string;
 }
 
-type SourceType = "pytest" | "vitest" | "playwright" | "all";
+type SourceType = "pytest" | "vitest" | "all";
 
 interface SourceOption {
   id: SourceType;
@@ -45,12 +45,6 @@ const SOURCE_OPTIONS: SourceOption[] = [
     description: "JavaScript/TypeScript tests",
     color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   },
-  {
-    id: "playwright",
-    name: "playwright",
-    description: "End-to-end browser tests",
-    color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  },
 ];
 
 export function ImportTestsDialog({
@@ -59,7 +53,7 @@ export function ImportTestsDialog({
   projectId,
 }: ImportTestsDialogProps) {
   const queryClient = useQueryClient();
-  const [selectedSources, setSelectedSources] = useState<Set<SourceType>>(new Set(["pytest", "vitest", "playwright"]));
+  const [selectedSources, setSelectedSources] = useState<Set<SourceType>>(new Set(["pytest", "vitest"]));
   const [isImporting, setIsImporting] = useState(false);
   const [result, setResult] = useState<ImportTestsResult | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -929,8 +929,7 @@ def init_schema() -> None:
                     "node_path": "npx",
                     "test_patterns": {
                         "pytest": "tests/**/*.py",
-                        "vitest": "**/*.test.{ts,tsx}",
-                        "playwright": "tests/e2e/**/*.spec.ts"
+                        "vitest": "**/*.test.{ts,tsx}"
                     }
                 }'::jsonb""",
                     "projects",

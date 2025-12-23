@@ -52,9 +52,8 @@ export interface SpecPreviewProps {
 const testTypeColors: Record<string, string> = {
   pytest: "bg-yellow-900/50 text-yellow-200",
   vitest: "bg-green-900/50 text-green-200",
-  playwright: "bg-purple-900/50 text-purple-200",
   api: "bg-blue-900/50 text-blue-200",
-  ui: "bg-pink-900/50 text-pink-200",
+  ui: "bg-purple-900/50 text-purple-200",
   mypy: "bg-orange-900/50 text-orange-200",
   ruff: "bg-cyan-900/50 text-cyan-200",
 };

@@ -29,7 +29,7 @@ def create_test(
         project_id: Project ID
         test_id: Unique test identifier
         name: Human-readable test name
-        test_type: Type of test (pytest, mypy, ruff, vitest, playwright, api, ui)
+        test_type: Type of test (pytest, mypy, ruff, vitest, api, ui)
         command: Command to run the test
         script: Script content for UI tests
         config: Additional configuration as JSON

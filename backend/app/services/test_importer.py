@@ -3,7 +3,8 @@
 This module provides test discovery and import for various test frameworks:
 - pytest: Python unit/integration tests
 - vitest: JavaScript/TypeScript unit tests
-- playwright: E2E browser tests
+
+UI tests are defined via roundtable conversations and use browser-automation skill.
 
 Tests are discovered via framework-specific methods and registered in the
 centralized test registry for tracking and execution.
@@ -72,6 +73,7 @@ def get_project_paths(project_id: str) -> tuple[str, str, str] | None:
 
     # Handle JSON string if needed
     import json
+
     if isinstance(test_config, str):
         test_config = json.loads(test_config)
 
@@ -90,7 +92,7 @@ async def import_tests(
 
     Args:
         project_id: Project ID
-        source_type: Type of tests to import ('pytest', 'vitest', 'playwright', 'all')
+        source_type: Type of tests to import ('pytest', 'vitest', 'all')
         discover: Whether to run discovery (True) or just check existing
 
     Returns:
@@ -108,7 +110,6 @@ async def import_tests(
     importers = {
         "pytest": lambda: discover_pytest_tests(project_id, root_path, backend_root),
         "vitest": lambda: discover_vitest_tests(project_id, root_path, frontend_root),
-        "playwright": lambda: discover_playwright_tests(project_id, root_path, frontend_root),
     }
 
     all_discovered: list[DiscoveredTest] = []
@@ -217,13 +218,15 @@ async def discover_pytest_tests(
             test_id = re.sub(r"[^a-z0-9-]", "-", test_id)
             test_id = test_id[:100]  # DB constraint
 
-            discovered.append(DiscoveredTest(
-                test_id=test_id,
-                name=f"{file_path}::{test_name}",
-                test_type="pytest",
-                command=f"{file_path}::{test_name}",
-                working_dir=working_dir,
-            ))
+            discovered.append(
+                DiscoveredTest(
+                    test_id=test_id,
+                    name=f"{file_path}::{test_name}",
+                    test_type="pytest",
+                    command=f"{file_path}::{test_name}",
+                    working_dir=working_dir,
+                )
+            )
 
     return discovered
 
@@ -277,73 +280,15 @@ async def discover_vitest_tests(
             test_id = re.sub(r"[^a-z0-9-]", "-", test_id)
             test_id = test_id[:100]  # DB constraint
 
-            discovered.append(DiscoveredTest(
-                test_id=test_id,
-                name=rel_path,
-                test_type="vitest",
-                command=rel_path,
-                working_dir=working_dir,
-            ))
-
-    return discovered
-
-
-# ============================================================
-# Playwright Discovery
-# ============================================================
-
-
-async def discover_playwright_tests(
-    project_id: str,
-    root_path: str,
-    frontend_root: str,
-) -> list[DiscoveredTest]:
-    """Discover playwright E2E tests via glob patterns.
-
-    Args:
-        project_id: Project ID
-        root_path: Project root path
-        frontend_root: Frontend directory relative to root
-
-    Returns:
-        List of discovered tests.
-    """
-    working_dir = os.path.join(root_path, frontend_root)
-
-    if not os.path.exists(working_dir):
-        return []
-
-    discovered = []
-
-    # Glob for E2E test files
-    patterns = [
-        "tests/e2e/**/*.spec.ts",
-        "e2e/**/*.spec.ts",
-        "tests/**/*.e2e.ts",
-        "**/*.e2e.spec.ts",
-    ]
-
-    for pattern in patterns:
-        for file_path in glob(os.path.join(working_dir, pattern), recursive=True):
-            # Get relative path
-            rel_path = os.path.relpath(file_path, working_dir)
-
-            # Skip node_modules
-            if "node_modules" in rel_path:
-                continue
-
-            # Generate test_id from path (truncate to 100 chars for DB constraint)
-            test_id = f"playwright-{rel_path.replace('/', '-').replace('.spec', '').replace('.e2e', '').replace('.ts', '')}".lower()
-            test_id = re.sub(r"[^a-z0-9-]", "-", test_id)
-            test_id = test_id[:100]  # DB constraint
-
-            discovered.append(DiscoveredTest(
-                test_id=test_id,
-                name=rel_path,
-                test_type="playwright",
-                command=rel_path,
-                working_dir=working_dir,
-            ))
+            discovered.append(
+                DiscoveredTest(
+                    test_id=test_id,
+                    name=rel_path,
+                    test_type="vitest",
+                    command=rel_path,
+                    working_dir=working_dir,
+                )
+            )
 
     return discovered
 
@@ -372,7 +317,7 @@ def create_manual_test(
         project_id: Project ID
         test_id: Unique test identifier
         name: Human-readable test name
-        test_type: Type of test (pytest, mypy, ruff, vitest, playwright, api, ui)
+        test_type: Type of test (pytest, mypy, ruff, vitest, api, ui)
         command: Command to run the test
         script: Script content for UI tests
         config: Additional configuration as JSON
