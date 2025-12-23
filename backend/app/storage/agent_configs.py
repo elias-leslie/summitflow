@@ -21,6 +21,14 @@ class AgentConfig(TypedDict, total=False):
     claude_model: str  # "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"
     gemini_model: str  # "gemini-3-flash-preview", "gemini-3-pro-preview"
 
+    # Memory system controls
+    memory_enabled: bool  # Master switch - disables all memory when false
+    observations_enabled: bool  # Tool observation capture
+    diary_enabled: bool  # Session diary entries
+    patterns_enabled: bool  # Pattern detection
+    checkpoints_enabled: bool  # Session checkpoints
+    context_injection_enabled: bool  # Auto-inject context at session start
+
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
@@ -28,6 +36,13 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "default_agent": "gemini",
     "claude_model": "claude-sonnet-4-5",
     "gemini_model": "gemini-3-flash-preview",
+    # Memory defaults - all enabled for backward compatibility
+    "memory_enabled": True,
+    "observations_enabled": True,
+    "diary_enabled": True,
+    "patterns_enabled": True,
+    "checkpoints_enabled": True,
+    "context_injection_enabled": True,
 }
 
 
