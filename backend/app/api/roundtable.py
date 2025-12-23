@@ -21,8 +21,8 @@ from ..services.roundtable import (
     TargetAgent,
     current_session_id,
     get_roundtable_service,
+    permission_manager,
 )
-from ..services.roundtable_permissions import permission_manager
 from ..storage import extraction_prompts as extraction_prompts_storage
 from ..storage import roundtable as roundtable_storage
 
@@ -1030,8 +1030,6 @@ async def stream_message(
 
         try:
             # First, add user message to session and emit confirmation
-
-            from ..services.roundtable import RoundtableMessage
 
             user_msg = RoundtableMessage.create("user", request_body.message)
             session.add_message(user_msg)

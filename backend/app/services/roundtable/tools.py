@@ -87,9 +87,7 @@ def get_search_code_tool() -> dict[str, Any]:
                 },
                 "path": {
                     "type": "string",
-                    "description": (
-                        "Directory to search in. Defaults to /home/kasadis/summitflow"
-                    ),
+                    "description": ("Directory to search in. Defaults to /home/kasadis/summitflow"),
                 },
                 "file_type": {
                     "type": "string",
@@ -153,9 +151,7 @@ def get_project_structure_tool() -> dict[str, Any]:
             "properties": {
                 "project": {
                     "type": "string",
-                    "description": (
-                        "Project to explore: 'summitflow' or 'portfolio-ai'"
-                    ),
+                    "description": ("Project to explore: 'summitflow' or 'portfolio-ai'"),
                     "enum": ["summitflow", "portfolio-ai"],
                 },
                 "depth": {
@@ -493,9 +489,7 @@ class RoundtableToolExecutor:
         # Check file size
         size = path.stat().st_size
         if size > MAX_FILE_SIZE:
-            return ToolResult(
-                False, "", f"File too large: {size} bytes (max {MAX_FILE_SIZE})"
-            )
+            return ToolResult(False, "", f"File too large: {size} bytes (max {MAX_FILE_SIZE})")
 
         # Read file
         try:
@@ -514,9 +508,7 @@ class RoundtableToolExecutor:
         file_type = params.get("file_type", "")
 
         # Validate path (handles relative paths)
-        is_valid, result = self._validate_path(
-            search_path, default_base="/home/kasadis/summitflow"
-        )
+        is_valid, result = self._validate_path(search_path, default_base="/home/kasadis/summitflow")
         if not is_valid:
             return ToolResult(False, "", result)
 
@@ -580,9 +572,7 @@ class RoundtableToolExecutor:
         limit = min(params.get("limit", 50), 200)  # Max 200 files
 
         # Validate path (handles relative paths)
-        is_valid, result = self._validate_path(
-            base_path, default_base="/home/kasadis/summitflow"
-        )
+        is_valid, result = self._validate_path(base_path, default_base="/home/kasadis/summitflow")
         if not is_valid:
             return ToolResult(False, "", result)
 
