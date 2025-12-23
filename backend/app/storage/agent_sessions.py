@@ -195,8 +195,14 @@ def update_session(
         Updated session dict or None if not found.
     """
     allowed_fields = {
-        "status", "capabilities_attempted", "capabilities_passed",
-        "capabilities_failed", "tests_run", "tests_passed", "tests_failed", "notes"
+        "status",
+        "capabilities_attempted",
+        "capabilities_passed",
+        "capabilities_failed",
+        "tests_run",
+        "tests_passed",
+        "tests_failed",
+        "notes",
     }
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
@@ -206,8 +212,8 @@ def update_session(
     # Always update updated_at
     updates["updated_at"] = datetime.now(UTC)
 
-    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-    values = list(updates.values()) + [project_id, session_id]
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    values = [*list(updates.values()), project_id, session_id]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

@@ -21,8 +21,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..storage import tests as tests_storage
 from ..storage import test_runs as test_runs_storage
+from ..storage import tests as tests_storage
 from ..storage.connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class ProjectConfig:
     test_patterns: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_db_row(cls, project_id: str, row: tuple) -> "ProjectConfig":
+    def from_db_row(cls, project_id: str, row: tuple) -> ProjectConfig:
         """Create from database row (root_path, test_config)."""
         root_path = row[0] or "."
         test_config = row[1] or {}
@@ -154,8 +154,12 @@ async def _run_command(
             proc.communicate(),
             timeout=timeout,
         )
-        return proc.returncode or 0, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
-    except asyncio.TimeoutError:
+        return (
+            proc.returncode or 0,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         return -1, "", f"Command timed out after {timeout}s"
@@ -296,21 +300,25 @@ async def run_tests(
                 triggered_by=triggered_by,
                 session_id=session_id,
             )
-            results.append({
-                "test_id": test["test_id"],
-                "result": "passed" if result.passed else "failed",
-                "duration_ms": result.duration_ms,
-                "output": result.output,
-                "error": result.error,
-            })
+            results.append(
+                {
+                    "test_id": test["test_id"],
+                    "result": "passed" if result.passed else "failed",
+                    "duration_ms": result.duration_ms,
+                    "output": result.output,
+                    "error": result.error,
+                }
+            )
         except Exception as e:
-            results.append({
-                "test_id": test["test_id"],
-                "result": "error",
-                "duration_ms": 0,
-                "output": "",
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "test_id": test["test_id"],
+                    "result": "error",
+                    "duration_ms": 0,
+                    "output": "",
+                    "error": str(e),
+                }
+            )
 
     return results
 
@@ -539,7 +547,16 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
         headers = test_config.get("headers", {})
         body = test_config.get("body")
 
-        cmd_parts = ["curl", "-s", "-o", "/tmp/api_response.json", "-w", "'%{http_code}'", "-X", method]
+        cmd_parts = [
+            "curl",
+            "-s",
+            "-o",
+            "/tmp/api_response.json",
+            "-w",
+            "'%{http_code}'",
+            "-X",
+            method,
+        ]
         for k, v in headers.items():
             cmd_parts.extend(["-H", f"'{k}: {v}'"])
         if body:
@@ -575,7 +592,7 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
             if jq_filter:
                 # Run jq to check assertion
                 jq_cmd = f"jq '{jq_filter}' /tmp/api_response.json"
-                jq_exit, jq_out, _ = await _run_command(jq_cmd, config.root_path, timeout=10)
+                _jq_exit, jq_out, _ = await _run_command(jq_cmd, config.root_path, timeout=10)
                 actual = jq_out.strip()
                 if str(actual) != str(expected):
                     passed = False

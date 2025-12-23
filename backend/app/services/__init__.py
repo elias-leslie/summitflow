@@ -29,6 +29,10 @@ from .feature_scanner import FeatureScanner
 from .verification_engine import VerificationEngine
 
 __all__ = [
+    # Feature scanner
+    "FeatureScanner",
+    # Verification engine
+    "VerificationEngine",
     # Evidence manager
     "capture_evidence",
     "cleanup_old_versions",
@@ -47,8 +51,4 @@ __all__ = [
     "save_evidence",
     "update_ai_review",
     "update_user_review",
-    # Verification engine
-    "VerificationEngine",
-    # Feature scanner
-    "FeatureScanner",
 ]

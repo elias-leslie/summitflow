@@ -15,22 +15,22 @@ logger = logging.getLogger(__name__)
 
 # Observation taxonomy
 OBSERVATION_TYPES = [
-    "pattern",      # Code patterns, conventions, best practices
-    "decision",     # Architectural or design decisions
-    "error",        # Errors, issues, problems encountered
-    "constraint",   # Constraints, limitations, requirements
-    "architecture", # System architecture, file structure
+    "pattern",  # Code patterns, conventions, best practices
+    "decision",  # Architectural or design decisions
+    "error",  # Errors, issues, problems encountered
+    "constraint",  # Constraints, limitations, requirements
+    "architecture",  # System architecture, file structure
     "user_preference",  # User preferences, style choices
 ]
 
 CONCEPT_TAGS = [
-    "debugging",    # Bug fixes, error resolution
-    "code_patterns", # Code style, patterns, conventions
+    "debugging",  # Bug fixes, error resolution
+    "code_patterns",  # Code style, patterns, conventions
     "dependencies",  # Dependencies, imports, integrations
-    "security",     # Security considerations
+    "security",  # Security considerations
     "performance",  # Performance optimizations
-    "testing",      # Tests, verification, validation
-    "configuration", # Config files, environment setup
+    "testing",  # Tests, verification, validation
+    "configuration",  # Config files, environment setup
 ]
 
 EXTRACTION_PROMPT = """Analyze this tool execution and extract a structured observation.
@@ -237,7 +237,7 @@ class ObservationExtractor:
                 observation_type="error",
                 title=f"Extraction failed for {tool_name}",
                 concepts=["debugging"],
-                narrative=f"Failed to extract observation: {str(e)}",
+                narrative=f"Failed to extract observation: {e!s}",
                 discovery_tokens=0,
                 extracted_by=self.model,
             )

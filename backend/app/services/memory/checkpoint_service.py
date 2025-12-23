@@ -9,7 +9,6 @@ Enables seamless pause/resume across sessions by:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from app.storage import memory as memory_storage
@@ -176,27 +175,33 @@ class CheckpointService:
 
         # Conversation summary
         if checkpoint.get("conversation_summary"):
-            lines.extend([
-                "## Previous Context",
-                checkpoint["conversation_summary"],
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Previous Context",
+                    checkpoint["conversation_summary"],
+                    "",
+                ]
+            )
 
         # What was being done
         if checkpoint.get("current_action"):
-            lines.extend([
-                "## Current Work",
-                f"You were working on: {checkpoint['current_action']}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Current Work",
+                    f"You were working on: {checkpoint['current_action']}",
+                    "",
+                ]
+            )
 
         # Pending question
         if checkpoint.get("question"):
-            lines.extend([
-                "## Pending Question",
-                checkpoint["question"],
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Pending Question",
+                    checkpoint["question"],
+                    "",
+                ]
+            )
             if checkpoint.get("options"):
                 lines.append("Options:")
                 for opt in checkpoint["options"]:
@@ -258,12 +263,14 @@ class CheckpointService:
             lines.append("")
 
         # Resume instruction
-        lines.extend([
-            "---",
-            "",
-            "**Please continue from where you left off.**",
-            "Review the context above and resume working on the remaining tasks.",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "**Please continue from where you left off.**",
+                "Review the context above and resume working on the remaining tasks.",
+            ]
+        )
 
         return "\n".join(lines)
 

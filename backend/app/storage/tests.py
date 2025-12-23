@@ -50,8 +50,17 @@ def create_test(
                       last_duration_ms, last_output, last_error, run_count, pass_count,
                       fail_count, flaky_score, created_at, updated_at
             """,
-            (project_id, test_id, name, test_type, command, script,
-             json.dumps(config) if config else "{}", working_dir, timeout_seconds),
+            (
+                project_id,
+                test_id,
+                name,
+                test_type,
+                command,
+                script,
+                json.dumps(config) if config else "{}",
+                working_dir,
+                timeout_seconds,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -166,8 +175,15 @@ def update_test(
     Returns:
         Updated test dict or None if not found.
     """
-    allowed_fields = {"name", "test_type", "command", "script", "config",
-                      "working_dir", "timeout_seconds"}
+    allowed_fields = {
+        "name",
+        "test_type",
+        "command",
+        "script",
+        "config",
+        "working_dir",
+        "timeout_seconds",
+    }
     updates = {}
     for k, v in kwargs.items():
         if k in allowed_fields:
@@ -182,8 +198,8 @@ def update_test(
     # Always update updated_at
     updates["updated_at"] = datetime.now(UTC)
 
-    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-    values = list(updates.values()) + [project_id, test_id]
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    values = [*list(updates.values()), project_id, test_id]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -258,8 +274,19 @@ def update_test_result(
                       last_duration_ms, last_output, last_error, run_count, pass_count,
                       fail_count, flaky_score, created_at, updated_at
             """,
-            (now, result, duration_ms, output, error, pass_increment, fail_increment,
-             fail_increment, now, project_id, test_id),
+            (
+                now,
+                result,
+                duration_ms,
+                output,
+                error,
+                pass_increment,
+                fail_increment,
+                fail_increment,
+                now,
+                project_id,
+                test_id,
+            ),
         )
         row = cur.fetchone()
         conn.commit()

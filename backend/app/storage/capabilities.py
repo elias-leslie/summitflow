@@ -155,8 +155,8 @@ def update_capability(
     # Always update updated_at
     updates["updated_at"] = datetime.now(UTC)
 
-    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-    values = list(updates.values()) + [project_id, capability_id]
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    values = [*list(updates.values()), project_id, capability_id]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

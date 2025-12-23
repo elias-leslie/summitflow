@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..logging_config import get_logger
-from ..services.task_validation import ValidationResult, validate_task_ready
+from ..services.task_validation import validate_task_ready
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
 
@@ -41,7 +41,9 @@ class TaskCreate(BaseModel):
     feature_id: int | None = None  # Database ID of feature (optional)
     # Issue tracking fields
     priority: int = Field(default=2, ge=0, le=4, description="Priority 0-4 (0=critical, 4=backlog)")
-    labels: list[str] = Field(default_factory=list, description="Labels (complexity:small, domains:backend)")
+    labels: list[str] = Field(
+        default_factory=list, description="Labels (complexity:small, domains:backend)"
+    )
     task_type: Literal["feature", "bug", "task"] = "task"
     parent_task_id: str | None = None
 
@@ -249,11 +251,17 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
 async def list_tasks(
     project_id: str,
     status: str | None = Query(None, description="Filter by status"),
-    task_type: str | None = Query(None, alias="type", description="Filter by type (feature, bug, task)"),
+    task_type: str | None = Query(
+        None, alias="type", description="Filter by type (feature, bug, task)"
+    ),
     priority: int | None = Query(None, ge=0, le=4, description="Filter by priority (0-4)"),
     labels: str | None = Query(None, description="Filter by labels (comma-separated)"),
-    orphans_only: bool = Query(False, description="Only return tasks not linked to a feature (issues)"),
-    include: str | None = Query(None, description="Include related data (e.g., 'feature,blockers')"),
+    orphans_only: bool = Query(
+        False, description="Only return tasks not linked to a feature (issues)"
+    ),
+    include: str | None = Query(
+        None, description="Include related data (e.g., 'feature,blockers')"
+    ),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ) -> TaskListResponse:
@@ -470,15 +478,11 @@ async def update_task_status(
         )
 
     # Check criteria satisfaction for feature-type tasks being completed
-    if (
-        update.status == "completed"
-        and existing.get("task_type") == "feature"
-        and not update.force
-    ):
+    if update.status == "completed" and existing.get("task_type") == "feature" and not update.force:
         criteria_result = task_store.check_criteria_satisfied(task_id)
         if not criteria_result["satisfied"]:
             unsatisfied = criteria_result["unsatisfied_criteria"]
-            criteria_ids = [c["id"] for c in unsatisfied]
+            [c["id"] for c in unsatisfied]
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -505,9 +509,7 @@ async def update_task_status(
     "/projects/{project_id}/tasks/{task_id}/validate-ready",
     response_model=ValidationResultResponse,
 )
-async def validate_task_ready_endpoint(
-    project_id: str, task_id: str
-) -> ValidationResultResponse:
+async def validate_task_ready_endpoint(project_id: str, task_id: str) -> ValidationResultResponse:
     """Validate if a task is ready to be worked on.
 
     Performs pre-work validation checks:
@@ -759,7 +761,9 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
 
 
 # Dependency endpoints
-@router.get("/projects/{project_id}/tasks/{task_id}/dependencies", response_model=list[DependencyResponse])
+@router.get(
+    "/projects/{project_id}/tasks/{task_id}/dependencies", response_model=list[DependencyResponse]
+)
 async def get_task_dependencies(project_id: str, task_id: str) -> list[DependencyResponse]:
     """Get dependencies for a task (what this task depends on).
 
@@ -794,7 +798,9 @@ async def get_task_dependencies(project_id: str, task_id: str) -> list[Dependenc
     ]
 
 
-@router.post("/projects/{project_id}/tasks/{task_id}/dependencies", response_model=DependencyResponse)
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/dependencies", response_model=DependencyResponse
+)
 async def add_task_dependency(
     project_id: str, task_id: str, dep: DependencyCreate
 ) -> DependencyResponse:

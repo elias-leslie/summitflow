@@ -13,11 +13,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..services.build_orchestrator import (
-    start_build,
     build_capability,
     get_build_status,
-    stop_build,
     run_full_build,
+    start_build,
+    stop_build,
 )
 
 router = APIRouter(prefix="/projects/{project_id}/build", tags=["build"])

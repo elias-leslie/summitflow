@@ -8,10 +8,7 @@ Tasks:
 from __future__ import annotations
 
 import asyncio
-import re
-import shutil
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from celery import shared_task
@@ -48,17 +45,16 @@ def capture_scheduled_evidence(
     )
 
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Get projects to process
-                if project_id:
-                    cur.execute(
-                        "SELECT id, base_url FROM projects WHERE id = %s",
-                        (project_id,),
-                    )
-                else:
-                    cur.execute("SELECT id, base_url FROM projects")
-                projects = cur.fetchall()
+        with get_connection() as conn, conn.cursor() as cur:
+            # Get projects to process
+            if project_id:
+                cur.execute(
+                    "SELECT id, base_url FROM projects WHERE id = %s",
+                    (project_id,),
+                )
+            else:
+                cur.execute("SELECT id, base_url FROM projects")
+            projects = cur.fetchall()
 
         captured = 0
         skipped = 0
@@ -93,21 +89,18 @@ def capture_scheduled_evidence(
         return {"status": "error", "error": str(e)}
 
 
-def _capture_for_project(
-    project_id: str, base_url: str, dry_run: bool
-) -> dict[str, int]:
+def _capture_for_project(project_id: str, base_url: str, dry_run: bool) -> dict[str, int]:
     """Capture evidence for a single project."""
     captured = 0
     skipped = 0
     errors = 0
 
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Find UI criteria needing evidence
-                # Join features with acceptance_criteria JSONB
-                cur.execute(
-                    """
+        with get_connection() as conn, conn.cursor() as cur:
+            # Find UI criteria needing evidence
+            # Join features with acceptance_criteria JSONB
+            cur.execute(
+                """
                     SELECT
                         fc.feature_id,
                         fc.name,
@@ -120,24 +113,23 @@ def _capture_for_project(
                       AND ac.value->>'type' = 'ui'
                     ORDER BY fc.feature_id, ac.value->>'id'
                     """,
-                    (project_id,),
-                )
-                criteria = cur.fetchall()
+                (project_id,),
+            )
+            criteria = cur.fetchall()
 
         if not criteria:
             logger.info("no_ui_criteria_found", project_id=project_id)
             return {"captured": 0, "skipped": 0, "errors": 0}
 
         # Check each criterion for evidence freshness
-        expiry_threshold = datetime.now(timezone.utc) - timedelta(hours=24)
+        expiry_threshold = datetime.now(UTC) - timedelta(hours=24)
 
-        for feature_id, name, criterion_id, criterion_text, verification_url in criteria:
+        for feature_id, _name, criterion_id, _criterion_text, verification_url in criteria:
             try:
                 # Check if evidence exists and is fresh
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
+                with get_connection() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
                             SELECT captured_at FROM evidence
                             WHERE project_id = %s
                               AND feature_id = %s
@@ -146,9 +138,9 @@ def _capture_for_project(
                             ORDER BY captured_at DESC
                             LIMIT 1
                             """,
-                            (project_id, feature_id, criterion_id),
-                        )
-                        row = cur.fetchone()
+                        (project_id, feature_id, criterion_id),
+                    )
+                    row = cur.fetchone()
 
                 if row and row[0] and row[0] > expiry_threshold:
                     skipped += 1
@@ -168,9 +160,7 @@ def _capture_for_project(
                     continue
 
                 # Capture evidence
-                result = asyncio.run(
-                    capture_evidence(project_id, url, feature_id, criterion_id)
-                )
+                result = asyncio.run(capture_evidence(project_id, url, feature_id, criterion_id))
 
                 if result.get("success"):
                     captured += 1
@@ -234,13 +224,12 @@ def cleanup_debug_captures(
     )
 
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                if project_id:
-                    cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-                else:
-                    cur.execute("SELECT id FROM projects")
-                projects = [row[0] for row in cur.fetchall()]
+        with get_connection() as conn, conn.cursor() as cur:
+            if project_id:
+                cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+            else:
+                cur.execute("SELECT id FROM projects")
+            projects = [row[0] for row in cur.fetchall()]
 
         deleted_count = 0
         deleted_bytes = 0

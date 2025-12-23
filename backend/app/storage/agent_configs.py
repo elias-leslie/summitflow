@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from psycopg.types.json import Jsonb
 
@@ -41,30 +40,29 @@ def get_agent_config(project_id: str) -> AgentConfig:
     Returns:
         AgentConfig dict, or default config if not set
     """
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 SELECT agent_configs
                 FROM projects
                 WHERE id = %s
                 """,
-                (project_id,),
-            )
-            row = cur.fetchone()
+            (project_id,),
+        )
+        row = cur.fetchone()
 
-            if row is None:
-                logger.warning(f"Project {project_id} not found, returning default config")
-                return DEFAULT_AGENT_CONFIG.copy()
+        if row is None:
+            logger.warning(f"Project {project_id} not found, returning default config")
+            return DEFAULT_AGENT_CONFIG.copy()
 
-            config = row[0]
-            if config is None:
-                return DEFAULT_AGENT_CONFIG.copy()
+        config = row[0]
+        if config is None:
+            return DEFAULT_AGENT_CONFIG.copy()
 
-            # Merge with defaults for any missing keys
-            result = DEFAULT_AGENT_CONFIG.copy()
-            result.update(config)
-            return result
+        # Merge with defaults for any missing keys
+        result = DEFAULT_AGENT_CONFIG.copy()
+        result.update(config)
+        return result
 
 
 def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
@@ -86,24 +84,23 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
     # Merge with new values
     current.update(config)
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 UPDATE projects
                 SET agent_configs = %s
                 WHERE id = %s
                 RETURNING agent_configs
                 """,
-                (Jsonb(current), project_id),
-            )
-            row = cur.fetchone()
+            (Jsonb(current), project_id),
+        )
+        row = cur.fetchone()
 
-            if row is None:
-                raise ValueError(f"Project {project_id} not found")
+        if row is None:
+            raise ValueError(f"Project {project_id} not found")
 
-            conn.commit()
-            return row[0]
+        conn.commit()
+        return row[0]
 
 
 def set_default_agent(project_id: str, agent_type: str) -> AgentConfig:

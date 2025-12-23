@@ -5,7 +5,6 @@ This module provides data access for test run history and statistics.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from .connection import get_connection
@@ -49,8 +48,18 @@ def create_test_run(
             RETURNING id, project_id, test_id, run_type, result, duration_ms,
                       output, error, evidence_path, triggered_by, session_id, created_at
             """,
-            (project_id, test_db_id, run_type, result, duration_ms,
-             output, error, evidence_path, triggered_by, session_id),
+            (
+                project_id,
+                test_db_id,
+                run_type,
+                result,
+                duration_ms,
+                output,
+                error,
+                evidence_path,
+                triggered_by,
+                session_id,
+            ),
         )
         row = cur.fetchone()
         conn.commit()

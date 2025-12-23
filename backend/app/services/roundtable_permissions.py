@@ -11,7 +11,6 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class PendingPermission:
     tool_name: str
     tool_args: dict
     event: asyncio.Event = field(default_factory=asyncio.Event)
-    approved: Optional[bool] = None
+    approved: bool | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -96,7 +95,7 @@ class PermissionManager:
                 permission.approved,
             )
             return permission.approved or False
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Permission timed out: id=%s session=%s tool=%s",
                 permission.id,
@@ -130,7 +129,7 @@ class PermissionManager:
         permission.event.set()
         return True
 
-    def get_pending(self, permission_id: str) -> Optional[PendingPermission]:
+    def get_pending(self, permission_id: str) -> PendingPermission | None:
         """
         Get a pending permission by ID.
 

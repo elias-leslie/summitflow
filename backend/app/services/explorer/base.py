@@ -18,7 +18,7 @@ from ...storage import explorer as storage
 from .models import ExplorerEntryCreate, ScanResult
 
 if TYPE_CHECKING:
-    from ...storage.connection import get_connection
+    pass
 
 logger = get_logger(__name__)
 

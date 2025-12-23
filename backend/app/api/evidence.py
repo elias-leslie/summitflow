@@ -12,6 +12,7 @@ This module provides REST API endpoints for evidence:
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import re
 from datetime import UTC, datetime
@@ -187,11 +188,7 @@ async def get_screenshot(
 
     evidence_base = get_evidence_base_dir(project_id)
     screenshot_path = (
-        evidence_base
-        / feature_id
-        / criterion_id
-        / f"v{evidence['version']}"
-        / "screenshot.png"
+        evidence_base / feature_id / criterion_id / f"v{evidence['version']}" / "screenshot.png"
     )
 
     if not screenshot_path.exists():
@@ -217,9 +214,7 @@ async def get_evidence_data(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    evidence_data = read_evidence_file(
-        project_id, feature_id, criterion_id, evidence["version"]
-    )
+    evidence_data = read_evidence_file(project_id, feature_id, criterion_id, evidence["version"])
 
     if not evidence_data:
         raise HTTPException(status_code=404, detail="Evidence data file not found")
@@ -234,9 +229,7 @@ async def refresh_evidence(
 ) -> dict[str, Any]:
     """Capture new evidence for a criterion."""
     # Get next version number
-    next_version = get_next_version(
-        project_id, request.feature_id, request.criterion_id
-    )
+    next_version = get_next_version(project_id, request.feature_id, request.criterion_id)
 
     # Capture evidence
     result = await capture_evidence(
@@ -370,42 +363,42 @@ async def agent_review(
     prompt = f"""Analyze this UI evidence capture and identify issues.
 
 ## Page Information
-- URL: {metadata.get('url', 'Unknown')}
-- Title: {metadata.get('pageTitle', 'Unknown')}
-- Captured: {metadata.get('capturedAt', 'Unknown')}
-- Viewport: {metadata.get('viewport', {})}
+- URL: {metadata.get("url", "Unknown")}
+- Title: {metadata.get("pageTitle", "Unknown")}
+- Captured: {metadata.get("capturedAt", "Unknown")}
+- Viewport: {metadata.get("viewport", {})}
 
 ## Console Analysis
-- Errors: {console_summary.get('errorCount', 0)}
-- Warnings: {console_summary.get('warningCount', 0)}
+- Errors: {console_summary.get("errorCount", 0)}
+- Warnings: {console_summary.get("warningCount", 0)}
 
 Error Details:
-{json.dumps(console_summary.get('errors', [])[:5], indent=2)}
+{json.dumps(console_summary.get("errors", [])[:5], indent=2)}
 
 Warning Details:
-{json.dumps(console_summary.get('warnings', [])[:3], indent=2)}
+{json.dumps(console_summary.get("warnings", [])[:3], indent=2)}
 
 ## Network Analysis
-- Total Requests: {network_summary.get('totalRequests', 0)}
-- Failed Requests: {network_summary.get('failedRequests', 0)}
+- Total Requests: {network_summary.get("totalRequests", 0)}
+- Failed Requests: {network_summary.get("failedRequests", 0)}
 
 Failed Request Details:
-{json.dumps(network_summary.get('failures', [])[:5], indent=2)}
+{json.dumps(network_summary.get("failures", [])[:5], indent=2)}
 
 Slow Requests (>3s):
-{json.dumps(network_summary.get('slowRequests', [])[:3], indent=2)}
+{json.dumps(network_summary.get("slowRequests", [])[:3], indent=2)}
 
 ## Page State
-- Has Content: {page_state.get('hasContent', False)}
-- Key Elements: {json.dumps(page_state.get('keyElements', {}), indent=2)}
-- Visible Text Sample: {page_state.get('visibleTextSample', '')[:200]}
+- Has Content: {page_state.get("hasContent", False)}
+- Key Elements: {json.dumps(page_state.get("keyElements", {}), indent=2)}
+- Visible Text Sample: {page_state.get("visibleTextSample", "")[:200]}
 
 ## Performance
-- Page Load: {performance.get('pageLoadMs', 'N/A')} ms
-- DOM Ready: {performance.get('domContentLoadedMs', 'N/A')} ms
-- LCP: {performance.get('largestContentfulPaintMs', 'N/A')} ms
+- Page Load: {performance.get("pageLoadMs", "N/A")} ms
+- DOM Ready: {performance.get("domContentLoadedMs", "N/A")} ms
+- LCP: {performance.get("largestContentfulPaintMs", "N/A")} ms
 
-{f'Focus Area: {request.focus}' if request.focus else ''}
+{f"Focus Area: {request.focus}" if request.focus else ""}
 
 Based on this evidence, provide:
 
@@ -466,10 +459,8 @@ Always format response as valid JSON."""
                 break
 
         if json_match:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 analysis = json.loads(json_match)
-            except json.JSONDecodeError:
-                pass
 
         if not analysis:
             # Fallback: create structured response from text
@@ -609,9 +600,7 @@ async def viewport_capture(
         # Get next version and create output directory
         version = get_next_version(project_id, request.feature_id, request.criterion_id)
         evidence_base = get_evidence_base_dir(project_id)
-        output_dir = (
-            evidence_base / request.feature_id / request.criterion_id / f"v{version}"
-        )
+        output_dir = evidence_base / request.feature_id / request.criterion_id / f"v{version}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Save screenshot
@@ -889,9 +878,7 @@ async def list_debug_captures(
                     "filename": path.name,
                     "path": str(path),
                     "size_bytes": path.stat().st_size,
-                    "created_at": datetime.fromtimestamp(
-                        path.stat().st_mtime, tz=UTC
-                    ).isoformat(),
+                    "created_at": datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(),
                 }
             )
             if len(captures) >= limit:

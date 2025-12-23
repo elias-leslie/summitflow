@@ -14,7 +14,6 @@ The build loop implements:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -22,7 +21,7 @@ from typing import Any
 from ..storage import agent_sessions as sessions_storage
 from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
-from .test_runner import run_test, get_project_config, TestResult
+from .test_runner import TestResult, get_project_config, run_test
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,8 @@ class BuildStatus:
             "tests_failed": self.tests_failed,
             "progress_percent": (
                 round(self.capabilities_completed / self.capabilities_total * 100)
-                if self.capabilities_total > 0 else 0
+                if self.capabilities_total > 0
+                else 0
             ),
         }
 
@@ -94,10 +94,7 @@ async def start_build(
 
     # Get failing capabilities (status != 'passing' and not locked)
     all_capabilities = caps_storage.list_capabilities(project_id, component_id)
-    failing_caps = [
-        cap for cap in all_capabilities
-        if cap["status"] not in ("passing", "locked")
-    ]
+    failing_caps = [cap for cap in all_capabilities if cap["status"] not in ("passing", "locked")]
 
     # Order by priority (lower = higher priority)
     failing_caps.sort(key=lambda c: (c["priority"], c["capability_id"]))
@@ -290,10 +287,7 @@ def _get_failure_info(batch_result: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dict with failure summary and details.
     """
-    failed_tests = [
-        r for r in batch_result["results"]
-        if not r["passed"]
-    ]
+    failed_tests = [r for r in batch_result["results"] if not r["passed"]]
 
     return {
         "summary": f"{len(failed_tests)} test(s) failed",
@@ -376,11 +370,13 @@ async def run_full_build(
             results.append(result)
         except Exception as e:
             logger.error(f"Failed to build capability {cap_id}: {e}")
-            results.append({
-                "capability_id": cap_id,
-                "status": "error",
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "capability_id": cap_id,
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
 
     # End the session
     passed_count = sum(1 for r in results if r.get("status") == "passed")
@@ -390,8 +386,7 @@ async def run_full_build(
     sessions_storage.end_session(project_id, session_id, notes=notes)
 
     # Clean up active build
-    if session_id in _active_builds:
-        del _active_builds[session_id]
+    _active_builds.pop(session_id, None)
 
     return {
         "session_id": session_id,

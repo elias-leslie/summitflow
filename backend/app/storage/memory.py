@@ -6,13 +6,10 @@ This module provides data access for the Context & Memory Intelligence system.
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from .connection import get_connection
-
 
 # =============================================================================
 # Observation Queue Storage
@@ -41,8 +38,14 @@ def create_queue_item(
             RETURNING id, project_id, session_id, agent_type, tool_name, tool_input,
                       tool_output, status, created_at, processed_at, error_message, retry_count
             """,
-            (project_id, session_id, agent_type, tool_name,
-             json.dumps(tool_input) if tool_input else None, tool_output),
+            (
+                project_id,
+                session_id,
+                agent_type,
+                tool_name,
+                json.dumps(tool_input) if tool_input else None,
+                tool_output,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -178,11 +181,23 @@ def create_observation(
                       files_modified, tool_name, tool_input, discovery_tokens,
                       extracted_by, created_at
             """,
-            (project_id, session_id, agent_type, observation_type, title,
-             concepts, subtitle, narrative, json.dumps(facts) if facts else None,
-             files_read, files_modified, tool_name,
-             json.dumps(tool_input) if tool_input else None, discovery_tokens,
-             extracted_by),
+            (
+                project_id,
+                session_id,
+                agent_type,
+                observation_type,
+                title,
+                concepts,
+                subtitle,
+                narrative,
+                json.dumps(facts) if facts else None,
+                files_read,
+                files_modified,
+                tool_name,
+                json.dumps(tool_input) if tool_input else None,
+                discovery_tokens,
+                extracted_by,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -374,12 +389,22 @@ def create_diary_entry(
                       user_corrections, patterns_used, reflected_at,
                       reflection_notes, patterns_generated, created_at
             """,
-            (project_id, session_id, task_id, agent_type, duration_seconds,
-             tokens_used, discovery_tokens, outcome, observation_type, concepts,
-             json.dumps(what_worked) if what_worked else None,
-             json.dumps(what_failed) if what_failed else None,
-             json.dumps(user_corrections) if user_corrections else None,
-             json.dumps(patterns_used) if patterns_used else None),
+            (
+                project_id,
+                session_id,
+                task_id,
+                agent_type,
+                duration_seconds,
+                tokens_used,
+                discovery_tokens,
+                outcome,
+                observation_type,
+                concepts,
+                json.dumps(what_worked) if what_worked else None,
+                json.dumps(what_failed) if what_failed else None,
+                json.dumps(user_corrections) if user_corrections else None,
+                json.dumps(patterns_used) if patterns_used else None,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -495,9 +520,11 @@ def mark_diary_entries_reflected(
                 patterns_generated = %s
             WHERE id = ANY(%s)
             """,
-            (reflection_notes,
-             json.dumps(patterns_generated) if patterns_generated else None,
-             entry_ids),
+            (
+                reflection_notes,
+                json.dumps(patterns_generated) if patterns_generated else None,
+                entry_ids,
+            ),
         )
         updated = cur.rowcount
         conn.commit()
@@ -566,10 +593,19 @@ def create_pattern(
                       status, confidence, usage_count, last_used_at, superseded_by,
                       applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             """,
-            (project_id, pattern_type, title, content, action, rationale,
-             json.dumps(source_diary_ids) if source_diary_ids else "[]",
-             json.dumps(source_observation_ids) if source_observation_ids else "[]",
-             target_pattern_id, confidence, reflected_by),
+            (
+                project_id,
+                pattern_type,
+                title,
+                content,
+                action,
+                rationale,
+                json.dumps(source_diary_ids) if source_diary_ids else "[]",
+                json.dumps(source_observation_ids) if source_observation_ids else "[]",
+                target_pattern_id,
+                confidence,
+                reflected_by,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -825,15 +861,22 @@ def create_checkpoint(
                       remaining_steps, files_modified, decisions_made,
                       conversation_summary, context_snapshot, tokens_used, created_at
             """,
-            (project_id, session_id, agent_type, current_action, question,
-             json.dumps(options) if options else None, recommendation,
-             json.dumps(completed_steps) if completed_steps else None,
-             json.dumps(remaining_steps) if remaining_steps else None,
-             json.dumps(files_modified) if files_modified else None,
-             json.dumps(decisions_made) if decisions_made else None,
-             conversation_summary,
-             json.dumps(context_snapshot) if context_snapshot else None,
-             tokens_used),
+            (
+                project_id,
+                session_id,
+                agent_type,
+                current_action,
+                question,
+                json.dumps(options) if options else None,
+                recommendation,
+                json.dumps(completed_steps) if completed_steps else None,
+                json.dumps(remaining_steps) if remaining_steps else None,
+                json.dumps(files_modified) if files_modified else None,
+                json.dumps(decisions_made) if decisions_made else None,
+                conversation_summary,
+                json.dumps(context_snapshot) if context_snapshot else None,
+                tokens_used,
+            ),
         )
         row = cur.fetchone()
         conn.commit()

@@ -9,11 +9,11 @@ from .pattern_service import PatternService
 from .reflection_service import ReflectionService
 
 __all__ = [
-    "ObservationQueue",
-    "ObservationExtractor",
-    "ContextBuilder",
     "CheckpointService",
+    "ContextBuilder",
     "DiaryService",
+    "ObservationExtractor",
+    "ObservationQueue",
     "PatternService",
     "ReflectionService",
 ]

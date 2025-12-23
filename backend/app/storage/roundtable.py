@@ -48,7 +48,12 @@ def save_session(
 
     with get_connection() as conn, conn.cursor() as cur:
         # Build dynamic update based on what's provided
-        if tools_enabled is not None or write_enabled is not None or yolo_mode is not None or tool_stats is not None:
+        if (
+            tools_enabled is not None
+            or write_enabled is not None
+            or yolo_mode is not None
+            or tool_stats is not None
+        ):
             # Full update including tools fields
             cur.execute(
                 """
@@ -92,7 +97,15 @@ def save_session(
                     updated_at = NOW()
                 RETURNING id, project_id, mode, title, status, agent_mode, tools_enabled, write_enabled, yolo_mode, tool_stats, messages, generated_features, created_at, updated_at
                 """,
-                (session_id, project_id, mode, title, agent_mode or "both", json.dumps(messages), json.dumps(features)),
+                (
+                    session_id,
+                    project_id,
+                    mode,
+                    title,
+                    agent_mode or "both",
+                    json.dumps(messages),
+                    json.dumps(features),
+                ),
             )
         row = cur.fetchone()
         conn.commit()
@@ -349,7 +362,7 @@ def update_tools_settings(
         cur.execute(
             f"""
             UPDATE roundtable_sessions
-            SET {', '.join(set_parts)}
+            SET {", ".join(set_parts)}
             WHERE id = %s
             RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, created_at, updated_at
             """,
@@ -424,7 +437,6 @@ def increment_tool_stats(
         True if updated, False if session not found
     """
     # Map tool names to stat fields
-    stat_field = "total_calls"
     if tool_name == "read_file":
         additional_field = "files_read"
     elif tool_name in ("search_code", "list_files"):
@@ -538,7 +550,7 @@ def update_sdk_session_ids(
         cur.execute(
             f"""
             UPDATE roundtable_sessions
-            SET {', '.join(set_parts)}
+            SET {", ".join(set_parts)}
             WHERE id = %s
             RETURNING id
             """,
@@ -592,7 +604,7 @@ def update_session_metadata(
         cur.execute(
             f"""
             UPDATE roundtable_sessions
-            SET {', '.join(set_parts)}
+            SET {", ".join(set_parts)}
             WHERE id = %s
             RETURNING id, project_id, title, description, status, agent_mode,
                       mode, tools_enabled, claude_sdk_session_id, gemini_sdk_session_id,

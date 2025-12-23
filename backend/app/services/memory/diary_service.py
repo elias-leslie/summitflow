@@ -7,7 +7,6 @@ system can analyze patterns across multiple sessions.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from app.storage import memory as memory_storage
@@ -89,9 +88,7 @@ class DiaryService:
             patterns_used=patterns_used,
         )
 
-        logger.info(
-            f"diary_entry_created: id={entry['id']} outcome={outcome}"
-        )
+        logger.info(f"diary_entry_created: id={entry['id']} outcome={outcome}")
 
         return entry
 

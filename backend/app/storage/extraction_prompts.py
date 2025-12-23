@@ -9,7 +9,6 @@ from typing import Any
 
 from .connection import get_connection
 
-
 # Default prompts - used when no custom prompt is configured
 DEFAULT_PROMPTS = {
     "feature_extraction": {

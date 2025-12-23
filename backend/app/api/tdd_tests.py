@@ -3,8 +3,8 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..storage import tests as storage
 from ..storage import test_runs as test_runs_storage
+from ..storage import tests as storage
 
 router = APIRouter()
 
@@ -90,7 +90,9 @@ async def get_test(project_id: str, test_id: str) -> TestWithHistoryResponse:
     # Get linked capabilities
     linked_capabilities = storage.get_capabilities_for_test(project_id, test_id)
 
-    return TestWithHistoryResponse(**test, run_history=run_history, linked_capabilities=linked_capabilities)
+    return TestWithHistoryResponse(
+        **test, run_history=run_history, linked_capabilities=linked_capabilities
+    )
 
 
 @router.post("/{project_id}/tests", response_model=TestResponse)
@@ -249,6 +251,7 @@ async def run_single_test(project_id: str, test_id: str) -> TestRunResponse:
         raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
 
     from ..services.test_runner import run_test
+
     result = await run_test(project_id, test_id)
     return TestRunResponse(
         test_id=test_id,
@@ -267,6 +270,7 @@ async def run_multiple_tests(project_id: str, body: TestRunRequest) -> list[Test
     If tier provided, run all tests matching that tier.
     """
     from ..services.test_runner import run_tests
+
     results = await run_tests(
         project_id,
         test_ids=body.test_ids,

@@ -148,11 +148,11 @@ class DualProviderClient(LLMClient):
 
 
 __all__ = [
+    "AgentType",
+    "ClaudeClient",
+    "DualProviderClient",
+    "GeminiClient",
     "LLMClient",
     "LLMResponse",
-    "ClaudeClient",
-    "GeminiClient",
-    "DualProviderClient",
     "get_agent",
-    "AgentType",
 ]

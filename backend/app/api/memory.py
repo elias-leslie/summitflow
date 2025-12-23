@@ -68,9 +68,7 @@ async def get_memory_stats() -> MemoryStats:
 
         # Calculate success rate
         total_completed = processed_24h + failed_24h
-        success_rate = (
-            (processed_24h / total_completed * 100) if total_completed > 0 else 100.0
-        )
+        success_rate = (processed_24h / total_completed * 100) if total_completed > 0 else 100.0
 
         # Observations today
         cur.execute(
@@ -213,7 +211,7 @@ async def bulk_approve_patterns(
                 errors.append(f"Pattern {pattern_id} not found")
         except Exception as e:
             failed += 1
-            errors.append(f"Pattern {pattern_id}: {str(e)}")
+            errors.append(f"Pattern {pattern_id}: {e!s}")
 
     return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
 
@@ -244,7 +242,7 @@ async def bulk_reject_patterns(
                 errors.append(f"Pattern {pattern_id} not found")
         except Exception as e:
             failed += 1
-            errors.append(f"Pattern {pattern_id}: {str(e)}")
+            errors.append(f"Pattern {pattern_id}: {e!s}")
 
     return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
 
