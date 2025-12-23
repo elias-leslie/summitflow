@@ -5,11 +5,12 @@ This module provides async test execution for various test types:
 - mypy: Python type checking
 - ruff: Python linting
 - vitest: JavaScript/TypeScript unit tests
-- playwright: E2E browser tests
 - api: HTTP API tests (curl-based)
-- ui: Browser automation tests
+- ui: Browser automation tests (using browser-automation skill)
 
 Results are stored in the test_runs table and test metadata is updated.
+
+Note: Playwright support has been replaced by browser-automation skill.
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ..storage import test_runs as test_runs_storage
@@ -29,6 +32,25 @@ logger = logging.getLogger(__name__)
 
 # Maximum output length to store (token efficiency)
 MAX_OUTPUT_LENGTH = 1000
+
+# Browser automation scripts path - uses ~/.claude/skills/browser-automation/scripts/ by default
+BROWSER_AUTOMATION_SCRIPTS_PATH = os.environ.get(
+    "BROWSER_AUTOMATION_SCRIPTS_PATH",
+    os.path.expanduser("~/.claude/skills/browser-automation/scripts"),
+)
+
+# Available browser-automation scripts
+BROWSER_SCRIPTS = {
+    "screenshot": "screenshot.js",
+    "click-screenshot": "click-screenshot.js",
+    "tab-click-screenshot": "tab-click-screenshot.js",
+    "interact": "interact.js",
+    "regression-check": "regression-check.js",
+    "console": "console.js",
+    "network": "network.js",
+    "capture-evidence": "capture-evidence.js",
+    "expand": "expand.js",
+}
 
 
 @dataclass
@@ -63,6 +85,7 @@ class ProjectConfig:
     pytest_path: str = ".venv/bin/pytest"
     node_path: str = "npx"
     test_patterns: dict[str, str] = field(default_factory=dict)
+    browser_scripts_path: str = field(default_factory=lambda: BROWSER_AUTOMATION_SCRIPTS_PATH)
 
     @classmethod
     def from_db_row(cls, project_id: str, row: tuple) -> ProjectConfig:
@@ -82,6 +105,9 @@ class ProjectConfig:
             pytest_path=test_config.get("pytest_path", ".venv/bin/pytest"),
             node_path=test_config.get("node_path", "npx"),
             test_patterns=test_config.get("test_patterns", {}),
+            browser_scripts_path=test_config.get(
+                "browser_scripts_path", BROWSER_AUTOMATION_SCRIPTS_PATH
+            ),
         )
 
 
@@ -116,6 +142,54 @@ def _truncate_output(output: str) -> str:
     # Keep first and last parts with indicator
     half = (MAX_OUTPUT_LENGTH - 50) // 2
     return f"{output[:half]}\n\n... [truncated {len(output) - MAX_OUTPUT_LENGTH} chars] ...\n\n{output[-half:]}"
+
+
+def resolve_browser_script(script_name: str, config: ProjectConfig | None = None) -> Path | None:
+    """Resolve a browser-automation script name to its full path.
+
+    Args:
+        script_name: Script name (e.g., 'screenshot', 'interact') or filename
+        config: Optional project config with custom browser_scripts_path
+
+    Returns:
+        Path to the script file if it exists, None otherwise.
+    """
+    scripts_path = Path(config.browser_scripts_path if config else BROWSER_AUTOMATION_SCRIPTS_PATH)
+
+    # If script_name is already a filename (ends with .js), use it directly
+    if script_name.endswith(".js"):
+        script_file = scripts_path / script_name
+    else:
+        # Look up in BROWSER_SCRIPTS map
+        filename = BROWSER_SCRIPTS.get(script_name, f"{script_name}.js")
+        script_file = scripts_path / filename
+
+    if script_file.exists():
+        return script_file
+
+    return None
+
+
+def get_available_browser_scripts(config: ProjectConfig | None = None) -> list[str]:
+    """Get list of available browser-automation scripts.
+
+    Args:
+        config: Optional project config with custom browser_scripts_path
+
+    Returns:
+        List of available script names.
+    """
+    scripts_path = Path(config.browser_scripts_path if config else BROWSER_AUTOMATION_SCRIPTS_PATH)
+
+    if not scripts_path.exists():
+        return []
+
+    available = []
+    for name, filename in BROWSER_SCRIPTS.items():
+        if (scripts_path / filename).exists():
+            available.append(name)
+
+    return available
 
 
 async def _run_command(
