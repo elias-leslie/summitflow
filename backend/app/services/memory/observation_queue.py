@@ -2,17 +2,40 @@
 
 This service provides async enqueue of tool executions for background extraction.
 Target latency: <100ms for enqueue operation.
+
+Includes Redis-based debouncing to prevent Celery task storms.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
+
+import redis
 
 from app.storage import memory as memory_storage
 
 logger = logging.getLogger(__name__)
+
+# Redis for debouncing
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+DEBOUNCE_SECONDS = 5  # Only trigger Celery task once per 5 seconds per project
+
+
+def _get_redis() -> redis.Redis | None:
+    """Get Redis connection for debouncing.
+
+    Returns None if Redis is unavailable (graceful degradation).
+    """
+    try:
+        r = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)
+        r.ping()  # Verify connection
+        return r
+    except redis.RedisError as e:
+        logger.warning(f"Redis unavailable for debouncing: {e}")
+        return None
 
 
 class ObservationQueue:
@@ -69,18 +92,26 @@ class ObservationQueue:
             tool_output=tool_output,
         )
 
-        # Trigger async processing
+        # Trigger async processing with debouncing
         if trigger_processing:
-            try:
-                from app.tasks.observation_processor import process_observation_queue
+            should_trigger = self._acquire_debounce_lock(project_id)
+            if should_trigger:
+                try:
+                    from app.tasks.observation_processor import process_observation_queue
 
-                process_observation_queue.delay()
-            except ImportError:
-                # Task not yet implemented - this is expected during development
-                logger.debug("observation_processor task not available yet")
-            except Exception as e:
-                # Don't let Celery failures break the enqueue
-                logger.warning(f"Failed to trigger observation processing: {e}")
+                    process_observation_queue.delay()
+                    logger.debug(f"Triggered observation processing for {project_id}")
+                except ImportError:
+                    # Task not yet implemented - this is expected during development
+                    logger.debug("observation_processor task not available yet")
+                except Exception as e:
+                    # Don't let Celery failures break the enqueue
+                    logger.warning(f"Failed to trigger observation processing: {e}")
+            else:
+                logger.debug(
+                    f"Debounced Celery trigger for {project_id} "
+                    f"(lock held, task already scheduled)"
+                )
 
         elapsed_ms = (time.time() - start_time) * 1000
         logger.debug(
@@ -94,3 +125,27 @@ class ObservationQueue:
             )
 
         return item
+
+    def _acquire_debounce_lock(self, project_id: str) -> bool:
+        """Try to acquire debounce lock for a project.
+
+        Uses Redis SET NX EX to atomically check-and-set a lock.
+        The lock auto-expires after DEBOUNCE_SECONDS.
+
+        Returns:
+            True if lock acquired (should trigger Celery), False if debounced.
+        """
+        r = _get_redis()
+        if r is None:
+            # Redis unavailable - don't debounce, trigger every time
+            logger.debug("Redis unavailable, skipping debounce (will trigger)")
+            return True
+
+        lock_key = f"obs_processing_lock:{project_id}"
+        try:
+            # SET NX EX: only set if not exists, with expiry
+            acquired = r.set(lock_key, "1", nx=True, ex=DEBOUNCE_SECONDS)
+            return bool(acquired)
+        except redis.RedisError as e:
+            logger.warning(f"Redis error during debounce lock: {e}")
+            return True  # On error, trigger processing
