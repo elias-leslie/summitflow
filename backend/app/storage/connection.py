@@ -134,50 +134,10 @@ def init_schema() -> None:
         )
 
         # ============================================================
-        # Phase 3: Artifacts Tables
+        # Evidence Tables
         # ============================================================
 
-        # Artifacts - evidence storage for verification
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS artifacts (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    artifact_id VARCHAR(50) NOT NULL,
-                    feature_id VARCHAR(20) NOT NULL,
-                    criterion_id VARCHAR(20),
-                    artifact_type VARCHAR(20) DEFAULT 'evidence',
-                    file_path VARCHAR(500) NOT NULL,
-                    file_size_bytes INTEGER,
-                    version INTEGER DEFAULT 1,
-                    is_current BOOLEAN DEFAULT TRUE,
-                    captured_at TIMESTAMPTZ DEFAULT NOW(),
-                    expires_at TIMESTAMPTZ,
-                    quality_status VARCHAR(20) DEFAULT 'pending',
-                    quality_issues JSONB DEFAULT '[]'::jsonb,
-                    confidence FLOAT,
-                    ai_reviewed_at TIMESTAMPTZ,
-                    ai_reviewed_by VARCHAR(50),
-                    ai_evidence TEXT,
-                    user_reviewed_at TIMESTAMPTZ,
-                    user_approved BOOLEAN,
-                    user_notes TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, artifact_id)
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_feature ON artifacts(feature_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_criterion ON artifacts(criterion_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_quality ON artifacts(quality_status)")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_artifacts_current ON artifacts(is_current) WHERE is_current = TRUE"
-        )
-
-        # Evidence table (same structure as artifacts, renamed for clarity)
-        # Used by evidence_manager service
+        # Evidence table - evidence storage for verification
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS evidence (
