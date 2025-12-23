@@ -23,6 +23,15 @@ import { fetchProjects, type Project } from '@/lib/api';
 import { BulkActionsBar } from './BulkActionsBar';
 
 // Types
+interface LifecycleStats {
+  failed_queue_count: number;
+  stuck_queue_count: number;
+  oldest_pending_age_minutes: number | null;
+  unreflected_diary_count: number;
+  stale_patterns_count: number;
+  pattern_status_breakdown: Record<string, number>;
+}
+
 interface MemoryStats {
   queue_depth: number;
   queue_pending: number;
@@ -31,6 +40,7 @@ interface MemoryStats {
   token_spend_24h: number;
   health: 'healthy' | 'degraded' | 'unhealthy';
   health_details: Record<string, string> | null;
+  lifecycle: LifecycleStats | null;
 }
 
 interface Observation {
@@ -742,6 +752,14 @@ export default function MemoryPage() {
     return tokens.toString();
   };
 
+  // Format age in minutes to human readable
+  const formatAge = (minutes: number | null): string => {
+    if (minutes === null) return '-';
+    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+    return `${Math.floor(minutes / 1440)}d`;
+  };
+
   const pendingPatterns = patterns.filter(p => p.status === 'pending');
 
   // Reset pagination when project changes
@@ -838,6 +856,69 @@ export default function MemoryPage() {
             healthStatus={stats?.health ?? 'healthy'}
           />
         </div>
+
+        {/* Lifecycle Status Section */}
+        {stats?.lifecycle && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Lifecycle Status</h2>
+            </div>
+            <div className="grid grid-cols-5 gap-3">
+              <MetricCard
+                label="Failed Queue"
+                value={stats.lifecycle.failed_queue_count}
+                subtitle="Items failed"
+                accent={stats.lifecycle.failed_queue_count > 0 ? 'amber' : 'green'}
+              />
+              <MetricCard
+                label="Stuck Items"
+                value={stats.lifecycle.stuck_queue_count}
+                subtitle="> 1 hour processing"
+                accent={stats.lifecycle.stuck_queue_count > 0 ? 'amber' : 'green'}
+              />
+              <MetricCard
+                label="Unreflected"
+                value={stats.lifecycle.unreflected_diary_count}
+                subtitle="Diary entries"
+                accent={stats.lifecycle.unreflected_diary_count > 5 ? 'amber' : 'green'}
+              />
+              <MetricCard
+                label="Stale Patterns"
+                value={stats.lifecycle.stale_patterns_count}
+                subtitle="30+ days unused"
+                accent={stats.lifecycle.stale_patterns_count > 3 ? 'amber' : 'green'}
+              />
+              <MetricCard
+                label="Oldest Pending"
+                value={formatAge(stats.lifecycle.oldest_pending_age_minutes)}
+                subtitle="Queue age"
+                accent={stats.lifecycle.oldest_pending_age_minutes && stats.lifecycle.oldest_pending_age_minutes > 30 ? 'amber' : 'green'}
+              />
+            </div>
+            {/* Pattern status badges */}
+            {Object.keys(stats.lifecycle.pattern_status_breakdown).length > 0 && (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-xs text-slate-500">Patterns:</span>
+                {Object.entries(stats.lifecycle.pattern_status_breakdown).map(([status, count]) => (
+                  <Badge
+                    key={status}
+                    variant="secondary"
+                    className={clsx(
+                      'text-xs',
+                      status === 'pending' && 'bg-amber-500/15 text-amber-400',
+                      status === 'approved' && 'bg-blue-500/15 text-blue-400',
+                      status === 'applied' && 'bg-emerald-500/15 text-emerald-400',
+                      status === 'rejected' && 'bg-rose-500/15 text-rose-400'
+                    )}
+                  >
+                    {status}: {count}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
