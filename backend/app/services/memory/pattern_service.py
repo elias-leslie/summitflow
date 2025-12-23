@@ -26,8 +26,16 @@ MAX_TITLE_LENGTH = 100
 MAX_CONTENT_LENGTH = 500
 MAX_SENTENCES = 3
 HEDGING_WORDS = [
-    "might", "maybe", "perhaps", "possibly", "could be",
-    "sometimes", "often", "usually", "generally", "typically",
+    "might",
+    "maybe",
+    "perhaps",
+    "possibly",
+    "could be",
+    "sometimes",
+    "often",
+    "usually",
+    "generally",
+    "typically",
 ]
 
 
@@ -80,33 +88,87 @@ class PatternService:
 
         # Title length
         if len(title) > MAX_TITLE_LENGTH:
-            violations.append(
-                f"Title exceeds {MAX_TITLE_LENGTH} chars ({len(title)} chars)"
-            )
+            violations.append(f"Title exceeds {MAX_TITLE_LENGTH} chars ({len(title)} chars)")
 
         # Content length
         if len(content) > MAX_CONTENT_LENGTH:
-            violations.append(
-                f"Content exceeds {MAX_CONTENT_LENGTH} chars ({len(content)} chars)"
-            )
+            violations.append(f"Content exceeds {MAX_CONTENT_LENGTH} chars ({len(content)} chars)")
 
         # Sentence count
-        sentences = re.split(r'[.!?]+', content.strip())
+        sentences = re.split(r"[.!?]+", content.strip())
         sentences = [s.strip() for s in sentences if s.strip()]
         if len(sentences) > MAX_SENTENCES:
-            violations.append(
-                f"Content has {len(sentences)} sentences (max {MAX_SENTENCES})"
-            )
+            violations.append(f"Content has {len(sentences)} sentences (max {MAX_SENTENCES})")
 
         # Hedging words
         content_lower = content.lower()
         found_hedging = [w for w in HEDGING_WORDS if w in content_lower]
         if found_hedging:
-            violations.append(
-                f"Content contains hedging words: {', '.join(found_hedging)}"
-            )
+            violations.append(f"Content contains hedging words: {', '.join(found_hedging)}")
 
         return len(violations) == 0, violations
+
+    # =========================================================================
+    # Feedback & Ranking
+    # =========================================================================
+
+    @staticmethod
+    def get_approval_boost(pattern: dict[str, Any]) -> float:
+        """Calculate approval boost multiplier for pattern ranking.
+
+        Approved patterns get a 10% boost.
+        Rejected patterns get graduated penalties:
+        - 1-2 rejections: 0.9x (10% penalty)
+        - 3-4 rejections: 0.7x (30% penalty)
+        - 5+ rejections: 0.5x (50% penalty)
+
+        Args:
+            pattern: Pattern dict with approval_count, rejection_count, status
+
+        Returns:
+            Multiplier (0.5-1.1) to apply to pattern ranking score.
+        """
+        status = pattern.get("status", "pending")
+        approval_count = pattern.get("approval_count", 0) or 0
+        rejection_count = pattern.get("rejection_count", 0) or 0
+
+        # Base multiplier
+        multiplier = 1.0
+
+        # Approved/applied patterns get boost
+        if status in ("approved", "applied") or approval_count > 0:
+            multiplier = 1.1  # +10% boost
+
+        # Rejection penalties (can override approval boost)
+        if rejection_count >= 5:
+            multiplier = 0.5  # 50% penalty
+        elif rejection_count >= 3:
+            multiplier = 0.7  # 30% penalty
+        elif rejection_count >= 1:
+            multiplier = 0.9  # 10% penalty
+
+        return multiplier
+
+    @staticmethod
+    def get_source_observation_boost(
+        observation: dict[str, Any],
+        pattern_multiplier: float = 1.0,
+    ) -> float:
+        """Apply inherited boost to source observations from approved patterns.
+
+        When a pattern is approved, observations that sourced it get a boost.
+
+        Args:
+            observation: Observation dict
+            pattern_multiplier: Boost from the parent pattern
+
+        Returns:
+            Additional boost (0.0-0.1) to add to observation score.
+        """
+        # Inherited boost is 50% of the pattern's boost above 1.0
+        if pattern_multiplier > 1.0:
+            return (pattern_multiplier - 1.0) * 0.5
+        return 0.0
 
     # =========================================================================
     # CRUD Operations
@@ -160,9 +222,7 @@ class PatternService:
             reflected_by=reflected_by,
         )
 
-        logger.info(
-            f"pattern_created: id={pattern['id']} type={pattern_type} action={action}"
-        )
+        logger.info(f"pattern_created: id={pattern['id']} type={pattern_type} action={action}")
 
         return pattern
 
@@ -302,9 +362,7 @@ class PatternService:
         if action == "remove":
             # Remove the pattern from rules file
             self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
-            logger.info(
-                f"pattern_removed: id={pattern_id} target={pattern['target_pattern_id']}"
-            )
+            logger.info(f"pattern_removed: id={pattern_id} target={pattern['target_pattern_id']}")
 
         elif action == "update":
             # Update existing pattern in rules file
@@ -325,17 +383,13 @@ class PatternService:
             pattern_entry = self._format_pattern_for_rules(pattern)
             with open(rules_path, "a") as f:
                 f.write("\n\n" + pattern_entry)
-            logger.info(
-                f"pattern_merged: id={pattern_id} sources={source_ids}"
-            )
+            logger.info(f"pattern_merged: id={pattern_id} sources={source_ids}")
 
         else:  # add
             pattern_entry = self._format_pattern_for_rules(pattern)
             with open(rules_path, "a") as f:
                 f.write("\n\n" + pattern_entry)
-            logger.info(
-                f"pattern_applied: id={pattern_id} file={rules_path}"
-            )
+            logger.info(f"pattern_applied: id={pattern_id} file={rules_path}")
 
         # Update status
         memory_storage.mark_pattern_applied(pattern_id)
@@ -414,15 +468,19 @@ class PatternService:
         ]
 
         if pattern.get("rationale"):
-            lines.extend([
-                "",
-                f"*Rationale: {pattern['rationale']}*",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"*Rationale: {pattern['rationale']}*",
+                ]
+            )
 
-        lines.extend([
-            "",
-            f"<!-- Pattern ID: {pattern['id']} | Applied: {datetime.now().isoformat()} -->",
-        ])
+        lines.extend(
+            [
+                "",
+                f"<!-- Pattern ID: {pattern['id']} | Applied: {datetime.now().isoformat()} -->",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -498,14 +556,12 @@ class PatternService:
         )
 
         # Tokenize input
-        input_words = set(re.findall(r'\w+', (title + " " + content).lower()))
+        input_words = set(re.findall(r"\w+", (title + " " + content).lower()))
 
         similar = []
         for p in existing:
             # Tokenize existing pattern
-            existing_words = set(
-                re.findall(r'\w+', (p["title"] + " " + p["content"]).lower())
-            )
+            existing_words = set(re.findall(r"\w+", (p["title"] + " " + p["content"]).lower()))
 
             # Calculate Jaccard similarity
             if not input_words or not existing_words:
@@ -516,10 +572,12 @@ class PatternService:
             similarity = intersection / union
 
             if similarity >= similarity_threshold:
-                similar.append({
-                    **p,
-                    "similarity_score": round(similarity, 2),
-                })
+                similar.append(
+                    {
+                        **p,
+                        "similarity_score": round(similarity, 2),
+                    }
+                )
 
         # Sort by similarity descending
         similar.sort(key=lambda x: x["similarity_score"], reverse=True)
@@ -563,9 +621,7 @@ class PatternService:
                 status_reason=f"Merged into {merged['id']}",
             )
 
-        logger.info(
-            f"patterns_merged: source={pattern_ids} target={merged['id']}"
-        )
+        logger.info(f"patterns_merged: source={pattern_ids} target={merged['id']}")
 
         return merged
 

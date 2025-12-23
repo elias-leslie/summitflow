@@ -213,6 +213,8 @@ class ContextBuilder:
 
         # Applied patterns (project-specific rules)
         if include_patterns:
+            from app.services.memory.pattern_service import PatternService
+
             patterns = memory_storage.list_patterns(
                 project_id=self.project_id,
                 status="applied",
@@ -222,6 +224,9 @@ class ContextBuilder:
             for pattern in patterns:
                 full_tokens = self._pattern_full_tokens(pattern)
                 total_full_tokens += full_tokens
+
+                # Calculate approval boost for ranking
+                approval_boost = PatternService.get_approval_boost(pattern)
 
                 # Compact index entry
                 title = (
@@ -236,6 +241,7 @@ class ContextBuilder:
                         "pt": pattern["pattern_type"][:3],
                         "title": title,
                         "use": pattern.get("usage_count", 0),
+                        "boost": approval_boost,  # Approval/rejection boost multiplier
                         "tok": full_tokens,
                     }
                 )
