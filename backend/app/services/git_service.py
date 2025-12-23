@@ -300,7 +300,7 @@ def create_pull_request(
     Raises:
         RuntimeError: If PR creation fails
     """
-    from ..storage import features as feature_store
+    from ..storage import capabilities as capability_store
 
     project_path = Path(project_path)
 
@@ -309,20 +309,20 @@ def create_pull_request(
         logger.error("no_branch_for_pr", task_id=task.get("id"))
         raise RuntimeError("Task has no branch_name, cannot create PR")
 
-    # Get feature info for PR content
-    feature = None
-    feature_id = task.get("feature_id")
-    if feature_id:
-        feature = feature_store.get_feature_by_db_id(feature_id)
+    # Get capability info for PR content (TDD architecture)
+    capability = None
+    capability_id = task.get("capability_id")
+    if capability_id:
+        capability = capability_store.get_capability_by_id(capability_id)
 
     # Build PR title
-    if feature:
-        pr_title = f"{feature.get('name', 'Feature')} [{task.get('id', 'task')}]"
+    if capability:
+        pr_title = f"{capability.get('name', 'Capability')} [{task.get('id', 'task')}]"
     else:
         pr_title = task.get("title", f"Task {task.get('id', '')}")
 
-    # Build PR body with criteria checklist
-    pr_body = _build_pr_body(task, feature)
+    # Build PR body with tests checklist
+    pr_body = _build_pr_body(task, capability)
 
     # Ensure branch is pushed to remote
     try:
@@ -374,48 +374,52 @@ def create_pull_request(
     return pr_url
 
 
-def _build_pr_body(task: dict, feature: dict | None) -> str:
-    """Build the PR body with criteria checklist.
+def _build_pr_body(task: dict, capability: dict | None) -> str:
+    """Build the PR body with tests checklist.
 
     Args:
         task: Task dict
-        feature: Feature dict (may be None)
+        capability: Capability dict (may be None)
 
     Returns:
         Formatted PR body as markdown
     """
+    from ..storage import tests as test_store
+
     lines = ["## Summary\n"]
 
-    # Add feature description if available
-    if feature:
-        desc = feature.get("description", "")
+    # Add capability description if available
+    if capability:
+        desc = capability.get("description", "")
         if desc:
             lines.append(f"{desc}\n")
         else:
-            lines.append(f"Implementation of **{feature.get('name', 'feature')}**\n")
+            lines.append(f"Implementation of **{capability.get('name', 'capability')}**\n")
     else:
         desc = task.get("description", "")
         if desc:
             lines.append(f"{desc}\n")
 
-    # Add acceptance criteria checklist
-    if feature:
-        criteria = feature.get("acceptance_criteria", [])
-        if criteria:
-            lines.append("\n## Acceptance Criteria\n")
-            for c in criteria:
-                passes = c.get("passes", False)
-                checkbox = "[x]" if passes else "[ ]"
-                cid = c.get("id", "")
-                description = c.get("description", "No description")
-                lines.append(f"- {checkbox} **{cid}**: {description}")
-            lines.append("")
+    # Add tests checklist (TDD architecture)
+    if capability:
+        project_id = capability.get("project_id")
+        cap_db_id = capability.get("id")
+        if project_id and cap_db_id:
+            cap_tests = test_store.get_tests_for_capability(project_id, cap_db_id)
+            if cap_tests:
+                lines.append("\n## Tests\n")
+                for t in cap_tests:
+                    passes = t.get("passes", False)
+                    checkbox = "[x]" if passes else "[ ]"
+                    test_name = t.get("name", "Unknown test")
+                    lines.append(f"- {checkbox} {test_name}")
+                lines.append("")
 
     # Add task metadata
     lines.append("\n## Task Info\n")
     lines.append(f"- **Task ID:** `{task.get('id', 'N/A')}`")
-    if feature:
-        lines.append(f"- **Feature ID:** `{feature.get('feature_id', 'N/A')}`")
+    if capability:
+        lines.append(f"- **Capability ID:** `{capability.get('capability_id', 'N/A')}`")
     lines.append(f"- **Status:** {task.get('status', 'N/A')}")
 
     # Add commits if any
