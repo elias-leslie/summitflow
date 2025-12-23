@@ -33,6 +33,44 @@ CONCEPT_TAGS = [
     "configuration",  # Config files, environment setup
 ]
 
+BATCH_EXTRACTION_PROMPT = """Analyze these tool executions and extract structured observations.
+
+For EACH item below, extract an observation. Return a JSON array with one result per item.
+
+{items_json}
+
+---
+
+For each item, return a JSON object with:
+- "index": <the item index for matching>
+- "observation_type": <one of: pattern, decision, error, constraint, architecture, user_preference>
+- "concepts": [<list from: debugging, code_patterns, dependencies, security, performance, testing, configuration>]
+- "title": <concise title, 5-10 words>
+- "subtitle": <optional one-line clarification or null>
+- "narrative": <2-3 sentences explaining significance>
+- "facts": {{<key>: <value>}} or null
+- "files_read": [<file paths read>] or null
+- "files_modified": [<file paths modified>] or null
+
+If an item is trivial (no insight), use:
+- "index": <index>
+- "skip": true
+- "reason": <brief reason>
+
+Rules:
+- Return ONLY a JSON array, no markdown
+- HIGH VALUE: error, decision, user_preference - always extract
+- MEDIUM VALUE: pattern, architecture - extract if significant
+- LOW VALUE: constraint - skip unless exceptional
+- Include index for every result to match back to items
+
+Example response format:
+[
+  {{"index": 0, "observation_type": "error", "concepts": ["debugging"], "title": "...", ...}},
+  {{"index": 1, "skip": true, "reason": "trivial file read"}},
+  ...
+]"""
+
 EXTRACTION_PROMPT = """Analyze this tool execution and extract a structured observation.
 
 Tool: {tool_name}
@@ -269,3 +307,172 @@ class ObservationExtractor:
         # Return empty dict on failure
         logger.warning(f"Failed to parse JSON from response: {content[:200]}...")
         return {}
+
+    def _parse_json_array(self, content: str) -> list[dict[str, Any]]:
+        """Parse JSON array from LLM response, with robust fallback parsing."""
+        # Try direct parse
+        try:
+            result = json.loads(content)
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+        # Try to extract JSON from markdown code block
+        json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", content, re.DOTALL)
+        if json_match:
+            try:
+                result = json.loads(json_match.group(1))
+                if isinstance(result, list):
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+        # Try to find JSON array in content
+        array_match = re.search(r"\[[\s\S]*\]", content)
+        if array_match:
+            try:
+                result = json.loads(array_match.group(0))
+                if isinstance(result, list):
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+        # Return empty array on failure
+        logger.warning(f"Failed to parse JSON array from response: {content[:200]}...")
+        return []
+
+    async def extract_batch(
+        self,
+        items: list[dict[str, Any]],
+        max_input_chars: int = 500,
+        max_output_chars: int = 1000,
+    ) -> list[ExtractedObservation]:
+        """Extract observations from multiple tool executions in a single LLM call.
+
+        Args:
+            items: List of queue items with tool_name, tool_input, tool_output
+            max_input_chars: Max chars for each item's input (truncated)
+            max_output_chars: Max chars for each item's output (truncated)
+
+        Returns:
+            List of ExtractedObservation objects, one per input item.
+        """
+        import time
+
+        start_time = time.time()
+
+        if not items:
+            return []
+
+        # Format items for the prompt
+        formatted_items = []
+        for idx, item in enumerate(items):
+            tool_input_str = json.dumps(item.get("tool_input") or {})
+            if len(tool_input_str) > max_input_chars:
+                tool_input_str = tool_input_str[:max_input_chars] + "..."
+
+            tool_output = item.get("tool_output") or ""
+            if len(tool_output) > max_output_chars:
+                tool_output = tool_output[:max_output_chars] + "..."
+
+            formatted_items.append({
+                "index": idx,
+                "tool_name": item.get("tool_name", "unknown"),
+                "tool_input": tool_input_str,
+                "tool_output": tool_output,
+            })
+
+        items_json = json.dumps(formatted_items, indent=2)
+        prompt = BATCH_EXTRACTION_PROMPT.format(items_json=items_json)
+
+        try:
+            client = self._get_client()
+
+            # Generate batch extraction
+            response = client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
+
+            # Extract token usage
+            discovery_tokens = 0
+            if hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
+                discovery_tokens = getattr(usage, "total_token_count", 0)
+
+            # Parse response array
+            content = response.text.strip()
+            results = self._parse_json_array(content)
+
+            # Build index map for matching results to items
+            result_map: dict[int, dict[str, Any]] = {}
+            for r in results:
+                if isinstance(r, dict) and "index" in r:
+                    result_map[r["index"]] = r
+
+            # Build observations for each item
+            observations: list[ExtractedObservation] = []
+            per_item_tokens = discovery_tokens // len(items) if items else 0
+
+            for idx, item in enumerate(items):
+                result = result_map.get(idx, {})
+
+                if result.get("skip"):
+                    observations.append(ExtractedObservation(
+                        observation_type="",
+                        title="",
+                        concepts=[],
+                        skipped=True,
+                        skip_reason=result.get("reason", "Trivial execution"),
+                        discovery_tokens=per_item_tokens,
+                        extracted_by=self.model,
+                    ))
+                    continue
+
+                # Validate and build observation
+                obs_type = result.get("observation_type", "pattern")
+                if obs_type not in OBSERVATION_TYPES:
+                    obs_type = "pattern"
+
+                concepts = result.get("concepts", [])
+                concepts = [c for c in concepts if c in CONCEPT_TAGS]
+
+                observations.append(ExtractedObservation(
+                    observation_type=obs_type,
+                    title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
+                    concepts=concepts,
+                    subtitle=result.get("subtitle"),
+                    narrative=result.get("narrative"),
+                    facts=result.get("facts"),
+                    files_read=result.get("files_read"),
+                    files_modified=result.get("files_modified"),
+                    discovery_tokens=per_item_tokens,
+                    extracted_by=self.model,
+                ))
+
+            duration_seconds = time.time() - start_time
+            items_per_second = len(items) / duration_seconds if duration_seconds > 0 else 0
+            logger.info(
+                f"batch_extraction_completed: batch_size={len(items)}, "
+                f"duration_seconds={round(duration_seconds, 2)}, "
+                f"items_per_second={round(items_per_second, 2)}, "
+                f"total_tokens={discovery_tokens}"
+            )
+
+            return observations
+
+        except Exception as e:
+            logger.error(f"Batch extraction failed: {e}")
+            # Return error observations for each item
+            return [
+                ExtractedObservation(
+                    observation_type="error",
+                    title=f"Extraction failed for {item.get('tool_name', 'unknown')}",
+                    concepts=["debugging"],
+                    narrative=f"Batch extraction failed: {e!s}",
+                    discovery_tokens=0,
+                    extracted_by=self.model,
+                )
+                for item in items
+            ]

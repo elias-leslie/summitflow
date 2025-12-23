@@ -19,7 +19,7 @@ from ..storage import memory as memory_storage
 logger = get_logger(__name__)
 
 # Max items to process in one task execution
-BATCH_SIZE = 10
+BATCH_SIZE = 50
 
 # Max retries before marking item as permanently failed
 MAX_RETRIES = 3
@@ -73,24 +73,17 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
 
         logger.info("observation_queue_items_found", count=len(pending_items))
 
-        # Create extractor
-        extractor = ObservationExtractor()
-
-        # Process each item
+        # Mark all items as processing before LLM call
         for item in pending_items:
+            memory_storage.update_queue_item_status(item["id"], "processing")
+
+        # Create extractor and run batch extraction (single LLM call)
+        extractor = ObservationExtractor()
+        observations = _run_async(extractor.extract_batch(pending_items))
+
+        # Process results - each observation corresponds to the item at same index
+        for idx, (item, observation) in enumerate(zip(pending_items, observations)):
             try:
-                # Mark as processing
-                memory_storage.update_queue_item_status(item["id"], "processing")
-
-                # Run extraction
-                observation = _run_async(
-                    extractor.extract(
-                        tool_name=item["tool_name"],
-                        tool_input=item["tool_input"],
-                        tool_output=item["tool_output"],
-                    )
-                )
-
                 if observation.skipped:
                     # Mark as processed but don't create observation
                     memory_storage.update_queue_item_status(
