@@ -1446,3 +1446,92 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
         "stale_patterns_count": stale_patterns_count,
         "pattern_status_breakdown": pattern_status_breakdown,
     }
+
+
+# =============================================================================
+# Lifecycle Cleanup Functions
+# =============================================================================
+
+
+def archive_failed_queue_items(max_age_days: int = 14) -> int:
+    """Archive (delete) failed queue items older than max_age_days.
+
+    Args:
+        max_age_days: Delete failed items older than this many days.
+
+    Returns:
+        Number of items deleted.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM observation_queue
+            WHERE status = 'failed'
+              AND created_at < NOW() - INTERVAL '%s days'
+            """,
+            (max_age_days,),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+
+    logger.info(
+        f"archive_failed_queue_items: deleted {deleted} items older than {max_age_days} days"
+    )
+    return deleted
+
+
+def cleanup_old_checkpoints(max_age_days: int = 30) -> int:
+    """Delete old checkpoints beyond the retention period.
+
+    Args:
+        max_age_days: Delete checkpoints older than this many days.
+
+    Returns:
+        Number of checkpoints deleted.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM agent_checkpoints
+            WHERE created_at < NOW() - INTERVAL '%s days'
+            """,
+            (max_age_days,),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+
+    logger.info(
+        f"cleanup_old_checkpoints: deleted {deleted} checkpoints older than {max_age_days} days"
+    )
+    return deleted
+
+
+def reset_stuck_queue_items(threshold_minutes: int = 60) -> int:
+    """Reset stuck queue items from 'processing' back to 'pending'.
+
+    Items stuck in 'processing' for longer than threshold_minutes are reset
+    so they can be reprocessed.
+
+    Args:
+        threshold_minutes: Reset items stuck longer than this.
+
+    Returns:
+        Number of items reset.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE observation_queue
+            SET status = 'pending'
+            WHERE status = 'processing'
+              AND created_at < NOW() - INTERVAL '%s minutes'
+            """,
+            (threshold_minutes,),
+        )
+        reset_count = cur.rowcount
+        conn.commit()
+
+    logger.info(
+        f"reset_stuck_queue_items: reset {reset_count} items stuck > {threshold_minutes} minutes"
+    )
+    return reset_count
