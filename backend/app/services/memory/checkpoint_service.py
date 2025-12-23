@@ -46,7 +46,7 @@ class CheckpointService:
         conversation_summary: str | None = None,
         context_snapshot: dict[str, Any] | None = None,
         tokens_used: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Create a checkpoint to save current agent state.
 
         Args:
@@ -65,7 +65,7 @@ class CheckpointService:
             tokens_used: Tokens used in the session so far.
 
         Returns:
-            The created checkpoint.
+            The created checkpoint, or None if memory is disabled.
         """
         checkpoint = memory_storage.create_checkpoint(
             project_id=self.project_id,
@@ -83,6 +83,10 @@ class CheckpointService:
             context_snapshot=context_snapshot,
             tokens_used=tokens_used,
         )
+
+        if checkpoint is None:
+            logger.debug(f"checkpoint_skipped: memory disabled for {self.project_id}")
+            return None
 
         logger.info(
             f"checkpoint_created: id={checkpoint['id']} session={session_id} agent={agent_type}"

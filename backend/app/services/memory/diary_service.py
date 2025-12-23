@@ -50,7 +50,7 @@ class DiaryService:
         what_failed: list[str] | None = None,
         user_corrections: list[str] | None = None,
         patterns_used: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Create a diary entry for a session or task.
 
         Args:
@@ -69,7 +69,7 @@ class DiaryService:
             patterns_used: Patterns that were applied.
 
         Returns:
-            The created diary entry.
+            The created diary entry, or None if memory is disabled.
         """
         entry = memory_storage.create_diary_entry(
             project_id=self.project_id,
@@ -87,6 +87,10 @@ class DiaryService:
             user_corrections=user_corrections,
             patterns_used=patterns_used,
         )
+
+        if entry is None:
+            logger.debug(f"diary_entry_skipped: memory disabled for {self.project_id}")
+            return None
 
         logger.info(f"diary_entry_created: id={entry['id']} outcome={outcome}")
 

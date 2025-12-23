@@ -39,9 +39,7 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
     Returns:
         Summary dict with entry_id or skip reason
     """
-    logger.info(
-        f"diary_aggregation_started: project={project_id}, session={session_id[:16]}..."
-    )
+    logger.info(f"diary_aggregation_started: project={project_id}, session={session_id[:16]}...")
 
     # Check if diary entry already exists for this session (debounce)
     existing = memory_storage.get_diary_entry_by_session(project_id, session_id)
@@ -55,17 +53,13 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
     observations = memory_storage.get_observations_by_session(project_id, session_id)
 
     if not observations:
-        logger.info(
-            f"diary_aggregation_skipped: no observations for session {session_id[:16]}..."
-        )
+        logger.info(f"diary_aggregation_skipped: no observations for session {session_id[:16]}...")
         return {"status": "skipped", "reason": "no_observations"}
 
     # Aggregate metrics
     total_tokens = sum(obs.get("discovery_tokens", 0) or 0 for obs in observations)
     error_count = sum(1 for obs in observations if obs.get("observation_type") == "error")
-    decision_count = sum(
-        1 for obs in observations if obs.get("observation_type") == "decision"
-    )
+    decision_count = sum(1 for obs in observations if obs.get("observation_type") == "decision")
 
     # Aggregate concepts from all observations
     all_concepts: set[str] = set()
@@ -105,7 +99,7 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
     what_worked = what_worked[:10]
     what_failed = what_failed[:10]
 
-    # Create diary entry
+    # Create diary entry (returns None if memory disabled)
     diary_service = DiaryService(project_id)
     entry = diary_service.create_entry(
         session_id=session_id,
@@ -116,6 +110,11 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
         what_worked=what_worked if what_worked else None,
         what_failed=what_failed if what_failed else None,
     )
+
+    # Memory disabled at storage layer
+    if entry is None:
+        logger.info(f"diary_aggregation_skipped: memory disabled for {project_id}")
+        return {"status": "skipped", "reason": "memory_disabled"}
 
     logger.info(
         f"diary_aggregation_completed: entry_id={entry['id']}, "

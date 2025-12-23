@@ -375,6 +375,17 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
         tool_output=request.tool_output,
     )
 
+    # Handle case where memory was disabled at storage layer
+    if item is None:
+        logger.debug(f"observation_skipped: memory disabled at storage layer")
+        _increment_metric("tools_skipped", "storage_memory_disabled")
+        return HookResponse(
+            status="skipped",
+            queued=False,
+            queue_item_id="skipped-storage-disabled",
+            skip_reason="storage_memory_disabled",
+        )
+
     logger.debug(f"observation_queued: tool={request.tool_name}, id={item['id']}")
     _increment_metric("tools_queued")
     return HookResponse(

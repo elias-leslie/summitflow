@@ -62,7 +62,7 @@ class ObservationQueue:
         tool_input: dict[str, Any] | None = None,
         tool_output: str | None = None,
         trigger_processing: bool = True,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Enqueue a tool execution for async observation extraction.
 
         This method is designed to be fire-and-forget with <100ms latency.
@@ -78,11 +78,11 @@ class ObservationQueue:
             trigger_processing: Whether to trigger Celery task after enqueue
 
         Returns:
-            The created queue item.
+            The created queue item, or None if memory is disabled.
         """
         start_time = time.time()
 
-        # Insert into queue
+        # Insert into queue (returns None if memory disabled for project)
         item = memory_storage.create_queue_item(
             project_id=project_id,
             session_id=session_id,
@@ -91,6 +91,11 @@ class ObservationQueue:
             tool_input=tool_input,
             tool_output=tool_output,
         )
+
+        # Memory disabled - skip processing
+        if item is None:
+            logger.debug(f"Memory disabled for {project_id}, skipping enqueue")
+            return None
 
         # Trigger async processing with debouncing
         if trigger_processing:
@@ -109,8 +114,7 @@ class ObservationQueue:
                     logger.warning(f"Failed to trigger observation processing: {e}")
             else:
                 logger.debug(
-                    f"Debounced Celery trigger for {project_id} "
-                    f"(lock held, task already scheduled)"
+                    f"Debounced Celery trigger for {project_id} (lock held, task already scheduled)"
                 )
 
         elapsed_ms = (time.time() - start_time) * 1000
@@ -120,9 +124,7 @@ class ObservationQueue:
         )
 
         if elapsed_ms > 100:
-            logger.warning(
-                f"Observation enqueue took {elapsed_ms:.1f}ms (target: <100ms)"
-            )
+            logger.warning(f"Observation enqueue took {elapsed_ms:.1f}ms (target: <100ms)")
 
         return item
 

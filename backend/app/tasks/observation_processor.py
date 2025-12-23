@@ -99,7 +99,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
                     )
                     continue
 
-                # Save observation
+                # Save observation (returns None if memory disabled)
                 obs = memory_storage.create_observation(
                     project_id=item["project_id"],
                     session_id=item["session_id"],
@@ -121,6 +121,21 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
                     extracted_by=observation.extracted_by,
                     raw_excerpt=observation.raw_excerpt,
                 )
+
+                # Memory disabled at storage layer - count as skipped
+                if obs is None:
+                    memory_storage.update_queue_item_status(
+                        item["id"],
+                        "processed",
+                        error_message="Skipped: memory disabled",
+                    )
+                    skipped += 1
+                    logger.debug(
+                        "observation_skipped_memory_disabled",
+                        item_id=item["id"],
+                        project_id=item["project_id"],
+                    )
+                    continue
 
                 # Mark queue item as processed
                 memory_storage.update_queue_item_status(item["id"], "processed")
