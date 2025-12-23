@@ -227,8 +227,7 @@ async def build_capability(
                     "tests_passed": full_results["tests_passed"],
                 }
 
-        # Tests failed - would call agent here
-        # For now, just record the failure info
+        # Tests failed - call agent to fix
         failure_info = _get_failure_info(
             smoke_results if not smoke_results["all_passed"] else full_results
         )
@@ -237,11 +236,25 @@ async def build_capability(
             f"Capability {capability_id} attempt {attempt} failed: {failure_info['summary']}"
         )
 
-        # In a full implementation, this is where we'd call the agent:
-        # await call_agent_for_fix(project_id, capability, failure_info)
+        # Call agent to fix the failures
+        agent_result = await call_agent_for_fix(
+            project_id=project_id,
+            capability=capability,
+            failure_info=failure_info,
+            session_id=session_id,
+        )
 
-        # For now, break after first attempt (no agent integration yet)
-        break
+        if not agent_result["success"]:
+            # Agent call failed - record error and continue to next attempt
+            logger.error(f"Agent fix failed: {agent_result.get('error', 'unknown')}")
+            continue
+
+        # Agent provided a fix - log and continue to re-run tests
+        logger.info(
+            f"Agent fix attempt {attempt}: received {len(agent_result.get('response', ''))} chars"
+        )
+        # The actual code changes would be applied by the agent tool calls
+        # For now, we just log and continue - tests will be re-run on next iteration
 
     # All attempts exhausted - mark as failing
     caps_storage.update_capability(project_id, capability_id, status="failing")
