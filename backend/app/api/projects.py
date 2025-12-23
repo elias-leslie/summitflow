@@ -412,6 +412,14 @@ class AgentConfigResponse(BaseModel):
     claude_model: str
     gemini_model: str
 
+    # Memory system controls
+    memory_enabled: bool = True
+    observations_enabled: bool = True
+    diary_enabled: bool = True
+    patterns_enabled: bool = True
+    checkpoints_enabled: bool = True
+    context_injection_enabled: bool = True
+
 
 class AgentConfigUpdate(BaseModel):
     """Request model for updating agent configuration."""
@@ -421,6 +429,14 @@ class AgentConfigUpdate(BaseModel):
     default_agent: str | None = None
     claude_model: str | None = None
     gemini_model: str | None = None
+
+    # Memory system controls
+    memory_enabled: bool | None = None
+    observations_enabled: bool | None = None
+    diary_enabled: bool | None = None
+    patterns_enabled: bool | None = None
+    checkpoints_enabled: bool | None = None
+    context_injection_enabled: bool | None = None
 
 
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
@@ -483,6 +499,20 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
                 status_code=400, detail=f"gemini_model must be one of: {valid_models}"
             )
         config_update["gemini_model"] = update.gemini_model
+
+    # Memory system controls - all are simple boolean flags
+    if update.memory_enabled is not None:
+        config_update["memory_enabled"] = update.memory_enabled
+    if update.observations_enabled is not None:
+        config_update["observations_enabled"] = update.observations_enabled
+    if update.diary_enabled is not None:
+        config_update["diary_enabled"] = update.diary_enabled
+    if update.patterns_enabled is not None:
+        config_update["patterns_enabled"] = update.patterns_enabled
+    if update.checkpoints_enabled is not None:
+        config_update["checkpoints_enabled"] = update.checkpoints_enabled
+    if update.context_injection_enabled is not None:
+        config_update["context_injection_enabled"] = update.context_injection_enabled
 
     if not config_update:
         raise HTTPException(status_code=400, detail="No fields to update")

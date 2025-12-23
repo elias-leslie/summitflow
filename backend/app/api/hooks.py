@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from ..services.memory import ObservationQueue
 from ..storage import notifications as notif_storage
+from ..storage.agent_configs import get_memory_config
 from ..storage.connection import get_connection
 
 router = APIRouter()
@@ -236,6 +237,7 @@ class ToolUseRequest(BaseModel):
     tool_name: str
     tool_input: dict[str, Any] | None = None
     tool_output: str | None = None
+    skip_memory: bool = False  # Session-level flag to bypass memory capture
 
 
 class HookResponse(BaseModel):
@@ -270,6 +272,17 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
     """
     # Track all tools received
     _increment_metric("tools_received")
+
+    # Session-level skip flag (for debugging/verification sessions)
+    if request.skip_memory:
+        logger.debug("observation_skipped: session skip_memory flag set")
+        _increment_metric("tools_skipped", "session_skip_flag")
+        return HookResponse(
+            status="skipped",
+            queued=False,
+            queue_item_id="skipped-session-flag",
+            skip_reason="session_skip_flag",
+        )
 
     # Skip if project doesn't exist (no auto-creation)
     if not _ensure_project_exists(request.project_id):
@@ -309,6 +322,28 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
             queued=False,
             queue_item_id="skipped-unknown-project",
             skip_reason="unknown_project",
+        )
+
+    # Project-level memory check
+    memory_config = get_memory_config(request.project_id)
+    if not memory_config.get("memory_enabled", True):
+        logger.debug(f"observation_skipped: memory disabled for project {request.project_id}")
+        _increment_metric("tools_skipped", "memory_disabled")
+        return HookResponse(
+            status="skipped",
+            queued=False,
+            queue_item_id="skipped-memory-disabled",
+            skip_reason="memory_disabled",
+        )
+
+    if not memory_config.get("observations_enabled", True):
+        logger.debug(f"observation_skipped: observations disabled for project {request.project_id}")
+        _increment_metric("tools_skipped", "observations_disabled")
+        return HookResponse(
+            status="skipped",
+            queued=False,
+            queue_item_id="skipped-observations-disabled",
+            skip_reason="observations_disabled",
         )
 
     # Apply tool filtering - skip trivial tools to reduce token cost
