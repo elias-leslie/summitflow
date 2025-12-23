@@ -17,6 +17,7 @@ import clsx from "clsx";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PromptEditor } from "@/components/prompts/PromptEditor";
 import { fetchPrompts, type Prompt, type PromptCategory } from "@/lib/api";
 
 interface TabConfig {
@@ -226,64 +227,13 @@ export default function PromptsPage() {
         ))}
       </div>
 
-      {/* Selected Prompt Detail (simple for now, PromptEditor in task 16.6) */}
+      {/* Prompt Editor Modal */}
       {selectedPrompt && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-lg border border-slate-700 max-w-2xl w-full max-h-[80vh] overflow-auto">
-            <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">
-                {selectedPrompt.prompt_type
-                  .split("_")
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(" ")}
-              </h2>
-              <button
-                onClick={() => setSelectedPrompt(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="text-xs text-slate-500 uppercase tracking-wide">
-                  Category
-                </label>
-                <p className="text-sm text-slate-300">{selectedPrompt.category}</p>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 uppercase tracking-wide">
-                  Thinking Budget
-                </label>
-                <p className="text-sm text-slate-300">
-                  {selectedPrompt.thinking_budget.toLocaleString()} tokens
-                </p>
-              </div>
-              {selectedPrompt.tools_enabled.length > 0 && (
-                <div>
-                  <label className="text-xs text-slate-500 uppercase tracking-wide">
-                    Tools Enabled
-                  </label>
-                  <div className="flex gap-1 mt-1">
-                    {selectedPrompt.tools_enabled.map((tool) => (
-                      <Badge key={tool} variant="outline" className="text-xs">
-                        {tool}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <label className="text-xs text-slate-500 uppercase tracking-wide">
-                  Prompt Text
-                </label>
-                <pre className="mt-1 p-3 bg-slate-800 rounded text-xs text-slate-300 whitespace-pre-wrap overflow-auto max-h-[300px]">
-                  {selectedPrompt.prompt_text}
-                </pre>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PromptEditor
+          prompt={selectedPrompt}
+          projectId={projectId}
+          onClose={() => setSelectedPrompt(null)}
+        />
       )}
     </div>
   );
