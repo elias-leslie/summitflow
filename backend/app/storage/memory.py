@@ -5,6 +5,7 @@ This module provides data access for the Context & Memory Intelligence system.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from decimal import Decimal
@@ -14,6 +15,21 @@ from .agent_configs import is_memory_feature_enabled
 from .connection import get_connection
 
 logger = logging.getLogger(__name__)
+
+
+# Deduplication window in minutes
+DEDUP_WINDOW_MINUTES = 60
+
+
+def _compute_observation_hash(title: str, observation_type: str, tool_name: str | None) -> str:
+    """Compute a short hash for observation deduplication.
+
+    Hash is based on title, type, and tool_name.
+    Returns first 16 characters of SHA256 hash.
+    """
+    content = f"{title}|{observation_type}|{tool_name or ''}"
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
+
 
 # =============================================================================
 # Observation Queue Storage
@@ -175,11 +191,14 @@ def create_observation(
 ) -> dict[str, Any] | None:
     """Create an observation from extracted tool execution data.
 
+    Includes deduplication check - if same content_hash exists for this session
+    within the deduplication window, returns None to skip duplicate.
+
     Args:
         skip_memory_check: If True, bypass the memory enabled check.
 
     Returns:
-        The created observation, or None if memory is disabled.
+        The created observation, or None if memory is disabled or duplicate.
     """
     if not skip_memory_check and not is_memory_feature_enabled(project_id, "observations"):
         logger.debug(f"Memory observations disabled for {project_id}, skipping observation")
@@ -192,14 +211,38 @@ def create_observation(
     if files_modified is None:
         files_modified = []
 
+    # Compute content hash for deduplication
+    content_hash = _compute_observation_hash(title, observation_type, tool_name)
+
     with get_connection() as conn, conn.cursor() as cur:
+        # Check for existing duplicate in same session within dedup window
+        cur.execute(
+            """
+            SELECT id FROM observations
+            WHERE session_id = %s
+              AND content_hash = %s
+              AND created_at > NOW() - INTERVAL '%s minutes'
+            LIMIT 1
+            """,
+            (session_id, content_hash, DEDUP_WINDOW_MINUTES),
+        )
+        existing = cur.fetchone()
+
+        if existing:
+            logger.debug(
+                f"Duplicate observation skipped: session={session_id[:8]}... "
+                f"hash={content_hash} existing_id={existing[0]}"
+            )
+            return None
+
+        # Insert new observation with content_hash
         cur.execute(
             """
             INSERT INTO observations
                 (project_id, session_id, agent_type, observation_type, title,
                  concepts, priority, confidence, entities, subtitle, narrative, facts, files_read, files_modified,
-                 tool_name, tool_input, discovery_tokens, extracted_by, raw_excerpt)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 tool_name, tool_input, discovery_tokens, extracted_by, raw_excerpt, content_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, session_id, agent_type, observation_type,
                       concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                       files_modified, tool_name, tool_input, discovery_tokens,
@@ -225,6 +268,7 @@ def create_observation(
                 discovery_tokens,
                 extracted_by,
                 raw_excerpt,
+                content_hash,
             ),
         )
         row = cur.fetchone()
