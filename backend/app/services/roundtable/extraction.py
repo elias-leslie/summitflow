@@ -245,11 +245,11 @@ def accept_spec(
         raise ValueError("Spec has no components")
 
     # Save to accepted_specs table (permanent record)
-    spec_record = specs_storage.create_accepted_spec(
+    spec_record = specs_storage.save_accepted_spec(
         project_id=project_id,
-        session_id=session_id,
-        spec_content=spec,
+        spec_json=spec,
         accepted_by=accepted_by,
+        notes=f"From roundtable session {session_id}",
     )
 
     # Track creation counts
