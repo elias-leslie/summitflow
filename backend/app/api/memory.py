@@ -138,6 +138,17 @@ async def get_memory_stats() -> MemoryStats:
     # Get filtering metrics from Redis
     filter_metrics = get_filtering_metrics()
 
+    # Get lifecycle stats
+    lifecycle_data = memory_storage.get_lifecycle_stats()
+    lifecycle = LifecycleStats(
+        failed_queue_count=lifecycle_data["failed_queue_count"],
+        stuck_queue_count=lifecycle_data["stuck_queue_count"],
+        oldest_pending_age_minutes=lifecycle_data["oldest_pending_age_minutes"],
+        unreflected_diary_count=lifecycle_data["unreflected_diary_count"],
+        stale_patterns_count=lifecycle_data["stale_patterns_count"],
+        pattern_status_breakdown=lifecycle_data["pattern_status_breakdown"],
+    )
+
     return MemoryStats(
         queue_depth=queue_depth,
         queue_pending=pending,
@@ -147,6 +158,7 @@ async def get_memory_stats() -> MemoryStats:
         health=health,
         health_details=health_details if health_details else None,
         filtering=FilteringMetrics(**filter_metrics),
+        lifecycle=lifecycle,
     )
 
 
