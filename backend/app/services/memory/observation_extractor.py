@@ -134,6 +134,7 @@ class ExtractedObservation:
     skipped: bool = False
     skip_reason: str | None = None
     extracted_by: str | None = None  # Model that performed extraction
+    raw_excerpt: str | None = None  # Verbatim excerpt from tool output for embeddings
 
 
 class ObservationExtractor:
@@ -352,6 +353,7 @@ class ObservationExtractor:
         items: list[dict[str, Any]],
         max_input_chars: int = 500,
         max_output_chars: int = 1000,
+        max_raw_excerpt_chars: int = 2000,
     ) -> list[ExtractedObservation]:
         """Extract observations from multiple tool executions in a single LLM call.
 
@@ -359,6 +361,7 @@ class ObservationExtractor:
             items: List of queue items with tool_name, tool_input, tool_output
             max_input_chars: Max chars for each item's input (truncated)
             max_output_chars: Max chars for each item's output (truncated)
+            max_raw_excerpt_chars: Max chars for raw_excerpt (for embeddings)
 
         Returns:
             List of ExtractedObservation objects, one per input item.
@@ -370,14 +373,19 @@ class ObservationExtractor:
         if not items:
             return []
 
-        # Format items for the prompt
+        # Format items for the prompt and capture raw excerpts
         formatted_items = []
+        raw_excerpts: list[str | None] = []
         for idx, item in enumerate(items):
             tool_input_str = json.dumps(item.get("tool_input") or {})
             if len(tool_input_str) > max_input_chars:
                 tool_input_str = tool_input_str[:max_input_chars] + "..."
 
             tool_output = item.get("tool_output") or ""
+            # Store raw excerpt (max 2000 chars) for embedding use
+            raw_excerpt = tool_output[:max_raw_excerpt_chars] if tool_output else None
+            raw_excerpts.append(raw_excerpt)
+
             if len(tool_output) > max_output_chars:
                 tool_output = tool_output[:max_output_chars] + "..."
 
@@ -465,6 +473,7 @@ class ObservationExtractor:
                         files_modified=result.get("files_modified"),
                         discovery_tokens=per_item_tokens,
                         extracted_by=self.model,
+                        raw_excerpt=raw_excerpts[idx],
                     )
                 )
 

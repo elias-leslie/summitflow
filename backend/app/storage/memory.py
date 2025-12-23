@@ -156,6 +156,7 @@ def create_observation(
     tool_input: dict[str, Any] | None = None,
     discovery_tokens: int = 0,
     extracted_by: str | None = None,
+    raw_excerpt: str | None = None,
 ) -> dict[str, Any]:
     """Create an observation from extracted tool execution data.
 
@@ -175,12 +176,12 @@ def create_observation(
             INSERT INTO observations
                 (project_id, session_id, agent_type, observation_type, title,
                  concepts, priority, subtitle, narrative, facts, files_read, files_modified,
-                 tool_name, tool_input, discovery_tokens, extracted_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 tool_name, tool_input, discovery_tokens, extracted_by, raw_excerpt)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, session_id, agent_type, observation_type,
                       concepts, priority, title, subtitle, narrative, facts, files_read,
                       files_modified, tool_name, tool_input, discovery_tokens,
-                      extracted_by, created_at
+                      extracted_by, raw_excerpt, created_at
             """,
             (
                 project_id,
@@ -199,6 +200,7 @@ def create_observation(
                 json.dumps(tool_input) if tool_input else None,
                 discovery_tokens,
                 extracted_by,
+                raw_excerpt,
             ),
         )
         row = cur.fetchone()
@@ -215,7 +217,7 @@ def get_observation(observation_id: str) -> dict[str, Any] | None:
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, priority, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, created_at
+                   extracted_by, raw_excerpt, created_at
             FROM observations
             WHERE id = %s
             """,
@@ -275,7 +277,7 @@ def list_observations(
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, priority, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, created_at
+                   extracted_by, raw_excerpt, created_at
             FROM observations
             {where_clause}
             ORDER BY created_at DESC
@@ -300,7 +302,7 @@ def search_observations_fts(
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, priority, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, created_at,
+                   extracted_by, raw_excerpt, created_at,
                    ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
             FROM observations
             WHERE project_id = %s
@@ -312,15 +314,16 @@ def search_observations_fts(
         )
         rows = cur.fetchall()
 
-    # Exclude rank from result (row has 19 cols now: 18 + rank)
-    return [_observation_row_to_dict(row[:18]) for row in rows]
+    # Exclude rank from result (row has 20 cols now: 19 + rank)
+    return [_observation_row_to_dict(row[:19]) for row in rows]
 
 
 def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
     """Convert observation row to dict.
 
     Handles row formats with varying columns:
-    - 18 cols: with priority and extracted_by (current)
+    - 19 cols: with priority, extracted_by, raw_excerpt (current)
+    - 18 cols: with priority and extracted_by, no raw_excerpt
     - 17 cols: with extracted_by, no priority (legacy)
     - 16 cols: no extracted_by, no priority (oldest)
     """
@@ -333,8 +336,8 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         "concepts": row[5] or [],
     }
 
-    # New format with priority (18 cols)
-    if len(row) >= 18:
+    # Current format with raw_excerpt (19 cols)
+    if len(row) >= 19:
         result["priority"] = row[6] or "medium"
         result["title"] = row[7]
         result["subtitle"] = row[8]
@@ -346,6 +349,22 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         result["tool_input"] = row[14]
         result["discovery_tokens"] = row[15]
         result["extracted_by"] = row[16]
+        result["raw_excerpt"] = row[17]
+        result["created_at"] = row[18].isoformat() if row[18] else None
+    # Previous format with priority, no raw_excerpt (18 cols)
+    elif len(row) >= 18:
+        result["priority"] = row[6] or "medium"
+        result["title"] = row[7]
+        result["subtitle"] = row[8]
+        result["narrative"] = row[9]
+        result["facts"] = row[10]
+        result["files_read"] = row[11] or []
+        result["files_modified"] = row[12] or []
+        result["tool_name"] = row[13]
+        result["tool_input"] = row[14]
+        result["discovery_tokens"] = row[15]
+        result["extracted_by"] = row[16]
+        result["raw_excerpt"] = None
         result["created_at"] = row[17].isoformat() if row[17] else None
     # Old format with extracted_by but no priority (17 cols)
     elif len(row) >= 17:
@@ -360,6 +379,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         result["tool_input"] = row[13]
         result["discovery_tokens"] = row[14]
         result["extracted_by"] = row[15]
+        result["raw_excerpt"] = None
         result["created_at"] = row[16].isoformat() if row[16] else None
     else:
         # Oldest format (16 cols)
@@ -374,6 +394,7 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
         result["tool_input"] = row[13]
         result["discovery_tokens"] = row[14]
         result["extracted_by"] = None
+        result["raw_excerpt"] = None
         result["created_at"] = row[15].isoformat() if row[15] else None
     return result
 
@@ -631,7 +652,7 @@ def get_observations_by_session(
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, priority, title, subtitle, narrative, facts,
                    files_read, files_modified, tool_name, tool_input,
-                   discovery_tokens, extracted_by, created_at
+                   discovery_tokens, extracted_by, raw_excerpt, created_at
             FROM observations
             WHERE project_id = %s AND session_id = %s
             ORDER BY created_at DESC
