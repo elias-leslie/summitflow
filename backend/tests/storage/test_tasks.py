@@ -1,7 +1,6 @@
 """Unit tests for tasks storage layer."""
 
 import pytest
-
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
@@ -73,13 +72,13 @@ class TestCreateTask:
             project_id=project_id,
             title="Full Task",
             description="Full description",
-            feature_id=None,  # Optional feature link
+            capability_id=None,  # Optional capability link
         )
 
         try:
             assert task["title"] == "Full Task"
             assert task["description"] == "Full description"
-            assert task["feature_id"] is None
+            assert task["capability_id"] is None
         finally:
             task_store.delete_task(task["id"])
 
@@ -197,9 +196,7 @@ class TestAppendProgressLog:
 
     def test_append_progress_log_adds_entry(self, test_task):
         """Test that append_progress_log adds timestamped entry."""
-        result = task_store.append_progress_log(
-            test_task["id"], "Test log entry"
-        )
+        result = task_store.append_progress_log(test_task["id"], "Test log entry")
 
         assert result is not None
         assert "Test log entry" in result["progress_log"]
