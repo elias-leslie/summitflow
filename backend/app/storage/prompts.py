@@ -1,18 +1,14 @@
-"""Storage layer for extraction prompts.
+"""Storage layer for prompts.
 
-Manages customizable prompts used for extracting TDD specs from roundtable
-conversations. Each project can have custom prompts that override the defaults.
-
-Note: Default TDD spec extraction prompts are defined in roundtable service.
-This module handles custom prompt storage/retrieval only.
+Manages customizable prompts used for TDD specs, recovery, QA, and extraction.
+Each project can have custom prompts that override the defaults.
 """
 
 from typing import Any
 
 from .connection import get_connection
 
-# Default prompts - empty after Vision/Goals/Features removal.
-# TDD spec extraction prompts are defined in roundtable service.
+# Default prompts - populated by task 16.3 with spec/recovery/qa prompts.
 DEFAULT_PROMPTS: dict[str, dict[str, Any]] = {}
 
 
@@ -25,17 +21,17 @@ def get_default_prompts() -> dict[str, dict[str, Any]]:
     return DEFAULT_PROMPTS.copy()
 
 
-def get_extraction_prompt(
+def get_prompt(
     project_id: str,
     prompt_type: str,
 ) -> dict[str, Any] | None:
-    """Get an extraction prompt for a project.
+    """Get a prompt for a project.
 
     Returns custom prompt if exists, otherwise returns default.
 
     Args:
         project_id: Project ID
-        prompt_type: Type of prompt (feature_extraction, vision_extraction, goals_extraction)
+        prompt_type: Type of prompt
 
     Returns:
         Prompt configuration dict or None if no default exists
@@ -45,8 +41,9 @@ def get_extraction_prompt(
             """
             SELECT prompt_type, prompt_text, primary_agent, primary_model,
                    verification_enabled, verification_agent, verification_model,
-                   verification_prompt, created_at, updated_at
-            FROM extraction_prompts
+                   verification_prompt, category, thinking_budget, tools_enabled,
+                   created_at, updated_at
+            FROM prompts
             WHERE project_id = %s AND prompt_type = %s
             """,
             (project_id, prompt_type),
@@ -63,8 +60,11 @@ def get_extraction_prompt(
             "verification_agent": row[5],
             "verification_model": row[6],
             "verification_prompt": row[7],
-            "created_at": row[8],
-            "updated_at": row[9],
+            "category": row[8],
+            "thinking_budget": row[9],
+            "tools_enabled": row[10] or [],
+            "created_at": row[11],
+            "updated_at": row[12],
             "is_default": False,
         }
 
@@ -76,28 +76,50 @@ def get_extraction_prompt(
     return None
 
 
-def get_all_extraction_prompts(project_id: str) -> list[dict[str, Any]]:
-    """Get all extraction prompts for a project.
+# Alias for backward compatibility
+get_extraction_prompt = get_prompt
+
+
+def get_all_prompts(
+    project_id: str,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get all prompts for a project.
 
     Returns custom prompts merged with defaults (custom takes precedence).
 
     Args:
         project_id: Project ID
+        category: Optional filter by category (spec, recovery, qa, extraction)
 
     Returns:
         List of prompt configuration dicts
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT prompt_type, prompt_text, primary_agent, primary_model,
-                   verification_enabled, verification_agent, verification_model,
-                   verification_prompt, created_at, updated_at
-            FROM extraction_prompts
-            WHERE project_id = %s
-            """,
-            (project_id,),
-        )
+        if category:
+            cur.execute(
+                """
+                SELECT prompt_type, prompt_text, primary_agent, primary_model,
+                       verification_enabled, verification_agent, verification_model,
+                       verification_prompt, category, thinking_budget, tools_enabled,
+                       created_at, updated_at
+                FROM prompts
+                WHERE project_id = %s AND category = %s
+                """,
+                (project_id, category),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT prompt_type, prompt_text, primary_agent, primary_model,
+                       verification_enabled, verification_agent, verification_model,
+                       verification_prompt, category, thinking_budget, tools_enabled,
+                       created_at, updated_at
+                FROM prompts
+                WHERE project_id = %s
+                """,
+                (project_id,),
+            )
         rows = cur.fetchall()
 
     # Build dict of custom prompts
@@ -112,23 +134,39 @@ def get_all_extraction_prompts(project_id: str) -> list[dict[str, Any]]:
             "verification_agent": row[5],
             "verification_model": row[6],
             "verification_prompt": row[7],
-            "created_at": row[8],
-            "updated_at": row[9],
+            "category": row[8],
+            "thinking_budget": row[9],
+            "tools_enabled": row[10] or [],
+            "created_at": row[11],
+            "updated_at": row[12],
             "is_default": False,
         }
 
-    # Merge with defaults
+    # Merge with defaults (filtered by category if specified)
     result = []
     for prompt_type, default in DEFAULT_PROMPTS.items():
+        if category and default.get("category") != category:
+            continue
         if prompt_type in custom_prompts:
             result.append(custom_prompts[prompt_type])
         else:
             result.append({**default, "is_default": True})
 
+    # Add any custom prompts not in defaults
+    for prompt_type, prompt in custom_prompts.items():
+        if prompt_type not in DEFAULT_PROMPTS and (
+            not category or prompt.get("category") == category
+        ):
+            result.append(prompt)
+
     return result
 
 
-def upsert_extraction_prompt(
+# Alias for backward compatibility
+get_all_extraction_prompts = get_all_prompts
+
+
+def upsert_prompt(
     project_id: str,
     prompt_type: str,
     prompt_text: str,
@@ -138,8 +176,11 @@ def upsert_extraction_prompt(
     verification_agent: str | None = None,
     verification_model: str | None = None,
     verification_prompt: str | None = None,
+    category: str = "extraction",
+    thinking_budget: int = 0,
+    tools_enabled: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Create or update an extraction prompt.
+    """Create or update a prompt.
 
     Args:
         project_id: Project ID
@@ -151,6 +192,9 @@ def upsert_extraction_prompt(
         verification_agent: Agent for verification
         verification_model: Model for verification
         verification_prompt: Prompt for verification pass
+        category: Prompt category (spec, recovery, qa, extraction)
+        thinking_budget: Token budget for extended thinking
+        tools_enabled: List of enabled tool names
 
     Returns:
         Saved prompt configuration dict
@@ -158,11 +202,12 @@ def upsert_extraction_prompt(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO extraction_prompts
+            INSERT INTO prompts
                 (project_id, prompt_type, prompt_text, primary_agent, primary_model,
                  verification_enabled, verification_agent, verification_model,
-                 verification_prompt, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                 verification_prompt, category, thinking_budget, tools_enabled,
+                 created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
             ON CONFLICT (project_id, prompt_type) DO UPDATE SET
                 prompt_text = EXCLUDED.prompt_text,
                 primary_agent = EXCLUDED.primary_agent,
@@ -171,10 +216,14 @@ def upsert_extraction_prompt(
                 verification_agent = EXCLUDED.verification_agent,
                 verification_model = EXCLUDED.verification_model,
                 verification_prompt = EXCLUDED.verification_prompt,
+                category = EXCLUDED.category,
+                thinking_budget = EXCLUDED.thinking_budget,
+                tools_enabled = EXCLUDED.tools_enabled,
                 updated_at = NOW()
             RETURNING prompt_type, prompt_text, primary_agent, primary_model,
                       verification_enabled, verification_agent, verification_model,
-                      verification_prompt, created_at, updated_at
+                      verification_prompt, category, thinking_budget, tools_enabled,
+                      created_at, updated_at
             """,
             (
                 project_id,
@@ -186,6 +235,9 @@ def upsert_extraction_prompt(
                 verification_agent,
                 verification_model,
                 verification_prompt,
+                category,
+                thinking_budget,
+                tools_enabled or [],
             ),
         )
         row = cur.fetchone()
@@ -200,17 +252,24 @@ def upsert_extraction_prompt(
         "verification_agent": row[5],
         "verification_model": row[6],
         "verification_prompt": row[7],
-        "created_at": row[8],
-        "updated_at": row[9],
+        "category": row[8],
+        "thinking_budget": row[9],
+        "tools_enabled": row[10] or [],
+        "created_at": row[11],
+        "updated_at": row[12],
         "is_default": False,
     }
 
 
-def delete_extraction_prompt(
+# Alias for backward compatibility
+upsert_extraction_prompt = upsert_prompt
+
+
+def delete_prompt(
     project_id: str,
     prompt_type: str,
 ) -> bool:
-    """Delete a custom extraction prompt (revert to default).
+    """Delete a custom prompt (revert to default).
 
     Args:
         project_id: Project ID
@@ -222,7 +281,7 @@ def delete_extraction_prompt(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            DELETE FROM extraction_prompts
+            DELETE FROM prompts
             WHERE project_id = %s AND prompt_type = %s
             RETURNING id
             """,
@@ -232,3 +291,7 @@ def delete_extraction_prompt(
         conn.commit()
 
     return row is not None
+
+
+# Alias for backward compatibility
+delete_extraction_prompt = delete_prompt

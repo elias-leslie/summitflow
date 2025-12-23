@@ -126,9 +126,9 @@ def get_effective_prompt(project_id: str, prompt_type: str) -> dict[str, Any]:
     Returns:
         Prompt configuration dict with prompt_text, primary_agent, primary_model, etc.
     """
-    from app.storage import extraction_prompts
+    from app.storage import prompts
 
-    prompt = extraction_prompts.get_extraction_prompt(project_id, prompt_type)
+    prompt = prompts.get_prompt(project_id, prompt_type)
     if prompt:
         return prompt
 

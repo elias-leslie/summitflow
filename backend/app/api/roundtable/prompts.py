@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
-from ...storage import extraction_prompts as extraction_prompts_storage
+from ...storage import prompts as prompts_storage
 from .models import (
     ExtractionPromptConfig,
     ExtractionPromptsExport,
@@ -25,7 +25,7 @@ async def list_extraction_prompts(project_id: str) -> list[ExtractionPromptConfi
     If a custom prompt exists, it's returned; otherwise, the default is used.
     The is_default flag indicates whether the prompt is using default configuration.
     """
-    prompts = extraction_prompts_storage.get_all_extraction_prompts(project_id)
+    prompts = prompts_storage.get_all_prompts(project_id)
     return [
         ExtractionPromptConfig(
             prompt_type=p["prompt_type"],
@@ -58,7 +58,7 @@ async def export_extraction_prompts(
     if format != "json":
         raise HTTPException(status_code=400, detail="Only 'json' format is currently supported")
 
-    prompts = extraction_prompts_storage.get_all_extraction_prompts(project_id)
+    prompts = prompts_storage.get_all_prompts(project_id)
 
     return ExtractionPromptsExport(
         project_id=project_id,
@@ -98,7 +98,7 @@ async def get_extraction_prompt(project_id: str, prompt_type: str) -> Extraction
             detail=f"Invalid prompt type. Must be one of: {', '.join(valid_types)}",
         )
 
-    prompt = extraction_prompts_storage.get_extraction_prompt(project_id, prompt_type)
+    prompt = prompts_storage.get_prompt(project_id, prompt_type)
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt type not found")
 
@@ -152,7 +152,7 @@ async def update_extraction_prompt(
             detail=f"Invalid verification_agent. Must be one of: {', '.join(valid_agents)}",
         )
 
-    result = extraction_prompts_storage.upsert_extraction_prompt(
+    result = prompts_storage.upsert_prompt(
         project_id=project_id,
         prompt_type=prompt_type,
         prompt_text=request.prompt_text,
@@ -194,7 +194,7 @@ async def delete_extraction_prompt(project_id: str, prompt_type: str) -> dict:
             detail=f"Invalid prompt type. Must be one of: {', '.join(valid_types)}",
         )
 
-    deleted = extraction_prompts_storage.delete_extraction_prompt(project_id, prompt_type)
+    deleted = prompts_storage.delete_prompt(project_id, prompt_type)
     if not deleted:
         # Not an error - just means they were already using default
         return {"reverted_to_default": True, "prompt_type": prompt_type}

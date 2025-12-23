@@ -591,11 +591,11 @@ def init_schema() -> None:
         )
 
         # ============================================================
-        # Extraction Prompts - Customizable prompts per project
+        # Prompts - Customizable prompts per project (spec, recovery, qa, extraction)
         # ============================================================
         cur.execute(
             """
-                CREATE TABLE IF NOT EXISTS extraction_prompts (
+                CREATE TABLE IF NOT EXISTS prompts (
                     id SERIAL PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     prompt_type VARCHAR(50) NOT NULL,
@@ -606,15 +606,16 @@ def init_schema() -> None:
                     verification_agent VARCHAR(50),
                     verification_model VARCHAR(100),
                     verification_prompt TEXT,
+                    category VARCHAR(50) DEFAULT 'extraction',
+                    thinking_budget INTEGER DEFAULT 0,
+                    tools_enabled TEXT[],
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
                     UNIQUE(project_id, prompt_type)
                 )
                 """
         )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_extraction_prompts_project ON extraction_prompts(project_id)"
-        )
+        cur.execute("CREATE INDEX IF NOT EXISTS prompts_project_idx ON prompts(project_id)")
 
         # ============================================================
         # Project Agent Configuration - Default agents/models per project
