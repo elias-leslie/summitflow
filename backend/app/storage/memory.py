@@ -6,10 +6,14 @@ This module provides data access for the Context & Memory Intelligence system.
 from __future__ import annotations
 
 import json
+import logging
 from decimal import Decimal
 from typing import Any
 
+from .agent_configs import is_memory_feature_enabled
 from .connection import get_connection
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Observation Queue Storage
@@ -23,12 +27,20 @@ def create_queue_item(
     tool_name: str,
     tool_input: dict[str, Any] | None = None,
     tool_output: str | None = None,
-) -> dict[str, Any]:
+    skip_memory_check: bool = False,
+) -> dict[str, Any] | None:
     """Create a queue item for async observation extraction.
 
+    Args:
+        skip_memory_check: If True, bypass the memory enabled check.
+
     Returns:
-        The created queue item.
+        The created queue item, or None if memory is disabled.
     """
+    if not skip_memory_check and not is_memory_feature_enabled(project_id, "observations"):
+        logger.debug(f"Memory observations disabled for {project_id}, skipping queue item")
+        return None
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -159,12 +171,20 @@ def create_observation(
     discovery_tokens: int = 0,
     extracted_by: str | None = None,
     raw_excerpt: str | None = None,
-) -> dict[str, Any]:
+    skip_memory_check: bool = False,
+) -> dict[str, Any] | None:
     """Create an observation from extracted tool execution data.
 
+    Args:
+        skip_memory_check: If True, bypass the memory enabled check.
+
     Returns:
-        The created observation.
+        The created observation, or None if memory is disabled.
     """
+    if not skip_memory_check and not is_memory_feature_enabled(project_id, "observations"):
+        logger.debug(f"Memory observations disabled for {project_id}, skipping observation")
+        return None
+
     if concepts is None:
         concepts = []
     if files_read is None:
@@ -515,12 +535,20 @@ def create_diary_entry(
     what_failed: list[str] | None = None,
     user_corrections: list[str] | None = None,
     patterns_used: list[str] | None = None,
-) -> dict[str, Any]:
+    skip_memory_check: bool = False,
+) -> dict[str, Any] | None:
     """Create a session diary entry.
 
+    Args:
+        skip_memory_check: If True, bypass the memory enabled check.
+
     Returns:
-        The created diary entry.
+        The created diary entry, or None if memory is disabled.
     """
+    if not skip_memory_check and not is_memory_feature_enabled(project_id, "diary"):
+        logger.debug(f"Memory diary disabled for {project_id}, skipping diary entry")
+        return None
+
     if concepts is None:
         concepts = []
 
@@ -778,12 +806,20 @@ def create_pattern(
     target_pattern_id: str | None = None,
     confidence: float | None = None,
     reflected_by: str | None = None,
-) -> dict[str, Any]:
+    skip_memory_check: bool = False,
+) -> dict[str, Any] | None:
     """Create a learned pattern.
 
+    Args:
+        skip_memory_check: If True, bypass the memory enabled check.
+
     Returns:
-        The created pattern.
+        The created pattern, or None if memory is disabled.
     """
+    if not skip_memory_check and not is_memory_feature_enabled(project_id, "patterns"):
+        logger.debug(f"Memory patterns disabled for {project_id}, skipping pattern")
+        return None
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -1045,12 +1081,20 @@ def create_checkpoint(
     conversation_summary: str | None = None,
     context_snapshot: dict[str, Any] | None = None,
     tokens_used: int | None = None,
-) -> dict[str, Any]:
+    skip_memory_check: bool = False,
+) -> dict[str, Any] | None:
     """Create an agent checkpoint.
 
+    Args:
+        skip_memory_check: If True, bypass the memory enabled check.
+
     Returns:
-        The created checkpoint.
+        The created checkpoint, or None if memory is disabled.
     """
+    if not skip_memory_check and not is_memory_feature_enabled(project_id, "checkpoints"):
+        logger.debug(f"Memory checkpoints disabled for {project_id}, skipping checkpoint")
+        return None
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
