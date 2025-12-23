@@ -139,6 +139,42 @@ Core tables:
 
 ---
 
+## Context Memory
+
+SummitFlow captures and learns from agent sessions automatically.
+
+### Observation Capture
+- **PostToolUse hook**: Captures observations from Write/Edit/Bash tool executions
+- Observations stored in `observation_queue` table, processed async via Celery
+- Extracted insights stored in `observations` table
+
+### Context Injection
+- **SessionStart hook**: Auto-injects recent context at session start
+- Recent project activity, observations, and patterns shown on each new session
+
+### Pattern Learning
+- Patterns extracted from diary entries via reflection
+- High-confidence patterns stored in `.claude/rules/learned-patterns.md`
+- Applied automatically at session start
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /projects/{id}/context/index` | Context summary with item counts |
+| `POST /projects/{id}/context/expand` | Expand specific context item |
+| `GET /projects/{id}/context/session-start` | Context for session injection |
+
+### Configuration
+Memory features toggled per-project via agent config (Settings page):
+- `memory_enabled` - Master switch
+- `observations_enabled` - Tool observation capture
+- `diary_enabled` - Session diary entries
+- `patterns_enabled` - Pattern learning
+- `context_injection_enabled` - Auto-inject at session start
+
+---
+
 ## First-Time Setup
 
 ```bash
@@ -165,4 +201,4 @@ bash ~/summitflow/scripts/start.sh
 
 ---
 
-**Version**: 2.1.0 | **Updated**: 2025-12-20
+**Version**: 2.2.0 | **Updated**: 2025-12-23
