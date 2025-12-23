@@ -192,6 +192,219 @@ def get_available_browser_scripts(config: ProjectConfig | None = None) -> list[s
     return available
 
 
+# ============================================================
+# UI Test Schema for Browser-Automation
+# ============================================================
+
+
+@dataclass
+class UITestConfig:
+    """Configuration for a browser-automation UI test.
+
+    A UI test can be defined in three ways:
+    1. script_name: Use a pre-built browser-automation script
+    2. script: Provide inline JavaScript to execute
+    3. command: Provide a raw shell command
+
+    Attributes:
+        script_name: Name of browser-automation script (screenshot, interact, etc.)
+        url: Target URL to test
+        args: Arguments to pass to the script
+        assertions: List of assertions to check after script execution
+        output_path: Path to save screenshots/evidence
+        wait_for: CSS selector to wait for before executing
+        auth_required: Whether Cloudflare auth is needed
+    """
+
+    script_name: str | None = None
+    url: str | None = None
+    args: dict[str, Any] = field(default_factory=dict)
+    assertions: list[dict[str, Any]] = field(default_factory=list)
+    output_path: str | None = None
+    wait_for: str | None = None
+    auth_required: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> UITestConfig:
+        """Create from a test config dict."""
+        return cls(
+            script_name=data.get("script_name"),
+            url=data.get("url"),
+            args=data.get("args", {}),
+            assertions=data.get("assertions", []),
+            output_path=data.get("output_path"),
+            wait_for=data.get("wait_for"),
+            auth_required=data.get("auth_required", False),
+        )
+
+
+def validate_ui_test_config(
+    config: dict[str, Any], project_config: ProjectConfig | None = None
+) -> tuple[bool, str | None]:
+    """Validate UI test configuration.
+
+    Args:
+        config: The test config dict to validate
+        project_config: Optional project config for script path resolution
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # At least one of script_name, script, or command must be provided
+    has_script_name = config.get("script_name")
+    has_script = config.get("script")
+    has_command = config.get("command")
+
+    if not any([has_script_name, has_script, has_command]):
+        return False, "UI test requires script_name, script, or command"
+
+    # If script_name provided, validate it exists
+    if has_script_name:
+        available = get_available_browser_scripts(project_config)
+        if has_script_name not in available:
+            return (
+                False,
+                f"Unknown script '{has_script_name}'. Available: {', '.join(available)}",
+            )
+
+    # If script_name is used with browser-automation, url is typically required
+    if has_script_name and has_script_name != "capture-evidence" and not config.get("url"):
+        return False, f"Script '{has_script_name}' requires a 'url' parameter"
+
+    # Validate assertions format if provided
+    assertions = config.get("assertions", [])
+    for assertion in assertions:
+        if not isinstance(assertion, dict):
+            return False, "Each assertion must be a dict"
+        if "type" not in assertion:
+            return False, "Each assertion must have a 'type' field"
+
+    return True, None
+
+
+# Available browser-automation scripts documentation
+UI_TEST_SCRIPTS_DOCS = {
+    "screenshot": {
+        "description": "Take a full-page screenshot",
+        "args": {
+            "url": "Target URL (required)",
+            "output": "Output path for screenshot",
+            "fullPage": "Capture full scrollable page (default: true)",
+        },
+        "example": {
+            "script_name": "screenshot",
+            "url": "https://example.com",
+            "args": {"fullPage": True},
+        },
+    },
+    "click-screenshot": {
+        "description": "Click an element and take a screenshot",
+        "args": {
+            "url": "Target URL (required)",
+            "selector": "CSS selector to click",
+            "output": "Output path for screenshot",
+        },
+        "example": {
+            "script_name": "click-screenshot",
+            "url": "https://example.com",
+            "args": {"selector": "button.submit"},
+        },
+    },
+    "tab-click-screenshot": {
+        "description": "Click a tab and take a screenshot",
+        "args": {
+            "url": "Target URL (required)",
+            "selector": "CSS selector for tab",
+            "output": "Output path for screenshot",
+        },
+        "example": {
+            "script_name": "tab-click-screenshot",
+            "url": "https://example.com/projects/1",
+            "args": {"selector": "[data-tab='components']"},
+        },
+    },
+    "interact": {
+        "description": "Perform user interactions (click, fill, hover)",
+        "args": {
+            "url": "Target URL (required)",
+            "actions": "List of actions to perform",
+        },
+        "example": {
+            "script_name": "interact",
+            "url": "https://example.com/login",
+            "args": {
+                "actions": [
+                    {"type": "fill", "selector": "#email", "value": "test@test.com"},
+                    {"type": "click", "selector": "button[type=submit]"},
+                ]
+            },
+        },
+    },
+    "regression-check": {
+        "description": "All-in-one regression testing with console/network monitoring",
+        "args": {
+            "url": "Target URL (required)",
+            "checkConsole": "Check for console errors (default: true)",
+            "checkNetwork": "Monitor network failures (default: true)",
+        },
+        "example": {
+            "script_name": "regression-check",
+            "url": "https://example.com",
+            "args": {"checkConsole": True, "checkNetwork": True},
+        },
+    },
+    "console": {
+        "description": "Capture console messages",
+        "args": {
+            "url": "Target URL (required)",
+            "filter": "Filter by log level (error, warn, info)",
+        },
+        "example": {
+            "script_name": "console",
+            "url": "https://example.com",
+            "args": {"filter": "error"},
+        },
+    },
+    "network": {
+        "description": "Monitor network requests",
+        "args": {
+            "url": "Target URL (required)",
+            "filter": "Filter by request type or URL pattern",
+        },
+        "example": {
+            "script_name": "network",
+            "url": "https://example.com",
+            "args": {"filter": "/api/"},
+        },
+    },
+    "capture-evidence": {
+        "description": "Capture comprehensive evidence (screenshot, console, network)",
+        "args": {
+            "url": "Target URL (required)",
+            "featureId": "Feature ID for evidence storage",
+            "criterionId": "Criterion ID for evidence storage",
+        },
+        "example": {
+            "script_name": "capture-evidence",
+            "url": "https://example.com/feature",
+            "args": {"featureId": "FEAT-001", "criterionId": "ac-001"},
+        },
+    },
+    "expand": {
+        "description": "Expand collapsed UI elements and take screenshot",
+        "args": {
+            "url": "Target URL (required)",
+            "selector": "CSS selector for expandable element",
+        },
+        "example": {
+            "script_name": "expand",
+            "url": "https://example.com",
+            "args": {"selector": "[data-expandable]"},
+        },
+    },
+}
+
+
 async def _run_command(
     command: str,
     working_dir: str,

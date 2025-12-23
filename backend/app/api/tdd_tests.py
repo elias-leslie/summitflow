@@ -3,6 +3,11 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from ..services.test_runner import (
+    UI_TEST_SCRIPTS_DOCS,
+    get_available_browser_scripts,
+    validate_ui_test_config,
+)
 from ..storage import test_runs as test_runs_storage
 from ..storage import tests as storage
 
@@ -97,7 +102,23 @@ async def get_test(project_id: str, test_id: str) -> TestWithHistoryResponse:
 
 @router.post("/{project_id}/tests", response_model=TestResponse)
 async def create_test(project_id: str, body: TestCreate) -> TestResponse:
-    """Create a new test."""
+    """Create a new test.
+
+    For UI tests, the config should follow the browser-automation schema:
+    - script_name: Name of browser-automation script (screenshot, interact, etc.)
+    - url: Target URL to test
+    - args: Arguments to pass to the script
+    - assertions: List of assertions to check
+    - output_path: Path to save evidence
+
+    Use GET /{project_id}/tests/ui-scripts to see available scripts.
+    """
+    # Validate UI test config if test_type is 'ui'
+    if body.test_type == "ui" and body.config:
+        is_valid, error = validate_ui_test_config(body.config)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid UI test config: {error}")
+
     try:
         test = storage.create_test(
             project_id=project_id,
@@ -116,8 +137,8 @@ async def create_test(project_id: str, body: TestCreate) -> TestResponse:
             raise HTTPException(
                 status_code=409,
                 detail=f"Test {body.test_id} already exists",
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            ) from None
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.patch("/{project_id}/tests/{test_id}", response_model=TestResponse)
@@ -310,7 +331,7 @@ async def import_tests_endpoint(
     Supports:
     - pytest: Discovers tests via pytest --collect-only
     - vitest: Discovers .test.ts/.tsx files
-    - playwright: Discovers .spec.ts E2E tests
+    - ui: Browser-automation UI tests
     - all: Discovers all supported test types
     """
     from ..services.test_importer import import_tests
@@ -328,4 +349,48 @@ async def import_tests_endpoint(
             errors=result.errors,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ============================================================
+# UI Test Scripts Documentation
+# ============================================================
+
+
+class UIScriptInfo(BaseModel):
+    """Information about a browser-automation script."""
+
+    name: str
+    description: str
+    args: dict[str, str]
+    example: dict
+
+
+class UIScriptsResponse(BaseModel):
+    """Response for available UI scripts."""
+
+    available: list[str]
+    scripts: dict[str, UIScriptInfo]
+
+
+@router.get("/{project_id}/tests/ui-scripts", response_model=UIScriptsResponse)
+async def get_ui_scripts(project_id: str) -> UIScriptsResponse:
+    """Get available browser-automation scripts for UI tests.
+
+    Returns a list of available scripts with their descriptions,
+    arguments, and usage examples.
+    """
+    available = get_available_browser_scripts()
+
+    scripts = {}
+    for name in available:
+        if name in UI_TEST_SCRIPTS_DOCS:
+            doc = UI_TEST_SCRIPTS_DOCS[name]
+            scripts[name] = UIScriptInfo(
+                name=name,
+                description=doc["description"],
+                args=doc["args"],
+                example=doc["example"],
+            )
+
+    return UIScriptsResponse(available=available, scripts=scripts)
