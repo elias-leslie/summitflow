@@ -83,6 +83,7 @@ def _restore_session_from_db(
     service._sessions[session_id] = session
     return session
 
+
 router = APIRouter()
 
 
@@ -166,119 +167,6 @@ class SendMessageResponse(BaseModel):
 
     user_message: MessageResponse
     responses: list[MessageResponse]
-
-
-class GenerateFeaturesRequest(BaseModel):
-    """Request to generate features from conversation."""
-
-    agent: str = "claude"  # "claude" or "gemini"
-
-
-class GeneratedCriterion(BaseModel):
-    """Acceptance criterion in generated feature."""
-
-    id: str
-    description: str
-
-
-class GeneratedFeature(BaseModel):
-    """Feature generated from conversation."""
-
-    feature_id: str
-    name: str
-    category: str
-    priority: int
-    description: str
-    acceptance_criteria: list[GeneratedCriterion]
-
-
-class GenerateFeaturesResponse(BaseModel):
-    """Response after generating features."""
-
-    features: list[GeneratedFeature]
-    session_id: str
-
-
-# Vision Generation Models
-class GenerateVisionRequest(BaseModel):
-    """Request to generate vision from conversation."""
-
-    agent: str = "claude"  # "claude" or "gemini"
-
-
-class GeneratedNarrative(BaseModel):
-    """Narrative generated from conversation."""
-
-    id: str
-    title: str
-    content: str
-    category: str = "general"
-
-
-class GeneratedMission(BaseModel):
-    """Mission statement generated from conversation."""
-
-    statement: str
-    values: list[str] = []
-
-
-class GenerateVisionResponse(BaseModel):
-    """Response after generating vision."""
-
-    mission: GeneratedMission | None
-    narratives: list[GeneratedNarrative]
-    session_id: str
-
-
-class SaveVisionRequest(BaseModel):
-    """Request to save generated vision."""
-
-    mission: GeneratedMission | None = None
-    narratives: list[GeneratedNarrative] = []
-
-
-class SaveVisionResponse(BaseModel):
-    """Response after saving vision."""
-
-    status: str
-    project_id: str
-
-
-# Goals Generation Models
-class GenerateGoalsRequest(BaseModel):
-    """Request to generate goals from conversation."""
-
-    agent: str = "claude"  # "claude" or "gemini"
-
-
-class GeneratedGoal(BaseModel):
-    """Goal generated from conversation."""
-
-    code: str
-    name: str
-    description: str
-    category: str = "general"
-
-
-class GenerateGoalsResponse(BaseModel):
-    """Response after generating goals."""
-
-    goals: list[GeneratedGoal]
-    session_id: str
-
-
-class SaveGoalsRequest(BaseModel):
-    """Request to save generated goals."""
-
-    goals: list[GeneratedGoal]
-
-
-class SaveGoalsResponse(BaseModel):
-    """Response after saving goals."""
-
-    status: str
-    project_id: str
-    goals_created: int
 
 
 # Extraction Prompts Models
@@ -547,7 +435,9 @@ async def get_session(project_id: str, session_id: str):
         "tools_enabled": session.get("tools_enabled", True),
         "write_enabled": session.get("write_enabled", False),
         "yolo_mode": session.get("yolo_mode", False),
-        "tool_stats": session.get("tool_stats", {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}),
+        "tool_stats": session.get(
+            "tool_stats", {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
+        ),
         "agent_override": session.get("agent_override"),
         "model_override": session.get("model_override"),
         "messages": session.get("messages", []),
@@ -646,9 +536,7 @@ async def update_session(
 
     # Validate status if provided
     if request.status is not None and request.status not in ("active", "archived"):
-        raise HTTPException(
-            status_code=400, detail="status must be 'active' or 'archived'"
-        )
+        raise HTTPException(status_code=400, detail="status must be 'active' or 'archived'")
 
     result = roundtable_storage.update_session_metadata(
         session_id=session_id,
@@ -698,11 +586,8 @@ async def update_session_agent_config(
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Validate agent if provided
-    if request.agent_override is not None:
-        if request.agent_override not in ("claude", "gemini"):
-            raise HTTPException(
-                status_code=400, detail="agent_override must be 'claude' or 'gemini'"
-            )
+    if request.agent_override is not None and request.agent_override not in ("claude", "gemini"):
+        raise HTTPException(status_code=400, detail="agent_override must be 'claude' or 'gemini'")
 
     # Update session with new values
     roundtable_storage.update_agent_config(
@@ -886,278 +771,6 @@ async def send_message(
     )
 
 
-@router.post(
-    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-features",
-    response_model=GenerateFeaturesResponse,
-)
-async def generate_features(
-    project_id: str,
-    session_id: str,
-    request: GenerateFeaturesRequest,
-):
-    """Generate features from a roundtable conversation."""
-    service = get_roundtable_service()
-
-    # Get session
-    session = service.get_session(session_id)
-    if not session:
-        session = _restore_session_from_db(service, session_id, project_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-    if len(session.messages) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 messages to generate features",
-        )
-
-    # Generate features
-    agent_type = request.agent if request.agent in ("claude", "gemini") else "gemini"
-    created_features = service.create_features_from_conversation(session, agent_type)
-
-    # Update session with generated features
-    features_data = [
-        {
-            "feature_id": f.get("id", ""),
-            "name": f.get("name", ""),
-            "category": f.get("category", ""),
-            "priority": f.get("priority", 3),
-            "description": f.get("description", ""),
-            "acceptance_criteria": f.get("acceptance_criteria", []),
-        }
-        for f in created_features
-    ]
-    roundtable_storage.update_generated_features(session_id, features_data)
-
-    return GenerateFeaturesResponse(
-        features=[
-            GeneratedFeature(
-                feature_id=f.get("id", ""),
-                name=f.get("name", ""),
-                category=f.get("category", ""),
-                priority=f.get("priority", 3),
-                description=f.get("description", ""),
-                acceptance_criteria=[
-                    GeneratedCriterion(
-                        id=c.get("id", ""),
-                        description=c.get("description", ""),
-                    )
-                    for c in f.get("acceptance_criteria", [])
-                ],
-            )
-            for f in created_features
-        ],
-        session_id=session_id,
-    )
-
-
-@router.post(
-    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-vision",
-    response_model=GenerateVisionResponse,
-)
-async def generate_vision(
-    project_id: str,
-    session_id: str,
-    request: GenerateVisionRequest,
-):
-    """Generate vision (mission + narratives) from a roundtable conversation."""
-    service = get_roundtable_service()
-
-    # Get session
-    session = service.get_session(session_id)
-    if not session:
-        session = _restore_session_from_db(service, session_id, project_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-    if len(session.messages) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 messages to generate vision",
-        )
-
-    # Extract vision
-    agent_type = request.agent if request.agent in ("claude", "gemini") else "claude"
-    extracted = service.extract_vision_from_conversation(session, agent_type)
-
-    mission = None
-    if extracted.get("mission"):
-        mission = GeneratedMission(
-            statement=extracted["mission"].get("statement", ""),
-            values=extracted["mission"].get("values", []),
-        )
-
-    narratives = [
-        GeneratedNarrative(
-            id=n.get("id", f"narrative-{i+1}"),
-            title=n.get("title", ""),
-            content=n.get("content", ""),
-            category=n.get("category", "general"),
-        )
-        for i, n in enumerate(extracted.get("narratives", []))
-    ]
-
-    return GenerateVisionResponse(
-        mission=mission,
-        narratives=narratives,
-        session_id=session_id,
-    )
-
-
-@router.post(
-    "/projects/{project_id}/roundtable/sessions/{session_id}/save-vision",
-    response_model=SaveVisionResponse,
-)
-async def save_vision(
-    project_id: str,
-    session_id: str,
-    request: SaveVisionRequest,
-):
-    """Save generated vision to the project's vision content."""
-    from ..storage.connection import get_connection
-
-    try:
-        with get_connection() as conn, conn.cursor() as cur:
-            # Save mission if provided
-            if request.mission:
-                cur.execute(
-                    """
-                    INSERT INTO vision_content (project_id, content_type, content_key, title, content, order_num, metadata)
-                    VALUES (%s, 'mission', 'mission-statement', 'Mission Statement', %s, 0, %s)
-                    ON CONFLICT (project_id, content_type, content_key) DO UPDATE
-                    SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, updated_at = NOW()
-                    """,
-                    (
-                        project_id,
-                        request.mission.statement,
-                        json.dumps({"values": request.mission.values}),
-                    ),
-                )
-
-            # Save narratives
-            for i, narrative in enumerate(request.narratives):
-                cur.execute(
-                    """
-                    INSERT INTO vision_content (project_id, content_type, content_key, title, content, order_num, metadata)
-                    VALUES (%s, 'vision', %s, %s, %s, %s, %s)
-                    ON CONFLICT (project_id, content_type, content_key) DO UPDATE
-                    SET title = EXCLUDED.title, content = EXCLUDED.content, order_num = EXCLUDED.order_num,
-                        metadata = EXCLUDED.metadata, updated_at = NOW()
-                    """,
-                    (
-                        project_id,
-                        narrative.id,
-                        narrative.title,
-                        narrative.content,
-                        i + 1,
-                        json.dumps({"category": narrative.category}),
-                    ),
-                )
-
-            conn.commit()
-
-        return SaveVisionResponse(
-            status="saved",
-            project_id=project_id,
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to save vision: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.post(
-    "/projects/{project_id}/roundtable/sessions/{session_id}/generate-goals",
-    response_model=GenerateGoalsResponse,
-)
-async def generate_goals(
-    project_id: str,
-    session_id: str,
-    request: GenerateGoalsRequest,
-):
-    """Generate strategic goals from a roundtable conversation."""
-    service = get_roundtable_service()
-
-    # Get session
-    session = service.get_session(session_id)
-    if not session:
-        session = _restore_session_from_db(service, session_id, project_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-    if len(session.messages) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 messages to generate goals",
-        )
-
-    # Extract goals
-    agent_type = request.agent if request.agent in ("claude", "gemini") else "claude"
-    extracted = service.extract_goals_from_conversation(session, agent_type)
-
-    goals = [
-        GeneratedGoal(
-            code=g.get("code", f"VG-{i+1:03d}"),
-            name=g.get("name", ""),
-            description=g.get("description", ""),
-            category=g.get("category", "general"),
-        )
-        for i, g in enumerate(extracted)
-    ]
-
-    return GenerateGoalsResponse(
-        goals=goals,
-        session_id=session_id,
-    )
-
-
-@router.post(
-    "/projects/{project_id}/roundtable/sessions/{session_id}/save-goals",
-    response_model=SaveGoalsResponse,
-)
-async def save_goals(
-    project_id: str,
-    session_id: str,
-    request: SaveGoalsRequest,
-):
-    """Save generated goals to the project's vision goals."""
-    from ..storage.connection import get_connection
-
-    try:
-        with get_connection() as conn, conn.cursor() as cur:
-            created = 0
-            for goal in request.goals:
-                cur.execute(
-                    """
-                    INSERT INTO vision_goals (code, project_id, name, description, category)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (code) DO UPDATE
-                    SET name = EXCLUDED.name, description = EXCLUDED.description,
-                        category = EXCLUDED.category, project_id = EXCLUDED.project_id, updated_at = NOW()
-                    """,
-                    (
-                        goal.code,
-                        project_id,
-                        goal.name,
-                        goal.description,
-                        goal.category,
-                    ),
-                )
-                created += 1
-
-            conn.commit()
-
-        return SaveGoalsResponse(
-            status="saved",
-            project_id=project_id,
-            goals_created=created,
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to save goals: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
 # ============================================================================
 # Extraction Prompts Endpoints
 # ============================================================================
@@ -1205,9 +818,7 @@ async def export_extraction_prompts(
     Currently only JSON format is supported.
     """
     if format != "json":
-        raise HTTPException(
-            status_code=400, detail="Only 'json' format is currently supported"
-        )
+        raise HTTPException(status_code=400, detail="Only 'json' format is currently supported")
 
     from datetime import datetime
 
@@ -1239,9 +850,7 @@ async def export_extraction_prompts(
     "/projects/{project_id}/roundtable/extraction-prompts/{prompt_type}",
     response_model=ExtractionPromptConfig,
 )
-async def get_extraction_prompt(
-    project_id: str, prompt_type: str
-) -> ExtractionPromptConfig:
+async def get_extraction_prompt(project_id: str, prompt_type: str) -> ExtractionPromptConfig:
     """Get a specific extraction prompt by type.
 
     Valid prompt types: feature_extraction, vision_extraction, goals_extraction
@@ -1297,12 +906,15 @@ async def update_extraction_prompt(
             detail=f"Invalid primary_agent. Must be one of: {', '.join(valid_agents)}",
         )
 
-    if request.verification_enabled and request.verification_agent:
-        if request.verification_agent not in valid_agents:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid verification_agent. Must be one of: {', '.join(valid_agents)}",
-            )
+    if (
+        request.verification_enabled
+        and request.verification_agent
+        and request.verification_agent not in valid_agents
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid verification_agent. Must be one of: {', '.join(valid_agents)}",
+        )
 
     result = extraction_prompts_storage.upsert_extraction_prompt(
         project_id=project_id,
@@ -1703,9 +1315,7 @@ async def generate_spec(
 
     # Count entities
     components_count = len(spec.get("components", []))
-    capabilities_count = sum(
-        len(c.get("capabilities", [])) for c in spec.get("components", [])
-    )
+    capabilities_count = sum(len(c.get("capabilities", [])) for c in spec.get("components", []))
     tests_count = sum(
         len(cap.get("tests", []))
         for c in spec.get("components", [])
@@ -1766,7 +1376,7 @@ async def accept_spec(
             accepted_by=request.accepted_by,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     return AcceptSpecResponse(
         spec_id=result["spec_id"],
