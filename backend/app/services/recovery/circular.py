@@ -7,21 +7,94 @@ indicating a circular pattern that won't converge.
 from __future__ import annotations
 
 import re
-from typing import Iterable
-
+from collections.abc import Iterable
 
 # Common stop words to filter from error text
-STOP_WORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "must", "shall", "can", "need", "to", "of",
-    "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
-    "during", "before", "after", "above", "below", "between", "under",
-    "again", "further", "then", "once", "here", "there", "when", "where",
-    "why", "how", "all", "each", "few", "more", "most", "other", "some",
-    "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-    "very", "just", "and", "but", "if", "or", "because", "until", "while",
-})
+STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "need",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "and",
+        "but",
+        "if",
+        "or",
+        "because",
+        "until",
+        "while",
+    }
+)
 
 # Minimum keyword length to consider
 MIN_KEYWORD_LENGTH = 3
@@ -49,9 +122,7 @@ def extract_keywords(error_text: str) -> set[str]:
 
     # Filter: remove stop words and short tokens
     keywords = {
-        token
-        for token in tokens
-        if len(token) >= MIN_KEYWORD_LENGTH and token not in STOP_WORDS
+        token for token in tokens if len(token) >= MIN_KEYWORD_LENGTH and token not in STOP_WORDS
     }
 
     return keywords

@@ -23,7 +23,6 @@ from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
 from .agents import get_agent
 from .recovery import (
-    FailureType,
     RecoveryManager,
     RecoveryStrategy,
     classify_failure,
@@ -249,8 +248,7 @@ async def build_capability(
 
         # Classify the failure
         error_text = "\n".join(
-            t.get("error", "") + t.get("output", "")
-            for t in failure_info.get("failed_tests", [])
+            t.get("error", "") + t.get("output", "") for t in failure_info.get("failed_tests", [])
         )
         failure_type = classify_failure(error_text=error_text)
 
@@ -372,11 +370,11 @@ async def call_agent_for_fix(
         Dict with 'success', 'changes_made', 'response'
     """
     # Build the prompt with context
-    prompt = f"""## Capability: {capability.get('name', 'Unknown')}
-{capability.get('description', '')}
+    prompt = f"""## Capability: {capability.get("name", "Unknown")}
+{capability.get("description", "")}
 
 ## Test Failures
-{failure_info['summary']}
+{failure_info["summary"]}
 
 ## Failed Test Details
 """

@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from ..services import explorer
+from ..storage import agent_configs
 from ..storage.connection import get_connection
 
 router = APIRouter()
@@ -53,32 +54,31 @@ async def create_project(
 
     Triggers an initial Explorer scan for all types in the background.
     """
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            # Check if already exists
-            cur.execute("SELECT id FROM projects WHERE id = %s", (project.id,))
-            if cur.fetchone():
-                raise HTTPException(status_code=409, detail=f"Project {project.id} already exists")
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check if already exists
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project.id,))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail=f"Project {project.id} already exists")
 
-            # Insert
-            now = datetime.now(UTC)
-            cur.execute(
-                """
+        # Insert
+        now = datetime.now(UTC)
+        cur.execute(
+            """
                 INSERT INTO projects (id, name, base_url, health_endpoint, root_path, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id, name, base_url, health_endpoint, root_path, created_at
                 """,
-                (
-                    project.id,
-                    project.name,
-                    project.base_url,
-                    project.health_endpoint,
-                    project.root_path,
-                    now,
-                ),
-            )
-            row = cur.fetchone()
-            conn.commit()
+            (
+                project.id,
+                project.name,
+                project.base_url,
+                project.health_endpoint,
+                project.root_path,
+                now,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
 
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create project")
@@ -399,8 +399,6 @@ async def delete_project(project_id: str) -> dict[str, str]:
 
 
 # --- Agent Configuration Endpoints ---
-
-from ..storage import agent_configs
 
 
 class AgentConfigResponse(BaseModel):

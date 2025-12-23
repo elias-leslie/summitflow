@@ -212,6 +212,8 @@ def list_tasks(
     task_type_filter: str | None = None,
     priority_filter: int | None = None,
     labels_filter: list[str] | None = None,
+    orphans_only: bool = False,
+    include_feature: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -223,6 +225,8 @@ def list_tasks(
         task_type_filter: Optional type filter (task, bug, feature)
         priority_filter: Optional priority filter (0-4)
         labels_filter: Optional labels filter (task must have ALL specified labels)
+        orphans_only: Only return tasks not linked to a feature/capability
+        include_feature: Include feature data (not yet implemented)
         limit: Max results (default 50)
         offset: Result offset
 
@@ -245,6 +249,8 @@ def list_tasks(
         # Task must contain all specified labels
         conditions.append("t.labels @> %s")
         params.append(labels_filter)
+    if orphans_only:
+        conditions.append("t.capability_id IS NULL")
 
     params.extend([limit, offset])
 

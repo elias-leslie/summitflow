@@ -377,7 +377,7 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
 
     # Handle case where memory was disabled at storage layer
     if item is None:
-        logger.debug(f"observation_skipped: memory disabled at storage layer")
+        logger.debug("observation_skipped: memory disabled at storage layer")
         _increment_metric("tools_skipped", "storage_memory_disabled")
         return HookResponse(
             status="skipped",

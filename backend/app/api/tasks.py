@@ -38,7 +38,7 @@ class TaskCreate(BaseModel):
 
     title: str
     description: str | None = None
-    feature_id: int | None = None  # Database ID of feature (optional)
+    capability_id: int | None = None  # Database ID of capability (optional)
     # Issue tracking fields
     priority: int = Field(default=2, ge=0, le=4, description="Priority 0-4 (0=critical, 4=backlog)")
     labels: list[str] = Field(
@@ -136,7 +136,7 @@ class TaskResponse(BaseModel):
 
     id: str
     project_id: str
-    feature_id: int | None
+    capability_id: int | None
     title: str
     description: str | None
     status: str
@@ -216,7 +216,7 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
-        feature_id=task["feature_id"],
+        capability_id=task["capability_id"],
         title=task["title"],
         description=task["description"],
         status=task["status"],
@@ -351,7 +351,7 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         project_id=project_id,
         title=task.title,
         description=task.description,
-        feature_id=task.feature_id,
+        capability_id=task.capability_id,
         priority=task.priority,
         labels=task.labels,
         task_type=task.task_type,

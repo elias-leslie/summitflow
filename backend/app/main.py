@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import (
     accepted_specs,
     agent_sessions,
-    beads,
     build,
     capabilities,
     celery_endpoints,
@@ -71,7 +70,6 @@ app.include_router(evidence.router, prefix="/api", tags=["evidence"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
-app.include_router(beads.router, prefix="/api", tags=["beads"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(terminal.router, tags=["terminal"])
