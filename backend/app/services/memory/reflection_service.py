@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.storage.memory import get_observations_by_session
+
 from .diary_service import DiaryService
 from .pattern_service import PatternService
 
@@ -306,7 +308,7 @@ class ReflectionService:
         return result
 
     def _format_diary_entries(self, entries: list[dict[str, Any]]) -> str:
-        """Format diary entries for the prompt."""
+        """Format diary entries for the prompt, enriched with observation details."""
         lines = []
         for entry in entries:
             lines.append(f"### Entry: {entry['id']}")
@@ -338,9 +340,58 @@ class ReflectionService:
                 if corrections:
                     lines.append(f"- User corrections: {', '.join(corrections)}")
 
+            # Enrich with observation details (limit to 5 most recent per session)
+            observations = self._get_session_observations(entry["session_id"], limit=5)
+            if observations:
+                lines.append("- Observations:")
+                for obs in observations:
+                    lines.append(f"  - [{obs['observation_type']}] {obs['title']}")
+                    if obs.get("tool_name"):
+                        lines.append(f"    Tool: {obs['tool_name']}")
+                    if obs.get("narrative"):
+                        # Truncate long narratives
+                        narrative = obs["narrative"][:500]
+                        if len(obs["narrative"]) > 500:
+                            narrative += "..."
+                        lines.append(f"    Details: {narrative}")
+                    if obs.get("facts"):
+                        facts = obs["facts"]
+                        if isinstance(facts, str):
+                            try:
+                                facts = json.loads(facts)
+                            except json.JSONDecodeError:
+                                facts = {}
+                        if facts:
+                            # Include key facts for error observations
+                            fact_strs = []
+                            for k, v in list(facts.items())[:5]:
+                                if v and str(v).strip():
+                                    fact_strs.append(f"{k}: {v}")
+                            if fact_strs:
+                                lines.append(f"    Facts: {'; '.join(fact_strs)}")
+
             lines.append("")
 
         return "\n".join(lines)
+
+    def _get_session_observations(self, session_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Get observations for a session, prioritizing error and decision types."""
+        try:
+            observations = get_observations_by_session(self.project_id, session_id, limit=20)
+            # Prioritize error, decision, and pattern observations
+            priority_types = {"error", "decision", "pattern", "correction"}
+            prioritized = sorted(
+                observations,
+                key=lambda o: (
+                    0 if o.get("observation_type") in priority_types else 1,
+                    o.get("created_at", ""),
+                ),
+                reverse=True,
+            )
+            return prioritized[:limit]
+        except Exception as e:
+            logger.warning(f"Failed to get session observations: {e}")
+            return []
 
     def _format_existing_patterns(self, patterns: list[dict[str, Any]]) -> str:
         """Format existing patterns for duplicate detection."""
@@ -368,7 +419,7 @@ class ReflectionService:
             pass
 
         # Try to extract JSON array from content
-        json_match = re.search(r'\[[\s\S]*\]', content)
+        json_match = re.search(r"\[[\s\S]*\]", content)
         if json_match:
             try:
                 data = json.loads(json_match.group(0))
@@ -380,7 +431,7 @@ class ReflectionService:
         logger.warning(f"Failed to parse reflection response: {content[:200]}...")
         return []
 
-    def _convert_to_suggestions(self, data: list[dict]) -> list[PatternSuggestion]:
+    def _convert_to_suggestions(self, data: list[dict[str, Any]]) -> list[PatternSuggestion]:
         """Convert parsed JSON to PatternSuggestion objects."""
         suggestions = []
         for item in data:

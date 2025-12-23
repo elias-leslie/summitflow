@@ -527,6 +527,40 @@ function Pagination({
 
   if (totalPages <= 1) return null;
 
+  // Build page numbers with ellipsis for large page counts
+  const getPageNumbers = (): (number | 'ellipsis')[] => {
+    const pages: (number | 'ellipsis')[] = [];
+
+    if (totalPages <= 7) {
+      // Show all pages if 7 or fewer
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      // Always show first page
+      pages.push(1);
+
+      if (currentPage > 3) {
+        pages.push('ellipsis');
+      }
+
+      // Show pages around current
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push('ellipsis');
+      }
+
+      // Always show last page
+      pages.push(totalPages);
+    }
+
+    return pages;
+  };
+
   return (
     <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
       <button
@@ -544,20 +578,26 @@ function Pagination({
       </button>
 
       <div className="flex items-center gap-1">
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-          <button
-            key={page}
-            onClick={() => onPageChange(page)}
-            className={clsx(
-              'w-8 h-8 text-sm rounded-lg transition-colors',
-              page === currentPage
-                ? 'bg-outrun-500/20 text-outrun-400 font-medium'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            )}
-          >
-            {page}
-          </button>
-        ))}
+        {getPageNumbers().map((page, idx) =>
+          page === 'ellipsis' ? (
+            <span key={`ellipsis-${idx}`} className="w-8 h-8 flex items-center justify-center text-slate-500">
+              …
+            </span>
+          ) : (
+            <button
+              key={page}
+              onClick={() => onPageChange(page)}
+              className={clsx(
+                'w-8 h-8 text-sm rounded-lg transition-colors',
+                page === currentPage
+                  ? 'bg-outrun-500/20 text-outrun-400 font-medium'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              )}
+            >
+              {page}
+            </button>
+          )
+        )}
       </div>
 
       <button
@@ -898,7 +938,7 @@ export default function MemoryPage() {
                   }}
                 />
                 <div className="space-y-2 mt-4">
-                  {pendingPatterns.map((pattern) => (
+                  {patterns.map((pattern) => (
                     <PatternRow
                       key={pattern.id}
                       pattern={pattern}
