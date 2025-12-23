@@ -82,7 +82,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
         observations = _run_async(extractor.extract_batch(pending_items))
 
         # Process results - each observation corresponds to the item at same index
-        for idx, (item, observation) in enumerate(zip(pending_items, observations)):
+        for _idx, (item, observation) in enumerate(zip(pending_items, observations, strict=False)):
             try:
                 if observation.skipped:
                     # Mark as processed but don't create observation
@@ -107,6 +107,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
                     observation_type=observation.observation_type,
                     title=observation.title,
                     concepts=observation.concepts,
+                    priority=observation.priority,
                     subtitle=observation.subtitle,
                     narrative=observation.narrative,
                     facts=observation.facts,
@@ -195,9 +196,7 @@ def _schedule_diary_aggregation(items: list[dict[str, Any]]) -> None:
     for project_id, session_id in sessions:
         key = (project_id, session_id)
         if key in _pending_diary_sessions:
-            logger.debug(
-                f"diary_aggregation_already_scheduled: session={session_id[:16]}..."
-            )
+            logger.debug(f"diary_aggregation_already_scheduled: session={session_id[:16]}...")
             continue
 
         # Schedule with delay

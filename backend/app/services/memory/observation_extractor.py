@@ -44,6 +44,7 @@ For EACH item below, extract an observation. Return a JSON array with one result
 For each item, return a JSON object with:
 - "index": <the item index for matching>
 - "observation_type": <one of: pattern, decision, error, constraint, architecture, user_preference>
+- "priority": <one of: high, medium, low>
 - "concepts": [<list from: debugging, code_patterns, dependencies, security, performance, testing, configuration>]
 - "title": <concise title, 5-10 words>
 - "subtitle": <optional one-line clarification or null>
@@ -59,14 +60,14 @@ If an item is trivial (no insight), use:
 
 Rules:
 - Return ONLY a JSON array, no markdown
-- HIGH VALUE: error, decision, user_preference - always extract
-- MEDIUM VALUE: pattern, architecture - extract if significant
-- LOW VALUE: constraint - skip unless exceptional
+- HIGH priority: error, decision, user_preference - always extract, critical insights
+- MEDIUM priority: pattern, architecture - significant learnings
+- LOW priority: constraint - routine observations, skip unless exceptional
 - Include index for every result to match back to items
 
 Example response format:
 [
-  {{"index": 0, "observation_type": "error", "concepts": ["debugging"], "title": "...", ...}},
+  {{"index": 0, "observation_type": "error", "priority": "high", "concepts": ["debugging"], "title": "...", ...}},
   {{"index": 1, "skip": true, "reason": "trivial file read"}},
   ...
 ]"""
@@ -113,6 +114,9 @@ If this tool execution is trivial (e.g., just reading a small file with no insig
 Return ONLY valid JSON, no markdown code blocks."""
 
 
+PRIORITY_VALUES = ["high", "medium", "low"]
+
+
 @dataclass
 class ExtractedObservation:
     """Structured observation extracted from tool execution."""
@@ -120,6 +124,7 @@ class ExtractedObservation:
     observation_type: str
     title: str
     concepts: list[str]
+    priority: str = "medium"  # high, medium, low
     subtitle: str | None = None
     narrative: str | None = None
     facts: dict[str, Any] | None = None
@@ -376,12 +381,14 @@ class ObservationExtractor:
             if len(tool_output) > max_output_chars:
                 tool_output = tool_output[:max_output_chars] + "..."
 
-            formatted_items.append({
-                "index": idx,
-                "tool_name": item.get("tool_name", "unknown"),
-                "tool_input": tool_input_str,
-                "tool_output": tool_output,
-            })
+            formatted_items.append(
+                {
+                    "index": idx,
+                    "tool_name": item.get("tool_name", "unknown"),
+                    "tool_input": tool_input_str,
+                    "tool_output": tool_output,
+                }
+            )
 
         items_json = json.dumps(formatted_items, indent=2)
         prompt = BATCH_EXTRACTION_PROMPT.format(items_json=items_json)
@@ -419,15 +426,17 @@ class ObservationExtractor:
                 result = result_map.get(idx, {})
 
                 if result.get("skip"):
-                    observations.append(ExtractedObservation(
-                        observation_type="",
-                        title="",
-                        concepts=[],
-                        skipped=True,
-                        skip_reason=result.get("reason", "Trivial execution"),
-                        discovery_tokens=per_item_tokens,
-                        extracted_by=self.model,
-                    ))
+                    observations.append(
+                        ExtractedObservation(
+                            observation_type="",
+                            title="",
+                            concepts=[],
+                            skipped=True,
+                            skip_reason=result.get("reason", "Trivial execution"),
+                            discovery_tokens=per_item_tokens,
+                            extracted_by=self.model,
+                        )
+                    )
                     continue
 
                 # Validate and build observation
@@ -435,21 +444,29 @@ class ObservationExtractor:
                 if obs_type not in OBSERVATION_TYPES:
                     obs_type = "pattern"
 
+                # Validate and normalize priority
+                priority = result.get("priority", "medium")
+                if priority not in PRIORITY_VALUES:
+                    priority = "medium"
+
                 concepts = result.get("concepts", [])
                 concepts = [c for c in concepts if c in CONCEPT_TAGS]
 
-                observations.append(ExtractedObservation(
-                    observation_type=obs_type,
-                    title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
-                    concepts=concepts,
-                    subtitle=result.get("subtitle"),
-                    narrative=result.get("narrative"),
-                    facts=result.get("facts"),
-                    files_read=result.get("files_read"),
-                    files_modified=result.get("files_modified"),
-                    discovery_tokens=per_item_tokens,
-                    extracted_by=self.model,
-                ))
+                observations.append(
+                    ExtractedObservation(
+                        observation_type=obs_type,
+                        title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
+                        concepts=concepts,
+                        priority=priority,
+                        subtitle=result.get("subtitle"),
+                        narrative=result.get("narrative"),
+                        facts=result.get("facts"),
+                        files_read=result.get("files_read"),
+                        files_modified=result.get("files_modified"),
+                        discovery_tokens=per_item_tokens,
+                        extracted_by=self.model,
+                    )
+                )
 
             duration_seconds = time.time() - start_time
             items_per_second = len(items) / duration_seconds if duration_seconds > 0 else 0
