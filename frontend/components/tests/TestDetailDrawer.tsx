@@ -15,6 +15,7 @@ import {
   ChevronRight,
   AlertTriangle,
   ExternalLink,
+  Image,
 } from "lucide-react";
 
 import {
@@ -177,6 +178,43 @@ export function TestDetailDrawer({
             </div>
           )}
 
+          {/* UI Test Config (for browser-automation tests) */}
+          {details?.test_type === "ui" && details?.config && Object.keys(details.config).length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Image className="h-3.5 w-3.5" />
+                Browser Automation
+              </h3>
+              <div className="rounded-lg bg-slate-800 p-3 space-y-2">
+                {(details.config as { script_name?: string }).script_name && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Script:</span>
+                    <span className="text-xs font-medium text-purple-400">
+                      {(details.config as { script_name?: string }).script_name}
+                    </span>
+                  </div>
+                )}
+                {(details.config as { url?: string }).url && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">URL:</span>
+                    <code className="text-xs text-blue-400 truncate max-w-[280px]">
+                      {(details.config as { url?: string }).url}
+                    </code>
+                  </div>
+                )}
+                {(details.config as { assertions?: unknown[] }).assertions &&
+                 ((details.config as { assertions: unknown[] }).assertions.length > 0) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Assertions:</span>
+                    <span className="text-xs text-slate-300">
+                      {(details.config as { assertions: unknown[] }).assertions.length} checks
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Command/Script */}
           {details?.command && (
             <div>
@@ -295,11 +333,26 @@ export function TestDetailDrawer({
                           {formatDuration(run.duration_ms)}
                         </span>
                       </div>
-                      {isExpanded && (run.output || run.error) && (
-                        <div className="border-t border-slate-700 p-2">
-                          <pre className="text-xs text-slate-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                            {run.error || run.output}
-                          </pre>
+                      {isExpanded && (
+                        <div className="border-t border-slate-700 space-y-2">
+                          {run.evidence_path && (
+                            <div className="p-2 bg-slate-800/50">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-400 mb-1.5">
+                                <Image className="h-3 w-3" />
+                                <span className="font-medium">Evidence Captured</span>
+                              </div>
+                              <code className="text-xs text-slate-500 break-all">
+                                {run.evidence_path}
+                              </code>
+                            </div>
+                          )}
+                          {(run.output || run.error) && (
+                            <div className="p-2">
+                              <pre className="text-xs text-slate-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                {run.error || run.output}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

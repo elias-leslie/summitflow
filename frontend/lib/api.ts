@@ -1710,6 +1710,7 @@ export interface TddTestRunHistory {
   duration_ms: number;
   output: string | null;
   error: string | null;
+  evidence_path: string | null;
   triggered_by: string | null;
   created_at: string | null;
 }
