@@ -4,9 +4,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   MessageCircle,
-  Target,
-  Flag,
-  ListChecks,
   Kanban,
   ListTodo,
   Camera,
@@ -17,7 +14,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "vision" | "goals" | "features" | "kanban" | "tasks" | "tests" | "components" | "evidence" | "explorer" | "settings";
+type TabId = "roundtable" | "kanban" | "tasks" | "tests" | "components" | "evidence" | "explorer" | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -40,33 +37,6 @@ const tabs: TabConfig[] = [
     inactiveClasses: "text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400",
     iconActiveClasses: "text-emerald-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-emerald-400",
-  },
-  {
-    id: "vision",
-    label: "Vision",
-    icon: Target,
-    activeClasses: "bg-violet-500/15 text-violet-400",
-    inactiveClasses: "text-slate-500 hover:bg-violet-500/10 hover:text-violet-400",
-    iconActiveClasses: "text-violet-400",
-    iconInactiveClasses: "text-slate-500 group-hover:text-violet-400",
-  },
-  {
-    id: "goals",
-    label: "Goals",
-    icon: Flag,
-    activeClasses: "bg-amber-500/15 text-amber-400",
-    inactiveClasses: "text-slate-500 hover:bg-amber-500/10 hover:text-amber-400",
-    iconActiveClasses: "text-amber-400",
-    iconInactiveClasses: "text-slate-500 group-hover:text-amber-400",
-  },
-  {
-    id: "features",
-    label: "Features",
-    icon: ListChecks,
-    activeClasses: "bg-blue-500/15 text-blue-400",
-    inactiveClasses: "text-slate-500 hover:bg-blue-500/10 hover:text-blue-400",
-    iconActiveClasses: "text-blue-400",
-    iconInactiveClasses: "text-slate-500 group-hover:text-blue-400",
   },
   {
     id: "kanban",
