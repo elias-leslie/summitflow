@@ -1,35 +1,33 @@
 # SummitFlow Agent Instructions
 
-Before anything else: run `bd onboard` and follow instructions.
-
-## Task Tracking (Beads)
+## Task Tracking (st CLI)
 
 ### Finding Work
 ```bash
-bd ready --json              # Find unblocked work
-bd list --status open --json # All open issues
-bd stale --days 7 --json     # Forgotten issues
+st ready                          # Find unblocked work
+st list --status pending          # All pending tasks
 ```
 
-### Working on Issues
+### Working on Tasks
 ```bash
-bd update <id> --status in_progress --json   # Claim work
-bd close <id> --reason "Completed" --json    # Mark done
-bd sync                                       # MANDATORY at session end
+st update <id> --status running   # Claim work
+st close <id> --reason "Done"     # Mark complete
+st close <id> --force             # Bypass criteria validation
 ```
 
-### Creating Issues (ENFORCED by pre-push hook)
+### Creating Tasks
 ```bash
-# Labels are REQUIRED - pre-push hook blocks if missing!
-bd create "Title" -t feature|bug|task -p 0-4 -d "Description" \
-  --set-labels "complexity:small" --set-labels "domains:backend" --json
+# Labels are REQUIRED
+st create "Title" -t feature|bug|task -p 0-4 \
+  -l "complexity:small,domains:backend" \
+  -d "Description"
 
-bd dep add <child> <parent>                  # Link dependencies
-bd create "Found bug" --deps discovered-from:<parent-id> \
-  --set-labels "complexity:small" --set-labels "domains:backend" --json
+# Link dependencies
+st dep add <child> <parent> --type blocks
+st dep add <child> <parent> --type discovered-from
 ```
 
-**See `.claude/rules/bead-quality.md` for full requirements.**
+**See `~/.claude/rules/tasks-workflow.md` for full reference.**
 
 ### Complexity Labels (REQUIRED)
 | Label | Criteria | Agent Strategy |
@@ -80,35 +78,33 @@ bd create "Found bug" --deps discovered-from:<parent-id> \
 
 **When you encounter ANY pre-existing bug, error, or issue during your work, you MUST:**
 
-1. **Review ALL open Beads** (do NOT filter by keywords - you might miss matches):
+1. **Review ALL open tasks** (do NOT filter by keywords - you might miss matches):
    ```bash
-   bd list --status open --json | jq -r '.[] | "\(.id) \(.title)"'
+   st list --status pending --json | jq -r '.tasks[] | "\(.id) \(.title)"'
    ```
-2. **If no bead exists, CREATE + LINK IMMEDIATELY**:
+2. **If no task exists, CREATE + LINK IMMEDIATELY**:
    ```bash
    # Create the bug with complexity and domain labels
-   bd create --title "Fix: <clear description>" \
-     --description "Error: <exact error message>
+   st create "Fix: <clear description>" -t bug -p 2 \
+     -l "complexity:small,domains:backend" \
+     -d "Error: <exact error message>
 
    Location: <file:line>
 
-   Found during: <parent-bead-id> <task name>" \
-     --priority 2 --type bug \
-     --set-labels "complexity:small" --set-labels "domains:backend" \
-     --json
+   Found during: <parent-task-id> <task name>"
 
    # MANDATORY: Link with discovered-from dependency
-   bd dep add <new-id> <parent-bead-id> --type discovered-from
+   st dep add <new-id> <parent-task-id> --type discovered-from
    ```
-3. **If bead exists, UPDATE with new info**: `bd update <id> --notes "Additional context..."`
+3. **If task exists, UPDATE with new info**: `st update <id> -d "Additional context..."`
 
 **This is MANDATORY. Do NOT:**
-- Mention bugs in summaries without creating beads
+- Mention bugs in summaries without creating tasks
 - Say "pre-existing issue, not related to this task" and move on
 - Leave issues undocumented for future discovery
-- Filter beads by keywords (scan the FULL list)
+- Filter tasks by keywords (scan the FULL list)
 
-**Every discovered issue = immediate bead creation + dependency link. No exceptions.**
+**Every discovered issue = immediate task creation + dependency link. No exceptions.**
 
 ---
 
@@ -136,7 +132,7 @@ journalctl --user -u summitflow-frontend -f
 | `git stash` with uncommitted changes | Commit first |
 | Start work with dirty working tree | Commit previous changes FIRST |
 | Skip pre-commit (`--no-verify`) | Fix the issues |
-| Note bugs without creating beads | Create bead IMMEDIATELY |
+| Note bugs without creating tasks | Create task IMMEDIATELY |
 
 ---
 
@@ -160,8 +156,8 @@ git status --short
 
 #### 2. Find and Claim Work
 ```bash
-bd ready --json                              # Find work
-bd update <id> --status in_progress --json   # Claim it
+st ready                              # Find work
+st update <id> --status running       # Claim it
 ```
 
 **Critical:** Uncommitted changes break multi-agent coordination. Never start new work on a dirty tree.
@@ -188,29 +184,15 @@ git commit -m "feat/fix/chore: <title>
 Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
-#### 3. Update Beads State (AFTER implementation commit)
+#### 3. Update Task State (AFTER implementation commit)
 ```bash
-# Close completed issues
-bd close <id> --reason "Completed: <summary>"
+# Close completed tasks
+st close <id> --reason "Completed: <summary>"
 
-# Update in-progress work
-bd update <id> --notes "Progress: <what was done>"
-
-# Create beads for discovered bugs (see MANDATORY section above)
+# Create tasks for discovered bugs (see MANDATORY section above)
 ```
 
-#### 4. Commit Beads Changes Separately
-`bd close` and `bd update` modify `.beads/issues.jsonl`. Commit this BEFORE pulling:
-```bash
-git add .beads/issues.jsonl
-git commit -m "chore: Update beads state after <task-id>
-
-Closes/updates beads for: <brief description of what was completed>
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-```
-
-#### 5. Push to Remote (NON-NEGOTIABLE)
+#### 4. Push to Remote (NON-NEGOTIABLE)
 ```bash
 git pull --rebase && git push
 git status  # MUST show "up to date with origin/main"
@@ -219,18 +201,17 @@ git status  # MUST show "up to date with origin/main"
 - Never say "ready to push when you are"—YOU must push
 - Unpushed work breaks multi-agent coordination
 
-#### 6. Verify Clean State
+#### 5. Verify Clean State
 ```bash
 git status  # Should show: "nothing to commit, working tree clean"
 ```
 
-#### 7. Choose Next Work
-- Run `bd ready --json` to identify next task
+#### 6. Choose Next Work
+- Run `st ready` to identify next task
 - Provide context for next session if needed
 
 **Critical Rules:**
-- Commit implementation BEFORE closing beads (order matters!)
-- Commit beads changes BEFORE `git pull --rebase` (avoids unstaged changes error)
+- Commit implementation BEFORE closing tasks (order matters!)
 - Never stop before pushing—that leaves work stranded locally
 - Lost issues = lost work = unacceptable
 
@@ -288,3 +269,29 @@ st feature list                  # List all features
 st feature show FEAT-001         # Show feature with criteria
 st feature start FEAT-001 -p 1   # Create task linked to feature
 ```
+
+---
+
+## Context Memory
+
+SummitFlow has a context memory system that captures observations from agent sessions and learns patterns.
+
+### How It Works
+- **SessionStart hook**: Auto-injects recent context at session start
+- **PostToolUse hook**: Captures observations from Write/Edit/Bash tool executions
+- **Patterns**: Extracted from diary entries via reflection, stored in `.claude/rules/learned-patterns.md`
+
+### API Endpoints
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /projects/{id}/context/index` | Get context summary with item counts |
+| `POST /projects/{id}/context/expand` | Expand specific context item for details |
+| `GET /projects/{id}/context/session-start` | Get context for session injection |
+
+### Memory Configuration
+Memory features can be toggled per-project via agent config:
+- `memory_enabled` - Master switch for all memory features
+- `observations_enabled` - Capture observations from tool use
+- `diary_enabled` - Session diary entries
+- `patterns_enabled` - Pattern learning and application
+- `context_injection_enabled` - Auto-inject context at session start
