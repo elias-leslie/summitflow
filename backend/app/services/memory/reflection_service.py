@@ -94,12 +94,39 @@ Return a JSON array of pattern suggestions:
 ]
 ```
 
+## Pattern Quality Rules
+
+**CRITICAL: Patterns must be copy-paste actionable.**
+
+For **command/shell errors**, include:
+- The exact command that works (e.g., `psql -d summitflow -c "SELECT 1"`)
+- The import statement or function call (e.g., `from app.storage.connection import get_connection`)
+
+For **code errors**, include:
+- The exact import path (e.g., `from app.utils.helpers import format_date`)
+- The function signature or class name
+
+For **configuration errors**, include:
+- The exact setting name and value
+- The file path where it should be set
+
+**BAD patterns (too abstract):**
+- "Prioritize database role configuration in environments" (HOW?)
+- "Ensure proper error handling" (WHAT specific handling?)
+- "Use correct imports" (WHICH imports?)
+
+**GOOD patterns (actionable):**
+- "Use `from app.storage.connection import get_connection` instead of `psycopg.connect()` for database access."
+- "Run migrations via `python -c 'from app.storage.connection import get_connection; ...'` not via psql."
+- "Import Celery tasks from `app.celery_app` not from individual task files."
+
 ## Rules
 
 - Only suggest patterns with confidence >= 0.5
 - Patterns with >= 0.9 confidence can be auto-applied
-- Content MUST be actionable and specific
+- Content MUST be actionable and specific - include exact code, commands, or paths
 - NO hedging words (might, maybe, perhaps, sometimes, usually)
+- NO abstract advice - if you can't include a specific command/import/path, skip the pattern
 - Detect duplicates and suggest merge instead of add
 - If no patterns found, return empty array []
 
