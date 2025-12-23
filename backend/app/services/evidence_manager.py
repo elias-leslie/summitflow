@@ -923,3 +923,136 @@ def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
         "user_approved": row[18],
         "user_notes": row[19],
     }
+
+
+# ============================================================
+# Test Evidence Integration
+# ============================================================
+
+
+def register_test_evidence(
+    project_id: str,
+    test_id: str,
+    test_run_id: int,
+    evidence_path: str,
+    capability_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Register evidence from a UI test run.
+
+    Creates an evidence record linked to a test run. Uses test_id as feature_id
+    and "test-run" as criterion_id for test-generated evidence.
+
+    Args:
+        project_id: Project ID for scoping
+        test_id: The test ID (used as feature_id for evidence)
+        test_run_id: The test_runs table ID for linking
+        evidence_path: Path to the evidence file (screenshot, etc.)
+        capability_id: Optional capability ID if test is linked to one
+
+    Returns:
+        Created evidence record or None if path doesn't exist
+    """
+    from pathlib import Path as PathLib
+
+    evidence_file = PathLib(evidence_path)
+    if not evidence_file.exists():
+        logger.warning(
+            "test_evidence_not_found",
+            project_id=project_id,
+            test_id=test_id,
+            path=evidence_path,
+        )
+        return None
+
+    # Use test_id as feature_id and "test-run-{id}" as criterion for uniqueness
+    feature_id = f"test-{test_id}"
+    criterion_id = f"run-{test_run_id}"
+
+    # Get next version
+    version = get_next_version(project_id, feature_id, criterion_id)
+
+    # Get file size
+    file_size = evidence_file.stat().st_size if evidence_file.exists() else 0
+
+    # Copy evidence to standard location
+    evidence_base = get_evidence_base_dir(project_id)
+    dest_dir = evidence_base / feature_id / criterion_id / f"v{version}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    dest_path = dest_dir / evidence_file.name
+    shutil.copy2(evidence_file, dest_path)
+
+    # Save evidence record
+    result = save_evidence(
+        project_id=project_id,
+        feature_id=feature_id,
+        criterion_id=criterion_id,
+        version=version,
+        file_path=str(dest_dir.relative_to(evidence_base)),
+        file_size_bytes=file_size,
+        expires_hours=DEFAULT_EXPIRY_HOURS * 7,  # Keep test evidence longer
+    )
+
+    # Update test_runs with evidence_path
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE test_runs
+            SET evidence_path = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (str(dest_path), test_run_id),
+        )
+        conn.commit()
+
+    logger.info(
+        "test_evidence_registered",
+        project_id=project_id,
+        test_id=test_id,
+        test_run_id=test_run_id,
+        evidence_id=result.get("evidence_id"),
+        version=version,
+    )
+
+    return result
+
+
+def get_test_evidence(
+    project_id: str,
+    test_id: str,
+    test_run_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Get evidence for a test or test run.
+
+    Args:
+        project_id: Project ID for scoping
+        test_id: The test ID
+        test_run_id: Optional specific test run ID
+
+    Returns:
+        List of evidence records
+    """
+    feature_id = f"test-{test_id}"
+
+    if test_run_id:
+        criterion_id = f"run-{test_run_id}"
+        return get_evidence_versions(project_id, feature_id, criterion_id)
+
+    # Get all evidence for this test
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+                   file_path, file_size_bytes, version, is_current,
+                   captured_at, expires_at, quality_status, quality_issues,
+                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
+                   user_reviewed_at, user_approved, user_notes
+            FROM evidence
+            WHERE project_id = %s AND feature_id = %s AND is_current = TRUE
+            ORDER BY captured_at DESC
+            """,
+            (project_id, feature_id),
+        )
+        rows = cur.fetchall()
+
+        return [_row_to_evidence(row) for row in rows]

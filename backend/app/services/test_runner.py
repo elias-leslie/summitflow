@@ -516,7 +516,7 @@ async def run_test(
     if result.error and "timed out" in result.error.lower():
         result_status = "timeout"
 
-    test_runs_storage.create_test_run(
+    test_run = test_runs_storage.create_test_run(
         project_id=project_id,
         test_db_id=test["id"],
         run_type=triggered_by,
@@ -528,6 +528,17 @@ async def run_test(
         triggered_by=triggered_by,
         session_id=session_id,
     )
+
+    # Register evidence if this is a UI test with evidence
+    if test_type == "ui" and result.evidence_path and test_run:
+        from . import evidence_manager
+
+        evidence_manager.register_test_evidence(
+            project_id=project_id,
+            test_id=test_id,
+            test_run_id=test_run["id"],
+            evidence_path=result.evidence_path,
+        )
 
     # Update test.last_* fields
     tests_storage.update_test_result(
