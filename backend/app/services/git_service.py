@@ -290,7 +290,7 @@ def create_pull_request(
     Uses the GitHub CLI (gh) to create a PR from the task's branch.
 
     Args:
-        task: Task dict with branch_name and capability info
+        task: Task dict with branch_name and feature info
         project_path: Path to the git repository
         base_branch: Target branch for PR (default: main)
 
@@ -300,7 +300,7 @@ def create_pull_request(
     Raises:
         RuntimeError: If PR creation fails
     """
-    from ..storage import capabilities as capability_store
+    from ..storage import features as feature_store
 
     project_path = Path(project_path)
 
@@ -309,20 +309,20 @@ def create_pull_request(
         logger.error("no_branch_for_pr", task_id=task.get("id"))
         raise RuntimeError("Task has no branch_name, cannot create PR")
 
-    # Get capability info for PR content
-    capability = None
-    capability_id = task.get("capability_id")
-    if capability_id:
-        capability = capability_store.get_capability_by_id(capability_id)
+    # Get feature info for PR content
+    feature = None
+    feature_id = task.get("feature_id")
+    if feature_id:
+        feature = feature_store.get_feature_by_db_id(feature_id)
 
     # Build PR title
-    if capability:
-        pr_title = f"{capability.get('name', 'Capability')} [{task.get('id', 'task')}]"
+    if feature:
+        pr_title = f"{feature.get('name', 'Feature')} [{task.get('id', 'task')}]"
     else:
         pr_title = task.get("title", f"Task {task.get('id', '')}")
 
-    # Build PR body
-    pr_body = _build_pr_body(task, capability)
+    # Build PR body with criteria checklist
+    pr_body = _build_pr_body(task, feature)
 
     # Ensure branch is pushed to remote
     try:
@@ -335,17 +335,11 @@ def create_pull_request(
     # Create PR using gh CLI
     result = subprocess.run(
         [
-            "gh",
-            "pr",
-            "create",
-            "--title",
-            pr_title,
-            "--body",
-            pr_body,
-            "--base",
-            base_branch,
-            "--head",
-            branch_name,
+            "gh", "pr", "create",
+            "--title", pr_title,
+            "--body", pr_body,
+            "--base", base_branch,
+            "--head", branch_name,
         ],
         cwd=project_path,
         capture_output=True,
@@ -374,35 +368,48 @@ def create_pull_request(
     return pr_url
 
 
-def _build_pr_body(task: dict, capability: dict | None) -> str:
-    """Build the PR body.
+def _build_pr_body(task: dict, feature: dict | None) -> str:
+    """Build the PR body with criteria checklist.
 
     Args:
         task: Task dict
-        capability: Capability dict (may be None)
+        feature: Feature dict (may be None)
 
     Returns:
         Formatted PR body as markdown
     """
     lines = ["## Summary\n"]
 
-    # Add capability description if available
-    if capability:
-        desc = capability.get("description", "")
+    # Add feature description if available
+    if feature:
+        desc = feature.get("description", "")
         if desc:
             lines.append(f"{desc}\n")
         else:
-            lines.append(f"Implementation of **{capability.get('name', 'capability')}**\n")
+            lines.append(f"Implementation of **{feature.get('name', 'feature')}**\n")
     else:
         desc = task.get("description", "")
         if desc:
             lines.append(f"{desc}\n")
 
+    # Add acceptance criteria checklist
+    if feature:
+        criteria = feature.get("acceptance_criteria", [])
+        if criteria:
+            lines.append("\n## Acceptance Criteria\n")
+            for c in criteria:
+                passes = c.get("passes", False)
+                checkbox = "[x]" if passes else "[ ]"
+                cid = c.get("id", "")
+                description = c.get("description", "No description")
+                lines.append(f"- {checkbox} **{cid}**: {description}")
+            lines.append("")
+
     # Add task metadata
     lines.append("\n## Task Info\n")
     lines.append(f"- **Task ID:** `{task.get('id', 'N/A')}`")
-    if capability:
-        lines.append(f"- **Capability ID:** `{capability.get('capability_id', 'N/A')}`")
+    if feature:
+        lines.append(f"- **Feature ID:** `{feature.get('feature_id', 'N/A')}`")
     lines.append(f"- **Status:** {task.get('status', 'N/A')}")
 
     # Add commits if any

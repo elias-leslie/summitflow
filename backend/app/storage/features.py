@@ -1,0 +1,538 @@
+"""Features storage layer - Feature and acceptance criteria CRUD operations.
+
+This module provides data access for features and their acceptance criteria.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from typing import Any
+
+from .connection import get_connection
+
+
+def get_feature(project_id: str, feature_id: str) -> dict[str, Any] | None:
+    """Get a single feature by project_id and feature_id.
+
+    Returns:
+        Feature dict with all columns, or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, feature_id, name, category, description,
+                   verification_layers, layer_results, priority, acceptance_criteria,
+                   vision_goals, health_status, status, last_verified_at,
+                   created_at, updated_at
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "feature_id": row[2],
+        "name": row[3],
+        "category": row[4],
+        "description": row[5],
+        "verification_layers": row[6] or [],
+        "layer_results": row[7] or {},
+        "priority": row[8],
+        "acceptance_criteria": row[9] or [],
+        "vision_goals": row[10] or [],
+        "health_status": row[11],
+        "status": row[12],
+        "last_verified_at": row[13],
+        "created_at": row[14],
+        "updated_at": row[15],
+    }
+
+
+def get_feature_by_db_id(feature_db_id: int) -> dict[str, Any] | None:
+    """Get a single feature by database ID.
+
+    Returns:
+        Feature dict with all columns, or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, feature_id, name, category, description,
+                   verification_layers, layer_results, priority, acceptance_criteria,
+                   vision_goals, health_status, status, last_verified_at,
+                   created_at, updated_at
+            FROM feature_capabilities
+            WHERE id = %s
+            """,
+            (feature_db_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "feature_id": row[2],
+        "name": row[3],
+        "category": row[4],
+        "description": row[5],
+        "verification_layers": row[6] or [],
+        "layer_results": row[7] or {},
+        "priority": row[8],
+        "acceptance_criteria": row[9] or [],
+        "vision_goals": row[10] or [],
+        "health_status": row[11],
+        "status": row[12],
+        "last_verified_at": row[13],
+        "created_at": row[14],
+        "updated_at": row[15],
+    }
+
+
+# =========================================================================
+# Acceptance Criteria Operations
+# =========================================================================
+
+
+def get_criteria(project_id: str, feature_id: str) -> list[dict[str, Any]]:
+    """Get all acceptance criteria for a feature.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+
+    Returns:
+        List of criterion dicts, empty if feature not found or no criteria.
+    """
+    feature = get_feature(project_id, feature_id)
+    if not feature:
+        return []
+    return feature.get("acceptance_criteria", [])
+
+
+def add_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Add a new acceptance criterion to a feature.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion: Criterion dict with at least 'id' and 'description'.
+            Structure: {
+                "id": "ac-001",
+                "description": "Description of what needs to be true",
+                "passes": false,  # Optional, defaults to false
+                "verified_at": null,  # Optional
+                "evidence_id": null  # Optional
+            }
+
+    Returns:
+        The added criterion dict, or None if feature not found.
+
+    Raises:
+        ValueError: If criterion with same ID already exists.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get current criteria
+        cur.execute(
+            """
+            SELECT acceptance_criteria
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        criteria: list[dict[str, Any]] = row[0] if row[0] else []
+
+        # Check for duplicate ID
+        criterion_id = criterion.get("id")
+        for c in criteria:
+            if c.get("id") == criterion_id:
+                raise ValueError(f"Criterion with ID '{criterion_id}' already exists")
+
+        # Ensure required fields
+        new_criterion = {
+            "id": criterion_id,
+            "description": criterion.get("description", ""),
+            "passes": criterion.get("passes", False),
+            "verified_at": criterion.get("verified_at"),
+            "evidence_id": criterion.get("evidence_id"),
+        }
+
+        # Add any extra fields from input
+        for key, value in criterion.items():
+            if key not in new_criterion:
+                new_criterion[key] = value
+
+        criteria.append(new_criterion)
+
+        # Update database
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET acceptance_criteria = %s::jsonb, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (json.dumps(criteria), project_id, feature_id),
+        )
+        conn.commit()
+
+    return new_criterion
+
+
+def update_criterion_status(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+    passes: bool,
+    evidence_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Update the passes status of a single acceptance criterion.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion_id: Criterion ID within the feature (e.g., ac-001)
+        passes: True if criterion is met, False otherwise
+        evidence_id: Optional evidence ID to link
+
+    Returns:
+        The updated criterion dict, or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get current criteria
+        cur.execute(
+            """
+            SELECT acceptance_criteria
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        criteria: list[dict[str, Any]] = row[0] if row[0] else []
+
+        # Find and update the criterion
+        updated_criterion = None
+        for c in criteria:
+            if c.get("id") == criterion_id:
+                c["passes"] = passes
+                c["verified_at"] = datetime.now(UTC).isoformat()
+                if evidence_id:
+                    c["evidence_id"] = evidence_id
+                updated_criterion = c
+                break
+
+        if not updated_criterion:
+            return None
+
+        # Update database
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET acceptance_criteria = %s::jsonb, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (json.dumps(criteria), project_id, feature_id),
+        )
+        conn.commit()
+
+    return updated_criterion
+
+
+def delete_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+) -> bool:
+    """Delete a criterion from a feature.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion_id: Criterion ID to delete (e.g., ac-001)
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get current criteria
+        cur.execute(
+            """
+            SELECT acceptance_criteria
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return False
+
+        criteria: list[dict[str, Any]] = row[0] if row[0] else []
+
+        # Find and remove the criterion
+        original_len = len(criteria)
+        criteria = [c for c in criteria if c.get("id") != criterion_id]
+
+        if len(criteria) == original_len:
+            return False  # Not found
+
+        # Update database
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET acceptance_criteria = %s::jsonb, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (json.dumps(criteria), project_id, feature_id),
+        )
+        conn.commit()
+
+    return True
+
+
+def link_evidence_to_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+    evidence_id: str,
+    evidence_type: str = "after",
+) -> dict[str, Any] | None:
+    """Link evidence to a criterion.
+
+    Criteria can have before_evidence_id (initial state) and after_evidence_id
+    (verification state) to show before/after comparison.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        criterion_id: Criterion ID (e.g., ac-001)
+        evidence_id: Evidence ID to link
+        evidence_type: 'before' or 'after' (default: 'after')
+
+    Returns:
+        Updated criterion dict, or None if not found.
+    """
+    if evidence_type not in ("before", "after"):
+        raise ValueError("evidence_type must be 'before' or 'after'")
+
+    field = f"{evidence_type}_evidence_id"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get current criteria
+        cur.execute(
+            """
+            SELECT acceptance_criteria
+            FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        criteria: list[dict[str, Any]] = row[0] if row[0] else []
+
+        # Find and update the criterion
+        updated_criterion = None
+        for c in criteria:
+            if c.get("id") == criterion_id:
+                c[field] = evidence_id
+                # Also update legacy evidence_id for backward compat
+                if evidence_type == "after":
+                    c["evidence_id"] = evidence_id
+                updated_criterion = c
+                break
+
+        if not updated_criterion:
+            return None
+
+        # Update database
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET acceptance_criteria = %s::jsonb, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (json.dumps(criteria), project_id, feature_id),
+        )
+        conn.commit()
+
+    return updated_criterion
+
+
+def get_evidence_for_criterion(
+    project_id: str,
+    feature_id: str,
+    criterion_id: str,
+) -> dict[str, str | None]:
+    """Get before and after evidence IDs for a criterion.
+
+    Returns:
+        Dict with 'before_evidence_id' and 'after_evidence_id' (may be None)
+    """
+    criteria = get_criteria(project_id, feature_id)
+    for c in criteria:
+        if c.get("id") == criterion_id:
+            return {
+                "before_evidence_id": c.get("before_evidence_id"),
+                "after_evidence_id": c.get("after_evidence_id") or c.get("evidence_id"),
+            }
+    return {"before_evidence_id": None, "after_evidence_id": None}
+
+
+def create_feature(
+    project_id: str,
+    feature_id: str,
+    name: str,
+    category: str = "feature",
+    description: str = "",
+    acceptance_criteria: list[dict[str, Any]] | None = None,
+    priority: int = 3,
+) -> dict[str, Any] | None:
+    """Create a new feature with optional acceptance criteria.
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID (e.g., FEAT-001)
+        name: Feature name/title
+        category: Category (default: feature)
+        description: Feature description
+        acceptance_criteria: List of criterion dicts (optional)
+        priority: Priority 1-5 (default: 3)
+
+    Returns:
+        Created feature dict, or None if feature_id already exists.
+    """
+    criteria = acceptance_criteria or []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check if feature already exists
+        cur.execute(
+            """
+            SELECT id FROM feature_capabilities
+            WHERE project_id = %s AND feature_id = %s
+            """,
+            (project_id, feature_id),
+        )
+        if cur.fetchone():
+            return None  # Already exists
+
+        # Insert new feature
+        cur.execute(
+            """
+            INSERT INTO feature_capabilities
+                (project_id, feature_id, name, category, description, priority,
+                 acceptance_criteria, status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, 'backlog', NOW(), NOW())
+            RETURNING id, feature_id, name
+            """,
+            (project_id, feature_id, name, category, description, priority, json.dumps(criteria)),
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    if not result:
+        return None
+
+    return {
+        "id": result[0],
+        "project_id": project_id,
+        "feature_id": result[1],
+        "name": result[2],
+        "category": category,
+        "description": description,
+        "acceptance_criteria": criteria,
+        "priority": priority,
+        "status": "backlog",
+    }
+
+
+def get_next_feature_id(project_id: str) -> str:
+    """Get the next available feature ID for a project.
+
+    Returns:
+        Next feature ID in format FEAT-XXX
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT feature_id FROM feature_capabilities
+            WHERE project_id = %s AND feature_id LIKE 'FEAT-%%'
+            ORDER BY feature_id DESC
+            LIMIT 1
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return "FEAT-001"
+
+    # Extract number and increment
+    last_id = row[0]
+    try:
+        num = int(last_id.replace("FEAT-", ""))
+        return f"FEAT-{num + 1:03d}"
+    except ValueError:
+        return "FEAT-001"
+
+
+def update_feature_status(
+    project_id: str,
+    feature_id: str,
+    status: str,
+) -> bool:
+    """Update feature status (backlog, in_progress, review, done).
+
+    Args:
+        project_id: Project ID
+        feature_id: Feature ID
+        status: New status value
+
+    Returns:
+        True if updated, False if feature not found.
+    """
+    valid_statuses = {"backlog", "in_progress", "review", "done"}
+    if status not in valid_statuses:
+        raise ValueError(f"Invalid status '{status}'. Must be one of: {valid_statuses}")
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE feature_capabilities
+            SET status = %s, updated_at = NOW()
+            WHERE project_id = %s AND feature_id = %s
+            RETURNING id
+            """,
+            (status, project_id, feature_id),
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+    return result is not None
