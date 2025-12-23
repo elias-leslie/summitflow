@@ -21,6 +21,7 @@ from typing import Any
 from ..storage import agent_sessions as sessions_storage
 from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
+from .agents import get_agent
 from .test_runner import TestResult, get_project_config, run_test
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,27 @@ logger = logging.getLogger(__name__)
 # Build configuration
 MAX_RETRY_ATTEMPTS = 5
 SMOKE_TEST_TYPES = {"pytest", "vitest"}  # Quick-running test types
+
+# TDD System Prompt for agent fix calls
+TDD_SYSTEM_PROMPT = """You are a TDD (Test-Driven Development) agent fixing failing tests.
+
+Your task is to analyze the test failures and implement code changes to make the tests pass.
+
+RULES:
+1. Focus ONLY on making the failing tests pass
+2. Do NOT add new features or refactor unrelated code
+3. Make minimal changes required to fix the tests
+4. If a test is genuinely wrong, explain why and suggest a fix
+5. Preserve existing functionality - don't break passing tests
+
+When writing code changes:
+- Use the exact file paths from the test output
+- Make targeted, surgical fixes
+- Include brief comments explaining non-obvious changes
+
+After making changes, the tests will be re-run automatically.
+If tests still fail, you'll receive the new output and can try again.
+"""
 
 
 @dataclass
@@ -276,6 +298,74 @@ async def _run_test_batch(
         "all_passed": failed == 0,
         "results": [r.to_dict() for r in results],
     }
+
+
+async def call_agent_for_fix(
+    project_id: str,
+    capability: dict[str, Any],
+    failure_info: dict[str, Any],
+    session_id: str,
+    agent_type: str = "claude",
+) -> dict[str, Any]:
+    """Call the LLM agent to fix failing tests.
+
+    Args:
+        project_id: Project ID
+        capability: Capability dict with name, description
+        failure_info: Dict with failure summary and failed tests
+        session_id: Build session ID for tracking
+        agent_type: Agent to use ('claude' or 'gemini')
+
+    Returns:
+        Dict with 'success', 'changes_made', 'response'
+    """
+    # Build the prompt with context
+    prompt = f"""## Capability: {capability.get('name', 'Unknown')}
+{capability.get('description', '')}
+
+## Test Failures
+{failure_info['summary']}
+
+## Failed Test Details
+"""
+    for i, test in enumerate(failure_info.get("failed_tests", []), 1):
+        prompt += f"\n### Test {i}\n"
+        if test.get("error"):
+            prompt += f"Error: {test['error']}\n"
+        if test.get("output"):
+            prompt += f"Output:\n```\n{test['output']}\n```\n"
+
+    prompt += "\n\nAnalyze these failures and provide the code changes needed to fix them."
+
+    try:
+        agent = get_agent(agent_type)
+        response = agent.generate(
+            prompt=prompt,
+            system=TDD_SYSTEM_PROMPT,
+            max_tokens=4096,
+            temperature=0.3,  # Lower temp for more deterministic fixes
+        )
+
+        logger.info(
+            f"Agent fix response for {capability.get('name')}: "
+            f"{len(response.content)} chars, model={response.model}"
+        )
+
+        return {
+            "success": True,
+            "changes_made": True,  # Agent provided response
+            "response": response.content,
+            "model": response.model,
+            "usage": response.usage,
+        }
+
+    except Exception as e:
+        logger.error(f"Agent fix call failed: {e}")
+        return {
+            "success": False,
+            "changes_made": False,
+            "error": str(e),
+        }
 
 
 def _get_failure_info(batch_result: dict[str, Any]) -> dict[str, Any]:
