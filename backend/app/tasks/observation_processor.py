@@ -162,11 +162,57 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
 
         result = {"processed": processed, "failed": failed, "skipped": skipped}
         logger.info("observation_queue_processing_completed", **result)
+
+        # Schedule diary aggregation for each unique session (with 5 min delay)
+        if processed > 0:
+            _schedule_diary_aggregation(pending_items)
+
         return result
 
     except Exception as e:
         logger.error("observation_queue_processing_error", error=str(e))
         raise
+
+
+# Track pending diary aggregations to avoid duplicates
+_pending_diary_sessions: set[tuple[str, str]] = set()
+DIARY_AGGREGATION_DELAY = 300  # 5 minutes
+
+
+def _schedule_diary_aggregation(items: list[dict[str, Any]]) -> None:
+    """Schedule diary aggregation for sessions in the processed batch.
+
+    Uses apply_async with countdown to delay execution, giving time for
+    more observations from the same session to be processed.
+    """
+    from .diary_aggregator import aggregate_session_diary
+
+    # Get unique (project_id, session_id) pairs
+    sessions: set[tuple[str, str]] = set()
+    for item in items:
+        sessions.add((item["project_id"], item["session_id"]))
+
+    for project_id, session_id in sessions:
+        key = (project_id, session_id)
+        if key in _pending_diary_sessions:
+            logger.debug(
+                f"diary_aggregation_already_scheduled: session={session_id[:16]}..."
+            )
+            continue
+
+        # Schedule with delay
+        try:
+            aggregate_session_diary.apply_async(
+                args=[project_id, session_id],
+                countdown=DIARY_AGGREGATION_DELAY,
+            )
+            _pending_diary_sessions.add(key)
+            logger.info(
+                f"diary_aggregation_scheduled: session={session_id[:16]}..., "
+                f"delay={DIARY_AGGREGATION_DELAY}s"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to schedule diary aggregation: {e}")
 
 
 def _publish_observation_event(project_id: str, observation: dict[str, Any]) -> None:

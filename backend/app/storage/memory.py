@@ -557,6 +557,61 @@ def _diary_row_to_dict(row: tuple) -> dict[str, Any]:
     }
 
 
+def get_diary_entry_by_session(project_id: str, session_id: str) -> dict[str, Any] | None:
+    """Get diary entry by session ID (for deduplication).
+
+    Returns:
+        The diary entry or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, session_id, task_id, agent_type,
+                   duration_seconds, tokens_used, discovery_tokens, outcome,
+                   observation_type, concepts, what_worked, what_failed,
+                   user_corrections, patterns_used, reflected_at,
+                   reflection_notes, patterns_generated, created_at
+            FROM session_diary
+            WHERE project_id = %s AND session_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (project_id, session_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return _diary_row_to_dict(row)
+
+
+def get_observations_by_session(
+    project_id: str, session_id: str, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Get observations for a specific session.
+
+    Returns:
+        List of observations for the session.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, session_id, agent_type, observation_type,
+                   title, subtitle, narrative, concepts, facts,
+                   files_read, files_modified, tool_name, tool_input,
+                   discovery_tokens, extracted_by, created_at
+            FROM observations
+            WHERE project_id = %s AND session_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (project_id, session_id, limit),
+        )
+        rows = cur.fetchall()
+
+    return [_observation_row_to_dict(row) for row in rows]
+
+
 # =============================================================================
 # Learned Patterns Storage
 # =============================================================================
