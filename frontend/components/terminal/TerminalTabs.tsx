@@ -10,8 +10,6 @@ import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { MobileKeyboard } from "./keyboard/MobileKeyboard";
-import { KeyboardMode } from "./keyboard/types";
-import { useVisualViewport } from "@/lib/hooks/use-visual-viewport";
 
 // Maximum number of split panes
 const MAX_SPLIT_PANES = 4;
@@ -51,14 +49,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const { fontId, fontSize, fontFamily, setFontId, setFontSize } = useTerminalSettings();
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [showSettings, setShowSettings] = useState(false);
-  const [keyboardMode, setKeyboardMode] = useState<KeyboardMode>("native");
   const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
-
-  // Track visual viewport for native keyboard on mobile
-  // Only enable when on mobile and in native keyboard mode
-  const { height: viewportHeight, isKeyboardVisible } = useVisualViewport(
-    isMobile && keyboardMode === "native"
-  );
 
   // Load keyboard size from localStorage
   useEffect(() => {

@@ -2,16 +2,14 @@
 
 import { useCallback } from "react";
 import { clsx } from "clsx";
-import { Keyboard, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
 import { KEY_SEQUENCES } from "./keyMappings";
-import { KeyboardMode, TerminalInputHandler } from "./types";
+import { TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
 
 interface ControlBarProps {
   onSend: TerminalInputHandler;
-  onToggleMode?: () => void;
-  mode?: KeyboardMode;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
   // CTRL modifier
@@ -21,8 +19,6 @@ interface ControlBarProps {
 
 export function ControlBar({
   onSend,
-  onToggleMode,
-  mode = "native",
   connectionStatus = "connected",
   onReconnect,
   ctrlActive = false,
@@ -109,26 +105,8 @@ export function ControlBar({
         </button>
       </div>
 
-      {/* Right side icons */}
+      {/* Right side - connection status/reconnect */}
       <div className="flex items-center gap-1 ml-auto">
-        {/* Keyboard mode toggle */}
-        {onToggleMode && (
-          <button
-            type="button"
-            onClick={onToggleMode}
-            className={clsx(
-              "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
-              mode === "custom"
-                ? "bg-phosphor-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-            )}
-            title={mode === "native" ? "Switch to full keyboard" : "Switch to native keyboard"}
-          >
-            <Keyboard className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* Refresh/Reconnect - colored by status */}
         <button
           type="button"
           onClick={onReconnect}

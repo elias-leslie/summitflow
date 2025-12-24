@@ -17,7 +17,6 @@ interface TerminalProps {
   onStatusChange?: (status: ConnectionStatus) => void;
   fontFamily?: string;
   fontSize?: number;
-  suppressNativeKeyboard?: boolean;
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead" | "timeout";
@@ -29,6 +28,14 @@ export interface TerminalHandle {
   status: ConnectionStatus;
 }
 
+// Check if we're on a mobile device (used for pull-to-refresh prevention)
+function isMobileDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  ) || window.innerWidth < 768;
+}
+
 export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(function TerminalComponent({
   sessionId,
   workingDir,
@@ -37,7 +44,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   onStatusChange,
   fontFamily = "'JetBrains Mono', monospace",
   fontSize = 14,
-  suppressNativeKeyboard = false,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<InstanceType<typeof Terminal> | null>(null);
@@ -45,6 +51,57 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const connectWebSocketRef = useRef<(() => void) | null>(null);
+
+  // Manual touch scrolling for xterm on mobile
+  // xterm's built-in touch scrolling doesn't work reliably, so we handle it ourselves
+  // IMPORTANT: Empty dependency array - handlers are set up once and use refs for current state
+  useEffect(() => {
+    if (!isMobileDevice() || !containerRef.current) return;
+
+    const container = containerRef.current;
+    let lastY = 0;
+    let isScrolling = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      lastY = e.touches[0].clientY;
+      isScrolling = true;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isScrolling) return;
+
+      // Always prevent default first to stop pull-to-refresh
+      e.preventDefault();
+
+      // Check if terminal is ready (use ref, not captured value)
+      const terminal = terminalRef.current;
+      if (!terminal) return;
+
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - lastY;
+      lastY = currentY;
+
+      // Convert pixel delta to lines (roughly 1 line per 20px)
+      const lines = Math.round(-deltaY / 20);
+      if (lines !== 0) {
+        terminal.scrollLines(lines);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      isScrolling = false;
+    };
+
+    container.addEventListener("touchstart", handleTouchStart, { passive: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []); // Empty deps - set up once, use refs for current values
 
   // Store callback in ref to avoid re-render loops
   const onStatusChangeRef = useRef(onStatusChange);
@@ -175,6 +232,15 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
 
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
+
+      // Always suppress native keyboard on mobile - we use custom keyboard
+      if (isMobileDevice()) {
+        const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+        if (textarea) {
+          textarea.inputMode = "none";
+          textarea.readOnly = true;
+        }
+      }
 
       // Fit immediately and again after a short delay to ensure proper sizing
       fitAddon.fit();
@@ -371,31 +437,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
     }
   }, [fontFamily, fontSize]);
 
-  // Apply keyboard suppression when enabled (for custom keyboard mode)
-  // Uses ref to track terminal readiness to avoid timing issues
-  const suppressionAppliedRef = useRef(false);
-
-  useEffect(() => {
-    if (!containerRef.current || !terminalRef.current) return;
-
-    const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
-    if (!textarea) return;
-
-    if (suppressNativeKeyboard && !suppressionAppliedRef.current) {
-      // Apply suppression
-      textarea.inputMode = "none";
-      textarea.readOnly = true;
-      // Blur to dismiss any open keyboard
-      textarea.blur();
-      suppressionAppliedRef.current = true;
-    } else if (!suppressNativeKeyboard && suppressionAppliedRef.current) {
-      // Restore normal input
-      textarea.inputMode = "";
-      textarea.readOnly = false;
-      suppressionAppliedRef.current = false;
-    }
-  }, [suppressNativeKeyboard, status]); // status changes after terminal is ready
-
   return (
     <div className={clsx("relative overflow-hidden", className)}>
       {/* Status indicator - hidden on mobile (shown in control bar) */}
@@ -422,10 +463,9 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           "bg-slate-900 overflow-hidden"
         )}
         style={{
-          // Prevent pull-to-refresh when scrolling at terminal boundaries
-          overscrollBehavior: "contain",
-          // Allow vertical panning (terminal scrollback) but prevent zoom gestures
-          touchAction: "pan-y",
+          // Full JS control of touch - our handler manages scrolling and prevents pull-to-refresh
+          touchAction: "none",
+          overscrollBehavior: "none",
         }}
       />
     </div>
