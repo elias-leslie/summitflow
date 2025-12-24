@@ -46,6 +46,29 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
+    """Get task and verify it belongs to the project.
+
+    Args:
+        task_id: Task ID to fetch
+        project_id: Expected project ID
+
+    Returns:
+        Task dict if valid
+
+    Raises:
+        HTTPException(404): If task not found or belongs to different project
+    """
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+    return task
+
+
 def _task_to_response(task: dict[str, Any]) -> TaskResponse:
     """Convert task dict to response model."""
     # Handle optional capability context
@@ -242,13 +265,7 @@ async def get_task(project_id: str, task_id: str) -> TaskResponse:
         project_id: Project ID
         task_id: Task ID
     """
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    task = _verify_task_project(task_id, project_id)
     return _task_to_response(task)
 
 
@@ -442,14 +459,7 @@ async def stream_task_log(
     Returns:
         StreamingResponse with text/event-stream content type
     """
-    # Verify task exists and belongs to project
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    task = _verify_task_project(task_id, project_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events for task progress."""
@@ -563,14 +573,7 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
     """
     from ..tasks.agent_runner import run_agent_task
 
-    # Verify task exists and belongs to project
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    task = _verify_task_project(task_id, project_id)
 
     # Check task is in a valid state to start
     if task["status"] not in ("pending", "paused", "failed"):
@@ -624,14 +627,7 @@ async def get_task_dependencies(project_id: str, task_id: str) -> list[Dependenc
     Returns:
         List of dependencies with details about the blocking tasks.
     """
-    # Verify task exists and belongs to project
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     deps = dep_store.get_dependencies(task_id)
     return [
@@ -664,14 +660,7 @@ async def add_task_dependency(
     Returns:
         The created dependency.
     """
-    # Verify task exists and belongs to project
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     # Verify target task exists
     target = task_store.get_task(dep.depends_on_task_id)
@@ -722,14 +711,7 @@ async def remove_task_dependency(
     Returns:
         Status dict.
     """
-    # Verify task exists and belongs to project
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     removed = dep_store.remove_dependency(task_id, depends_on_task_id, dependency_type)
 
