@@ -157,7 +157,7 @@ def check_reflection_trigger(
             )
 
             # Trigger reflection
-            result = process_reflection.delay(
+            result = process_reflection.delay(  # type: ignore[reportCallIssue]
                 project_id=project_id,
                 project_path=project_path,
                 auto_apply=auto_apply,
@@ -216,7 +216,7 @@ def trigger_capability_reflection(
 
     try:
         # Trigger reflection with higher limit for capabilities
-        result = process_reflection.delay(
+        result = process_reflection.delay(  # type: ignore[reportCallIssue]
             project_id=project_id,
             project_path=project_path,
             auto_apply=auto_apply,

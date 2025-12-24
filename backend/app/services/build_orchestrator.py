@@ -229,7 +229,9 @@ async def build_capability(
                 sessions_storage.mark_capability_passed(project_id, session_id, capability_id)
 
                 # Mark current commit as good
-                recovery.mark_good_commit(_get_current_commit(project_id))
+                current_commit = _get_current_commit(project_id)
+                if current_commit:
+                    recovery.mark_good_commit(current_commit)
                 recovery.clear_attempt_history()
 
                 if session_id in _active_builds:

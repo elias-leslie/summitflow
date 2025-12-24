@@ -30,6 +30,7 @@ def get_connection() -> Generator[psycopg.Connection, None, None]:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     """
+    assert DATABASE_URL is not None, "DATABASE_URL must be set"
     conn = psycopg.connect(DATABASE_URL)
     try:
         yield conn

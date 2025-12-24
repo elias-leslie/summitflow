@@ -219,7 +219,7 @@ def _schedule_diary_aggregation(items: list[dict[str, Any]]) -> None:
 
         # Schedule with delay
         try:
-            aggregate_session_diary.apply_async(
+            aggregate_session_diary.apply_async(  # type: ignore[reportCallIssue]
                 args=[project_id, session_id],
                 countdown=DIARY_AGGREGATION_DELAY,
             )
