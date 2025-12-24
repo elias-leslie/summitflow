@@ -68,6 +68,13 @@ st dep add <child> <parent> --type discovered-from
 - pytest for business logic (edge cases, calculations)
 - Don't duplicate - if pytest tests it, don't duplicate elsewhere
 
+### Code Cleanliness (MANDATORY)
+- **Delete dead code** - unused functions, commented-out blocks, deprecated code
+- **No hoarding** - "might need later" = delete it (git has history)
+- **No fake backwards compatibility** - if nothing uses it, delete it
+- **Comments: concise + useful** - explain WHY not WHAT, 1-2 lines max
+- See `.claude/rules/code-cleanliness.md` for full rules
+
 ### Architecture Coherence
 - **Before ANY new code**: Check for existing implementations (see `.claude/rules/architecture-coherence.md`)
 - Consolidate over create - extend existing utilities, don't duplicate

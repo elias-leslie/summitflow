@@ -48,15 +48,18 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 
 ---
 
-## Rules (5 files in `.claude/rules/`)
+## Rules (`.claude/rules/`)
 
 | Rule | Purpose |
 |------|---------|
 | `issue-tracking.md` | **MANDATORY: Track ALL discovered bugs** |
 | `architecture-coherence.md` | **MANDATORY: Anti-silo, DRY, holistic architecture** |
+| `code-cleanliness.md` | **MANDATORY: Delete dead code, concise comments, no hoarding** |
+| `explorer-architecture.md` | Explorer feature layer boundaries |
 | `ui-backend-lockstep.md` | Backend changes need UI visibility |
 | `service-management.md` | Systemd ops |
 | `interaction-style.md` | Communication style |
+| `learned-patterns.md` | Auto-learned patterns from sessions |
 
 ---
 
