@@ -40,3 +40,6 @@ htmlcov/
 # Temp
 /tmp/
 *.tmp
+
+# Runtime data (evidence, screenshots, project data)
+data/

@@ -1,11 +1,9 @@
 """Tests for Explorer base scanner service."""
 
 import pytest
-
 from app.services.explorer import (
     BaseScanner,
     ExplorerEntryCreate,
-    ScanResult,
     calculate_health,
     get_entries,
     get_stats,
@@ -51,12 +49,7 @@ class TestCalculateHealth:
 
     def test_error_takes_priority(self) -> None:
         """Error status takes priority over warnings."""
-        assert (
-            calculate_health(
-                error_count=1, warning_count=5, last_modified_days=100
-            )
-            == "error"
-        )
+        assert calculate_health(error_count=1, warning_count=5, last_modified_days=100) == "error"
 
 
 class TestCalculateStaleness:
@@ -96,9 +89,10 @@ class TestCalculateBloatLevel:
 
     def test_critical_when_multiple_issues(self) -> None:
         """Returns critical when multiple thresholds exceeded severely."""
-        assert calculate_bloat_level(
-            size_bytes=600000, lines_of_code=4000, file_count=200
-        ) == "critical"
+        assert (
+            calculate_bloat_level(size_bytes=600000, lines_of_code=4000, file_count=200)
+            == "critical"
+        )
 
 
 class TestEndpointHealth:

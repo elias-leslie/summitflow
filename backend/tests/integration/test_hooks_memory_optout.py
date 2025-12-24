@@ -3,9 +3,8 @@
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -97,7 +96,6 @@ class TestHooksMemoryOptout:
         self, mock_exists, mock_config, mock_queue_class, client
     ):
         """Hook processes normally when memory is enabled."""
-        import asyncio
 
         mock_exists.return_value = True
         mock_config.return_value = {
