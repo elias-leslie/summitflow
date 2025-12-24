@@ -149,6 +149,63 @@ async def capture_evidence(
         }
 
 
+def _mark_previous_as_stale(
+    cur: Any,
+    project_id: str,
+    capability_id: str,
+    criterion_id: str,
+) -> None:
+    """Mark previous evidence versions as not current."""
+    cur.execute(
+        """
+        UPDATE evidence
+        SET is_current = FALSE, updated_at = NOW()
+        WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
+        """,
+        (project_id, capability_id, criterion_id),
+    )
+
+
+def _insert_evidence_record(
+    cur: Any,
+    project_id: str,
+    evidence_id: str,
+    capability_id: str,
+    criterion_id: str,
+    file_path: str,
+    file_size_bytes: int | None,
+    version: int,
+    expires_at: datetime,
+) -> tuple[int, str, datetime | None]:
+    """Insert a new evidence record and return (id, evidence_id, captured_at)."""
+    cur.execute(
+        """
+        INSERT INTO evidence (
+            project_id, evidence_id, capability_id, criterion_id, evidence_type,
+            file_path, file_size_bytes, version, is_current,
+            captured_at, expires_at, quality_status
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), %s, 'pending')
+        RETURNING id, evidence_id, captured_at
+        """,
+        (
+            project_id,
+            evidence_id,
+            capability_id,
+            criterion_id,
+            "evidence",
+            file_path,
+            file_size_bytes,
+            version,
+            expires_at,
+        ),
+    )
+    result = cur.fetchone()
+    if not result:
+        raise RuntimeError("Failed to create evidence record")
+    return result[0], result[1], result[2]
+
+
 def save_evidence(
     project_id: str,
     capability_id: str,
@@ -178,44 +235,19 @@ def save_evidence(
     expires_at = datetime.now(UTC) + timedelta(hours=expires_hours)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Mark previous versions as not current
-        cur.execute(
-            """
-            UPDATE evidence
-            SET is_current = FALSE, updated_at = NOW()
-            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
-            """,
-            (project_id, capability_id, criterion_id),
+        _mark_previous_as_stale(cur, project_id, capability_id, criterion_id)
+        rec_id, rec_evidence_id, captured_ts = _insert_evidence_record(
+            cur,
+            project_id,
+            evidence_id,
+            capability_id,
+            criterion_id,
+            file_path,
+            file_size_bytes,
+            version,
+            expires_at,
         )
-
-        # Insert new evidence
-        cur.execute(
-            """
-            INSERT INTO evidence (
-                project_id, evidence_id, capability_id, criterion_id, evidence_type,
-                file_path, file_size_bytes, version, is_current,
-                captured_at, expires_at, quality_status
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), %s, 'pending')
-            RETURNING id, evidence_id, captured_at
-            """,
-            (
-                project_id,
-                evidence_id,
-                capability_id,
-                criterion_id,
-                "evidence",
-                file_path,
-                file_size_bytes,
-                version,
-                expires_at,
-            ),
-        )
-        result = cur.fetchone()
         conn.commit()
-
-        if not result:
-            raise RuntimeError("Failed to create evidence record")
 
         logger.info(
             "evidence_saved",
@@ -226,14 +258,13 @@ def save_evidence(
             version=version,
         )
 
-        captured_ts = result[2]
         captured_iso: str | None = None
         if captured_ts is not None and isinstance(captured_ts, datetime):
             captured_iso = captured_ts.isoformat()
 
         return {
-            "id": result[0],
-            "evidence_id": result[1],
+            "id": rec_id,
+            "evidence_id": rec_evidence_id,
             "captured_at": captured_iso,
             "version": version,
             "file_path": file_path,
