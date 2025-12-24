@@ -4,7 +4,7 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent, TerminalHandle, ConnectionStatus } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2, RefreshCw } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2, RefreshCw, Copy, Check } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
@@ -73,6 +73,22 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
       return next;
     });
   }, []);
+
+  // Copy terminal content state and handler
+  const [copied, setCopied] = useState(false);
+  const handleCopyContent = useCallback(async () => {
+    if (activeId) {
+      const terminalRef = terminalRefs.current.get(activeId);
+      const content = terminalRef?.getContent() || "";
+      try {
+        await navigator.clipboard.writeText(content);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+  }, [activeId]);
 
   // Number of panes to show in split mode (1:1 with sessions, capped)
   const splitPaneCount = Math.min(sessions.length, MAX_SPLIT_PANES);
@@ -240,6 +256,32 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           >
             <RefreshCw className="w-4 h-4" />
             <span className="hidden sm:inline">Reconnect</span>
+          </button>
+        )}
+
+        {/* Copy button - visible only on mobile */}
+        {isMobile && (
+          <button
+            onClick={handleCopyContent}
+            className={clsx(
+              "flex items-center gap-1 px-2 py-1.5 text-sm rounded transition-colors",
+              copied
+                ? "text-green-400"
+                : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+            )}
+            title="Copy terminal output"
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                <span>Copy</span>
+              </>
+            )}
           </button>
         )}
 

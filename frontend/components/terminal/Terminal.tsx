@@ -23,6 +23,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 
 export interface TerminalHandle {
   reconnect: () => void;
+  getContent: () => string;
   status: ConnectionStatus;
 }
 
@@ -47,7 +48,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
     onStatusChange?.(status);
   }, [status, onStatusChange]);
 
-  // Expose reconnect function to parent
+  // Expose functions to parent
   useImperativeHandle(ref, () => ({
     reconnect: () => {
       if (connectWebSocketRef.current) {
@@ -59,6 +60,14 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         setStatus("connecting");
         connectWebSocketRef.current();
       }
+    },
+    getContent: () => {
+      if (!terminalRef.current) return "";
+      // Select all text and get the selection
+      terminalRef.current.selectAll();
+      const content = terminalRef.current.getSelection();
+      terminalRef.current.clearSelection();
+      return content;
     },
     status,
   }), [status]);
