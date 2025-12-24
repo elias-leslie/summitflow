@@ -66,6 +66,109 @@ def format_relative_time(timestamp: str | None) -> str:
         return ""
 
 
+def format_session_context(
+    git: dict[str, Any] | None,
+    diary: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+) -> str:
+    """Format session context as plain text for injection.
+
+    Args:
+        git: Git state dict with current_time, recent_files, uncommitted_count
+        diary: List of diary entries with full content
+        observations: List of observations with full content
+
+    Returns:
+        Formatted plain text context block. No truncation.
+    """
+    lines = ["## Recent Project Context"]
+
+    # Current time from git state
+    if git and git.get("current_time"):
+        lines.append(f"Current time: {git['current_time']}")
+        lines.append("")
+
+    # Git section
+    if git:
+        lines.append("**Git:**")
+        if git.get("recent_files"):
+            files = git["recent_files"]
+            if isinstance(files, str):
+                files = files.split(",")
+            lines.append(f"- Last modified: {', '.join(f.strip() for f in files[:5])}")
+        if git.get("uncommitted_count") is not None:
+            lines.append(f"- Uncommitted: {git['uncommitted_count']} files")
+        lines.append("")
+
+    # Recent sessions (diary entries)
+    if diary:
+        lines.append("**Recent Sessions:**")
+        lines.append("")
+        for entry in diary:
+            session_id = entry.get("session_id", "unknown")[:8]
+            outcome = entry.get("outcome", "unknown")
+            timestamp = format_relative_time(entry.get("created_at"))
+
+            outcome_label = {"success": "Success", "failure": "Failure"}.get(
+                outcome, outcome.title() if outcome else "Partial"
+            )
+
+            lines.append(f"Session {session_id} ({outcome_label}) - {timestamp}:")
+
+            # What worked
+            what_worked = entry.get("what_worked") or []
+            if isinstance(what_worked, str):
+                import json
+
+                try:
+                    what_worked = json.loads(what_worked)
+                except (json.JSONDecodeError, TypeError):
+                    what_worked = []
+            for item in what_worked:
+                lines.append(f"  ✓ {item}")
+
+            # What failed
+            what_failed = entry.get("what_failed") or []
+            if isinstance(what_failed, str):
+                import json
+
+                try:
+                    what_failed = json.loads(what_failed)
+                except (json.JSONDecodeError, TypeError):
+                    what_failed = []
+            for item in what_failed:
+                lines.append(f"  ✗ {item}")
+
+            lines.append("")
+
+    # Recent observations
+    if observations:
+        lines.append("**Recent Observations:**")
+        for obs in observations:
+            obs_type = obs.get("observation_type", "general")
+            timestamp = format_relative_time(obs.get("created_at"))
+            title = obs.get("title", "No title")
+
+            lines.append(f"- [{obs_type}] {timestamp} - {title}")
+
+            # Full narrative
+            narrative = obs.get("narrative")
+            if narrative:
+                lines.append(f"  {narrative}")
+
+            # Files modified
+            files_modified = obs.get("files_modified") or []
+            if files_modified:
+                files_str = ", ".join(files_modified[:5])
+                lines.append(f"  → Files: {files_str}")
+
+            lines.append("")
+
+    lines.append("Use /projects/{project_id}/context/expand for full details.")
+
+    return "\n".join(lines)
+
+
 router = APIRouter()
 
 
