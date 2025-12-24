@@ -1,6 +1,3 @@
-// Keyboard mode: native Android keyboard + key bar, or full custom keyboard
-export type KeyboardMode = "native" | "custom";
-
 // Modifier key states: off, sticky (single-tap, applies to next key), locked (double-tap, persists)
 export type ModifierState = "off" | "sticky" | "locked";
 

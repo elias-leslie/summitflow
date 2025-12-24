@@ -189,17 +189,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     );
   }
 
-  // Apply dynamic height when native keyboard is visible on mobile
-  const containerStyle: React.CSSProperties | undefined =
-    isMobile && keyboardMode === "native" && isKeyboardVisible
-      ? { height: viewportHeight }
-      : undefined;
-
   return (
-    <div
-      className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}
-      style={containerStyle}
-    >
+    <div className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}>
       {/* Tab bar - order-2 on mobile (below terminal), order-1 on desktop (above terminal) */}
       <div className={clsx(
         "flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 overflow-x-auto overflow-y-visible",
@@ -382,7 +373,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 fontFamily={fontFamily}
                 fontSize={fontSize}
                 onStatusChange={(status) => handleStatusChange(session.id, status)}
-                suppressNativeKeyboard={isMobile && keyboardMode === "custom"}
               />
             </div>
           ))
@@ -410,7 +400,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                   }
                 }}
                 onStatusChange={(status) => handleStatusChange(session.id, status)}
-                suppressNativeKeyboard={isMobile && keyboardMode === "custom"}
               />
             ))}
           </Group>
@@ -422,7 +411,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
         <div className="order-3">
           <MobileKeyboard
             onSend={handleKeyboardInput}
-            onModeChange={setKeyboardMode}
             connectionStatus={activeStatus}
             onReconnect={handleReconnect}
             keyboardSize={keyboardSize}
@@ -444,10 +432,9 @@ interface SplitPaneProps {
   fontSize: number;
   onTerminalRef?: (handle: TerminalHandle | null) => void;
   onStatusChange?: (status: ConnectionStatus) => void;
-  suppressNativeKeyboard?: boolean;
 }
 
-function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize, onTerminalRef, onStatusChange, suppressNativeKeyboard }: SplitPaneProps) {
+function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize, onTerminalRef, onStatusChange }: SplitPaneProps) {
   const defaultSize = 100 / paneCount;
   const minSize = `${Math.max(10, 100 / (paneCount * 2))}%`; // String percentage for proper sizing
 
@@ -474,7 +461,6 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFa
             fontFamily={fontFamily}
             fontSize={fontSize}
             onStatusChange={onStatusChange}
-            suppressNativeKeyboard={suppressNativeKeyboard}
           />
         </div>
       </Panel>
