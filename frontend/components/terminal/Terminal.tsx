@@ -398,8 +398,8 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
 
   return (
     <div className={clsx("relative overflow-hidden", className)}>
-      {/* Status indicator */}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+      {/* Status indicator - hidden on mobile (shown in control bar) */}
+      <div className="absolute top-2 right-2 z-10 items-center gap-2 hidden md:flex">
         <span
           className={clsx("w-2 h-2 rounded-full", {
             "bg-yellow-400 animate-pulse": status === "connecting",

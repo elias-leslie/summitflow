@@ -9,7 +9,7 @@ import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import { MobileKeyboard, useMobileKeyboardMode } from "./keyboard/MobileKeyboard";
+import { MobileKeyboard } from "./keyboard/MobileKeyboard";
 import { KeyboardMode } from "./keyboard/types";
 
 // Maximum number of split panes
@@ -395,7 +395,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           connectionStatus={activeStatus}
           onReconnect={handleReconnect}
           onMinimize={() => setOpen(false)}
-          onShowSettings={() => setShowSettings(!showSettings)}
         />
       )}
     </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { EssentialKeyBar } from "./EssentialKeyBar";
 import { FullKeyboard } from "./FullKeyboard";
 import { ControlBar } from "./ControlBar";
 import { KeyboardMode, KeyboardSizePreset, TerminalInputHandler } from "./types";

@@ -40,12 +40,11 @@ const display = {
 
 interface FullKeyboardProps {
   onSend: TerminalInputHandler;
-  onToggleMode?: () => void;
   mode?: KeyboardMode;
   keyboardSize?: KeyboardSizePreset;
 }
 
-function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize = "medium" }: FullKeyboardProps) {
+function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProps) {
   const keyboardRef = useRef<Keyboard | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { sendKey, sendRaw, modifiers } = useKeyboardInput({ onSend });
