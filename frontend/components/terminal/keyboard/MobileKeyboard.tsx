@@ -5,6 +5,7 @@ import { FullKeyboard } from "./FullKeyboard";
 import { ControlBar } from "./ControlBar";
 import { KeyboardMode, KeyboardSizePreset, TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
+import { TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 
 const STORAGE_KEY = "terminal-keyboard-mode";
 const SIZE_STORAGE_KEY = "terminal-keyboard-size";
@@ -14,6 +15,12 @@ interface MobileKeyboardProps {
   onModeChange?: (mode: KeyboardMode) => void;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
+  onMinimize?: () => void;
+  // Font settings
+  fontId?: TerminalFontId;
+  fontSize?: TerminalFontSize;
+  onFontIdChange?: (id: TerminalFontId) => void;
+  onFontSizeChange?: (size: TerminalFontSize) => void;
 }
 
 export function MobileKeyboard({
@@ -21,6 +28,11 @@ export function MobileKeyboard({
   onModeChange,
   connectionStatus = "connected",
   onReconnect,
+  onMinimize,
+  fontId,
+  fontSize,
+  onFontIdChange,
+  onFontSizeChange,
 }: MobileKeyboardProps) {
   const [mode, setMode] = useState<KeyboardMode>("native");
   const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
@@ -72,8 +84,13 @@ export function MobileKeyboard({
         mode={mode}
         connectionStatus={connectionStatus}
         onReconnect={onReconnect}
+        onMinimize={onMinimize}
         keyboardSize={keyboardSize}
         onKeyboardSizeChange={handleKeyboardSizeChange}
+        fontId={fontId}
+        fontSize={fontSize}
+        onFontIdChange={onFontIdChange}
+        onFontSizeChange={onFontSizeChange}
       />
       {/* Show full keyboard only in custom mode */}
       {mode === "custom" && (

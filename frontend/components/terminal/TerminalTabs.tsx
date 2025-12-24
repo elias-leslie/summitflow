@@ -325,7 +325,11 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
       </div>
 
       {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}
-      <div className="flex-1 min-h-0 relative overflow-hidden">
+      {/* order-1 on mobile (above tabs), order-2 on desktop (below tabs) */}
+      <div className={clsx(
+        "flex-1 min-h-0 relative overflow-hidden",
+        isMobile ? "order-1" : "order-2"
+      )}>
         {sessions.length === 0 ? (
           // Empty state - just show hint text
           <div className="flex items-center justify-center h-full text-slate-500 text-sm">
@@ -390,14 +394,16 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
         )}
       </div>
 
-      {/* Mobile keyboard - only on mobile */}
+      {/* Mobile keyboard - only on mobile, order-3 (at bottom) */}
       {isMobile && sessions.length > 0 && (
-        <MobileKeyboard
-          onSend={handleKeyboardInput}
-          onModeChange={setKeyboardMode}
-          connectionStatus={activeStatus}
-          onReconnect={handleReconnect}
-        />
+        <div className="order-3">
+          <MobileKeyboard
+            onSend={handleKeyboardInput}
+            onModeChange={setKeyboardMode}
+            connectionStatus={activeStatus}
+            onReconnect={handleReconnect}
+          />
+        </div>
       )}
     </div>
   );
