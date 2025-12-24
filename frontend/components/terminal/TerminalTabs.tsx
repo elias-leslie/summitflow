@@ -3,8 +3,8 @@
 import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { TerminalComponent } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2 } from "lucide-react";
+import { TerminalComponent, TerminalHandle, ConnectionStatus } from "./Terminal";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2, RefreshCw } from "lucide-react";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
@@ -48,6 +48,31 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const { fontId, fontSize, fontFamily, setFontId, setFontSize } = useTerminalSettings();
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [showSettings, setShowSettings] = useState(false);
+
+  // Terminal refs and connection status tracking
+  const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map());
+  const [terminalStatuses, setTerminalStatuses] = useState<Map<string, ConnectionStatus>>(new Map());
+
+  // Get active terminal status for showing reconnect button
+  const activeStatus = activeId ? terminalStatuses.get(activeId) : undefined;
+  const showReconnect = activeStatus && ["disconnected", "error", "timeout"].includes(activeStatus);
+
+  // Handle reconnect for active terminal
+  const handleReconnect = useCallback(() => {
+    if (activeId) {
+      const terminalRef = terminalRefs.current.get(activeId);
+      terminalRef?.reconnect();
+    }
+  }, [activeId]);
+
+  // Handle status change from terminal
+  const handleStatusChange = useCallback((sessionId: string, status: ConnectionStatus) => {
+    setTerminalStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(sessionId, status);
+      return next;
+    });
+  }, []);
 
   // Number of panes to show in split mode (1:1 with sessions, capped)
   const splitPaneCount = Math.min(sessions.length, MAX_SPLIT_PANES);

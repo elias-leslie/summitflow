@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { clsx } from "clsx";
 
 // Dynamic imports for xterm (client-side only)
@@ -13,25 +13,54 @@ interface TerminalProps {
   workingDir?: string;
   className?: string;
   onDisconnect?: () => void;
+  onStatusChange?: (status: ConnectionStatus) => void;
   fontFamily?: string;
   fontSize?: number;
 }
 
-type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead" | "timeout";
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead" | "timeout";
 
-export function TerminalComponent({
+export interface TerminalHandle {
+  reconnect: () => void;
+  status: ConnectionStatus;
+}
+
+export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(function TerminalComponent({
   sessionId,
   workingDir,
   className,
   onDisconnect,
+  onStatusChange,
   fontFamily = "'JetBrains Mono', monospace",
   fontSize = 14,
-}: TerminalProps) {
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<InstanceType<typeof Terminal> | null>(null);
   const fitAddonRef = useRef<InstanceType<typeof FitAddon> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const connectWebSocketRef = useRef<(() => void) | null>(null);
+
+  // Notify parent of status changes
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
+
+  // Expose reconnect function to parent
+  useImperativeHandle(ref, () => ({
+    reconnect: () => {
+      if (connectWebSocketRef.current) {
+        // Close existing connection if any
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+        terminalRef.current?.writeln("\x1b[33mReconnecting...\x1b[0m");
+        setStatus("connecting");
+        connectWebSocketRef.current();
+      }
+    },
+    status,
+  }), [status]);
 
   // Handle resize - always fit the terminal, send dims only if WS connected
   const handleResize = useCallback(() => {
@@ -233,6 +262,8 @@ export function TerminalComponent({
         });
       }
 
+      // Store reference for reconnection
+      connectWebSocketRef.current = connectWebSocket;
       connectWebSocket();
 
       // Handle window resize
@@ -320,4 +351,4 @@ export function TerminalComponent({
       />
     </div>
   );
-}
+});
