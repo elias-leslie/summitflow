@@ -104,7 +104,7 @@ class ObservationQueue:
                 try:
                     from app.tasks.observation_processor import process_observation_queue
 
-                    process_observation_queue.delay()
+                    process_observation_queue.delay()  # type: ignore[reportCallIssue]
                     logger.debug(f"Triggered observation processing for {project_id}")
                 except ImportError:
                     # Task not yet implemented - this is expected during development

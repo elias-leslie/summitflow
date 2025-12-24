@@ -723,7 +723,7 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
         )
 
     # Start the Celery task
-    celery_task = run_agent_task.delay(
+    celery_task = run_agent_task.delay(  # type: ignore[reportCallIssue]
         task_id=task_id,
         agent_type=request.agent_type,
         model=request.model,

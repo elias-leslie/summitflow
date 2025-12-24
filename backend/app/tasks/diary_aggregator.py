@@ -126,7 +126,7 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
     from .reflection_processor import check_reflection_trigger
 
     try:
-        check_reflection_trigger.delay(project_id=project_id)
+        check_reflection_trigger.delay(project_id=project_id)  # type: ignore[reportCallIssue]
         logger.debug(f"reflection_trigger_check_scheduled: project={project_id}")
     except Exception as e:
         # Don't fail diary aggregation for reflection trigger failures
