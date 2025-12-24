@@ -20,6 +20,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { fetchProjects, type Project } from '@/lib/api';
 import { BulkActionsBar } from './BulkActionsBar';
+import {
+  formatTime,
+  formatDuration,
+  formatTokens,
+  formatAge,
+} from '@/lib/formatters/memory-formatters';
 
 // Types
 interface LifecycleStats {
@@ -179,11 +185,6 @@ function ObservationRow({ observation }: { observation: Observation }) {
   };
 
   const typeColor = typeColors[observation.observation_type] || typeColors.default;
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  };
 
   return (
     <div
@@ -382,25 +383,6 @@ function DiaryRow({ entry }: { entry: DiaryEntry }) {
   };
 
   const config = outcomeConfig[entry.outcome] || outcomeConfig.neutral;
-
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return null;
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  };
-
-  const formatTokens = (tokens: number | null) => {
-    if (!tokens) return null;
-    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
-    return tokens.toString();
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  };
 
   return (
     <div
