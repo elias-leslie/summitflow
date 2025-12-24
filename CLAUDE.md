@@ -38,8 +38,11 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Check status | `bash ~/summitflow/scripts/status.sh` |
 | Run tests | `cd ~/summitflow/backend && .venv/bin/pytest` |
 | Type check | `pyright backend/app/` (cross-project capable) |
+| Refactor workflow | `/refactor_it` (inventory, plan, execute) |
 
 **Task Types:** `feature` (linked to feature, validates criteria), `bug`, `task`
+
+**Global Hooks:** SessionStart (context injection), PreToolUse (git discipline), PostToolUse (observation capture), Stop (context monitoring)
 
 **Session End (NON-NEGOTIABLE):** Commit impl → `st close` → `git pull --rebase && git push` (see AGENTS.md for full checklist)
 
