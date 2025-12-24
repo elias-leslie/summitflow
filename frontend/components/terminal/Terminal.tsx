@@ -17,7 +17,7 @@ interface TerminalProps {
   fontSize?: number;
 }
 
-type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead";
+type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead" | "timeout";
 
 export function TerminalComponent({
   sessionId,
@@ -121,83 +121,119 @@ export function TerminalComponent({
         }
       }, 100);
 
-      // Connect to WebSocket
-      // WebSocket needs to connect directly to backend, not through Next.js
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      let wsHost: string;
+      // Connect to WebSocket with timeout and auto-retry
+      const CONNECTION_TIMEOUT = 10000; // 10 seconds
+      const RETRY_BACKOFF = 2000; // 2 seconds
+      let hasRetried = false;
 
-      // Map frontend hosts to their backend WebSocket endpoints
-      if (window.location.host === "dev.summitflow.dev") {
-        wsHost = "devapi.summitflow.dev";
-      } else if (window.location.host.includes("localhost:3001")) {
-        wsHost = "localhost:8001";
-      } else {
-        // Default: same host (for local dev or other setups)
-        wsHost = window.location.host;
-      }
+      function connectWebSocket() {
+        // WebSocket needs to connect directly to backend, not through Next.js
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        let wsHost: string;
 
-      let wsUrl = `${protocol}//${wsHost}/ws/terminal/${sessionId}`;
-      if (workingDir) {
-        wsUrl += `?working_dir=${encodeURIComponent(workingDir)}`;
-      }
-
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!mounted) return;
-        setStatus("connected");
-        term.writeln("Connected to terminal session: " + sessionId);
-        term.writeln("");
-
-        // Send initial size
-        const dims = fitAddon.proposeDimensions();
-        if (dims) {
-          ws.send(
-            JSON.stringify({
-              resize: { cols: dims.cols, rows: dims.rows },
-            })
-          );
-        }
-      };
-
-      ws.onmessage = (event) => {
-        if (!mounted) return;
-        term.write(event.data);
-      };
-
-      ws.onclose = (event) => {
-        if (!mounted) return;
-
-        // Check for session_dead error (code 4000)
-        if (event.code === 4000) {
-          setStatus("session_dead");
-          try {
-            const reason = JSON.parse(event.reason);
-            term.writeln(`\r\n\x1b[31m${reason.message || "Session not found"}\x1b[0m`);
-          } catch {
-            term.writeln("\r\n\x1b[31mSession not found or could not be restored\x1b[0m");
-          }
+        // Map frontend hosts to their backend WebSocket endpoints
+        if (window.location.host === "dev.summitflow.dev") {
+          wsHost = "devapi.summitflow.dev";
+        } else if (window.location.host.includes("localhost:3001")) {
+          wsHost = "localhost:8001";
         } else {
-          setStatus("disconnected");
-          term.writeln("\r\n\x1b[31mDisconnected from terminal\x1b[0m");
+          // Default: same host (for local dev or other setups)
+          wsHost = window.location.host;
         }
 
-        onDisconnect?.();
-      };
-
-      ws.onerror = () => {
-        if (!mounted) return;
-        setStatus("error");
-        term.writeln("\r\n\x1b[31mConnection error\x1b[0m");
-      };
-
-      // Handle terminal input
-      term.onData((data) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(data);
+        let wsUrl = `${protocol}//${wsHost}/ws/terminal/${sessionId}`;
+        if (workingDir) {
+          wsUrl += `?working_dir=${encodeURIComponent(workingDir)}`;
         }
-      });
+
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        // Connection timeout
+        const timeoutId = setTimeout(() => {
+          if (ws.readyState === WebSocket.CONNECTING) {
+            ws.close();
+            if (!mounted) return;
+
+            if (!hasRetried) {
+              // Auto-retry once with backoff
+              hasRetried = true;
+              term.writeln("\x1b[33mConnection timeout, retrying...\x1b[0m");
+              setStatus("connecting");
+              setTimeout(() => {
+                if (mounted) {
+                  connectWebSocket();
+                }
+              }, RETRY_BACKOFF);
+            } else {
+              // Second timeout - give up
+              setStatus("timeout");
+              term.writeln("\r\n\x1b[31mConnection timeout\x1b[0m");
+              onDisconnect?.();
+            }
+          }
+        }, CONNECTION_TIMEOUT);
+
+        ws.onopen = () => {
+          clearTimeout(timeoutId);
+          if (!mounted) return;
+          setStatus("connected");
+          term.writeln("Connected to terminal session: " + sessionId);
+          term.writeln("");
+
+          // Send initial size
+          const dims = fitAddon.proposeDimensions();
+          if (dims) {
+            ws.send(
+              JSON.stringify({
+                resize: { cols: dims.cols, rows: dims.rows },
+              })
+            );
+          }
+        };
+
+        ws.onmessage = (event) => {
+          if (!mounted) return;
+          term.write(event.data);
+        };
+
+        ws.onclose = (event) => {
+          clearTimeout(timeoutId);
+          if (!mounted) return;
+
+          // Check for session_dead error (code 4000)
+          if (event.code === 4000) {
+            setStatus("session_dead");
+            try {
+              const reason = JSON.parse(event.reason);
+              term.writeln(`\r\n\x1b[31m${reason.message || "Session not found"}\x1b[0m`);
+            } catch {
+              term.writeln("\r\n\x1b[31mSession not found or could not be restored\x1b[0m");
+            }
+          } else {
+            setStatus("disconnected");
+            term.writeln("\r\n\x1b[31mDisconnected from terminal\x1b[0m");
+          }
+
+          onDisconnect?.();
+        };
+
+        ws.onerror = () => {
+          clearTimeout(timeoutId);
+          if (!mounted) return;
+          setStatus("error");
+          term.writeln("\r\n\x1b[31mConnection error\x1b[0m");
+        };
+
+        // Handle terminal input
+        term.onData((data) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(data);
+          }
+        });
+      }
+
+      connectWebSocket();
 
       // Handle window resize
       window.addEventListener("resize", handleResize);
@@ -260,7 +296,7 @@ export function TerminalComponent({
             "bg-yellow-400 animate-pulse": status === "connecting",
             "bg-green-400": status === "connected",
             "bg-gray-400": status === "disconnected",
-            "bg-red-400": status === "error",
+            "bg-red-400": status === "error" || status === "timeout",
             "bg-orange-400": status === "session_dead",
           })}
         />
