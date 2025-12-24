@@ -18,7 +18,7 @@ import { clsx } from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { fetchProjects } from '@/lib/api';
+import { fetchProjects, type Project } from '@/lib/api';
 import { BulkActionsBar } from './BulkActionsBar';
 
 // Types

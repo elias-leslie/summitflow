@@ -157,24 +157,8 @@ export function TaskKanbanBoard({
     })
   );
 
-  // Apply filters to tasks
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      // Type filter
-      if (filters.type !== "all" && task.task_type !== filters.type) {
-        return false;
-      }
-      // Priority filter
-      if (filters.priority !== "all" && task.priority !== filters.priority) {
-        return false;
-      }
-      // Feature filter
-      if (filters.capabilityId !== "all" && task.capability_id !== filters.capabilityId) {
-        return false;
-      }
-      return true;
-    });
-  }, [tasks, filters]);
+  // Tasks are used directly (filtering can be added via props if needed)
+  const filteredTasks = tasks;
 
   // Group tasks by column (using filtered tasks)
   const tasksByColumn = useMemo(() => {
