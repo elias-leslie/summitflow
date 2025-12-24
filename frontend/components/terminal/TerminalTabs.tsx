@@ -51,6 +51,21 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardMode, setKeyboardMode] = useState<KeyboardMode>("native");
+  const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
+
+  // Load keyboard size from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("terminal-keyboard-size");
+    if (stored === "small" || stored === "medium" || stored === "large") {
+      setKeyboardSize(stored);
+    }
+  }, []);
+
+  // Save keyboard size to localStorage
+  const handleKeyboardSizeChange = useCallback((size: KeyboardSizePreset) => {
+    setKeyboardSize(size);
+    localStorage.setItem("terminal-keyboard-size", size);
+  }, []);
 
   // Terminal refs and connection status tracking
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map());
@@ -309,6 +324,9 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             setFontSize={setFontSize}
             showSettings={showSettings}
             setShowSettings={setShowSettings}
+            keyboardSize={keyboardSize}
+            setKeyboardSize={handleKeyboardSizeChange}
+            isMobile={isMobile}
           />
 
           {/* Close/minimize terminal button */}
@@ -400,6 +418,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             onModeChange={setKeyboardMode}
             connectionStatus={activeStatus}
             onReconnect={handleReconnect}
+            keyboardSize={keyboardSize}
           />
         </div>
       )}
@@ -466,6 +485,9 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFa
   );
 }
 
+// Keyboard size type
+type KeyboardSizePreset = "small" | "medium" | "large";
+
 // Settings dropdown component with fixed positioning to escape overflow containers
 interface SettingsDropdownProps {
   fontId: TerminalFontId;
@@ -474,6 +496,10 @@ interface SettingsDropdownProps {
   setFontSize: (size: TerminalFontSize) => void;
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
+  // Keyboard size (only shown on mobile)
+  keyboardSize?: KeyboardSizePreset;
+  setKeyboardSize?: (size: KeyboardSizePreset) => void;
+  isMobile?: boolean;
 }
 
 function SettingsDropdown({
@@ -483,6 +509,9 @@ function SettingsDropdown({
   setFontSize,
   showSettings,
   setShowSettings,
+  keyboardSize,
+  setKeyboardSize,
+  isMobile,
 }: SettingsDropdownProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -558,7 +587,7 @@ function SettingsDropdown({
           </div>
 
           {/* Font size */}
-          <div>
+          <div className={isMobile && keyboardSize !== undefined ? "mb-3" : ""}>
             <label className="block text-xs text-slate-400 mb-1">Size</label>
             <select
               value={fontSize}
@@ -572,6 +601,30 @@ function SettingsDropdown({
               ))}
             </select>
           </div>
+
+          {/* Keyboard size - only on mobile */}
+          {isMobile && keyboardSize !== undefined && setKeyboardSize && (
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Keyboard Size</label>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setKeyboardSize(size)}
+                    className={clsx(
+                      "flex-1 px-2 py-1.5 text-xs rounded transition-colors capitalize",
+                      keyboardSize === size
+                        ? "bg-phosphor-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    )}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -7,13 +7,13 @@ import { KeyboardMode, KeyboardSizePreset, TerminalInputHandler } from "./types"
 import { ConnectionStatus } from "../Terminal";
 
 const STORAGE_KEY = "terminal-keyboard-mode";
-const SIZE_STORAGE_KEY = "terminal-keyboard-size";
 
 interface MobileKeyboardProps {
   onSend: TerminalInputHandler;
   onModeChange?: (mode: KeyboardMode) => void;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
+  keyboardSize?: KeyboardSizePreset;
 }
 
 export function MobileKeyboard({
@@ -21,9 +21,9 @@ export function MobileKeyboard({
   onModeChange,
   connectionStatus = "connected",
   onReconnect,
+  keyboardSize = "medium",
 }: MobileKeyboardProps) {
   const [mode, setMode] = useState<KeyboardMode>("native");
-  const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
   const [isLoaded, setIsLoaded] = useState(false);
   const [ctrlActive, setCtrlActive] = useState(false);
 
@@ -46,15 +46,11 @@ export function MobileKeyboard({
     setCtrlActive(prev => !prev);
   }, []);
 
-  // Load preferences from localStorage on mount
+  // Load keyboard mode from localStorage on mount
   useEffect(() => {
     const storedMode = localStorage.getItem(STORAGE_KEY);
     if (storedMode === "native" || storedMode === "custom") {
       setMode(storedMode);
-    }
-    const storedSize = localStorage.getItem(SIZE_STORAGE_KEY);
-    if (storedSize === "small" || storedSize === "medium" || storedSize === "large") {
-      setKeyboardSize(storedSize);
     }
     setIsLoaded(true);
   }, []);
@@ -66,12 +62,6 @@ export function MobileKeyboard({
       onModeChange?.(mode);
     }
   }, [mode, isLoaded, onModeChange]);
-
-  // Save keyboard size preference
-  const handleKeyboardSizeChange = useCallback((size: KeyboardSizePreset) => {
-    setKeyboardSize(size);
-    localStorage.setItem(SIZE_STORAGE_KEY, size);
-  }, []);
 
   // Toggle between modes
   const handleToggleMode = useCallback(() => {
@@ -92,8 +82,6 @@ export function MobileKeyboard({
         mode={mode}
         connectionStatus={connectionStatus}
         onReconnect={onReconnect}
-        keyboardSize={keyboardSize}
-        onKeyboardSizeChange={handleKeyboardSizeChange}
         ctrlActive={ctrlActive}
         onCtrlToggle={handleCtrlToggle}
       />
