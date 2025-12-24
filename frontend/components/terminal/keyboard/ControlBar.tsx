@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { clsx } from "clsx";
 import { Keyboard, Settings2, RefreshCw, Minus } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
@@ -15,7 +15,6 @@ interface ControlBarProps {
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
   onMinimize?: () => void;
-  onShowSettings?: () => void;
   keyboardSize?: KeyboardSizePreset;
   onKeyboardSizeChange?: (size: KeyboardSizePreset) => void;
 }
@@ -27,13 +26,31 @@ export function ControlBar({
   connectionStatus = "connected",
   onReconnect,
   onMinimize,
-  onShowSettings,
   keyboardSize = "medium",
   onKeyboardSizeChange,
 }: ControlBarProps) {
-  const showSettingsRef = useRef(false);
+  const [showSettings, setShowSettings] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close settings when clicking outside
+  useEffect(() => {
+    if (!showSettings) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        settingsButtonRef.current &&
+        !settingsButtonRef.current.contains(e.target as Node) &&
+        settingsDropdownRef.current &&
+        !settingsDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowSettings(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSettings]);
 
   // Arrow key handlers
   const handleArrowLeft = useCallback(() => onSend(KEY_SEQUENCES.ARROW_LEFT), [onSend]);
@@ -105,18 +122,53 @@ export function ControlBar({
           </button>
         )}
 
-        {/* Settings */}
-        {onShowSettings && (
+        {/* Settings with dropdown */}
+        <div className="relative">
           <button
             ref={settingsButtonRef}
             type="button"
-            onClick={onShowSettings}
-            className="flex items-center justify-center h-9 w-9 rounded-md bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
+            onClick={() => setShowSettings(!showSettings)}
+            className={clsx(
+              "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
+              showSettings
+                ? "bg-phosphor-600 text-white"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            )}
             title="Keyboard settings"
           >
             <Settings2 className="w-4 h-4" />
           </button>
-        )}
+
+          {/* Settings dropdown */}
+          {showSettings && (
+            <div
+              ref={settingsDropdownRef}
+              className="absolute bottom-full right-0 mb-2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3 min-w-[160px] z-50"
+            >
+              <label className="block text-xs text-slate-400 mb-2">Keyboard Size</label>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => {
+                      onKeyboardSizeChange?.(size);
+                      setShowSettings(false);
+                    }}
+                    className={clsx(
+                      "flex-1 px-2 py-1.5 text-xs rounded transition-colors capitalize",
+                      keyboardSize === size
+                        ? "bg-phosphor-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    )}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Refresh/Reconnect - colored by status */}
         <button

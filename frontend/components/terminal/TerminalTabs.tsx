@@ -297,24 +297,28 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           </div>
         )}
 
-        {/* Settings button */}
-        <SettingsDropdown
-          fontId={fontId}
-          fontSize={fontSize}
-          setFontId={setFontId}
-          setFontSize={setFontSize}
-          showSettings={showSettings}
-          setShowSettings={setShowSettings}
-        />
+        {/* Settings button - hidden on mobile (in control bar) */}
+        {!isMobile && (
+          <SettingsDropdown
+            fontId={fontId}
+            fontSize={fontSize}
+            setFontId={setFontId}
+            setFontSize={setFontSize}
+            showSettings={showSettings}
+            setShowSettings={setShowSettings}
+          />
+        )}
 
-        {/* Close terminal button */}
-        <button
-          onClick={() => setOpen(false)}
-          title="Close terminal"
-          className="ml-2 p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
+        {/* Close terminal button - hidden on mobile (in control bar) */}
+        {!isMobile && (
+          <button
+            onClick={() => setOpen(false)}
+            title="Close terminal"
+            className="ml-2 p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}

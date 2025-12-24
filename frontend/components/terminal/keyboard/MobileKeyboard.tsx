@@ -16,7 +16,6 @@ interface MobileKeyboardProps {
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
   onMinimize?: () => void;
-  onShowSettings?: () => void;
 }
 
 export function MobileKeyboard({
@@ -25,7 +24,6 @@ export function MobileKeyboard({
   connectionStatus = "connected",
   onReconnect,
   onMinimize,
-  onShowSettings,
 }: MobileKeyboardProps) {
   const [mode, setMode] = useState<KeyboardMode>("native");
   const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
@@ -78,7 +76,6 @@ export function MobileKeyboard({
         connectionStatus={connectionStatus}
         onReconnect={onReconnect}
         onMinimize={onMinimize}
-        onShowSettings={onShowSettings}
         keyboardSize={keyboardSize}
         onKeyboardSizeChange={handleKeyboardSizeChange}
       />
