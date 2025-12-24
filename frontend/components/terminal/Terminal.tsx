@@ -24,6 +24,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 export interface TerminalHandle {
   reconnect: () => void;
   getContent: () => string;
+  sendInput: (data: string) => void;
   status: ConnectionStatus;
 }
 
@@ -68,6 +69,11 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       const content = terminalRef.current.getSelection();
       terminalRef.current.clearSelection();
       return content;
+    },
+    sendInput: (data: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(data);
+      }
     },
     status,
   }), [status]);
