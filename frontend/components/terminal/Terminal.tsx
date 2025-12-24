@@ -195,6 +195,20 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         const viewport = containerRef.current.querySelector<HTMLElement>(".xterm-viewport");
 
         if (viewport) {
+          // Create invisible touch overlay that sits on top of xterm
+          const overlay = document.createElement("div");
+          overlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 100;
+            touch-action: none;
+          `;
+          containerRef.current.style.position = "relative";
+          containerRef.current.appendChild(overlay);
+
           let lastY = 0;
           let isTouching = false;
 
@@ -207,13 +221,12 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
             if (!isTouching) return;
 
             e.preventDefault(); // Prevent pull-to-refresh
-            e.stopPropagation(); // Stop event from bubbling
 
             const currentY = e.touches[0].clientY;
             const deltaY = lastY - currentY;
             lastY = currentY;
 
-            // Directly scroll the viewport
+            // Scroll the viewport
             viewport.scrollTop += deltaY;
           };
 
@@ -221,16 +234,17 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
             isTouching = false;
           };
 
-          // Attach directly to viewport element
-          viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
-          viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
-          viewport.addEventListener("touchend", handleTouchEnd, { passive: true });
+          // Attach to our overlay
+          overlay.addEventListener("touchstart", handleTouchStart, { passive: true });
+          overlay.addEventListener("touchmove", handleTouchMove, { passive: false });
+          overlay.addEventListener("touchend", handleTouchEnd, { passive: true });
 
           // Store cleanup
           const cleanupTouch = () => {
-            viewport.removeEventListener("touchstart", handleTouchStart);
-            viewport.removeEventListener("touchmove", handleTouchMove);
-            viewport.removeEventListener("touchend", handleTouchEnd);
+            overlay.removeEventListener("touchstart", handleTouchStart);
+            overlay.removeEventListener("touchmove", handleTouchMove);
+            overlay.removeEventListener("touchend", handleTouchEnd);
+            overlay.remove();
           };
           (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
         }
