@@ -77,6 +77,29 @@ export function ControlBar({
   const handleArrowDown = useCallback(() => onSend(KEY_SEQUENCES.ARROW_DOWN), [onSend]);
   const handleArrowRight = useCallback(() => onSend(KEY_SEQUENCES.ARROW_RIGHT), [onSend]);
 
+  // Special key handlers
+  const handleEsc = useCallback(() => onSend(KEY_SEQUENCES.ESC), [onSend]);
+  const handleTab = useCallback(() => onSend(KEY_SEQUENCES.TAB), [onSend]);
+
+  // CTRL modifier state
+  const [ctrlActive, setCtrlActive] = useState(false);
+
+  const handleCtrl = useCallback(() => {
+    setCtrlActive((prev) => !prev);
+  }, []);
+
+  // When CTRL is active, wrap the next key press
+  const handleCtrlKeyPress = useCallback((key: string) => {
+    if (ctrlActive) {
+      // Send Ctrl+key sequence
+      const ctrlKey = key.toLowerCase().charCodeAt(0) - 96; // a=1, b=2, etc.
+      if (ctrlKey >= 1 && ctrlKey <= 26) {
+        onSend(String.fromCharCode(ctrlKey));
+      }
+      setCtrlActive(false);
+    }
+  }, [ctrlActive, onSend]);
+
   // Get connection status color for refresh button
   const getStatusColor = () => {
     switch (connectionStatus) {
@@ -106,32 +129,58 @@ export function ControlBar({
 
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-800 border-t border-slate-700">
-      {/* Arrow keys - take up remaining space */}
-      <div className="flex-1 flex items-center gap-1 min-w-0">
+      {/* Arrow keys */}
+      <div className="flex items-center gap-1">
         <KeyboardKey
           label="←"
           onPress={handleArrowLeft}
-          className="flex-1 min-w-[44px]"
+          className="w-10"
         />
         <KeyboardKey
           label="↑"
           onPress={handleArrowUp}
-          className="flex-1 min-w-[44px]"
+          className="w-10"
         />
         <KeyboardKey
           label="↓"
           onPress={handleArrowDown}
-          className="flex-1 min-w-[44px]"
+          className="w-10"
         />
         <KeyboardKey
           label="→"
           onPress={handleArrowRight}
-          className="flex-1 min-w-[44px]"
+          className="w-10"
         />
       </div>
 
+      {/* Special terminal keys */}
+      <div className="flex items-center gap-1 ml-1">
+        <KeyboardKey
+          label="ESC"
+          onPress={handleEsc}
+          className="text-xs px-2"
+        />
+        <KeyboardKey
+          label="TAB"
+          onPress={handleTab}
+          className="text-xs px-2"
+        />
+        <button
+          type="button"
+          onClick={handleCtrl}
+          className={clsx(
+            "h-9 px-2 rounded-md text-xs font-medium transition-colors",
+            ctrlActive
+              ? "bg-blue-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+          )}
+        >
+          CTRL
+        </button>
+      </div>
+
       {/* Right side icons */}
-      <div className="flex items-center gap-1 ml-2">
+      <div className="flex items-center gap-1 ml-auto">
         {/* Keyboard mode toggle */}
         {onToggleMode && (
           <button

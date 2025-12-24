@@ -8,34 +8,39 @@ import { useKeyboardInput } from "./useKeyboardInput";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { TerminalInputHandler, KeyboardSizePreset, KEYBOARD_SIZE_HEIGHTS } from "./types";
 
-// Terminal-optimized keyboard layout - arrows moved to control bar
+// Android-like keyboard layout
 const layout = {
   default: [
-    "{esc} 1 2 3 4 5 6 7 8 9 0 {bksp}",
-    "{tab} q w e r t y u i o p",
-    "{ctrl} a s d f g h j k l ; '",
-    "{shift} z x c v b n m , . / {alt}",
-    "{space} {enter}",
+    "1 2 3 4 5 6 7 8 9 0",
+    "q w e r t y u i o p",
+    "a s d f g h j k l",
+    "{shift} z x c v b n m {bksp}",
+    "{sym} ' {space} . {enter}",
   ],
   shift: [
-    "{esc} ! @ # $ % ^ & * ( ) {bksp}",
-    "{tab} Q W E R T Y U I O P",
-    "{ctrl} A S D F G H J K L : \"",
-    "{shift} Z X C V B N M < > ? {alt}",
-    "{space} {enter}",
+    "1 2 3 4 5 6 7 8 9 0",
+    "Q W E R T Y U I O P",
+    "A S D F G H J K L",
+    "{shift} Z X C V B N M {bksp}",
+    "{sym} ' {space} . {enter}",
+  ],
+  symbols: [
+    "! @ # $ % ^ & * ( )",
+    "- _ = + [ ] \\ | / ~",
+    "` < > { } : ; \" ?",
+    "{shift} € £ ¥ • ° ± § {bksp}",
+    "{abc} ' {space} , {enter}",
   ],
 };
 
 // Button display names
 const display = {
-  "{esc}": "ESC",
   "{bksp}": "⌫",
-  "{tab}": "TAB",
   "{enter}": "↵",
-  "{ctrl}": "CTRL",
-  "{shift}": "SHIFT",
-  "{alt}": "ALT",
-  "{space}": "SPACE",
+  "{shift}": "⇧",
+  "{space}": " ",
+  "{sym}": "?123",
+  "{abc}": "ABC",
 };
 
 interface FullKeyboardProps {
@@ -64,7 +69,7 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
     toggleModifierRef.current = toggleModifier;
   }, [sendKey, sendRaw, toggleModifier]);
 
-  // Initialize simple-keyboard ONCE (no dependencies that change)
+  // Initialize simple-keyboard
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -72,12 +77,6 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
     const handleKeyPress = (button: string) => {
       // Handle special keys
       switch (button) {
-        case "{esc}":
-          sendRawRef.current(KEY_SEQUENCES.ESC);
-          break;
-        case "{tab}":
-          sendRawRef.current(KEY_SEQUENCES.TAB);
-          break;
         case "{enter}":
           sendRawRef.current(KEY_SEQUENCES.ENTER);
           break;
@@ -87,21 +86,35 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
         case "{space}":
           sendKeyRef.current(" ");
           break;
-        case "{ctrl}":
-          toggleModifierRef.current("ctrl");
-          break;
         case "{shift}":
           toggleModifierRef.current("shift");
-          // Also toggle shift layout in simple-keyboard
+          // Toggle shift layout in simple-keyboard
           if (keyboardRef.current) {
             const currentLayout = keyboardRef.current.options.layoutName;
+            if (currentLayout === "symbols") {
+              // Stay in symbols, just toggle modifier
+            } else {
+              keyboardRef.current.setOptions({
+                layoutName: currentLayout === "shift" ? "default" : "shift",
+              });
+            }
+          }
+          break;
+        case "{sym}":
+          // Switch to symbols layout
+          if (keyboardRef.current) {
             keyboardRef.current.setOptions({
-              layoutName: currentLayout === "shift" ? "default" : "shift",
+              layoutName: "symbols",
             });
           }
           break;
-        case "{alt}":
-          toggleModifierRef.current("alt");
+        case "{abc}":
+          // Switch back to default layout
+          if (keyboardRef.current) {
+            keyboardRef.current.setOptions({
+              layoutName: "default",
+            });
+          }
           break;
         default:
           // Regular character
@@ -119,20 +132,12 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
       onKeyPress: handleKeyPress,
       layout,
       display,
+      layoutName: "default",
       theme: "hg-theme-default terminal-keyboard-theme",
       mergeDisplay: true,
       physicalKeyboardHighlight: false,
       physicalKeyboardHighlightPress: false,
-      // Disable key repeat/hold behavior
       disableButtonHold: true,
-      // Custom button attributes for sizing
-      buttonAttributes: [
-        {
-          attribute: "data-skbtnuid",
-          value: "bksp",
-          buttons: "{bksp}",
-        },
-      ],
     });
 
     keyboardRef.current = keyboard;
@@ -140,40 +145,26 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
     return () => {
       keyboard.destroy();
     };
-  }, []); // Empty deps - only initialize once
+  }, [keyboardSize]); // Recreate keyboard when size changes
 
   // Update modifier button styles
   useEffect(() => {
     if (!keyboardRef.current) return;
 
     // Get button classes based on modifier state
-    const getButtonClass = (mod: keyof typeof modifiers) => {
-      switch (modifiers[mod]) {
-        case "sticky":
-          return "modifier-sticky";
-        case "locked":
-          return "modifier-locked";
-        default:
-          return "";
-      }
-    };
+    const shiftClass = modifiers.shift === "sticky"
+      ? "modifier-sticky"
+      : modifiers.shift === "locked"
+        ? "modifier-locked"
+        : "";
 
     // Update button themes
     keyboardRef.current.setOptions({
       buttonTheme: [
-        {
-          class: getButtonClass("ctrl"),
-          buttons: "{ctrl}",
-        },
-        {
-          class: getButtonClass("shift"),
-          buttons: "{shift}",
-        },
-        {
-          class: getButtonClass("alt"),
-          buttons: "{alt}",
-        },
-      ].filter((t) => t.class),
+        ...(shiftClass ? [{ class: shiftClass, buttons: "{shift}" }] : []),
+        { class: "accent-key", buttons: "{shift} {bksp} {enter}" },
+        { class: "wide-key", buttons: "{sym} {abc}" },
+      ],
     });
   }, [modifiers]);
 
@@ -183,18 +174,19 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
       <style jsx global>{`
         .terminal-keyboard-theme {
           background: #1e293b;
-          padding: 4px;
+          padding: 6px;
           border-radius: 0;
         }
 
         .terminal-keyboard-theme .hg-button {
-          background: #334155;
+          background: #3f4a5c;
           color: #e2e8f0;
           border: none;
-          border-radius: 4px;
+          border-radius: 8px;
           height: ${rowHeight}px;
           min-width: 28px;
-          font-size: ${rowHeight <= 36 ? 12 : rowHeight <= 44 ? 14 : 16}px;
+          font-size: ${rowHeight <= 36 ? 16 : rowHeight <= 44 ? 18 : 20}px;
+          font-weight: 400;
           box-shadow: none;
           flex: 1 1 0;
           display: flex;
@@ -203,16 +195,34 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
         }
 
         .terminal-keyboard-theme .hg-button:active {
-          background: #475569;
+          background: #4b5563;
         }
 
+        /* Accent colored keys (shift, backspace, enter) */
+        .terminal-keyboard-theme .hg-button.accent-key {
+          background: #4a5568;
+        }
+
+        .terminal-keyboard-theme .hg-button.accent-key:active {
+          background: #5a6578;
+        }
+
+        /* Wide keys (sym, abc) */
+        .terminal-keyboard-theme .hg-button.wide-key {
+          background: #4a5568;
+          font-size: ${rowHeight <= 36 ? 12 : rowHeight <= 44 ? 13 : 14}px;
+          font-weight: 500;
+        }
+
+        /* Modifier states */
         .terminal-keyboard-theme .hg-button.modifier-sticky {
-          border: 1px solid #22c55e;
-          color: #4ade80;
+          background: #4a5568;
+          border: 2px solid #60a5fa;
+          color: #60a5fa;
         }
 
         .terminal-keyboard-theme .hg-button.modifier-locked {
-          background: #16a34a;
+          background: #3b82f6;
           color: white;
         }
 
@@ -220,39 +230,51 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
           display: flex;
           flex-direction: row;
           gap: 4px;
-          margin-bottom: 4px;
+          margin-bottom: 6px;
         }
 
         .terminal-keyboard-theme .hg-row:last-child {
           margin-bottom: 0;
         }
 
-        /* Backspace - slightly wider */
+        /* Row 3 (ASDF) - 9 keys, add padding for centering effect */
+        .terminal-keyboard-theme .hg-row:nth-child(3) {
+          padding-left: 5%;
+          padding-right: 5%;
+        }
+
+        /* Shift key - wider */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{shift}"] {
+          flex: 1.5 1 0;
+        }
+
+        /* Backspace - wider */
         .terminal-keyboard-theme .hg-button[data-skbtn="{bksp}"] {
-          flex-grow: 1.25;
+          flex: 1.5 1 0;
         }
 
-        /* Space key - 66% of bottom row */
+        /* Symbol/ABC toggle - wider */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{sym}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{abc}"] {
+          flex: 1.5 1 0;
+        }
+
+        /* Space key - takes most of bottom row */
         .terminal-keyboard-theme .hg-button[data-skbtn="{space}"] {
-          flex-grow: 2;
+          flex: 4 1 0;
         }
 
-        /* Enter key - 33% of bottom row */
+        /* Enter key - wider */
         .terminal-keyboard-theme .hg-button[data-skbtn="{enter}"] {
-          flex-grow: 1;
+          flex: 1.5 1 0;
+          background: #4a5568;
         }
 
-        /* Modifier keys - slightly wider */
-        .terminal-keyboard-theme .hg-button[data-skbtn="{ctrl}"],
-        .terminal-keyboard-theme .hg-button[data-skbtn="{shift}"],
-        .terminal-keyboard-theme .hg-button[data-skbtn="{alt}"] {
-          flex-grow: 1.25;
-        }
-
-        /* ESC and TAB */
-        .terminal-keyboard-theme .hg-button[data-skbtn="{esc}"],
-        .terminal-keyboard-theme .hg-button[data-skbtn="{tab}"] {
-          flex-grow: 1.25;
+        /* Apostrophe and period - normal size */
+        .terminal-keyboard-theme .hg-button[data-skbtn="'"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="."],
+        .terminal-keyboard-theme .hg-button[data-skbtn=","] {
+          flex: 1 1 0;
         }
       `}</style>
     </div>
