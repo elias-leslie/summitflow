@@ -90,13 +90,6 @@ export async function createProject(project: {
   return res.json();
 }
 
-export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${getApiBase()}/api/projects/${id}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) throw new Error("Failed to delete project");
-}
-
 // ============================================================================
 // Common Types (used by Explorer)
 // ============================================================================
@@ -415,39 +408,6 @@ export async function updateTask(
   return res.json();
 }
 
-export async function fetchTaskDependencies(projectId: string, taskId: string): Promise<TaskDependency[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies`);
-  if (!res.ok) throw new Error("Failed to fetch dependencies");
-  return res.json();
-}
-
-export async function addTaskDependency(
-  projectId: string,
-  taskId: string,
-  dependsOnTaskId: string,
-  dependencyType: "blocks" | "discovered-from" = "blocks"
-): Promise<TaskDependency> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ depends_on_task_id: dependsOnTaskId, dependency_type: dependencyType }),
-  });
-  if (!res.ok) throw new Error("Failed to add dependency");
-  return res.json();
-}
-
-export async function removeTaskDependency(
-  projectId: string,
-  taskId: string,
-  dependsOnTaskId: string
-): Promise<void> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/dependencies/${dependsOnTaskId}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) throw new Error("Failed to remove dependency");
-}
-
 export async function fetchTask(projectId: string, taskId: string): Promise<Task> {
   const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}`);
   if (!res.ok) throw new Error("Failed to fetch task");
@@ -569,14 +529,6 @@ export async function dismissNotification(projectId: string, notificationId: str
   return res.json();
 }
 
-export async function dismissAllNotifications(projectId: string): Promise<{ dismissed: number }> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/notifications/dismiss-all`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error("Failed to dismiss all notifications");
-  return res.json();
-}
-
 // =============================================================================
 // Roundtable API
 // =============================================================================
@@ -641,11 +593,6 @@ export interface GeneratedFeature {
   acceptance_criteria: { id: string; description: string }[];
 }
 
-export interface SendMessageResponse {
-  user_message: RoundtableMessage;
-  responses: RoundtableMessage[];
-}
-
 export interface CreateSessionResponse {
   session_id: string;
   project_id: string;
@@ -665,21 +612,6 @@ export interface CreateSessionOptions {
   toolsEnabled?: boolean;
   writeEnabled?: boolean;
   yoloMode?: boolean;
-}
-
-export interface UpdateSessionRequest {
-  title?: string;
-  status?: "active" | "archived";
-  agentMode?: "claude" | "gemini" | "both";
-}
-
-export interface UpdateSessionResponse {
-  id: string;
-  project_id: string;
-  title: string | null;
-  status: "active" | "archived";
-  agent_mode: "claude" | "gemini" | "both";
-  updated_at: string;
 }
 
 export async function createRoundtableSession(
@@ -721,28 +653,6 @@ export async function listRoundtableSessions(
   }
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error("Failed to list roundtable sessions");
-  return res.json();
-}
-
-export async function updateRoundtableSession(
-  projectId: string,
-  sessionId: string,
-  updates: UpdateSessionRequest
-): Promise<UpdateSessionResponse> {
-  const body: Record<string, unknown> = {};
-  if (updates.title !== undefined) body.title = updates.title;
-  if (updates.status !== undefined) body.status = updates.status;
-  if (updates.agentMode !== undefined) body.agent_mode = updates.agentMode;
-
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
-  if (!res.ok) throw new Error("Failed to update roundtable session");
   return res.json();
 }
 
@@ -820,33 +730,6 @@ export async function updateRoundtableAgentConfig(
   );
   if (!res.ok) throw new Error("Failed to update agent config");
   return res.json();
-}
-
-export async function sendRoundtableMessage(
-  projectId: string,
-  sessionId: string,
-  message: string,
-  target: "claude" | "gemini" | "both" = "both"
-): Promise<SendMessageResponse> {
-  // Use AbortController for timeout - AI responses can take 60+ seconds
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/messages`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, target }),
-        signal: controller.signal,
-      }
-    );
-    if (!res.ok) throw new Error("Failed to send roundtable message");
-    return res.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 // SSE event types for roundtable streaming
