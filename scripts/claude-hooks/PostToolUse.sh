@@ -1,6 +1,9 @@
 #!/bin/bash
 # PostToolUse hook for Claude Code
-# Captures tool executions and sends to SummitFlow for observation extraction
+#
+# Two functions:
+# 1. Captures tool executions and sends to SummitFlow for observation extraction
+# 2. Auto-commits after every N Write/Edit operations with M+ uncommitted files
 #
 # Data from Claude Code (passed via stdin as JSON):
 # - session_id: Claude Code session ID
@@ -23,7 +26,7 @@ SUMMITFLOW_API_URL="${SUMMITFLOW_API_URL:-http://localhost:8001/api}"
 SUMMITFLOW_ENABLED="${SUMMITFLOW_ENABLED:-1}"
 LOG_FILE="$HOME/.claude/hooks/summitflow.log"
 
-# Commit reminder configuration
+# Auto-commit configuration: commit after every 5 Write/Edit ops if 3+ uncommitted files
 COMMIT_REMINDER_COUNTER_FILE="$HOME/.claude/hooks/.write-edit-counter"
 COMMIT_REMINDER_INTERVAL=5
 UNCOMMITTED_THRESHOLD=3
@@ -137,7 +140,7 @@ elif [ -z "$RESPONSE" ]; then
     echo "[$(date -Iseconds)] API request failed for: $TOOL_NAME" >> "$LOG_FILE"
 fi
 
-# Periodic commit reminder for Write/Edit tools
+# Auto-commit after threshold of Write/Edit operations with uncommitted files
 if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
     # Increment counter
     CURRENT_COUNT=0
@@ -147,12 +150,28 @@ if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
     NEW_COUNT=$((CURRENT_COUNT + 1))
     echo "$NEW_COUNT" > "$COMMIT_REMINDER_COUNTER_FILE"
 
-    # Check if we should remind
+    # Check if we should auto-commit
     if [ $((NEW_COUNT % COMMIT_REMINDER_INTERVAL)) -eq 0 ]; then
         # Count uncommitted files
         UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l || echo 0)
         if [ "$UNCOMMITTED" -ge "$UNCOMMITTED_THRESHOLD" ]; then
-            echo "{\"systemMessage\": \"📝 Commit reminder: ${UNCOMMITTED} uncommitted files after ${NEW_COUNT} Write/Edit operations.\"}"
+            # Auto-commit
+            COMMIT_STATUS="failed"
+            PUSH_STATUS=""
+            if git add -A 2>/dev/null && SKIP=mypy,pyright git commit -m "checkpoint: auto-save after ${NEW_COUNT} edits (${UNCOMMITTED} files)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)" 2>/dev/null; then
+                COMMIT_STATUS="committed"
+                # Reset counter after successful commit
+                echo "0" > "$COMMIT_REMINDER_COUNTER_FILE"
+                # Auto-push
+                if git push 2>/dev/null; then
+                    PUSH_STATUS=", pushed"
+                else
+                    PUSH_STATUS=", push pending"
+                fi
+            fi
+            echo "{\"systemMessage\": \"📝 Auto-checkpoint: ${UNCOMMITTED} files ${COMMIT_STATUS}${PUSH_STATUS}.\"}"
         fi
     fi
 fi
