@@ -195,6 +195,19 @@ def get_test_stats(
         )
         row = cur.fetchone()
 
+    if not row:
+        return {
+            "total_runs": 0,
+            "passed": 0,
+            "failed": 0,
+            "error": 0,
+            "timeout": 0,
+            "skipped": 0,
+            "avg_duration_ms": None,
+            "pass_rate": 0.0,
+            "last_run_at": None,
+        }
+
     total = row[0] or 0
     passed = row[1] or 0
     pass_rate = (passed / total * 100) if total > 0 else 0.0

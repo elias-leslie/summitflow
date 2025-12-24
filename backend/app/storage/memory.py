@@ -11,6 +11,9 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from psycopg import sql
+from psycopg.rows import TupleRow
+
 from .agent_configs import is_memory_feature_enabled
 from .connection import get_connection
 
@@ -144,8 +147,10 @@ def update_queue_item_status(
     return updated
 
 
-def _queue_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
+def _queue_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert queue row to dict."""
+    if row is None:
+        raise ValueError("Row cannot be None")
     return {
         "id": str(row[0]),
         "project_id": row[1],
@@ -337,20 +342,23 @@ def list_observations(
 
     params.extend([limit, offset])
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, project_id, session_id, agent_type, observation_type,
                    concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
                    files_modified, tool_name, tool_input, discovery_tokens,
                    extracted_by, raw_excerpt, created_at
             FROM observations
-            {where_clause}
+            WHERE {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         rows = cur.fetchall()
@@ -391,11 +399,16 @@ def count_observations(
         conditions.append("session_id = %s")
         params.append(session_id)
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"SELECT COUNT(*) FROM observations {where_clause}",
+            sql.SQL("SELECT COUNT(*) FROM observations WHERE {where_clause}").format(
+                where_clause=where_clause
+            ),
             params,
         )
         row = cur.fetchone()
@@ -470,7 +483,7 @@ def search_observations_fts(
     return results[:limit]
 
 
-def _observation_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
+def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert observation row to dict.
 
     Handles row formats with varying columns:
@@ -481,7 +494,8 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type
     - 17 cols: with extracted_by, no priority (legacy)
     - 16 cols: no extracted_by, no priority (oldest)
     """
-    from decimal import Decimal
+    if row is None:
+        raise ValueError("Row cannot be None")
 
     result = {
         "id": str(row[0]),
@@ -725,21 +739,24 @@ def list_diary_entries(
 
     params.extend([limit, offset])
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, project_id, session_id, task_id, agent_type,
                    duration_seconds, tokens_used, discovery_tokens, outcome,
                    observation_type, concepts, what_worked, what_failed,
                    user_corrections, patterns_used, reflected_at,
                    reflection_notes, patterns_generated, created_at
             FROM session_diary
-            {where_clause}
+            WHERE {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         rows = cur.fetchall()
@@ -770,11 +787,16 @@ def count_diary_entries(
         conditions.append("outcome = %s")
         params.append(outcome)
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"SELECT COUNT(*) FROM session_diary {where_clause}",
+            sql.SQL("SELECT COUNT(*) FROM session_diary WHERE {where_clause}").format(
+                where_clause=where_clause
+            ),
             params,
         )
         row = cur.fetchone()
@@ -831,8 +853,10 @@ def mark_diary_entries_reflected(
     return updated
 
 
-def _diary_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
+def _diary_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert diary row to dict."""
+    if row is None:
+        raise ValueError("Row cannot be None")
     return {
         "id": str(row[0]),
         "project_id": row[1],
@@ -1035,20 +1059,23 @@ def list_patterns(
 
     params.extend([limit, offset])
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, project_id, pattern_type, title, content, rationale,
                    source_diary_ids, source_observation_ids, action, target_pattern_id,
                    status, confidence, usage_count, last_used_at, superseded_by,
                    applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
             FROM learned_patterns
-            {where_clause}
+            WHERE {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         rows = cur.fetchall()
@@ -1089,11 +1116,16 @@ def count_patterns(
         conditions.append("pattern_type = %s")
         params.append(pattern_type)
 
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"SELECT COUNT(*) FROM learned_patterns {where_clause}",
+            sql.SQL("SELECT COUNT(*) FROM learned_patterns WHERE {where_clause}").format(
+                where_clause=where_clause
+            ),
             params,
         )
         row = cur.fetchone()
@@ -1189,11 +1221,13 @@ def increment_pattern_usage(pattern_id: str) -> bool:
     return updated
 
 
-def _pattern_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
+def _pattern_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert pattern row to dict.
 
     Handles both old 19-column rows and new 20-column rows with reflected_by.
     """
+    if row is None:
+        raise ValueError("Row cannot be None")
     confidence = row[11]
     if isinstance(confidence, Decimal):
         confidence = float(confidence)
@@ -1363,8 +1397,10 @@ def delete_checkpoint(checkpoint_id: str) -> bool:
     return deleted
 
 
-def _checkpoint_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
+def _checkpoint_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert checkpoint row to dict."""
+    if row is None:
+        raise ValueError("Row cannot be None")
     return {
         "id": str(row[0]),
         "project_id": row[1],

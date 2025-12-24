@@ -10,6 +10,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from psycopg import sql
+from psycopg.rows import TupleRow
+
 from .connection import get_connection
 
 
@@ -152,33 +155,33 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     if invalid:
         raise ValueError(f"Invalid fields: {invalid}")
 
-    set_clauses: list[str] = []
+    set_clauses: list[sql.Composable] = []
     params: list[Any] = []
     for field, value in fields.items():
         if field in ("commits", "labels") and isinstance(value, list):
-            set_clauses.append(f"{field} = %s")
+            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
         elif field == "plan_content" and isinstance(value, dict):
-            set_clauses.append(f"{field} = %s::jsonb")
+            set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
             params.append(json.dumps(value))
         else:
-            set_clauses.append(f"{field} = %s")
+            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
 
     params.append(task_id)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE tasks
-            SET {", ".join(set_clauses)}
+            SET {set_clause}
             WHERE id = %s
             RETURNING id, project_id, capability_id, title, description, status,
                       current_criterion_id, spec_content, plan_content, progress_log,
                       error_message, branch_name, commits, pull_request_url,
                       total_sessions, total_tokens_used, created_at, started_at, completed_at,
                       priority, labels, task_type, parent_task_id
-            """,
+            """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             tuple(params),
         )
         row = cur.fetchone()
@@ -256,17 +259,17 @@ def list_tasks(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
                    t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
                    t.error_message, t.branch_name, t.commits, t.pull_request_url,
                    t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
                    t.priority, t.labels, t.task_type, t.parent_task_id
             FROM tasks t
-            WHERE {" AND ".join(conditions)}
+            WHERE {conditions}
             ORDER BY t.priority ASC, t.created_at DESC
             LIMIT %s OFFSET %s
-            """,
+            """).format(conditions=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)),  # type: ignore[arg-type]
             tuple(params),
         )
         rows = cur.fetchall()
@@ -480,7 +483,7 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
+def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
     Column order: id, project_id, capability_id, title, description, status,
@@ -489,6 +492,8 @@ def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
                   priority, labels, task_type, parent_task_id
     """
+    if row is None:
+        raise ValueError("Row cannot be None")
     return {
         "id": row[0],
         "project_id": row[1],

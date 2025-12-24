@@ -9,6 +9,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from psycopg import sql
+
 from .connection import get_connection
 
 
@@ -198,12 +200,12 @@ def update_test(
     # Always update updated_at
     updates["updated_at"] = datetime.now(UTC)
 
-    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    set_clauses = [sql.SQL("{} = %s").format(sql.Identifier(k)) for k in updates]
     values = [*list(updates.values()), project_id, test_id]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE tests
             SET {set_clause}
             WHERE project_id = %s AND test_id = %s
@@ -211,7 +213,7 @@ def update_test(
                       config, working_dir, timeout_seconds, last_run_at, last_result,
                       last_duration_ms, last_output, last_error, run_count, pass_count,
                       fail_count, flaky_score, created_at, updated_at
-            """,
+            """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             values,
         )
         row = cur.fetchone()
@@ -348,6 +350,9 @@ def link_test_to_capability(
         )
         row = cur.fetchone()
         conn.commit()
+
+    if not row:
+        raise ValueError("Failed to link test to capability")
 
     return {
         "capability_id": row[0],

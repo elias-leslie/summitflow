@@ -222,6 +222,9 @@ class PatternService:
             reflected_by=reflected_by,
         )
 
+        if not pattern:
+            raise ValueError("Failed to create pattern")
+
         logger.info(f"pattern_created: id={pattern['id']} type={pattern_type} action={action}")
 
         return pattern
@@ -618,7 +621,7 @@ class PatternService:
             memory_storage.update_pattern_status(
                 pattern_id=pid,
                 status="merged",
-                status_reason=f"Merged into {merged['id']}",
+                reviewed_by=f"Merged into {merged['id']}",
             )
 
         logger.info(f"patterns_merged: source={pattern_ids} target={merged['id']}")
@@ -629,7 +632,7 @@ class PatternService:
     # Usage Tracking
     # =========================================================================
 
-    def record_usage(self, pattern_id: str) -> dict[str, Any] | None:
+    def record_usage(self, pattern_id: str) -> bool:
         """Record that a pattern was used.
 
         Updates usage_count and last_used_at.
@@ -638,6 +641,7 @@ class PatternService:
             pattern_id: The pattern ID.
 
         Returns:
-            Updated pattern or None if not found.
+            True if updated successfully.
         """
-        return memory_storage.increment_pattern_usage(pattern_id)
+        result = memory_storage.increment_pattern_usage(pattern_id)
+        return result is not None

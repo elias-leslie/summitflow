@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Settings2, Download, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -24,7 +24,6 @@ type SettingsTab = "prompts" | "defaults";
 export default function ProjectSettingsPage() {
   const params = useParams();
   const projectId = params.id as string;
-  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("prompts");
   const [exporting, setExporting] = useState(false);

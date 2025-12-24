@@ -3,14 +3,13 @@
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  FolderKanban,
   ChevronDown,
   Check,
   LayoutGrid,
 } from "lucide-react";
 import clsx from "clsx";
 import { useState, useEffect, useRef } from "react";
-import { fetchProjects, type Project } from "@/lib/api";
+import { fetchProjects } from "@/lib/api";
 
 interface ProjectSelectorProps {
   onProjectChange?: (projectId: string | null) => void;

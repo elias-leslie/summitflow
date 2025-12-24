@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import {
   X,
   Camera,
@@ -353,11 +354,13 @@ export function EvidenceBrowser({
                     <div className="p-4">
                       <div className="flex items-start gap-4">
                         {/* Screenshot thumbnail */}
-                        <div className="shrink-0 w-48 h-32 rounded border border-slate-700 overflow-hidden bg-slate-800">
-                          <img
+                        <div className="shrink-0 w-48 h-32 rounded border border-slate-700 overflow-hidden bg-slate-800 relative">
+                          <Image
                             src={lastCapture.screenshotUrl}
                             alt="Captured screenshot"
-                            className="w-full h-full object-cover object-top"
+                            fill
+                            className="object-cover object-top"
+                            unoptimized
                           />
                         </div>
 

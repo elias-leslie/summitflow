@@ -286,7 +286,7 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
   const [showCreate, setShowCreate] = useState(false);
 
   // Fetch ready tasks
-  const { data: readyData, isLoading: readyLoading } = useQuery({
+  const { data: readyData } = useQuery({
     queryKey: ["tasks", projectId, "ready"],
     queryFn: () => fetchReadyTasks(projectId),
     staleTime: 30000,

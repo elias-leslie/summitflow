@@ -13,13 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { Progress } from "../ui/progress";
 import {
   Brain,
   ChevronDown,
   ChevronUp,
-  Zap,
   RefreshCw,
   WifiOff,
   Clock,
@@ -31,6 +30,7 @@ import {
   Database,
   Layers,
   Loader2,
+  Zap,
 } from "lucide-react";
 
 // Observation types from the plan

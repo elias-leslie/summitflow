@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { clsx } from "clsx";
-import { Badge, SuccessBadge, ErrorBadge, WarningBadge } from "../ui/badge";
+import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { Button } from "../ui/button";
 import {
@@ -13,8 +13,8 @@ import {
   Clock,
   Loader2,
   WifiOff,
-  Pause,
   Play,
+  Pause,
   RefreshCw,
   FileCode,
 } from "lucide-react";
@@ -41,10 +41,11 @@ interface TaskLogViewerProps {
   feature?: FeatureContext;
 }
 
-interface SSEEvent {
-  type: "connected" | "log" | "status" | "complete" | "error";
-  data: Record<string, unknown>;
-}
+// SSEEvent interface - defined for future use
+// interface _SSEEvent {
+//   type: "connected" | "log" | "status" | "complete" | "error";
+//   data: Record<string, unknown>;
+// }
 
 const statusConfig: Record<TaskStatus, { icon: typeof CheckCircle; variant: "phosphor" | "amber" | "rose" | "slate" }> = {
   pending: { icon: Clock, variant: "slate" },

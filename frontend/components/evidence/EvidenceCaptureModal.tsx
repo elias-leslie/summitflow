@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -18,7 +18,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Camera,
   Loader2,
-  Zap,
   FolderOpen,
   Search,
   ArrowUpDown,
@@ -27,6 +26,7 @@ import {
   Link2,
   CheckCircle2,
   Crosshair,
+  Zap,
 } from "lucide-react";
 import { clsx } from "clsx";
 

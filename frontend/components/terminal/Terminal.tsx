@@ -219,6 +219,9 @@ export function TerminalComponent({
         terminalRef.current = null;
       }
     };
+    // NOTE: fontFamily/fontSize intentionally omitted - they're handled by separate effect (line 239-249)
+    // Including them here would cause terminal to reinitialize on font changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, workingDir, handleResize, onDisconnect]);
 
   // Handle container resize

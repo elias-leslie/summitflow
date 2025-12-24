@@ -7,7 +7,6 @@ import {
   ChevronRight,
   ChevronLeft,
   Activity,
-  Zap,
   Clock,
   Check,
   X,
@@ -16,10 +15,10 @@ import {
   BookOpen
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { fetchProjects, type Project } from '@/lib/api';
+import { fetchProjects } from '@/lib/api';
 import { BulkActionsBar } from './BulkActionsBar';
 
 // Types

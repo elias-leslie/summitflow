@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { clsx } from "clsx";
 import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent, CardHeader } from "../ui/card";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   Select,
@@ -91,11 +90,7 @@ export function DiaryViewer({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [unprocessedCount, setUnprocessedCount] = useState(0);
 
-  useEffect(() => {
-    fetchEntries();
-  }, [projectId, outcomeFilter]);
-
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -121,7 +116,11 @@ export function DiaryViewer({
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, outcomeFilter]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return null;

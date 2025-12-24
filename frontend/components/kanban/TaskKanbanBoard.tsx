@@ -12,7 +12,6 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
-  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -20,21 +19,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-import type { Task, TaskStatus, TaskType } from "@/lib/api";
+import type { Task, TaskStatus } from "@/lib/api";
 import { TaskCard, DragOverlayTaskCard } from "./TaskCard";
-
-// Simple filter types (inline, no UI component for now)
-interface TaskKanbanFilterValues {
-  type: TaskType | "all";
-  priority: number | "all";
-  capabilityId: number | "all";
-}
-
-const DEFAULT_TASK_KANBAN_FILTERS: TaskKanbanFilterValues = {
-  type: "all",
-  priority: "all",
-  capabilityId: "all",
-};
 
 // ============================================================================
 // Types
@@ -149,13 +135,10 @@ function DroppableColumn({ column, tasks, onTaskClick }: DroppableColumnProps) {
 
 export function TaskKanbanBoard({
   tasks,
-  projectId,
   onStatusChange,
   onTaskClick,
-  onNewTask,
 }: TaskKanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<TaskKanbanFilterValues>(DEFAULT_TASK_KANBAN_FILTERS);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -233,7 +216,7 @@ export function TaskKanbanBoard({
     setActiveId(event.active.id as string);
   };
 
-  const handleDragOver = (_event: DragOverEvent) => {
+  const handleDragOver = () => {
     // Handle drag over logic if needed for visual feedback
   };
 

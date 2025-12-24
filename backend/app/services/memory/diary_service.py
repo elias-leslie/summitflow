@@ -189,7 +189,7 @@ class DiaryService:
         Returns:
             The created diary entry.
         """
-        return self.create_entry(
+        entry = self.create_entry(
             session_id=session_id,
             agent_type=agent_type,
             outcome=outcome,
@@ -199,3 +199,6 @@ class DiaryService:
             tokens_used=tokens,
             duration_seconds=duration,
         )
+        if not entry:
+            raise ValueError("Failed to create diary entry")
+        return entry

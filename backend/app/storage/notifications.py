@@ -8,6 +8,8 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
+from psycopg.rows import TupleRow
+
 from .connection import get_connection
 
 NotificationType = Literal["task_failed", "task_needs_input", "task_completed", "system"]
@@ -301,8 +303,10 @@ def create_task_failure_notification(
     )
 
 
-def _row_to_dict(row: tuple) -> dict[str, Any]:
+def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a notification dict."""
+    if row is None:
+        raise ValueError("Row cannot be None")
     return {
         "id": row[0],
         "project_id": row[1],

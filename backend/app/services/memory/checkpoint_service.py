@@ -302,7 +302,7 @@ class CheckpointService:
         Returns:
             The created checkpoint.
         """
-        return self.create_checkpoint(
+        checkpoint = self.create_checkpoint(
             session_id=session_id,
             agent_type=agent_type,
             current_action="Session ended",
@@ -312,3 +312,6 @@ class CheckpointService:
             files_modified=files,
             tokens_used=tokens,
         )
+        if not checkpoint:
+            raise ValueError("Failed to create checkpoint")
+        return checkpoint

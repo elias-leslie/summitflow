@@ -14,14 +14,13 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Folder, Database, Zap, Globe, FileText, Loader2 } from "lucide-react";
+import { Folder, Database, Globe, FileText, Zap } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
 import { SummaryBar, ScanningOverlay } from "./SummaryBar";
 import {
   fetchExplorerEntries,
   triggerExplorerScan,
   fetchScanStatus,
-  type ExplorerResponse,
   type ScanStatusResponse,
 } from "@/lib/api/explorer";
 import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
@@ -99,7 +98,14 @@ export function ExplorerShell({
   useEffect(() => {
     const fetchAllStats = async () => {
       const types: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
-      const newStats: Record<ExplorerType, ExplorerStats> = { ...statsData };
+      // Start with empty stats object to avoid dependency on statsData
+      const newStats: Record<ExplorerType, ExplorerStats> = {
+        files: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        database: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+      };
 
       for (const type of types) {
         try {
@@ -127,6 +133,8 @@ export function ExplorerShell({
     };
 
     fetchAllStats();
+    // NOTE: statsData intentionally omitted - including it would cause infinite loop
+    // We construct newStats fresh each time instead of spreading statsData
   }, [projectId, isScanning]); // Re-fetch when scanning completes
 
   // Handlers

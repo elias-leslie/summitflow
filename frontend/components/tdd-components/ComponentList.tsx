@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -143,7 +143,6 @@ export function ComponentList({
     <div className="space-y-3">
       {groupedData.map((group) => {
         const isExpanded = expandedComponents.has(group.component.id);
-        const total = group.capabilities.length;
 
         return (
           <div

@@ -1,6 +1,7 @@
 """Session management endpoints for roundtable."""
 
 import logging
+from typing import Literal, cast
 
 from fastapi import APIRouter, HTTPException
 
@@ -53,7 +54,7 @@ async def create_session(
 
     session = service.create_session(
         project_id,
-        mode=request.mode,
+        mode=cast(Literal["spec_driven", "quick"], request.mode),
         tools_enabled=request.tools_enabled,
     )
 
@@ -66,7 +67,7 @@ async def create_session(
     roundtable_storage.save_session(
         session_id=session.id,
         project_id=project_id,
-        mode=request.mode,
+        mode=cast(Literal["spec_driven", "quick"], request.mode),
         messages=[],
         generated_features=[],
         tools_enabled=request.tools_enabled,

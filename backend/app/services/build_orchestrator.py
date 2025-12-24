@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..storage import agent_sessions as sessions_storage
 from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
-from .agents import get_agent
+from .agents import AgentType, get_agent
 from .recovery import (
     RecoveryManager,
     RecoveryStrategy,
@@ -209,6 +209,8 @@ async def build_capability(
     # Initialize recovery manager
     recovery = RecoveryManager(project_id, session_id)
     failure_info = None
+    full_results: dict[str, Any] = {}
+    attempt = 0
 
     # TDD Loop
     for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
@@ -388,7 +390,7 @@ async def call_agent_for_fix(
     prompt += "\n\nAnalyze these failures and provide the code changes needed to fix them."
 
     try:
-        agent = get_agent(agent_type)
+        agent = get_agent(cast(AgentType, agent_type))
         response = agent.generate(
             prompt=prompt,
             system=TDD_SYSTEM_PROMPT,

@@ -413,6 +413,9 @@ def upsert_prompt(
         row = cur.fetchone()
         conn.commit()
 
+    if not row:
+        raise ValueError("Failed to create/update prompt")
+
     return {
         "prompt_type": row[0],
         "prompt_text": row[1],

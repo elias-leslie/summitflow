@@ -324,7 +324,7 @@ class GeminiClient(LLMClient):
             name="gemini_roundtable",
             model=self.model,
             instruction=system or "You are a helpful assistant.",
-            tools=tools,
+            tools=tools,  # type: ignore[arg-type]
             before_tool_callback=self._create_before_tool_callback(write_enabled, yolo_mode),
             after_tool_callback=after_tool_cb,
         )

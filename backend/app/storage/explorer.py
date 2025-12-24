@@ -15,6 +15,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from psycopg import sql
+
 from .connection import get_connection
 
 
@@ -105,7 +107,11 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
         conditions.append("path LIKE %s")
         params.append(f"{filters['path']}%")
 
-    where_clause = " AND ".join(conditions)
+    # Build WHERE clause from conditions
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     # Sort and pagination
     sort_field = filters.get("sort", "path")
@@ -120,14 +126,18 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, project_id, entry_type, path, name, health_status,
                    metadata, last_scanned_at, created_at, updated_at
             FROM explorer_entries
             WHERE {where_clause}
             ORDER BY {sort_field} {sort_dir}
             LIMIT %s OFFSET %s
-            """,
+            """).format(
+                where_clause=where_clause,
+                sort_field=sql.Identifier(sort_field),
+                sort_dir=sql.SQL(sort_dir),
+            ),
             (*params, limit, offset),
         )
         rows = cur.fetchall()
@@ -402,17 +412,20 @@ def get_relationships(
         conditions.append("target_path = %s")
         params.append(target_path)
 
-    where_clause = " AND ".join(conditions)
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, project_id, source_type, source_path,
                    target_type, target_path, relationship, created_at
             FROM explorer_relationships
             WHERE {where_clause}
             ORDER BY created_at DESC
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         rows = cur.fetchall()

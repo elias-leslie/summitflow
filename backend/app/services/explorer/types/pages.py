@@ -73,6 +73,9 @@ class PageScanner(BaseScanner):
         """Scan Next.js app router for frontend pages."""
         entries = []
 
+        if not self.root_path:
+            return entries
+
         app_dir = self.root_path / self.frontend_dir / "app"
         if not app_dir.exists():
             return entries
@@ -112,7 +115,9 @@ class PageScanner(BaseScanner):
                         metadata={
                             "method": "GET",
                             "port": 3001,
-                            "source_file": str(page_file.relative_to(self.root_path)),
+                            "source_file": str(page_file.relative_to(self.root_path))
+                            if self.root_path
+                            else "unknown",
                             "route_params": route_params,
                             "http_status": None,
                             "response_time_ms": None,

@@ -2,10 +2,10 @@
 
 import { useState, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import Image from "next/image";
 import {
   X,
-  AlertTriangle,
   AlertCircle,
   CheckCircle2,
   Loader2,
@@ -222,11 +222,14 @@ export function EvidenceReviewDialog({
           {/* Left: Screenshot preview */}
           <div className="w-1/3 border-r border-slate-700 p-4 overflow-auto bg-slate-900/50">
             <h3 className="text-sm font-medium text-slate-300 mb-3">Captured Evidence</h3>
-            <div className="rounded border border-slate-700 overflow-hidden mb-4">
-              <img
+            <div className="rounded border border-slate-700 overflow-hidden mb-4 relative">
+              <Image
                 src={screenshotUrl}
                 alt="Evidence screenshot"
-                className="w-full"
+                width={800}
+                height={600}
+                className="w-full h-auto"
+                unoptimized
               />
             </div>
             <div className="text-xs text-slate-500">

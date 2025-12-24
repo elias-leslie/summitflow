@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from psycopg import sql
+
 from ..connection import get_connection
 
 
@@ -28,29 +30,29 @@ def update_tools_settings(
     default_stats = {"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}
 
     # Build SET clause dynamically based on provided fields
-    set_parts = ["updated_at = NOW()"]
+    set_parts: list[sql.Composable] = [sql.SQL("updated_at = NOW()")]
     params: list[bool | str] = []
 
     if tools_enabled is not None:
-        set_parts.append("tools_enabled = %s")
+        set_parts.append(sql.SQL("tools_enabled = %s"))
         params.append(tools_enabled)
     if write_enabled is not None:
-        set_parts.append("write_enabled = %s")
+        set_parts.append(sql.SQL("write_enabled = %s"))
         params.append(write_enabled)
     if yolo_mode is not None:
-        set_parts.append("yolo_mode = %s")
+        set_parts.append(sql.SQL("yolo_mode = %s"))
         params.append(yolo_mode)
 
     params.append(session_id)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE roundtable_sessions
-            SET {", ".join(set_parts)}
+            SET {set_parts}
             WHERE id = %s
             RETURNING id, project_id, mode, tools_enabled, write_enabled, yolo_mode, tool_stats, created_at, updated_at
-            """,
+            """).format(set_parts=sql.SQL(", ").join(set_parts)),
             params,
         )
         row = cur.fetchone()
@@ -219,26 +221,26 @@ def update_sdk_session_ids(
         True if session was updated, False if not found
     """
     # Build SET clause dynamically - only update provided fields
-    set_parts = ["updated_at = NOW()"]
+    set_parts: list[sql.Composable] = [sql.SQL("updated_at = NOW()")]
     params: list[str] = []
 
     if claude_sdk_session_id is not None:
-        set_parts.append("claude_sdk_session_id = %s")
+        set_parts.append(sql.SQL("claude_sdk_session_id = %s"))
         params.append(claude_sdk_session_id)
     if gemini_sdk_session_id is not None:
-        set_parts.append("gemini_sdk_session_id = %s")
+        set_parts.append(sql.SQL("gemini_sdk_session_id = %s"))
         params.append(gemini_sdk_session_id)
 
     params.append(session_id)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE roundtable_sessions
-            SET {", ".join(set_parts)}
+            SET {set_parts}
             WHERE id = %s
             RETURNING id
-            """,
+            """).format(set_parts=sql.SQL(", ").join(set_parts)),
             params,
         )
         result = cur.fetchone()
@@ -267,34 +269,34 @@ def update_session_metadata(
         Updated session dict or None if not found
     """
     # Build SET clause dynamically based on provided fields
-    set_parts = ["updated_at = NOW()"]
+    set_parts: list[sql.Composable] = [sql.SQL("updated_at = NOW()")]
     params: list[str] = []
 
     if title is not None:
-        set_parts.append("title = %s")
+        set_parts.append(sql.SQL("title = %s"))
         params.append(title)
     if description is not None:
-        set_parts.append("description = %s")
+        set_parts.append(sql.SQL("description = %s"))
         params.append(description)
     if status is not None:
-        set_parts.append("status = %s")
+        set_parts.append(sql.SQL("status = %s"))
         params.append(status)
     if agent_mode is not None:
-        set_parts.append("agent_mode = %s")
+        set_parts.append(sql.SQL("agent_mode = %s"))
         params.append(agent_mode)
 
     params.append(session_id)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE roundtable_sessions
-            SET {", ".join(set_parts)}
+            SET {set_parts}
             WHERE id = %s
             RETURNING id, project_id, title, description, status, agent_mode,
                       mode, tools_enabled, claude_sdk_session_id, gemini_sdk_session_id,
                       created_at, updated_at
-            """,
+            """).format(set_parts=sql.SQL(", ").join(set_parts)),
             params,
         )
         row = cur.fetchone()

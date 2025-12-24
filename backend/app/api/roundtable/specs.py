@@ -1,7 +1,10 @@
 """TDD spec generation and acceptance endpoints for roundtable."""
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException
 
+from ...services.agents import AgentType
 from ...services.roundtable import get_roundtable_service
 from ...storage import roundtable as roundtable_storage
 from .helpers import restore_session_from_db
@@ -41,7 +44,7 @@ async def generate_spec(
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Extract spec
-    spec = service.extract_spec_from_conversation(session, request.agent_type)
+    spec = service.extract_spec_from_conversation(session, cast(AgentType, request.agent_type))
 
     # Count entities
     components_count = len(spec.get("components", []))

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json as json_module
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..agents import AgentType, get_agent
 
@@ -172,7 +172,9 @@ def extract_spec_from_conversation(
     prompt_text = prompt_config.get("prompt_text", SPEC_EXTRACTION_PROMPT)
 
     # Use session override > prompt config > provided agent_type
-    effective_agent = session.agent_override or prompt_config.get("primary_agent", agent_type)
+    effective_agent = session.agent_override or prompt_config.get(
+        "primary_agent", cast(AgentType, agent_type)
+    )
 
     effective_model = session.get_effective_model(effective_agent, claude_model, gemini_model)
     agent = get_agent(effective_agent, model=effective_model)

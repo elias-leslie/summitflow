@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import {
   CheckCircle2,
   XCircle,
@@ -281,10 +281,13 @@ export function EvidenceViewerModal({
 
               <div className="flex-1 overflow-hidden relative bg-slate-950/50">
                 <TabsContent value="screenshot" className="absolute inset-0 overflow-auto p-4">
-                  <img
+                  <Image
                     src={getScreenshotUrl(projectId, capabilityId, criterionId, artifact?.version ?? 1)}
                     alt="Page screenshot"
-                    className="border border-slate-700 rounded shadow-lg"
+                    width={1920}
+                    height={1080}
+                    className="border border-slate-700 rounded shadow-lg w-auto h-auto"
+                    unoptimized
                   />
                 </TabsContent>
 

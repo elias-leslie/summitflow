@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { clsx } from "clsx";
 
 interface TooltipContextValue {

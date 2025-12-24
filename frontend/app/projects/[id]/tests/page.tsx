@@ -7,15 +7,11 @@ import {
   Search,
   Download,
   Play,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
   RefreshCw,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { TestList } from "@/components/tests/TestList";

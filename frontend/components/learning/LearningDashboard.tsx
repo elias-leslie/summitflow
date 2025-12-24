@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { clsx } from "clsx";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -12,7 +12,6 @@ import {
   Sparkles,
   Clock,
   CheckCircle,
-  XCircle,
   AlertTriangle,
   RefreshCw,
   Settings,
@@ -71,12 +70,7 @@ export function LearningDashboard({
   const [autoApply, setAutoApply] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    fetchPatterns();
-    fetchStalePatterns();
-  }, [projectId]);
-
-  const fetchPatterns = async (status?: string) => {
+  const fetchPatterns = useCallback(async (status?: string) => {
     setLoading(true);
     setError(null);
 
@@ -102,9 +96,9 @@ export function LearningDashboard({
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
-  const fetchStalePatterns = async () => {
+  const fetchStalePatterns = useCallback(async () => {
     try {
       const response = await fetch(
         `/api/projects/${projectId}/patterns/stale?days=30`
@@ -117,7 +111,12 @@ export function LearningDashboard({
     } catch (err) {
       console.error("Failed to fetch stale patterns:", err);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchPatterns();
+    fetchStalePatterns();
+  }, [fetchPatterns, fetchStalePatterns]);
 
   const handleApprove = async (patternId: string) => {
     const response = await fetch(

@@ -201,7 +201,7 @@ async def rollback_to_commit(
     """
     import asyncio
 
-    from ...storage import projects as projects_storage
+    from ...storage import projects as projects_storage  # type: ignore[attr-defined]
 
     # Get project config for root path
     project = projects_storage.get_project(project_id)

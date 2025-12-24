@@ -28,6 +28,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from psycopg import sql
+
 from ..logging_config import get_logger
 from ..storage.connection import get_connection
 
@@ -417,17 +419,23 @@ def list_evidence(
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern, search_pattern])
 
-        where_sql = " AND ".join(where_clauses)
+        if where_clauses:
+            where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)  # type: ignore[arg-type]
+        else:
+            where_sql = sql.SQL("TRUE")
 
         # Get total count
-        cur.execute(f"SELECT COUNT(*) FROM evidence WHERE {where_sql}", params)
+        cur.execute(
+            sql.SQL("SELECT COUNT(*) FROM evidence WHERE {where_sql}").format(where_sql=where_sql),
+            params,
+        )
         count_row = cur.fetchone()
         total = int(count_row[0]) if count_row and count_row[0] else 0
 
         # Get paginated results
         params.extend([limit, offset])
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
@@ -437,7 +445,7 @@ def list_evidence(
             WHERE {where_sql}
             ORDER BY captured_at DESC
             LIMIT %s OFFSET %s
-            """,
+            """).format(where_sql=where_sql),
             params,
         )
         rows = cur.fetchall()

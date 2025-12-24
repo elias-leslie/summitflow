@@ -8,7 +8,7 @@
  * Does NOT handle: Data fetching, filters/sorting
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 
 interface UseExplorerStateOptions {
   /** Initial expanded IDs */

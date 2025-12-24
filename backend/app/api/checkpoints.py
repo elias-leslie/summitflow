@@ -142,6 +142,10 @@ async def create_checkpoint(
         tokens_used=request.tokens_used,
     )
 
+    # Add None check for pyright
+    if not checkpoint:
+        raise HTTPException(status_code=500, detail="Failed to create checkpoint")
+
     return CheckpointResponse(**checkpoint)
 
 

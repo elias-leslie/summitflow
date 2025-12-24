@@ -83,10 +83,10 @@ async def get_memory_stats() -> MemoryStats:
             (yesterday, yesterday, yesterday),
         )
         queue_row = cur.fetchone()
-        pending = queue_row[0] or 0
-        processing = queue_row[1] or 0
-        processed_24h = queue_row[2] or 0
-        failed_24h = queue_row[3] or 0
+        pending = queue_row[0] if queue_row else 0
+        processing = queue_row[1] if queue_row else 0
+        processed_24h = queue_row[2] if queue_row else 0
+        failed_24h = queue_row[3] if queue_row else 0
 
         queue_depth = pending + processing
 
@@ -103,7 +103,8 @@ async def get_memory_stats() -> MemoryStats:
             """,
             (today_start,),
         )
-        observations_today = cur.fetchone()[0] or 0
+        obs_row = cur.fetchone()
+        observations_today = obs_row[0] if obs_row else 0
 
         # Token spend (discovery_tokens from observations in last 24h)
         cur.execute(
@@ -114,7 +115,8 @@ async def get_memory_stats() -> MemoryStats:
             """,
             (yesterday,),
         )
-        token_spend_24h = cur.fetchone()[0] or 0
+        token_row = cur.fetchone()
+        token_spend_24h = token_row[0] if token_row else 0
 
     # Determine health status
     health = "healthy"

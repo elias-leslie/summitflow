@@ -132,6 +132,9 @@ async def create_diary_entry(
         patterns_used=body.patterns_used,
     )
 
+    if not entry:
+        raise HTTPException(status_code=500, detail="Failed to create diary entry")
+
     return entry
 
 

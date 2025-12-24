@@ -37,8 +37,8 @@ async def list_extraction_prompts(project_id: str) -> list[ExtractionPromptConfi
             verification_model=p.get("verification_model"),
             verification_prompt=p.get("verification_prompt"),
             is_default=p.get("is_default", True),
-            created_at=p.get("created_at").isoformat() if p.get("created_at") else None,
-            updated_at=p.get("updated_at").isoformat() if p.get("updated_at") else None,
+            created_at=p["created_at"].isoformat() if p.get("created_at") else None,
+            updated_at=p["updated_at"].isoformat() if p.get("updated_at") else None,
         )
         for p in prompts
     ]
@@ -74,8 +74,8 @@ async def export_extraction_prompts(
                 verification_model=p.get("verification_model"),
                 verification_prompt=p.get("verification_prompt"),
                 is_default=p.get("is_default", True),
-                created_at=p.get("created_at").isoformat() if p.get("created_at") else None,
-                updated_at=p.get("updated_at").isoformat() if p.get("updated_at") else None,
+                created_at=p["created_at"].isoformat() if p.get("created_at") else None,
+                updated_at=p["updated_at"].isoformat() if p.get("updated_at") else None,
             )
             for p in prompts
         ],
@@ -112,8 +112,8 @@ async def get_extraction_prompt(project_id: str, prompt_type: str) -> Extraction
         verification_model=prompt.get("verification_model"),
         verification_prompt=prompt.get("verification_prompt"),
         is_default=prompt.get("is_default", True),
-        created_at=prompt.get("created_at").isoformat() if prompt.get("created_at") else None,
-        updated_at=prompt.get("updated_at").isoformat() if prompt.get("updated_at") else None,
+        created_at=prompt["created_at"].isoformat() if prompt.get("created_at") else None,
+        updated_at=prompt["updated_at"].isoformat() if prompt.get("updated_at") else None,
     )
 
 
@@ -174,8 +174,8 @@ async def update_extraction_prompt(
         verification_model=result.get("verification_model"),
         verification_prompt=result.get("verification_prompt"),
         is_default=False,
-        created_at=result.get("created_at").isoformat() if result.get("created_at") else None,
-        updated_at=result.get("updated_at").isoformat() if result.get("updated_at") else None,
+        created_at=result["created_at"].isoformat() if result.get("created_at") else None,
+        updated_at=result["updated_at"].isoformat() if result.get("updated_at") else None,
     )
 
 

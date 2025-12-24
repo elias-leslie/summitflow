@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Filter } from "lucide-react";
-import { fetchTddCapabilities, type TaskType, type TaskStatus, type TddCapability } from "@/lib/api";
+import { fetchTddCapabilities, type TaskType, type TaskStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface TaskFilterValues {

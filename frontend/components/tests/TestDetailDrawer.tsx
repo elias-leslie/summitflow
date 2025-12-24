@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  ExternalLink,
   Image,
 } from "lucide-react";
 
@@ -91,7 +90,7 @@ export function TestDetailDrawer({
   const [expandedRuns, setExpandedRuns] = useState<Set<number>>(new Set());
 
   // Fetch full test details with history
-  const { data: testDetails, isLoading } = useQuery<TddTestWithHistory>({
+  const { data: testDetails } = useQuery<TddTestWithHistory>({
     queryKey: ["tdd-test", projectId, test?.test_id],
     queryFn: () => fetchTddTest(projectId, test!.test_id),
     enabled: open && !!test,
@@ -182,7 +181,7 @@ export function TestDetailDrawer({
           {details?.test_type === "ui" && details?.config && Object.keys(details.config).length > 0 && (
             <div>
               <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Image className="h-3.5 w-3.5" />
+                <Image className="h-3.5 w-3.5" aria-label="Browser automation icon" />
                 Browser Automation
               </h3>
               <div className="rounded-lg bg-slate-800 p-3 space-y-2">
@@ -338,7 +337,7 @@ export function TestDetailDrawer({
                           {run.evidence_path && (
                             <div className="p-2 bg-slate-800/50">
                               <div className="flex items-center gap-1.5 text-xs text-purple-400 mb-1.5">
-                                <Image className="h-3 w-3" />
+                                <Image className="h-3 w-3" aria-label="Evidence captured icon" />
                                 <span className="font-medium">Evidence Captured</span>
                               </div>
                               <code className="text-xs text-slate-500 break-all">

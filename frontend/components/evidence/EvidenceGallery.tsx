@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
 import {
   Image as ImageIcon,
   Calendar,
@@ -267,10 +268,12 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
               >
                 {/* Thumbnail */}
                 <div className="relative aspect-video bg-slate-900 overflow-hidden">
-                  <img
+                  <Image
                     src={item.screenshotUrl}
-                    alt={`${item.capabilityId} / ${item.criterionId}`}
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                    alt={`${item.capabilityId} / ${item.criterionId} evidence screenshot`}
+                    fill
+                    className="object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                    unoptimized
                   />
                   {item.version > 1 && (
                     <div className="absolute top-2 right-2">

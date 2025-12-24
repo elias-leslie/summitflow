@@ -437,7 +437,6 @@ function GeneratedFeaturesList({
 }
 
 export function RoundtableChat({
-  projectId,
   sessionId,
   className,
   mode = "quick",

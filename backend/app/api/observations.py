@@ -68,7 +68,7 @@ async def capture_observation(
         tool_output=request.tool_output,
     )
 
-    return CaptureResponse(queued=True, queue_item_id=item["id"])
+    return CaptureResponse(queued=True, queue_item_id=item["id"] if item else "")
 
 
 @router.get("/{project_id}/observations")

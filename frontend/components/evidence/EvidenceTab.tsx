@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
 import {
   Grid3X3,
   List,
@@ -295,11 +296,12 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
             >
               {/* Thumbnail */}
               <div className="aspect-video bg-slate-800 relative overflow-hidden">
-                <img
+                <Image
                   src={evidence.screenshotUrl}
-                  alt={`${evidence.capabilityId} ${evidence.criterionId}`}
-                  className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
-                  loading="lazy"
+                  alt={`${evidence.capabilityId} ${evidence.criterionId} evidence screenshot`}
+                  fill
+                  className="object-cover object-top group-hover:scale-105 transition-transform"
+                  unoptimized
                   onError={(e) => {
                     e.currentTarget.style.display = "none";
                   }}

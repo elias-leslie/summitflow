@@ -250,7 +250,10 @@ async def undo_pattern_application(
         from ..storage import memory as memory_storage
 
         memory_storage.update_pattern_status(pattern_id, "approved")
-        return service.get_pattern(pattern_id)
+        updated_pattern = service.get_pattern(pattern_id)
+        if not updated_pattern:
+            raise HTTPException(status_code=404, detail="Pattern not found after update")
+        return updated_pattern
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from None
 

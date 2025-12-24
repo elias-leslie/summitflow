@@ -2,8 +2,6 @@
 
 import {
   CheckCircle2,
-  XCircle,
-  Clock,
   Lock,
   Package,
   Layers,

@@ -92,7 +92,6 @@ function ExplorerContent({
 
   // UI state
   const {
-    expandedIds,
     isExpanded,
     toggleExpand,
   } = useExplorerState();

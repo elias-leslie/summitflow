@@ -105,7 +105,7 @@ class TaskScanner(BaseScanner):
 
         entries: list[ExplorerEntryCreate] = []
 
-        for task_name, task_config in beat_schedule.items():
+        for task_name, task_config in beat_schedule.items() if beat_schedule else []:
             try:
                 entry = self._scan_task(task_name, task_config)
                 if entry:
@@ -137,6 +137,9 @@ class TaskScanner(BaseScanner):
 
     def _scan_beat_schedule_files(self) -> dict[str, Any]:
         """Scan Celery files for beat_schedule definition."""
+        if not self.root_path:
+            return {}
+
         celery_files = [
             self.root_path / self.backend_dir / "app" / "celery_schedules.py",
             self.root_path / self.backend_dir / "app" / "celery_app.py",

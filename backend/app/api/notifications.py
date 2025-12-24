@@ -8,7 +8,7 @@ This module provides:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -116,7 +116,7 @@ async def list_notifications(
     """
     notifications = notification_store.list_notifications(
         project_id=project_id,
-        status_filter=status,
+        status_filter=cast(Literal["pending", "read", "dismissed"], status) if status else None,
         limit=limit,
         offset=offset,
         include_dismissed=include_dismissed,

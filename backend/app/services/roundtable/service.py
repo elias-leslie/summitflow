@@ -412,6 +412,7 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
         # Track tool usage for limits
         total_tool_calls = 0
         seen_calls: set[str] = set()
+        response = None
 
         for iteration in range(max_iterations):
             # Generate with tools
@@ -568,6 +569,16 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
         logger.warning(
             f"Agent reached max iterations ({max_iterations}), {total_tool_calls} tool calls made"
         )
+        if response is None:
+            # Fallback in case max_iterations was 0
+            from ..agents.base import LLMResponse
+
+            response = LLMResponse(
+                content="No iterations were executed (max_iterations=0)",
+                provider="unknown",
+                model="unknown",
+                stop_reason="max_iterations_zero",
+            )
         return response
 
     async def _send_with_tools_native(
@@ -747,15 +758,15 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
         for agent_type, result in zip(["claude", "gemini"], results, strict=True):
             if isinstance(result, Exception):
                 msg = RoundtableMessage.create(
-                    agent_type,  # type: ignore
+                    agent_type,  # type: ignore[arg-type]
                     f"[Error: {result!s}]",
                 )
             else:
                 msg = RoundtableMessage.create(
-                    agent_type,  # type: ignore
-                    result.content,
-                    tokens_used=result.usage.get("total_tokens", 0),
-                    model=result.model,
+                    agent_type,  # type: ignore[arg-type]
+                    result.content,  # type: ignore[attr-defined]
+                    tokens_used=result.usage.get("total_tokens", 0),  # type: ignore[attr-defined]
+                    model=result.model,  # type: ignore[attr-defined]
                 )
             session.add_message(msg)
             responses.append(msg)
@@ -985,7 +996,7 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
             from ...tasks.reflection_processor import check_reflection_trigger
 
             # Fire and forget - don't wait for result
-            check_reflection_trigger.delay(project_id=project_id)
+            check_reflection_trigger.delay(project_id=project_id)  # type: ignore[operator]
             logger.debug(f"Reflection trigger check scheduled for {project_id}")
         except Exception as e:
             logger.warning(f"Failed to schedule reflection check: {e}")

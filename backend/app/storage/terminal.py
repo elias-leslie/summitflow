@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import psycopg.sql
+
 from .connection import get_connection
 
 
@@ -132,6 +134,9 @@ def create_session(
         row = cur.fetchone()
         conn.commit()
 
+    if not row:
+        raise ValueError("Failed to create terminal session")
+
     return str(row[0])
 
 
@@ -153,21 +158,22 @@ def update_session(session_id: str | UUID, **fields: Any) -> dict[str, Any] | No
     if not update_fields:
         return get_session(session_id)
 
-    set_clauses = [f"{field} = %s" for field in update_fields]
+    set_clauses = [
+        psycopg.sql.SQL("{} = %s").format(psycopg.sql.Identifier(field)) for field in update_fields
+    ]
     values = list(update_fields.values())
     values.append(str(session_id))
 
+    query = psycopg.sql.SQL("""
+        UPDATE terminal_sessions
+        SET {}
+        WHERE id = %s
+        RETURNING id, name, user_id, project_id, working_dir, display_order,
+                  is_alive, created_at, last_accessed_at
+    """).format(psycopg.sql.SQL(", ").join(set_clauses))
+
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            UPDATE terminal_sessions
-            SET {", ".join(set_clauses)}
-            WHERE id = %s
-            RETURNING id, name, user_id, project_id, working_dir, display_order,
-                      is_alive, created_at, last_accessed_at
-            """,
-            values,
-        )
+        cur.execute(query, values)
         row = cur.fetchone()
         conn.commit()
 

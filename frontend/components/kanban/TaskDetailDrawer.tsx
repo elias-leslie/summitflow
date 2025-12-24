@@ -4,14 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
-  XCircle,
-  HelpCircle,
   Edit2,
   Save,
   X,
   Play,
   Loader2,
-  Pause,
   FastForward,
   Package,
   Bug,
@@ -25,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckpointViewer, type Checkpoint } from "@/components/tasks/CheckpointViewer";
-import type { Task, TaskType, TaskStatus, AcceptanceCriterion } from "@/lib/api";
+import type { Task, TaskType, TaskStatus } from "@/lib/api";
 
 interface TaskDetailDrawerProps {
   task: Task | null;
@@ -73,40 +70,6 @@ const taskTypeConfig: Record<TaskType, { icon: React.ReactNode; label: string; c
 };
 
 // ============================================================================
-// Criterion Row Component
-// ============================================================================
-
-function CriterionRow({ criterion }: { criterion: AcceptanceCriterion }) {
-  const isPassed = criterion.passed === true;
-  const isFailed = criterion.passed === false;
-
-  return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-slate-800 last:border-0">
-      <span className="shrink-0 mt-0.5">
-        {isPassed ? (
-          <CheckCircle2 className="h-4 w-4 text-phosphor-400" />
-        ) : isFailed ? (
-          <XCircle className="h-4 w-4 text-rose-400" />
-        ) : (
-          <HelpCircle className="h-4 w-4 text-amber-400" />
-        )}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="mono text-xs text-slate-500">{criterion.id}</span>
-          {criterion.type && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-              {criterion.type}
-            </span>
-          )}
-        </div>
-        <p className="text-sm text-slate-300">{criterion.criterion}</p>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Task Detail Drawer
 // ============================================================================
 
@@ -138,7 +101,6 @@ export function TaskDetailDrawer({
   const isRunning = task.status === "running";
   const isPaused = task.status === "paused";
   const isCompleted = task.status === "completed";
-  const isPending = task.status === "pending";
 
   const handleEditStart = () => {
     setEditTitle(task.title);

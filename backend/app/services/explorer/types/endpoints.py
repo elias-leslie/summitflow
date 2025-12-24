@@ -114,6 +114,9 @@ class EndpointScanner(BaseScanner):
         """Scan FastAPI route files for endpoints."""
         entries = []
 
+        if not self.root_path:
+            return entries
+
         api_dirs = [
             self.root_path / self.backend_dir / "app" / "api",
             self.root_path / self.backend_dir / "app" / "routes",
@@ -178,7 +181,9 @@ class EndpointScanner(BaseScanner):
                     metadata={
                         "method": method.upper(),
                         "port": 8001,
-                        "source_file": str(route_file.relative_to(self.root_path)),
+                        "source_file": str(route_file.relative_to(self.root_path))
+                        if self.root_path
+                        else "unknown",
                         "function_name": function_name or "unknown",
                         "category": category,
                         "depends_on_tables": depends_on_tables,

@@ -429,6 +429,7 @@ async def _run_command(
     if env:
         full_env.update(env)
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -447,8 +448,9 @@ async def _run_command(
             stderr.decode("utf-8", errors="replace"),
         )
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
+        if proc:
+            proc.kill()
+            await proc.wait()
         return -1, "", f"Command timed out after {timeout}s"
     except Exception as e:
         return -1, "", str(e)

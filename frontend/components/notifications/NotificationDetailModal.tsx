@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, AlertCircle, Send, Bot, User, ExternalLink, RefreshCw, Loader2 } from "lucide-react";
+import { X, AlertCircle, Send, Bot, User, RefreshCw, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import { type Notification, type Task, fetchTask, startTask } from "@/lib/api";
 

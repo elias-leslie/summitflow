@@ -9,6 +9,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from psycopg import sql
+
 from .connection import get_connection
 
 
@@ -212,12 +214,12 @@ def update_session(
     # Always update updated_at
     updates["updated_at"] = datetime.now(UTC)
 
-    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    set_clauses = [sql.SQL("{} = %s").format(sql.Identifier(k)) for k in updates]
     values = [*list(updates.values()), project_id, session_id]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL("""
             UPDATE agent_sessions
             SET {set_clause}
             WHERE project_id = %s AND session_id = %s
@@ -225,7 +227,7 @@ def update_session(
                       capabilities_attempted, capabilities_passed, capabilities_failed,
                       tests_run, tests_passed, tests_failed, notes, git_commit_sha,
                       created_at, updated_at
-            """,
+            """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             values,
         )
         row = cur.fetchone()

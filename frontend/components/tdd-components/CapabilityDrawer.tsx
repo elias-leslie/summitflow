@@ -7,7 +7,6 @@ import {
   XCircle,
   HelpCircle,
   Lock,
-  Unlock,
   FlaskConical,
   Link2,
   Timer,
@@ -97,7 +96,7 @@ export function CapabilityDrawer({
   const [isLocking, setIsLocking] = useState(false);
 
   // Fetch full capability details with tests
-  const { data: capabilityDetails, isLoading } = useQuery<TddCapabilityWithTests>({
+  const { data: capabilityDetails } = useQuery<TddCapabilityWithTests>({
     queryKey: ["tdd-capability", projectId, capability?.capability_id],
     queryFn: () => fetchTddCapability(projectId, capability!.capability_id),
     enabled: open && !!capability,
