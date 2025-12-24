@@ -39,7 +39,7 @@ interface AcceptanceCriterion {
 }
 
 interface Feature {
-  feature_id: string;
+  capability_id: string;
   name: string;
   category: string | null;
   acceptance_criteria: AcceptanceCriterion[];
@@ -48,7 +48,7 @@ interface Feature {
 interface EvidenceCaptureResult {
   success: boolean;
   version?: number;
-  feature_id?: string;
+  capability_id?: string;
   criterion_id?: string;
   error?: string;
   evidence?: {
@@ -66,7 +66,7 @@ interface EvidenceCaptureModalProps {
   onCaptured: (result: EvidenceCaptureResult) => void;
 }
 
-type SortField = "feature_id" | "name" | "category" | "ui_count" | "url_match";
+type SortField = "capability_id" | "name" | "category" | "ui_count" | "url_match";
 type SortDirection = "asc" | "desc";
 
 // Extract path from URL for matching
@@ -286,7 +286,7 @@ export function EvidenceCaptureModal({
       onCaptured({
         success: true,
         version: 1,
-        feature_id: "DEBUG",
+        capability_id: "DEBUG",
         criterion_id: "debug",
         evidence: {
           console: clientEvidence.console,
@@ -310,7 +310,7 @@ export function EvidenceCaptureModal({
   }, [projectId, pageUrl, onCaptured, captureScreenshotBase64, gatherClientSideEvidence]);
 
   // Feature capture - saves to feature/criterion with DB entry
-  const captureForFeature = useCallback(async (featureId: string, criterionId: string) => {
+  const captureForFeature = useCallback(async (capabilityId: string, criterionId: string) => {
     setIsCapturing(true);
 
     try {
@@ -324,7 +324,7 @@ export function EvidenceCaptureModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feature_id: featureId,
+          capability_id: capabilityId,
           criterion_id: criterionId,
           screenshot_base64: base64,
           url: pageUrl,
@@ -342,7 +342,7 @@ export function EvidenceCaptureModal({
       }
 
       const result = await response.json();
-      toast.success(`Evidence captured (v${result.version}) for ${featureId}`);
+      toast.success(`Evidence captured (v${result.version}) for ${capabilityId}`);
       onCaptured(result);
     } catch (error) {
       console.error("Feature capture failed:", error);
@@ -358,15 +358,14 @@ export function EvidenceCaptureModal({
     }
   }, [projectId, pageUrl, onCaptured, captureScreenshotBase64, gatherClientSideEvidence]);
 
-  // Fetch existing features
+  // Fetch existing features (deprecated - features replaced with capabilities)
   const { data: featuresData, isLoading: loadingFeatures } = useQuery<{
     features: Feature[];
   }>({
     queryKey: ["features-for-evidence", projectId],
     queryFn: async () => {
-      const response = await fetch(`/api/projects/${projectId}/features?limit=200`);
-      if (!response.ok) throw new Error("Failed to fetch features");
-      return response.json();
+      // Features API deprecated, return empty to maintain compatibility
+      return { features: [] };
     },
     enabled: open && mode === "existing",
   });
@@ -399,7 +398,7 @@ export function EvidenceCaptureModal({
       const query = searchQuery.toLowerCase();
       result = result.filter(
         (f) =>
-          f.feature_id.toLowerCase().includes(query) ||
+          f.capability_id.toLowerCase().includes(query) ||
           f.name.toLowerCase().includes(query) ||
           (f.category || "").toLowerCase().includes(query) ||
           f.uiCriteria.some((c) => c.criterion.toLowerCase().includes(query))
@@ -415,8 +414,8 @@ export function EvidenceCaptureModal({
     result.sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
-        case "feature_id":
-          comparison = a.feature_id.localeCompare(b.feature_id);
+        case "capability_id":
+          comparison = a.capability_id.localeCompare(b.capability_id);
           break;
         case "name":
           comparison = a.name.localeCompare(b.name);
@@ -431,7 +430,7 @@ export function EvidenceCaptureModal({
           // URL matches first, then by feature ID
           comparison = (b.urlMatch ? 1 : 0) - (a.urlMatch ? 1 : 0);
           if (comparison === 0) {
-            comparison = a.feature_id.localeCompare(b.feature_id);
+            comparison = a.capability_id.localeCompare(b.capability_id);
           }
           break;
       }
@@ -443,7 +442,7 @@ export function EvidenceCaptureModal({
 
   // Get selected feature data
   const selectedFeatureData = processedFeatures.find(
-    (f) => f.feature_id === selectedFeature
+    (f) => f.capability_id === selectedFeature
   );
 
   // Reset state when modal opens/closes
@@ -493,7 +492,7 @@ export function EvidenceCaptureModal({
         if (!response.ok) throw new Error("Failed to create feature");
         const newFeature = await response.json();
         const criterionId = newFeature.acceptance_criteria?.[0]?.id || "ac-001";
-        await captureForFeature(newFeature.feature_id, criterionId);
+        await captureForFeature(newFeature.capability_id, criterionId);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to create feature");
       }
@@ -656,9 +655,9 @@ export function EvidenceCaptureModal({
                 <div className="grid grid-cols-[1fr_2fr_1fr_60px_50px] gap-2 px-3 py-2 bg-slate-800/50 border-b border-slate-700 text-xs font-medium">
                   <button
                     className="flex items-center gap-1 hover:text-phosphor-400 text-left"
-                    onClick={() => handleSort("feature_id")}
+                    onClick={() => handleSort("capability_id")}
                   >
-                    ID <SortIcon field="feature_id" />
+                    ID <SortIcon field="capability_id" />
                   </button>
                   <button
                     className="flex items-center gap-1 hover:text-phosphor-400 text-left"
@@ -702,19 +701,19 @@ export function EvidenceCaptureModal({
                   ) : (
                     filteredFeatures.map((feature) => (
                       <button
-                        key={feature.feature_id}
+                        key={feature.capability_id}
                         className={clsx(
                           "w-full grid grid-cols-[1fr_2fr_1fr_60px_50px] gap-2 px-3 py-2 text-xs text-left",
                           "hover:bg-slate-800/50 border-b border-slate-700/50 transition-colors",
-                          selectedFeature === feature.feature_id &&
+                          selectedFeature === feature.capability_id &&
                             "bg-phosphor-500/10 hover:bg-phosphor-500/20"
                         )}
                         onClick={() => {
-                          setSelectedFeature(feature.feature_id);
+                          setSelectedFeature(feature.capability_id);
                           setSelectedCriterion("");
                         }}
                       >
-                        <span className="mono truncate">{feature.feature_id}</span>
+                        <span className="mono truncate">{feature.capability_id}</span>
                         <span className="truncate">{feature.name}</span>
                         <span className="truncate text-slate-500">
                           {feature.category || "N/A"}

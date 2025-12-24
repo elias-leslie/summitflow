@@ -23,7 +23,7 @@ interface EvidenceTabProps {
 interface Evidence {
   id: number;
   evidenceId: string;
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   version: number;
   isCurrent: boolean;
@@ -297,7 +297,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
               <div className="aspect-video bg-slate-800 relative overflow-hidden">
                 <img
                   src={evidence.screenshotUrl}
-                  alt={`${evidence.featureId} ${evidence.criterionId}`}
+                  alt={`${evidence.capabilityId} ${evidence.criterionId}`}
                   className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform"
                   loading="lazy"
                   onError={(e) => {
@@ -310,7 +310,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
               <div className="p-2 space-y-1">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-xs font-mono text-white truncate">
-                    {evidence.featureId}
+                    {evidence.capabilityId}
                   </span>
                   <StatusBadge status={evidence.qualityStatus} />
                 </div>
@@ -359,7 +359,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   className="hover:bg-slate-800/30 cursor-pointer transition-colors"
                 >
                   <td className="px-3 py-2 font-mono text-xs text-white">
-                    {evidence.featureId}
+                    {evidence.capabilityId}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-400">
                     {evidence.criterionId}
@@ -419,7 +419,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
           open={modalOpen}
           onOpenChange={setModalOpen}
           projectId={projectId}
-          featureId={selectedEvidence.featureId}
+          capabilityId={selectedEvidence.capabilityId}
           criterionId={selectedEvidence.criterionId}
         />
       )}

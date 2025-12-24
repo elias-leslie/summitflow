@@ -31,7 +31,7 @@ import { EvidenceViewerModal } from "./EvidenceViewerModal";
 interface EvidenceItem {
   id: number;
   evidenceId: string;
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   version: number;
   isCurrent: boolean;
@@ -61,7 +61,7 @@ async function fetchEvidenceList(
   params: {
     limit: number;
     offset: number;
-    featureId?: string;
+    capabilityId?: string;
     status?: string;
     search?: string;
   }
@@ -70,7 +70,7 @@ async function fetchEvidenceList(
     limit: params.limit.toString(),
     offset: params.offset.toString(),
   });
-  if (params.featureId) searchParams.set("feature_id", params.featureId);
+  if (params.capabilityId) searchParams.set("capability_id", params.capabilityId);
   if (params.status) searchParams.set("status", params.status);
   if (params.search) searchParams.set("search", params.search);
 
@@ -103,16 +103,16 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
       fetchEvidenceList(projectId, {
         limit: pageSize,
         offset: page * pageSize,
-        featureId: featureFilter !== "all" ? featureFilter : undefined,
+        capabilityId: featureFilter !== "all" ? featureFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
         search: searchQuery || undefined,
       }),
   });
 
   // Get unique feature IDs for filter dropdown
-  const featureIds = useMemo(() => {
+  const capabilityIds = useMemo(() => {
     if (!data?.evidence) return [];
-    const ids = new Set(data.evidence.map((e) => e.featureId));
+    const ids = new Set(data.evidence.map((e) => e.capabilityId));
     return Array.from(ids).sort();
   }, [data]);
 
@@ -199,7 +199,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Features</SelectItem>
-              {featureIds.map((id) => (
+              {capabilityIds.map((id) => (
                 <SelectItem key={id} value={id}>
                   {id}
                 </SelectItem>
@@ -269,7 +269,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
                 <div className="relative aspect-video bg-slate-900 overflow-hidden">
                   <img
                     src={item.screenshotUrl}
-                    alt={`${item.featureId} / ${item.criterionId}`}
+                    alt={`${item.capabilityId} / ${item.criterionId}`}
                     className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
                   />
                   {item.version > 1 && (
@@ -287,7 +287,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
                     <div className="flex items-center gap-1.5 min-w-0">
                       <FileJson className="h-4 w-4 text-slate-500 shrink-0" />
                       <span className="mono text-sm text-phosphor-400 truncate">
-                        {item.featureId}
+                        {item.capabilityId}
                       </span>
                     </div>
                     {getStatusBadge(item.qualityStatus, item.userApproved)}
@@ -341,7 +341,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
           open={!!selectedEvidence}
           onOpenChange={(open) => !open && setSelectedEvidence(null)}
           projectId={projectId}
-          featureId={selectedEvidence.featureId}
+          capabilityId={selectedEvidence.capabilityId}
           criterionId={selectedEvidence.criterionId}
         />
       )}

@@ -110,7 +110,7 @@ export type HealthStatus = "healthy" | "warning" | "error" | "unknown";
 export interface Evidence {
   metadata: {
     url: string;
-    featureId: string;
+    capabilityId: string;
     criterionId: string;
     version: number;
     capturedAt: string;
@@ -152,7 +152,7 @@ export interface Evidence {
 export interface Artifact {
   id: number;
   artifactId: string;
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   version: number;
   isCurrent: boolean;
@@ -179,7 +179,7 @@ export interface ArtifactResponse {
 
 export async function fetchEvidence(
   projectId: string,
-  featureId: string,
+  capabilityId: string,
   criterionId: string,
   version?: number,
   includeEvidence = true
@@ -189,7 +189,7 @@ export async function fetchEvidence(
   if (version) params.append("version", version.toString());
 
   const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/evidence/${featureId}/${criterionId}?${params}`
+    `${getApiBase()}/api/projects/${projectId}/evidence/${capabilityId}/${criterionId}?${params}`
   );
   if (!res.ok) {
     if (res.status === 404) throw new Error("No evidence captured yet");
@@ -200,14 +200,14 @@ export async function fetchEvidence(
 
 export async function refreshEvidence(
   projectId: string,
-  featureId: string,
+  capabilityId: string,
   criterionId: string,
   url: string
 ): Promise<{ success: boolean; version?: number; error?: string }> {
   const res = await fetch(`${getApiBase()}/api/projects/${projectId}/evidence/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feature_id: featureId, criterion_id: criterionId, url }),
+    body: JSON.stringify({ capability_id: capabilityId, criterion_id: criterionId, url }),
   });
   if (!res.ok) throw new Error("Failed to refresh evidence");
   return res.json();
@@ -228,12 +228,12 @@ export async function submitEvidenceReview(
   return res.json();
 }
 
-export function getScreenshotUrl(projectId: string, featureId: string, criterionId: string, version: number): string {
-  return `${getApiBase()}/api/projects/${projectId}/evidence/${featureId}/${criterionId}/screenshot?version=${version}`;
+export function getScreenshotUrl(projectId: string, capabilityId: string, criterionId: string, version: number): string {
+  return `${getApiBase()}/api/projects/${projectId}/evidence/${capabilityId}/${criterionId}/screenshot?version=${version}`;
 }
 
 // ============================================================================
-// Feature Types
+// Acceptance Criteria Types
 // ============================================================================
 
 export interface AcceptanceCriterion {
@@ -244,214 +244,6 @@ export interface AcceptanceCriterion {
   passed: boolean | null;
   verified_at: string | null;
   verification_output: string | null;
-}
-
-export interface Feature {
-  id: number | null;
-  project_id: string;
-  feature_id: string;
-  name: string;
-  category: string | null;
-  description: string | null;
-  layers: string[];
-  layer_results: Record<string, { passed: boolean; evidence?: string }>;
-  total_tasks: number;
-  completed_tasks: number;
-  completion_pct: number;
-  health_status: string;
-  status?: "backlog" | "in_progress" | "review" | "done";
-  last_verified_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  priority: number | null;
-  effective_priority: number;
-  acceptance_criteria: AcceptanceCriterion[];
-  vision_goals: string[];
-}
-
-export interface FeaturesListResponse {
-  features: Feature[];
-  total: number;
-  filtered: number;
-}
-
-export interface FeatureSummary {
-  total: number;
-  category_breakdown: Record<string, number>;
-  health_breakdown: Record<string, number>;
-}
-
-export interface VerificationSummary {
-  total_criteria: number;
-  passed: number;
-  failed: number;
-  pending: number;
-  by_type: Record<string, { total: number; passed: number; failed: number; pending: number }>;
-  last_run_at: string | null;
-}
-
-// ============================================================================
-// Feature API Functions
-// ============================================================================
-
-export async function fetchFeatures(
-  projectId: string,
-  options: {
-    category?: string;
-    health_status?: string;
-    limit?: number;
-    offset?: number;
-  } = {}
-): Promise<FeaturesListResponse> {
-  const params = new URLSearchParams();
-  if (options.category) params.append("category", options.category);
-  if (options.health_status) params.append("health_status", options.health_status);
-  if (options.limit) params.append("limit", options.limit.toString());
-  if (options.offset) params.append("offset", options.offset.toString());
-
-  const queryString = params.toString();
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/features${queryString ? `?${queryString}` : ""}`
-  );
-  if (!res.ok) throw new Error("Failed to fetch features");
-  return res.json();
-}
-
-export async function fetchFeatureSummary(projectId: string): Promise<FeatureSummary> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/summary`);
-  if (!res.ok) throw new Error("Failed to fetch feature summary");
-  return res.json();
-}
-
-export async function fetchVerificationSummary(projectId: string): Promise<VerificationSummary> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/verification-summary`);
-  if (!res.ok) throw new Error("Failed to fetch verification summary");
-  return res.json();
-}
-
-export type FeatureStatus = "backlog" | "in_progress" | "review" | "done";
-
-export async function updateFeatureStatus(
-  projectId: string,
-  featureId: string,
-  status: FeatureStatus
-): Promise<{ status: string; work_status: FeatureStatus }> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/features/${featureId}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to update feature status" }));
-    throw new Error(error.detail || "Failed to update feature status");
-  }
-  return res.json();
-}
-
-// ============================================================================
-// Feature Tasks
-// ============================================================================
-
-export interface FeatureTask {
-  id: string;
-  title: string;
-  status: "pending" | "running" | "paused" | "completed" | "failed";
-  started_at: string | null;
-  completed_at: string | null;
-  duration_seconds: number | null;
-}
-
-export async function fetchFeatureTasks(
-  projectId: string,
-  featureId: string
-): Promise<FeatureTask[]> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/features/${featureId}/tasks`
-  );
-  if (!res.ok) throw new Error("Failed to fetch feature tasks");
-  return res.json();
-}
-
-// ============================================================================
-// Vision Types
-// ============================================================================
-
-export interface VisionGoal {
-  code: string;
-  name: string;
-  description: string | null;
-  category: string | null;
-  feature_count: number;
-  criteria_total: number;
-  criteria_passed: number;
-  pass_rate: number;
-}
-
-export interface FeatureLink {
-  feature_id: string;
-  name: string;
-  criteria_total: number;
-  criteria_passed: number;
-}
-
-export interface VisionGoalDetail extends VisionGoal {
-  features: FeatureLink[];
-}
-
-export interface VisionContentItem {
-  id: number;
-  content_type: string;
-  content_key: string;
-  title: string | null;
-  content: string;
-  order_num: number;
-  metadata: Record<string, unknown> | null;
-}
-
-export interface VisionContentResponse {
-  content_types: string[];
-  content: Record<string, VisionContentItem[]>;
-}
-
-export interface GoalDetail {
-  id: number;
-  goal_code: string;
-  detail_type: string;
-  content: string;
-  order_num: number;
-  metadata: Record<string, unknown> | null;
-}
-
-// ============================================================================
-// Vision API Functions
-// ============================================================================
-
-export async function fetchVisionGoals(projectId: string): Promise<VisionGoal[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals`);
-  if (!res.ok) throw new Error("Failed to fetch vision goals");
-  return res.json();
-}
-
-export async function fetchVisionGoal(projectId: string, code: string): Promise<VisionGoalDetail> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals/${code}`);
-  if (!res.ok) throw new Error("Failed to fetch vision goal");
-  return res.json();
-}
-
-export async function fetchVisionGoalDetails(projectId: string, code: string): Promise<GoalDetail[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision-goals/${code}/details`);
-  if (!res.ok) {
-    // Goal details may not exist - return empty array
-    if (res.status === 404) return [];
-    throw new Error("Failed to fetch vision goal details");
-  }
-  return res.json();
-}
-
-export async function fetchVisionContent(projectId: string): Promise<VisionContentResponse> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/vision`);
-  if (!res.ok) throw new Error("Failed to fetch vision content");
-  return res.json();
 }
 
 // ============================================================================
@@ -467,9 +259,9 @@ export interface TaskAcceptanceCriterion {
   passes: boolean;
 }
 
-export interface FeatureContext {
+export interface CapabilityContext {
   id: number;
-  feature_id: string;
+  capability_id: string;
   name: string;
   criteria_passed: number;
   criteria_total: number;
@@ -486,7 +278,7 @@ export interface BlockerInfo {
 export interface Task {
   id: string;
   project_id: string;
-  feature_id: number | null;
+  capability_id: number | null;
   title: string;
   description: string | null;
   status: TaskStatus;
@@ -508,8 +300,8 @@ export interface Task {
   labels: string[];
   task_type: TaskType;
   parent_task_id: string | null;
-  // Optional feature context (when fetched with include=feature)
-  feature?: FeatureContext | null;
+  // Optional capability context (when fetched with include=capability)
+  capability?: CapabilityContext | null;
   // Optional blocker context (when fetched with include=blockers)
   blockers?: BlockerInfo[] | null;
   blocked_by_incomplete?: boolean | null;
@@ -539,7 +331,7 @@ export async function createTask(
   task: {
     title: string;
     description?: string;
-    feature_id?: number;
+    capability_id?: number;
     priority?: number;
     labels?: string[];
     task_type?: TaskType;
@@ -841,7 +633,7 @@ export interface RoundtableSessionInfo {
 }
 
 export interface GeneratedFeature {
-  feature_id: string;
+  capability_id: string;
   name: string;
   category: string;
   priority: number;

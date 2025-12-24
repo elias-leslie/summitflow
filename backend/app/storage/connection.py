@@ -144,7 +144,7 @@ def init_schema() -> None:
                     id SERIAL PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     evidence_id VARCHAR(50) NOT NULL,
-                    feature_id VARCHAR(20) NOT NULL,
+                    capability_id VARCHAR(50) NOT NULL,
                     criterion_id VARCHAR(20),
                     evidence_type VARCHAR(20) DEFAULT 'evidence',
                     file_path VARCHAR(500) NOT NULL,
@@ -169,7 +169,7 @@ def init_schema() -> None:
                 """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_feature ON evidence(feature_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_capability ON evidence(capability_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
         cur.execute(

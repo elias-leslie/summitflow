@@ -22,12 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import {
   fetchTasks,
   fetchBlockedTasks,
-  fetchFeatures,
+  fetchTddCapabilities,
   updateTaskStatus,
   type Task,
   type TaskType,
   type TaskStatus,
-  type Feature,
+  type TddCapability,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TaskFilters, DEFAULT_FILTERS, type TaskFilterValues } from "./TaskFilters";
@@ -78,7 +78,7 @@ const statusConfig: Record<TaskStatus, { icon: React.ReactNode; className: strin
 
 function TaskRow({
   task,
-  feature,
+  capability,
   isExpanded,
   onToggle,
   onStatusChange,
@@ -86,7 +86,7 @@ function TaskRow({
   projectId,
 }: {
   task: Task;
-  feature?: Feature;
+  capability?: TddCapability;
   isExpanded: boolean;
   onToggle: () => void;
   onStatusChange: (status: TaskStatus) => void;
@@ -142,10 +142,10 @@ function TaskRow({
           <span className="text-sm text-slate-200 line-clamp-1">{task.title}</span>
         </td>
 
-        {/* Feature */}
+        {/* Capability */}
         <td className="px-3 py-3">
-          {feature ? (
-            <span className="text-xs text-purple-400">{feature.feature_id}</span>
+          {capability ? (
+            <span className="text-xs text-purple-400">{capability.capability_id}</span>
           ) : (
             <span className="text-xs text-slate-600">—</span>
           )}
@@ -316,10 +316,10 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     }
   };
 
-  // Fetch features for linking
-  const { data: featuresData } = useQuery({
-    queryKey: ["features", projectId],
-    queryFn: () => fetchFeatures(projectId, { limit: 100 }),
+  // Fetch capabilities for linking
+  const { data: capabilities = [] } = useQuery({
+    queryKey: ["capabilities", projectId],
+    queryFn: () => fetchTddCapabilities(projectId),
     staleTime: 60000,
   });
 
@@ -336,18 +336,14 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     statusMutation.mutate({ taskId, status });
   };
 
-  // Create feature lookup map
-  const featureMap = useMemo(() => {
-    const map = new Map<number, Feature>();
-    if (featuresData?.features) {
-      for (const f of featuresData.features) {
-        if (f.id !== null) {
-          map.set(f.id, f);
-        }
-      }
+  // Create capability lookup map
+  const capabilityMap = useMemo(() => {
+    const map = new Map<number, TddCapability>();
+    for (const cap of capabilities) {
+      map.set(cap.id, cap);
     }
     return map;
-  }, [featuresData]);
+  }, [capabilities]);
 
   // Apply client-side filters
   const filteredTasks = useMemo(() => {
@@ -379,12 +375,12 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
       }
 
       // Feature filter
-      if (filters.featureId !== "all" && task.feature_id !== filters.featureId) {
+      if (filters.capabilityId !== "all" && task.capability_id !== filters.capabilityId) {
         return false;
       }
 
       // Standalone only filter
-      if (filters.standaloneOnly && task.feature_id !== null) {
+      if (filters.standaloneOnly && task.capability_id !== null) {
         return false;
       }
 
@@ -450,7 +446,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <TaskRow
                   key={task.id}
                   task={task}
-                  feature={task.feature_id ? featureMap.get(task.feature_id) : undefined}
+                  capability={task.capability_id ? capabilityMap.get(task.capability_id) : undefined}
                   isExpanded={expandedId === task.id}
                   onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
                   onStatusChange={(status) => handleStatusChange(task.id, status)}

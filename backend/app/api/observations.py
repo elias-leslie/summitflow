@@ -115,24 +115,8 @@ async def search_observations(
     )
 
 
-@router.get("/{project_id}/observations/{observation_id}")
-async def get_observation(
-    project_id: str,
-    observation_id: str,
-) -> dict[str, Any]:
-    """Get a single observation by ID."""
-    observation = memory_storage.get_observation(observation_id)
-
-    if not observation:
-        raise HTTPException(status_code=404, detail="Observation not found")
-
-    if observation["project_id"] != project_id:
-        raise HTTPException(status_code=404, detail="Observation not found")
-
-    return observation
-
-
 # SSE stream endpoint (task 2.5)
+# NOTE: Must be defined BEFORE /{observation_id} route to avoid path conflict
 @router.get("/{project_id}/observations/stream")
 async def stream_observations(
     project_id: str,
@@ -201,3 +185,20 @@ async def stream_observations(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
+
+
+@router.get("/{project_id}/observations/{observation_id}")
+async def get_observation(
+    project_id: str,
+    observation_id: str,
+) -> dict[str, Any]:
+    """Get a single observation by ID."""
+    observation = memory_storage.get_observation(observation_id)
+
+    if not observation:
+        raise HTTPException(status_code=404, detail="Observation not found")
+
+    if observation["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="Observation not found")
+
+    return observation

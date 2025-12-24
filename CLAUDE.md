@@ -37,6 +37,7 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Stop services | `bash ~/summitflow/scripts/shutdown.sh` |
 | Check status | `bash ~/summitflow/scripts/status.sh` |
 | Run tests | `cd ~/summitflow/backend && .venv/bin/pytest` |
+| Type check | `pyright backend/app/` (cross-project capable) |
 
 **Task Types:** `feature` (linked to feature, validates criteria), `bug`, `task`
 
@@ -124,7 +125,7 @@ Core tables:
 - `task_dependencies` - Dependency relationships between tasks
 - `explorer_entries` - Unified explorer data (files, tables, tasks, endpoints)
 - `explorer_relationships` - Cross-entity relationships
-- `feature_capabilities` - Feature tracking
+- `capabilities` - TDD capability tracking (what must work)
 - `artifacts` - Evidence (screenshots, logs)
 - `vision_goals` - Project vision goals
 - `vision_content` - Vision documentation

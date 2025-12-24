@@ -6,7 +6,7 @@ This module provides functions to:
 - Manage AI and user reviews
 - Clean up old versions
 
-Evidence is stored at: {project_data_dir}/evidence/{feature_id}/{criterion_id}/v{n}/
+Evidence is stored at: {project_data_dir}/evidence/{capability_id}/{criterion_id}/v{n}/
 Each version contains:
   - screenshot.png: Full page screenshot
   - evidence.json: Console, network, page state, performance data
@@ -58,15 +58,15 @@ def get_browser_scripts_dir(project_id: str) -> Path:
     return Path("/home/kasadis/summitflow/.claude/skills/browser-automation/scripts")
 
 
-def generate_evidence_id(feature_id: str, criterion_id: str, version: int) -> str:
+def generate_evidence_id(capability_id: str, criterion_id: str, version: int) -> str:
     """Generate a unique evidence ID."""
-    return f"{feature_id}-{criterion_id}-v{version}"
+    return f"{capability_id}-{criterion_id}-v{version}"
 
 
 async def capture_evidence(
     project_id: str,
     url: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
 ) -> dict[str, Any]:
     """Capture evidence for a UI criterion using the capture-evidence.js script.
@@ -74,7 +74,7 @@ async def capture_evidence(
     Args:
         project_id: Project ID for scoping
         url: The full URL to capture
-        feature_id: Feature ID (e.g., FEAT-001)
+        capability_id: Capability ID (e.g., login, password-reset)
         criterion_id: Criterion ID (e.g., ac-001)
 
     Returns:
@@ -98,7 +98,7 @@ async def capture_evidence(
             "node",
             str(script_path),
             url,
-            feature_id,
+            capability_id,
             criterion_id,
             str(evidence_base),
             stdout=asyncio.subprocess.PIPE,
@@ -142,7 +142,7 @@ async def capture_evidence(
 
 def save_evidence(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int,
     file_path: str,
@@ -154,7 +154,7 @@ def save_evidence(
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Feature ID (e.g., FEAT-001)
+        capability_id: Feature ID (e.g., FEAT-001)
         criterion_id: Criterion ID (e.g., ac-001)
         version: Version number
         file_path: Relative path to evidence directory
@@ -165,7 +165,7 @@ def save_evidence(
     Returns:
         Created evidence record
     """
-    evidence_id = generate_evidence_id(feature_id, criterion_id, version)
+    evidence_id = generate_evidence_id(capability_id, criterion_id, version)
     expires_at = datetime.now(UTC) + timedelta(hours=expires_hours)
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -174,16 +174,16 @@ def save_evidence(
             """
             UPDATE evidence
             SET is_current = FALSE, updated_at = NOW()
-            WHERE project_id = %s AND feature_id = %s AND criterion_id = %s AND is_current = TRUE
+            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
             """,
-            (project_id, feature_id, criterion_id),
+            (project_id, capability_id, criterion_id),
         )
 
         # Insert new evidence
         cur.execute(
             """
             INSERT INTO evidence (
-                project_id, evidence_id, feature_id, criterion_id, evidence_type,
+                project_id, evidence_id, capability_id, criterion_id, evidence_type,
                 file_path, file_size_bytes, version, is_current,
                 captured_at, expires_at, quality_status
             )
@@ -193,7 +193,7 @@ def save_evidence(
             (
                 project_id,
                 evidence_id,
-                feature_id,
+                capability_id,
                 criterion_id,
                 "evidence",
                 file_path,
@@ -212,7 +212,7 @@ def save_evidence(
             "evidence_saved",
             project_id=project_id,
             evidence_id=evidence_id,
-            feature_id=feature_id,
+            capability_id=capability_id,
             criterion_id=criterion_id,
             version=version,
         )
@@ -233,7 +233,7 @@ def save_evidence(
 
 def get_evidence(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int | None = None,
 ) -> dict[str, Any] | None:
@@ -241,7 +241,7 @@ def get_evidence(
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Feature ID
+        capability_id: Feature ID
         criterion_id: Criterion ID
         version: Optional specific version (defaults to current)
 
@@ -252,28 +252,28 @@ def get_evidence(
         if version:
             cur.execute(
                 """
-                SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+                SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                        file_path, file_size_bytes, version, is_current,
                        captured_at, expires_at, quality_status, quality_issues,
                        confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
                        user_reviewed_at, user_approved, user_notes
                 FROM evidence
-                WHERE project_id = %s AND feature_id = %s AND criterion_id = %s AND version = %s
+                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND version = %s
                 """,
-                (project_id, feature_id, criterion_id, version),
+                (project_id, capability_id, criterion_id, version),
             )
         else:
             cur.execute(
                 """
-                SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+                SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                        file_path, file_size_bytes, version, is_current,
                        captured_at, expires_at, quality_status, quality_issues,
                        confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
                        user_reviewed_at, user_approved, user_notes
                 FROM evidence
-                WHERE project_id = %s AND feature_id = %s AND criterion_id = %s AND is_current = TRUE
+                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
                 """,
-                (project_id, feature_id, criterion_id),
+                (project_id, capability_id, criterion_id),
             )
         row = cur.fetchone()
 
@@ -295,7 +295,7 @@ def get_latest_evidence(project_id: str) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -315,12 +315,12 @@ def get_latest_evidence(project_id: str) -> dict[str, Any] | None:
         return _row_to_evidence(row)
 
 
-def get_next_version(project_id: str, feature_id: str, criterion_id: str) -> int:
+def get_next_version(project_id: str, capability_id: str, criterion_id: str) -> int:
     """Get the next version number for a feature/criterion pair.
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Feature ID
+        capability_id: Feature ID
         criterion_id: Criterion ID
 
     Returns:
@@ -331,9 +331,9 @@ def get_next_version(project_id: str, feature_id: str, criterion_id: str) -> int
             """
             SELECT MAX(version) as max_version
             FROM evidence
-            WHERE project_id = %s AND feature_id = %s AND criterion_id = %s
+            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
             """,
-            (project_id, feature_id, criterion_id),
+            (project_id, capability_id, criterion_id),
         )
         row = cur.fetchone()
 
@@ -344,14 +344,14 @@ def get_next_version(project_id: str, feature_id: str, criterion_id: str) -> int
 
 def get_evidence_versions(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
 ) -> list[dict[str, Any]]:
     """Get all versions of evidence for a criterion.
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Feature ID
+        capability_id: Feature ID
         criterion_id: Criterion ID
 
     Returns:
@@ -360,16 +360,16 @@ def get_evidence_versions(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
                    user_reviewed_at, user_approved, user_notes
             FROM evidence
-            WHERE project_id = %s AND feature_id = %s AND criterion_id = %s
+            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
             ORDER BY version DESC
             """,
-            (project_id, feature_id, criterion_id),
+            (project_id, capability_id, criterion_id),
         )
         rows = cur.fetchall()
 
@@ -380,7 +380,7 @@ def list_evidence(
     project_id: str,
     limit: int = 100,
     offset: int = 0,
-    feature_id: str | None = None,
+    capability_id: str | None = None,
     quality_status: str | None = None,
     search: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -390,9 +390,9 @@ def list_evidence(
         project_id: Project ID for scoping
         limit: Maximum number of results
         offset: Offset for pagination
-        feature_id: Optional filter by feature ID
+        capability_id: Optional filter by feature ID
         quality_status: Optional filter by quality status
-        search: Optional search term (matches feature_id, criterion_id)
+        search: Optional search term (matches capability_id, criterion_id)
 
     Returns:
         Tuple of (list of evidence records, total count)
@@ -402,9 +402,9 @@ def list_evidence(
         where_clauses = ["project_id = %s", "is_current = TRUE"]
         params: list[Any] = [project_id]
 
-        if feature_id:
-            where_clauses.append("feature_id = %s")
-            params.append(feature_id)
+        if capability_id:
+            where_clauses.append("capability_id = %s")
+            params.append(capability_id)
 
         if quality_status:
             where_clauses.append("quality_status = %s")
@@ -412,7 +412,7 @@ def list_evidence(
 
         if search:
             where_clauses.append(
-                "(feature_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
+                "(capability_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
             )
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern, search_pattern])
@@ -428,7 +428,7 @@ def list_evidence(
         params.extend([limit, offset])
         cur.execute(
             f"""
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -458,7 +458,7 @@ def get_pending_review(project_id: str, limit: int = 50) -> list[dict[str, Any]]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -488,7 +488,7 @@ def get_needs_user_review(project_id: str, limit: int = 50) -> list[dict[str, An
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -518,7 +518,7 @@ def get_with_user_notes(project_id: str, limit: int = 50) -> list[dict[str, Any]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -676,7 +676,7 @@ def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
@@ -694,7 +694,7 @@ def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
 
 def cleanup_old_versions(
     project_id: str,
-    feature_id: str | None = None,
+    capability_id: str | None = None,
     max_versions: int = MAX_VERSIONS_TO_KEEP,
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -702,7 +702,7 @@ def cleanup_old_versions(
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Optional filter by feature
+        capability_id: Optional filter by feature
         max_versions: Max versions to keep per criterion
         dry_run: If True, only report what would be deleted
 
@@ -715,19 +715,19 @@ def cleanup_old_versions(
 
     with get_connection() as conn, conn.cursor() as cur:
         # Get all feature/criterion pairs
-        if feature_id:
+        if capability_id:
             cur.execute(
                 """
-                SELECT DISTINCT feature_id, criterion_id
+                SELECT DISTINCT capability_id, criterion_id
                 FROM evidence
-                WHERE project_id = %s AND feature_id = %s
+                WHERE project_id = %s AND capability_id = %s
                 """,
-                (project_id, feature_id),
+                (project_id, capability_id),
             )
         else:
             cur.execute(
                 """
-                SELECT DISTINCT feature_id, criterion_id
+                SELECT DISTINCT capability_id, criterion_id
                 FROM evidence
                 WHERE project_id = %s
                 """,
@@ -741,7 +741,7 @@ def cleanup_old_versions(
                 """
                 SELECT id, evidence_id, file_path, file_size_bytes, version
                 FROM evidence
-                WHERE project_id = %s AND feature_id = %s AND criterion_id = %s
+                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
                 ORDER BY version DESC
                 OFFSET %s
                 """,
@@ -766,7 +766,7 @@ def cleanup_old_versions(
                     )
 
                 deleted_count += 1
-                if isinstance(size, (int, float)):
+                if isinstance(size, int | float):
                     deleted_size += int(size)
 
         if not dry_run:
@@ -865,7 +865,7 @@ def get_summary(project_id: str) -> dict[str, Any]:
 
 def read_evidence_file(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int | None = None,
 ) -> dict[str, Any] | None:
@@ -873,7 +873,7 @@ def read_evidence_file(
 
     Args:
         project_id: Project ID for scoping
-        feature_id: Feature ID
+        capability_id: Feature ID
         criterion_id: Criterion ID
         version: Optional version (defaults to current)
 
@@ -883,9 +883,11 @@ def read_evidence_file(
     evidence_base = get_evidence_base_dir(project_id)
 
     if version:
-        evidence_path = evidence_base / feature_id / criterion_id / f"v{version}" / "evidence.json"
+        evidence_path = (
+            evidence_base / capability_id / criterion_id / f"v{version}" / "evidence.json"
+        )
     else:
-        evidence_path = evidence_base / feature_id / criterion_id / "current" / "evidence.json"
+        evidence_path = evidence_base / capability_id / criterion_id / "current" / "evidence.json"
 
     if not evidence_path.exists():
         return None
@@ -904,7 +906,7 @@ def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "evidence_id": row[1],
-        "feature_id": row[2],
+        "capability_id": row[2],
         "criterion_id": row[3],
         "evidence_type": row[4],
         "file_path": row[5],
@@ -939,12 +941,12 @@ def register_test_evidence(
 ) -> dict[str, Any] | None:
     """Register evidence from a UI test run.
 
-    Creates an evidence record linked to a test run. Uses test_id as feature_id
+    Creates an evidence record linked to a test run. Uses test_id as capability_id
     and "test-run" as criterion_id for test-generated evidence.
 
     Args:
         project_id: Project ID for scoping
-        test_id: The test ID (used as feature_id for evidence)
+        test_id: The test ID (used as capability_id for evidence)
         test_run_id: The test_runs table ID for linking
         evidence_path: Path to the evidence file (screenshot, etc.)
         capability_id: Optional capability ID if test is linked to one
@@ -964,19 +966,19 @@ def register_test_evidence(
         )
         return None
 
-    # Use test_id as feature_id and "test-run-{id}" as criterion for uniqueness
-    feature_id = f"test-{test_id}"
+    # Use test_id as capability_id and "test-run-{id}" as criterion for uniqueness
+    capability_id = f"test-{test_id}"
     criterion_id = f"run-{test_run_id}"
 
     # Get next version
-    version = get_next_version(project_id, feature_id, criterion_id)
+    version = get_next_version(project_id, capability_id, criterion_id)
 
     # Get file size
     file_size = evidence_file.stat().st_size if evidence_file.exists() else 0
 
     # Copy evidence to standard location
     evidence_base = get_evidence_base_dir(project_id)
-    dest_dir = evidence_base / feature_id / criterion_id / f"v{version}"
+    dest_dir = evidence_base / capability_id / criterion_id / f"v{version}"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest_path = dest_dir / evidence_file.name
@@ -985,7 +987,7 @@ def register_test_evidence(
     # Save evidence record
     result = save_evidence(
         project_id=project_id,
-        feature_id=feature_id,
+        capability_id=capability_id,
         criterion_id=criterion_id,
         version=version,
         file_path=str(dest_dir.relative_to(evidence_base)),
@@ -1032,26 +1034,26 @@ def get_test_evidence(
     Returns:
         List of evidence records
     """
-    feature_id = f"test-{test_id}"
+    capability_id = f"test-{test_id}"
 
     if test_run_id:
         criterion_id = f"run-{test_run_id}"
-        return get_evidence_versions(project_id, feature_id, criterion_id)
+        return get_evidence_versions(project_id, capability_id, criterion_id)
 
     # Get all evidence for this test
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, evidence_id, feature_id, criterion_id, evidence_type,
+            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
                    file_path, file_size_bytes, version, is_current,
                    captured_at, expires_at, quality_status, quality_issues,
                    confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
                    user_reviewed_at, user_approved, user_notes
             FROM evidence
-            WHERE project_id = %s AND feature_id = %s AND is_current = TRUE
+            WHERE project_id = %s AND capability_id = %s AND is_current = TRUE
             ORDER BY captured_at DESC
             """,
-            (project_id, feature_id),
+            (project_id, capability_id),
         )
         rows = cur.fetchall()
 

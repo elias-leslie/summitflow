@@ -1,7 +1,7 @@
-"""Evidence API - Evidence capture and retrieval for feature verification.
+"""Evidence API - Evidence capture and retrieval for capability verification.
 
 This module provides REST API endpoints for evidence:
-- GET /projects/{project_id}/evidence/{feature_id}/{criterion_id} - Get evidence with optional version
+- GET /projects/{project_id}/evidence/{capability_id}/{criterion_id} - Get evidence with optional version
 - POST /projects/{project_id}/evidence/refresh - Capture new evidence (server-side)
 - POST /projects/{project_id}/evidence/viewport-capture - Capture from client-side screenshot
 - POST /projects/{project_id}/evidence/debug-capture - Quick debug capture (no DB entry)
@@ -50,7 +50,7 @@ DEBUG_CAPTURES_BASE = Path("/home/kasadis/summitflow/data/projects")
 class RefreshRequest(BaseModel):
     """Request to capture new evidence."""
 
-    feature_id: str
+    capability_id: str
     criterion_id: str
     url: str
 
@@ -82,7 +82,7 @@ class ClientEvidence(BaseModel):
 class ViewportCaptureRequest(BaseModel):
     """Request to upload a client-side viewport capture."""
 
-    feature_id: str = Field(..., description="Feature ID")
+    capability_id: str = Field(..., description="Capability ID")
     criterion_id: str = Field(..., description="Criterion ID")
     screenshot_base64: str = Field(..., description="Base64-encoded PNG screenshot")
     url: str = Field(..., description="URL of the captured page")
@@ -107,16 +107,16 @@ class DebugCaptureRequest(BaseModel):
     )
 
 
-@router.get("/projects/{project_id}/evidence/{feature_id}/{criterion_id}")
+@router.get("/projects/{project_id}/evidence/{capability_id}/{criterion_id}")
 async def get_evidence_endpoint(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int | None = Query(None, description="Specific version (default: current)"),
     include_evidence: bool = Query(False, description="Include evidence.json data"),
 ) -> dict[str, Any]:
     """Get evidence metadata and optionally the evidence data."""
-    evidence = get_evidence(project_id, feature_id, criterion_id, version)
+    evidence = get_evidence(project_id, capability_id, criterion_id, version)
 
     if not evidence:
         raise HTTPException(status_code=404, detail="No evidence captured yet")
@@ -125,7 +125,7 @@ async def get_evidence_endpoint(
         "artifact": {
             "id": evidence["id"],
             "artifactId": evidence["evidence_id"],
-            "featureId": evidence["feature_id"],
+            "capabilityId": evidence["capability_id"],
             "criterionId": evidence["criterion_id"],
             "version": evidence["version"],
             "isCurrent": evidence["is_current"],
@@ -138,17 +138,17 @@ async def get_evidence_endpoint(
             "fileSizeBytes": evidence["file_size_bytes"],
         },
         "versions": [],
-        "screenshotUrl": f"/api/projects/{project_id}/evidence/{feature_id}/{criterion_id}/screenshot?version={evidence['version']}",
-        "evidenceUrl": f"/api/projects/{project_id}/evidence/{feature_id}/{criterion_id}/data?version={evidence['version']}",
+        "screenshotUrl": f"/api/projects/{project_id}/evidence/{capability_id}/{criterion_id}/screenshot?version={evidence['version']}",
+        "evidenceUrl": f"/api/projects/{project_id}/evidence/{capability_id}/{criterion_id}/data?version={evidence['version']}",
     }
 
     # Get all versions
-    versions = get_evidence_versions(project_id, feature_id, criterion_id)
+    versions = get_evidence_versions(project_id, capability_id, criterion_id)
     result["versions"] = [
         {
             "id": v["id"],
             "artifactId": v["evidence_id"],
-            "featureId": v["feature_id"],
+            "capabilityId": v["capability_id"],
             "criterionId": v["criterion_id"],
             "version": v["version"],
             "isCurrent": v["is_current"],
@@ -166,29 +166,29 @@ async def get_evidence_endpoint(
     # Include evidence data if requested
     if include_evidence:
         evidence_data = read_evidence_file(
-            project_id, feature_id, criterion_id, evidence["version"]
+            project_id, capability_id, criterion_id, evidence["version"]
         )
         result["evidence"] = evidence_data
 
     return result
 
 
-@router.get("/projects/{project_id}/evidence/{feature_id}/{criterion_id}/screenshot")
+@router.get("/projects/{project_id}/evidence/{capability_id}/{criterion_id}/screenshot")
 async def get_screenshot(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int | None = Query(None, description="Specific version"),
 ) -> FileResponse:
     """Get the screenshot image for evidence."""
-    evidence = get_evidence(project_id, feature_id, criterion_id, version)
+    evidence = get_evidence(project_id, capability_id, criterion_id, version)
 
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
     evidence_base = get_evidence_base_dir(project_id)
     screenshot_path = (
-        evidence_base / feature_id / criterion_id / f"v{evidence['version']}" / "screenshot.png"
+        evidence_base / capability_id / criterion_id / f"v{evidence['version']}" / "screenshot.png"
     )
 
     if not screenshot_path.exists():
@@ -197,24 +197,24 @@ async def get_screenshot(
     return FileResponse(
         path=screenshot_path,
         media_type="image/png",
-        filename=f"{feature_id}-{criterion_id}-v{evidence['version']}.png",
+        filename=f"{capability_id}-{criterion_id}-v{evidence['version']}.png",
     )
 
 
-@router.get("/projects/{project_id}/evidence/{feature_id}/{criterion_id}/data")
+@router.get("/projects/{project_id}/evidence/{capability_id}/{criterion_id}/data")
 async def get_evidence_data(
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     criterion_id: str,
     version: int | None = Query(None, description="Specific version"),
 ) -> dict[str, Any]:
     """Get the evidence.json data for evidence."""
-    evidence = get_evidence(project_id, feature_id, criterion_id, version)
+    evidence = get_evidence(project_id, capability_id, criterion_id, version)
 
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    evidence_data = read_evidence_file(project_id, feature_id, criterion_id, evidence["version"])
+    evidence_data = read_evidence_file(project_id, capability_id, criterion_id, evidence["version"])
 
     if not evidence_data:
         raise HTTPException(status_code=404, detail="Evidence data file not found")
@@ -229,13 +229,13 @@ async def refresh_evidence(
 ) -> dict[str, Any]:
     """Capture new evidence for a criterion."""
     # Get next version number
-    next_version = get_next_version(project_id, request.feature_id, request.criterion_id)
+    next_version = get_next_version(project_id, request.capability_id, request.criterion_id)
 
     # Capture evidence
     result = await capture_evidence(
         project_id=project_id,
         url=request.url,
-        feature_id=request.feature_id,
+        capability_id=request.capability_id,
         criterion_id=request.criterion_id,
     )
 
@@ -249,7 +249,7 @@ async def refresh_evidence(
     evidence_base = get_evidence_base_dir(project_id)
     file_path = str(
         evidence_base
-        / request.feature_id
+        / request.capability_id
         / request.criterion_id
         / f"v{result.get('version', next_version)}"
     )
@@ -264,7 +264,7 @@ async def refresh_evidence(
 
     save_evidence(
         project_id=project_id,
-        feature_id=request.feature_id,
+        capability_id=request.capability_id,
         criterion_id=request.criterion_id,
         version=result.get("version", next_version),
         file_path=file_path,
@@ -315,27 +315,27 @@ async def agent_review(
 
     Returns proposed issues with suggested features/fixes.
     """
-    # Parse evidence_id to get feature_id, criterion_id, version
-    # Format: {feature_id}-{criterion_id}-v{version} or direct DB lookup
+    # Parse evidence_id to get capability_id, criterion_id, version
+    # Format: {capability_id}-{criterion_id}-v{version} or direct DB lookup
     parts = evidence_id.rsplit("-v", 1)
     if len(parts) == 2:
         prefix = parts[0]
         version = int(parts[1]) if parts[1].isdigit() else None
-        # Split prefix into feature_id and criterion_id
+        # Split prefix into capability_id and criterion_id
         prefix_parts = prefix.split("-")
         if len(prefix_parts) >= 2:
-            feature_id = prefix_parts[0]
+            capability_id = prefix_parts[0]
             criterion_id = "-".join(prefix_parts[1:])
         else:
             raise HTTPException(status_code=400, detail="Invalid evidence_id format")
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid evidence_id format. Expected: FEAT-XXX-ac-XXX-vN",
+            detail="Invalid evidence_id format. Expected: CAP-XXX-ac-XXX-vN",
         )
 
     # Get evidence data
-    evidence_data = read_evidence_file(project_id, feature_id, criterion_id, version)
+    evidence_data = read_evidence_file(project_id, capability_id, criterion_id, version)
     if not evidence_data:
         raise HTTPException(status_code=404, detail="Evidence data not found")
 
@@ -489,7 +489,7 @@ Always format response as valid JSON."""
             confidence = score / 100.0
 
         # Update AI review in database
-        evidence_record = get_evidence(project_id, feature_id, criterion_id, version)
+        evidence_record = get_evidence(project_id, capability_id, criterion_id, version)
         if evidence_record:
             update_ai_review(
                 project_id=project_id,
@@ -528,16 +528,16 @@ async def list_evidence_endpoint(
     project_id: str,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    feature_id: str | None = Query(None, description="Filter by feature ID"),
+    capability_id: str | None = Query(None, description="Filter by capability ID"),
     status: str | None = Query(None, description="Filter by quality status"),
-    search: str | None = Query(None, description="Search feature/criterion IDs"),
+    search: str | None = Query(None, description="Search capability/criterion IDs"),
 ) -> dict[str, Any]:
     """List all evidence for a project with optional filtering."""
     evidence_list, total = list_evidence(
         project_id=project_id,
         limit=limit,
         offset=offset,
-        feature_id=feature_id,
+        capability_id=capability_id,
         quality_status=status,
         search=search,
     )
@@ -547,7 +547,7 @@ async def list_evidence_endpoint(
             {
                 "id": e["id"],
                 "evidenceId": e["evidence_id"],
-                "featureId": e["feature_id"],
+                "capabilityId": e["capability_id"],
                 "criterionId": e["criterion_id"],
                 "version": e["version"],
                 "isCurrent": e["is_current"],
@@ -558,7 +558,7 @@ async def list_evidence_endpoint(
                 "userApproved": e["user_approved"],
                 "userNotes": e["user_notes"],
                 "fileSizeBytes": e["file_size_bytes"],
-                "screenshotUrl": f"/api/projects/{project_id}/evidence/{e['feature_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
+                "screenshotUrl": f"/api/projects/{project_id}/evidence/{e['capability_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
             }
             for e in evidence_list
         ],
@@ -595,12 +595,12 @@ async def viewport_capture(
         try:
             screenshot_data = base64.b64decode(request.screenshot_base64)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 screenshot data")
+            raise HTTPException(status_code=400, detail="Invalid base64 screenshot data") from None
 
         # Get next version and create output directory
-        version = get_next_version(project_id, request.feature_id, request.criterion_id)
+        version = get_next_version(project_id, request.capability_id, request.criterion_id)
         evidence_base = get_evidence_base_dir(project_id)
-        output_dir = evidence_base / request.feature_id / request.criterion_id / f"v{version}"
+        output_dir = evidence_base / request.capability_id / request.criterion_id / f"v{version}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Save screenshot
@@ -611,7 +611,7 @@ async def viewport_capture(
         evidence_data = {
             "metadata": {
                 "url": request.url,
-                "featureId": request.feature_id,
+                "capabilityId": request.capability_id,
                 "criterionId": request.criterion_id,
                 "projectId": project_id,
                 "version": version,
@@ -677,7 +677,7 @@ async def viewport_capture(
         evidence_path.write_text(json.dumps(evidence_data, indent=2))
 
         # Update current symlink
-        current_link = evidence_base / request.feature_id / request.criterion_id / "current"
+        current_link = evidence_base / request.capability_id / request.criterion_id / "current"
         if current_link.is_symlink():
             current_link.unlink()
         current_link.symlink_to(f"v{version}")
@@ -686,7 +686,7 @@ async def viewport_capture(
         file_size = len(screenshot_data) + len(json.dumps(evidence_data))
         save_evidence(
             project_id=project_id,
-            feature_id=request.feature_id,
+            capability_id=request.capability_id,
             criterion_id=request.criterion_id,
             version=version,
             file_path=str(output_dir),
@@ -696,7 +696,7 @@ async def viewport_capture(
         logger.info(
             "viewport_capture_saved",
             project_id=project_id,
-            feature_id=request.feature_id,
+            capability_id=request.capability_id,
             criterion_id=request.criterion_id,
             version=version,
             scroll_y=request.scroll_y,
@@ -705,7 +705,7 @@ async def viewport_capture(
         return {
             "success": True,
             "version": version,
-            "feature_id": request.feature_id,
+            "capability_id": request.capability_id,
             "criterion_id": request.criterion_id,
             "evidence": evidence_data,
             "files": [
@@ -740,7 +740,7 @@ async def debug_capture(
         try:
             screenshot_data = base64.b64decode(request.screenshot_base64)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 screenshot data")
+            raise HTTPException(status_code=400, detail="Invalid base64 screenshot data") from None
 
         # Ensure directory exists
         debug_dir = DEBUG_CAPTURES_BASE / project_id / "debug-captures"

@@ -42,7 +42,7 @@ interface EvidenceViewerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   criterionText?: string;
   verificationUrl?: string;
@@ -52,7 +52,7 @@ export function EvidenceViewerModal({
   open,
   onOpenChange,
   projectId,
-  featureId,
+  capabilityId,
   criterionId,
   criterionText,
   verificationUrl,
@@ -65,9 +65,9 @@ export function EvidenceViewerModal({
 
   // Fetch evidence data
   const { data, isLoading, error, refetch } = useQuery<ArtifactResponse>({
-    queryKey: ["evidence", projectId, featureId, criterionId, selectedVersion],
-    queryFn: () => fetchEvidence(projectId, featureId, criterionId, selectedVersion ?? undefined),
-    enabled: open && !!projectId && !!featureId && !!criterionId,
+    queryKey: ["evidence", projectId, capabilityId, criterionId, selectedVersion],
+    queryFn: () => fetchEvidence(projectId, capabilityId, criterionId, selectedVersion ?? undefined),
+    enabled: open && !!projectId && !!capabilityId && !!criterionId,
     staleTime: 0,
     refetchOnMount: true,
     retry: 1,
@@ -97,7 +97,7 @@ export function EvidenceViewerModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["evidence", projectId, featureId, criterionId],
+        queryKey: ["evidence", projectId, capabilityId, criterionId],
       });
     },
   });
@@ -128,11 +128,11 @@ export function EvidenceViewerModal({
 
     setIsRefreshing(true);
     try {
-      const result = await refreshEvidence(projectId, featureId, criterionId, captureUrl);
+      const result = await refreshEvidence(projectId, capabilityId, criterionId, captureUrl);
       if (result.success && result.version) {
         setSelectedVersion(result.version);
         await queryClient.invalidateQueries({
-          queryKey: ["evidence", projectId, featureId, criterionId],
+          queryKey: ["evidence", projectId, capabilityId, criterionId],
         });
         refetch();
       }
@@ -163,7 +163,7 @@ export function EvidenceViewerModal({
             <X className="w-4 h-4" />
           </button>
           <DialogTitle className="flex items-center gap-3">
-            <span className="mono text-phosphor-400">{featureId}</span>
+            <span className="mono text-phosphor-400">{capabilityId}</span>
             <span className="text-slate-600">/</span>
             <span className="mono text-slate-300">{criterionId}</span>
             {artifact && (
@@ -282,7 +282,7 @@ export function EvidenceViewerModal({
               <div className="flex-1 overflow-hidden relative bg-slate-950/50">
                 <TabsContent value="screenshot" className="absolute inset-0 overflow-auto p-4">
                   <img
-                    src={getScreenshotUrl(projectId, featureId, criterionId, artifact?.version ?? 1)}
+                    src={getScreenshotUrl(projectId, capabilityId, criterionId, artifact?.version ?? 1)}
                     alt="Page screenshot"
                     className="border border-slate-700 rounded shadow-lg"
                   />

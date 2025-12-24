@@ -566,7 +566,7 @@ export default function ProjectDetailPage() {
 
       // Convert to the format expected by the component
       const features: GeneratedFeature[] = result.features.map((f) => ({
-        feature_id: f.feature_id,
+        capability_id: f.capability_id,
         name: f.name,
         category: f.category,
         priority: f.priority,

@@ -69,7 +69,7 @@ export interface ChatMessage {
 }
 
 export interface GeneratedFeature {
-  feature_id: string;
+  capability_id: string;
   name: string;
   category: string;
   priority: number;
@@ -407,13 +407,13 @@ function GeneratedFeaturesList({
       <div className="space-y-2">
         {features.map((feat) => (
           <div
-            key={feat.feature_id}
+            key={feat.capability_id}
             className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-lg"
           >
             <ListChecks className="w-4 h-4 text-phosphor-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 mono">{feat.feature_id}</span>
+                <span className="text-xs text-slate-500 mono">{feat.capability_id}</span>
                 <Badge variant="phosphor" className="text-2xs">
                   P{feat.priority}
                 </Badge>

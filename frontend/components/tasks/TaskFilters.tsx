@@ -2,14 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Filter } from "lucide-react";
-import { fetchFeatures, type TaskType, type TaskStatus, type Feature } from "@/lib/api";
+import { fetchTddCapabilities, type TaskType, type TaskStatus, type TddCapability } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface TaskFilterValues {
   type: TaskType | "all";
   status: TaskStatus | "all" | "active" | "blocked";
   priority: number | "all";
-  featureId: number | "all";
+  capabilityId: number | "all";
   standaloneOnly: boolean;
 }
 
@@ -47,14 +47,12 @@ const PRIORITY_OPTIONS = [
 ];
 
 export function TaskFilters({ projectId, filters, onChange, className }: TaskFiltersProps) {
-  // Fetch features for the feature filter dropdown
-  const { data: featuresData } = useQuery({
-    queryKey: ["features", projectId],
-    queryFn: () => fetchFeatures(projectId, { limit: 100 }),
+  // Fetch capabilities for the capability filter dropdown
+  const { data: capabilities = [] } = useQuery({
+    queryKey: ["capabilities", projectId],
+    queryFn: () => fetchTddCapabilities(projectId),
     staleTime: 60000, // 1 minute
   });
-
-  const features = featuresData?.features || [];
 
   const handleChange = (key: keyof TaskFilterValues, value: string | number | boolean) => {
     onChange({ ...filters, [key]: value });
@@ -106,23 +104,21 @@ export function TaskFilters({ projectId, filters, onChange, className }: TaskFil
         ))}
       </select>
 
-      {/* Feature Filter */}
+      {/* Capability Filter */}
       <select
-        value={filters.featureId}
+        value={filters.capabilityId}
         onChange={(e) => {
           const val = e.target.value;
-          handleChange("featureId", val === "all" ? "all" : parseInt(val, 10));
+          handleChange("capabilityId", val === "all" ? "all" : parseInt(val, 10));
         }}
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-white"
       >
-        <option value="all">All Features</option>
-        {features
-          .filter((f: Feature) => f.id !== null)
-          .map((f: Feature) => (
-            <option key={f.id} value={f.id!}>
-              {f.feature_id} - {f.name}
-            </option>
-          ))}
+        <option value="all">All Capabilities</option>
+        {capabilities.map((cap) => (
+          <option key={cap.id} value={cap.id}>
+            {cap.capability_id} - {cap.name}
+          </option>
+        ))}
       </select>
 
       {/* Standalone Only Checkbox */}
@@ -143,6 +139,6 @@ export const DEFAULT_FILTERS: TaskFilterValues = {
   type: "all",
   status: "all",
   priority: "all",
-  featureId: "all",
+  capabilityId: "all",
   standaloneOnly: false,
 };

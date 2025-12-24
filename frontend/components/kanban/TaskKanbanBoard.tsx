@@ -20,9 +20,21 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-import type { Task, TaskStatus } from "@/lib/api";
+import type { Task, TaskStatus, TaskType } from "@/lib/api";
 import { TaskCard, DragOverlayTaskCard } from "./TaskCard";
-import { KanbanFilters, KanbanFilterValues, DEFAULT_KANBAN_FILTERS } from "./KanbanFilters";
+
+// Simple filter types (inline, no UI component for now)
+interface TaskKanbanFilterValues {
+  type: TaskType | "all";
+  priority: number | "all";
+  capabilityId: number | "all";
+}
+
+const DEFAULT_TASK_KANBAN_FILTERS: TaskKanbanFilterValues = {
+  type: "all",
+  priority: "all",
+  capabilityId: "all",
+};
 
 // ============================================================================
 // Types
@@ -143,7 +155,7 @@ export function TaskKanbanBoard({
   onNewTask,
 }: TaskKanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<KanbanFilterValues>(DEFAULT_KANBAN_FILTERS);
+  const [filters, setFilters] = useState<TaskKanbanFilterValues>(DEFAULT_TASK_KANBAN_FILTERS);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -174,7 +186,7 @@ export function TaskKanbanBoard({
         return false;
       }
       // Feature filter
-      if (filters.featureId !== "all" && task.feature_id !== filters.featureId) {
+      if (filters.capabilityId !== "all" && task.capability_id !== filters.capabilityId) {
         return false;
       }
       return true;
@@ -265,14 +277,7 @@ export function TaskKanbanBoard({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <KanbanFilters
-        projectId={projectId}
-        filters={filters}
-        onChange={setFilters}
-        onNewTask={onNewTask}
-      />
-
+      {/* TODO: Add task filters if needed */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}

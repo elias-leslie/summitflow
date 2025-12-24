@@ -86,11 +86,14 @@ def process_reflection(
 
         # Publish notification if patterns were created
         if result.patterns_created:
-            _publish_reflection_event(project_id, {
-                "patterns_created": len(result.patterns_created),
-                "patterns_auto_applied": len(result.patterns_auto_applied),
-                "diary_entries_processed": len(result.diary_ids_processed),
-            })
+            _publish_reflection_event(
+                project_id,
+                {
+                    "patterns_created": len(result.patterns_created),
+                    "patterns_auto_applied": len(result.patterns_auto_applied),
+                    "diary_entries_processed": len(result.diary_ids_processed),
+                },
+            )
 
         summary = {
             "diary_entries_processed": len(result.diary_ids_processed),
@@ -184,21 +187,21 @@ def check_reflection_trigger(
     name="summitflow.trigger_feature_reflection",
     bind=True,
 )
-def trigger_feature_reflection(
+def trigger_capability_reflection(
     self,
     project_id: str,
-    feature_id: str,
+    capability_id: str,
     project_path: str | None = None,
     auto_apply: bool = True,
 ) -> dict[str, Any]:
-    """Trigger reflection after feature completion.
+    """Trigger reflection after capability completion.
 
-    Called when a feature is marked complete. Analyzes all diary entries
-    since the feature started.
+    Called when a capability is marked complete. Analyzes all diary entries
+    since the capability started.
 
     Args:
         project_id: Project ID
-        feature_id: Completed feature ID
+        capability_id: Completed capability ID
         project_path: Path to project root
         auto_apply: Whether to auto-apply high-confidence patterns
 
@@ -206,30 +209,30 @@ def trigger_feature_reflection(
         Summary dict with reflection results
     """
     logger.info(
-        "feature_reflection_triggered",
+        "capability_reflection_triggered",
         project_id=project_id,
-        feature_id=feature_id,
+        capability_id=capability_id,
     )
 
     try:
-        # Trigger reflection with higher limit for features
+        # Trigger reflection with higher limit for capabilities
         result = process_reflection.delay(
             project_id=project_id,
             project_path=project_path,
             auto_apply=auto_apply,
-            limit=20,  # More entries for feature reflection
+            limit=20,  # More entries for capability reflection
         )
 
         return {
             "triggered": True,
-            "feature_id": feature_id,
+            "capability_id": capability_id,
             "task_id": result.id,
         }
 
     except Exception as e:
         logger.error(
-            "feature_reflection_trigger_error",
-            feature_id=feature_id,
+            "capability_reflection_trigger_error",
+            capability_id=capability_id,
             error=str(e),
         )
         return {
@@ -245,10 +248,12 @@ def _publish_reflection_event(project_id: str, data: dict[str, Any]) -> None:
 
         r = redis.from_url(REDIS_URL)
         channel = f"reflection:{project_id}"
-        message = json.dumps({
-            "event": "reflection_completed",
-            "data": data,
-        })
+        message = json.dumps(
+            {
+                "event": "reflection_completed",
+                "data": data,
+            }
+        )
         r.publish(channel, message)
         logger.debug("reflection_event_published", channel=channel)
     except Exception as e:

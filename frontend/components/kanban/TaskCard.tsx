@@ -107,10 +107,10 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
   const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task;
   const statusConfig = taskStatusConfig[task.status];
 
-  // Feature context for criteria progress
-  const feature = task.feature;
-  const hasCriteria = feature && feature.criteria_total > 0;
-  const allPassed = hasCriteria && feature.criteria_passed === feature.criteria_total;
+  // Capability context for criteria progress
+  const capability = task.capability;
+  const hasCriteria = capability && capability.criteria_total > 0;
+  const allPassed = hasCriteria && capability.criteria_passed === capability.criteria_total;
 
   return (
     <div
@@ -163,15 +163,15 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
           {task.title}
         </h4>
 
-        {/* Feature Link or Standalone Indicator */}
+        {/* Capability Link or Standalone Indicator */}
         <div className="flex items-center justify-between">
-          {feature ? (
+          {capability ? (
             <div className="flex items-center gap-1.5">
               <Link2 className="h-3 w-3 text-slate-500" />
-              <span className="text-xs text-phosphor-400 mono">{feature.feature_id}</span>
+              <span className="text-xs text-phosphor-400 mono">{capability.capability_id}</span>
               {hasCriteria && (
                 <span className={`text-xs mono ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}>
-                  ({feature.criteria_passed}/{feature.criteria_total})
+                  ({capability.criteria_passed}/{capability.criteria_total})
                 </span>
               )}
             </div>
@@ -179,14 +179,14 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
             <span className="text-xs text-slate-600 italic">Standalone</span>
           )}
 
-          {/* Criteria Progress Dots for feature-type tasks with feature context */}
+          {/* Criteria Progress Dots for capability-linked tasks */}
           {hasCriteria && (
             <div className="flex items-center gap-0.5">
-              {Array.from({ length: feature.criteria_total }).map((_, i) => (
+              {Array.from({ length: capability!.criteria_total }).map((_, i) => (
                 <div
                   key={i}
                   className={`h-1.5 w-1.5 rounded-full ${
-                    i < feature.criteria_passed ? "bg-phosphor-500" : "bg-slate-600"
+                    i < capability!.criteria_passed ? "bg-phosphor-500" : "bg-slate-600"
                   }`}
                 />
               ))}

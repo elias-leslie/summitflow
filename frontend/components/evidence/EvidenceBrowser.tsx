@@ -33,7 +33,7 @@ interface EvidenceBrowserProps {
 interface CaptureResult {
   success: boolean;
   version?: number;
-  feature_id?: string;
+  capability_id?: string;
   criterion_id?: string;
   error?: string;
   evidence?: {
@@ -44,7 +44,7 @@ interface CaptureResult {
 }
 
 interface LastCapture {
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   version: number;
   capturedAt: string;
@@ -158,21 +158,21 @@ export function EvidenceBrowser({
 
   const handleCaptureComplete = useCallback((result: CaptureResult) => {
     setCaptureModalOpen(false);
-    if (result.success && result.feature_id && result.criterion_id && result.version) {
+    if (result.success && result.capability_id && result.criterion_id && result.version) {
       const capture: LastCapture = {
-        featureId: result.feature_id,
+        capabilityId: result.capability_id,
         criterionId: result.criterion_id,
         version: result.version,
         capturedAt: result.evidence?.metadata?.capturedAt || new Date().toISOString(),
         url: result.evidence?.metadata?.url || currentUrl,
-        screenshotUrl: `/api/projects/${projectId}/evidence/${result.feature_id}/${result.criterion_id}/screenshot?version=${result.version}`,
+        screenshotUrl: `/api/projects/${projectId}/evidence/${result.capability_id}/${result.criterion_id}/screenshot?version=${result.version}`,
         errorCount: result.evidence?.console?.errorCount || 0,
         warningCount: result.evidence?.console?.warningCount || 0,
         failedRequests: result.evidence?.network?.failedRequests || 0,
       };
       setLastCapture(capture);
       setShowPreview(true);
-      toast.success(`Captured evidence v${result.version} for ${result.feature_id}`);
+      toast.success(`Captured evidence v${result.version} for ${result.capability_id}`);
     }
   }, [currentUrl, projectId]);
 
@@ -372,7 +372,7 @@ export function EvidenceBrowser({
                           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-3">
                             <div className="flex items-center gap-2">
                               <span className="text-slate-500">Feature:</span>
-                              <span className="mono text-phosphor-400">{lastCapture.featureId}</span>
+                              <span className="mono text-phosphor-400">{lastCapture.capabilityId}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-slate-500">Criterion:</span>
@@ -446,9 +446,9 @@ export function EvidenceBrowser({
           open={reviewDialogOpen}
           onOpenChange={setReviewDialogOpen}
           projectId={projectId}
-          evidenceId={`${lastCapture.featureId}-${lastCapture.criterionId}-v${lastCapture.version}`}
+          evidenceId={`${lastCapture.capabilityId}-${lastCapture.criterionId}-v${lastCapture.version}`}
           screenshotUrl={lastCapture.screenshotUrl}
-          featureId={lastCapture.featureId}
+          capabilityId={lastCapture.capabilityId}
           criterionId={lastCapture.criterionId}
           onFeaturesCreated={(features) => {
             toast.success(`Created ${features.length} feature(s)`);

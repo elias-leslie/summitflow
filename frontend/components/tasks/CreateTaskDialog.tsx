@@ -12,7 +12,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { fetchFeatures, createTask, type TaskType } from "@/lib/api";
+import { fetchTddCapabilities, createTask, type TaskType } from "@/lib/api";
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -44,19 +44,17 @@ export function CreateTaskDialog({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState(2);
   const [taskType, setTaskType] = useState<TaskType>("task");
-  const [featureId, setFeatureId] = useState<number | null>(null);
+  const [capabilityId, setFeatureId] = useState<number | null>(null);
   const [labels, setLabels] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch features for the select dropdown
-  const { data: featuresData } = useQuery({
-    queryKey: ["features", projectId],
-    queryFn: () => fetchFeatures(projectId, { limit: 100 }),
+  // Fetch capabilities for the select dropdown
+  const { data: capabilities = [] } = useQuery({
+    queryKey: ["capabilities", projectId],
+    queryFn: () => fetchTddCapabilities(projectId),
     enabled: open,
   });
-
-  const features = featuresData?.features ?? [];
 
   const resetForm = () => {
     setTitle("");
@@ -95,7 +93,7 @@ export function CreateTaskDialog({
         description: description.trim() || undefined,
         priority,
         task_type: taskType,
-        feature_id: featureId ?? undefined,
+        capability_id: capabilityId ?? undefined,
         labels: labelsArray.length > 0 ? labelsArray : undefined,
       });
 
@@ -191,21 +189,21 @@ export function CreateTaskDialog({
             </div>
           </div>
 
-          {/* Feature (optional) */}
+          {/* Capability (optional) */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">
-              Linked Feature
+              Linked Capability
             </label>
             <select
-              value={featureId ?? ""}
+              value={capabilityId ?? ""}
               onChange={(e) => setFeatureId(e.target.value ? parseInt(e.target.value) : null)}
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white
                 focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500"
             >
-              <option value="">No feature linked</option>
-              {features.filter(f => f.id !== null).map((feature) => (
-                <option key={feature.id} value={feature.id!}>
-                  {feature.feature_id} - {feature.name}
+              <option value="">No capability linked</option>
+              {capabilities.map((cap) => (
+                <option key={cap.id} value={cap.id}>
+                  {cap.capability_id} - {cap.name}
                 </option>
               ))}
             </select>

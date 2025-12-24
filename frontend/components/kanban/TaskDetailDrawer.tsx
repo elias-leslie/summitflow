@@ -128,11 +128,11 @@ export function TaskDetailDrawer({
   const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task;
   const colors = priorityColors[task.priority] || priorityColors[2];
 
-  // Feature context
-  const feature = task.feature;
-  const hasCriteria = feature && feature.criteria_total > 0;
-  const allPassed = hasCriteria && feature.criteria_passed === feature.criteria_total;
-  const progressPct = hasCriteria ? (feature.criteria_passed / feature.criteria_total) * 100 : 0;
+  // Capability context
+  const capability = task.capability;
+  const hasCriteria = capability && capability.criteria_total > 0;
+  const allPassed = hasCriteria && capability.criteria_passed === capability.criteria_total;
+  const progressPct = hasCriteria ? (capability.criteria_passed / capability.criteria_total) * 100 : 0;
 
   // Status checks
   const isRunning = task.status === "running";
@@ -278,19 +278,19 @@ export function TaskDetailDrawer({
             )}
           </div>
 
-          {/* Linked Feature */}
-          {feature && (
+          {/* Linked Capability */}
+          {capability && (
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
                   <Link2 className="h-4 w-4" />
-                  Linked Feature
+                  Linked Capability
                 </h3>
                 <Link
-                  href={`/projects/${projectId}?tab=features&feature=${feature.feature_id}`}
+                  href={`/projects/${projectId}/components`}
                   className="text-xs text-phosphor-400 hover:text-phosphor-300 flex items-center gap-1"
                 >
-                  View Feature
+                  View Capabilities
                   <ExternalLink className="h-3 w-3" />
                 </Link>
               </div>
@@ -298,8 +298,8 @@ export function TaskDetailDrawer({
               <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <span className="mono text-xs text-slate-500">{feature.feature_id}</span>
-                    <h4 className="text-sm font-medium text-white">{feature.name}</h4>
+                    <span className="mono text-xs text-slate-500">{capability.capability_id}</span>
+                    <h4 className="text-sm font-medium text-white">{capability.name}</h4>
                   </div>
                 </div>
 
@@ -309,7 +309,7 @@ export function TaskDetailDrawer({
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs text-slate-500">Criteria</span>
                       <span className={`text-xs mono font-medium ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}>
-                        {feature.criteria_passed}/{feature.criteria_total}
+                        {capability.criteria_passed}/{capability.criteria_total}
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">

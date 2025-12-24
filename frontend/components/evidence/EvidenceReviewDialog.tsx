@@ -71,7 +71,7 @@ interface EvidenceReviewDialogProps {
   projectId: string;
   evidenceId: string;
   screenshotUrl: string;
-  featureId: string;
+  capabilityId: string;
   criterionId: string;
   onFeaturesCreated?: (features: Array<{ id: string; name: string }>) => void;
 }
@@ -102,7 +102,7 @@ export function EvidenceReviewDialog({
   projectId,
   evidenceId,
   screenshotUrl,
-  featureId,
+  capabilityId,
   criterionId,
   onFeaturesCreated,
 }: EvidenceReviewDialogProps) {
@@ -232,7 +232,7 @@ export function EvidenceReviewDialog({
             <div className="text-xs text-slate-500">
               <div className="flex items-center gap-2 mb-1">
                 <span>Feature:</span>
-                <span className="mono text-phosphor-400">{featureId}</span>
+                <span className="mono text-phosphor-400">{capabilityId}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span>Criterion:</span>

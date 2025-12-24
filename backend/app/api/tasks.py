@@ -111,11 +111,11 @@ class AcceptanceCriterion(BaseModel):
     passes: bool = False
 
 
-class FeatureContext(BaseModel):
-    """Feature context for a task."""
+class CapabilityContext(BaseModel):
+    """Capability context for a task."""
 
     id: int  # Database ID
-    feature_id: str  # String ID like FEAT-001
+    capability_id: str  # String ID like login, password-reset
     name: str
     criteria_passed: int
     criteria_total: int
@@ -158,8 +158,8 @@ class TaskResponse(BaseModel):
     labels: list[str]
     task_type: str
     parent_task_id: str | None
-    # Optional feature context (when include=feature)
-    feature: FeatureContext | None = None
+    # Optional capability context (when include=capability)
+    capability: CapabilityContext | None = None
     # Optional blockers context (when include=blockers)
     blockers: list[BlockerInfo] | None = None
     blocked_by_incomplete: bool | None = None
@@ -174,27 +174,27 @@ class TaskListResponse(BaseModel):
 
 def _task_to_response(task: dict[str, Any]) -> TaskResponse:
     """Convert task dict to response model."""
-    # Handle optional feature context
-    feature_context = None
-    if task.get("feature") is not None:
-        f = task["feature"]
+    # Handle optional capability context
+    capability_context = None
+    if task.get("capability") is not None:
+        c = task["capability"]
         # Parse acceptance criteria if present
         criteria_list = None
-        if f.get("acceptance_criteria"):
+        if c.get("acceptance_criteria"):
             criteria_list = [
                 AcceptanceCriterion(
-                    id=c.get("id", ""),
-                    description=c.get("description", ""),
-                    passes=c.get("passes", False),
+                    id=crit.get("id", ""),
+                    description=crit.get("description", ""),
+                    passes=crit.get("passes", False),
                 )
-                for c in f["acceptance_criteria"]
+                for crit in c["acceptance_criteria"]
             ]
-        feature_context = FeatureContext(
-            id=f["id"],
-            feature_id=f["feature_id"],
-            name=f["name"],
-            criteria_passed=f["criteria_passed"],
-            criteria_total=f["criteria_total"],
+        capability_context = CapabilityContext(
+            id=c["id"],
+            capability_id=c["capability_id"],
+            name=c["name"],
+            criteria_passed=c["criteria_passed"],
+            criteria_total=c["criteria_total"],
             acceptance_criteria=criteria_list,
         )
 
@@ -239,7 +239,7 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
         # Optional feature context
-        feature=feature_context,
+        capability=capability_context,
         # Optional blockers context
         blockers=blockers_list,
         blocked_by_incomplete=blocked_by_incomplete,
@@ -272,14 +272,14 @@ async def list_tasks(
         - type: Filter by task type (feature, bug, task)
         - priority: Filter by priority (0-4)
         - labels: Filter by labels (comma-separated, e.g., "complexity:small,domains:backend")
-        - orphans_only: Only return tasks not linked to a feature
-        - include: Include related data (comma-separated: 'feature' for feature context, 'blockers' for blocking tasks)
+        - orphans_only: Only return tasks not linked to a capability
+        - include: Include related data (comma-separated: 'capability' for capability context, 'blockers' for blocking tasks)
         - limit: Results per page (default 50, max 500)
         - offset: Results offset for pagination
     """
     labels_list = labels.split(",") if labels else None
     includes = include.split(",") if include else []
-    include_feature = "feature" in includes
+    include_capability = "capability" in includes
     include_blockers = "blockers" in includes
 
     tasks = task_store.list_tasks(
@@ -289,7 +289,7 @@ async def list_tasks(
         priority_filter=priority,
         labels_filter=labels_list,
         orphans_only=orphans_only,
-        include_feature=include_feature,
+        include_capability=include_capability,
         limit=limit,
         offset=offset,
     )
