@@ -804,69 +804,50 @@ def get_summary(project_id: str) -> dict[str, Any]:
         Dict with counts and breakdowns
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # Total count
-        cur.execute(
-            "SELECT COUNT(*) FROM evidence WHERE project_id = %s AND is_current = TRUE",
-            (project_id,),
-        )
-        total_row = cur.fetchone()
-        total = int(total_row[0]) if total_row and total_row[0] else 0
-
-        # By status
+        # Single query for all aggregations
         cur.execute(
             """
-            SELECT quality_status, COUNT(*)
+            SELECT
+                COUNT(*) FILTER (WHERE is_current = TRUE) as total_current,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND expires_at < NOW()) as expired_count,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND user_notes IS NOT NULL) as with_notes,
+                COALESCE(SUM(file_size_bytes), 0) as total_size,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'pending') as status_pending,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'passed') as status_passed,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'failed') as status_failed,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'needs_review') as status_needs_review
             FROM evidence
-            WHERE project_id = %s AND is_current = TRUE
-            GROUP BY quality_status
-            """,
-            (project_id,),
-        )
-        status_rows = cur.fetchall()
-        by_status = {}
-        for row in status_rows:
-            if row[1] is not None:
-                by_status[str(row[0])] = int(row[1])
-
-        # Expired count
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM evidence
-            WHERE project_id = %s AND is_current = TRUE AND expires_at < NOW()
-            """,
-            (project_id,),
-        )
-        expired_row = cur.fetchone()
-        expired = int(expired_row[0]) if expired_row and expired_row[0] else 0
-
-        # With user feedback
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM evidence
-            WHERE project_id = %s AND is_current = TRUE AND user_notes IS NOT NULL
-            """,
-            (project_id,),
-        )
-        notes_row = cur.fetchone()
-        with_notes = int(notes_row[0]) if notes_row and notes_row[0] else 0
-
-        # Total storage size
-        cur.execute(
-            """
-            SELECT COALESCE(SUM(file_size_bytes), 0) FROM evidence
             WHERE project_id = %s
             """,
             (project_id,),
         )
-        size_row = cur.fetchone()
-        total_size = int(size_row[0]) if size_row and size_row[0] else 0
+        row = cur.fetchone()
+
+        if not row:
+            return {
+                "total_current": 0,
+                "by_status": {},
+                "expired_count": 0,
+                "with_user_notes": 0,
+                "total_storage_bytes": 0,
+            }
+
+        by_status: dict[str, int] = {}
+        if row[4]:
+            by_status["pending"] = int(row[4])
+        if row[5]:
+            by_status["passed"] = int(row[5])
+        if row[6]:
+            by_status["failed"] = int(row[6])
+        if row[7]:
+            by_status["needs_review"] = int(row[7])
 
         return {
-            "total_current": total,
+            "total_current": int(row[0]) if row[0] else 0,
             "by_status": by_status,
-            "expired_count": expired,
-            "with_user_notes": with_notes,
-            "total_storage_bytes": total_size,
+            "expired_count": int(row[1]) if row[1] else 0,
+            "with_user_notes": int(row[2]) if row[2] else 0,
+            "total_storage_bytes": int(row[3]) if row[3] else 0,
         }
 
 
