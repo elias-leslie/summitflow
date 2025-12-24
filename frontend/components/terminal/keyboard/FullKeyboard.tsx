@@ -6,23 +6,23 @@ import "simple-keyboard/build/css/index.css";
 import { ModifierProvider, useModifiers } from "./ModifierContext";
 import { useKeyboardInput } from "./useKeyboardInput";
 import { KEY_SEQUENCES } from "./keyMappings";
-import { TerminalInputHandler, KeyboardMode } from "./types";
+import { TerminalInputHandler, KeyboardMode, KeyboardSizePreset, KEYBOARD_SIZE_HEIGHTS } from "./types";
 
-// Terminal-optimized keyboard layout
+// Terminal-optimized keyboard layout - arrows moved to control bar
 const layout = {
   default: [
     "{esc} 1 2 3 4 5 6 7 8 9 0 {bksp}",
-    "{tab} q w e r t y u i o p {enter}",
+    "{tab} q w e r t y u i o p",
     "{ctrl} a s d f g h j k l ; '",
-    "{shift} z x c v b n m , . /",
-    "{alt} {space} {arrowleft} {arrowup} {arrowdown} {arrowright} {toggle}",
+    "{shift} z x c v b n m , . / {alt}",
+    "{space} {enter}",
   ],
   shift: [
     "{esc} ! @ # $ % ^ & * ( ) {bksp}",
-    "{tab} Q W E R T Y U I O P {enter}",
+    "{tab} Q W E R T Y U I O P",
     "{ctrl} A S D F G H J K L : \"",
-    "{shift} Z X C V B N M < > ?",
-    "{alt} {space} {arrowleft} {arrowup} {arrowdown} {arrowright} {toggle}",
+    "{shift} Z X C V B N M < > ? {alt}",
+    "{space} {enter}",
   ],
 };
 
@@ -36,38 +36,35 @@ const display = {
   "{shift}": "SHIFT",
   "{alt}": "ALT",
   "{space}": "SPACE",
-  "{arrowleft}": "←",
-  "{arrowup}": "↑",
-  "{arrowdown}": "↓",
-  "{arrowright}": "→",
-  "{toggle}": "📱",
 };
 
 interface FullKeyboardProps {
   onSend: TerminalInputHandler;
   onToggleMode?: () => void;
   mode?: KeyboardMode;
+  keyboardSize?: KeyboardSizePreset;
 }
 
-function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboardProps) {
+function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize = "medium" }: FullKeyboardProps) {
   const keyboardRef = useRef<Keyboard | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { sendKey, sendRaw, modifiers } = useKeyboardInput({ onSend });
   const { toggleModifier } = useModifiers();
 
+  // Get row height based on size preset
+  const rowHeight = KEYBOARD_SIZE_HEIGHTS[keyboardSize];
+
   // Store callbacks in refs to avoid recreating keyboard on every change
   const sendKeyRef = useRef(sendKey);
   const sendRawRef = useRef(sendRaw);
   const toggleModifierRef = useRef(toggleModifier);
-  const onToggleModeRef = useRef(onToggleMode);
 
   // Keep refs updated
   useEffect(() => {
     sendKeyRef.current = sendKey;
     sendRawRef.current = sendRaw;
     toggleModifierRef.current = toggleModifier;
-    onToggleModeRef.current = onToggleMode;
-  }, [sendKey, sendRaw, toggleModifier, onToggleMode]);
+  }, [sendKey, sendRaw, toggleModifier]);
 
   // Initialize simple-keyboard ONCE (no dependencies that change)
   useEffect(() => {
@@ -92,18 +89,6 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
         case "{space}":
           sendKeyRef.current(" ");
           break;
-        case "{arrowleft}":
-          sendRawRef.current(KEY_SEQUENCES.ARROW_LEFT);
-          break;
-        case "{arrowup}":
-          sendRawRef.current(KEY_SEQUENCES.ARROW_UP);
-          break;
-        case "{arrowdown}":
-          sendRawRef.current(KEY_SEQUENCES.ARROW_DOWN);
-          break;
-        case "{arrowright}":
-          sendRawRef.current(KEY_SEQUENCES.ARROW_RIGHT);
-          break;
         case "{ctrl}":
           toggleModifierRef.current("ctrl");
           break;
@@ -119,9 +104,6 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
           break;
         case "{alt}":
           toggleModifierRef.current("alt");
-          break;
-        case "{toggle}":
-          onToggleModeRef.current?.();
           break;
         default:
           // Regular character

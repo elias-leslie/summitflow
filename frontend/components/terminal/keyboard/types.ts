@@ -21,3 +21,13 @@ export interface KeyConfig {
 
 // Terminal input handler type
 export type TerminalInputHandler = (sequence: string) => void;
+
+// Keyboard size presets for mobile
+export type KeyboardSizePreset = "small" | "medium" | "large";
+
+// Map size presets to row heights in pixels
+export const KEYBOARD_SIZE_HEIGHTS: Record<KeyboardSizePreset, number> = {
+  small: 36,
+  medium: 44,
+  large: 52,
+};
