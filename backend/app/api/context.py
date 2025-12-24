@@ -105,6 +105,17 @@ async def expand_entity(
     return ExpandResponse(**result)
 
 
+class SessionStartRequest(BaseModel):
+    """Request model for session-start context injection.
+
+    All fields optional for backward compatibility.
+    """
+
+    current_time: str | None = None  # Client's current time, e.g. "2024-12-24 09:45 PST"
+    recent_files: str | None = None  # Comma-separated list of recently modified files
+    uncommitted_count: int | None = None  # Number of uncommitted changes
+
+
 class SessionStartContextResponse(BaseModel):
     """Response model for session-start context injection."""
 
@@ -113,10 +124,10 @@ class SessionStartContextResponse(BaseModel):
     items_included: int
 
 
-@router.get("/{project_id}/context/session-start", response_model=SessionStartContextResponse)
+@router.post("/{project_id}/context/session-start", response_model=SessionStartContextResponse)
 async def get_session_start_context(
     project_id: str,
-    limit: int = Query(10, ge=1, le=20, description="Max items to include"),
+    request: SessionStartRequest | None = None,
 ) -> SessionStartContextResponse:
     """Get context for automatic session-start injection.
 
@@ -136,6 +147,9 @@ async def get_session_start_context(
             token_estimate=0,
             items_included=0,
         )
+
+    # Default limit; will be updated to adaptive limits in task 2.4
+    limit = 10
 
     builder = ContextBuilder(project_id=project_id)
     index = builder.build_index(
