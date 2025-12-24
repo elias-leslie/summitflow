@@ -17,6 +17,7 @@ interface TerminalProps {
   onStatusChange?: (status: ConnectionStatus) => void;
   fontFamily?: string;
   fontSize?: number;
+  suppressNativeKeyboard?: boolean;
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "session_dead" | "timeout";
@@ -36,6 +37,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   onStatusChange,
   fontFamily = "'JetBrains Mono', monospace",
   fontSize = 14,
+  suppressNativeKeyboard = false,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<InstanceType<typeof Terminal> | null>(null);
@@ -337,6 +339,31 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       }
     }
   }, [fontFamily, fontSize]);
+
+  // Apply keyboard suppression when enabled (for custom keyboard mode)
+  useEffect(() => {
+    if (!containerRef.current || !suppressNativeKeyboard) return;
+
+    // Find the xterm helper textarea
+    const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    if (!textarea) return;
+
+    // Apply suppression techniques
+    const originalInputMode = textarea.inputMode;
+    const originalReadOnly = textarea.readOnly;
+
+    // Tier 1: inputMode="none" (works on most mobile browsers)
+    textarea.inputMode = "none";
+
+    // Tier 2: readonly fallback
+    textarea.readOnly = true;
+
+    // Cleanup on unmount or when suppression is disabled
+    return () => {
+      textarea.inputMode = originalInputMode;
+      textarea.readOnly = originalReadOnly;
+    };
+  }, [suppressNativeKeyboard]);
 
   return (
     <div className={clsx("relative overflow-hidden", className)}>
