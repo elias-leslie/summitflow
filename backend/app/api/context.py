@@ -294,6 +294,13 @@ async def get_session_start_context(
         token_estimate: Estimated tokens in the block
         items_included: Number of items included
     """
+    from ..storage.memory import (
+        count_diary_entries_since,
+        count_observations_since,
+        list_diary_entries,
+        list_observations,
+    )
+
     # Check if context injection is enabled for this project
     if not is_memory_feature_enabled(project_id, "context_injection"):
         return SessionStartContextResponse(
@@ -302,50 +309,44 @@ async def get_session_start_context(
             items_included=0,
         )
 
-    # Default limit; will be updated to adaptive limits in task 2.4
-    limit = 10
+    # Calculate adaptive limits based on recent activity
+    # Diary: 3-5 entries based on sessions in last 24h
+    diary_count = count_diary_entries_since(project_id, hours=24)
+    diary_limit = min(5, max(3, diary_count))
 
-    builder = ContextBuilder(project_id=project_id)
-    index = builder.build_index(
-        limit=limit,
-        include_observations=True,
-        include_checkpoints=True,
-        include_patterns=True,
+    # Observations: 4-8 based on observations in last 2h
+    obs_count = count_observations_since(project_id, hours=2)
+    obs_limit = min(8, max(4, obs_count))
+
+    # Fetch data
+    diary = list_diary_entries(project_id=project_id, limit=diary_limit)
+    observations = list_observations(
+        project_id=project_id,
+        min_confidence=0.7,
+        limit=obs_limit,
     )
 
-    # Return empty if no items
-    if not index.get("items"):
-        return SessionStartContextResponse(
-            context_block="",
-            token_estimate=0,
-            items_included=0,
-        )
+    # Build git state from request
+    git_state: dict[str, Any] | None = None
+    if request:
+        git_state = {}
+        if request.current_time:
+            git_state["current_time"] = request.current_time
+        if request.recent_files:
+            git_state["recent_files"] = request.recent_files
+        if request.uncommitted_count is not None:
+            git_state["uncommitted_count"] = request.uncommitted_count
 
-    # Format as plain text for injection
-    lines = ["## Recent Project Context", ""]
-    for item in index["items"]:
-        item_type = item.get("type", "unknown")
-        title = item.get("title", item.get("summary", "No title"))
-        created = item.get("created_at", "")[:10] if item.get("created_at") else ""
+    # Format using new function
+    context_block = format_session_context(git_state, diary, observations)
 
-        if item_type == "observation":
-            obs_type = item.get("observation_type", "general")
-            lines.append(f"- [{obs_type}] {title} ({created})")
-        elif item_type == "checkpoint":
-            lines.append(f"- [checkpoint] {title} ({created})")
-        elif item_type == "pattern":
-            lines.append(f"- [pattern] {title}")
-        else:
-            lines.append(f"- {title}")
+    # Count items included
+    items_count = len(diary) + len(observations)
 
-    lines.append("")
-    lines.append("Use /projects/{project_id}/context/expand for full details.")
-
-    context_block = "\n".join(lines)
     token_estimate = len(context_block) // 4  # Rough estimate
 
     return SessionStartContextResponse(
         context_block=context_block,
         token_estimate=token_estimate,
-        items_included=len(index["items"]),
+        items_included=items_count,
     )
