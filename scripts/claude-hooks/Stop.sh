@@ -11,8 +11,8 @@
 
 set -euo pipefail
 
-# Context script location (global - stored in ~/.claude/scripts/)
-CONTEXT_SCRIPT="$HOME/.claude/scripts/check-context.js"
+# Context script location (git versioned in summitflow)
+CONTEXT_SCRIPT="/home/kasadis/summitflow/.claude/skills/context-manager/check.js"
 
 # Thresholds
 WARN_THRESHOLD=75
