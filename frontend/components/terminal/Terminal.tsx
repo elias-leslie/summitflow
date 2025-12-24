@@ -191,43 +191,52 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.readOnly = true;
         }
 
-        // Set up touch scrolling at DOCUMENT level to ensure we catch all events
-        // This is more reliable than attaching to the container
+        // Get the xterm viewport element for direct scroll manipulation
+        const viewport = containerRef.current.querySelector<HTMLElement>(".xterm-viewport");
+        if (!viewport) {
+          console.warn("[Terminal] Could not find .xterm-viewport for touch scrolling");
+        }
+
+        // Set up touch scrolling at DOCUMENT level
         const container = containerRef.current;
         let lastY = 0;
         let isScrolling = false;
-        let scrollTarget: typeof term | null = null;
 
         const handleTouchStart = (e: TouchEvent) => {
-          // Check if touch started inside our terminal container
-          const target = e.target as Node;
-          if (container.contains(target)) {
-            lastY = e.touches[0].clientY;
+          // Check if touch started inside our terminal container using bounding rect
+          const rect = container.getBoundingClientRect();
+          const touch = e.touches[0];
+          const isInside = (
+            touch.clientX >= rect.left &&
+            touch.clientX <= rect.right &&
+            touch.clientY >= rect.top &&
+            touch.clientY <= rect.bottom
+          );
+
+          if (isInside) {
+            lastY = touch.clientY;
             isScrolling = true;
-            scrollTarget = term;
           }
         };
 
         const handleTouchMove = (e: TouchEvent) => {
-          if (!isScrolling || !scrollTarget) return;
+          if (!isScrolling) return;
 
           // Prevent pull-to-refresh
           e.preventDefault();
 
           const currentY = e.touches[0].clientY;
-          const deltaY = currentY - lastY;
+          const deltaY = lastY - currentY; // Positive = scrolling down (finger moving up)
           lastY = currentY;
 
-          // Convert pixel delta to lines (roughly 1 line per 18px for smoother scrolling)
-          const lines = Math.round(-deltaY / 18);
-          if (lines !== 0) {
-            scrollTarget.scrollLines(lines);
+          // Scroll the viewport directly - more reliable than scrollLines()
+          if (viewport && Math.abs(deltaY) > 0) {
+            viewport.scrollTop += deltaY;
           }
         };
 
         const handleTouchEnd = () => {
           isScrolling = false;
-          scrollTarget = null;
         };
 
         // Attach to document with capture phase - catches events before anything else
