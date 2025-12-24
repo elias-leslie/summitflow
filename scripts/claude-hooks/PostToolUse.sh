@@ -23,6 +23,11 @@ SUMMITFLOW_API_URL="${SUMMITFLOW_API_URL:-http://localhost:8001/api}"
 SUMMITFLOW_ENABLED="${SUMMITFLOW_ENABLED:-1}"
 LOG_FILE="$HOME/.claude/hooks/summitflow.log"
 
+# Commit reminder configuration
+COMMIT_REMINDER_COUNTER_FILE="$HOME/.claude/hooks/.write-edit-counter"
+COMMIT_REMINDER_INTERVAL=5
+UNCOMMITTED_THRESHOLD=3
+
 # Exit if disabled
 if [ "$SUMMITFLOW_ENABLED" = "0" ]; then
     exit 0
@@ -130,6 +135,26 @@ if [ -n "$RESPONSE" ]; then
 elif [ -z "$RESPONSE" ]; then
     # API request failed - log but don't warn (might just be offline)
     echo "[$(date -Iseconds)] API request failed for: $TOOL_NAME" >> "$LOG_FILE"
+fi
+
+# Periodic commit reminder for Write/Edit tools
+if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
+    # Increment counter
+    CURRENT_COUNT=0
+    if [ -f "$COMMIT_REMINDER_COUNTER_FILE" ]; then
+        CURRENT_COUNT=$(cat "$COMMIT_REMINDER_COUNTER_FILE" 2>/dev/null || echo 0)
+    fi
+    NEW_COUNT=$((CURRENT_COUNT + 1))
+    echo "$NEW_COUNT" > "$COMMIT_REMINDER_COUNTER_FILE"
+
+    # Check if we should remind
+    if [ $((NEW_COUNT % COMMIT_REMINDER_INTERVAL)) -eq 0 ]; then
+        # Count uncommitted files
+        UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l || echo 0)
+        if [ "$UNCOMMITTED" -ge "$UNCOMMITTED_THRESHOLD" ]; then
+            echo "{\"systemMessage\": \"📝 Commit reminder: ${UNCOMMITTED} uncommitted files after ${NEW_COUNT} Write/Edit operations.\"}"
+        fi
+    fi
 fi
 
 exit 0
