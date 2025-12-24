@@ -7,13 +7,64 @@ This module provides REST API endpoints for the context system:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..services.memory import ContextBuilder
 from ..storage.agent_configs import is_memory_feature_enabled
+
+
+def format_relative_time(timestamp: str | None) -> str:
+    """Format timestamp as a human-readable relative time.
+
+    Args:
+        timestamp: ISO 8601 timestamp string (e.g., "2024-12-24T09:28:00")
+
+    Returns:
+        Human-readable relative time:
+        - "9:28 AM today" for today
+        - "yesterday 3:00 PM" for yesterday
+        - "Monday 3:00 PM" for this week (last 7 days)
+        - "Dec 22" for older dates
+    """
+    if not timestamp:
+        return ""
+
+    try:
+        # Parse ISO timestamp (handles both with and without timezone)
+        if timestamp.endswith("Z"):
+            timestamp = timestamp[:-1] + "+00:00"
+        dt = datetime.fromisoformat(timestamp)
+
+        # Convert to local timezone for display
+        local_tz = ZoneInfo("America/Los_Angeles")  # PST/PDT
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        dt_local = dt.astimezone(local_tz)
+
+        now = datetime.now(local_tz)
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        dt_date = dt_local.date()
+
+        time_str = dt_local.strftime("%-I:%M %p").lstrip("0")
+
+        if dt_date == today:
+            return f"{time_str} today"
+        elif dt_date == yesterday:
+            return f"yesterday {time_str}"
+        elif (today - dt_date).days < 7:
+            day_name = dt_local.strftime("%A")
+            return f"{day_name} {time_str}"
+        else:
+            return dt_local.strftime("%b %-d")
+    except (ValueError, TypeError):
+        return ""
+
 
 router = APIRouter()
 
