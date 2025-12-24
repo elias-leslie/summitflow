@@ -231,6 +231,18 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           )}
         </button>
 
+        {/* Reconnect button - visible when disconnected */}
+        {showReconnect && (
+          <button
+            onClick={handleReconnect}
+            className="flex items-center gap-1 px-2 py-1.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-slate-700/50 rounded transition-colors"
+            title="Reconnect terminal"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span className="hidden sm:inline">Reconnect</span>
+          </button>
+        )}
+
         {/* Layout mode buttons - hidden on mobile */}
         {!isMobile && (
           <div className="ml-auto flex items-center gap-0.5 border-l border-slate-700 pl-2">
@@ -311,11 +323,19 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
               )}
             >
               <TerminalComponent
+                ref={(handle) => {
+                  if (handle) {
+                    terminalRefs.current.set(session.id, handle);
+                  } else {
+                    terminalRefs.current.delete(session.id);
+                  }
+                }}
                 sessionId={session.id}
                 workingDir={session.working_dir || projectPath}
                 className="h-full"
                 fontFamily={fontFamily}
                 fontSize={fontSize}
+                onStatusChange={(status) => handleStatusChange(session.id, status)}
               />
             </div>
           ))
@@ -335,6 +355,14 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 paneCount={splitPaneCount}
                 fontFamily={fontFamily}
                 fontSize={fontSize}
+                onTerminalRef={(handle) => {
+                  if (handle) {
+                    terminalRefs.current.set(session.id, handle);
+                  } else {
+                    terminalRefs.current.delete(session.id);
+                  }
+                }}
+                onStatusChange={(status) => handleStatusChange(session.id, status)}
               />
             ))}
           </Group>
@@ -353,9 +381,11 @@ interface SplitPaneProps {
   paneCount: number;
   fontFamily: string;
   fontSize: number;
+  onTerminalRef?: (handle: TerminalHandle | null) => void;
+  onStatusChange?: (status: ConnectionStatus) => void;
 }
 
-function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize }: SplitPaneProps) {
+function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize, onTerminalRef, onStatusChange }: SplitPaneProps) {
   const defaultSize = 100 / paneCount;
   const minSize = `${Math.max(10, 100 / (paneCount * 2))}%`; // String percentage for proper sizing
 
@@ -375,11 +405,13 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFa
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">
           <TerminalComponent
+            ref={onTerminalRef}
             sessionId={session.id}
             workingDir={session.working_dir || projectPath}
             className="h-full"
             fontFamily={fontFamily}
             fontSize={fontSize}
+            onStatusChange={onStatusChange}
           />
         </div>
       </Panel>
