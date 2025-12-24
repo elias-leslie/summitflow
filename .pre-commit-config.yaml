@@ -30,5 +30,12 @@ repos:
           - celery>=5.4.0
           - types-redis
 
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.390
+    hooks:
+      - id: pyright
+        args: [--project, backend/pyrightconfig.json]
+        files: ^backend/app/
+
 ci:
   autoupdate_schedule: weekly
