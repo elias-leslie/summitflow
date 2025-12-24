@@ -276,6 +276,11 @@ export function TerminalComponent({
           "w-full h-full",
           "bg-slate-900 overflow-hidden"
         )}
+        style={{
+          overscrollBehavior: "contain",
+          touchAction: "none",
+        }}
+        onTouchMove={(e) => e.stopPropagation()}
       />
     </div>
   );
