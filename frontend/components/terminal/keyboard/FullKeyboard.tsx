@@ -193,9 +193,13 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
           border: none;
           border-radius: 4px;
           height: ${rowHeight}px;
+          min-width: 28px;
           font-size: ${rowHeight <= 36 ? 12 : rowHeight <= 44 ? 14 : 16}px;
           box-shadow: none;
-          flex-grow: 1;
+          flex: 1 1 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .terminal-keyboard-theme .hg-button:active {
@@ -213,6 +217,9 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
         }
 
         .terminal-keyboard-theme .hg-row {
+          display: flex;
+          flex-direction: row;
+          gap: 4px;
           margin-bottom: 4px;
         }
 

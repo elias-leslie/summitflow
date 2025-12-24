@@ -4,7 +4,7 @@ import { ReactNode, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { Terminal, ChevronDown } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 import { useIsMobile } from "@/lib/hooks/use-media-query";
 import { TerminalTabs } from "@/components/terminal/TerminalTabs";
@@ -74,17 +74,6 @@ export function AppShell({ children }: AppShellProps) {
               projectPath={projectPath}
               className="flex-1"
             />
-
-            {/* Minimize pill button at bottom */}
-            <div className="flex justify-center pb-4 pt-2">
-              <button
-                onClick={toggle}
-                className="flex items-center gap-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-full text-sm text-slate-300 transition-colors"
-              >
-                <ChevronDown className="w-4 h-4" />
-                <span>Minimize</span>
-              </button>
-            </div>
           </div>
         )}
 
