@@ -64,6 +64,11 @@ def _create_tmux_session(session_id: str, working_dir: str | None = None) -> str
         )
         logger.info("tmux_session_created", session=session_name, working_dir=working_dir)
     else:
+        # Ensure mouse is off for existing sessions too
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "mouse", "off"],
+            capture_output=True,
+        )
         logger.info("tmux_session_attached", session=session_name)
 
     return session_name
