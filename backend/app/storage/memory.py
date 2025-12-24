@@ -833,6 +833,33 @@ def get_unreflected_diary_count(project_id: str) -> int:
     return result[0] if result else 0
 
 
+def count_diary_entries_since(
+    project_id: str,
+    hours: int = 24,
+) -> int:
+    """Count diary entries created in the last N hours.
+
+    Args:
+        project_id: Project to count for.
+        hours: Time window in hours (default: 24).
+
+    Returns:
+        Count of diary entries created within the time window.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM session_diary
+            WHERE project_id = %s
+              AND created_at >= NOW() - INTERVAL '%s hours'
+            """,
+            (project_id, hours),
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+
 def mark_diary_entries_reflected(
     entry_ids: list[str],
     reflection_notes: str | None = None,
