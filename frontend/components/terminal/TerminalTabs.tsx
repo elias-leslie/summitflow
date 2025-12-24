@@ -9,7 +9,8 @@ import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import { EssentialKeyBar } from "./keyboard/EssentialKeyBar";
+import { MobileKeyboard, useMobileKeyboardMode } from "./keyboard/MobileKeyboard";
+import { KeyboardMode } from "./keyboard/types";
 
 // Maximum number of split panes
 const MAX_SPLIT_PANES = 4;
@@ -49,6 +50,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const { fontId, fontSize, fontFamily, setFontId, setFontSize } = useTerminalSettings();
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [showSettings, setShowSettings] = useState(false);
+  const [keyboardMode, setKeyboardMode] = useState<KeyboardMode>("native");
 
   // Terminal refs and connection status tracking
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map());
@@ -387,6 +389,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                 fontFamily={fontFamily}
                 fontSize={fontSize}
                 onStatusChange={(status) => handleStatusChange(session.id, status)}
+                suppressNativeKeyboard={isMobile && keyboardMode === "custom"}
               />
             </div>
           ))
@@ -414,15 +417,16 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
                   }
                 }}
                 onStatusChange={(status) => handleStatusChange(session.id, status)}
+                suppressNativeKeyboard={isMobile && keyboardMode === "custom"}
               />
             ))}
           </Group>
         )}
       </div>
 
-      {/* Essential key bar - mobile only */}
+      {/* Mobile keyboard - only on mobile */}
       {isMobile && sessions.length > 0 && (
-        <EssentialKeyBar onSend={handleKeyboardInput} />
+        <MobileKeyboard onSend={handleKeyboardInput} onModeChange={setKeyboardMode} />
       )}
     </div>
   );
@@ -439,9 +443,10 @@ interface SplitPaneProps {
   fontSize: number;
   onTerminalRef?: (handle: TerminalHandle | null) => void;
   onStatusChange?: (status: ConnectionStatus) => void;
+  suppressNativeKeyboard?: boolean;
 }
 
-function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize, onTerminalRef, onStatusChange }: SplitPaneProps) {
+function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFamily, fontSize, onTerminalRef, onStatusChange, suppressNativeKeyboard }: SplitPaneProps) {
   const defaultSize = 100 / paneCount;
   const minSize = `${Math.max(10, 100 / (paneCount * 2))}%`; // String percentage for proper sizing
 
@@ -468,6 +473,7 @@ function SplitPane({ session, projectPath, layoutMode, isLast, paneCount, fontFa
             fontFamily={fontFamily}
             fontSize={fontSize}
             onStatusChange={onStatusChange}
+            suppressNativeKeyboard={suppressNativeKeyboard}
           />
         </div>
       </Panel>
