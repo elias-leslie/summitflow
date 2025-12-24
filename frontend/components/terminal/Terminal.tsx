@@ -183,10 +183,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       fitAddonRef.current = fitAddon;
 
       // Mobile-specific setup
-      const isMobile = isMobileDevice();
-      console.log("[Terminal] isMobileDevice:", isMobile, "container:", !!containerRef.current);
-
-      if (isMobile) {
+      if (isMobileDevice()) {
         // Suppress native keyboard - we use custom keyboard
         const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
         if (textarea) {
@@ -194,50 +191,57 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.readOnly = true;
         }
 
-        // Set up touch scrolling with capture phase to intercept before xterm
+        // Set up touch scrolling at DOCUMENT level to ensure we catch all events
+        // This is more reliable than attaching to the container
         const container = containerRef.current;
         let lastY = 0;
         let isScrolling = false;
+        let scrollTarget: typeof term | null = null;
 
         const handleTouchStart = (e: TouchEvent) => {
-          console.log("[Terminal] touchstart", e.touches[0].clientY);
-          lastY = e.touches[0].clientY;
-          isScrolling = true;
+          // Check if touch started inside our terminal container
+          const target = e.target as Node;
+          if (container.contains(target)) {
+            lastY = e.touches[0].clientY;
+            isScrolling = true;
+            scrollTarget = term;
+          }
         };
 
         const handleTouchMove = (e: TouchEvent) => {
-          if (!isScrolling) return;
-          e.preventDefault(); // Block pull-to-refresh
-          e.stopPropagation(); // Stop xterm from getting this
+          if (!isScrolling || !scrollTarget) return;
+
+          // Prevent pull-to-refresh
+          e.preventDefault();
 
           const currentY = e.touches[0].clientY;
           const deltaY = currentY - lastY;
           lastY = currentY;
 
-          // Convert pixel delta to lines (roughly 1 line per 20px)
-          const lines = Math.round(-deltaY / 20);
-          console.log("[Terminal] touchmove deltaY:", deltaY, "lines:", lines);
+          // Convert pixel delta to lines (roughly 1 line per 18px for smoother scrolling)
+          const lines = Math.round(-deltaY / 18);
           if (lines !== 0) {
-            term.scrollLines(lines);
+            scrollTarget.scrollLines(lines);
           }
         };
 
         const handleTouchEnd = () => {
-          console.log("[Terminal] touchend");
           isScrolling = false;
+          scrollTarget = null;
         };
 
-        // Use capture phase to get events before xterm's handlers
-        container.addEventListener("touchstart", handleTouchStart, { passive: true, capture: true });
-        container.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
-        container.addEventListener("touchend", handleTouchEnd, { passive: true, capture: true });
-        console.log("[Terminal] Touch handlers attached to container");
+        // Attach to document with capture phase - catches events before anything else
+        document.addEventListener("touchstart", handleTouchStart, { passive: true, capture: true });
+        document.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
+        document.addEventListener("touchend", handleTouchEnd, { passive: true, capture: true });
+        document.addEventListener("touchcancel", handleTouchEnd, { passive: true, capture: true });
 
         // Store cleanup function
         const cleanupTouch = () => {
-          container.removeEventListener("touchstart", handleTouchStart, { capture: true });
-          container.removeEventListener("touchmove", handleTouchMove, { capture: true });
-          container.removeEventListener("touchend", handleTouchEnd, { capture: true });
+          document.removeEventListener("touchstart", handleTouchStart, { capture: true });
+          document.removeEventListener("touchmove", handleTouchMove, { capture: true });
+          document.removeEventListener("touchend", handleTouchEnd, { capture: true });
+          document.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
         };
         (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
       }
