@@ -11,8 +11,8 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/home/kasadis/summitflow"
-CONTEXT_SCRIPT="${PROJECT_DIR}/.claude/skills/context-manager/check.js"
+# Context script location (global - stored in ~/.claude/scripts/)
+CONTEXT_SCRIPT="$HOME/.claude/scripts/check-context.js"
 
 # Thresholds
 WARN_THRESHOLD=75
@@ -24,11 +24,23 @@ UNCOMMITTED_WARN_THRESHOLD=5
 # Read stdin (JSON input)
 INPUT=$(cat)
 
+# Extract cwd from input and detect project
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+if [[ -z "$CWD" ]]; then
+    exit 0
+fi
+
+# Detect project directory from git root
+cd "$CWD" 2>/dev/null || exit 0
+PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+PROJECT_ID=$(basename "$PROJECT_DIR")
+
 # Function to get context info
 get_context_info() {
     if [[ -f "$CONTEXT_SCRIPT" ]]; then
         local output
-        output=$(cd "$PROJECT_DIR" && node "$CONTEXT_SCRIPT" --json 2>/dev/null) || true
+        # Pass project ID to context script
+        output=$(node "$CONTEXT_SCRIPT" --json --project "$PROJECT_ID" 2>/dev/null) || true
         if [[ -n "$output" ]]; then
             echo "$output"
             return 0

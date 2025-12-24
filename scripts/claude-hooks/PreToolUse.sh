@@ -10,11 +10,18 @@
 
 set -euo pipefail
 
-# Read stdin (JSON input with tool_name, tool_input, etc.)
+# Read stdin (JSON input with tool_name, tool_input, cwd, etc.)
 INPUT=$(cat)
 
-# Get project directory from environment or default
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-/home/kasadis/summitflow}"
+# Extract cwd from input and detect project
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+if [[ -z "$CWD" ]]; then
+    exit 0
+fi
+
+# Detect project directory from git root
+cd "$CWD" 2>/dev/null || exit 0
+PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 # Thresholds
 UNCOMMITTED_THRESHOLD=10
