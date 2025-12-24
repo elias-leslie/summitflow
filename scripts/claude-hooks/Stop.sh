@@ -2,11 +2,11 @@
 #
 # Stop hook - Context monitoring after each response.
 #
-# Monitors context usage and provides warnings:
-# - 75-79%: Warning message
-# - 80-84%: Wrap up warning - finish current task and notify user
-# - 85-89%: Auto-commit + urgent warning
-# - 90%+: Critical - end session immediately
+# Monitors context usage and takes action:
+# - 75-79%: Warning message only
+# - 80-84%: Auto-commit + wrap up warning
+# - 85-89%: Auto-commit + auto-push + urgent warning
+# - 90%+: Auto-commit + auto-push + critical end session
 #
 
 set -euo pipefail
@@ -48,10 +48,20 @@ get_uncommitted_count() {
 auto_commit() {
     local message="$1"
     cd "$PROJECT_DIR"
-    if git add -A 2>/dev/null && git commit -m "$message" 2>/dev/null; then
+    if git add -A 2>/dev/null && SKIP=mypy,pyright git commit -m "$message" 2>/dev/null; then
         echo "committed"
     else
-        echo "needs commit"
+        echo "nothing to commit"
+    fi
+}
+
+# Function to auto-push
+auto_push() {
+    cd "$PROJECT_DIR"
+    if git push 2>/dev/null; then
+        echo "pushed"
+    else
+        echo "push failed"
     fi
 }
 
@@ -70,18 +80,23 @@ main() {
 
     if (( context_pct >= CRITICAL_THRESHOLD )); then
         local commit_msg="checkpoint: auto-save at ${context_pct}% context"
-        local status
-        status=$(auto_commit "$commit_msg")
-        messages+=("🔴 CRITICAL: ${context_pct}% context (${status}). END SESSION NOW. Tell user: 'I've reached context limit. Please start a new session.'")
+        local commit_status push_status
+        commit_status=$(auto_commit "$commit_msg")
+        push_status=$(auto_push)
+        messages+=("🔴 CRITICAL: ${context_pct}% context (${commit_status}, ${push_status}). END SESSION NOW. Tell user: 'I've reached context limit. Please start a new session.'")
 
     elif (( context_pct >= CHECKPOINT_THRESHOLD )); then
         local commit_msg="checkpoint: auto-save at ${context_pct}% context"
-        local status
-        status=$(auto_commit "$commit_msg")
-        messages+=("🟠 HIGH: ${context_pct}% (${status}). Finish current task, commit, and notify user to start new session.")
+        local commit_status push_status
+        commit_status=$(auto_commit "$commit_msg")
+        push_status=$(auto_push)
+        messages+=("🟠 HIGH: ${context_pct}% (${commit_status}, ${push_status}). Finish current task and notify user to start new session.")
 
     elif (( context_pct >= WRAP_UP_THRESHOLD )); then
-        messages+=("🟡 WRAP UP: ${context_pct}% context. Finish current task, commit progress, then notify user you're at 80% and they should start a new session.")
+        local commit_msg="checkpoint: auto-save at ${context_pct}% context"
+        local commit_status
+        commit_status=$(auto_commit "$commit_msg")
+        messages+=("🟡 WRAP UP: ${context_pct}% context (${commit_status}). Finish current task, then notify user you're at 80% and they should start a new session.")
 
     elif (( context_pct >= WARN_THRESHOLD )); then
         messages+=("📊 Context: ${context_pct}%. Approaching wrap-up threshold.")
