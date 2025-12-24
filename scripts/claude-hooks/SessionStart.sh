@@ -46,9 +46,23 @@ fi
 # API endpoint
 API_BASE="${SUMMITFLOW_API:-http://localhost:8001/api}"
 
-# Fetch context from SummitFlow
+# Collect git state for context injection
+CURRENT_TIME=$(date '+%Y-%m-%d %H:%M %Z')
+RECENT_FILES=$(git log -1 --name-only --pretty=format: 2>/dev/null | head -5 | paste -sd, 2>/dev/null || echo "")
+
+# Build JSON request body
+REQUEST_BODY=$(jq -n \
+    --arg current_time "$CURRENT_TIME" \
+    --arg recent_files "$RECENT_FILES" \
+    --argjson uncommitted "$UNCOMMITTED" \
+    '{current_time: $current_time, recent_files: $recent_files, uncommitted_count: $uncommitted}')
+
+# Fetch context from SummitFlow (POST with JSON body)
 RESPONSE=$(curl -s --max-time 5 \
-    "${API_BASE}/projects/${PROJECT_ID}/context/session-start?limit=10" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "$REQUEST_BODY" \
+    "${API_BASE}/projects/${PROJECT_ID}/context/session-start" \
     2>/dev/null) || exit 0
 
 # Extract context_block from response
