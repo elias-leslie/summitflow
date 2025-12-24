@@ -137,7 +137,7 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
       mergeDisplay: true,
       physicalKeyboardHighlight: false,
       physicalKeyboardHighlightPress: false,
-      disableButtonHold: true,
+      disableButtonHold: false,
     });
 
     keyboardRef.current = keyboard;

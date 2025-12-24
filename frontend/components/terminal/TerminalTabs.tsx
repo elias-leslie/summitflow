@@ -300,8 +300,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           </div>
         )}
 
-        {/* Settings button - hidden on mobile (in control bar) */}
-        {!isMobile && (
+        {/* Settings button - always visible, pushed to right on mobile */}
+        <div className={clsx("flex items-center gap-1", isMobile && "ml-auto")}>
           <SettingsDropdown
             fontId={fontId}
             fontSize={fontSize}
@@ -310,18 +310,16 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             showSettings={showSettings}
             setShowSettings={setShowSettings}
           />
-        )}
 
-        {/* Close terminal button - hidden on mobile (in control bar) */}
-        {!isMobile && (
+          {/* Close/minimize terminal button */}
           <button
             onClick={() => setOpen(false)}
-            title="Close terminal"
-            className="ml-2 p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
+            title="Minimize terminal"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
           >
             <Minus className="w-4 h-4" />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Terminal panels - use min-h-0 to allow flex-1 to shrink below content size */}

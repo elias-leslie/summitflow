@@ -5,7 +5,6 @@ import { FullKeyboard } from "./FullKeyboard";
 import { ControlBar } from "./ControlBar";
 import { KeyboardMode, KeyboardSizePreset, TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
-import { TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 
 const STORAGE_KEY = "terminal-keyboard-mode";
 const SIZE_STORAGE_KEY = "terminal-keyboard-size";
@@ -15,12 +14,6 @@ interface MobileKeyboardProps {
   onModeChange?: (mode: KeyboardMode) => void;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
-  onMinimize?: () => void;
-  // Font settings
-  fontId?: TerminalFontId;
-  fontSize?: TerminalFontSize;
-  onFontIdChange?: (id: TerminalFontId) => void;
-  onFontSizeChange?: (size: TerminalFontSize) => void;
 }
 
 export function MobileKeyboard({
@@ -28,15 +21,30 @@ export function MobileKeyboard({
   onModeChange,
   connectionStatus = "connected",
   onReconnect,
-  onMinimize,
-  fontId,
-  fontSize,
-  onFontIdChange,
-  onFontSizeChange,
 }: MobileKeyboardProps) {
   const [mode, setMode] = useState<KeyboardMode>("native");
   const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
   const [isLoaded, setIsLoaded] = useState(false);
+  const [ctrlActive, setCtrlActive] = useState(false);
+
+  // Wrapped onSend that handles CTRL modifier
+  const handleSend = useCallback((key: string) => {
+    if (ctrlActive && key.length === 1) {
+      // Send Ctrl+key sequence (ASCII control codes)
+      const char = key.toLowerCase();
+      if (char >= 'a' && char <= 'z') {
+        const ctrlCode = char.charCodeAt(0) - 96; // a=1, b=2, ..., z=26
+        onSend(String.fromCharCode(ctrlCode));
+        setCtrlActive(false);
+        return;
+      }
+    }
+    onSend(key);
+  }, [ctrlActive, onSend]);
+
+  const handleCtrlToggle = useCallback(() => {
+    setCtrlActive(prev => !prev);
+  }, []);
 
   // Load preferences from localStorage on mount
   useEffect(() => {
@@ -91,11 +99,13 @@ export function MobileKeyboard({
         fontSize={fontSize}
         onFontIdChange={onFontIdChange}
         onFontSizeChange={onFontSizeChange}
+        ctrlActive={ctrlActive}
+        onCtrlToggle={handleCtrlToggle}
       />
       {/* Show full keyboard only in custom mode */}
       {mode === "custom" && (
         <FullKeyboard
-          onSend={onSend}
+          onSend={handleSend}
           keyboardSize={keyboardSize}
         />
       )}
