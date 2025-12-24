@@ -127,6 +127,14 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize
       physicalKeyboardHighlightPress: false,
       // Disable key repeat/hold behavior
       disableButtonHold: true,
+      // Custom button attributes for sizing
+      buttonAttributes: [
+        {
+          attribute: "data-skbtnuid",
+          value: "bksp",
+          buttons: "{bksp}",
+        },
+      ],
     });
 
     keyboardRef.current = keyboard;
@@ -172,7 +180,7 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize
   }, [modifiers]);
 
   return (
-    <div className="terminal-keyboard-container bg-slate-800 border-t border-slate-700">
+    <div className="terminal-keyboard-container bg-slate-800">
       <div ref={containerRef} />
       <style jsx global>{`
         .terminal-keyboard-theme {
@@ -186,9 +194,10 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize
           color: #e2e8f0;
           border: none;
           border-radius: 4px;
-          height: 36px;
-          font-size: 12px;
+          height: ${rowHeight}px;
+          font-size: ${rowHeight <= 36 ? 12 : rowHeight <= 44 ? 14 : 16}px;
           box-shadow: none;
+          flex-grow: 1;
         }
 
         .terminal-keyboard-theme .hg-button:active {
@@ -211,6 +220,34 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom", keyboardSize
 
         .terminal-keyboard-theme .hg-row:last-child {
           margin-bottom: 0;
+        }
+
+        /* Backspace - slightly wider */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{bksp}"] {
+          flex-grow: 1.25;
+        }
+
+        /* Space key - 66% of bottom row */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{space}"] {
+          flex-grow: 2;
+        }
+
+        /* Enter key - 33% of bottom row */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{enter}"] {
+          flex-grow: 1;
+        }
+
+        /* Modifier keys - slightly wider */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{ctrl}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{shift}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{alt}"] {
+          flex-grow: 1.25;
+        }
+
+        /* ESC and TAB */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{esc}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{tab}"] {
+          flex-grow: 1.25;
         }
       `}</style>
     </div>

@@ -242,8 +242,8 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           )}
         </button>
 
-        {/* Reconnect button - visible when disconnected */}
-        {showReconnect && (
+        {/* Reconnect button - visible when disconnected, hidden on mobile (in control bar) */}
+        {showReconnect && !isMobile && (
           <button
             onClick={handleReconnect}
             className="flex items-center gap-1 px-2 py-1.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-slate-700/50 rounded transition-colors"
@@ -385,7 +385,14 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
       {/* Mobile keyboard - only on mobile */}
       {isMobile && sessions.length > 0 && (
-        <MobileKeyboard onSend={handleKeyboardInput} onModeChange={setKeyboardMode} />
+        <MobileKeyboard
+          onSend={handleKeyboardInput}
+          onModeChange={setKeyboardMode}
+          connectionStatus={activeStatus}
+          onReconnect={handleReconnect}
+          onMinimize={() => setOpen(false)}
+          onShowSettings={() => setShowSettings(!showSettings)}
+        />
       )}
     </div>
   );
