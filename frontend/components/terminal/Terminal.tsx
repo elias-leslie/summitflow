@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 let Terminal: typeof import("@xterm/xterm").Terminal;
 let FitAddon: typeof import("@xterm/addon-fit").FitAddon;
 let WebLinksAddon: typeof import("@xterm/addon-web-links").WebLinksAddon;
+let ClipboardAddon: typeof import("@xterm/addon-clipboard").ClipboardAddon;
 
 interface TerminalProps {
   sessionId: string;
@@ -92,12 +93,14 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       const xtermModule = await import("@xterm/xterm");
       const fitModule = await import("@xterm/addon-fit");
       const webLinksModule = await import("@xterm/addon-web-links");
+      const clipboardModule = await import("@xterm/addon-clipboard");
 
       if (!mounted) return;
 
       Terminal = xtermModule.Terminal;
       FitAddon = fitModule.FitAddon;
       WebLinksAddon = webLinksModule.WebLinksAddon;
+      ClipboardAddon = clipboardModule.ClipboardAddon;
 
       // Create terminal
       const term = new Terminal({
@@ -132,9 +135,11 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       // Create addons
       const fitAddon = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
+      const clipboardAddon = new ClipboardAddon();
 
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
+      term.loadAddon(clipboardAddon);
 
       // Open terminal in container
       term.open(containerRef.current);
