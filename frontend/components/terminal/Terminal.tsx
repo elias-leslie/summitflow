@@ -183,7 +183,10 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       fitAddonRef.current = fitAddon;
 
       // Mobile-specific setup
-      if (isMobileDevice()) {
+      const isMobile = isMobileDevice();
+      console.log("[Terminal] isMobileDevice:", isMobile, "container:", !!containerRef.current);
+
+      if (isMobile) {
         // Suppress native keyboard - we use custom keyboard
         const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
         if (textarea) {
@@ -191,50 +194,52 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.readOnly = true;
         }
 
-        // Set up touch scrolling on the xterm screen element
-        // We attach to .xterm-screen because it covers the visible terminal area
-        const screen = containerRef.current.querySelector<HTMLElement>(".xterm-screen");
-        if (screen) {
-          let lastY = 0;
-          let isScrolling = false;
+        // Set up touch scrolling with capture phase to intercept before xterm
+        const container = containerRef.current;
+        let lastY = 0;
+        let isScrolling = false;
 
-          const handleTouchStart = (e: TouchEvent) => {
-            lastY = e.touches[0].clientY;
-            isScrolling = true;
-          };
+        const handleTouchStart = (e: TouchEvent) => {
+          console.log("[Terminal] touchstart", e.touches[0].clientY);
+          lastY = e.touches[0].clientY;
+          isScrolling = true;
+        };
 
-          const handleTouchMove = (e: TouchEvent) => {
-            if (!isScrolling) return;
-            e.preventDefault(); // Block pull-to-refresh
+        const handleTouchMove = (e: TouchEvent) => {
+          if (!isScrolling) return;
+          e.preventDefault(); // Block pull-to-refresh
+          e.stopPropagation(); // Stop xterm from getting this
 
-            const currentY = e.touches[0].clientY;
-            const deltaY = currentY - lastY;
-            lastY = currentY;
+          const currentY = e.touches[0].clientY;
+          const deltaY = currentY - lastY;
+          lastY = currentY;
 
-            // Convert pixel delta to lines (roughly 1 line per 20px)
-            const lines = Math.round(-deltaY / 20);
-            if (lines !== 0) {
-              term.scrollLines(lines);
-            }
-          };
+          // Convert pixel delta to lines (roughly 1 line per 20px)
+          const lines = Math.round(-deltaY / 20);
+          console.log("[Terminal] touchmove deltaY:", deltaY, "lines:", lines);
+          if (lines !== 0) {
+            term.scrollLines(lines);
+          }
+        };
 
-          const handleTouchEnd = () => {
-            isScrolling = false;
-          };
+        const handleTouchEnd = () => {
+          console.log("[Terminal] touchend");
+          isScrolling = false;
+        };
 
-          screen.addEventListener("touchstart", handleTouchStart, { passive: true });
-          screen.addEventListener("touchmove", handleTouchMove, { passive: false });
-          screen.addEventListener("touchend", handleTouchEnd, { passive: true });
+        // Use capture phase to get events before xterm's handlers
+        container.addEventListener("touchstart", handleTouchStart, { passive: true, capture: true });
+        container.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
+        container.addEventListener("touchend", handleTouchEnd, { passive: true, capture: true });
+        console.log("[Terminal] Touch handlers attached to container");
 
-          // Store cleanup function for later
-          const cleanupTouch = () => {
-            screen.removeEventListener("touchstart", handleTouchStart);
-            screen.removeEventListener("touchmove", handleTouchMove);
-            screen.removeEventListener("touchend", handleTouchEnd);
-          };
-          // We'll clean up when terminal disposes (handled in main cleanup)
-          (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
-        }
+        // Store cleanup function
+        const cleanupTouch = () => {
+          container.removeEventListener("touchstart", handleTouchStart, { capture: true });
+          container.removeEventListener("touchmove", handleTouchMove, { capture: true });
+          container.removeEventListener("touchend", handleTouchEnd, { capture: true });
+        };
+        (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
       }
 
       // Fit immediately and again after a short delay to ensure proper sizing
@@ -457,15 +462,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       {/* Terminal container - no min-height to prevent overflow */}
       <div
         ref={containerRef}
-        className={clsx(
-          "w-full h-full",
-          "bg-slate-900 overflow-hidden"
-        )}
-        style={{
-          // Full JS control of touch - our handler manages scrolling and prevents pull-to-refresh
-          touchAction: "none",
-          overscrollBehavior: "none",
-        }}
+        className="w-full h-full bg-slate-900 overflow-hidden"
       />
     </div>
   );

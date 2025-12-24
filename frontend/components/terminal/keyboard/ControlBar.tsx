@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { clsx } from "clsx";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { TerminalInputHandler } from "./types";
@@ -15,6 +15,9 @@ interface ControlBarProps {
   // CTRL modifier
   ctrlActive?: boolean;
   onCtrlToggle?: () => void;
+  // Keyboard minimize
+  minimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 export function ControlBar({
@@ -23,6 +26,8 @@ export function ControlBar({
   onReconnect,
   ctrlActive = false,
   onCtrlToggle,
+  minimized = false,
+  onToggleMinimize,
 }: ControlBarProps) {
   // Arrow key handlers
   const handleArrowLeft = useCallback(() => onSend(KEY_SEQUENCES.ARROW_LEFT), [onSend]);
@@ -105,7 +110,7 @@ export function ControlBar({
         </button>
       </div>
 
-      {/* Right side - connection status/reconnect */}
+      {/* Right side - connection status/reconnect and keyboard toggle */}
       <div className="flex items-center gap-1 ml-auto">
         <button
           type="button"
@@ -122,6 +127,23 @@ export function ControlBar({
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+
+        {/* Keyboard minimize/expand toggle */}
+        {onToggleMinimize && (
+          <button
+            type="button"
+            onClick={onToggleMinimize}
+            className={clsx(
+              "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
+              minimized
+                ? "bg-phosphor-600 text-white"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            )}
+            title={minimized ? "Show keyboard" : "Hide keyboard"}
+          >
+            {minimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        )}
       </div>
     </div>
   );

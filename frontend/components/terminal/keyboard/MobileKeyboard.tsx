@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { FullKeyboard } from "./FullKeyboard";
 import { ControlBar } from "./ControlBar";
 import { KeyboardSizePreset, TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
+
+const MINIMIZED_STORAGE_KEY = "terminal-keyboard-minimized";
 
 interface MobileKeyboardProps {
   onSend: TerminalInputHandler;
@@ -20,6 +22,24 @@ export function MobileKeyboard({
   keyboardSize = "medium",
 }: MobileKeyboardProps) {
   const [ctrlActive, setCtrlActive] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+
+  // Load minimized state from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem(MINIMIZED_STORAGE_KEY);
+    if (stored === "true") {
+      setMinimized(true);
+    }
+  }, []);
+
+  // Save minimized state
+  const handleToggleMinimize = useCallback(() => {
+    setMinimized(prev => {
+      const newValue = !prev;
+      localStorage.setItem(MINIMIZED_STORAGE_KEY, String(newValue));
+      return newValue;
+    });
+  }, []);
 
   // Wrapped onSend that handles CTRL modifier
   const handleSend = useCallback((key: string) => {
@@ -49,12 +69,16 @@ export function MobileKeyboard({
         onReconnect={onReconnect}
         ctrlActive={ctrlActive}
         onCtrlToggle={handleCtrlToggle}
+        minimized={minimized}
+        onToggleMinimize={handleToggleMinimize}
       />
-      {/* Full keyboard - always visible (custom keyboard only mode) */}
-      <FullKeyboard
-        onSend={handleSend}
-        keyboardSize={keyboardSize}
-      />
+      {/* Full keyboard - hidden when minimized */}
+      {!minimized && (
+        <FullKeyboard
+          onSend={handleSend}
+          keyboardSize={keyboardSize}
+        />
+      )}
     </div>
   );
 }
