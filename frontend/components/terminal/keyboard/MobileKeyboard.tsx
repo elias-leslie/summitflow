@@ -82,7 +82,6 @@ export function MobileKeyboard({
       {mode === "custom" && (
         <FullKeyboard
           onSend={onSend}
-          mode={mode}
           keyboardSize={keyboardSize}
         />
       )}

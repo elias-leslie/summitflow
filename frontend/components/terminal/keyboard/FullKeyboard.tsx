@@ -6,7 +6,7 @@ import "simple-keyboard/build/css/index.css";
 import { ModifierProvider, useModifiers } from "./ModifierContext";
 import { useKeyboardInput } from "./useKeyboardInput";
 import { KEY_SEQUENCES } from "./keyMappings";
-import { TerminalInputHandler, KeyboardMode, KeyboardSizePreset, KEYBOARD_SIZE_HEIGHTS } from "./types";
+import { TerminalInputHandler, KeyboardSizePreset, KEYBOARD_SIZE_HEIGHTS } from "./types";
 
 // Terminal-optimized keyboard layout - arrows moved to control bar
 const layout = {
@@ -40,7 +40,6 @@ const display = {
 
 interface FullKeyboardProps {
   onSend: TerminalInputHandler;
-  mode?: KeyboardMode;
   keyboardSize?: KeyboardSizePreset;
 }
 

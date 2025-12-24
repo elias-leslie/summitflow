@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState, useEffect } from "react";
 import { clsx } from "clsx";
-import { Keyboard, Settings2, RefreshCw, Minus } from "lucide-react";
+import { Keyboard, Settings2, RefreshCw } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { KeyboardMode, TerminalInputHandler, KeyboardSizePreset } from "./types";
@@ -186,18 +186,6 @@ export function ControlBar({
         >
           <RefreshCw className="w-4 h-4" />
         </button>
-
-        {/* Minimize */}
-        {onMinimize && (
-          <button
-            type="button"
-            onClick={onMinimize}
-            className="flex items-center justify-center h-9 w-9 rounded-md bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
-            title="Minimize terminal"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-        )}
       </div>
     </div>
   );
