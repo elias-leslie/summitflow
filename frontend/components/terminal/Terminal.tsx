@@ -197,6 +197,16 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           console.warn("[Terminal] Could not find .xterm-viewport for touch scrolling");
         }
 
+        // Disable text selection on mobile to prevent conflict with scrolling
+        // Selection can still be done via long-press context menu if needed
+        const xtermElement = containerRef.current.querySelector<HTMLElement>(".xterm");
+        if (xtermElement) {
+          xtermElement.style.userSelect = "none";
+          xtermElement.style.webkitUserSelect = "none";
+          // Tell browser we'll handle touch scrolling
+          xtermElement.style.touchAction = "none";
+        }
+
         // Set up touch scrolling at DOCUMENT level
         const container = containerRef.current;
         let lastY = 0;
@@ -229,9 +239,15 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           const deltaY = lastY - currentY; // Positive = scrolling down (finger moving up)
           lastY = currentY;
 
-          // Scroll the viewport directly - more reliable than scrollLines()
-          if (viewport && Math.abs(deltaY) > 0) {
-            viewport.scrollTop += deltaY;
+          // Simulate wheel event - xterm definitely handles these
+          if (Math.abs(deltaY) > 2) {
+            const wheelEvent = new WheelEvent("wheel", {
+              deltaY: deltaY * 3, // Amplify for better scroll feel
+              deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+              bubbles: true,
+              cancelable: true,
+            });
+            container.dispatchEvent(wheelEvent);
           }
         };
 
