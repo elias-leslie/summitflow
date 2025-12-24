@@ -726,21 +726,6 @@ export default function MemoryPage() {
     }
   };
 
-  const formatTokens = (tokens: number) => {
-    if (tokens >= 1000) {
-      return `${(tokens / 1000).toFixed(1)}k`;
-    }
-    return tokens.toString();
-  };
-
-  // Format age in minutes to human readable
-  const formatAge = (minutes: number | null): string => {
-    if (minutes === null) return '-';
-    if (minutes < 60) return `${minutes}m`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
-    return `${Math.floor(minutes / 1440)}d`;
-  };
-
   const pendingPatterns = patterns.filter(p => p.status === 'pending');
 
   // Reset pagination when project changes
@@ -824,7 +809,7 @@ export default function MemoryPage() {
           />
           <MetricCard
             label="Token Spend"
-            value={stats ? formatTokens(stats.token_spend_24h) : '-'}
+            value={stats ? formatTokens(stats.token_spend_24h) ?? '-' : '-'}
             subtitle="24h total"
             accent="blue"
           />

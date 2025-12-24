@@ -32,6 +32,7 @@ import {
   Loader2,
   Zap,
 } from "lucide-react";
+import { formatTime } from "@/lib/formatters/memory-formatters";
 
 // Observation types from the plan
 type ObservationType =
@@ -289,11 +290,6 @@ export function MemoryStreamPanel({
       }
       return next;
     });
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   const estimateTokens = (text: string | null | undefined): number => {
