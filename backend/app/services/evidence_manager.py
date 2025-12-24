@@ -640,6 +640,80 @@ def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
         return [_row_to_evidence(row) for row in rows]
 
 
+def _get_evidence_pairs_to_clean(
+    cur: Any,
+    project_id: str,
+    capability_id: str | None = None,
+) -> list[tuple[str, str]]:
+    """Get all capability/criterion pairs that have evidence to potentially clean."""
+    if capability_id:
+        cur.execute(
+            """
+            SELECT DISTINCT capability_id, criterion_id
+            FROM evidence
+            WHERE project_id = %s AND capability_id = %s
+            """,
+            (project_id, capability_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT DISTINCT capability_id, criterion_id
+            FROM evidence
+            WHERE project_id = %s
+            """,
+            (project_id,),
+        )
+    result: list[tuple[str, str]] = cur.fetchall()
+    return result
+
+
+def _delete_old_versions_for_pair(
+    cur: Any,
+    project_id: str,
+    feat_id: str,
+    crit_id: str,
+    max_versions: int,
+    evidence_base: Path,
+    dry_run: bool,
+) -> tuple[int, int]:
+    """Delete old versions for a single capability/criterion pair.
+
+    Returns:
+        Tuple of (deleted_count, deleted_size_bytes)
+    """
+    cur.execute(
+        """
+        SELECT id, evidence_id, file_path, file_size_bytes, version
+        FROM evidence
+        WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
+        ORDER BY version DESC
+        OFFSET %s
+        """,
+        (project_id, feat_id, crit_id, max_versions),
+    )
+    old_versions = cur.fetchall()
+
+    deleted_count = 0
+    deleted_size = 0
+
+    for row in old_versions:
+        ev_id, _evidence_id, _file_path, size, version_val = row
+
+        if not dry_run:
+            version_str = str(version_val) if version_val is not None else "0"
+            version_dir = evidence_base / str(feat_id) / str(crit_id) / f"v{version_str}"
+            if version_dir.exists():
+                shutil.rmtree(version_dir)
+            cur.execute("DELETE FROM evidence WHERE id = %s", (ev_id,))
+
+        deleted_count += 1
+        if isinstance(size, int | float):
+            deleted_size += int(size)
+
+    return deleted_count, deleted_size
+
+
 def cleanup_old_versions(
     project_id: str,
     capability_id: str | None = None,
@@ -662,60 +736,14 @@ def cleanup_old_versions(
     deleted_size = 0
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Get all feature/criterion pairs
-        if capability_id:
-            cur.execute(
-                """
-                SELECT DISTINCT capability_id, criterion_id
-                FROM evidence
-                WHERE project_id = %s AND capability_id = %s
-                """,
-                (project_id, capability_id),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT DISTINCT capability_id, criterion_id
-                FROM evidence
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
-        pairs = cur.fetchall()
+        pairs = _get_evidence_pairs_to_clean(cur, project_id, capability_id)
 
         for feat_id, crit_id in pairs:
-            # Get versions to delete (keep only max_versions)
-            cur.execute(
-                """
-                SELECT id, evidence_id, file_path, file_size_bytes, version
-                FROM evidence
-                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
-                ORDER BY version DESC
-                OFFSET %s
-                """,
-                (project_id, feat_id, crit_id, max_versions),
+            count, size = _delete_old_versions_for_pair(
+                cur, project_id, feat_id, crit_id, max_versions, evidence_base, dry_run
             )
-            old_versions = cur.fetchall()
-
-            for row in old_versions:
-                ev_id, _evidence_id, _file_path, size, version_val = row
-
-                if not dry_run:
-                    # Delete files
-                    version_str = str(version_val) if version_val is not None else "0"
-                    version_dir = evidence_base / str(feat_id) / str(crit_id) / f"v{version_str}"
-                    if version_dir.exists():
-                        shutil.rmtree(version_dir)
-
-                    # Delete database record
-                    cur.execute(
-                        "DELETE FROM evidence WHERE id = %s",
-                        (ev_id,),
-                    )
-
-                deleted_count += 1
-                if isinstance(size, int | float):
-                    deleted_size += int(size)
+            deleted_count += count
+            deleted_size += size
 
         if not dry_run:
             conn.commit()
