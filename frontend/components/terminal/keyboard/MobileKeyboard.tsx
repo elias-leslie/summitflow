@@ -92,13 +92,8 @@ export function MobileKeyboard({
         mode={mode}
         connectionStatus={connectionStatus}
         onReconnect={onReconnect}
-        onMinimize={onMinimize}
         keyboardSize={keyboardSize}
         onKeyboardSizeChange={handleKeyboardSizeChange}
-        fontId={fontId}
-        fontSize={fontSize}
-        onFontIdChange={onFontIdChange}
-        onFontSizeChange={onFontSizeChange}
         ctrlActive={ctrlActive}
         onCtrlToggle={handleCtrlToggle}
       />

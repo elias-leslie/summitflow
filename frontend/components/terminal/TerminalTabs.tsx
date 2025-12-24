@@ -400,11 +400,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
             onModeChange={setKeyboardMode}
             connectionStatus={activeStatus}
             onReconnect={handleReconnect}
-            onMinimize={() => setOpen(false)}
-            fontId={fontId}
-            fontSize={fontSize}
-            onFontIdChange={setFontId}
-            onFontSizeChange={setFontSize}
           />
         </div>
       )}
