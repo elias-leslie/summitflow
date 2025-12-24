@@ -999,6 +999,58 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
     )
 
 
+def _add_script_args(
+    cmd_parts: list[str],
+    script_name: str,
+    args: dict[str, Any],
+) -> set[str]:
+    """Add script-specific arguments and return set of handled arg keys."""
+    import shlex
+
+    handled: set[str] = set()
+
+    if script_name == "screenshot":
+        if args.get("fullPage", True):
+            cmd_parts.append("--fullPage")
+        handled.add("fullPage")
+        if args.get("selector"):
+            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+            handled.add("selector")
+
+    elif script_name in ("click-screenshot", "tab-click-screenshot", "expand"):
+        if args.get("selector"):
+            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+            handled.add("selector")
+
+    elif script_name == "interact":
+        if args.get("actions"):
+            cmd_parts.extend(["--actions", shlex.quote(json.dumps(args["actions"]))])
+            handled.add("actions")
+
+    elif script_name == "regression-check":
+        if args.get("checkConsole", True):
+            cmd_parts.append("--checkConsole")
+        handled.add("checkConsole")
+        if args.get("checkNetwork", True):
+            cmd_parts.append("--checkNetwork")
+        handled.add("checkNetwork")
+
+    elif script_name in ("console", "network"):
+        if args.get("filter"):
+            cmd_parts.extend(["--filter", shlex.quote(args["filter"])])
+            handled.add("filter")
+
+    elif script_name == "capture-evidence":
+        if args.get("featureId"):
+            cmd_parts.extend(["--featureId", shlex.quote(args["featureId"])])
+            handled.add("featureId")
+        if args.get("criterionId"):
+            cmd_parts.extend(["--criterionId", shlex.quote(args["criterionId"])])
+            handled.add("criterionId")
+
+    return handled
+
+
 def _build_browser_script_command(
     script_path: Path,
     script_name: str,
@@ -1006,76 +1058,21 @@ def _build_browser_script_command(
     args: dict[str, Any],
     output_path: str | None = None,
 ) -> str:
-    """Build command to run a browser-automation script.
-
-    Different scripts have different argument patterns:
-    - screenshot.js: node screenshot.js <url> [--output <path>] [--fullPage]
-    - interact.js: node interact.js <url> --actions '<json>'
-    - regression-check.js: node regression-check.js <url>
-    """
+    """Build command to run a browser-automation script."""
     import shlex
 
     cmd_parts = ["node", str(script_path)]
 
-    # URL is typically the first positional argument
     if url:
         cmd_parts.append(shlex.quote(url))
 
-    # Handle common args
     if output_path:
         cmd_parts.extend(["--output", shlex.quote(output_path)])
 
-    # Script-specific argument handling
-    if script_name == "screenshot":
-        if args.get("fullPage", True):
-            cmd_parts.append("--fullPage")
-        if args.get("selector"):
-            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
+    handled_keys = _add_script_args(cmd_parts, script_name, args)
 
-    elif script_name in ("click-screenshot", "tab-click-screenshot"):
-        if args.get("selector"):
-            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
-
-    elif script_name == "interact":
-        if args.get("actions"):
-            cmd_parts.extend(["--actions", shlex.quote(json.dumps(args["actions"]))])
-
-    elif script_name == "regression-check":
-        if args.get("checkConsole", True):
-            cmd_parts.append("--checkConsole")
-        if args.get("checkNetwork", True):
-            cmd_parts.append("--checkNetwork")
-
-    elif script_name in ("console", "network"):
-        if args.get("filter"):
-            cmd_parts.extend(["--filter", shlex.quote(args["filter"])])
-
-    elif script_name == "capture-evidence":
-        if args.get("featureId"):
-            cmd_parts.extend(["--featureId", shlex.quote(args["featureId"])])
-        if args.get("criterionId"):
-            cmd_parts.extend(["--criterionId", shlex.quote(args["criterionId"])])
-
-    elif script_name == "expand":
-        if args.get("selector"):
-            cmd_parts.extend(["--selector", shlex.quote(args["selector"])])
-
-    # Pass any other args as JSON
-    other_args = {
-        k: v
-        for k, v in args.items()
-        if k
-        not in (
-            "fullPage",
-            "selector",
-            "actions",
-            "checkConsole",
-            "checkNetwork",
-            "filter",
-            "featureId",
-            "criterionId",
-        )
-    }
+    # Pass unhandled args as JSON
+    other_args = {k: v for k, v in args.items() if k not in handled_keys}
     if other_args:
         cmd_parts.extend(["--extra", shlex.quote(json.dumps(other_args))])
 

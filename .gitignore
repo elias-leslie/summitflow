@@ -43,3 +43,4 @@ htmlcov/
 
 # Runtime data (evidence, screenshots, project data)
 data/
+backups/
