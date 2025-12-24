@@ -143,6 +143,25 @@ journalctl --user -u summitflow-frontend -f
 
 ---
 
+## No Workarounds - Ask for Help
+
+**When blocked by permissions, restarts, or dependencies: ASK the user.**
+
+| Blocked By | Do NOT | DO |
+|------------|--------|-----|
+| Needs `sudo` | Skip the step or hack around it | Ask user to run the command |
+| Needs session restart | Skip verification | Ask user to restart, split into verify task |
+| Needs dependency install | Use inferior alternative | Ask user to approve `npm install` / `pip install` |
+| Needs service restart | Hope it works without | Ask user or restart yourself if allowed |
+
+**Rules:**
+- Workarounds = tech debt. Proper solutions > shortcuts.
+- Every verification step in implementation.json MUST be completed.
+- If you can't complete a step, ask for help - don't mark it done.
+- Never skip installing the ideal dependency to avoid interrupting the user.
+
+---
+
 ## Session Protocol
 
 ### Start - MANDATORY
