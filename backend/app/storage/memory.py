@@ -24,6 +24,38 @@ logger = logging.getLogger(__name__)
 DEDUP_WINDOW_MINUTES = 60
 
 
+def _build_where_clause(
+    filters: dict[str, Any],
+    special_conditions: list[str] | None = None,
+) -> tuple[sql.SQL | sql.Composed, list[Any]]:
+    """Build a WHERE clause from filters dict.
+
+    Args:
+        filters: Dict of {column_name: value} - None values are skipped
+        special_conditions: Additional raw SQL conditions (e.g., "reflected_at IS NULL")
+
+    Returns:
+        Tuple of (sql.SQL where clause, list of params)
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    for column, value in filters.items():
+        if value is not None:
+            conditions.append(f"{column} = %s")
+            params.append(value)
+
+    if special_conditions:
+        conditions.extend(special_conditions)
+
+    if conditions:
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    else:
+        where_clause = sql.SQL("TRUE")
+
+    return where_clause, params
+
+
 def _compute_observation_hash(title: str, observation_type: str, tool_name: str | None) -> str:
     """Compute a short hash for observation deduplication.
 
@@ -324,28 +356,15 @@ def list_observations(
     Returns:
         List of observations sorted by created_at descending.
     """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if agent_type:
-        conditions.append("agent_type = %s")
-        params.append(agent_type)
-    if observation_type:
-        conditions.append("observation_type = %s")
-        params.append(observation_type)
-    if session_id:
-        conditions.append("session_id = %s")
-        params.append(session_id)
-
+    where_clause, params = _build_where_clause(
+        {
+            "project_id": project_id,
+            "agent_type": agent_type,
+            "observation_type": observation_type,
+            "session_id": session_id,
+        }
+    )
     params.extend([limit, offset])
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -383,26 +402,14 @@ def count_observations(
     Returns:
         Total count of matching observations.
     """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if agent_type:
-        conditions.append("agent_type = %s")
-        params.append(agent_type)
-    if observation_type:
-        conditions.append("observation_type = %s")
-        params.append(observation_type)
-    if session_id:
-        conditions.append("session_id = %s")
-        params.append(session_id)
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
+    where_clause, params = _build_where_clause(
+        {
+            "project_id": project_id,
+            "agent_type": agent_type,
+            "observation_type": observation_type,
+            "session_id": session_id,
+        }
+    )
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -725,24 +732,12 @@ def list_diary_entries(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """List diary entries with optional filters."""
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if outcome:
-        conditions.append("outcome = %s")
-        params.append(outcome)
-    if unreflected_only:
-        conditions.append("reflected_at IS NULL")
-
+    special = ["reflected_at IS NULL"] if unreflected_only else None
+    where_clause, params = _build_where_clause(
+        {"project_id": project_id, "outcome": outcome},
+        special_conditions=special,
+    )
     params.extend([limit, offset])
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -777,20 +772,12 @@ def count_diary_entries(
     Returns:
         Total count of matching diary entries.
     """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if outcome:
-        conditions.append("outcome = %s")
-        params.append(outcome)
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
+    where_clause, params = _build_where_clause(
+        {
+            "project_id": project_id,
+            "outcome": outcome,
+        }
+    )
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -1041,28 +1028,15 @@ def list_patterns(
     Returns:
         List of patterns sorted by created_at descending.
     """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if status:
-        conditions.append("status = %s")
-        params.append(status)
-    if action:
-        conditions.append("action = %s")
-        params.append(action)
-    if pattern_type:
-        conditions.append("pattern_type = %s")
-        params.append(pattern_type)
-
+    where_clause, params = _build_where_clause(
+        {
+            "project_id": project_id,
+            "status": status,
+            "action": action,
+            "pattern_type": pattern_type,
+        }
+    )
     params.extend([limit, offset])
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -1100,26 +1074,14 @@ def count_patterns(
     Returns:
         Total count of matching patterns.
     """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    if project_id:
-        conditions.append("project_id = %s")
-        params.append(project_id)
-    if status:
-        conditions.append("status = %s")
-        params.append(status)
-    if action:
-        conditions.append("action = %s")
-        params.append(action)
-    if pattern_type:
-        conditions.append("pattern_type = %s")
-        params.append(pattern_type)
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
+    where_clause, params = _build_where_clause(
+        {
+            "project_id": project_id,
+            "status": status,
+            "action": action,
+            "pattern_type": pattern_type,
+        }
+    )
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
