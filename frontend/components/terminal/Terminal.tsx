@@ -422,10 +422,11 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           "bg-slate-900 overflow-hidden"
         )}
         style={{
+          // Prevent pull-to-refresh when scrolling at terminal boundaries
           overscrollBehavior: "contain",
-          touchAction: "none",
+          // Allow vertical panning (terminal scrollback) but prevent zoom gestures
+          touchAction: "pan-y",
         }}
-        onTouchMove={(e) => e.stopPropagation()}
       />
     </div>
   );

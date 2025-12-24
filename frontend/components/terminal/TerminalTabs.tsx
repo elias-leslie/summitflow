@@ -11,6 +11,7 @@ import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontI
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { MobileKeyboard } from "./keyboard/MobileKeyboard";
 import { KeyboardMode } from "./keyboard/types";
+import { useVisualViewport } from "@/lib/hooks/use-visual-viewport";
 
 // Maximum number of split panes
 const MAX_SPLIT_PANES = 4;
@@ -52,6 +53,12 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardMode, setKeyboardMode] = useState<KeyboardMode>("native");
   const [keyboardSize, setKeyboardSize] = useState<KeyboardSizePreset>("medium");
+
+  // Track visual viewport for native keyboard on mobile
+  // Only enable when on mobile and in native keyboard mode
+  const { height: viewportHeight, isKeyboardVisible } = useVisualViewport(
+    isMobile && keyboardMode === "native"
+  );
 
   // Load keyboard size from localStorage
   useEffect(() => {
@@ -191,8 +198,17 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
     );
   }
 
+  // Apply dynamic height when native keyboard is visible on mobile
+  const containerStyle: React.CSSProperties | undefined =
+    isMobile && keyboardMode === "native" && isKeyboardVisible
+      ? { height: viewportHeight }
+      : undefined;
+
   return (
-    <div className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}>
+    <div
+      className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}
+      style={containerStyle}
+    >
       {/* Tab bar - order-2 on mobile (below terminal), order-1 on desktop (above terminal) */}
       <div className={clsx(
         "flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 overflow-x-auto overflow-y-visible",
