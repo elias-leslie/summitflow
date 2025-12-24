@@ -136,9 +136,7 @@ class ClaudeClient(LLMClient):
             LLMResponse with Claude's response
         """
         # Run async code synchronously - use asyncio.run() for thread safety
-        return asyncio.run(
-            self._generate_async(prompt, system, working_dir)
-        )
+        return asyncio.run(self._generate_async(prompt, system, working_dir))
 
     async def _generate_async(
         self,
@@ -185,9 +183,7 @@ class ClaudeClient(LLMClient):
             duration_ms = int((time.time() - start_time) * 1000)
             content = "".join(content_parts)
 
-            logger.info(
-                f"Claude SDK response: {duration_ms}ms, {len(content)} chars"
-            )
+            logger.info(f"Claude SDK response: {duration_ms}ms, {len(content)} chars")
 
             return LLMResponse(
                 content=content,
@@ -301,9 +297,7 @@ class ClaudeClient(LLMClient):
                         }
 
                 # No callback configured - deny by default for safety
-                logger.warning(
-                    f"Denying write tool (no callback): {tool_name}"
-                )
+                logger.warning(f"Denying write tool (no callback): {tool_name}")
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event_name,
@@ -340,9 +334,7 @@ class ClaudeClient(LLMClient):
             return {}
 
         # Build hooks dict
-        hooks: dict[str, list[HookMatcher]] = {
-            "PreToolUse": [HookMatcher(hooks=[permission_hook])]
-        }
+        hooks: dict[str, list[HookMatcher]] = {"PreToolUse": [HookMatcher(hooks=[permission_hook])]}
         if after_tool_callback:
             hooks["PostToolUse"] = [HookMatcher(hooks=[post_tool_hook])]
 

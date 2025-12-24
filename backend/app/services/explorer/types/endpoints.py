@@ -170,26 +170,28 @@ class EndpointScanner(BaseScanner):
 
             category = categorize_endpoint(full_path)
 
-            entries.append(ExplorerEntryCreate(
-                path=f"{method.upper()} {full_path}",
-                name=function_name or full_path.split("/")[-1] or "root",
-                health_status="unknown",
-                metadata={
-                    "method": method.upper(),
-                    "port": 8001,
-                    "source_file": str(route_file.relative_to(self.root_path)),
-                    "function_name": function_name or "unknown",
-                    "category": category,
-                    "depends_on_tables": depends_on_tables,
-                    "called_by_frontend": [],
-                    # Health check fields (to be populated by health scanner)
-                    "http_status": None,
-                    "response_time_ms": None,
-                    "console_errors": None,
-                    "console_warnings": None,
-                    "last_health_check": None,
-                },
-            ))
+            entries.append(
+                ExplorerEntryCreate(
+                    path=f"{method.upper()} {full_path}",
+                    name=function_name or full_path.split("/")[-1] or "root",
+                    health_status="unknown",
+                    metadata={
+                        "method": method.upper(),
+                        "port": 8001,
+                        "source_file": str(route_file.relative_to(self.root_path)),
+                        "function_name": function_name or "unknown",
+                        "category": category,
+                        "depends_on_tables": depends_on_tables,
+                        "called_by_frontend": [],
+                        # Health check fields (to be populated by health scanner)
+                        "http_status": None,
+                        "response_time_ms": None,
+                        "console_errors": None,
+                        "console_warnings": None,
+                        "last_health_check": None,
+                    },
+                )
+            )
 
         return entries
 
@@ -202,7 +204,7 @@ class EndpointScanner(BaseScanner):
             if not decorator_match:
                 return None
 
-            remaining_content = content[decorator_match.end():]
+            remaining_content = content[decorator_match.end() :]
             func_pattern = r"^\s*(?:async\s+)?def\s+([a-z_][a-z0-9_]*)"
             func_match = re.search(func_pattern, remaining_content, re.MULTILINE)
 
@@ -243,7 +245,13 @@ class EndpointScanner(BaseScanner):
 
         # Filter out SQL keywords
         exclude_names = {
-            "select", "where", "order", "group", "limit", "offset", "values",
+            "select",
+            "where",
+            "order",
+            "group",
+            "limit",
+            "offset",
+            "values",
         }
         tables = {t for t in tables if t.lower() not in exclude_names}
 

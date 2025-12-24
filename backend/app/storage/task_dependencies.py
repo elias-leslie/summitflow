@@ -30,7 +30,9 @@ def add_dependency(
     """
     valid_types = {"blocks", "discovered-from"}
     if dependency_type not in valid_types:
-        raise ValueError(f"Invalid dependency type '{dependency_type}'. Must be one of: {valid_types}")
+        raise ValueError(
+            f"Invalid dependency type '{dependency_type}'. Must be one of: {valid_types}"
+        )
 
     if task_id == depends_on_task_id:
         raise ValueError("Task cannot depend on itself")

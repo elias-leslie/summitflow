@@ -84,6 +84,7 @@ class GeminiClient(LLMClient):
         # Check for application default credentials
         try:
             import google.auth
+
             google.auth.default()
             return True
         except Exception:
@@ -324,9 +325,7 @@ class GeminiClient(LLMClient):
             model=self.model,
             instruction=system or "You are a helpful assistant.",
             tools=tools,
-            before_tool_callback=self._create_before_tool_callback(
-                write_enabled, yolo_mode
-            ),
+            before_tool_callback=self._create_before_tool_callback(write_enabled, yolo_mode),
             after_tool_callback=after_tool_cb,
         )
 

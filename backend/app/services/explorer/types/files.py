@@ -32,18 +32,48 @@ logger = get_logger(__name__)
 
 # Directories to skip during scan
 SKIP_DIRS = {
-    "node_modules", ".venv", "venv", "__pycache__", ".git", ".next",
-    "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "data", "solution_state", ".beads",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+    ".next",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "data",
+    "solution_state",
+    ".beads",
 }
 
 # File extensions to skip
 SKIP_EXTENSIONS = {
-    ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
-    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg",
-    ".woff", ".woff2", ".ttf", ".eot",
-    ".mp3", ".mp4", ".wav", ".pdf",
-    ".zip", ".tar", ".gz", ".lock",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".svg",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".lock",
 }
 
 # Bloat thresholds by extension: (warning_loc, critical_loc)
@@ -120,7 +150,9 @@ class FileScanner(BaseScanner):
         dir_entries = self._create_directory_entries(dir_stats)
         entries.extend(dir_entries)
 
-        logger.info(f"File scan found {len(entries)} entries ({len(entries) - len(dir_entries)} files, {len(dir_entries)} dirs)")
+        logger.info(
+            f"File scan found {len(entries)} entries ({len(entries) - len(dir_entries)} files, {len(dir_entries)} dirs)"
+        )
         return entries
 
     def _scan_file(self, file_path: Path, rel_path: str, ext: str) -> ExplorerEntryCreate | None:

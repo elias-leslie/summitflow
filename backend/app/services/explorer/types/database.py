@@ -42,7 +42,9 @@ if _env_file.exists():
 
 # System tables to exclude
 SYSTEM_TABLES = {
-    "celery_taskmeta", "celery_tasksetmeta", "alembic_version",
+    "celery_taskmeta",
+    "celery_tasksetmeta",
+    "alembic_version",
     "spatial_ref_sys",
 }
 
@@ -158,9 +160,7 @@ class DatabaseScanner(BaseScanner):
         if row_count > 0:
             for col_name in column_names[:20]:  # Limit for performance
                 try:
-                    result = conn.execute(
-                        text(f'SELECT COUNT("{col_name}") FROM "{table_name}"')
-                    )
+                    result = conn.execute(text(f'SELECT COUNT("{col_name}") FROM "{table_name}"'))
                     row = result.fetchone()
                     non_null = int(row[0]) if row else 0
                     if non_null > 0:
@@ -171,9 +171,7 @@ class DatabaseScanner(BaseScanner):
                     continue
 
         completeness_pct = (
-            int((len(columns_with_data) / min(column_count, 20)) * 100)
-            if column_count > 0
-            else 0
+            int((len(columns_with_data) / min(column_count, 20)) * 100) if column_count > 0 else 0
         )
 
         # Freshness detection
@@ -182,9 +180,7 @@ class DatabaseScanner(BaseScanner):
         for date_col in date_columns:
             if date_col in column_names:
                 try:
-                    result = conn.execute(
-                        text(f'SELECT MAX("{date_col}") FROM "{table_name}"')
-                    )
+                    result = conn.execute(text(f'SELECT MAX("{date_col}") FROM "{table_name}"'))
                     row = result.fetchone()
                     if row and row[0]:
                         last_date = row[0]

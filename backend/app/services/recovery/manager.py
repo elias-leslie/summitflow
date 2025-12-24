@@ -120,9 +120,7 @@ class RecoveryManager:
         """
         # Check for circular fix
         previous_errors = [
-            a["error_text"]
-            for a in self._state.get("attempt_history", [])
-            if "error_text" in a
+            a["error_text"] for a in self._state.get("attempt_history", []) if "error_text" in a
         ]
         is_circular = is_circular_fix(error_text, previous_errors)
 
@@ -225,7 +223,12 @@ async def rollback_to_commit(
     # Verify commit exists
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", project_root, "cat-file", "-t", commit_sha,
+            "git",
+            "-C",
+            project_root,
+            "cat-file",
+            "-t",
+            commit_sha,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -248,7 +251,11 @@ async def rollback_to_commit(
     # Check for dirty state
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", project_root, "status", "--porcelain",
+            "git",
+            "-C",
+            project_root,
+            "status",
+            "--porcelain",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -258,7 +265,12 @@ async def rollback_to_commit(
             # Dirty state - stash changes first
             logger.warning(f"Stashing changes before rollback for {project_id}")
             stash_proc = await asyncio.create_subprocess_exec(
-                "git", "-C", project_root, "stash", "push", "-m",
+                "git",
+                "-C",
+                project_root,
+                "stash",
+                "push",
+                "-m",
                 f"Auto-stash before rollback to {commit_sha[:8]}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -271,7 +283,12 @@ async def rollback_to_commit(
     # Perform rollback
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", project_root, "reset", "--hard", commit_sha,
+            "git",
+            "-C",
+            project_root,
+            "reset",
+            "--hard",
+            commit_sha,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

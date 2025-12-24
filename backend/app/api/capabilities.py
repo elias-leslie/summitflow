@@ -93,13 +93,13 @@ async def create_capability(project_id: str, body: CapabilityCreate) -> Capabili
             raise HTTPException(
                 status_code=409,
                 detail=f"Capability {body.capability_id} already exists",
-            )
+            ) from e
         if "violates foreign key constraint" in str(e).lower():
             raise HTTPException(
                 status_code=400,
                 detail=f"Component with id {body.component_id} not found",
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.patch("/{project_id}/capabilities/{capability_id}", response_model=CapabilityResponse)
@@ -128,9 +128,7 @@ async def lock_capability(project_id: str, capability_id: str) -> CapabilityResp
     return CapabilityResponse(**capability)
 
 
-@router.post(
-    "/{project_id}/capabilities/{capability_id}/unlock", response_model=CapabilityResponse
-)
+@router.post("/{project_id}/capabilities/{capability_id}/unlock", response_model=CapabilityResponse)
 async def unlock_capability(project_id: str, capability_id: str) -> CapabilityResponse:
     """Unlock a capability."""
     capability = storage.unlock_capability(project_id, capability_id)

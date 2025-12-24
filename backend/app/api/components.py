@@ -73,8 +73,8 @@ async def create_component(project_id: str, body: ComponentCreate) -> ComponentR
             raise HTTPException(
                 status_code=409,
                 detail=f"Component {body.component_id} already exists",
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.patch("/{project_id}/components/{component_id}", response_model=ComponentResponse)

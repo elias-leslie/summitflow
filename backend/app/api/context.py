@@ -98,9 +98,9 @@ async def expand_entity(
     try:
         result = builder.expand_entity(request.entity_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     return ExpandResponse(**result)
 

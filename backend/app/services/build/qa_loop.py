@@ -52,7 +52,7 @@ def _create_error_signature(
         MD5 hash signature.
     """
     # Extract key lines from error (first 3 non-empty lines)
-    lines = [l.strip() for l in error_text.split("\n") if l.strip()][:3]
+    lines = [line.strip() for line in error_text.split("\n") if line.strip()][:3]
     key_content = failure_type.value + "|" + "|".join(lines)
     return hashlib.md5(key_content.encode()).hexdigest()[:12]
 
@@ -86,9 +86,7 @@ async def qa_loop(
     previous_errors: list[str] = []
 
     for iteration in range(1, QA_MAX_ITERATIONS + 1):
-        logger.info(
-            f"QA iteration {iteration}/{QA_MAX_ITERATIONS} for {capability_id}"
-        )
+        logger.info(f"QA iteration {iteration}/{QA_MAX_ITERATIONS} for {capability_id}")
 
         # Run tests
         test_results = await run_tests()
@@ -100,9 +98,7 @@ async def qa_loop(
         # Tests failed - extract failure info
         failed_tests = test_results.get("results", [])
         error_text = "\n".join(
-            t.get("error", "") + t.get("output", "")
-            for t in failed_tests
-            if not t.get("passed")
+            t.get("error", "") + t.get("output", "") for t in failed_tests if not t.get("passed")
         )
 
         # Classify failure
@@ -119,9 +115,7 @@ async def qa_loop(
 
         # Check for circular fix
         if previous_errors and is_circular_fix(error_text, previous_errors):
-            logger.warning(
-                f"Circular fix detected for {capability_id} - escalating"
-            )
+            logger.warning(f"Circular fix detected for {capability_id} - escalating")
             return QAResult.ESCALATE
 
         # Check for recurring issue
@@ -154,14 +148,10 @@ async def qa_loop(
             )
             continue
 
-        logger.info(
-            f"Agent fix applied on QA iteration {iteration}, re-running tests..."
-        )
+        logger.info(f"Agent fix applied on QA iteration {iteration}, re-running tests...")
 
     # Max iterations exceeded
-    logger.warning(
-        f"QA max iterations ({QA_MAX_ITERATIONS}) exceeded for {capability_id}"
-    )
+    logger.warning(f"QA max iterations ({QA_MAX_ITERATIONS}) exceeded for {capability_id}")
     return QAResult.FAILED
 
 
@@ -205,9 +195,7 @@ def escalate_build(
         },
     )
 
-    logger.warning(
-        f"Build escalated for {capability_id}: {reason}"
-    )
+    logger.warning(f"Build escalated for {capability_id}: {reason}")
 
     return escalation
 

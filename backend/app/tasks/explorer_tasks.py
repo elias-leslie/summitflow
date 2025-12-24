@@ -74,22 +74,26 @@ def scan_all_projects(
 
             if dry_run:
                 logger.info("would_scan", project_id=proj_id, project_name=proj_name)
-                details.append({
-                    "project_id": proj_id,
-                    "project_name": proj_name,
-                    "status": "would_scan",
-                })
+                details.append(
+                    {
+                        "project_id": proj_id,
+                        "project_name": proj_name,
+                        "status": "would_scan",
+                    }
+                )
                 scanned += 1
                 continue
 
             try:
                 result = _scan_project(proj_id, entry_type)
-                details.append({
-                    "project_id": proj_id,
-                    "project_name": proj_name,
-                    "status": "success",
-                    "results": result,
-                })
+                details.append(
+                    {
+                        "project_id": proj_id,
+                        "project_name": proj_name,
+                        "status": "success",
+                        "results": result,
+                    }
+                )
                 scanned += 1
                 logger.info(
                     "project_scanned",
@@ -98,12 +102,14 @@ def scan_all_projects(
                 )
             except Exception as e:
                 errors += 1
-                details.append({
-                    "project_id": proj_id,
-                    "project_name": proj_name,
-                    "status": "error",
-                    "error": str(e),
-                })
+                details.append(
+                    {
+                        "project_id": proj_id,
+                        "project_name": proj_name,
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
                 logger.error(
                     "project_scan_failed",
                     project_id=proj_id,
@@ -146,13 +152,15 @@ def _scan_project(project_id: str, entry_type: str | None = None) -> list[dict[s
 
     for t in types_to_scan:
         result = explorer.scan(project_id, t)
-        results.append({
-            "entry_type": result.entry_type,
-            "entries_found": result.entries_found,
-            "entries_saved": result.entries_saved,
-            "duration_ms": result.duration_ms,
-            "success": result.success,
-            "error": result.error,
-        })
+        results.append(
+            {
+                "entry_type": result.entry_type,
+                "entries_found": result.entries_found,
+                "entries_saved": result.entries_saved,
+                "duration_ms": result.duration_ms,
+                "success": result.success,
+                "error": result.error,
+            }
+        )
 
     return results

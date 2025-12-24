@@ -322,9 +322,7 @@ def delete_entries(project_id: str, entry_type: str | None = None) -> int:
         return deleted
 
 
-def upsert_relationships(
-    project_id: str, relationships: list[dict]
-) -> int:
+def upsert_relationships(project_id: str, relationships: list[dict]) -> int:
     """Upsert explorer relationships.
 
     Args:

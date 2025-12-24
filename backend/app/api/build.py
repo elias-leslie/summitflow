@@ -100,7 +100,7 @@ async def api_start_build(
         )
         return StartBuildResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/status", response_model=BuildStatusResponse)
@@ -152,7 +152,7 @@ async def api_build_capability(
             start_result = await start_build(project_id)
             session_id = start_result["session_id"]
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     try:
         result = await build_capability(
@@ -162,7 +162,7 @@ async def api_build_capability(
         )
         return BuildCapabilityResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/run")
@@ -183,7 +183,7 @@ async def api_run_full_build(
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 class EscalationResponse(BaseModel):

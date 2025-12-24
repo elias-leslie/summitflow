@@ -160,6 +160,7 @@ class LLMClient(ABC):
         # Use generate_with_tools_native() for SDK-native tool calling.
         # Kept for fallback/legacy compatibility only.
         import warnings
+
         warnings.warn(
             "generate_with_tools() is deprecated and uses a custom JSON protocol. "
             "Use generate_with_tools_native() for SDK-native tool calling with "
@@ -214,9 +215,7 @@ class LLMClient(ABC):
             raw_response=response.raw_response,
         )
 
-    def _format_system_with_tools(
-        self, system: str | None, tools: list[dict[str, Any]]
-    ) -> str:
+    def _format_system_with_tools(self, system: str | None, tools: list[dict[str, Any]]) -> str:
         """Format system prompt with tool definitions."""
         tool_descriptions = []
         for tool in tools:
@@ -310,9 +309,7 @@ RULES:
                     continue
 
         # Strategy 3: Direct JSON object search
-        json_match = re.search(
-            r"(\{\s*\"tool_calls\".*?\}\s*)\s*$", response_text, re.DOTALL
-        )
+        json_match = re.search(r"(\{\s*\"tool_calls\".*?\}\s*)\s*$", response_text, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))

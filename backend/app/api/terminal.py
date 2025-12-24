@@ -136,7 +136,10 @@ async def terminal_websocket(
         if not is_alive:
             # Session doesn't exist in DB or couldn't be resurrected
             logger.warning("terminal_session_dead", session_id=session_id)
-            await websocket.close(code=4000, reason='{"error": "session_dead", "message": "Session not found or could not be restored"}')
+            await websocket.close(
+                code=4000,
+                reason='{"error": "session_dead", "message": "Session not found or could not be restored"}',
+            )
             return
 
         # Touch session to update last_accessed_at

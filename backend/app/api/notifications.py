@@ -82,9 +82,13 @@ def _notification_to_response(notification: dict[str, Any]) -> NotificationRespo
         severity=notification["severity"],
         status=notification["status"],
         metadata=notification.get("metadata", {}),
-        created_at=notification["created_at"].isoformat() if notification.get("created_at") else None,
+        created_at=notification["created_at"].isoformat()
+        if notification.get("created_at")
+        else None,
         read_at=notification["read_at"].isoformat() if notification.get("read_at") else None,
-        dismissed_at=notification["dismissed_at"].isoformat() if notification.get("dismissed_at") else None,
+        dismissed_at=notification["dismissed_at"].isoformat()
+        if notification.get("dismissed_at")
+        else None,
     )
 
 
@@ -134,7 +138,9 @@ async def get_notification_count(project_id: str) -> NotificationCountResponse:
     return NotificationCountResponse(pending=count)
 
 
-@router.get("/projects/{project_id}/notifications/{notification_id}", response_model=NotificationResponse)
+@router.get(
+    "/projects/{project_id}/notifications/{notification_id}", response_model=NotificationResponse
+)
 async def get_notification(project_id: str, notification_id: str) -> NotificationResponse:
     """Get a single notification."""
     notification = notification_store.get_notification(notification_id)
@@ -142,13 +148,16 @@ async def get_notification(project_id: str, notification_id: str) -> Notificatio
         raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
     if notification["project_id"] != project_id:
         raise HTTPException(
-            status_code=404, detail=f"Notification {notification_id} not found in project {project_id}"
+            status_code=404,
+            detail=f"Notification {notification_id} not found in project {project_id}",
         )
     return _notification_to_response(notification)
 
 
 @router.post("/projects/{project_id}/notifications", response_model=NotificationResponse)
-async def create_notification(project_id: str, request: CreateNotificationRequest) -> NotificationResponse:
+async def create_notification(
+    project_id: str, request: CreateNotificationRequest
+) -> NotificationResponse:
     """Create a new notification."""
     notification = notification_store.create_notification(
         project_id=project_id,
@@ -162,7 +171,10 @@ async def create_notification(project_id: str, request: CreateNotificationReques
     return _notification_to_response(notification)
 
 
-@router.patch("/projects/{project_id}/notifications/{notification_id}/read", response_model=NotificationResponse)
+@router.patch(
+    "/projects/{project_id}/notifications/{notification_id}/read",
+    response_model=NotificationResponse,
+)
 async def mark_notification_read(project_id: str, notification_id: str) -> NotificationResponse:
     """Mark a notification as read."""
     # Verify notification exists and belongs to project
@@ -171,7 +183,8 @@ async def mark_notification_read(project_id: str, notification_id: str) -> Notif
         raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
     if existing["project_id"] != project_id:
         raise HTTPException(
-            status_code=404, detail=f"Notification {notification_id} not found in project {project_id}"
+            status_code=404,
+            detail=f"Notification {notification_id} not found in project {project_id}",
         )
 
     notification = notification_store.mark_as_read(notification_id)
@@ -180,7 +193,10 @@ async def mark_notification_read(project_id: str, notification_id: str) -> Notif
     return _notification_to_response(notification)
 
 
-@router.patch("/projects/{project_id}/notifications/{notification_id}/dismiss", response_model=NotificationResponse)
+@router.patch(
+    "/projects/{project_id}/notifications/{notification_id}/dismiss",
+    response_model=NotificationResponse,
+)
 async def dismiss_notification(project_id: str, notification_id: str) -> NotificationResponse:
     """Dismiss a notification."""
     # Verify notification exists and belongs to project
@@ -189,7 +205,8 @@ async def dismiss_notification(project_id: str, notification_id: str) -> Notific
         raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
     if existing["project_id"] != project_id:
         raise HTTPException(
-            status_code=404, detail=f"Notification {notification_id} not found in project {project_id}"
+            status_code=404,
+            detail=f"Notification {notification_id} not found in project {project_id}",
         )
 
     notification = notification_store.dismiss_notification(notification_id)
@@ -205,7 +222,9 @@ async def dismiss_all_notifications(project_id: str) -> dict[str, Any]:
     return {"dismissed": count}
 
 
-@router.delete("/projects/{project_id}/notifications/{notification_id}", response_model=dict[str, Any])
+@router.delete(
+    "/projects/{project_id}/notifications/{notification_id}", response_model=dict[str, Any]
+)
 async def delete_notification(project_id: str, notification_id: str) -> dict[str, Any]:
     """Delete a notification."""
     # Verify notification exists and belongs to project
@@ -214,7 +233,8 @@ async def delete_notification(project_id: str, notification_id: str) -> dict[str
         raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
     if existing["project_id"] != project_id:
         raise HTTPException(
-            status_code=404, detail=f"Notification {notification_id} not found in project {project_id}"
+            status_code=404,
+            detail=f"Notification {notification_id} not found in project {project_id}",
         )
 
     if not notification_store.delete_notification(notification_id):

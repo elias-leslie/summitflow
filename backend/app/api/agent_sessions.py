@@ -87,9 +87,7 @@ async def create_session(project_id: str, body: SessionCreate) -> SessionRespons
 
 
 @router.patch("/{project_id}/sessions/{session_id}", response_model=SessionResponse)
-async def update_session(
-    project_id: str, session_id: str, body: SessionUpdate
-) -> SessionResponse:
+async def update_session(project_id: str, session_id: str, body: SessionUpdate) -> SessionResponse:
     """Update a session (notes, stats, capabilities)."""
     updates = body.model_dump(exclude_unset=True)
     if not updates:

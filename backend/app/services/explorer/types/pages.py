@@ -89,7 +89,9 @@ class PageScanner(BaseScanner):
 
                 # Clean up Next.js route syntax for display
                 display_path = re.sub(r"\[([^\]]+)\]", r":\1", route_path)  # [id] -> :id
-                display_path = display_path.replace("/(", "/").replace(")/", "/")  # Remove route groups
+                display_path = display_path.replace("/(", "/").replace(
+                    ")/", "/"
+                )  # Remove route groups
                 if display_path == "/.":
                     display_path = "/"
 
@@ -102,22 +104,24 @@ class PageScanner(BaseScanner):
                 if not page_name or page_name == ".":
                     page_name = "home"
 
-                entries.append(ExplorerEntryCreate(
-                    path=display_path,
-                    name=page_name,
-                    health_status="unknown",
-                    metadata={
-                        "method": "GET",
-                        "port": 3001,
-                        "source_file": str(page_file.relative_to(self.root_path)),
-                        "route_params": route_params,
-                        "http_status": None,
-                        "response_time_ms": None,
-                        "console_errors": None,
-                        "console_warnings": None,
-                        "last_health_check": None,
-                    },
-                ))
+                entries.append(
+                    ExplorerEntryCreate(
+                        path=display_path,
+                        name=page_name,
+                        health_status="unknown",
+                        metadata={
+                            "method": "GET",
+                            "port": 3001,
+                            "source_file": str(page_file.relative_to(self.root_path)),
+                            "route_params": route_params,
+                            "http_status": None,
+                            "response_time_ms": None,
+                            "console_errors": None,
+                            "console_warnings": None,
+                            "last_health_check": None,
+                        },
+                    )
+                )
             except Exception as e:
                 logger.warning(f"Failed to scan page {page_file}: {e}")
 
