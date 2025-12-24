@@ -133,6 +133,11 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
       mergeDisplay: true,
       physicalKeyboardHighlight: false,
       physicalKeyboardHighlightPress: false,
+      // Prevent double-firing on mobile touch
+      preventMouseDownDefault: true,
+      stopMouseDownPropagation: true,
+      // Use pointerEvents for better touch handling
+      useMouseEvents: false,
     });
 
     keyboardRef.current = keyboard;

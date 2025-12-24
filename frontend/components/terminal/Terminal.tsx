@@ -395,6 +395,10 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           touchAction: "none",
         }}
         onTouchMove={(e) => e.stopPropagation()}
+        onContextMenu={(e) => {
+          // Prevent browser context menu - let xterm/clipboard addon handle copy/paste
+          e.preventDefault();
+        }}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { clsx } from "clsx";
 import { ModifierState } from "./types";
 
@@ -26,16 +26,31 @@ export function KeyboardKey({
   width = 1,
   className,
 }: KeyboardKeyProps) {
-  const handlePress = useCallback(() => {
+  // Track if touch event was used to prevent duplicate onClick
+  const touchedRef = useRef(false);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault(); // Prevent click from firing
+    touchedRef.current = true;
     vibrate();
     onPress();
+  }, [onPress]);
+
+  const handleClick = useCallback(() => {
+    // Only fire if this wasn't a touch event (for mouse/keyboard fallback)
+    if (!touchedRef.current) {
+      vibrate();
+      onPress();
+    }
+    // Reset for next interaction
+    touchedRef.current = false;
   }, [onPress]);
 
   return (
     <button
       type="button"
-      onTouchStart={handlePress}
-      onClick={handlePress}
+      onTouchStart={handleTouchStart}
+      onClick={handleClick}
       className={clsx(
         // Base styles
         "flex items-center justify-center",
