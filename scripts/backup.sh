@@ -4,13 +4,15 @@
 # Creates compressed backup archive and transfers to SMB share
 #
 # Usage:
-#   ./scripts/backup.sh              # Full backup
+#   ./scripts/backup.sh              # Full backup (SMB only)
+#   ./scripts/backup.sh --keep-local # Full backup + keep local copy
 #   ./scripts/backup.sh --quick      # Skip DB dump (use existing)
 #   ./scripts/backup.sh --local      # Local only (no transfer)
 #   ./scripts/backup.sh --status     # Show status only
 #
 # Destination: //192.168.8.128/davion-gem/project-backups/summitflow/
-# Retention: 30 versions
+# Local backups: ~/summitflow/backups/
+# Retention: 30 versions (SMB), 5 versions (local)
 
 set -eo pipefail
 
@@ -27,22 +29,27 @@ STAGING_DIR="/tmp/summitflow-backup-$$"
 QUICK_MODE=false
 LOCAL_ONLY=false
 STATUS_ONLY=false
+KEEP_LOCAL=false
+LOCAL_RETENTION=5
 
 for arg in "$@"; do
     case $arg in
         --quick) QUICK_MODE=true ;;
         --local) LOCAL_ONLY=true ;;
+        --keep-local) KEEP_LOCAL=true ;;
         --status) STATUS_ONLY=true ;;
         --help|-h)
-            echo "Usage: $0 [--quick] [--local] [--status]"
+            echo "Usage: $0 [--quick] [--local] [--keep-local] [--status]"
             echo ""
             echo "Options:"
-            echo "  --quick   Skip fresh DB dump, use existing backup"
-            echo "  --local   Create archive locally only, skip transfer"
-            echo "  --status  Show backup status only"
+            echo "  --quick      Skip fresh DB dump, use existing backup"
+            echo "  --local      Create archive locally only, skip SMB transfer"
+            echo "  --keep-local Upload to SMB AND keep local copy (for fast restore)"
+            echo "  --status     Show backup status only"
             echo ""
             echo "Destination: //$SMB_HOST/$SMB_SHARE/$SMB_PATH"
-            echo "Retention: $MAX_BACKUPS backups"
+            echo "Local backups: $PROJECT_DIR/backups/"
+            echo "Retention: $MAX_BACKUPS (SMB), $LOCAL_RETENTION (local)"
             exit 0
             ;;
     esac
@@ -256,6 +263,21 @@ main() {
         # Apply retention policy (only if upload succeeded)
         apply_retention
 
+        # Keep local copy if requested
+        if [ "$KEEP_LOCAL" = true ]; then
+            local local_backup_dir="$PROJECT_DIR/backups"
+            mkdir -p "$local_backup_dir"
+            cp "$archive_path" "$local_backup_dir/$ARCHIVE_NAME"
+            log_success "Local copy saved: $local_backup_dir/$ARCHIVE_NAME"
+
+            # Apply local retention (keep only latest N)
+            local local_count=$(ls -1 "$local_backup_dir"/*.tar.gz 2>/dev/null | wc -l)
+            if [ "$local_count" -gt "$LOCAL_RETENTION" ]; then
+                ls -1t "$local_backup_dir"/*.tar.gz | tail -n +$((LOCAL_RETENTION + 1)) | xargs rm -f
+                log "Local retention applied: keeping $LOCAL_RETENTION backups"
+            fi
+        fi
+
         # Update backup index
         update_backup_index "$ARCHIVE_NAME" "$archive_size" "$db_size" "ok" "$verification"
 
@@ -268,6 +290,9 @@ main() {
         echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
         echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
         echo "  Location: //$SMB_HOST/$SMB_SHARE/$SMB_PATH/$ARCHIVE_NAME"
+        if [ "$KEEP_LOCAL" = true ]; then
+            echo "  Local: $PROJECT_DIR/backups/$ARCHIVE_NAME"
+        fi
         echo ""
         echo "  Index updated: $BACKUP_INDEX"
         echo ""
