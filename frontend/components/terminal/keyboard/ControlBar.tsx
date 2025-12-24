@@ -14,7 +14,6 @@ interface ControlBarProps {
   mode?: KeyboardMode;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
-  onMinimize?: () => void;
   keyboardSize?: KeyboardSizePreset;
   onKeyboardSizeChange?: (size: KeyboardSizePreset) => void;
 }
@@ -25,7 +24,6 @@ export function ControlBar({
   mode = "native",
   connectionStatus = "connected",
   onReconnect,
-  onMinimize,
   keyboardSize = "medium",
   onKeyboardSizeChange,
 }: ControlBarProps) {

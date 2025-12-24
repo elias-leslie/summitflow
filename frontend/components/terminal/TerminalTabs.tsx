@@ -178,8 +178,11 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
   return (
     <div className={clsx("flex flex-col h-full min-h-0 overflow-visible", className)}>
-      {/* Tab bar */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 border-b border-slate-700 overflow-x-auto overflow-y-visible">
+      {/* Tab bar - order-2 on mobile (below terminal), order-1 on desktop (above terminal) */}
+      <div className={clsx(
+        "flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-slate-800 overflow-x-auto overflow-y-visible",
+        isMobile ? "order-2 border-t border-slate-700" : "order-1 border-b border-slate-700"
+      )}>
         {sessions.map((session) => (
           <button
             key={session.id}
@@ -394,7 +397,6 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           onModeChange={setKeyboardMode}
           connectionStatus={activeStatus}
           onReconnect={handleReconnect}
-          onMinimize={() => setOpen(false)}
         />
       )}
     </div>
