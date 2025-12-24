@@ -9,6 +9,7 @@ import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { EssentialKeyBar } from "./keyboard/EssentialKeyBar";
 
 // Maximum number of split panes
 const MAX_SPLIT_PANES = 4;
@@ -87,6 +88,14 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
       } catch (err) {
         console.error("Failed to copy:", err);
       }
+    }
+  }, [activeId]);
+
+  // Handle input from keyboard bar
+  const handleKeyboardInput = useCallback((data: string) => {
+    if (activeId) {
+      const terminalRef = terminalRefs.current.get(activeId);
+      terminalRef?.sendInput(data);
     }
   }, [activeId]);
 
@@ -410,6 +419,11 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
           </Group>
         )}
       </div>
+
+      {/* Essential key bar - mobile only */}
+      {isMobile && sessions.length > 0 && (
+        <EssentialKeyBar onSend={handleKeyboardInput} />
+      )}
     </div>
   );
 }
