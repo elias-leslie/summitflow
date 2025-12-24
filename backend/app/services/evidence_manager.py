@@ -40,6 +40,13 @@ DEFAULT_EXPIRY_HOURS = 24
 MAX_VERSIONS_TO_KEEP = 5
 CAPTURE_TIMEOUT_SECONDS = 60
 
+# Shared SELECT columns for evidence queries (DRY)
+EVIDENCE_SELECT_COLUMNS = """id, evidence_id, capability_id, criterion_id, evidence_type,
+       file_path, file_size_bytes, version, is_current,
+       captured_at, expires_at, quality_status, quality_issues,
+       confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
+       user_reviewed_at, user_approved, user_notes"""
+
 
 def get_evidence_base_dir(project_id: str) -> Path:
     """Get evidence base directory for a project.
@@ -253,28 +260,14 @@ def get_evidence(
     with get_connection() as conn, conn.cursor() as cur:
         if version:
             cur.execute(
-                """
-                SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                       file_path, file_size_bytes, version, is_current,
-                       captured_at, expires_at, quality_status, quality_issues,
-                       confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                       user_reviewed_at, user_approved, user_notes
-                FROM evidence
-                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND version = %s
-                """,
+                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND version = %s",
                 (project_id, capability_id, criterion_id, version),
             )
         else:
             cur.execute(
-                """
-                SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                       file_path, file_size_bytes, version, is_current,
-                       captured_at, expires_at, quality_status, quality_issues,
-                       confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                       user_reviewed_at, user_approved, user_notes
-                FROM evidence
-                WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
-                """,
+                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE",
                 (project_id, capability_id, criterion_id),
             )
         row = cur.fetchone()
@@ -296,17 +289,9 @@ def get_latest_evidence(project_id: str) -> dict[str, Any] | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND is_current = TRUE
-            ORDER BY captured_at DESC
-            LIMIT 1
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND is_current = TRUE "
+            "ORDER BY captured_at DESC LIMIT 1",
             (project_id,),
         )
         row = cur.fetchone()
@@ -361,16 +346,9 @@ def get_evidence_versions(
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
-            ORDER BY version DESC
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s "
+            "ORDER BY version DESC",
             (project_id, capability_id, criterion_id),
         )
         rows = cur.fetchall()
@@ -435,17 +413,10 @@ def list_evidence(
         # Get paginated results
         params.extend([limit, offset])
         cur.execute(
-            sql.SQL("""
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE {where_sql}
-            ORDER BY captured_at DESC
-            LIMIT %s OFFSET %s
-            """).format(where_sql=where_sql),
+            sql.SQL(
+                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+                "WHERE {{where_sql}} ORDER BY captured_at DESC LIMIT %s OFFSET %s"
+            ).format(where_sql=where_sql),
             params,
         )
         rows = cur.fetchall()
@@ -465,17 +436,9 @@ def get_pending_review(project_id: str, limit: int = 50) -> list[dict[str, Any]]
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND quality_status = 'pending' AND is_current = TRUE
-            ORDER BY captured_at DESC
-            LIMIT %s
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND quality_status = 'pending' AND is_current = TRUE "
+            "ORDER BY captured_at DESC LIMIT %s",
             (project_id, limit),
         )
         rows = cur.fetchall()
@@ -495,17 +458,9 @@ def get_needs_user_review(project_id: str, limit: int = 50) -> list[dict[str, An
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND quality_status = 'needs_review' AND is_current = TRUE
-            ORDER BY captured_at DESC
-            LIMIT %s
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND quality_status = 'needs_review' AND is_current = TRUE "
+            "ORDER BY captured_at DESC LIMIT %s",
             (project_id, limit),
         )
         rows = cur.fetchall()
@@ -525,17 +480,9 @@ def get_with_user_notes(project_id: str, limit: int = 50) -> list[dict[str, Any]
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND user_notes IS NOT NULL AND is_current = TRUE
-            ORDER BY user_reviewed_at DESC
-            LIMIT %s
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND user_notes IS NOT NULL AND is_current = TRUE "
+            "ORDER BY user_reviewed_at DESC LIMIT %s",
             (project_id, limit),
         )
         rows = cur.fetchall()
@@ -683,16 +630,9 @@ def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND expires_at < NOW() AND is_current = TRUE
-            ORDER BY expires_at ASC
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND expires_at < NOW() AND is_current = TRUE "
+            "ORDER BY expires_at ASC",
             (project_id,),
         )
         rows = cur.fetchall()
@@ -1051,16 +991,9 @@ def get_test_evidence(
     # Get all evidence for this test
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, evidence_id, capability_id, criterion_id, evidence_type,
-                   file_path, file_size_bytes, version, is_current,
-                   captured_at, expires_at, quality_status, quality_issues,
-                   confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-                   user_reviewed_at, user_approved, user_notes
-            FROM evidence
-            WHERE project_id = %s AND capability_id = %s AND is_current = TRUE
-            ORDER BY captured_at DESC
-            """,
+            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
+            "WHERE project_id = %s AND capability_id = %s AND is_current = TRUE "
+            "ORDER BY captured_at DESC",
             (project_id, capability_id),
         )
         rows = cur.fetchall()
