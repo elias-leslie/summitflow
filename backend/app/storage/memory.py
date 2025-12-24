@@ -340,6 +340,7 @@ def list_observations(
     agent_type: str | None = None,
     observation_type: str | None = None,
     session_id: str | None = None,
+    min_confidence: float | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -350,20 +351,30 @@ def list_observations(
         agent_type: Filter by agent type
         observation_type: Filter by observation type
         session_id: Filter by session ID
+        min_confidence: Filter by minimum confidence score (0.0 - 1.0)
         limit: Maximum results
         offset: Pagination offset
 
     Returns:
         List of observations sorted by created_at descending.
     """
+    # Build special conditions for comparison operators
+    special_conditions: list[str] = []
+    if min_confidence is not None:
+        special_conditions.append("confidence >= %s")
+
     where_clause, params = _build_where_clause(
         {
             "project_id": project_id,
             "agent_type": agent_type,
             "observation_type": observation_type,
             "session_id": session_id,
-        }
+        },
+        special_conditions=special_conditions,
     )
+    # Append special params after the equality params (matching SQL order)
+    if min_confidence is not None:
+        params.append(min_confidence)
     params.extend([limit, offset])
 
     with get_connection() as conn, conn.cursor() as cur:
