@@ -490,6 +490,33 @@ def search_observations_fts(
     return results[:limit]
 
 
+def count_observations_since(
+    project_id: str,
+    hours: int = 2,
+) -> int:
+    """Count observations created in the last N hours.
+
+    Args:
+        project_id: Project to count for.
+        hours: Time window in hours (default: 2).
+
+    Returns:
+        Count of observations created within the time window.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM observations
+            WHERE project_id = %s
+              AND created_at >= NOW() - INTERVAL '%s hours'
+            """,
+            (project_id, hours),
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+
 def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert observation row to dict.
 
