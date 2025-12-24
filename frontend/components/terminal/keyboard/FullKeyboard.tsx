@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import Keyboard from "simple-keyboard";
 import "simple-keyboard/build/css/index.css";
 import { ModifierProvider, useModifiers } from "./ModifierContext";
 import { useKeyboardInput } from "./useKeyboardInput";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { TerminalInputHandler, KeyboardMode } from "./types";
-import { Smartphone } from "lucide-react";
 
 // Terminal-optimized keyboard layout
 const layout = {
@@ -56,43 +55,60 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
   const { sendKey, sendRaw, modifiers } = useKeyboardInput({ onSend });
   const { toggleModifier } = useModifiers();
 
-  // Handle key press
-  const handleKeyPress = useCallback(
-    (button: string) => {
+  // Store callbacks in refs to avoid recreating keyboard on every change
+  const sendKeyRef = useRef(sendKey);
+  const sendRawRef = useRef(sendRaw);
+  const toggleModifierRef = useRef(toggleModifier);
+  const onToggleModeRef = useRef(onToggleMode);
+
+  // Keep refs updated
+  useEffect(() => {
+    sendKeyRef.current = sendKey;
+    sendRawRef.current = sendRaw;
+    toggleModifierRef.current = toggleModifier;
+    onToggleModeRef.current = onToggleMode;
+  }, [sendKey, sendRaw, toggleModifier, onToggleMode]);
+
+  // Initialize simple-keyboard ONCE (no dependencies that change)
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // Handler uses refs so it never needs to change
+    const handleKeyPress = (button: string) => {
       // Handle special keys
       switch (button) {
         case "{esc}":
-          sendRaw(KEY_SEQUENCES.ESC);
+          sendRawRef.current(KEY_SEQUENCES.ESC);
           break;
         case "{tab}":
-          sendRaw(KEY_SEQUENCES.TAB);
+          sendRawRef.current(KEY_SEQUENCES.TAB);
           break;
         case "{enter}":
-          sendRaw(KEY_SEQUENCES.ENTER);
+          sendRawRef.current(KEY_SEQUENCES.ENTER);
           break;
         case "{bksp}":
-          sendRaw(KEY_SEQUENCES.BACKSPACE);
+          sendRawRef.current(KEY_SEQUENCES.BACKSPACE);
           break;
         case "{space}":
-          sendKey(" ");
+          sendKeyRef.current(" ");
           break;
         case "{arrowleft}":
-          sendRaw(KEY_SEQUENCES.ARROW_LEFT);
+          sendRawRef.current(KEY_SEQUENCES.ARROW_LEFT);
           break;
         case "{arrowup}":
-          sendRaw(KEY_SEQUENCES.ARROW_UP);
+          sendRawRef.current(KEY_SEQUENCES.ARROW_UP);
           break;
         case "{arrowdown}":
-          sendRaw(KEY_SEQUENCES.ARROW_DOWN);
+          sendRawRef.current(KEY_SEQUENCES.ARROW_DOWN);
           break;
         case "{arrowright}":
-          sendRaw(KEY_SEQUENCES.ARROW_RIGHT);
+          sendRawRef.current(KEY_SEQUENCES.ARROW_RIGHT);
           break;
         case "{ctrl}":
-          toggleModifier("ctrl");
+          toggleModifierRef.current("ctrl");
           break;
         case "{shift}":
-          toggleModifier("shift");
+          toggleModifierRef.current("shift");
           // Also toggle shift layout in simple-keyboard
           if (keyboardRef.current) {
             const currentLayout = keyboardRef.current.options.layoutName;
@@ -102,14 +118,14 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
           }
           break;
         case "{alt}":
-          toggleModifier("alt");
+          toggleModifierRef.current("alt");
           break;
         case "{toggle}":
-          onToggleMode?.();
+          onToggleModeRef.current?.();
           break;
         default:
           // Regular character
-          sendKey(button);
+          sendKeyRef.current(button);
           break;
       }
 
@@ -117,13 +133,7 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         navigator.vibrate(10);
       }
-    },
-    [sendKey, sendRaw, toggleModifier, onToggleMode]
-  );
-
-  // Initialize simple-keyboard
-  useEffect(() => {
-    if (!containerRef.current) return;
+    };
 
     const keyboard = new Keyboard(containerRef.current, {
       onKeyPress: handleKeyPress,
@@ -133,11 +143,8 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
       mergeDisplay: true,
       physicalKeyboardHighlight: false,
       physicalKeyboardHighlightPress: false,
-      // Prevent double-firing on mobile touch
-      preventMouseDownDefault: true,
-      stopMouseDownPropagation: true,
-      // Use pointerEvents for better touch handling
-      useMouseEvents: false,
+      // Disable key repeat/hold behavior
+      disableButtonHold: true,
     });
 
     keyboardRef.current = keyboard;
@@ -145,7 +152,7 @@ function FullKeyboardInner({ onSend, onToggleMode, mode = "custom" }: FullKeyboa
     return () => {
       keyboard.destroy();
     };
-  }, [handleKeyPress]);
+  }, []); // Empty deps - only initialize once
 
   // Update modifier button styles
   useEffect(() => {

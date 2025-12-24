@@ -56,6 +56,12 @@ def _create_tmux_session(session_id: str, working_dir: str | None = None) -> str
         if working_dir:
             cmd.extend(["-c", working_dir])
         subprocess.run(cmd, capture_output=True)
+
+        # Disable mouse mode so xterm.js handles selection natively
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "mouse", "off"],
+            capture_output=True,
+        )
         logger.info("tmux_session_created", session=session_name, working_dir=working_dir)
     else:
         logger.info("tmux_session_attached", session=session_name)

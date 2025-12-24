@@ -46,10 +46,16 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const connectWebSocketRef = useRef<(() => void) | null>(null);
 
-  // Notify parent of status changes
+  // Store callback in ref to avoid re-render loops
+  const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => {
-    onStatusChange?.(status);
-  }, [status, onStatusChange]);
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
+
+  // Notify parent of status changes (uses ref to avoid dependency on callback)
+  useEffect(() => {
+    onStatusChangeRef.current?.(status);
+  }, [status]);
 
   // Expose functions to parent
   useImperativeHandle(ref, () => ({
@@ -124,6 +130,12 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         cursorBlink: true,
         fontSize: fontSize,
         fontFamily: fontFamily,
+        // Force selection to work even if shell has mouse mode enabled
+        allowProposedApi: true,
+        rightClickSelectsWord: true,
+        // Alt+click forces selection on Windows/Linux, Option+click on Mac
+        macOptionClickForcesSelection: true,
+        altClickMovesCursor: false,
         theme: {
           background: "#0f172a", // slate-900
           foreground: "#e2e8f0", // slate-200
@@ -313,17 +325,36 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, workingDir, handleResize, onDisconnect]);
 
-  // Handle container resize
+  // Handle container resize with debounce to prevent loops
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
+    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastWidth = 0;
+    let lastHeight = 0;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Only process if size actually changed (prevents loops)
+      const entry = entries[0];
+      if (!entry) return;
+
+      const { width, height } = entry.contentRect;
+      if (width === lastWidth && height === lastHeight) return;
+
+      lastWidth = width;
+      lastHeight = height;
+
+      // Debounce resize to prevent rapid firing
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        handleResize();
+      }, 50);
     });
 
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeObserver.disconnect();
     };
   }, [handleResize]);
@@ -341,29 +372,29 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   }, [fontFamily, fontSize]);
 
   // Apply keyboard suppression when enabled (for custom keyboard mode)
-  useEffect(() => {
-    if (!containerRef.current || !suppressNativeKeyboard) return;
+  // Uses ref to track terminal readiness to avoid timing issues
+  const suppressionAppliedRef = useRef(false);
 
-    // Find the xterm helper textarea
+  useEffect(() => {
+    if (!containerRef.current || !terminalRef.current) return;
+
     const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
     if (!textarea) return;
 
-    // Apply suppression techniques
-    const originalInputMode = textarea.inputMode;
-    const originalReadOnly = textarea.readOnly;
-
-    // Tier 1: inputMode="none" (works on most mobile browsers)
-    textarea.inputMode = "none";
-
-    // Tier 2: readonly fallback
-    textarea.readOnly = true;
-
-    // Cleanup on unmount or when suppression is disabled
-    return () => {
-      textarea.inputMode = originalInputMode;
-      textarea.readOnly = originalReadOnly;
-    };
-  }, [suppressNativeKeyboard]);
+    if (suppressNativeKeyboard && !suppressionAppliedRef.current) {
+      // Apply suppression
+      textarea.inputMode = "none";
+      textarea.readOnly = true;
+      // Blur to dismiss any open keyboard
+      textarea.blur();
+      suppressionAppliedRef.current = true;
+    } else if (!suppressNativeKeyboard && suppressionAppliedRef.current) {
+      // Restore normal input
+      textarea.inputMode = "";
+      textarea.readOnly = false;
+      suppressionAppliedRef.current = false;
+    }
+  }, [suppressNativeKeyboard, status]); // status changes after terminal is ready
 
   return (
     <div className={clsx("relative overflow-hidden", className)}>
@@ -395,10 +426,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           touchAction: "none",
         }}
         onTouchMove={(e) => e.stopPropagation()}
-        onContextMenu={(e) => {
-          // Prevent browser context menu - let xterm/clipboard addon handle copy/paste
-          e.preventDefault();
-        }}
       />
     </div>
   );
