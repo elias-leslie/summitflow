@@ -191,84 +191,49 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.readOnly = true;
         }
 
-        // Get the xterm viewport element for direct scroll manipulation
+        // Get the xterm viewport - this is the scrollable element
         const viewport = containerRef.current.querySelector<HTMLElement>(".xterm-viewport");
-        if (!viewport) {
-          console.warn("[Terminal] Could not find .xterm-viewport for touch scrolling");
+
+        if (viewport) {
+          let lastY = 0;
+          let isTouching = false;
+
+          const handleTouchStart = (e: TouchEvent) => {
+            lastY = e.touches[0].clientY;
+            isTouching = true;
+          };
+
+          const handleTouchMove = (e: TouchEvent) => {
+            if (!isTouching) return;
+
+            e.preventDefault(); // Prevent pull-to-refresh
+            e.stopPropagation(); // Stop event from bubbling
+
+            const currentY = e.touches[0].clientY;
+            const deltaY = lastY - currentY;
+            lastY = currentY;
+
+            // Directly scroll the viewport
+            viewport.scrollTop += deltaY;
+          };
+
+          const handleTouchEnd = () => {
+            isTouching = false;
+          };
+
+          // Attach directly to viewport element
+          viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
+          viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
+          viewport.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+          // Store cleanup
+          const cleanupTouch = () => {
+            viewport.removeEventListener("touchstart", handleTouchStart);
+            viewport.removeEventListener("touchmove", handleTouchMove);
+            viewport.removeEventListener("touchend", handleTouchEnd);
+          };
+          (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
         }
-
-        // Disable text selection on mobile to prevent conflict with scrolling
-        // Selection can still be done via long-press context menu if needed
-        const xtermElement = containerRef.current.querySelector<HTMLElement>(".xterm");
-        if (xtermElement) {
-          xtermElement.style.userSelect = "none";
-          xtermElement.style.webkitUserSelect = "none";
-          // Tell browser we'll handle touch scrolling
-          xtermElement.style.touchAction = "none";
-        }
-
-        // Set up touch scrolling at DOCUMENT level
-        const container = containerRef.current;
-        let lastY = 0;
-        let isScrolling = false;
-
-        const handleTouchStart = (e: TouchEvent) => {
-          // Check if touch started inside our terminal container using bounding rect
-          const rect = container.getBoundingClientRect();
-          const touch = e.touches[0];
-          const isInside = (
-            touch.clientX >= rect.left &&
-            touch.clientX <= rect.right &&
-            touch.clientY >= rect.top &&
-            touch.clientY <= rect.bottom
-          );
-
-          if (isInside) {
-            lastY = touch.clientY;
-            isScrolling = true;
-          }
-        };
-
-        const handleTouchMove = (e: TouchEvent) => {
-          if (!isScrolling) return;
-
-          // Prevent pull-to-refresh
-          e.preventDefault();
-
-          const currentY = e.touches[0].clientY;
-          const deltaY = lastY - currentY; // Positive = scrolling down (finger moving up)
-          lastY = currentY;
-
-          // Simulate wheel event - xterm definitely handles these
-          if (Math.abs(deltaY) > 2) {
-            const wheelEvent = new WheelEvent("wheel", {
-              deltaY: deltaY * 3, // Amplify for better scroll feel
-              deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-              bubbles: true,
-              cancelable: true,
-            });
-            container.dispatchEvent(wheelEvent);
-          }
-        };
-
-        const handleTouchEnd = () => {
-          isScrolling = false;
-        };
-
-        // Attach to document with capture phase - catches events before anything else
-        document.addEventListener("touchstart", handleTouchStart, { passive: true, capture: true });
-        document.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
-        document.addEventListener("touchend", handleTouchEnd, { passive: true, capture: true });
-        document.addEventListener("touchcancel", handleTouchEnd, { passive: true, capture: true });
-
-        // Store cleanup function
-        const cleanupTouch = () => {
-          document.removeEventListener("touchstart", handleTouchStart, { capture: true });
-          document.removeEventListener("touchmove", handleTouchMove, { capture: true });
-          document.removeEventListener("touchend", handleTouchEnd, { capture: true });
-          document.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
-        };
-        (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
       }
 
       // Fit immediately and again after a short delay to ensure proper sizing
