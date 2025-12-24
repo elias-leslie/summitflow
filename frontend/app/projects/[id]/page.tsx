@@ -7,7 +7,6 @@ import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import {
   fetchProject,
-  fetchProjectHealth,
   createRoundtableSession,
   getRoundtableSession,
   streamRoundtableMessage,
@@ -28,7 +27,6 @@ import {
   type GeneratedNarrative,
   type GeneratedGoal,
   type GeneratedSpec,
-  type RoundtableSSEEvent,
   type ToolStats,
   type PermissionRequest,
 } from "@/lib/api";
@@ -44,7 +42,6 @@ import {
   RoundtableChat,
   type ChatMessage,
   type RoundtableMode,
-  type FileAttachment,
   type GeneratedVision,
 } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
@@ -149,7 +146,6 @@ export default function ProjectDetailPage() {
   const [roundtableLoading, setRoundtableLoading] = useState(false);
   const [streamingAgent, setStreamingAgent] = useState<"claude" | "gemini" | null>(null);
   const [roundtableError, setRoundtableError] = useState<string | null>(null);
-  const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
   const [generatedSpec, setGeneratedSpec] = useState<GeneratedSpec | null>(null);
   const [roundtableSessionLoaded, setRoundtableSessionLoaded] = useState(false);
   const [toolsEnabled, setToolsEnabled] = useState(true);
@@ -197,11 +193,6 @@ export default function ProjectDetailPage() {
           }));
           setRoundtableMessages(messages);
 
-          // Load generated features if any
-          if (session.generated_features && session.generated_features.length > 0) {
-            setGeneratedFeatures(session.generated_features);
-          }
-
           // Load generated spec if any (using the separate spec endpoint)
           getSpecFromRoundtable(projectId, session.id)
             .then((specData) => {
@@ -237,12 +228,6 @@ export default function ProjectDetailPage() {
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => fetchProject(projectId),
-  });
-
-  const { data: health } = useQuery({
-    queryKey: ["project-health", projectId],
-    queryFn: () => fetchProjectHealth(projectId),
-    refetchInterval: 30000,
   });
 
   // Tasks for Kanban (fetch with feature context)
@@ -293,7 +278,6 @@ export default function ProjectDetailPage() {
     // Clear current session
     setRoundtableSessionId(null);
     setRoundtableMessages([]);
-    setGeneratedFeatures([]);
     setGeneratedSpec(null);
     setRoundtableError(null);
     // Reset tools state
@@ -336,13 +320,6 @@ export default function ProjectDetailPage() {
         tokensUsed: msg.tokens_used,
       }));
       setRoundtableMessages(messages);
-
-      // Load generated features if any
-      if (session.generated_features && session.generated_features.length > 0) {
-        setGeneratedFeatures(session.generated_features);
-      } else {
-        setGeneratedFeatures([]);
-      }
 
       // Load generated spec if any
       try {
@@ -447,9 +424,7 @@ export default function ProjectDetailPage() {
   };
 
   const handleSendMessage = async (
-    message: string,
-    _attachments?: FileAttachment[],
-    _targetAgent?: "claude" | "gemini" | "user"
+    message: string
   ) => {
     setRoundtableLoading(true);
     setRoundtableError(null);
@@ -564,18 +539,7 @@ export default function ProjectDetailPage() {
         "gemini" // Use Gemini for faster extraction
       );
 
-      // Convert to the format expected by the component
-      const features: GeneratedFeature[] = result.features.map((f) => ({
-        capability_id: f.capability_id,
-        name: f.name,
-        category: f.category,
-        priority: f.priority,
-        description: f.description,
-        acceptance_criteria: f.acceptance_criteria,
-      }));
-
-      setGeneratedFeatures(features);
-      return features;
+      return result.features;
     } catch (err) {
       setRoundtableError(err instanceof Error ? err.message : "Failed to generate features");
       return [];
@@ -730,7 +694,7 @@ export default function ProjectDetailPage() {
         <div className="card p-8 text-center max-w-md">
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
           <h2 className="display text-lg font-semibold text-white mb-2">Project Not Found</h2>
-          <p className="text-slate-400 mb-6">The project you're looking for doesn't exist or couldn't be loaded.</p>
+          <p className="text-slate-400 mb-6">The project you&apos;re looking for doesn&apos;t exist or couldn&apos;t be loaded.</p>
           <Link href="/" className="btn-primary inline-flex items-center gap-2">
             Back to Dashboard
           </Link>

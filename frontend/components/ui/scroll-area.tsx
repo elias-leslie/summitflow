@@ -3,7 +3,7 @@
 import { forwardRef, type HTMLAttributes } from "react";
 import { clsx } from "clsx";
 
-interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {}
+type ScrollAreaProps = HTMLAttributes<HTMLDivElement>;
 
 export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(
   ({ className, children, ...props }, ref) => {

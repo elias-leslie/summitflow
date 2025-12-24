@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import Link from "next/link";
 import {
   Layers,
   Zap,
@@ -204,7 +205,7 @@ export default function AboutPage() {
           <p className="text-slate-400 mb-8 max-w-lg mx-auto">
             Get started with SummitFlow today and experience the future of AI-assisted software development.
           </p>
-          <a
+          <Link
             href="/"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-white transition-all"
             style={{
@@ -214,7 +215,7 @@ export default function AboutPage() {
           >
             Go to Dashboard
             <ArrowRight className="w-4 h-4" />
-          </a>
+          </Link>
         </div>
       </section>
     </div>

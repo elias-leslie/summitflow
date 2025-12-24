@@ -116,8 +116,8 @@ def _prompt_to_config(prompt: dict[str, Any]) -> PromptConfig:
         thinking_budget=prompt.get("thinking_budget", 0),
         tools_enabled=prompt.get("tools_enabled") or [],
         is_default=prompt.get("is_default", True),
-        created_at=prompt.get("created_at").isoformat() if prompt.get("created_at") else None,
-        updated_at=prompt.get("updated_at").isoformat() if prompt.get("updated_at") else None,
+        created_at=prompt["created_at"].isoformat() if prompt.get("created_at") else None,
+        updated_at=prompt["updated_at"].isoformat() if prompt.get("updated_at") else None,
     )
 
 

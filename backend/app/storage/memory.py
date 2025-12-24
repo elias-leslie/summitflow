@@ -144,7 +144,7 @@ def update_queue_item_status(
     return updated
 
 
-def _queue_row_to_dict(row: tuple) -> dict[str, Any]:
+def _queue_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
     """Convert queue row to dict."""
     return {
         "id": str(row[0]),
@@ -398,7 +398,8 @@ def count_observations(
             f"SELECT COUNT(*) FROM observations {where_clause}",
             params,
         )
-        return cur.fetchone()[0]
+        row = cur.fetchone()
+        return row[0] if row else 0
 
 
 def search_observations_fts(
@@ -469,7 +470,7 @@ def search_observations_fts(
     return results[:limit]
 
 
-def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
+def _observation_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
     """Convert observation row to dict.
 
     Handles row formats with varying columns:
@@ -493,112 +494,112 @@ def _observation_row_to_dict(row: tuple) -> dict[str, Any]:
 
     # Current format with entities (21 cols)
     if len(row) >= 21:
-        result["priority"] = row[6] or "medium"
-        confidence = row[7]
+        result["priority"] = row[6] or "medium"  # type: ignore[misc]
+        confidence = row[7]  # type: ignore[misc]
         result["confidence"] = (
             float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
         )
-        result["entities"] = row[8] or []
-        result["title"] = row[9]
-        result["subtitle"] = row[10]
-        result["narrative"] = row[11]
-        result["facts"] = row[12]
-        result["files_read"] = row[13] or []
-        result["files_modified"] = row[14] or []
-        result["tool_name"] = row[15]
-        result["tool_input"] = row[16]
-        result["discovery_tokens"] = row[17]
-        result["extracted_by"] = row[18]
-        result["raw_excerpt"] = row[19]
-        result["created_at"] = row[20].isoformat() if row[20] else None
+        result["entities"] = row[8] or []  # type: ignore[misc]
+        result["title"] = row[9]  # type: ignore[misc]
+        result["subtitle"] = row[10]  # type: ignore[misc]
+        result["narrative"] = row[11]  # type: ignore[misc]
+        result["facts"] = row[12]  # type: ignore[misc]
+        result["files_read"] = row[13] or []  # type: ignore[misc]
+        result["files_modified"] = row[14] or []  # type: ignore[misc]
+        result["tool_name"] = row[15]  # type: ignore[misc]
+        result["tool_input"] = row[16]  # type: ignore[misc]
+        result["discovery_tokens"] = row[17]  # type: ignore[misc]
+        result["extracted_by"] = row[18]  # type: ignore[misc]
+        result["raw_excerpt"] = row[19]  # type: ignore[misc]
+        result["created_at"] = row[20].isoformat() if row[20] else None  # type: ignore[misc]
     # Previous format with confidence, no entities (20 cols)
     elif len(row) >= 20:
-        result["priority"] = row[6] or "medium"
-        confidence = row[7]
+        result["priority"] = row[6] or "medium"  # type: ignore[misc]
+        confidence = row[7]  # type: ignore[misc]
         result["confidence"] = (
             float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
         )
         result["entities"] = []
-        result["title"] = row[8]
-        result["subtitle"] = row[9]
-        result["narrative"] = row[10]
-        result["facts"] = row[11]
-        result["files_read"] = row[12] or []
-        result["files_modified"] = row[13] or []
-        result["tool_name"] = row[14]
-        result["tool_input"] = row[15]
-        result["discovery_tokens"] = row[16]
-        result["extracted_by"] = row[17]
-        result["raw_excerpt"] = row[18]
-        result["created_at"] = row[19].isoformat() if row[19] else None
+        result["title"] = row[8]  # type: ignore[misc]
+        result["subtitle"] = row[9]  # type: ignore[misc]
+        result["narrative"] = row[10]  # type: ignore[misc]
+        result["facts"] = row[11]  # type: ignore[misc]
+        result["files_read"] = row[12] or []  # type: ignore[misc]
+        result["files_modified"] = row[13] or []  # type: ignore[misc]
+        result["tool_name"] = row[14]  # type: ignore[misc]
+        result["tool_input"] = row[15]  # type: ignore[misc]
+        result["discovery_tokens"] = row[16]  # type: ignore[misc]
+        result["extracted_by"] = row[17]  # type: ignore[misc]
+        result["raw_excerpt"] = row[18]  # type: ignore[misc]
+        result["created_at"] = row[19].isoformat() if row[19] else None  # type: ignore[misc]
     # Previous format with raw_excerpt, no confidence (19 cols)
     elif len(row) >= 19:
-        result["priority"] = row[6] or "medium"
+        result["priority"] = row[6] or "medium"  # type: ignore[misc]
         result["confidence"] = 0.50  # Default for legacy
         result["entities"] = []
-        result["title"] = row[7]
-        result["subtitle"] = row[8]
-        result["narrative"] = row[9]
-        result["facts"] = row[10]
-        result["files_read"] = row[11] or []
-        result["files_modified"] = row[12] or []
-        result["tool_name"] = row[13]
-        result["tool_input"] = row[14]
-        result["discovery_tokens"] = row[15]
-        result["extracted_by"] = row[16]
-        result["raw_excerpt"] = row[17]
-        result["created_at"] = row[18].isoformat() if row[18] else None
+        result["title"] = row[7]  # type: ignore[misc]
+        result["subtitle"] = row[8]  # type: ignore[misc]
+        result["narrative"] = row[9]  # type: ignore[misc]
+        result["facts"] = row[10]  # type: ignore[misc]
+        result["files_read"] = row[11] or []  # type: ignore[misc]
+        result["files_modified"] = row[12] or []  # type: ignore[misc]
+        result["tool_name"] = row[13]  # type: ignore[misc]
+        result["tool_input"] = row[14]  # type: ignore[misc]
+        result["discovery_tokens"] = row[15]  # type: ignore[misc]
+        result["extracted_by"] = row[16]  # type: ignore[misc]
+        result["raw_excerpt"] = row[17]  # type: ignore[misc]
+        result["created_at"] = row[18].isoformat() if row[18] else None  # type: ignore[misc]
     # Previous format with priority, no raw_excerpt (18 cols)
     elif len(row) >= 18:
-        result["priority"] = row[6] or "medium"
+        result["priority"] = row[6] or "medium"  # type: ignore[misc]
         result["confidence"] = 0.50
         result["entities"] = []
-        result["title"] = row[7]
-        result["subtitle"] = row[8]
-        result["narrative"] = row[9]
-        result["facts"] = row[10]
-        result["files_read"] = row[11] or []
-        result["files_modified"] = row[12] or []
-        result["tool_name"] = row[13]
-        result["tool_input"] = row[14]
-        result["discovery_tokens"] = row[15]
-        result["extracted_by"] = row[16]
+        result["title"] = row[7]  # type: ignore[misc]
+        result["subtitle"] = row[8]  # type: ignore[misc]
+        result["narrative"] = row[9]  # type: ignore[misc]
+        result["facts"] = row[10]  # type: ignore[misc]
+        result["files_read"] = row[11] or []  # type: ignore[misc]
+        result["files_modified"] = row[12] or []  # type: ignore[misc]
+        result["tool_name"] = row[13]  # type: ignore[misc]
+        result["tool_input"] = row[14]  # type: ignore[misc]
+        result["discovery_tokens"] = row[15]  # type: ignore[misc]
+        result["extracted_by"] = row[16]  # type: ignore[misc]
         result["raw_excerpt"] = None
-        result["created_at"] = row[17].isoformat() if row[17] else None
+        result["created_at"] = row[17].isoformat() if row[17] else None  # type: ignore[misc]
     # Old format with extracted_by but no priority (17 cols)
     elif len(row) >= 17:
         result["priority"] = "medium"  # Default for legacy data
         result["confidence"] = 0.50
         result["entities"] = []
-        result["title"] = row[6]
-        result["subtitle"] = row[7]
-        result["narrative"] = row[8]
-        result["facts"] = row[9]
-        result["files_read"] = row[10] or []
-        result["files_modified"] = row[11] or []
-        result["tool_name"] = row[12]
-        result["tool_input"] = row[13]
-        result["discovery_tokens"] = row[14]
-        result["extracted_by"] = row[15]
+        result["title"] = row[6]  # type: ignore[misc]
+        result["subtitle"] = row[7]  # type: ignore[misc]
+        result["narrative"] = row[8]  # type: ignore[misc]
+        result["facts"] = row[9]  # type: ignore[misc]
+        result["files_read"] = row[10] or []  # type: ignore[misc]
+        result["files_modified"] = row[11] or []  # type: ignore[misc]
+        result["tool_name"] = row[12]  # type: ignore[misc]
+        result["tool_input"] = row[13]  # type: ignore[misc]
+        result["discovery_tokens"] = row[14]  # type: ignore[misc]
+        result["extracted_by"] = row[15]  # type: ignore[misc]
         result["raw_excerpt"] = None
-        result["created_at"] = row[16].isoformat() if row[16] else None
+        result["created_at"] = row[16].isoformat() if row[16] else None  # type: ignore[misc]
     else:
         # Oldest format (16 cols)
         result["priority"] = "medium"
         result["confidence"] = 0.50
         result["entities"] = []
-        result["title"] = row[6]
-        result["subtitle"] = row[7]
-        result["narrative"] = row[8]
-        result["facts"] = row[9]
-        result["files_read"] = row[10] or []
-        result["files_modified"] = row[11] or []
-        result["tool_name"] = row[12]
-        result["tool_input"] = row[13]
-        result["discovery_tokens"] = row[14]
+        result["title"] = row[6]  # type: ignore[misc]
+        result["subtitle"] = row[7]  # type: ignore[misc]
+        result["narrative"] = row[8]  # type: ignore[misc]
+        result["facts"] = row[9]  # type: ignore[misc]
+        result["files_read"] = row[10] or []  # type: ignore[misc]
+        result["files_modified"] = row[11] or []  # type: ignore[misc]
+        result["tool_name"] = row[12]  # type: ignore[misc]
+        result["tool_input"] = row[13]  # type: ignore[misc]
+        result["discovery_tokens"] = row[14]  # type: ignore[misc]
         result["extracted_by"] = None
         result["raw_excerpt"] = None
-        result["created_at"] = row[15].isoformat() if row[15] else None
+        result["created_at"] = row[15].isoformat() if row[15] else None  # type: ignore[misc]
     return result
 
 
@@ -776,7 +777,8 @@ def count_diary_entries(
             f"SELECT COUNT(*) FROM session_diary {where_clause}",
             params,
         )
-        return cur.fetchone()[0]
+        row = cur.fetchone()
+        return row[0] if row else 0
 
 
 def get_unreflected_diary_count(project_id: str) -> int:
@@ -829,7 +831,7 @@ def mark_diary_entries_reflected(
     return updated
 
 
-def _diary_row_to_dict(row: tuple) -> dict[str, Any]:
+def _diary_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
     """Convert diary row to dict."""
     return {
         "id": str(row[0]),
@@ -1094,7 +1096,8 @@ def count_patterns(
             f"SELECT COUNT(*) FROM learned_patterns {where_clause}",
             params,
         )
-        return cur.fetchone()[0]
+        row = cur.fetchone()
+        return row[0] if row else 0
 
 
 def get_stale_patterns(project_id: str, days: int = 30) -> list[dict[str, Any]]:
@@ -1186,7 +1189,7 @@ def increment_pattern_usage(pattern_id: str) -> bool:
     return updated
 
 
-def _pattern_row_to_dict(row: tuple) -> dict[str, Any]:
+def _pattern_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
     """Convert pattern row to dict.
 
     Handles both old 19-column rows and new 20-column rows with reflected_by.
@@ -1360,7 +1363,7 @@ def delete_checkpoint(checkpoint_id: str) -> bool:
     return deleted
 
 
-def _checkpoint_row_to_dict(row: tuple) -> dict[str, Any]:
+def _checkpoint_row_to_dict(row: tuple) -> dict[str, Any]:  # type: ignore[type-arg]
     """Convert checkpoint row to dict."""
     return {
         "id": str(row[0]),
@@ -1416,7 +1419,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        failed_queue_count = cur.fetchone()[0] or 0
+        row = cur.fetchone()
+        failed_queue_count = row[0] if row else 0
 
         # Stuck queue count (processing for > 1 hour)
         cur.execute(
@@ -1429,7 +1433,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        stuck_queue_count = cur.fetchone()[0] or 0
+        row = cur.fetchone()
+        stuck_queue_count = row[0] if row else 0
 
         # Oldest pending age in minutes
         cur.execute(
@@ -1441,7 +1446,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        result = cur.fetchone()[0]
+        row = cur.fetchone()
+        result = row[0] if row else None
         oldest_pending_age_minutes = int(result) if result else None
 
         # Unreflected diary count
@@ -1454,7 +1460,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        unreflected_diary_count = cur.fetchone()[0] or 0
+        row = cur.fetchone()
+        unreflected_diary_count = row[0] if row else 0
 
         # Stale patterns count (applied but unused for 30+ days)
         cur.execute(
@@ -1467,7 +1474,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        stale_patterns_count = cur.fetchone()[0] or 0
+        row = cur.fetchone()
+        stale_patterns_count = row[0] if row else 0
 
         # Pattern status breakdown
         cur.execute(

@@ -2,11 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   RefreshCw,
-  Package,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -20,7 +19,6 @@ import {
   fetchTddComponents,
   fetchTddCapabilities,
   lockTddCapability,
-  type TddComponent,
   type TddCapability,
 } from "@/lib/api";
 
@@ -55,7 +53,6 @@ function ComponentsPageSkeleton() {
 export default function ComponentsPage() {
   const params = useParams();
   const projectId = params.id as string;
-  const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
