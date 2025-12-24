@@ -647,11 +647,10 @@ export async function listRoundtableSessions(
   projectId: string,
   status?: "active" | "archived"
 ): Promise<RoundtableSessionInfo[]> {
-  const url = new URL(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`);
-  if (status) {
-    url.searchParams.set("status", status);
-  }
-  const res = await fetch(url.toString());
+  const params = status ? `?status=${status}` : "";
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions${params}`
+  );
   if (!res.ok) throw new Error("Failed to list roundtable sessions");
   return res.json();
 }
