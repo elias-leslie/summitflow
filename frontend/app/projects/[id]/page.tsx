@@ -410,83 +410,45 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleGenerateFeatures = async (): Promise<GeneratedFeature[]> => {
+  // Wrapper to handle common generation pattern (loading state, error handling, session check)
+  const withGeneration = async <T,>(
+    defaultValue: T,
+    errorPrefix: string,
+    fn: (sessionId: string) => Promise<T>
+  ): Promise<T> => {
     if (!roundtableSessionId) {
       setRoundtableError("No active session");
-      return [];
+      return defaultValue;
     }
-
     setRoundtableLoading(true);
     setRoundtableError(null);
-
     try {
-      const result = await generateFeaturesFromRoundtable(
-        projectId,
-        roundtableSessionId,
-        "gemini" // Use Gemini for faster extraction
-      );
+      return await fn(roundtableSessionId);
+    } catch (err) {
+      setRoundtableError(err instanceof Error ? err.message : `Failed to ${errorPrefix}`);
+      return defaultValue;
+    } finally {
+      setRoundtableLoading(false);
+    }
+  };
 
+  const handleGenerateFeatures = (): Promise<GeneratedFeature[]> =>
+    withGeneration([], "generate features", async (sessionId) => {
+      const result = await generateFeaturesFromRoundtable(projectId, sessionId, "gemini");
       return result.features;
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to generate features");
-      return [];
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
+    });
 
-  const handleGenerateVision = async (): Promise<GeneratedVision> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return { mission: null, narratives: [] };
-    }
+  const handleGenerateVision = (): Promise<GeneratedVision> =>
+    withGeneration({ mission: null, narratives: [] }, "generate vision", async (sessionId) => {
+      const result = await generateVisionFromRoundtable(projectId, sessionId, "claude");
+      return { mission: result.mission, narratives: result.narratives };
+    });
 
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-
-    try {
-      const result = await generateVisionFromRoundtable(
-        projectId,
-        roundtableSessionId,
-        "claude"
-      );
-
-      return {
-        mission: result.mission,
-        narratives: result.narratives,
-      };
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to generate vision");
-      return { mission: null, narratives: [] };
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
-
-  const handleGenerateGoals = async (): Promise<GeneratedGoal[]> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return [];
-    }
-
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-
-    try {
-      const result = await generateGoalsFromRoundtable(
-        projectId,
-        roundtableSessionId,
-        "claude"
-      );
-
+  const handleGenerateGoals = (): Promise<GeneratedGoal[]> =>
+    withGeneration([], "generate goals", async (sessionId) => {
+      const result = await generateGoalsFromRoundtable(projectId, sessionId, "claude");
       return result.goals;
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to generate goals");
-      return [];
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
+    });
 
   const handleSaveVision = async (
     mission: GeneratedMission | null,
@@ -517,31 +479,12 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleGenerateSpec = async (): Promise<GeneratedSpec> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return { components: [] };
-    }
-
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-
-    try {
-      const result = await generateSpecFromRoundtable(
-        projectId,
-        roundtableSessionId,
-        "gemini" // Use Gemini for faster extraction
-      );
-
+  const handleGenerateSpec = (): Promise<GeneratedSpec> =>
+    withGeneration({ components: [] }, "generate spec", async (sessionId) => {
+      const result = await generateSpecFromRoundtable(projectId, sessionId, "gemini");
       setGeneratedSpec(result.spec);
       return result.spec;
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to generate spec");
-      return { components: [] };
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
+    });
 
   const handleAcceptSpec = async (): Promise<void> => {
     if (!roundtableSessionId) {
