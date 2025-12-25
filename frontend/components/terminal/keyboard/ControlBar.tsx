@@ -12,9 +12,11 @@ interface ControlBarProps {
   onSend: TerminalInputHandler;
   connectionStatus?: ConnectionStatus;
   onReconnect?: () => void;
-  // CTRL modifier
+  // Modifiers
   ctrlActive?: boolean;
   onCtrlToggle?: () => void;
+  shiftActive?: boolean;
+  onShiftToggle?: () => void;
   // Keyboard minimize
   minimized?: boolean;
   onToggleMinimize?: () => void;
@@ -26,18 +28,38 @@ export function ControlBar({
   onReconnect,
   ctrlActive = false,
   onCtrlToggle,
+  shiftActive = false,
+  onShiftToggle,
   minimized = false,
   onToggleMinimize,
 }: ControlBarProps) {
-  // Arrow key handlers
+  // Helper to clear modifiers after use
+  const clearModifiers = useCallback(() => {
+    if (ctrlActive && onCtrlToggle) onCtrlToggle();
+    if (shiftActive && onShiftToggle) onShiftToggle();
+  }, [ctrlActive, onCtrlToggle, shiftActive, onShiftToggle]);
+
+  // Arrow key handlers - don't clear modifiers for arrows
   const handleArrowLeft = useCallback(() => onSend(KEY_SEQUENCES.ARROW_LEFT), [onSend]);
   const handleArrowUp = useCallback(() => onSend(KEY_SEQUENCES.ARROW_UP), [onSend]);
   const handleArrowDown = useCallback(() => onSend(KEY_SEQUENCES.ARROW_DOWN), [onSend]);
   const handleArrowRight = useCallback(() => onSend(KEY_SEQUENCES.ARROW_RIGHT), [onSend]);
 
   // Special key handlers
-  const handleEsc = useCallback(() => onSend(KEY_SEQUENCES.ESC), [onSend]);
-  const handleTab = useCallback(() => onSend(KEY_SEQUENCES.TAB), [onSend]);
+  const handleEsc = useCallback(() => {
+    onSend(KEY_SEQUENCES.ESC);
+    clearModifiers();
+  }, [onSend, clearModifiers]);
+
+  const handleTab = useCallback(() => {
+    if (shiftActive) {
+      // Shift+Tab (backtab) - reverse tab completion
+      onSend('\x1b[Z');
+    } else {
+      onSend(KEY_SEQUENCES.TAB);
+    }
+    clearModifiers();
+  }, [shiftActive, onSend, clearModifiers]);
 
   // Get connection status color for refresh button
   const getStatusColor = () => {
