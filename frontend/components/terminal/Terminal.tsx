@@ -63,7 +63,11 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const handleScrollUp = useCallback(() => {
     const term = terminalRef.current;
     if (term) {
+      const buffer = term.buffer.active;
+      alert(`termRef exists. baseY=${buffer.baseY}, cursorY=${buffer.cursorY}, length=${buffer.length}`);
       term.scrollLines(-5);
+    } else {
+      alert('terminalRef.current is NULL');
     }
   }, []);
 
