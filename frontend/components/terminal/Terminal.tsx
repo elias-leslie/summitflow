@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { clsx } from "clsx";
+import { MobileScrollControls } from "./MobileScrollControls";
 
 // Dynamic imports for xterm (client-side only)
 let Terminal: typeof import("@xterm/xterm").Terminal;
@@ -50,7 +51,75 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const fitAddonRef = useRef<InstanceType<typeof FitAddon> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [isMobile, setIsMobile] = useState(false);
   const connectWebSocketRef = useRef<(() => void) | null>(null);
+
+  // Detect mobile on mount
+  useEffect(() => {
+    setIsMobile(isMobileDevice());
+  }, []);
+
+  // Scroll handlers for mobile controls - use viewport element directly
+  const getViewport = useCallback(() => {
+    const viewport = containerRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
+    console.log('[Scroll] getViewport:', viewport ? 'found' : 'NOT FOUND',
+      viewport ? `scrollH=${viewport.scrollHeight} clientH=${viewport.clientHeight}` : '');
+    return viewport;
+  }, []);
+
+  const handleScrollUp = useCallback(() => {
+    console.log('[Scroll] handleScrollUp called');
+    const viewport = getViewport();
+    if (viewport) {
+      const before = viewport.scrollTop;
+      viewport.scrollTop -= 60;
+      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
+    }
+  }, [getViewport]);
+
+  const handleScrollDown = useCallback(() => {
+    console.log('[Scroll] handleScrollDown called');
+    const viewport = getViewport();
+    if (viewport) {
+      const before = viewport.scrollTop;
+      viewport.scrollTop += 60;
+      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
+    }
+  }, [getViewport]);
+
+  const handlePageUp = useCallback(() => {
+    console.log('[Scroll] handlePageUp called');
+    const viewport = getViewport();
+    if (viewport) {
+      const before = viewport.scrollTop;
+      viewport.scrollTop -= viewport.clientHeight;
+      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
+    }
+  }, [getViewport]);
+
+  const handlePageDown = useCallback(() => {
+    console.log('[Scroll] handlePageDown called');
+    const viewport = getViewport();
+    if (viewport) {
+      const before = viewport.scrollTop;
+      viewport.scrollTop += viewport.clientHeight;
+      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
+    }
+  }, [getViewport]);
+
+  // Copy selected text
+  const handleCopy = useCallback(async (): Promise<string | null> => {
+    if (!terminalRef.current) return null;
+    const selection = terminalRef.current.getSelection();
+    return selection || null;
+  }, []);
+
+  // Paste text into terminal
+  const handlePaste = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(text);
+    }
+  }, []);
 
   // Store callback in ref to avoid re-render loops
   const onStatusChangeRef = useRef(onStatusChange);
@@ -331,10 +400,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       }
 
       if (terminalRef.current) {
-        // Clean up touch handlers if they exist
-        const touchCleanup = (terminalRef.current as unknown as { _touchCleanup?: () => void })._touchCleanup;
-        if (touchCleanup) touchCleanup();
-
         terminalRef.current.dispose();
         terminalRef.current = null;
       }
@@ -413,6 +478,18 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         ref={containerRef}
         className="w-full h-full bg-slate-900 overflow-hidden"
       />
+
+      {/* Mobile scroll controls */}
+      {isMobile && (
+        <MobileScrollControls
+          onScrollUp={handleScrollUp}
+          onScrollDown={handleScrollDown}
+          onPageUp={handlePageUp}
+          onPageDown={handlePageDown}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+        />
+      )}
     </div>
   );
 });
