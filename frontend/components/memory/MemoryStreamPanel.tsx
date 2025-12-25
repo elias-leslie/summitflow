@@ -146,12 +146,29 @@ export function MemoryStreamPanel({
 }: MemoryStreamPanelProps) {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [connected, setConnected] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Use shared SSE hook
+  const handleObservation = useCallback((obs: BaseObservation) => {
+    const observation = obs as Observation;
+    setObservations((prev) => {
+      // Avoid duplicates
+      if (prev.some((o) => o.id === observation.id)) {
+        return prev;
+      }
+      // Add to front (newest first)
+      return [observation, ...prev].slice(0, 100); // Keep max 100
+    });
+  }, []);
+
+  const { status } = useObservationStream({
+    projectId,
+    sessionId,
+    onObservation: handleObservation,
+  });
+
+  const connected = status === 'connected';
+  const reconnecting = status === 'reconnecting';
 
   // Filtering state
   const [typeFilter, setTypeFilter] = useState<ObservationType | "all">("all");
@@ -168,80 +185,6 @@ export function MemoryStreamPanel({
   const [expandedContextIds, setExpandedContextIds] = useState<Set<string>>(new Set());
   const [expandedContents, setExpandedContents] = useState<Map<string, ExpandedContent>>(new Map());
   const [expandingIds, setExpandingIds] = useState<Set<string>>(new Set());
-
-  // Connect to SSE stream
-  const connect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    setReconnecting(true);
-    setError(null);
-
-    const url = `/api/projects/${projectId}/observations/stream`;
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
-
-    eventSource.addEventListener("connected", () => {
-      setConnected(true);
-      setReconnecting(false);
-      setError(null);
-    });
-
-    eventSource.addEventListener("observation", (event) => {
-      try {
-        const observation = JSON.parse(event.data) as Observation;
-
-        // Filter by session if specified
-        if (sessionId && observation.session_id !== sessionId) {
-          return;
-        }
-
-        setObservations((prev) => {
-          // Avoid duplicates
-          if (prev.some((o) => o.id === observation.id)) {
-            return prev;
-          }
-          // Add to front (newest first)
-          return [observation, ...prev].slice(0, 100); // Keep max 100
-        });
-      } catch (err) {
-        console.error("Failed to parse observation:", err);
-      }
-    });
-
-    eventSource.addEventListener("heartbeat", () => {
-      // Keep alive, no action needed
-    });
-
-    eventSource.onerror = () => {
-      setConnected(false);
-      setReconnecting(false);
-      eventSource.close();
-
-      // Reconnect after delay
-      if (!reconnectTimeoutRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectTimeoutRef.current = null;
-          connect();
-        }, 5000);
-      }
-    };
-  }, [projectId, sessionId]);
-
-  // Initial connection and cleanup
-  useEffect(() => {
-    connect();
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [connect]);
 
   // Load initial observations
   useEffect(() => {
@@ -570,14 +513,6 @@ export function MemoryStreamPanel({
               Clear filters
             </Button>
           )}
-        </div>
-      )}
-
-      {/* Stream tab error */}
-      {activeTab === "stream" && error && (
-        <div className="p-2 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
-          <AlertCircle className="h-3.5 w-3.5" />
-          {error}
         </div>
       )}
 

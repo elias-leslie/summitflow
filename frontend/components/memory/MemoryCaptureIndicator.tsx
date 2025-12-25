@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { clsx } from 'clsx';
-
-type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+import { useObservationStream, type ConnectionStatus } from '@/lib/hooks/useObservationStream';
 
 interface MemoryCaptureIndicatorProps {
   projectId: string;
@@ -18,62 +17,10 @@ export function MemoryCaptureIndicator({
   projectId,
   className,
 }: MemoryCaptureIndicatorProps) {
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { status } = useObservationStream({ projectId });
   const [showTooltip, setShowTooltip] = useState(false);
 
-  useEffect(() => {
-    const connect = () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-
-      setStatus('reconnecting');
-
-      const url = `/api/projects/${projectId}/observations/stream`;
-      const eventSource = new EventSource(url);
-      eventSourceRef.current = eventSource;
-
-      eventSource.addEventListener('connected', () => {
-        setStatus('connected');
-      });
-
-      eventSource.addEventListener('heartbeat', () => {
-        // Keep alive, ensure we're marked as connected
-        if (status !== 'connected') {
-          setStatus('connected');
-        }
-      });
-
-      eventSource.onerror = () => {
-        setStatus('disconnected');
-        eventSource.close();
-        eventSourceRef.current = null;
-
-        // Reconnect after delay
-        if (!reconnectTimeoutRef.current) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectTimeoutRef.current = null;
-            connect();
-          }, 5000);
-        }
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [projectId, status]);
-
-  const statusConfig = {
+  const statusConfig: Record<ConnectionStatus, { color: string; shadow: string; pulse: boolean; text: string }> = {
     connected: {
       color: 'bg-emerald-400',
       shadow: 'shadow-[0_0_6px_rgba(52,211,153,0.6)]',
