@@ -446,7 +446,7 @@ def list_evidence(
         cur.execute(
             sql.SQL(
                 f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE {{where_sql}} ORDER BY captured_at DESC LIMIT %s OFFSET %s"
+                "WHERE {where_sql} ORDER BY captured_at DESC LIMIT %s OFFSET %s"
             ).format(where_sql=where_sql),
             params,
         )
