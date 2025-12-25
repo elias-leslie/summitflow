@@ -59,54 +59,34 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
     setIsMobile(isMobileDevice());
   }, []);
 
-  // Scroll handlers for mobile controls - use viewport element directly
-  const getViewport = useCallback(() => {
-    return containerRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
+  // Scroll handlers for mobile controls - use xterm's native API
+  const handleScrollUp = useCallback(() => {
+    const term = terminalRef.current;
+    if (term) {
+      term.scrollLines(-5);
+    }
   }, []);
 
-  const handleScrollUp = useCallback(() => {
-    const viewport = getViewport();
-    if (viewport) {
-      const before = viewport.scrollTop;
-      viewport.scrollTop -= 60;
-      alert(`ScrollUp: ${before} -> ${viewport.scrollTop} (scrollH=${viewport.scrollHeight}, clientH=${viewport.clientHeight})`);
-    } else {
-      alert('Viewport NOT FOUND!');
-    }
-  }, [getViewport]);
-
   const handleScrollDown = useCallback(() => {
-    const viewport = getViewport();
-    if (viewport) {
-      const before = viewport.scrollTop;
-      viewport.scrollTop += 60;
-      alert(`ScrollDown: ${before} -> ${viewport.scrollTop}`);
-    } else {
-      alert('Viewport NOT FOUND!');
+    const term = terminalRef.current;
+    if (term) {
+      term.scrollLines(5);
     }
-  }, [getViewport]);
+  }, []);
 
   const handlePageUp = useCallback(() => {
-    const viewport = getViewport();
-    if (viewport) {
-      const before = viewport.scrollTop;
-      viewport.scrollTop -= viewport.clientHeight;
-      alert(`PageUp: ${before} -> ${viewport.scrollTop}`);
-    } else {
-      alert('Viewport NOT FOUND!');
+    const term = terminalRef.current;
+    if (term) {
+      term.scrollToTop();
     }
-  }, [getViewport]);
+  }, []);
 
   const handlePageDown = useCallback(() => {
-    const viewport = getViewport();
-    if (viewport) {
-      const before = viewport.scrollTop;
-      viewport.scrollTop += viewport.clientHeight;
-      alert(`PageDown: ${before} -> ${viewport.scrollTop}`);
-    } else {
-      alert('Viewport NOT FOUND!');
+    const term = terminalRef.current;
+    if (term) {
+      term.scrollToBottom();
     }
-  }, [getViewport]);
+  }, []);
 
   // Copy selected text
   const handleCopy = useCallback(async (): Promise<string | null> => {
