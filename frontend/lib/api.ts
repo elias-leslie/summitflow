@@ -655,16 +655,12 @@ export async function updateRoundtableTools(
   if (options.writeEnabled !== undefined) body.write_enabled = options.writeEnabled;
   if (options.yoloMode !== undefined) body.yolo_mode = options.yoloMode;
 
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/tools`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
-  if (!res.ok) throw new Error("Failed to update roundtable tools");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions/${sessionId}/tools`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    errorMessage: "Failed to update roundtable tools",
+  });
 }
 
 export interface AgentConfigUpdate {
