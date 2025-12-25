@@ -31,6 +31,21 @@ OBSERVATION_COLUMNS = """
     extracted_by, raw_excerpt, created_at
 """.strip()
 
+DIARY_COLUMNS = """
+    id, project_id, session_id, task_id, agent_type,
+    duration_seconds, tokens_used, discovery_tokens, outcome,
+    observation_type, concepts, what_worked, what_failed,
+    user_corrections, patterns_used, reflected_at,
+    reflection_notes, patterns_generated, created_at
+""".strip()
+
+PATTERN_COLUMNS = """
+    id, project_id, pattern_type, title, content, rationale,
+    source_diary_ids, source_observation_ids, action, target_pattern_id,
+    status, confidence, usage_count, last_used_at, superseded_by,
+    applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
+""".strip()
+
 
 def _build_where_clause(
     filters: dict[str, Any],
@@ -739,15 +754,7 @@ def get_diary_entry(entry_id: str) -> dict[str, Any] | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, task_id, agent_type,
-                   duration_seconds, tokens_used, discovery_tokens, outcome,
-                   observation_type, concepts, what_worked, what_failed,
-                   user_corrections, patterns_used, reflected_at,
-                   reflection_notes, patterns_generated, created_at
-            FROM session_diary
-            WHERE id = %s
-            """,
+            f"SELECT {DIARY_COLUMNS} FROM session_diary WHERE id = %s",
             (entry_id,),
         )
         row = cur.fetchone()
@@ -774,14 +781,10 @@ def list_diary_entries(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            sql.SQL("""
-            SELECT id, project_id, session_id, task_id, agent_type,
-                   duration_seconds, tokens_used, discovery_tokens, outcome,
-                   observation_type, concepts, what_worked, what_failed,
-                   user_corrections, patterns_used, reflected_at,
-                   reflection_notes, patterns_generated, created_at
+            sql.SQL(f"""
+            SELECT {DIARY_COLUMNS}
             FROM session_diary
-            WHERE {where_clause}
+            WHERE {{where_clause}}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """).format(where_clause=where_clause),
@@ -935,12 +938,8 @@ def get_diary_entry_by_session(project_id: str, session_id: str) -> dict[str, An
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, task_id, agent_type,
-                   duration_seconds, tokens_used, discovery_tokens, outcome,
-                   observation_type, concepts, what_worked, what_failed,
-                   user_corrections, patterns_used, reflected_at,
-                   reflection_notes, patterns_generated, created_at
+            f"""
+            SELECT {DIARY_COLUMNS}
             FROM session_diary
             WHERE project_id = %s AND session_id = %s
             ORDER BY created_at DESC
@@ -1047,14 +1046,7 @@ def get_pattern(pattern_id: str) -> dict[str, Any] | None:
     """Get a pattern by ID."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, pattern_type, title, content, rationale,
-                   source_diary_ids, source_observation_ids, action, target_pattern_id,
-                   status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
-            FROM learned_patterns
-            WHERE id = %s
-            """,
+            f"SELECT {PATTERN_COLUMNS} FROM learned_patterns WHERE id = %s",
             (pattern_id,),
         )
         row = cur.fetchone()
@@ -1097,13 +1089,10 @@ def list_patterns(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            sql.SQL("""
-            SELECT id, project_id, pattern_type, title, content, rationale,
-                   source_diary_ids, source_observation_ids, action, target_pattern_id,
-                   status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
+            sql.SQL(f"""
+            SELECT {PATTERN_COLUMNS}
             FROM learned_patterns
-            WHERE {where_clause}
+            WHERE {{where_clause}}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """).format(where_clause=where_clause),
@@ -1155,11 +1144,8 @@ def get_stale_patterns(project_id: str, days: int = 30) -> list[dict[str, Any]]:
     """Get patterns that are applied but unused for N days."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, pattern_type, title, content, rationale,
-                   source_diary_ids, source_observation_ids, action, target_pattern_id,
-                   status, confidence, usage_count, last_used_at, superseded_by,
-                   applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
+            f"""
+            SELECT {PATTERN_COLUMNS}
             FROM learned_patterns
             WHERE project_id = %s
               AND status = 'applied'
