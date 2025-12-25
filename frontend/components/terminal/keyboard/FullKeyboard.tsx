@@ -218,7 +218,7 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
         .terminal-keyboard-theme .hg-button[data-skbtn="{shift}"],
         .terminal-keyboard-theme .hg-button[data-skbtn="{bksp}"],
         .terminal-keyboard-theme .hg-button[data-skbtn="{enter}"] {
-          font-size: ${rowHeight <= 36 ? 20 : rowHeight <= 44 ? 22 : 24}px;
+          font-size: ${rowHeight <= 36 ? 24 : rowHeight <= 44 ? 26 : 28}px;
         }
 
         /* Modifier states */

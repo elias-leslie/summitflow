@@ -2,17 +2,14 @@
 
 import { useCallback } from "react";
 import { clsx } from "clsx";
-import { RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { useModifiers } from "./ModifierContext";
 import { TerminalInputHandler } from "./types";
-import { ConnectionStatus } from "../Terminal";
 
 interface ControlBarProps {
   onSend: TerminalInputHandler;
-  connectionStatus?: ConnectionStatus;
-  onReconnect?: () => void;
   // Modifiers
   ctrlActive?: boolean;
   onCtrlToggle?: () => void;
@@ -23,8 +20,6 @@ interface ControlBarProps {
 
 export function ControlBar({
   onSend,
-  connectionStatus = "connected",
-  onReconnect,
   ctrlActive = false,
   onCtrlToggle,
   minimized = false,
@@ -62,25 +57,6 @@ export function ControlBar({
     clearModifiers();
   }, [shiftActive, onSend, clearModifiers]);
 
-  // Get connection status color for refresh button
-  const getStatusColor = () => {
-    switch (connectionStatus) {
-      case "connecting":
-        return "text-yellow-400 animate-pulse";
-      case "connected":
-        return "text-green-400";
-      case "disconnected":
-      case "error":
-      case "timeout":
-      case "session_dead":
-        return "text-red-400";
-      default:
-        return "text-slate-400";
-    }
-  };
-
-  const canReconnect = ["disconnected", "error", "timeout"].includes(connectionStatus);
-
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-800 border-t border-slate-700">
       {/* Arrow keys */}
@@ -88,22 +64,22 @@ export function ControlBar({
         <KeyboardKey
           label="←"
           onPress={handleArrowLeft}
-          className="w-11 text-lg"
+          className="w-12 text-xl"
         />
         <KeyboardKey
           label="↑"
           onPress={handleArrowUp}
-          className="w-11 text-lg"
+          className="w-11 text-xl"
         />
         <KeyboardKey
           label="↓"
           onPress={handleArrowDown}
-          className="w-11 text-lg"
+          className="w-11 text-xl"
         />
         <KeyboardKey
           label="→"
           onPress={handleArrowRight}
-          className="w-11 text-lg"
+          className="w-12 text-xl"
         />
       </div>
 
@@ -133,41 +109,22 @@ export function ControlBar({
         </button>
       </div>
 
-      {/* Right side - connection status/reconnect and keyboard toggle */}
-      <div className="flex items-center gap-1 ml-auto">
+      {/* Right side - keyboard toggle */}
+      {onToggleMinimize && (
         <button
           type="button"
-          onClick={onReconnect}
-          disabled={!canReconnect}
+          onClick={onToggleMinimize}
           className={clsx(
-            "flex items-center justify-center h-11 w-11 rounded-md transition-colors",
-            canReconnect
-              ? "bg-slate-700 hover:bg-slate-600"
-              : "bg-slate-800 cursor-default",
-            getStatusColor()
+            "flex items-center justify-center h-11 w-11 rounded-md transition-colors ml-auto",
+            minimized
+              ? "bg-phosphor-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
           )}
-          title={canReconnect ? "Reconnect" : `Status: ${connectionStatus}`}
+          title={minimized ? "Show keyboard" : "Hide keyboard"}
         >
-          <RefreshCw className="w-5 h-5" />
+          {minimized ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
-
-        {/* Keyboard minimize/expand toggle */}
-        {onToggleMinimize && (
-          <button
-            type="button"
-            onClick={onToggleMinimize}
-            className={clsx(
-              "flex items-center justify-center h-11 w-11 rounded-md transition-colors",
-              minimized
-                ? "bg-phosphor-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-            )}
-            title={minimized ? "Show keyboard" : "Hide keyboard"}
-          >
-            {minimized ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 }

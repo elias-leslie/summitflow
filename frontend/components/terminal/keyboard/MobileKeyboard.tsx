@@ -67,8 +67,6 @@ export function MobileKeyboard({
         {/* Control bar with arrows and special keys - always visible */}
         <ControlBar
           onSend={onSend}
-          connectionStatus={connectionStatus}
-          onReconnect={onReconnect}
           ctrlActive={ctrlActive}
           onCtrlToggle={handleCtrlToggle}
           minimized={minimized}
