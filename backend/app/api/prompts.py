@@ -30,10 +30,6 @@ class PromptConfig(BaseModel):
     prompt_text: str
     primary_agent: str = "claude"
     primary_model: str = "claude-sonnet-4-5"
-    verification_enabled: bool = False
-    verification_agent: str | None = None
-    verification_model: str | None = None
-    verification_prompt: str | None = None
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -48,10 +44,6 @@ class UpdatePromptRequest(BaseModel):
     prompt_text: str
     primary_agent: str = "claude"
     primary_model: str = "claude-sonnet-4-5"
-    verification_enabled: bool = False
-    verification_agent: str | None = None
-    verification_model: str | None = None
-    verification_prompt: str | None = None
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -72,10 +64,6 @@ class ImportPromptItem(BaseModel):
     prompt_text: str
     primary_agent: str = "claude"
     primary_model: str = "claude-sonnet-4-5"
-    verification_enabled: bool = False
-    verification_agent: str | None = None
-    verification_model: str | None = None
-    verification_prompt: str | None = None
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -108,10 +96,6 @@ def _prompt_to_config(prompt: dict[str, Any]) -> PromptConfig:
         prompt_text=prompt["prompt_text"],
         primary_agent=prompt.get("primary_agent", "claude"),
         primary_model=prompt.get("primary_model", "claude-sonnet-4-5"),
-        verification_enabled=prompt.get("verification_enabled", False),
-        verification_agent=prompt.get("verification_agent"),
-        verification_model=prompt.get("verification_model"),
-        verification_prompt=prompt.get("verification_prompt"),
         category=prompt.get("category", "extraction"),
         thinking_budget=prompt.get("thinking_budget", 0),
         tools_enabled=prompt.get("tools_enabled") or [],
@@ -196,10 +180,6 @@ async def import_prompts(
                 prompt_text=item.prompt_text,
                 primary_agent=item.primary_agent,
                 primary_model=item.primary_model,
-                verification_enabled=item.verification_enabled,
-                verification_agent=item.verification_agent,
-                verification_model=item.verification_model,
-                verification_prompt=item.verification_prompt,
                 category=item.category,
                 thinking_budget=item.thinking_budget,
                 tools_enabled=item.tools_enabled,
@@ -252,16 +232,6 @@ async def update_prompt(
             detail=f"Invalid primary_agent. Must be one of: {', '.join(valid_agents)}",
         )
 
-    if (
-        request.verification_enabled
-        and request.verification_agent
-        and request.verification_agent not in valid_agents
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid verification_agent. Must be one of: {', '.join(valid_agents)}",
-        )
-
     valid_categories = ["spec", "recovery", "qa", "extraction"]
     if request.category not in valid_categories:
         raise HTTPException(
@@ -275,10 +245,6 @@ async def update_prompt(
         prompt_text=request.prompt_text,
         primary_agent=request.primary_agent,
         primary_model=request.primary_model,
-        verification_enabled=request.verification_enabled,
-        verification_agent=request.verification_agent,
-        verification_model=request.verification_model,
-        verification_prompt=request.verification_prompt,
         category=request.category,
         thinking_budget=request.thinking_budget,
         tools_enabled=request.tools_enabled,

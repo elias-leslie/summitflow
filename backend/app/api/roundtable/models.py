@@ -195,10 +195,6 @@ class ExtractionPromptConfig(BaseModel):
     prompt_text: str
     primary_agent: str = "claude"
     primary_model: str = "claude-sonnet-4-5"
-    verification_enabled: bool = False
-    verification_agent: str | None = None
-    verification_model: str | None = None
-    verification_prompt: str | None = None
     is_default: bool = False
     created_at: str | None = None
     updated_at: str | None = None
@@ -210,10 +206,6 @@ class UpdateExtractionPromptRequest(BaseModel):
     prompt_text: str
     primary_agent: str = "claude"
     primary_model: str = "claude-sonnet-4-5"
-    verification_enabled: bool = False
-    verification_agent: str | None = None
-    verification_model: str | None = None
-    verification_prompt: str | None = None
 
 
 class ExtractionPromptsExport(BaseModel):
