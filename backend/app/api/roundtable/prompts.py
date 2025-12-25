@@ -130,26 +130,12 @@ async def update_extraction_prompt(
             detail=f"Invalid primary_agent. Must be one of: {', '.join(valid_agents)}",
         )
 
-    if (
-        request.verification_enabled
-        and request.verification_agent
-        and request.verification_agent not in valid_agents
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid verification_agent. Must be one of: {', '.join(valid_agents)}",
-        )
-
     result = prompts_storage.upsert_prompt(
         project_id=project_id,
         prompt_type=prompt_type,
         prompt_text=request.prompt_text,
         primary_agent=request.primary_agent,
         primary_model=request.primary_model,
-        verification_enabled=request.verification_enabled,
-        verification_agent=request.verification_agent,
-        verification_model=request.verification_model,
-        verification_prompt=request.verification_prompt,
     )
 
     return ExtractionPromptConfig(
@@ -157,10 +143,6 @@ async def update_extraction_prompt(
         prompt_text=result["prompt_text"],
         primary_agent=result["primary_agent"],
         primary_model=result["primary_model"],
-        verification_enabled=result["verification_enabled"],
-        verification_agent=result.get("verification_agent"),
-        verification_model=result.get("verification_model"),
-        verification_prompt=result.get("verification_prompt"),
         is_default=False,
         created_at=result["created_at"].isoformat() if result.get("created_at") else None,
         updated_at=result["updated_at"].isoformat() if result.get("updated_at") else None,

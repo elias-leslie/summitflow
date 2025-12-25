@@ -629,10 +629,6 @@ export interface ExtractionPrompt {
   prompt_text: string;
   primary_agent: "claude" | "gemini";
   primary_model: string;
-  verification_enabled: boolean;
-  verification_agent: "claude" | "gemini" | null;
-  verification_model: string | null;
-  verification_prompt: string | null;
   is_default: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -642,10 +638,6 @@ export interface ExtractionPromptUpdate {
   prompt_text: string;
   primary_agent?: "claude" | "gemini";
   primary_model?: string;
-  verification_enabled?: boolean;
-  verification_agent?: "claude" | "gemini" | null;
-  verification_model?: string | null;
-  verification_prompt?: string | null;
 }
 
 export interface ExtractionPromptsExport {
@@ -689,10 +681,6 @@ export async function updateExtractionPrompt(
         prompt_text: config.prompt_text,
         primary_agent: config.primary_agent ?? "claude",
         primary_model: config.primary_model ?? "claude-sonnet-4-5",
-        verification_enabled: config.verification_enabled ?? false,
-        verification_agent: config.verification_agent ?? null,
-        verification_model: config.verification_model ?? null,
-        verification_prompt: config.verification_prompt ?? null,
       }),
     }
   );
@@ -963,10 +951,6 @@ export interface Prompt {
   prompt_text: string;
   primary_agent: string;
   primary_model: string;
-  verification_enabled: boolean;
-  verification_agent: string | null;
-  verification_model: string | null;
-  verification_prompt: string | null;
   category: PromptCategory;
   thinking_budget: number;
   tools_enabled: string[];
@@ -985,10 +969,6 @@ export interface PromptUpdate {
   prompt_text: string;
   primary_agent?: string;
   primary_model?: string;
-  verification_enabled?: boolean;
-  verification_agent?: string | null;
-  verification_model?: string | null;
-  verification_prompt?: string | null;
   category?: PromptCategory;
   thinking_budget?: number;
   tools_enabled?: string[];
