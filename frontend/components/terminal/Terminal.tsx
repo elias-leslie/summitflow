@@ -198,13 +198,21 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.readOnly = true;
         }
 
+        // Prevent pull-to-refresh via CSS
+        containerRef.current.style.overscrollBehavior = 'none';
+        containerRef.current.style.touchAction = 'none';
+
         // Touch scrolling - send scroll commands to tmux via WebSocket
         let touchStartY = 0;
         let lastSentY = 0;
         let inCopyMode = false;
         const SCROLL_THRESHOLD = 50; // pixels per scroll command
+        const container = containerRef.current;
 
         const handleTouchStart = (e: TouchEvent) => {
+          // Only handle touches inside our container
+          if (!container.contains(e.target as Node)) return;
+
           touchStartY = e.touches[0].clientY;
           lastSentY = touchStartY;
 
@@ -216,7 +224,11 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         };
 
         const handleTouchMove = (e: TouchEvent) => {
+          // Only handle touches inside our container
+          if (!container.contains(e.target as Node)) return;
+
           e.preventDefault(); // Prevent pull-to-refresh
+          e.stopPropagation();
 
           const currentY = e.touches[0].clientY;
           const deltaY = lastSentY - currentY;
@@ -243,18 +255,18 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           touchStartY = 0;
           lastSentY = 0;
           // Keep copy mode active so user can continue scrolling
-          // User can tap 'q' or send any command to exit copy mode
         };
 
-        containerRef.current.addEventListener('touchstart', handleTouchStart, { passive: true });
-        containerRef.current.addEventListener('touchmove', handleTouchMove, { passive: false });
-        containerRef.current.addEventListener('touchend', handleTouchEnd, { passive: true });
+        // Use document-level listeners with capture to intercept before browser
+        document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+        document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
 
         // Store cleanup
         (term as unknown as { _touchCleanup?: () => void })._touchCleanup = () => {
-          containerRef.current?.removeEventListener('touchstart', handleTouchStart);
-          containerRef.current?.removeEventListener('touchmove', handleTouchMove);
-          containerRef.current?.removeEventListener('touchend', handleTouchEnd);
+          document.removeEventListener('touchstart', handleTouchStart, { capture: true });
+          document.removeEventListener('touchmove', handleTouchMove, { capture: true });
+          document.removeEventListener('touchend', handleTouchEnd, { capture: true });
         };
       }
 
