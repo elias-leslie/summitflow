@@ -294,31 +294,21 @@ export default function ProjectDetailPage() {
   };
 
   // Permission handlers
-  const handleApprovePermission = async () => {
+  const handleResolvePermission = async (approve: boolean) => {
     if (!pendingPermission || !roundtableSessionId) return;
     setPermissionLoading(true);
     try {
-      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, true);
+      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, approve);
       setPendingPermission(null);
     } catch (error) {
-      console.error("Failed to approve permission:", error);
+      console.error(`Failed to ${approve ? "approve" : "deny"} permission:`, error);
     } finally {
       setPermissionLoading(false);
     }
   };
 
-  const handleDenyPermission = async () => {
-    if (!pendingPermission || !roundtableSessionId) return;
-    setPermissionLoading(true);
-    try {
-      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, false);
-      setPendingPermission(null);
-    } catch (error) {
-      console.error("Failed to deny permission:", error);
-    } finally {
-      setPermissionLoading(false);
-    }
-  };
+  const handleApprovePermission = () => handleResolvePermission(true);
+  const handleDenyPermission = () => handleResolvePermission(false);
 
   const handleSendMessage = async (
     message: string
