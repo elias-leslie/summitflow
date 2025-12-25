@@ -1,6 +1,8 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
-// Build: 2025-12-17-v6
+// Build: 2025-12-25-v1
+import { fetchWithErrorHandling, buildQueryString } from "./api/utils";
+
 function getApiBase(): string {
   return "";
 }
@@ -49,27 +51,27 @@ export interface ProjectHealth {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${getApiBase()}/api/projects`);
-  if (!res.ok) throw new Error("Failed to fetch projects");
-  return res.json();
+  return fetchWithErrorHandling("/api/projects", {
+    errorMessage: "Failed to fetch projects",
+  });
 }
 
 export async function fetchProjectsWithStats(): Promise<ProjectsWithStatsResponse> {
-  const res = await fetch(`${getApiBase()}/api/projects/with-stats`);
-  if (!res.ok) throw new Error("Failed to fetch projects with stats");
-  return res.json();
+  return fetchWithErrorHandling("/api/projects/with-stats", {
+    errorMessage: "Failed to fetch projects with stats",
+  });
 }
 
 export async function fetchProject(id: string): Promise<Project> {
-  const res = await fetch(`${getApiBase()}/api/projects/${id}`);
-  if (!res.ok) throw new Error("Failed to fetch project");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${id}`, {
+    errorMessage: "Failed to fetch project",
+  });
 }
 
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
-  const res = await fetch(`${getApiBase()}/api/projects/${id}/health`);
-  if (!res.ok) throw new Error("Failed to check project health");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${id}/health`, {
+    errorMessage: "Failed to check project health",
+  });
 }
 
 export async function createProject(project: {
@@ -78,16 +80,12 @@ export async function createProject(project: {
   base_url: string;
   health_endpoint?: string;
 }): Promise<Project> {
-  const res = await fetch(`${getApiBase()}/api/projects`, {
+  return fetchWithErrorHandling("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(project),
+    errorMessage: "Failed to create project",
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Failed to create project");
-  }
-  return res.json();
 }
 
 // ============================================================================
@@ -197,13 +195,12 @@ export async function refreshEvidence(
   criterionId: string,
   url: string
 ): Promise<{ success: boolean; version?: number; error?: string }> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/evidence/refresh`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/evidence/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ capability_id: capabilityId, criterion_id: criterionId, url }),
+    errorMessage: "Failed to refresh evidence",
   });
-  if (!res.ok) throw new Error("Failed to refresh evidence");
-  return res.json();
 }
 
 export async function submitEvidenceReview(
@@ -212,13 +209,12 @@ export async function submitEvidenceReview(
   approved: boolean | null,
   notes?: string
 ): Promise<{ success: boolean }> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/evidence/${evidenceId}/review`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/evidence/${evidenceId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ approved, notes }),
+    errorMessage: "Failed to submit review",
   });
-  if (!res.ok) throw new Error("Failed to submit review");
-  return res.json();
 }
 
 export function getScreenshotUrl(projectId: string, capabilityId: string, criterionId: string, version: number): string {
@@ -331,16 +327,12 @@ export async function createTask(
     parent_task_id?: string;
   }
 ): Promise<Task> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(task),
+    errorMessage: "Failed to create task",
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Failed to create task");
-  }
-  return res.json();
 }
 
 export async function fetchTasks(
@@ -355,33 +347,22 @@ export async function fetchTasks(
     offset?: number;
   } = {}
 ): Promise<TaskListResponse> {
-  const params = new URLSearchParams();
-  if (options.status) params.append("status", options.status);
-  if (options.type) params.append("type", options.type);
-  if (options.priority !== undefined) params.append("priority", options.priority.toString());
-  if (options.labels) params.append("labels", options.labels);
-  if (options.include) params.append("include", options.include);
-  if (options.limit) params.append("limit", options.limit.toString());
-  if (options.offset) params.append("offset", options.offset.toString());
-
-  const queryString = params.toString();
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/tasks${queryString ? `?${queryString}` : ""}`
-  );
-  if (!res.ok) throw new Error("Failed to fetch tasks");
-  return res.json();
+  const query = buildQueryString(options);
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks${query}`, {
+    errorMessage: "Failed to fetch tasks",
+  });
 }
 
 export async function fetchReadyTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/ready?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch ready tasks");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/ready?limit=${limit}`, {
+    errorMessage: "Failed to fetch ready tasks",
+  });
 }
 
 export async function fetchBlockedTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/blocked?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch blocked tasks");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/blocked?limit=${limit}`, {
+    errorMessage: "Failed to fetch blocked tasks",
+  });
 }
 
 export async function updateTask(
@@ -396,22 +377,18 @@ export async function updateTask(
     parent_task_id?: string;
   }
 ): Promise<Task> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
+    errorMessage: "Failed to update task",
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Failed to update task");
-  }
-  return res.json();
 }
 
 export async function fetchTask(projectId: string, taskId: string): Promise<Task> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}`);
-  if (!res.ok) throw new Error("Failed to fetch task");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
+    errorMessage: "Failed to fetch task",
+  });
 }
 
 export type AgentType = "claude" | "gemini";
@@ -490,43 +467,32 @@ export async function fetchNotifications(
   projectId: string,
   options: { status?: string; limit?: number; offset?: number; include_dismissed?: boolean } = {}
 ): Promise<NotificationListResponse> {
-  const params = new URLSearchParams();
-  if (options.status) params.append("status", options.status);
-  if (options.limit) params.append("limit", options.limit.toString());
-  if (options.offset) params.append("offset", options.offset.toString());
-  if (options.include_dismissed) params.append("include_dismissed", "true");
-
-  const queryString = params.toString();
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/notifications${queryString ? `?${queryString}` : ""}`
-  );
-  if (!res.ok) throw new Error("Failed to fetch notifications");
-  return res.json();
+  const query = buildQueryString(options);
+  return fetchWithErrorHandling(`/api/projects/${projectId}/notifications${query}`, {
+    errorMessage: "Failed to fetch notifications",
+  });
 }
 
 export async function fetchNotificationCount(projectId: string): Promise<number> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/notifications/count`);
-  if (!res.ok) throw new Error("Failed to fetch notification count");
-  const data = await res.json();
+  const data = await fetchWithErrorHandling<{ pending: number }>(
+    `/api/projects/${projectId}/notifications/count`,
+    { errorMessage: "Failed to fetch notification count" }
+  );
   return data.pending;
 }
 
 export async function markNotificationRead(projectId: string, notificationId: string): Promise<Notification> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/notifications/${notificationId}/read`,
-    { method: "PATCH" }
-  );
-  if (!res.ok) throw new Error("Failed to mark notification as read");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/notifications/${notificationId}/read`, {
+    method: "PATCH",
+    errorMessage: "Failed to mark notification as read",
+  });
 }
 
 export async function dismissNotification(projectId: string, notificationId: string): Promise<Notification> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/notifications/${notificationId}/dismiss`,
-    { method: "PATCH" }
-  );
-  if (!res.ok) throw new Error("Failed to dismiss notification");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/notifications/${notificationId}/dismiss`, {
+    method: "PATCH",
+    errorMessage: "Failed to dismiss notification",
+  });
 }
 
 // =============================================================================
@@ -627,7 +593,7 @@ export async function createRoundtableSession(
     yoloMode = false,
   } = options;
 
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -638,34 +604,31 @@ export async function createRoundtableSession(
       write_enabled: writeEnabled,
       yolo_mode: yoloMode,
     }),
+    errorMessage: "Failed to create roundtable session",
   });
-  if (!res.ok) throw new Error("Failed to create roundtable session");
-  return res.json();
 }
 
 export async function listRoundtableSessions(
   projectId: string,
   status?: "active" | "archived"
 ): Promise<RoundtableSessionInfo[]> {
-  const params = status ? `?status=${status}` : "";
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions${params}`
-  );
-  if (!res.ok) throw new Error("Failed to list roundtable sessions");
-  return res.json();
+  const query = status ? `?status=${status}` : "";
+  return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions${query}`, {
+    errorMessage: "Failed to list roundtable sessions",
+  });
 }
 
 export async function getRoundtableSession(projectId: string, sessionId: string): Promise<RoundtableSession> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`);
-  if (!res.ok) throw new Error("Failed to get roundtable session");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions/${sessionId}`, {
+    errorMessage: "Failed to get roundtable session",
+  });
 }
 
 export async function deleteRoundtableSession(projectId: string, sessionId: string): Promise<void> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions/${sessionId}`, {
     method: "DELETE",
+    errorMessage: "Failed to delete roundtable session",
   });
-  if (!res.ok) throw new Error("Failed to delete roundtable session");
 }
 
 export interface UpdateToolsResponse {
