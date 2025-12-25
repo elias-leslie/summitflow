@@ -360,6 +360,17 @@ class RoundtableToolExecutor:
         """Check if write access is enabled."""
         return "write" in self.enabled_categories
 
+    def _require_param(self, params: dict[str, Any], key: str) -> tuple[str, ToolResult | None]:
+        """Extract a required parameter, returning error ToolResult if missing.
+
+        Returns:
+            (value, None) on success, ("", ToolResult) on failure.
+        """
+        value = params.get(key, "")
+        if not value:
+            return "", ToolResult(False, "", f"{key} is required")
+        return value, None
+
     def enable_write_access(self) -> None:
         """Enable write access tools."""
         if "write" not in self.enabled_categories:
@@ -468,9 +479,9 @@ class RoundtableToolExecutor:
 
     def _execute_read_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute read_file tool."""
-        file_path = params.get("file_path", "")
-        if not file_path:
-            return ToolResult(False, "", "file_path is required")
+        file_path, err = self._require_param(params, "file_path")
+        if err:
+            return err
 
         # Validate path
         is_valid, result = self._validate_path(file_path)
@@ -500,9 +511,9 @@ class RoundtableToolExecutor:
 
     def _execute_search_code(self, params: dict[str, Any]) -> ToolResult:
         """Execute search_code tool using ripgrep."""
-        pattern = params.get("pattern", "")
-        if not pattern:
-            return ToolResult(False, "", "pattern is required")
+        pattern, err = self._require_param(params, "pattern")
+        if err:
+            return err
 
         search_path = params.get("path", "/home/kasadis/summitflow")
         file_type = params.get("file_type", "")
@@ -564,9 +575,9 @@ class RoundtableToolExecutor:
 
     def _execute_list_files(self, params: dict[str, Any]) -> ToolResult:
         """Execute list_files tool using glob."""
-        pattern = params.get("pattern", "")
-        if not pattern:
-            return ToolResult(False, "", "pattern is required")
+        pattern, err = self._require_param(params, "pattern")
+        if err:
+            return err
 
         base_path = params.get("path", "/home/kasadis/summitflow")
         limit = min(params.get("limit", 50), 200)  # Max 200 files
@@ -677,11 +688,10 @@ class RoundtableToolExecutor:
 
     def _execute_write_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute write_file tool."""
-        file_path = params.get("file_path", "")
+        file_path, err = self._require_param(params, "file_path")
+        if err:
+            return err
         content = params.get("content", "")
-
-        if not file_path:
-            return ToolResult(False, "", "file_path is required")
 
         # Validate path
         is_valid, result = self._validate_path(file_path)
@@ -706,14 +716,13 @@ class RoundtableToolExecutor:
 
     def _execute_edit_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute edit_file tool."""
-        file_path = params.get("file_path", "")
-        old_string = params.get("old_string", "")
+        file_path, err = self._require_param(params, "file_path")
+        if err:
+            return err
+        old_string, err = self._require_param(params, "old_string")
+        if err:
+            return err
         new_string = params.get("new_string", "")
-
-        if not file_path:
-            return ToolResult(False, "", "file_path is required")
-        if not old_string:
-            return ToolResult(False, "", "old_string is required")
 
         # Validate path
         is_valid, result = self._validate_path(file_path)
@@ -762,10 +771,9 @@ class RoundtableToolExecutor:
 
     def _execute_create_directory(self, params: dict[str, Any]) -> ToolResult:
         """Execute create_directory tool."""
-        dir_path = params.get("path", "")
-
-        if not dir_path:
-            return ToolResult(False, "", "path is required")
+        dir_path, err = self._require_param(params, "path")
+        if err:
+            return err
 
         # Validate path
         is_valid, result = self._validate_path(dir_path)
@@ -782,10 +790,9 @@ class RoundtableToolExecutor:
 
     def _execute_delete_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute delete_file tool."""
-        file_path = params.get("file_path", "")
-
-        if not file_path:
-            return ToolResult(False, "", "file_path is required")
+        file_path, err = self._require_param(params, "file_path")
+        if err:
+            return err
 
         # Validate path
         is_valid, result = self._validate_path(file_path)
