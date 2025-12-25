@@ -59,32 +59,40 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
     setIsMobile(isMobileDevice());
   }, []);
 
-  // Scroll handlers for mobile controls - use xterm's native API
+  // Scroll handlers for mobile controls - send to tmux via WebSocket
+  // tmux copy-mode: Ctrl+b [ enters copy mode, then arrow keys scroll
   const handleScrollUp = useCallback(() => {
-    const term = terminalRef.current;
-    if (term) {
-      term.scrollLines(-5);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      // Send Up arrow key (moves up in tmux copy-mode or shell history)
+      ws.send('\x1b[A'); // Up arrow
     }
   }, []);
 
   const handleScrollDown = useCallback(() => {
-    const term = terminalRef.current;
-    if (term) {
-      term.scrollLines(5);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      // Send Down arrow key
+      ws.send('\x1b[B'); // Down arrow
     }
   }, []);
 
   const handlePageUp = useCallback(() => {
-    const term = terminalRef.current;
-    if (term) {
-      term.scrollToTop();
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      // Enter tmux copy-mode and page up: Ctrl+b [ then PageUp
+      ws.send('\x02['); // Ctrl+b [
+      setTimeout(() => {
+        ws.send('\x1b[5~'); // PageUp
+      }, 100);
     }
   }, []);
 
   const handlePageDown = useCallback(() => {
-    const term = terminalRef.current;
-    if (term) {
-      term.scrollToBottom();
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      // PageDown in copy-mode, or 'q' to exit copy-mode and go to bottom
+      ws.send('\x1b[6~'); // PageDown
     }
   }, []);
 
