@@ -33,6 +33,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatTime } from "@/lib/formatters/memory-formatters";
+import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 
 // Observation types from the plan
 type ObservationType =
@@ -53,23 +54,9 @@ type ConceptType =
   | "pattern"
   | "trade-off";
 
-interface Observation {
-  id: string;
-  project_id: string;
-  session_id: string;
-  agent_type: string;
+interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
   observation_type: ObservationType;
   concepts: ConceptType[];
-  title: string;
-  subtitle: string | null;
-  narrative: string | null;
-  facts: Record<string, unknown>[] | null;
-  files_read: string[] | null;
-  files_modified: string[] | null;
-  tool_name: string;
-  tool_input: Record<string, unknown> | null;
-  discovery_tokens: number | null;
-  created_at: string;
 }
 
 interface MemoryStreamPanelProps {
