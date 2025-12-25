@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { clsx } from "clsx";
-import { MobileScrollControls } from "./MobileScrollControls";
 
 // Dynamic imports for xterm (client-side only)
 let Terminal: typeof import("@xterm/xterm").Terminal;
@@ -51,57 +50,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const fitAddonRef = useRef<InstanceType<typeof FitAddon> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
-  const [isMobile, setIsMobile] = useState(false);
   const connectWebSocketRef = useRef<(() => void) | null>(null);
-
-  // Detect mobile on mount
-  useEffect(() => {
-    setIsMobile(isMobileDevice());
-  }, []);
-
-  // Scroll handlers for mobile controls - send to tmux via WebSocket
-  // tmux copy-mode: Ctrl+b [ enters copy mode, then arrow keys scroll
-  const handleScrollUp = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      // Send Up arrow key (moves up in tmux copy-mode or shell history)
-      ws.send('\x1b[A'); // Up arrow
-    }
-  }, []);
-
-  const handleScrollDown = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      // Send Down arrow key
-      ws.send('\x1b[B'); // Down arrow
-    }
-  }, []);
-
-  const handlePageUp = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      // Enter tmux copy-mode and page up: Ctrl+b [ then PageUp
-      ws.send('\x02['); // Ctrl+b [
-      setTimeout(() => {
-        ws.send('\x1b[5~'); // PageUp
-      }, 100);
-    }
-  }, []);
-
-  const handlePageDown = useCallback(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      // PageDown in copy-mode, or 'q' to exit copy-mode and go to bottom
-      ws.send('\x1b[6~'); // PageDown
-    }
-  }, []);
-
-  // Copy selected text
-  const handleCopy = useCallback(async (): Promise<string | null> => {
-    if (!terminalRef.current) return null;
-    const selection = terminalRef.current.getSelection();
-    return selection || null;
-  }, []);
 
   // Paste text into terminal
   const handlePaste = useCallback((text: string) => {
@@ -253,11 +202,17 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         let touchStartY = 0;
         let lastSentY = 0;
         let inCopyMode = false;
-        const SCROLL_THRESHOLD = 30; // pixels per scroll command
+        const SCROLL_THRESHOLD = 50; // pixels per scroll command
 
         const handleTouchStart = (e: TouchEvent) => {
           touchStartY = e.touches[0].clientY;
           lastSentY = touchStartY;
+
+          // Enter tmux copy-mode immediately on touch
+          if (!inCopyMode && wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send('\x02['); // Ctrl+b [
+            inCopyMode = true;
+          }
         };
 
         const handleTouchMove = (e: TouchEvent) => {
@@ -268,24 +223,14 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
 
           // Only scroll if we've moved enough
           if (Math.abs(deltaY) >= SCROLL_THRESHOLD) {
-            const scrollCount = Math.floor(Math.abs(deltaY) / SCROLL_THRESHOLD);
-
-            // Enter tmux copy-mode on first scroll if not already
-            if (!inCopyMode && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send('\x02['); // Ctrl+b [
-              inCopyMode = true;
-            }
-
-            // Send scroll commands
+            // Send scroll commands using Ctrl+U (half page up) and Ctrl+D (half page down)
             if (wsRef.current?.readyState === WebSocket.OPEN) {
-              for (let i = 0; i < scrollCount; i++) {
-                if (deltaY > 0) {
-                  // Scrolling up (finger moving up)
-                  wsRef.current.send('\x1b[A'); // Up arrow
-                } else {
-                  // Scrolling down (finger moving down)
-                  wsRef.current.send('\x1b[B'); // Down arrow
-                }
+              if (deltaY > 0) {
+                // Scrolling up (finger moving up) - Ctrl+U for half page up
+                wsRef.current.send('\x15'); // Ctrl+U
+              } else {
+                // Scrolling down (finger moving down) - Ctrl+D for half page down
+                wsRef.current.send('\x04'); // Ctrl+D
               }
             }
 
@@ -298,6 +243,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           touchStartY = 0;
           lastSentY = 0;
           // Keep copy mode active so user can continue scrolling
+          // User can tap 'q' or send any command to exit copy mode
         };
 
         containerRef.current.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -534,18 +480,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         ref={containerRef}
         className="w-full h-full bg-slate-900 overflow-hidden"
       />
-
-      {/* Mobile scroll controls */}
-      {isMobile && (
-        <MobileScrollControls
-          onScrollUp={handleScrollUp}
-          onScrollDown={handleScrollDown}
-          onPageUp={handlePageUp}
-          onPageDown={handlePageDown}
-          onCopy={handleCopy}
-          onPaste={handlePaste}
-        />
-      )}
     </div>
   );
 });
