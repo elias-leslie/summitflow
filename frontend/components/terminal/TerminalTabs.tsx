@@ -315,6 +315,26 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
 
         {/* Settings button - always visible, pushed to right on mobile */}
         <div className={clsx("flex items-center gap-1", isMobile && "ml-auto")}>
+          {/* Connection status / reconnect - show on mobile */}
+          {isMobile && (
+            <button
+              onClick={handleReconnect}
+              disabled={!showReconnect}
+              className={clsx(
+                "p-1.5 rounded transition-colors",
+                showReconnect
+                  ? "text-amber-400 hover:text-amber-300 hover:bg-slate-700/50"
+                  : activeStatus === "connected"
+                    ? "text-green-400 cursor-default"
+                    : activeStatus === "connecting"
+                      ? "text-yellow-400 animate-pulse cursor-default"
+                      : "text-slate-500 cursor-default"
+              )}
+              title={showReconnect ? "Reconnect" : `Status: ${activeStatus || "unknown"}`}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
           <SettingsDropdown
             fontId={fontId}
             fontSize={fontSize}

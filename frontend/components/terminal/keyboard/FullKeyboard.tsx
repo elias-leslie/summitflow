@@ -185,7 +185,7 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
           border-radius: 8px;
           height: ${rowHeight}px;
           min-width: 28px;
-          font-size: ${rowHeight <= 36 ? 16 : rowHeight <= 44 ? 18 : 20}px;
+          font-size: ${rowHeight <= 36 ? 18 : rowHeight <= 44 ? 20 : 22}px;
           font-weight: 400;
           box-shadow: none;
           flex: 1 1 0;
@@ -210,8 +210,15 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
         /* Wide keys (sym, abc) */
         .terminal-keyboard-theme .hg-button.wide-key {
           background: #4a5568;
-          font-size: ${rowHeight <= 36 ? 12 : rowHeight <= 44 ? 13 : 14}px;
+          font-size: ${rowHeight <= 36 ? 14 : rowHeight <= 44 ? 15 : 16}px;
           font-weight: 500;
+        }
+
+        /* Larger icons for shift, backspace, enter */
+        .terminal-keyboard-theme .hg-button[data-skbtn="{shift}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{bksp}"],
+        .terminal-keyboard-theme .hg-button[data-skbtn="{enter}"] {
+          font-size: ${rowHeight <= 36 ? 20 : rowHeight <= 44 ? 22 : 24}px;
         }
 
         /* Modifier states */

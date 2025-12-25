@@ -112,18 +112,18 @@ export function ControlBar({
         <KeyboardKey
           label="ESC"
           onPress={handleEsc}
-          className="text-xs px-1.5"
+          className="text-sm px-2"
         />
         <KeyboardKey
           label="TAB"
           onPress={handleTab}
-          className="text-xs px-1.5"
+          className="text-sm px-2"
         />
         <button
           type="button"
           onClick={onCtrlToggle}
           className={clsx(
-            "h-9 px-1.5 rounded-md text-xs font-medium transition-colors",
+            "h-11 px-2.5 rounded-md text-sm font-medium transition-colors",
             ctrlActive
               ? "bg-blue-600 text-white"
               : "bg-slate-700 text-slate-300 hover:bg-slate-600"
@@ -140,7 +140,7 @@ export function ControlBar({
           onClick={onReconnect}
           disabled={!canReconnect}
           className={clsx(
-            "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
+            "flex items-center justify-center h-11 w-11 rounded-md transition-colors",
             canReconnect
               ? "bg-slate-700 hover:bg-slate-600"
               : "bg-slate-800 cursor-default",
@@ -148,7 +148,7 @@ export function ControlBar({
           )}
           title={canReconnect ? "Reconnect" : `Status: ${connectionStatus}`}
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className="w-5 h-5" />
         </button>
 
         {/* Keyboard minimize/expand toggle */}
@@ -157,14 +157,14 @@ export function ControlBar({
             type="button"
             onClick={onToggleMinimize}
             className={clsx(
-              "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
+              "flex items-center justify-center h-11 w-11 rounded-md transition-colors",
               minimized
                 ? "bg-phosphor-600 text-white"
                 : "bg-slate-700 text-slate-300 hover:bg-slate-600"
             )}
             title={minimized ? "Show keyboard" : "Hide keyboard"}
           >
-            {minimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {minimized ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </button>
         )}
       </div>
