@@ -1,11 +1,12 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
-// Build: 2025-12-25-v1
-import { fetchWithErrorHandling, buildQueryString } from "./api/utils";
-
-function getApiBase(): string {
-  return "";
-}
+// Build: 2025-12-25-v2
+import { fetchWithErrorHandling, buildQueryString, getApiBase } from "./api/utils";
+import {
+  fetchWithGenerationTimeout,
+  roundtableSessionAction,
+  buildRoundtableGenerationUrl,
+} from "./api/wrappers";
 
 export interface Project {
   id: string;
@@ -830,25 +831,11 @@ export async function generateFeaturesFromRoundtable(
   sessionId: string,
   agent: "claude" | "gemini" = "claude"
 ): Promise<{ features: GeneratedFeature[]; session_id: string }> {
-  // Use AbortController for timeout - feature extraction can take time
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-features`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent }),
-        signal: controller.signal,
-      }
-    );
-    if (!res.ok) throw new Error("Failed to generate features from roundtable");
-    return res.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return fetchWithGenerationTimeout(
+    buildRoundtableGenerationUrl(projectId, sessionId, "generate-features"),
+    { agent },
+    "Failed to generate features from roundtable"
+  );
 }
 
 // Vision/Goals types for roundtable generation
@@ -887,24 +874,11 @@ export async function generateVisionFromRoundtable(
   sessionId: string,
   agent: "claude" | "gemini" = "claude"
 ): Promise<GenerateVisionResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-vision`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent }),
-        signal: controller.signal,
-      }
-    );
-    if (!res.ok) throw new Error("Failed to generate vision from roundtable");
-    return res.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return fetchWithGenerationTimeout(
+    buildRoundtableGenerationUrl(projectId, sessionId, "generate-vision"),
+    { agent },
+    "Failed to generate vision from roundtable"
+  );
 }
 
 export async function saveVisionFromRoundtable(
@@ -913,16 +887,11 @@ export async function saveVisionFromRoundtable(
   mission: GeneratedMission | null,
   narratives: GeneratedNarrative[]
 ): Promise<{ status: string; project_id: string }> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/save-vision`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mission, narratives }),
-    }
+  return roundtableSessionAction(
+    projectId, sessionId, "save-vision",
+    { mission, narratives },
+    "Failed to save vision"
   );
-  if (!res.ok) throw new Error("Failed to save vision");
-  return res.json();
 }
 
 export async function generateGoalsFromRoundtable(
@@ -930,24 +899,11 @@ export async function generateGoalsFromRoundtable(
   sessionId: string,
   agent: "claude" | "gemini" = "claude"
 ): Promise<GenerateGoalsResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-goals`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent }),
-        signal: controller.signal,
-      }
-    );
-    if (!res.ok) throw new Error("Failed to generate goals from roundtable");
-    return res.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return fetchWithGenerationTimeout(
+    buildRoundtableGenerationUrl(projectId, sessionId, "generate-goals"),
+    { agent },
+    "Failed to generate goals from roundtable"
+  );
 }
 
 export async function saveGoalsFromRoundtable(
@@ -955,16 +911,11 @@ export async function saveGoalsFromRoundtable(
   sessionId: string,
   goals: GeneratedGoal[]
 ): Promise<{ status: string; project_id: string; goals_created: number }> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/save-goals`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goals }),
-    }
+  return roundtableSessionAction(
+    projectId, sessionId, "save-goals",
+    { goals },
+    "Failed to save goals"
   );
-  if (!res.ok) throw new Error("Failed to save goals");
-  return res.json();
 }
 
 // =============================================================================
@@ -1016,24 +967,11 @@ export async function generateSpecFromRoundtable(
   sessionId: string,
   agent: "claude" | "gemini" = "gemini"
 ): Promise<GenerateSpecResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
-
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/generate-spec`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_type: agent }),
-        signal: controller.signal,
-      }
-    );
-    if (!res.ok) throw new Error("Failed to generate spec");
-    return res.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return fetchWithGenerationTimeout(
+    buildRoundtableGenerationUrl(projectId, sessionId, "generate-spec"),
+    { agent_type: agent },
+    "Failed to generate spec"
+  );
 }
 
 export async function getSpecFromRoundtable(
@@ -1052,16 +990,11 @@ export async function acceptSpecFromRoundtable(
   sessionId: string,
   acceptedBy: string = "user"
 ): Promise<AcceptSpecResponse> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/accept-spec`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accepted_by: acceptedBy }),
-    }
+  return roundtableSessionAction(
+    projectId, sessionId, "accept-spec",
+    { accepted_by: acceptedBy },
+    "Failed to accept spec"
   );
-  if (!res.ok) throw new Error("Failed to accept spec");
-  return res.json();
 }
 
 // =============================================================================
