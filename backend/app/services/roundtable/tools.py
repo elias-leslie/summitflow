@@ -371,6 +371,26 @@ class RoundtableToolExecutor:
             return "", ToolResult(False, "", f"{key} is required")
         return value, None
 
+    def _validate_file_exists(
+        self, path: Path, file_path: str, *, is_dir_error: str | None = None
+    ) -> ToolResult | None:
+        """Validate file exists and is a regular file.
+
+        Args:
+            path: Resolved Path object.
+            file_path: Original file path string for error messages.
+            is_dir_error: Custom error message if path is a directory. Defaults to "Not a file".
+
+        Returns:
+            None on success, ToolResult with error on failure.
+        """
+        if not path.exists():
+            return ToolResult(False, "", f"File not found: {file_path}")
+        if not path.is_file():
+            msg = is_dir_error or "Not a file"
+            return ToolResult(False, "", f"{msg}: {file_path}")
+        return None
+
     def enable_write_access(self) -> None:
         """Enable write access tools."""
         if "write" not in self.enabled_categories:
@@ -491,11 +511,8 @@ class RoundtableToolExecutor:
         path = Path(result)
 
         # Check file exists
-        if not path.exists():
-            return ToolResult(False, "", f"File not found: {file_path}")
-
-        if not path.is_file():
-            return ToolResult(False, "", f"Not a file: {file_path}")
+        if err := self._validate_file_exists(path, file_path):
+            return err
 
         # Check file size
         size = path.stat().st_size
@@ -731,11 +748,8 @@ class RoundtableToolExecutor:
 
         path = Path(result)
 
-        if not path.exists():
-            return ToolResult(False, "", f"File not found: {file_path}")
-
-        if not path.is_file():
-            return ToolResult(False, "", f"Not a file: {file_path}")
+        if err := self._validate_file_exists(path, file_path):
+            return err
 
         try:
             # Read current content
@@ -801,11 +815,10 @@ class RoundtableToolExecutor:
 
         path = Path(result)
 
-        if not path.exists():
-            return ToolResult(False, "", f"File not found: {file_path}")
-
-        if not path.is_file():
-            return ToolResult(False, "", f"Not a file (use rmdir for directories): {file_path}")
+        if err := self._validate_file_exists(
+            path, file_path, is_dir_error="Not a file (use rmdir for directories)"
+        ):
+            return err
 
         try:
             path.unlink()
