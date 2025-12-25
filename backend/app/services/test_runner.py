@@ -52,6 +52,13 @@ BROWSER_SCRIPTS = {
     "expand": "expand.js",
 }
 
+# Test tier to test type mapping
+TIER_TEST_TYPES: dict[str, tuple[str, ...]] = {
+    "smoke": ("pytest", "ruff", "mypy"),
+    "unit": ("pytest", "vitest"),
+    "integration": ("ui", "api"),
+}
+
 
 def _combine_outputs(stdout: str, stderr: str) -> str:
     """Combine stdout and stderr into a single output string."""
@@ -585,13 +592,9 @@ async def run_tests(
     else:
         # Filter by tier if specified
         all_tests = tests_storage.list_tests(project_id)
-        if tier == "smoke":
-            # Smoke = fast tests (pytest, ruff, mypy)
-            tests = [t for t in all_tests if t["test_type"] in ("pytest", "ruff", "mypy")]
-        elif tier == "unit":
-            tests = [t for t in all_tests if t["test_type"] in ("pytest", "vitest")]
-        elif tier == "integration":
-            tests = [t for t in all_tests if t["test_type"] in ("ui", "api")]
+        if tier and tier in TIER_TEST_TYPES:
+            allowed_types = TIER_TEST_TYPES[tier]
+            tests = [t for t in all_tests if t["test_type"] in allowed_types]
         else:
             tests = all_tests
 
