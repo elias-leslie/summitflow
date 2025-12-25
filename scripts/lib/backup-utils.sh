@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-# SummitFlow Backup Utilities
+# Universal Backup Utilities
 # Shared functions for backup and restore scripts
+# Works for any project - auto-detects project from PWD/git root
 #
 
 # Colors
@@ -11,23 +12,30 @@ export RED='\033[0;31m'
 export BLUE='\033[0;34m'
 export NC='\033[0m'
 
-# Configuration
-export PROJECT_DIR="${PROJECT_DIR:-$HOME/summitflow}"
+# Project Detection - auto-detect from PWD or git root
+if [ -z "$PROJECT_DIR" ]; then
+    PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+fi
+export PROJECT_DIR
+export PROJECT_NAME=$(basename "$PROJECT_DIR")
+
+# Configuration - derived from project name
 export SMB_HOST="192.168.8.128"
 export SMB_SHARE="davion-gem"
-export SMB_PATH="project-backups/summitflow"
+export SMB_PATH="project-backups/$PROJECT_NAME"
 export SMB_USER="${SMB_USER:-backup-svc}"
 export CREDENTIALS_FILE="$HOME/.smbcredentials"
 export BACKUP_INDEX="$PROJECT_DIR/backup-index.json"
 export MAX_BACKUPS=30
 
 # Database config - load from ~/.env.local if available
-# Look for SUMMITFLOW_DB_URL first, then fallback to DATABASE_URL with summitflow in it
+# Derive env var name from project: portfolio-ai -> PORTFOLIO_AI_DB_URL
+_env_var_name=$(echo "${PROJECT_NAME}" | tr '[:lower:]-' '[:upper:]_')_DB_URL
 if [ -f "$HOME/.env.local" ]; then
-    _db_url=$(grep "^SUMMITFLOW_DB_URL=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
+    _db_url=$(grep "^${_env_var_name}=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
     if [ -z "$_db_url" ]; then
-        # Fallback: look for DATABASE_URL that contains summitflow
-        _db_url=$(grep "^DATABASE_URL=.*summitflow" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
+        # Fallback: look for DATABASE_URL that contains project name
+        _db_url=$(grep "^DATABASE_URL=.*${PROJECT_NAME}" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
     fi
     if [ -n "$_db_url" ]; then
         _db_userpass=$(echo "$_db_url" | sed -n 's|postgresql://\([^@]*\)@.*|\1|p')
@@ -37,9 +45,10 @@ if [ -f "$HOME/.env.local" ]; then
     fi
 fi
 
-# Fallback defaults
-export DB_NAME="${DB_NAME:-summitflow}"
-export DB_USER="${DB_USER:-summitflow_app}"
+# Fallback defaults - derived from project name (portfolio-ai -> portfolio_ai)
+_db_default=$(echo "$PROJECT_NAME" | tr '-' '_')
+export DB_NAME="${DB_NAME:-$_db_default}"
+export DB_USER="${DB_USER:-${_db_default}_app}"
 export DB_PASSWORD="${DB_PASSWORD:-}"
 
 # Exclusions - things that should NEVER be backed up
@@ -143,7 +152,7 @@ export PENDING_BACKUP_DIR="$HOME/.local/share/backup-pending"
 upload_with_retry() {
     local archive_path="$1"
     local archive_name="$2"
-    local project_name="${3:-summitflow}"
+    local project_name="${3:-$PROJECT_NAME}"
     local max_retries="${SMB_MAX_RETRIES:-5}"
     local initial_delay="${SMB_RETRY_DELAY:-30}"
 
@@ -180,7 +189,7 @@ upload_with_retry() {
 save_to_pending() {
     local archive_path="$1"
     local archive_name="$2"
-    local project_name="${3:-summitflow}"
+    local project_name="${3:-$PROJECT_NAME}"
 
     mkdir -p "$PENDING_BACKUP_DIR"
 
@@ -293,8 +302,9 @@ EOF
 
 # List remote backups
 smb_list_backups() {
-    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" -c "cd $SMB_PATH; ls summitflow-*.tar.gz" 2>/dev/null | \
-        grep "summitflow-" | awk '{print $1}' | sort
+    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "cd $SMB_PATH; ls ${PROJECT_NAME}-*.tar.gz" 2>/dev/null | \
+        grep "${PROJECT_NAME}-" | awk '{print $1}' | sort
 }
 
 # Download file via smbclient
@@ -411,7 +421,7 @@ verify_backup() {
 
     local tree_json
     tree_json=$(tar -tzf "$archive_path" 2>/dev/null | \
-        sed 's|^summitflow/\./||;s|^summitflow/||' | \
+        sed "s|^${PROJECT_NAME}/\./||;s|^${PROJECT_NAME}/||" | \
         grep -v '/$' | grep -v '^$' | \
         awk -F'/' '
         {
@@ -646,8 +656,8 @@ EOF
         if ! echo "$index_backups" | grep -q "^${backup}$"; then
             log "Adding missing backup: $backup"
 
-            # Extract timestamp from filename (summitflow-YYYYMMDD-HHMMSS.tar.gz)
-            local ts_part=$(echo "$backup" | sed -n 's/summitflow-\([0-9]*\)-\([0-9]*\)\.tar\.gz/\1-\2/p')
+            # Extract timestamp from filename (PROJECT_NAME-YYYYMMDD-HHMMSS.tar.gz)
+            local ts_part=$(echo "$backup" | sed -n "s/${PROJECT_NAME}-\([0-9]*\)-\([0-9]*\)\.tar\.gz/\1-\2/p")
             local year=${ts_part:0:4}
             local month=${ts_part:4:2}
             local day=${ts_part:6:2}

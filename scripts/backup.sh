@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-# SummitFlow Backup Script
+# Universal Backup Script
 # Creates compressed backup archive and transfers to SMB share
+# Works for any project - auto-detects project from PWD/git root
 #
 # Usage:
 #   ./scripts/backup.sh              # Full backup (SMB only)
@@ -10,20 +11,20 @@
 #   ./scripts/backup.sh --local      # Local only (no transfer)
 #   ./scripts/backup.sh --status     # Show status only
 #
-# Destination: //192.168.8.128/davion-gem/project-backups/summitflow/
-# Local backups: ~/summitflow/backups/
+# Destination: //192.168.8.128/davion-gem/project-backups/$PROJECT_NAME/
+# Local backups: $PROJECT_DIR/backups/
 # Retention: 30 versions (SMB), 5 versions (local)
 
 set -eo pipefail
 
-# Load utilities
+# Load utilities (which also detects PROJECT_DIR and PROJECT_NAME)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/backup-utils.sh"
 
-# Local configuration
+# Local configuration - uses PROJECT_NAME from backup-utils.sh
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-ARCHIVE_NAME="summitflow-${TIMESTAMP}.tar.gz"
-STAGING_DIR="/tmp/summitflow-backup-$$"
+ARCHIVE_NAME="${PROJECT_NAME}-${TIMESTAMP}.tar.gz"
+STAGING_DIR="/tmp/${PROJECT_NAME}-backup-$$"
 
 # Parse arguments
 QUICK_MODE=false
@@ -67,8 +68,10 @@ trap cleanup EXIT
 show_status() {
     echo ""
     echo "========================================"
-    echo "SummitFlow Backup Status"
+    echo "$PROJECT_NAME Backup Status"
     echo "========================================"
+    echo ""
+    echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
     echo ""
 
     if [ -f "$BACKUP_INDEX" ]; then
@@ -116,7 +119,7 @@ dump_database() {
 
     if [ "$QUICK_MODE" = true ]; then
         log "Quick mode: Using existing backup"
-        local existing_backup="$PROJECT_DIR/backups/summitflow_daily.sql.gz"
+        local existing_backup="$PROJECT_DIR/backups/${PROJECT_NAME}_daily.sql.gz"
 
         if [ -f "$existing_backup" ]; then
             cp "$existing_backup" "$dump_file"
@@ -163,13 +166,13 @@ create_archive() {
     tar --create \
         --file="$tar_path" \
         "${exclude_args[@]}" \
-        --transform='s|^|summitflow/|' \
+        --transform="s|^|${PROJECT_NAME}/|" \
         . 2>/dev/null || true
 
     # Add database dump to archive
     tar --append \
         --file="$tar_path" \
-        --transform="s|^|summitflow/|" \
+        --transform="s|^|${PROJECT_NAME}/|" \
         -C "$STAGING_DIR" "database.sql.gz"
 
     # Compress
@@ -215,8 +218,10 @@ main() {
 
     echo ""
     echo "========================================"
-    echo "SummitFlow Backup"
+    echo "$PROJECT_NAME Backup"
     echo "========================================"
+    echo ""
+    echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
     echo ""
 
     # Setup
@@ -259,7 +264,7 @@ main() {
     ensure_smb_credentials
 
     # Upload with retry and local fallback
-    if upload_with_retry "$archive_path" "$ARCHIVE_NAME" "summitflow"; then
+    if upload_with_retry "$archive_path" "$ARCHIVE_NAME" "$PROJECT_NAME"; then
         # Apply retention policy (only if upload succeeded)
         apply_retention
 

@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-# SummitFlow Restore Script
+# Universal Restore Script
 # Restores code and/or database from backup archives
+# Works for any project - auto-detects project from PWD/git root
 #
 # Usage:
 #   ./scripts/restore.sh --list              # List available backups
@@ -12,19 +13,19 @@
 #   ./scripts/restore.sh --dry-run           # Show what would be restored
 #
 # Sources (checked in order):
-#   1. Local: ~/summitflow/backups/
+#   1. Local: $PROJECT_DIR/backups/
 #   2. Pending: ~/.local/share/backup-pending/
-#   3. SMB: //192.168.8.128/davion-gem/project-backups/summitflow/
+#   3. SMB: //192.168.8.128/davion-gem/project-backups/$PROJECT_NAME/
 
 set -eo pipefail
 
-# Load utilities
+# Load utilities (which also detects PROJECT_DIR and PROJECT_NAME)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/backup-utils.sh"
 
-# Configuration
+# Configuration - uses PROJECT_NAME from backup-utils.sh
 LOCAL_BACKUP_DIR="$PROJECT_DIR/backups"
-RESTORE_STAGING="/tmp/summitflow-restore-$$"
+RESTORE_STAGING="/tmp/${PROJECT_NAME}-restore-$$"
 
 # Parse arguments
 RESTORE_MODE=""
@@ -107,7 +108,7 @@ list_backups() {
         if [ -n "$local_backups" ]; then
             echo "$local_backups" | while read f; do
                 local size=$(du -h "$f" | cut -f1)
-                local date=$(basename "$f" | sed 's/summitflow-\([0-9-]*\)\.tar\.gz/\1/')
+                local date=$(basename "$f" | sed "s/${PROJECT_NAME}-\([0-9-]*\)\.tar\.gz/\1/")
                 echo "  $(basename "$f")  ($size)"
             done
         else
@@ -192,8 +193,8 @@ verify_archive() {
 
     # Check for required components
     local has_db=$(tar -tzf "$archive" | grep -c "database.sql.gz" || true)
-    local has_backend=$(tar -tzf "$archive" | grep -c "summitflow/backend/" || true)
-    local has_frontend=$(tar -tzf "$archive" | grep -c "summitflow/frontend/" || true)
+    local has_backend=$(tar -tzf "$archive" | grep -c "${PROJECT_NAME}/backend/" || true)
+    local has_frontend=$(tar -tzf "$archive" | grep -c "${PROJECT_NAME}/frontend/" || true)
 
     echo "  Database dump: $([ "$has_db" -gt 0 ] && echo "✓" || echo "✗")"
     echo "  Backend code: $([ "$has_backend" -gt 0 ] && echo "✓" || echo "✗")"
@@ -220,7 +221,7 @@ restore_database() {
 
     # Stop services that use the database
     log "Stopping services..."
-    systemctl --user stop summitflow-backend 2>/dev/null || true
+    systemctl --user stop ${PROJECT_NAME}-backend 2>/dev/null || true
 
     # Restore
     export PGPASSWORD="$DB_PASSWORD"
@@ -253,7 +254,7 @@ restore_database() {
 
     # Restart services
     log "Restarting services..."
-    systemctl --user start summitflow-backend 2>/dev/null || true
+    systemctl --user start ${PROJECT_NAME}-backend 2>/dev/null || true
 
     return 0
 }
@@ -279,14 +280,14 @@ restore_files() {
 
     # Stop services
     log "Stopping services..."
-    systemctl --user stop summitflow-backend summitflow-frontend 2>/dev/null || true
+    systemctl --user stop ${PROJECT_NAME}-backend ${PROJECT_NAME}-frontend 2>/dev/null || true
 
     # Backup current state (just in case)
     local pre_restore_backup="$PROJECT_DIR/backups/.pre-restore-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$pre_restore_backup"
 
     # Restore backend (excluding venv)
-    if [ -d "$staging/summitflow/backend" ]; then
+    if [ -d "$staging/${PROJECT_NAME}/backend" ]; then
         log "Restoring backend..."
         rsync -a --delete \
             --exclude='.venv' \
@@ -294,30 +295,30 @@ restore_files() {
             --exclude='.pytest_cache' \
             --exclude='.mypy_cache' \
             --exclude='.ruff_cache' \
-            "$staging/summitflow/backend/" "$PROJECT_DIR/backend/"
+            "$staging/${PROJECT_NAME}/backend/" "$PROJECT_DIR/backend/"
     fi
 
     # Restore frontend (excluding node_modules and .next)
-    if [ -d "$staging/summitflow/frontend" ]; then
+    if [ -d "$staging/${PROJECT_NAME}/frontend" ]; then
         log "Restoring frontend..."
         rsync -a --delete \
             --exclude='node_modules' \
             --exclude='.next' \
-            "$staging/summitflow/frontend/" "$PROJECT_DIR/frontend/"
+            "$staging/${PROJECT_NAME}/frontend/" "$PROJECT_DIR/frontend/"
     fi
 
     # Restore other directories
     for dir in scripts data .claude; do
-        if [ -d "$staging/summitflow/$dir" ]; then
+        if [ -d "$staging/${PROJECT_NAME}/$dir" ]; then
             log "Restoring $dir..."
-            rsync -a "$staging/summitflow/$dir/" "$PROJECT_DIR/$dir/"
+            rsync -a "$staging/${PROJECT_NAME}/$dir/" "$PROJECT_DIR/$dir/"
         fi
     done
 
     # Restore root files
     for file in CLAUDE.md AGENTS.md; do
-        if [ -f "$staging/summitflow/$file" ]; then
-            cp "$staging/summitflow/$file" "$PROJECT_DIR/$file"
+        if [ -f "$staging/${PROJECT_NAME}/$file" ]; then
+            cp "$staging/${PROJECT_NAME}/$file" "$PROJECT_DIR/$file"
         fi
     done
 
@@ -336,8 +337,10 @@ do_restore() {
 
     echo ""
     echo "========================================"
-    echo "SummitFlow Restore"
+    echo "$PROJECT_NAME Restore"
     echo "========================================"
+    echo ""
+    echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
     echo ""
 
     if [ ! -f "$archive" ]; then
@@ -390,8 +393,8 @@ do_restore() {
         [ "$FILES_ONLY" != true ] && echo "  Database: restored"
         echo ""
         echo "  Verify with:"
-        echo "    bash ~/summitflow/scripts/status.sh"
-        echo "    cd backend && .venv/bin/pytest tests/ -x"
+        echo "    bash $PROJECT_DIR/scripts/status.sh"
+        echo "    cd $PROJECT_DIR/backend && .venv/bin/pytest tests/ -x"
     fi
     echo ""
 }
@@ -406,7 +409,7 @@ case "$RESTORE_MODE" in
         if [ -z "$latest" ]; then
             log_error "No backups found"
             echo ""
-            echo "Run backup first: bash ~/summitflow/scripts/backup.sh --keep-local"
+            echo "Run backup first: cd $PROJECT_DIR && bash ~/summitflow/scripts/backup.sh --keep-local"
             exit 1
         fi
         log "Found latest backup: $latest"
