@@ -63,11 +63,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const handleScrollUp = useCallback(() => {
     const term = terminalRef.current;
     if (term) {
-      const buffer = term.buffer.active;
-      alert(`termRef exists. baseY=${buffer.baseY}, cursorY=${buffer.cursorY}, length=${buffer.length}`);
       term.scrollLines(-5);
-    } else {
-      alert('terminalRef.current is NULL');
     }
   }, []);
 
@@ -190,6 +186,7 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         cursorBlink: true,
         fontSize: fontSize,
         fontFamily: fontFamily,
+        scrollback: 5000, // Enable scrollback buffer (5000 lines)
         // Force selection to work even if shell has mouse mode enabled
         allowProposedApi: true,
         rightClickSelectsWord: true,
