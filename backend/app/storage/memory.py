@@ -47,6 +47,19 @@ PATTERN_COLUMNS = """
 """.strip()
 
 
+def _json_or_default(obj: Any, default: str | None = None) -> str | None:
+    """Serialize object to JSON or return default if falsy.
+
+    Args:
+        obj: Object to serialize (list, dict, etc.)
+        default: Value to return if obj is falsy (None or "[]")
+
+    Returns:
+        JSON string or default value.
+    """
+    return json.dumps(obj) if obj else default
+
+
 def _build_where_clause(
     filters: dict[str, Any],
     special_conditions: list[str] | None = None,
@@ -129,7 +142,7 @@ def create_queue_item(
                 session_id,
                 agent_type,
                 tool_name,
-                json.dumps(tool_input) if tool_input else None,
+                _json_or_default(tool_input),
                 tool_output,
             ),
         )
@@ -317,14 +330,14 @@ def create_observation(
                 concepts,
                 priority,
                 confidence,
-                json.dumps(entities) if entities else "[]",
+                _json_or_default(entities, "[]"),
                 subtitle,
                 narrative,
-                json.dumps(facts) if facts else None,
+                _json_or_default(facts),
                 files_read,
                 files_modified,
                 tool_name,
-                json.dumps(tool_input) if tool_input else None,
+                _json_or_default(tool_input),
                 discovery_tokens,
                 extracted_by,
                 raw_excerpt,
@@ -734,10 +747,10 @@ def create_diary_entry(
                 outcome,
                 observation_type,
                 concepts,
-                json.dumps(what_worked) if what_worked else None,
-                json.dumps(what_failed) if what_failed else None,
-                json.dumps(user_corrections) if user_corrections else None,
-                json.dumps(patterns_used) if patterns_used else None,
+                _json_or_default(what_worked),
+                _json_or_default(what_failed),
+                _json_or_default(user_corrections),
+                _json_or_default(patterns_used),
             ),
         )
         row = cur.fetchone()
@@ -893,7 +906,7 @@ def mark_diary_entries_reflected(
             """,
             (
                 reflection_notes,
-                json.dumps(patterns_generated) if patterns_generated else None,
+                _json_or_default(patterns_generated),
                 entry_ids,
             ),
         )
@@ -1029,8 +1042,8 @@ def create_pattern(
                 content,
                 action,
                 rationale,
-                json.dumps(source_diary_ids) if source_diary_ids else "[]",
-                json.dumps(source_observation_ids) if source_observation_ids else "[]",
+                _json_or_default(source_diary_ids, "[]"),
+                _json_or_default(source_observation_ids, "[]"),
                 target_pattern_id,
                 confidence,
                 reflected_by,
@@ -1320,14 +1333,14 @@ def create_checkpoint(
                 agent_type,
                 current_action,
                 question,
-                json.dumps(options) if options else None,
+                _json_or_default(options),
                 recommendation,
-                json.dumps(completed_steps) if completed_steps else None,
-                json.dumps(remaining_steps) if remaining_steps else None,
-                json.dumps(files_modified) if files_modified else None,
-                json.dumps(decisions_made) if decisions_made else None,
+                _json_or_default(completed_steps),
+                _json_or_default(remaining_steps),
+                _json_or_default(files_modified),
+                _json_or_default(decisions_made),
                 conversation_summary,
-                json.dumps(context_snapshot) if context_snapshot else None,
+                _json_or_default(context_snapshot),
                 tokens_used,
             ),
         )
