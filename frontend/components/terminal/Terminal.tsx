@@ -61,49 +61,34 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
 
   // Scroll handlers for mobile controls - use viewport element directly
   const getViewport = useCallback(() => {
-    const viewport = containerRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
-    console.log('[Scroll] getViewport:', viewport ? 'found' : 'NOT FOUND',
-      viewport ? `scrollH=${viewport.scrollHeight} clientH=${viewport.clientHeight}` : '');
-    return viewport;
+    return containerRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
   }, []);
 
   const handleScrollUp = useCallback(() => {
-    console.log('[Scroll] handleScrollUp called');
     const viewport = getViewport();
     if (viewport) {
-      const before = viewport.scrollTop;
       viewport.scrollTop -= 60;
-      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
     }
   }, [getViewport]);
 
   const handleScrollDown = useCallback(() => {
-    console.log('[Scroll] handleScrollDown called');
     const viewport = getViewport();
     if (viewport) {
-      const before = viewport.scrollTop;
       viewport.scrollTop += 60;
-      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
     }
   }, [getViewport]);
 
   const handlePageUp = useCallback(() => {
-    console.log('[Scroll] handlePageUp called');
     const viewport = getViewport();
     if (viewport) {
-      const before = viewport.scrollTop;
       viewport.scrollTop -= viewport.clientHeight;
-      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
     }
   }, [getViewport]);
 
   const handlePageDown = useCallback(() => {
-    console.log('[Scroll] handlePageDown called');
     const viewport = getViewport();
     if (viewport) {
-      const before = viewport.scrollTop;
       viewport.scrollTop += viewport.clientHeight;
-      console.log('[Scroll] scrollTop:', before, '->', viewport.scrollTop);
     }
   }, [getViewport]);
 

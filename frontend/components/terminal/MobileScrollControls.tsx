@@ -32,20 +32,33 @@ export function MobileScrollControls({
     };
   }, []);
 
-  // Start continuous scrolling on touch hold
-  const startScrolling = useCallback((scrollFn: () => void) => {
+  // Start continuous scrolling on pointer hold
+  const startScrolling = useCallback((e: React.PointerEvent, scrollFn: () => void) => {
+    e.preventDefault();
+    e.stopPropagation();
     scrollFn(); // Immediate first scroll
     scrollIntervalRef.current = setInterval(scrollFn, 80);
   }, []);
 
-  const stopScrolling = useCallback(() => {
+  const stopScrolling = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (scrollIntervalRef.current) {
       clearInterval(scrollIntervalRef.current);
       scrollIntervalRef.current = null;
     }
   }, []);
 
-  const handleCopy = useCallback(async () => {
+  // Simple tap handler for page up/down
+  const handleTap = useCallback((e: React.PointerEvent, fn: () => void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fn();
+  }, []);
+
+  const handleCopy = useCallback(async (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     const text = await onCopy();
     if (text) {
       await navigator.clipboard.writeText(text);
@@ -54,7 +67,9 @@ export function MobileScrollControls({
     }
   }, [onCopy]);
 
-  const handlePaste = useCallback(async () => {
+  const handlePaste = useCallback(async (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
@@ -67,10 +82,10 @@ export function MobileScrollControls({
 
   const buttonClass = `
     w-10 h-10 flex items-center justify-center
-    bg-slate-800/90 hover:bg-slate-700 active:bg-slate-600
+    bg-slate-800/90 active:bg-slate-600
     border border-slate-600/50 rounded-lg
     text-slate-300 active:text-white
-    transition-colors touch-none select-none
+    transition-colors select-none
   `;
 
   return (
@@ -78,8 +93,7 @@ export function MobileScrollControls({
       {/* Page Up */}
       <button
         className={buttonClass}
-        onTouchStart={() => onPageUp()}
-        onClick={onPageUp}
+        onPointerDown={(e) => handleTap(e, onPageUp)}
         aria-label="Page up"
       >
         <ChevronsUp size={20} />
@@ -88,10 +102,10 @@ export function MobileScrollControls({
       {/* Scroll Up - hold to repeat */}
       <button
         className={buttonClass}
-        onTouchStart={() => startScrolling(onScrollUp)}
-        onTouchEnd={stopScrolling}
-        onTouchCancel={stopScrolling}
-        onClick={onScrollUp}
+        onPointerDown={(e) => startScrolling(e, onScrollUp)}
+        onPointerUp={stopScrolling}
+        onPointerLeave={stopScrolling}
+        onPointerCancel={stopScrolling}
         aria-label="Scroll up"
       >
         <ChevronUp size={20} />
@@ -100,10 +114,10 @@ export function MobileScrollControls({
       {/* Scroll Down - hold to repeat */}
       <button
         className={buttonClass}
-        onTouchStart={() => startScrolling(onScrollDown)}
-        onTouchEnd={stopScrolling}
-        onTouchCancel={stopScrolling}
-        onClick={onScrollDown}
+        onPointerDown={(e) => startScrolling(e, onScrollDown)}
+        onPointerUp={stopScrolling}
+        onPointerLeave={stopScrolling}
+        onPointerCancel={stopScrolling}
         aria-label="Scroll down"
       >
         <ChevronDown size={20} />
@@ -112,8 +126,7 @@ export function MobileScrollControls({
       {/* Page Down */}
       <button
         className={buttonClass}
-        onTouchStart={() => onPageDown()}
-        onClick={onPageDown}
+        onPointerDown={(e) => handleTap(e, onPageDown)}
         aria-label="Page down"
       >
         <ChevronsDown size={20} />
@@ -125,7 +138,7 @@ export function MobileScrollControls({
       {/* Copy */}
       <button
         className={`${buttonClass} ${copied ? "bg-green-700 text-white" : ""}`}
-        onClick={handleCopy}
+        onPointerDown={handleCopy}
         aria-label="Copy selected text"
       >
         <Copy size={18} />
@@ -134,7 +147,7 @@ export function MobileScrollControls({
       {/* Paste */}
       <button
         className={buttonClass}
-        onClick={handlePaste}
+        onPointerDown={handlePaste}
         aria-label="Paste from clipboard"
       >
         <ClipboardPaste size={18} />
