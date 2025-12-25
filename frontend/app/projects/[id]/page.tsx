@@ -8,26 +8,22 @@ import Link from "next/link";
 import {
   fetchProject,
   createRoundtableSession,
-  getRoundtableSession,
   streamRoundtableMessage,
   generateFeaturesFromRoundtable,
   generateVisionFromRoundtable,
   generateGoalsFromRoundtable,
   generateSpecFromRoundtable,
-  getSpecFromRoundtable,
   acceptSpecFromRoundtable,
   saveVisionFromRoundtable,
   saveGoalsFromRoundtable,
   updateRoundtableTools,
   updateRoundtableAgentConfig,
   resolvePermission,
-  type RoundtableMessage,
   type GeneratedFeature,
   type GeneratedMission,
   type GeneratedNarrative,
   type GeneratedGoal,
   type GeneratedSpec,
-  type ToolStats,
   type PermissionRequest,
 } from "@/lib/api";
 import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
@@ -176,72 +172,6 @@ export default function ProjectDetailPage() {
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const [permissionLoading, setPermissionLoading] = useState(false);
 
-  // Load roundtable session from localStorage on mount
-  useEffect(() => {
-    const storageKey = `roundtable-session-${projectId}`;
-    const savedSessionId = localStorage.getItem(storageKey);
-
-    if (savedSessionId) {
-      // Load session data from backend
-      getRoundtableSession(projectId, savedSessionId)
-        .then((session) => {
-          setRoundtableSessionId(session.id);
-          setRoundtableMode(session.mode as RoundtableMode);
-
-          // Load tools settings
-          setToolsEnabled(session.tools_enabled ?? true);
-          setWriteEnabled(session.write_enabled ?? false);
-          setYoloMode(session.yolo_mode ?? false);
-          if (session.tool_stats) {
-            setToolStats(session.tool_stats);
-          }
-
-          // Load agent config
-          setAgentOverride(session.agent_override ?? null);
-          setModelOverride(session.model_override ?? null);
-
-          // Convert messages to ChatMessage format
-          const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
-            id: msg.id,
-            agent: msg.agent,
-            content: msg.content,
-            timestamp: new Date(msg.timestamp),
-            tokensUsed: msg.tokens_used,
-          }));
-          setRoundtableMessages(messages);
-
-          // Load generated spec if any (using the separate spec endpoint)
-          getSpecFromRoundtable(projectId, session.id)
-            .then((specData) => {
-              if (specData.spec) {
-                setGeneratedSpec(specData.spec);
-              }
-            })
-            .catch((err) => {
-              console.warn("Failed to load spec:", err);
-            });
-        })
-        .catch((err) => {
-          console.warn("Failed to load saved session:", err);
-          // Clear invalid session
-          localStorage.removeItem(storageKey);
-        })
-        .finally(() => {
-          setRoundtableSessionLoaded(true);
-        });
-    } else {
-      setRoundtableSessionLoaded(true);
-    }
-  }, [projectId]);
-
-  // Save session ID to localStorage when it changes
-  useEffect(() => {
-    if (roundtableSessionId && roundtableSessionLoaded) {
-      const storageKey = `roundtable-session-${projectId}`;
-      localStorage.setItem(storageKey, roundtableSessionId);
-    }
-  }, [roundtableSessionId, projectId, roundtableSessionLoaded]);
-
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => fetchProject(projectId),
@@ -286,72 +216,22 @@ export default function ProjectDetailPage() {
     }
   };
 
-  // Roundtable handlers
+  // Roundtable handlers (session management extracted to useRoundtableSession hook)
   const handleRoundtableModeChange = (mode: RoundtableMode) => {
     setRoundtableMode(mode);
   };
 
-  const handleNewRoundtableSession = () => {
-    // Clear current session
-    setRoundtableSessionId(null);
-    setRoundtableMessages([]);
-    setGeneratedSpec(null);
+  // Wrapper to clear error when starting new session
+  const handleNewSession = () => {
+    handleNewRoundtableSession();
     setRoundtableError(null);
-    // Reset tools state
-    setToolsEnabled(true);
-    setWriteEnabled(false);
-    setYoloMode(false);
-    setToolStats({ total_calls: 0, files_read: 0, searches: 0, writes: 0 });
-    // Clear from localStorage
-    const storageKey = `roundtable-session-${projectId}`;
-    localStorage.removeItem(storageKey);
   };
 
-  const handleSelectSession = async (sessionId: string) => {
-    // Don't reload if already selected
-    if (sessionId === roundtableSessionId) return;
-
+  // Wrapper to handle session selection with error handling
+  const handleSessionSelect = async (sessionId: string) => {
     try {
-      const session = await getRoundtableSession(projectId, sessionId);
-      setRoundtableSessionId(session.id);
-      setRoundtableMode(session.mode as RoundtableMode);
-
-      // Load tools settings
-      setToolsEnabled(session.tools_enabled ?? true);
-      setWriteEnabled(session.write_enabled ?? false);
-      setYoloMode(session.yolo_mode ?? false);
-      if (session.tool_stats) {
-        setToolStats(session.tool_stats);
-      }
-
-      // Load agent config
-      setAgentOverride(session.agent_override ?? null);
-      setModelOverride(session.model_override ?? null);
-
-      // Convert messages to ChatMessage format
-      const messages: ChatMessage[] = session.messages.map((msg: RoundtableMessage) => ({
-        id: msg.id,
-        agent: msg.agent,
-        content: msg.content,
-        timestamp: new Date(msg.timestamp),
-        tokensUsed: msg.tokens_used,
-      }));
-      setRoundtableMessages(messages);
-
-      // Load generated spec if any
-      try {
-        const specData = await getSpecFromRoundtable(projectId, sessionId);
-        setGeneratedSpec(specData.spec);
-      } catch {
-        setGeneratedSpec(null);
-      }
-
-      // Clear any errors
+      await handleSelectSession(sessionId);
       setRoundtableError(null);
-
-      // Save to localStorage for persistence
-      const storageKey = `roundtable-session-${projectId}`;
-      localStorage.setItem(storageKey, sessionId);
     } catch (err) {
       console.error("Failed to load session:", err);
       setRoundtableError("Failed to load session");
@@ -731,8 +611,8 @@ export default function ProjectDetailPage() {
               <SessionList
                 projectId={projectId}
                 currentSessionId={roundtableSessionId ?? undefined}
-                onSelectSession={handleSelectSession}
-                onNewSession={handleNewRoundtableSession}
+                onSelectSession={handleSessionSelect}
+                onNewSession={handleNewSession}
               />
             </div>
 
@@ -757,7 +637,7 @@ export default function ProjectDetailPage() {
                 onSaveGoals={handleSaveGoals}
                 onAcceptSpec={handleAcceptSpec}
                 generatedSpec={generatedSpec}
-                onNewSession={handleNewRoundtableSession}
+                onNewSession={handleNewSession}
                 messages={roundtableMessages}
                 isLoading={roundtableLoading}
                 streamingAgent={streamingAgent}
