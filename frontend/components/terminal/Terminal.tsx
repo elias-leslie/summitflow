@@ -236,13 +236,14 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           // Only scroll if we've moved enough
           if (Math.abs(deltaY) >= SCROLL_THRESHOLD) {
             // Send scroll commands using Ctrl+U (half page up) and Ctrl+D (half page down)
+            // Natural scrolling: swipe up = see older content (scroll up), swipe down = see newer content
             if (wsRef.current?.readyState === WebSocket.OPEN) {
               if (deltaY > 0) {
-                // Scrolling up (finger moving up) - Ctrl+U for half page up
-                wsRef.current.send('\x15'); // Ctrl+U
-              } else {
-                // Scrolling down (finger moving down) - Ctrl+D for half page down
+                // Finger moving up - natural scroll: go down in history (Ctrl+D)
                 wsRef.current.send('\x04'); // Ctrl+D
+              } else {
+                // Finger moving down - natural scroll: go up in history (Ctrl+U)
+                wsRef.current.send('\x15'); // Ctrl+U
               }
             }
 

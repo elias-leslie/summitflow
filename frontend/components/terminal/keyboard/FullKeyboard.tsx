@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Keyboard from "simple-keyboard";
 import "simple-keyboard/build/css/index.css";
-import { ModifierProvider, useModifiers } from "./ModifierContext";
+import { useModifiers } from "./ModifierContext";
 import { useKeyboardInput } from "./useKeyboardInput";
 import { KEY_SEQUENCES } from "./keyMappings";
 import { TerminalInputHandler, KeyboardSizePreset, KEYBOARD_SIZE_HEIGHTS } from "./types";

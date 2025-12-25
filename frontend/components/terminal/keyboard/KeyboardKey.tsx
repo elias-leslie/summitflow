@@ -54,12 +54,12 @@ export function KeyboardKey({
       className={clsx(
         // Base styles
         "flex items-center justify-center",
-        "text-xs font-medium",
+        "text-base font-medium",
         "rounded-md",
         "select-none touch-manipulation",
         "transition-colors duration-100",
         // Height
-        "h-9 min-h-[36px]",
+        "h-11 min-h-[44px]",
         // State-based styling
         state === "off" && "bg-slate-700 text-slate-200 active:bg-slate-600",
         state === "sticky" && "bg-slate-700 text-phosphor-400 border border-phosphor-500 active:bg-slate-600",
@@ -68,7 +68,7 @@ export function KeyboardKey({
       )}
       style={{
         flex: width,
-        minWidth: `${width * 36}px`, // 36px base width
+        minWidth: `${width * 44}px`, // 44px base width
       }}
     >
       {label}

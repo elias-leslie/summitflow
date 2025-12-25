@@ -88,22 +88,22 @@ export function ControlBar({
         <KeyboardKey
           label="←"
           onPress={handleArrowLeft}
-          className="w-9"
+          className="w-11 text-lg"
         />
         <KeyboardKey
           label="↑"
           onPress={handleArrowUp}
-          className="w-9"
+          className="w-11 text-lg"
         />
         <KeyboardKey
           label="↓"
           onPress={handleArrowDown}
-          className="w-9"
+          className="w-11 text-lg"
         />
         <KeyboardKey
           label="→"
           onPress={handleArrowRight}
-          className="w-9"
+          className="w-11 text-lg"
         />
       </div>
 
