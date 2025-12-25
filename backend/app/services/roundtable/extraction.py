@@ -138,7 +138,6 @@ def get_effective_prompt(project_id: str, prompt_type: str) -> dict[str, Any]:
             "prompt_text": SPEC_EXTRACTION_PROMPT,
             "primary_agent": "gemini",
             "primary_model": "gemini-3-flash-preview",
-            "verification_enabled": False,
             "is_default": True,
         }
 

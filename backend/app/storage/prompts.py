@@ -26,7 +26,6 @@ Given the feature description and existing codebase patterns, identify:
 Output a structured analysis that will help guide the implementation.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "spec",
         "thinking_budget": 5000,
         "tools_enabled": ["read_file", "glob", "grep"],
@@ -45,7 +44,6 @@ Given the initial requirements and codebase context, enhance the spec with:
 Output a detailed implementation specification.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "spec",
         "thinking_budget": 5000,
         "tools_enabled": [],
@@ -64,7 +62,6 @@ Analyze the spec for:
 Provide specific improvements and flag any blocking issues.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "spec",
         "thinking_budget": 20000,
         "tools_enabled": [],
@@ -83,7 +80,6 @@ Generate:
 Output a JSON implementation plan compatible with the task system.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "spec",
         "thinking_budget": 10000,
         "tools_enabled": [],
@@ -106,7 +102,6 @@ Given the error output, classify it as:
 Output the classification and affected file(s).""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "recovery",
         "thinking_budget": 0,
         "tools_enabled": [],
@@ -129,7 +124,6 @@ Generate the fix:
 Output the fix as a code diff or replacement.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "recovery",
         "thinking_budget": 10000,
         "tools_enabled": ["read_file", "write_file"],
@@ -152,7 +146,6 @@ Check for:
 Output a structured QA report with severity levels.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "qa",
         "thinking_budget": 5000,
         "tools_enabled": ["read_file"],
@@ -174,7 +167,6 @@ For each issue:
 Output the fixes as code diffs.""",
         "primary_agent": "claude",
         "primary_model": "claude-sonnet-4-5",
-        "verification_enabled": False,
         "category": "qa",
         "thinking_budget": 10000,
         "tools_enabled": ["read_file", "write_file"],
@@ -210,8 +202,7 @@ def get_prompt(
         cur.execute(
             """
             SELECT prompt_type, prompt_text, primary_agent, primary_model,
-                   verification_enabled, verification_agent, verification_model,
-                   verification_prompt, category, thinking_budget, tools_enabled,
+                   category, thinking_budget, tools_enabled,
                    created_at, updated_at
             FROM prompts
             WHERE project_id = %s AND prompt_type = %s
@@ -226,15 +217,11 @@ def get_prompt(
             "prompt_text": row[1],
             "primary_agent": row[2],
             "primary_model": row[3],
-            "verification_enabled": row[4],
-            "verification_agent": row[5],
-            "verification_model": row[6],
-            "verification_prompt": row[7],
-            "category": row[8],
-            "thinking_budget": row[9],
-            "tools_enabled": row[10] or [],
-            "created_at": row[11],
-            "updated_at": row[12],
+            "category": row[4],
+            "thinking_budget": row[5],
+            "tools_enabled": row[6] or [],
+            "created_at": row[7],
+            "updated_at": row[8],
             "is_default": False,
         }
 
@@ -270,8 +257,7 @@ def get_all_prompts(
             cur.execute(
                 """
                 SELECT prompt_type, prompt_text, primary_agent, primary_model,
-                       verification_enabled, verification_agent, verification_model,
-                       verification_prompt, category, thinking_budget, tools_enabled,
+                       category, thinking_budget, tools_enabled,
                        created_at, updated_at
                 FROM prompts
                 WHERE project_id = %s AND category = %s
@@ -282,8 +268,7 @@ def get_all_prompts(
             cur.execute(
                 """
                 SELECT prompt_type, prompt_text, primary_agent, primary_model,
-                       verification_enabled, verification_agent, verification_model,
-                       verification_prompt, category, thinking_budget, tools_enabled,
+                       category, thinking_budget, tools_enabled,
                        created_at, updated_at
                 FROM prompts
                 WHERE project_id = %s
@@ -300,15 +285,11 @@ def get_all_prompts(
             "prompt_text": row[1],
             "primary_agent": row[2],
             "primary_model": row[3],
-            "verification_enabled": row[4],
-            "verification_agent": row[5],
-            "verification_model": row[6],
-            "verification_prompt": row[7],
-            "category": row[8],
-            "thinking_budget": row[9],
-            "tools_enabled": row[10] or [],
-            "created_at": row[11],
-            "updated_at": row[12],
+            "category": row[4],
+            "thinking_budget": row[5],
+            "tools_enabled": row[6] or [],
+            "created_at": row[7],
+            "updated_at": row[8],
             "is_default": False,
         }
 
@@ -342,10 +323,6 @@ def upsert_prompt(
     prompt_text: str,
     primary_agent: str = "claude",
     primary_model: str = "claude-sonnet-4-5",
-    verification_enabled: bool = False,
-    verification_agent: str | None = None,
-    verification_model: str | None = None,
-    verification_prompt: str | None = None,
     category: str = "extraction",
     thinking_budget: int = 0,
     tools_enabled: list[str] | None = None,
@@ -358,10 +335,6 @@ def upsert_prompt(
         prompt_text: The prompt text
         primary_agent: Agent to use (claude/gemini)
         primary_model: Model ID to use
-        verification_enabled: Enable second-pass verification
-        verification_agent: Agent for verification
-        verification_model: Model for verification
-        verification_prompt: Prompt for verification pass
         category: Prompt category (spec, recovery, qa, extraction)
         thinking_budget: Token budget for extended thinking
         tools_enabled: List of enabled tool names
@@ -374,25 +347,19 @@ def upsert_prompt(
             """
             INSERT INTO prompts
                 (project_id, prompt_type, prompt_text, primary_agent, primary_model,
-                 verification_enabled, verification_agent, verification_model,
-                 verification_prompt, category, thinking_budget, tools_enabled,
+                 category, thinking_budget, tools_enabled,
                  created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
             ON CONFLICT (project_id, prompt_type) DO UPDATE SET
                 prompt_text = EXCLUDED.prompt_text,
                 primary_agent = EXCLUDED.primary_agent,
                 primary_model = EXCLUDED.primary_model,
-                verification_enabled = EXCLUDED.verification_enabled,
-                verification_agent = EXCLUDED.verification_agent,
-                verification_model = EXCLUDED.verification_model,
-                verification_prompt = EXCLUDED.verification_prompt,
                 category = EXCLUDED.category,
                 thinking_budget = EXCLUDED.thinking_budget,
                 tools_enabled = EXCLUDED.tools_enabled,
                 updated_at = NOW()
             RETURNING prompt_type, prompt_text, primary_agent, primary_model,
-                      verification_enabled, verification_agent, verification_model,
-                      verification_prompt, category, thinking_budget, tools_enabled,
+                      category, thinking_budget, tools_enabled,
                       created_at, updated_at
             """,
             (
@@ -401,10 +368,6 @@ def upsert_prompt(
                 prompt_text,
                 primary_agent,
                 primary_model,
-                verification_enabled,
-                verification_agent,
-                verification_model,
-                verification_prompt,
                 category,
                 thinking_budget,
                 tools_enabled or [],
@@ -421,15 +384,11 @@ def upsert_prompt(
         "prompt_text": row[1],
         "primary_agent": row[2],
         "primary_model": row[3],
-        "verification_enabled": row[4],
-        "verification_agent": row[5],
-        "verification_model": row[6],
-        "verification_prompt": row[7],
-        "category": row[8],
-        "thinking_budget": row[9],
-        "tools_enabled": row[10] or [],
-        "created_at": row[11],
-        "updated_at": row[12],
+        "category": row[4],
+        "thinking_budget": row[5],
+        "tools_enabled": row[6] or [],
+        "created_at": row[7],
+        "updated_at": row[8],
         "is_default": False,
     }
 
