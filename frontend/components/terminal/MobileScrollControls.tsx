@@ -53,8 +53,6 @@ export function MobileScrollControls({
   const handleTap = useCallback((e: React.PointerEvent, fn: () => void) => {
     e.preventDefault();
     e.stopPropagation();
-    // DEBUG: Show alert to confirm handler fires
-    alert('Button pressed! Handler is firing.');
     fn();
   }, []);
 

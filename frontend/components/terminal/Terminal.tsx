@@ -67,28 +67,44 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const handleScrollUp = useCallback(() => {
     const viewport = getViewport();
     if (viewport) {
+      const before = viewport.scrollTop;
       viewport.scrollTop -= 60;
+      alert(`ScrollUp: ${before} -> ${viewport.scrollTop} (scrollH=${viewport.scrollHeight}, clientH=${viewport.clientHeight})`);
+    } else {
+      alert('Viewport NOT FOUND!');
     }
   }, [getViewport]);
 
   const handleScrollDown = useCallback(() => {
     const viewport = getViewport();
     if (viewport) {
+      const before = viewport.scrollTop;
       viewport.scrollTop += 60;
+      alert(`ScrollDown: ${before} -> ${viewport.scrollTop}`);
+    } else {
+      alert('Viewport NOT FOUND!');
     }
   }, [getViewport]);
 
   const handlePageUp = useCallback(() => {
     const viewport = getViewport();
     if (viewport) {
+      const before = viewport.scrollTop;
       viewport.scrollTop -= viewport.clientHeight;
+      alert(`PageUp: ${before} -> ${viewport.scrollTop}`);
+    } else {
+      alert('Viewport NOT FOUND!');
     }
   }, [getViewport]);
 
   const handlePageDown = useCallback(() => {
     const viewport = getViewport();
     if (viewport) {
+      const before = viewport.scrollTop;
       viewport.scrollTop += viewport.clientHeight;
+      alert(`PageDown: ${before} -> ${viewport.scrollTop}`);
+    } else {
+      alert('Viewport NOT FOUND!');
     }
   }, [getViewport]);
 
