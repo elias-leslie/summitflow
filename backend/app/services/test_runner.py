@@ -53,6 +53,11 @@ BROWSER_SCRIPTS = {
 }
 
 
+def _combine_outputs(stdout: str, stderr: str) -> str:
+    """Combine stdout and stderr into a single output string."""
+    return stdout + ("\n" + stderr if stderr else "")
+
+
 @dataclass
 class TestResult:
     """Result from a test execution."""
@@ -655,7 +660,7 @@ async def run_pytest(test: dict[str, Any], config: ProjectConfig) -> TestResult:
         timeout=timeout,
     )
 
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
     passed = exit_code == 0
 
     return TestResult(
@@ -692,7 +697,7 @@ async def run_mypy(test: dict[str, Any], config: ProjectConfig) -> TestResult:
         timeout=timeout,
     )
 
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
     passed = exit_code == 0
 
     return TestResult(
@@ -729,7 +734,7 @@ async def run_ruff(test: dict[str, Any], config: ProjectConfig) -> TestResult:
         timeout=timeout,
     )
 
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
     passed = exit_code == 0
 
     return TestResult(
@@ -766,7 +771,7 @@ async def run_vitest(test: dict[str, Any], config: ProjectConfig) -> TestResult:
         timeout=timeout,
     )
 
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
     passed = exit_code == 0
 
     return TestResult(
@@ -852,7 +857,7 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
                     stdout += f"\nAssertion failed: {jq_filter} = {actual}, expected {expected}"
                     break
 
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
 
     return TestResult(
         passed=passed,
@@ -954,7 +959,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
                 timeout=timeout,
             )
 
-            output = stdout + ("\n" + stderr if stderr else "")
+            output = _combine_outputs(stdout, stderr)
             passed = exit_code == 0
 
             # Try to find evidence path from output
@@ -981,7 +986,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
             timeout=timeout,
         )
 
-        output = stdout + ("\n" + stderr if stderr else "")
+        output = _combine_outputs(stdout, stderr)
         passed = exit_code == 0
 
         return TestResult(
@@ -1091,7 +1096,7 @@ def _parse_browser_script_output(stdout: str, stderr: str, exit_code: int) -> Te
         "network": [...]
     }
     """
-    output = stdout + ("\n" + stderr if stderr else "")
+    output = _combine_outputs(stdout, stderr)
     passed = exit_code == 0
     evidence_path = None
     error = None
