@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { FullKeyboard } from "./FullKeyboard";
 import { ControlBar } from "./ControlBar";
+import { ModifierProvider } from "./ModifierContext";
 import { KeyboardSizePreset, TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
 
@@ -61,24 +62,26 @@ export function MobileKeyboard({
   }, []);
 
   return (
-    <div className="flex flex-col">
-      {/* Control bar with arrows and special keys - always visible */}
-      <ControlBar
-        onSend={onSend}
-        connectionStatus={connectionStatus}
-        onReconnect={onReconnect}
-        ctrlActive={ctrlActive}
-        onCtrlToggle={handleCtrlToggle}
-        minimized={minimized}
-        onToggleMinimize={handleToggleMinimize}
-      />
-      {/* Full keyboard - hidden when minimized */}
-      {!minimized && (
-        <FullKeyboard
-          onSend={handleSend}
-          keyboardSize={keyboardSize}
+    <ModifierProvider>
+      <div className="flex flex-col">
+        {/* Control bar with arrows and special keys - always visible */}
+        <ControlBar
+          onSend={onSend}
+          connectionStatus={connectionStatus}
+          onReconnect={onReconnect}
+          ctrlActive={ctrlActive}
+          onCtrlToggle={handleCtrlToggle}
+          minimized={minimized}
+          onToggleMinimize={handleToggleMinimize}
         />
-      )}
-    </div>
+        {/* Full keyboard - hidden when minimized */}
+        {!minimized && (
+          <FullKeyboard
+            onSend={handleSend}
+            keyboardSize={keyboardSize}
+          />
+        )}
+      </div>
+    </ModifierProvider>
   );
 }

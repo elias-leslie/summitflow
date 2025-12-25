@@ -282,9 +282,6 @@ function FullKeyboardInner({ onSend, keyboardSize = "medium" }: FullKeyboardProp
 }
 
 export function FullKeyboard(props: FullKeyboardProps) {
-  return (
-    <ModifierProvider>
-      <FullKeyboardInner {...props} />
-    </ModifierProvider>
-  );
+  // ModifierProvider is expected to be at parent level (MobileKeyboard)
+  return <FullKeyboardInner {...props} />;
 }

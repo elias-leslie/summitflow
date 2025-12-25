@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { KeyboardKey } from "./KeyboardKey";
 import { KEY_SEQUENCES } from "./keyMappings";
+import { useModifiers } from "./ModifierContext";
 import { TerminalInputHandler } from "./types";
 import { ConnectionStatus } from "../Terminal";
 
@@ -15,8 +16,6 @@ interface ControlBarProps {
   // Modifiers
   ctrlActive?: boolean;
   onCtrlToggle?: () => void;
-  shiftActive?: boolean;
-  onShiftToggle?: () => void;
   // Keyboard minimize
   minimized?: boolean;
   onToggleMinimize?: () => void;
@@ -28,16 +27,18 @@ export function ControlBar({
   onReconnect,
   ctrlActive = false,
   onCtrlToggle,
-  shiftActive = false,
-  onShiftToggle,
   minimized = false,
   onToggleMinimize,
 }: ControlBarProps) {
+  // Get shift state from shared modifier context
+  const { modifiers, resetModifiers } = useModifiers();
+  const shiftActive = modifiers.shift !== "off";
+
   // Helper to clear modifiers after use
   const clearModifiers = useCallback(() => {
     if (ctrlActive && onCtrlToggle) onCtrlToggle();
-    if (shiftActive && onShiftToggle) onShiftToggle();
-  }, [ctrlActive, onCtrlToggle, shiftActive, onShiftToggle]);
+    resetModifiers(); // Clear sticky shift from context
+  }, [ctrlActive, onCtrlToggle, resetModifiers]);
 
   // Arrow key handlers - don't clear modifiers for arrows
   const handleArrowLeft = useCallback(() => onSend(KEY_SEQUENCES.ARROW_LEFT), [onSend]);
