@@ -49,6 +49,7 @@ import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
+import { useRoundtableSession } from "@/lib/hooks/useRoundtableSession";
 
 type TabId = "roundtable" | "kanban" | "tasks" | "evidence" | "explorer";
 
@@ -139,21 +140,37 @@ export default function ProjectDetailPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
 
-  // Roundtable state
-  const [roundtableSessionId, setRoundtableSessionId] = useState<string | null>(null);
-  const [roundtableMode, setRoundtableMode] = useState<RoundtableMode>("spec_driven");
-  const [roundtableMessages, setRoundtableMessages] = useState<ChatMessage[]>([]);
+  // Roundtable session state (extracted to hook)
+  const {
+    sessionId: roundtableSessionId,
+    setSessionId: setRoundtableSessionId,
+    mode: roundtableMode,
+    setMode: setRoundtableMode,
+    messages: roundtableMessages,
+    setMessages: setRoundtableMessages,
+    sessionLoaded: roundtableSessionLoaded,
+    toolsEnabled,
+    setToolsEnabled,
+    writeEnabled,
+    setWriteEnabled,
+    yoloMode,
+    setYoloMode,
+    toolStats,
+    setToolStats,
+    agentOverride,
+    setAgentOverride,
+    modelOverride,
+    setModelOverride,
+    generatedSpec,
+    setGeneratedSpec,
+    selectSession: handleSelectSession,
+    clearSession: handleNewRoundtableSession,
+  } = useRoundtableSession(projectId);
+
+  // Remaining roundtable UI state
   const [roundtableLoading, setRoundtableLoading] = useState(false);
   const [streamingAgent, setStreamingAgent] = useState<"claude" | "gemini" | null>(null);
   const [roundtableError, setRoundtableError] = useState<string | null>(null);
-  const [generatedSpec, setGeneratedSpec] = useState<GeneratedSpec | null>(null);
-  const [roundtableSessionLoaded, setRoundtableSessionLoaded] = useState(false);
-  const [toolsEnabled, setToolsEnabled] = useState(true);
-  const [writeEnabled, setWriteEnabled] = useState(false);
-  const [yoloMode, setYoloMode] = useState(false);
-  const [toolStats, setToolStats] = useState<ToolStats>({ total_calls: 0, files_read: 0, searches: 0, writes: 0 });
-  const [agentOverride, setAgentOverride] = useState<string | null>(null);
-  const [modelOverride, setModelOverride] = useState<string | null>(null);
 
   // Permission prompting state
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
