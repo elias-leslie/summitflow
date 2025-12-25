@@ -182,71 +182,13 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // Mobile-specific setup
+      // Mobile-specific setup: suppress native keyboard (we use custom keyboard)
+      // Touch scrolling is now handled via CSS (touch-action: pan-y on .xterm-viewport)
       if (isMobileDevice()) {
-        // Suppress native keyboard - we use custom keyboard
         const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
         if (textarea) {
           textarea.inputMode = "none";
           textarea.readOnly = true;
-        }
-
-        // Get the xterm viewport - this is the scrollable element
-        const viewport = containerRef.current.querySelector<HTMLElement>(".xterm-viewport");
-
-        if (viewport) {
-          // Create invisible touch overlay that sits on top of xterm
-          const overlay = document.createElement("div");
-          overlay.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 100;
-            touch-action: none;
-          `;
-          containerRef.current.style.position = "relative";
-          containerRef.current.appendChild(overlay);
-
-          let lastY = 0;
-          let isTouching = false;
-
-          const handleTouchStart = (e: TouchEvent) => {
-            lastY = e.touches[0].clientY;
-            isTouching = true;
-          };
-
-          const handleTouchMove = (e: TouchEvent) => {
-            if (!isTouching) return;
-
-            e.preventDefault(); // Prevent pull-to-refresh
-
-            const currentY = e.touches[0].clientY;
-            const deltaY = lastY - currentY;
-            lastY = currentY;
-
-            // Scroll the viewport
-            viewport.scrollTop += deltaY;
-          };
-
-          const handleTouchEnd = () => {
-            isTouching = false;
-          };
-
-          // Attach to our overlay
-          overlay.addEventListener("touchstart", handleTouchStart, { passive: true });
-          overlay.addEventListener("touchmove", handleTouchMove, { passive: false });
-          overlay.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-          // Store cleanup
-          const cleanupTouch = () => {
-            overlay.removeEventListener("touchstart", handleTouchStart);
-            overlay.removeEventListener("touchmove", handleTouchMove);
-            overlay.removeEventListener("touchend", handleTouchEnd);
-            overlay.remove();
-          };
-          (term as unknown as { _touchCleanup?: () => void })._touchCleanup = cleanupTouch;
         }
       }
 
