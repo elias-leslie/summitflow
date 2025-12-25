@@ -183,7 +183,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       fitAddonRef.current = fitAddon;
 
       // Mobile-specific setup: suppress native keyboard (we use custom keyboard)
-      // Touch scrolling is now handled via CSS (touch-action: pan-y on .xterm-viewport)
       if (isMobileDevice()) {
         const textarea = containerRef.current.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
         if (textarea) {

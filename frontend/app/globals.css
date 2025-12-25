@@ -377,21 +377,9 @@ body::before {
   overscroll-behavior: contain;
 }
 
-/* Ensure the viewport doesn't stretch the content and enable native touch scrolling */
+/* Ensure the viewport doesn't stretch the content */
 .xterm-viewport {
   overflow-y: auto !important;
-  touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch !important;
-}
-
-/* Allow touch events to pass through rows to viewport for scrolling */
-.xterm-rows {
-  pointer-events: none;
-}
-
-/* But keep pointer events on individual row children for text selection */
-.xterm-rows > div {
-  pointer-events: auto;
 }
 
 /* Ensure screen and canvas maintain proper sizing */
