@@ -115,7 +115,7 @@ class TestGetMemoryConfig:
 class TestStorageGuards:
     """Tests for storage layer guards returning None when disabled."""
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_queue.is_memory_feature_enabled")
     def test_create_queue_item_returns_none_when_disabled(self, mock_enabled):
         """create_queue_item returns None when observations disabled."""
         from app.storage.memory import create_queue_item
@@ -200,7 +200,7 @@ class TestStorageGuards:
 class TestSkipMemoryCheckBypass:
     """Tests for skip_memory_check parameter bypassing guards."""
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_queue.is_memory_feature_enabled")
     def test_skip_flag_bypasses_guard(self, mock_enabled):
         """skip_memory_check=True bypasses the feature check (verified by mock not called)."""
         from app.storage.memory import create_queue_item
