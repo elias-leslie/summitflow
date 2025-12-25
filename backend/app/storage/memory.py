@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 # Deduplication window in minutes
 DEDUP_WINDOW_MINUTES = 60
 
+# Column lists for DRY queries
+OBSERVATION_COLUMNS = """
+    id, project_id, session_id, agent_type, observation_type,
+    concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
+    files_modified, tool_name, tool_input, discovery_tokens,
+    extracted_by, raw_excerpt, created_at
+""".strip()
+
 
 def _build_where_clause(
     filters: dict[str, Any],
@@ -318,14 +326,7 @@ def get_observation(observation_id: str) -> dict[str, Any] | None:
     """Get an observation by ID."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, raw_excerpt, created_at
-            FROM observations
-            WHERE id = %s
-            """,
+            f"SELECT {OBSERVATION_COLUMNS} FROM observations WHERE id = %s",
             (observation_id,),
         )
         row = cur.fetchone()
@@ -379,13 +380,10 @@ def list_observations(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            sql.SQL("""
-            SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, raw_excerpt, created_at
+            sql.SQL(f"""
+            SELECT {OBSERVATION_COLUMNS}
             FROM observations
-            WHERE {where_clause}
+            WHERE {{where_clause}}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """).format(where_clause=where_clause),
@@ -454,11 +452,8 @@ def search_observations_fts(
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, entities, title, subtitle, narrative, facts, files_read,
-                   files_modified, tool_name, tool_input, discovery_tokens,
-                   extracted_by, raw_excerpt, created_at,
+            f"""
+            SELECT {OBSERVATION_COLUMNS},
                    ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
             FROM observations
             WHERE project_id = %s
@@ -970,11 +965,8 @@ def get_observations_by_session(
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, observation_type,
-                   concepts, priority, confidence, entities, title, subtitle, narrative, facts,
-                   files_read, files_modified, tool_name, tool_input,
-                   discovery_tokens, extracted_by, raw_excerpt, created_at
+            f"""
+            SELECT {OBSERVATION_COLUMNS}
             FROM observations
             WHERE project_id = %s AND session_id = %s
             ORDER BY created_at DESC
