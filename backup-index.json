@@ -4,6 +4,85 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20251225-060906.tar.gz",
+      "timestamp": "2025-12-25T06:09:20-05:00",
+      "size_bytes": 235127526,
+      "db_size_bytes": 7830684,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2025-12-25T06:09:18-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 147
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 51
+          },
+          "scripts": {
+            "count": 22
+          },
+          ".summitflow": {
+            "count": 8
+          },
+          "frontend": {
+            "count": 159
+          },
+          ".claude": {
+            "count": 550
+          },
+          "tasks": {
+            "count": 56
+          },
+          "data": {
+            "count": 2837
+          },
+          "mockups": {
+            "count": 7
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "AGENTS.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          ".pre-commit-config.yaml": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          }
+        },
+        "total_files": 3886,
+        "checksum": "sha256:f1e34c96238e996dc4b97ffd42b7d2eefd834c4d780d09996d5c6ca802af88ee"
+      }
+    },
+    {
       "name": "summitflow-20251224-151006.tar.gz",
       "timestamp": "2025-12-24T15:10:20-05:00",
       "size_bytes": 234143985,
@@ -2059,5 +2138,5 @@
       }
     }
   ],
-  "last_updated": "2025-12-24T15:10:20-05:00"
+  "last_updated": "2025-12-25T06:09:20-05:00"
 }
