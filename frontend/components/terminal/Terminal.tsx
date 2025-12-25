@@ -248,6 +248,68 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
           textarea.inputMode = "none";
           textarea.readOnly = true;
         }
+
+        // Touch scrolling - send scroll commands to tmux via WebSocket
+        let touchStartY = 0;
+        let lastSentY = 0;
+        let inCopyMode = false;
+        const SCROLL_THRESHOLD = 30; // pixels per scroll command
+
+        const handleTouchStart = (e: TouchEvent) => {
+          touchStartY = e.touches[0].clientY;
+          lastSentY = touchStartY;
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+          e.preventDefault(); // Prevent pull-to-refresh
+
+          const currentY = e.touches[0].clientY;
+          const deltaY = lastSentY - currentY;
+
+          // Only scroll if we've moved enough
+          if (Math.abs(deltaY) >= SCROLL_THRESHOLD) {
+            const scrollCount = Math.floor(Math.abs(deltaY) / SCROLL_THRESHOLD);
+
+            // Enter tmux copy-mode on first scroll if not already
+            if (!inCopyMode && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send('\x02['); // Ctrl+b [
+              inCopyMode = true;
+            }
+
+            // Send scroll commands
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              for (let i = 0; i < scrollCount; i++) {
+                if (deltaY > 0) {
+                  // Scrolling up (finger moving up)
+                  wsRef.current.send('\x1b[A'); // Up arrow
+                } else {
+                  // Scrolling down (finger moving down)
+                  wsRef.current.send('\x1b[B'); // Down arrow
+                }
+              }
+            }
+
+            lastSentY = currentY;
+          }
+        };
+
+        const handleTouchEnd = () => {
+          // Reset for next touch
+          touchStartY = 0;
+          lastSentY = 0;
+          // Keep copy mode active so user can continue scrolling
+        };
+
+        containerRef.current.addEventListener('touchstart', handleTouchStart, { passive: true });
+        containerRef.current.addEventListener('touchmove', handleTouchMove, { passive: false });
+        containerRef.current.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+        // Store cleanup
+        (term as unknown as { _touchCleanup?: () => void })._touchCleanup = () => {
+          containerRef.current?.removeEventListener('touchstart', handleTouchStart);
+          containerRef.current?.removeEventListener('touchmove', handleTouchMove);
+          containerRef.current?.removeEventListener('touchend', handleTouchEnd);
+        };
       }
 
       // Fit immediately and again after a short delay to ensure proper sizing
@@ -390,6 +452,10 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
       }
 
       if (terminalRef.current) {
+        // Clean up touch handlers
+        const touchCleanup = (terminalRef.current as unknown as { _touchCleanup?: () => void })._touchCleanup;
+        if (touchCleanup) touchCleanup();
+
         terminalRef.current.dispose();
         terminalRef.current = null;
       }
