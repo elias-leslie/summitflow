@@ -103,6 +103,7 @@ class BaseScanner(ABC):
         1. Calls scan() to discover entries
         2. Determines health status for each
         3. Saves entries to database
+        4. Cleans up stale entries no longer in codebase
 
         Returns:
             ScanResult with statistics
@@ -120,11 +121,23 @@ class BaseScanner(ABC):
             # Save to database
             saved_count = self.save(entries)
 
+            # Clean up stale entries (entries in DB that weren't in this scan)
+            current_paths = {e.path for e in entries}
+            deleted_count = storage.cleanup_stale_entries(
+                self.project_id, self.entry_type, current_paths
+            )
+            if deleted_count > 0:
+                logger.info(
+                    f"Cleaned up {deleted_count} stale {self.entry_type} entries "
+                    f"for {self.project_id}"
+                )
+
             duration_ms = int((time.time() - start_time) * 1000)
 
             logger.info(
                 f"Scan complete: {self.entry_type} for {self.project_id} - "
-                f"found {len(entries)}, saved {saved_count} in {duration_ms}ms"
+                f"found {len(entries)}, saved {saved_count}, "
+                f"deleted {deleted_count} stale in {duration_ms}ms"
             )
 
             return ScanResult(
