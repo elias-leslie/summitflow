@@ -269,6 +269,142 @@ def get_delete_file_tool() -> dict[str, Any]:
 
 
 # =============================================================================
+# Explorer Tools (codebase analysis via Explorer API)
+# =============================================================================
+
+
+def get_codebase_metrics_tool() -> dict[str, Any]:
+    """Get codebase metrics tool definition."""
+    return {
+        "name": "get_codebase_metrics",
+        "description": (
+            "Get summary metrics about the codebase from Explorer. Returns counts "
+            "of files, endpoints, pages, tables, and health status breakdown. "
+            "Optionally filter by path prefix to analyze a specific directory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (e.g., 'summitflow', 'portfolio-ai')",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional path prefix to filter metrics (e.g., 'backend/app')",
+                },
+            },
+            "required": ["project_id"],
+        },
+    }
+
+
+def get_find_complex_files_tool() -> dict[str, Any]:
+    """Find complex files tool definition."""
+    return {
+        "name": "find_complex_files",
+        "description": (
+            "Find files with high complexity scores that may need refactoring. "
+            "Returns files sorted by complexity with metrics like line count, "
+            "function count, and class count."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (e.g., 'summitflow')",
+                },
+                "threshold": {
+                    "type": "number",
+                    "description": "Minimum complexity score (default 10)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum files to return (default 20)",
+                },
+            },
+            "required": ["project_id"],
+        },
+    }
+
+
+def get_refactor_targets_tool() -> dict[str, Any]:
+    """Get refactor targets tool definition."""
+    return {
+        "name": "get_refactor_targets",
+        "description": (
+            "Get files that are candidates for refactoring based on complexity "
+            "and line count. Returns files with high or medium priority along "
+            "with specific reasons for refactoring."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (e.g., 'summitflow')",
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["high", "medium"],
+                    "description": "Filter by priority level (default: all)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum targets to return (default 20)",
+                },
+            },
+            "required": ["project_id"],
+        },
+    }
+
+
+def get_tdd_suggestions_tool() -> dict[str, Any]:
+    """Get TDD suggestions tool definition."""
+    return {
+        "name": "get_tdd_suggestions",
+        "description": (
+            "Get suggestions for TDD structure based on codebase analysis. "
+            "Returns suggested components, existing tests found, and coverage "
+            "summary for endpoints and pages."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (e.g., 'summitflow')",
+                },
+            },
+            "required": ["project_id"],
+        },
+    }
+
+
+def get_coverage_gaps_tool() -> dict[str, Any]:
+    """Get coverage gaps tool definition."""
+    return {
+        "name": "get_coverage_gaps",
+        "description": (
+            "Find endpoints, pages, and tables that are not linked to any "
+            "capability. These represent gaps in TDD coverage that should "
+            "be addressed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (e.g., 'summitflow')",
+                },
+            },
+            "required": ["project_id"],
+        },
+    }
+
+
+# =============================================================================
 # Tool Categories
 # =============================================================================
 
@@ -309,10 +445,25 @@ WRITE_TOOLS = ToolCategory(
     requires_permission=True,
 )
 
+# Explorer tools (codebase analysis via Explorer API)
+EXPLORER_TOOLS = ToolCategory(
+    name="explorer",
+    description="Codebase analysis tools via Explorer (metrics, complexity, coverage)",
+    tools=[
+        get_codebase_metrics_tool(),
+        get_find_complex_files_tool(),
+        get_refactor_targets_tool(),
+        get_tdd_suggestions_tool(),
+        get_coverage_gaps_tool(),
+    ],
+    requires_permission=False,
+)
+
 # All tool categories
 ALL_CATEGORIES = {
     "read_only": READ_ONLY_TOOLS,
     "write": WRITE_TOOLS,
+    "explorer": EXPLORER_TOOLS,
 }
 
 
@@ -354,6 +505,8 @@ class RoundtableToolExecutor:
             tools.extend(READ_ONLY_TOOLS.tools)
         if "write" in self.enabled_categories:
             tools.extend(WRITE_TOOLS.tools)
+        if "explorer" in self.enabled_categories:
+            tools.extend(EXPLORER_TOOLS.tools)
         return tools
 
     def has_write_access(self) -> bool:
@@ -429,6 +582,12 @@ class RoundtableToolExecutor:
             "edit_file": self._execute_edit_file,
             "create_directory": self._execute_create_directory,
             "delete_file": self._execute_delete_file,
+            # Explorer tools
+            "get_codebase_metrics": self._execute_get_codebase_metrics,
+            "find_complex_files": self._execute_find_complex_files,
+            "get_refactor_targets": self._execute_get_refactor_targets,
+            "get_tdd_suggestions": self._execute_get_tdd_suggestions,
+            "get_coverage_gaps": self._execute_get_coverage_gaps,
         }
 
         executor = executors.get(tool_name)
@@ -826,6 +985,116 @@ class RoundtableToolExecutor:
         except Exception as e:
             return ToolResult(False, "", f"Failed to delete file: {e}")
 
+    # =========================================================================
+    # Explorer Tool Executors
+    # =========================================================================
+
+    def _execute_get_codebase_metrics(self, params: dict[str, Any]) -> ToolResult:
+        """Execute get_codebase_metrics tool."""
+        from ...services import explorer as explorer_service
+
+        project_id, err = self._require_param(params, "project_id")
+        if err:
+            return err
+
+        path_filter = params.get("path")
+
+        try:
+            stats = explorer_service.get_stats(project_id)
+            if path_filter:
+                # Get filtered entries count
+                from ...storage import explorer as explorer_storage
+
+                entries = explorer_storage.get_entries(
+                    project_id, {"path": path_filter, "limit": 10000}
+                )
+                stats["filtered_count"] = len(entries)
+                stats["filter_path"] = path_filter
+
+            import json
+
+            return ToolResult(True, json.dumps(stats, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to get metrics: {e}")
+
+    def _execute_find_complex_files(self, params: dict[str, Any]) -> ToolResult:
+        """Execute find_complex_files tool."""
+        from ...storage import explorer as explorer_storage
+
+        project_id, err = self._require_param(params, "project_id")
+        if err:
+            return err
+
+        threshold = float(params.get("threshold", 10))
+        limit = int(params.get("limit", 20))
+
+        try:
+            result = explorer_storage.get_refactor_targets(
+                project_id,
+                min_complexity=threshold,
+                limit=limit,
+            )
+            import json
+
+            return ToolResult(True, json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to find complex files: {e}")
+
+    def _execute_get_refactor_targets(self, params: dict[str, Any]) -> ToolResult:
+        """Execute get_refactor_targets tool."""
+        from ...storage import explorer as explorer_storage
+
+        project_id, err = self._require_param(params, "project_id")
+        if err:
+            return err
+
+        priority = params.get("priority")
+        limit = int(params.get("limit", 20))
+
+        try:
+            result = explorer_storage.get_refactor_targets(
+                project_id,
+                priority=priority,
+                limit=limit,
+            )
+            import json
+
+            return ToolResult(True, json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to get refactor targets: {e}")
+
+    def _execute_get_tdd_suggestions(self, params: dict[str, Any]) -> ToolResult:
+        """Execute get_tdd_suggestions tool."""
+        from ...services import tdd_suggestions
+
+        project_id, err = self._require_param(params, "project_id")
+        if err:
+            return err
+
+        try:
+            result = tdd_suggestions.get_tdd_suggestions(project_id)
+            import json
+
+            return ToolResult(True, json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to get TDD suggestions: {e}")
+
+    def _execute_get_coverage_gaps(self, params: dict[str, Any]) -> ToolResult:
+        """Execute get_coverage_gaps tool."""
+        from ...storage import explorer as explorer_storage
+
+        project_id, err = self._require_param(params, "project_id")
+        if err:
+            return err
+
+        try:
+            result = explorer_storage.get_coverage_gaps(project_id)
+            import json
+
+            return ToolResult(True, json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"Failed to get coverage gaps: {e}")
+
 
 # =============================================================================
 # Helper Functions
@@ -863,6 +1132,13 @@ def format_tool_results_for_prompt(results: list[tuple[str, ToolResult]]) -> str
 # Tool name sets for permission handling
 READ_TOOL_NAMES = {"read_file", "search_code", "list_files", "get_project_structure"}
 WRITE_TOOL_NAMES = {"write_file", "edit_file", "delete_file", "create_directory"}
+EXPLORER_TOOL_NAMES = {
+    "get_codebase_metrics",
+    "find_complex_files",
+    "get_refactor_targets",
+    "get_tdd_suggestions",
+    "get_coverage_gaps",
+}
 
 
 def get_tool_description(tool_name: str) -> str:
@@ -883,6 +1159,12 @@ def get_tool_description(tool_name: str) -> str:
         "edit_file": get_edit_file_tool,
         "create_directory": get_create_directory_tool,
         "delete_file": get_delete_file_tool,
+        # Explorer tools
+        "get_codebase_metrics": get_codebase_metrics_tool,
+        "find_complex_files": get_find_complex_files_tool,
+        "get_refactor_targets": get_refactor_targets_tool,
+        "get_tdd_suggestions": get_tdd_suggestions_tool,
+        "get_coverage_gaps": get_coverage_gaps_tool,
     }
 
     getter = tool_getters.get(tool_name)
