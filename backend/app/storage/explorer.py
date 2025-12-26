@@ -81,31 +81,44 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
             - type: Filter by entry_type
             - health: Filter by health_status
             - path: Filter by path prefix (LIKE 'path%')
+            - association: Filter by association_status ('orphan', 'linked', 'is_component')
             - sort: Sort field (default: 'path')
             - dir: Sort direction ('asc' or 'desc', default: 'asc')
             - limit: Max results (default: 1000)
             - offset: Skip results (default: 0)
 
     Returns:
-        List of entry dicts
+        List of entry dicts with association_status field
     """
     filters = filters or {}
 
     # Build WHERE clause
-    conditions = ["project_id = %s"]
+    conditions = ["ee.project_id = %s"]
     params: list[Any] = [project_id]
 
     if filters.get("type"):
-        conditions.append("entry_type = %s")
+        conditions.append("ee.entry_type = %s")
         params.append(filters["type"])
 
     if filters.get("health"):
-        conditions.append("health_status = %s")
+        conditions.append("ee.health_status = %s")
         params.append(filters["health"])
 
     if filters.get("path"):
-        conditions.append("path LIKE %s")
+        conditions.append("ee.path LIKE %s")
         params.append(f"{filters['path']}%")
+
+    # Handle association filter in HAVING clause
+    association_filter = filters.get("association")
+    having_clause = ""
+    if association_filter == "is_component":
+        having_clause = "HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1"
+    elif association_filter == "linked":
+        having_clause = """HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0
+                          AND MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 1"""
+    elif association_filter == "orphan":
+        having_clause = """HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0
+                          AND MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 0"""
 
     # Build WHERE clause from conditions
     if conditions:
@@ -127,22 +140,40 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             sql.SQL("""
-            SELECT id, project_id, entry_type, path, name, health_status,
-                   metadata, last_scanned_at, created_at, updated_at
-            FROM explorer_entries
+            SELECT ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
+                   ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at,
+                   CASE
+                       WHEN MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'is_component'
+                       WHEN MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'linked'
+                       ELSE 'orphan'
+                   END as association_status
+            FROM explorer_entries ee
+            LEFT JOIN components c ON c.explorer_entry_id = ee.id
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
             WHERE {where_clause}
+            GROUP BY ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
+                     ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at
+            {having_clause}
             ORDER BY {sort_field} {sort_dir}
             LIMIT %s OFFSET %s
             """).format(
                 where_clause=where_clause,
-                sort_field=sql.Identifier(sort_field),
+                sort_field=sql.Identifier("ee", sort_field),
                 sort_dir=sql.SQL(sort_dir),
+                having_clause=sql.SQL(having_clause),
             ),
             (*params, limit, offset),
         )
         rows = cur.fetchall()
 
-        return [_row_to_entry(row) for row in rows]
+        return [_row_to_entry_with_association(row) for row in rows]
+
+
+def _row_to_entry_with_association(row: tuple) -> dict:
+    """Convert a database row with association_status to an entry dict."""
+    entry = _row_to_entry(row[:10])
+    entry["association_status"] = row[10] if len(row) > 10 else "orphan"
+    return entry
 
 
 def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
