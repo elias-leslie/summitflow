@@ -1222,17 +1222,18 @@ cmd_capability_show() {
     else
         echo -e "${BLUE}Capability: $(echo "$response" | jq -r '.capability_id')${NC}"
         echo "$response" | jq -r '"
-Name:        \(.name)
-Component:   \(.component_id // "none")
-Status:      \(.status // "pending")
-Priority:    \(.priority // 0)
-Locked:      \(.locked_at // "no")
-Description: \(.description // "(none)")
+Name:           \(.name)
+Component:      \(.component_id // "none")
+Status:         \(.status // "pending")
+Priority:       \(.priority // 0)
+Locked:         \(.locked_at // "no")
+Verification:   \(.verification_url // "(none)")
+Description:    \(.description // "(none)")
 
-Linked Tests: \(.linked_tests | length // 0)"'
+Linked Tests: \(.tests | length // 0)"'
 
-        # Show linked tests if any
-        echo "$response" | jq -r '.linked_tests // [] | .[] |
+        # Show linked tests if any with pass/fail status
+        echo "$response" | jq -r '.tests // [] | .[] |
             "  - \(.test_id): \(.name) [\(.last_result // "not run")]"'
     fi
 }
