@@ -13,13 +13,19 @@ Metadata schema (per architecture doc):
   "stale_status": "fresh",
   "last_commit_days": 5,
   "last_commit_hash": "abc123",
-  "last_commit_message": "feat: Add feature"
+  "last_commit_message": "feat: Add feature",
+  "function_count": 10,
+  "class_count": 2,
+  "import_count": 5,
+  "complexity_score": 7.5,
+  "refactor_priority": "medium"
 }
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +97,37 @@ BLOAT_THRESHOLDS: dict[str, tuple[int, int]] = {
 
 STALE_THRESHOLD_DAYS = 90
 
+# Regex patterns for complexity metrics
+FUNCTION_PATTERNS: dict[str, re.Pattern] = {
+    ".py": re.compile(r"^\s*def\s+", re.MULTILINE),
+    ".ts": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
+    ".tsx": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
+    ".js": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
+    ".jsx": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
+}
+
+CLASS_PATTERNS: dict[str, re.Pattern] = {
+    ".py": re.compile(r"^\s*class\s+\w+", re.MULTILINE),
+    ".ts": re.compile(r"class\s+\w+", re.MULTILINE),
+    ".tsx": re.compile(r"class\s+\w+", re.MULTILINE),
+    ".js": re.compile(r"class\s+\w+", re.MULTILINE),
+    ".jsx": re.compile(r"class\s+\w+", re.MULTILINE),
+}
+
+IMPORT_PATTERNS: dict[str, re.Pattern] = {
+    ".py": re.compile(r"^\s*(import|from)\s+", re.MULTILINE),
+    ".ts": re.compile(r"^\s*import\s+", re.MULTILINE),
+    ".tsx": re.compile(r"^\s*import\s+", re.MULTILINE),
+    ".js": re.compile(r"^\s*import\s+", re.MULTILINE),
+    ".jsx": re.compile(r"^\s*import\s+", re.MULTILINE),
+}
+
+# Refactor priority thresholds
+REFACTOR_HIGH_COMPLEXITY = 15
+REFACTOR_HIGH_LINES = 500
+REFACTOR_MEDIUM_COMPLEXITY = 10
+REFACTOR_MEDIUM_LINES = 300
+
 
 class FileScanner(BaseScanner):
     """Scans codebase files for explorer entries."""
@@ -161,15 +198,27 @@ class FileScanner(BaseScanner):
             stat = file_path.stat()
             size_bytes = stat.st_size
 
-            # Count lines of code
+            # Read file content for analysis
+            content = ""
+            lines = 0
             try:
                 with file_path.open(encoding="utf-8", errors="ignore") as f:
-                    lines = sum(1 for _ in f)
+                    content = f.read()
+                    lines = content.count("\n") + (
+                        1 if content and not content.endswith("\n") else 0
+                    )
             except Exception:
                 lines = 0
 
             # Calculate bloat level
             bloat_level = self._calculate_bloat(ext, lines)
+
+            # Calculate complexity metrics
+            function_count = self._count_matches(ext, FUNCTION_PATTERNS, content)
+            class_count = self._count_matches(ext, CLASS_PATTERNS, content)
+            import_count = self._count_matches(ext, IMPORT_PATTERNS, content)
+            complexity_score = self._calculate_complexity_score(lines, function_count, class_count)
+            refactor_priority = self._calculate_refactor_priority(complexity_score, lines)
 
             return ExplorerEntryCreate(
                 path=rel_path,
@@ -181,6 +230,11 @@ class FileScanner(BaseScanner):
                     "size_bytes": size_bytes,
                     "lines_of_code": lines,
                     "bloat_level": bloat_level,
+                    "function_count": function_count,
+                    "class_count": class_count,
+                    "import_count": import_count,
+                    "complexity_score": complexity_score,
+                    "refactor_priority": refactor_priority,
                 },
             )
         except Exception:
@@ -198,6 +252,27 @@ class FileScanner(BaseScanner):
         if lines >= warning:
             return "warning"
         return None
+
+    def _count_matches(self, ext: str, patterns: dict[str, re.Pattern], content: str) -> int:
+        """Count regex matches for the given extension."""
+        pattern = patterns.get(ext)
+        if not pattern or not content:
+            return 0
+        return len(pattern.findall(content))
+
+    def _calculate_complexity_score(
+        self, lines: int, function_count: int, class_count: int
+    ) -> float:
+        """Calculate complexity score: lines/100 + funcs/10 + classes/5."""
+        return round(lines / 100 + function_count / 10 + class_count / 5, 2)
+
+    def _calculate_refactor_priority(self, complexity_score: float, lines: int) -> str:
+        """Determine refactor priority based on complexity and lines."""
+        if complexity_score > REFACTOR_HIGH_COMPLEXITY or lines > REFACTOR_HIGH_LINES:
+            return "high"
+        if complexity_score > REFACTOR_MEDIUM_COMPLEXITY or lines > REFACTOR_MEDIUM_LINES:
+            return "medium"
+        return "none"
 
     def _aggregate_to_parents(
         self, rel_path: str, entry: ExplorerEntryCreate, dir_stats: dict[str, dict]
