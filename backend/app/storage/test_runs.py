@@ -84,16 +84,20 @@ def _update_capability_statuses(
     When a test passes, check all linked capabilities. If all tests for a
     capability pass, update its status to 'tests_passing'. If any test fails,
     set status to 'pending'.
+
+    Note: The current test's last_result hasn't been updated yet when this is
+    called, so we use the 'result' parameter for the current test instead of
+    its stored last_result.
     """
     # Get the test to find its test_id string
     test = get_test_by_id(test_db_id)
     if not test:
         return
 
-    test_id = test["test_id"]
+    current_test_id = test["test_id"]
 
     # Get all capabilities linked to this test
-    capabilities = get_capabilities_for_test(project_id, test_id)
+    capabilities = get_capabilities_for_test(project_id, current_test_id)
 
     for cap in capabilities:
         capability_id = cap["capability_id"]
@@ -104,8 +108,17 @@ def _update_capability_statuses(
         if not tests:
             continue
 
-        # Check if all tests have last_result='passed'
-        all_passing = all(t.get("last_result") == "passed" for t in tests)
+        # Check if all tests pass, using current result for the just-run test
+        all_passing = True
+        for t in tests:
+            if t["test_id"] == current_test_id:
+                # Use the result we just got, not the stale last_result
+                if result != "passed":
+                    all_passing = False
+                    break
+            elif t.get("last_result") != "passed":
+                all_passing = False
+                break
 
         # Update capability status
         new_status = "tests_passing" if all_passing else "pending"
