@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .capabilities import update_capability
 from .connection import get_connection
+from .tests import get_capabilities_for_test, get_test_by_id, get_tests_for_capability
 
 
 def create_test_run(
@@ -64,7 +66,54 @@ def create_test_run(
         row = cur.fetchone()
         conn.commit()
 
-    return _row_to_dict(row)
+    test_run = _row_to_dict(row)
+
+    # After creating test run, update linked capability statuses
+    _update_capability_statuses(project_id, test_db_id, result)
+
+    return test_run
+
+
+def _update_capability_statuses(
+    project_id: str,
+    test_db_id: int,
+    result: str,
+) -> None:
+    """Update capability statuses based on test result.
+
+    When a test passes, check all linked capabilities. If all tests for a
+    capability pass, update its status to 'tests_passing'. If any test fails,
+    set status to 'pending'.
+    """
+    # Get the test to find its test_id string
+    test = get_test_by_id(test_db_id)
+    if not test:
+        return
+
+    test_id = test["test_id"]
+
+    # Get all capabilities linked to this test
+    capabilities = get_capabilities_for_test(project_id, test_id)
+
+    for cap in capabilities:
+        capability_id = cap["capability_id"]
+
+        # Get all tests linked to this capability
+        tests = get_tests_for_capability(project_id, capability_id)
+
+        if not tests:
+            continue
+
+        # Check if all tests have last_result='passed'
+        all_passing = all(t.get("last_result") == "passed" for t in tests)
+
+        # Update capability status
+        new_status = "tests_passing" if all_passing else "pending"
+        current_status = cap.get("status")
+
+        # Only update if status changed
+        if current_status != new_status:
+            update_capability(project_id, capability_id, status=new_status)
 
 
 def get_test_run(run_id: int) -> dict[str, Any] | None:
