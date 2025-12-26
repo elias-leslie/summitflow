@@ -5,11 +5,10 @@ This module provides data access for test run history and statistics.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
-from .capabilities import update_capability
 from .connection import get_connection
-from .tests import get_capabilities_for_test, get_test_by_id, get_tests_for_capability
 
 
 def create_test_run(
@@ -24,7 +23,14 @@ def create_test_run(
     triggered_by: str | None = None,
     session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create a test run record.
+    """Create a test run record and update test's last_result.
+
+    This function:
+    1. Inserts a test run record (history)
+    2. Updates the test's last_result, last_run_at, etc. (current state)
+
+    Capability status is computed on read from test.last_result, so there's
+    no sync logic here - the status will reflect the new result automatically.
 
     Args:
         project_id: Project ID
@@ -41,7 +47,12 @@ def create_test_run(
     Returns:
         The created test run dict.
     """
+    now = datetime.now(UTC)
+    pass_increment = 1 if result == "passed" else 0
+    fail_increment = 1 if result in ("failed", "error", "timeout") else 0
+
     with get_connection() as conn, conn.cursor() as cur:
+        # Insert test run record
         cur.execute(
             """
             INSERT INTO test_runs (project_id, test_id, run_type, result, duration_ms,
@@ -64,69 +75,44 @@ def create_test_run(
             ),
         )
         row = cur.fetchone()
+
+        # Update test's current state (last_result, counts, etc.)
+        cur.execute(
+            """
+            UPDATE tests
+            SET last_run_at = %s,
+                last_result = %s,
+                last_duration_ms = %s,
+                last_output = %s,
+                last_error = %s,
+                run_count = run_count + 1,
+                pass_count = pass_count + %s,
+                fail_count = fail_count + %s,
+                flaky_score = CASE
+                    WHEN run_count >= 5 THEN
+                        CAST(fail_count + %s AS FLOAT) / CAST(run_count + 1 AS FLOAT)
+                    ELSE flaky_score
+                END,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (
+                now,
+                result,
+                duration_ms,
+                output,
+                error,
+                pass_increment,
+                fail_increment,
+                fail_increment,
+                now,
+                test_db_id,
+            ),
+        )
+
         conn.commit()
 
-    test_run = _row_to_dict(row)
-
-    # After creating test run, update linked capability statuses
-    _update_capability_statuses(project_id, test_db_id, result)
-
-    return test_run
-
-
-def _update_capability_statuses(
-    project_id: str,
-    test_db_id: int,
-    result: str,
-) -> None:
-    """Update capability statuses based on test result.
-
-    When a test passes, check all linked capabilities. If all tests for a
-    capability pass, update its status to 'tests_passing'. If any test fails,
-    set status to 'pending'.
-
-    Note: The current test's last_result hasn't been updated yet when this is
-    called, so we use the 'result' parameter for the current test instead of
-    its stored last_result.
-    """
-    # Get the test to find its test_id string
-    test = get_test_by_id(test_db_id)
-    if not test:
-        return
-
-    current_test_id = test["test_id"]
-
-    # Get all capabilities linked to this test
-    capabilities = get_capabilities_for_test(project_id, current_test_id)
-
-    for cap in capabilities:
-        capability_id = cap["capability_id"]
-
-        # Get all tests linked to this capability
-        tests = get_tests_for_capability(project_id, capability_id)
-
-        if not tests:
-            continue
-
-        # Check if all tests pass, using current result for the just-run test
-        all_passing = True
-        for t in tests:
-            if t["test_id"] == current_test_id:
-                # Use the result we just got, not the stale last_result
-                if result != "passed":
-                    all_passing = False
-                    break
-            elif t.get("last_result") != "passed":
-                all_passing = False
-                break
-
-        # Update capability status
-        new_status = "tests_passing" if all_passing else "pending"
-        current_status = cap.get("status")
-
-        # Only update if status changed
-        if current_status != new_status:
-            update_capability(project_id, capability_id, status=new_status)
+    return _row_to_dict(row)
 
 
 def get_test_run(run_id: int) -> dict[str, Any] | None:

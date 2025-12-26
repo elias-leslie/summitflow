@@ -53,16 +53,35 @@ def create_capability(
 def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None:
     """Get a capability by project_id and capability_id.
 
+    Status is computed on read:
+    - 'locked' if locked_at is set
+    - 'tests_passing' if all linked tests have last_result='passed'
+    - 'pending' otherwise (no tests, or any test not passing)
+
     Returns:
         Capability dict or None if not found.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, component_id, capability_id, name, description,
-                   priority, status, locked_at, verification_url, created_at, updated_at
-            FROM capabilities
-            WHERE project_id = %s AND capability_id = %s
+            SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
+                   c.priority,
+                   CASE
+                       WHEN c.locked_at IS NOT NULL THEN 'locked'
+                       WHEN NOT EXISTS (
+                           SELECT 1 FROM capability_tests WHERE capability_id = c.id
+                       ) THEN 'pending'
+                       WHEN EXISTS (
+                           SELECT 1 FROM capability_tests ct
+                           JOIN tests t ON ct.test_id = t.id
+                           WHERE ct.capability_id = c.id
+                             AND (t.last_result IS NULL OR t.last_result != 'passed')
+                       ) THEN 'pending'
+                       ELSE 'tests_passing'
+                   END as status,
+                   c.locked_at, c.verification_url, c.created_at, c.updated_at
+            FROM capabilities c
+            WHERE c.project_id = %s AND c.capability_id = %s
             """,
             (project_id, capability_id),
         )
@@ -74,16 +93,32 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
 def get_capability_by_id(capability_db_id: int) -> dict[str, Any] | None:
     """Get a capability by database ID.
 
+    Status is computed on read (see get_capability for logic).
+
     Returns:
         Capability dict or None if not found.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, component_id, capability_id, name, description,
-                   priority, status, locked_at, verification_url, created_at, updated_at
-            FROM capabilities
-            WHERE id = %s
+            SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
+                   c.priority,
+                   CASE
+                       WHEN c.locked_at IS NOT NULL THEN 'locked'
+                       WHEN NOT EXISTS (
+                           SELECT 1 FROM capability_tests WHERE capability_id = c.id
+                       ) THEN 'pending'
+                       WHEN EXISTS (
+                           SELECT 1 FROM capability_tests ct
+                           JOIN tests t ON ct.test_id = t.id
+                           WHERE ct.capability_id = c.id
+                             AND (t.last_result IS NULL OR t.last_result != 'passed')
+                       ) THEN 'pending'
+                       ELSE 'tests_passing'
+                   END as status,
+                   c.locked_at, c.verification_url, c.created_at, c.updated_at
+            FROM capabilities c
+            WHERE c.id = %s
             """,
             (capability_db_id,),
         )
@@ -98,6 +133,8 @@ def list_capabilities(
 ) -> list[dict[str, Any]]:
     """List capabilities for a project, optionally filtered by component.
 
+    Status is computed on read (see get_capability for logic).
+
     Args:
         project_id: Project ID
         component_id: Optional component database ID to filter by
@@ -105,26 +142,45 @@ def list_capabilities(
     Returns:
         List of capability dicts, ordered by priority then name.
     """
+    # Common SQL for computed status
+    status_sql = """
+        CASE
+            WHEN c.locked_at IS NOT NULL THEN 'locked'
+            WHEN NOT EXISTS (
+                SELECT 1 FROM capability_tests WHERE capability_id = c.id
+            ) THEN 'pending'
+            WHEN EXISTS (
+                SELECT 1 FROM capability_tests ct
+                JOIN tests t ON ct.test_id = t.id
+                WHERE ct.capability_id = c.id
+                  AND (t.last_result IS NULL OR t.last_result != 'passed')
+            ) THEN 'pending'
+            ELSE 'tests_passing'
+        END as status
+    """
+
     with get_connection() as conn, conn.cursor() as cur:
         if component_id is not None:
             cur.execute(
-                """
-                SELECT id, project_id, component_id, capability_id, name, description,
-                       priority, status, locked_at, verification_url, created_at, updated_at
-                FROM capabilities
-                WHERE project_id = %s AND component_id = %s
-                ORDER BY priority ASC, name ASC
+                f"""
+                SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
+                       c.priority, {status_sql},
+                       c.locked_at, c.verification_url, c.created_at, c.updated_at
+                FROM capabilities c
+                WHERE c.project_id = %s AND c.component_id = %s
+                ORDER BY c.priority ASC, c.name ASC
                 """,
                 (project_id, component_id),
             )
         else:
             cur.execute(
-                """
-                SELECT id, project_id, component_id, capability_id, name, description,
-                       priority, status, locked_at, verification_url, created_at, updated_at
-                FROM capabilities
-                WHERE project_id = %s
-                ORDER BY priority ASC, name ASC
+                f"""
+                SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
+                       c.priority, {status_sql},
+                       c.locked_at, c.verification_url, c.created_at, c.updated_at
+                FROM capabilities c
+                WHERE c.project_id = %s
+                ORDER BY c.priority ASC, c.name ASC
                 """,
                 (project_id,),
             )

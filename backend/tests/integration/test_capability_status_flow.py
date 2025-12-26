@@ -142,18 +142,11 @@ class TestCapabilityStatusFlow:
             test_db_id=test2["id"],
         )
 
-        # Run test1 (pass) - need to update last_result for test1
+        # Run test1 (pass) - create_test_run now updates last_result automatically
         runs_store.create_test_run(
             project_id=project_id,
             test_db_id=test1["id"],
             run_type="manual",
-            result="passed",
-            duration_ms=100,
-        )
-        # Simulate that test1's last_result is now passed
-        test_store.update_test_result(
-            project_id=project_id,
-            test_id="test-status-flow-1",
             result="passed",
             duration_ms=100,
         )
@@ -167,7 +160,7 @@ class TestCapabilityStatusFlow:
             duration_ms=100,
         )
 
-        # Capability should now be tests_passing
+        # Capability should now be tests_passing (status computed from last_result)
         cap = cap_store.get_capability(project_id, "test-cap-status-flow")
         assert cap["status"] == "tests_passing"
 
