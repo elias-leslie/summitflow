@@ -945,6 +945,25 @@ export async function fetchTddComponents(projectId: string): Promise<TddComponen
   return res.json();
 }
 
+export interface ComponentSuggestion {
+  suggested_name: string;
+  type: "page_group" | "endpoint_group" | "directory";
+  path: string;
+  entry_count: number;
+  entries: { id: number; path: string }[];
+}
+
+export async function fetchComponentSuggestions(
+  projectId: string,
+  source: string
+): Promise<ComponentSuggestion[]> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/tdd/component-suggestions?source=${source}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch component suggestions");
+  return res.json();
+}
+
 export interface CreateComponentRequest {
   component_id: string;
   name: string;

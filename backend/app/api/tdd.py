@@ -2,11 +2,12 @@
 
 Provides endpoints for:
 - GET /projects/{project_id}/tdd/suggestions - Get TDD structure suggestions
+- GET /projects/{project_id}/tdd/component-suggestions - Get filtered component suggestions
 """
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..services import tdd_suggestions
 
@@ -37,3 +38,20 @@ async def get_suggestions(project_id: str) -> dict[str, Any]:
     _validate_project_exists(project_id)
 
     return tdd_suggestions.get_tdd_suggestions(project_id)
+
+
+@router.get("/projects/{project_id}/tdd/component-suggestions")
+async def get_component_suggestions(
+    project_id: str,
+    source: str = Query(
+        default="manual", description="Source type: pages, endpoints, directories, manual"
+    ),
+) -> list[dict[str, Any]]:
+    """Get component suggestions filtered by source type.
+
+    Used by the Components page to show suggestions based on project settings.
+    Returns an empty list when source is 'manual' (no auto-suggestions).
+    """
+    _validate_project_exists(project_id)
+
+    return tdd_suggestions.get_component_suggestions_by_source(project_id, source)

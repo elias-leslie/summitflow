@@ -17,6 +17,7 @@ import { ComponentList } from "@/components/tdd-components/ComponentList";
 import { CapabilityDrawer } from "@/components/tdd-components/CapabilityDrawer";
 import { BuildProgress } from "@/components/tdd-components/BuildProgress";
 import { CreateComponentModal } from "@/components/tdd-components/CreateComponentModal";
+import { ComponentSuggestions } from "@/components/tdd-components/ComponentSuggestions";
 import {
   fetchTddComponents,
   fetchTddCapabilities,
@@ -183,6 +184,12 @@ export default function ComponentsPage() {
           Create Component
         </Button>
       </div>
+
+      {/* Component Suggestions */}
+      <ComponentSuggestions
+        projectId={projectId}
+        onComponentCreated={refetchComponents}
+      />
 
       {/* Results count */}
       <div className="text-sm text-slate-500">

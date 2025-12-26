@@ -269,6 +269,35 @@ def get_tdd_suggestions(project_id: str) -> dict[str, Any]:
     }
 
 
+def get_component_suggestions_by_source(project_id: str, source_type: str) -> list[dict[str, Any]]:
+    """Get component suggestions filtered by source type.
+
+    Args:
+        project_id: Project ID for scoping
+        source_type: One of 'pages', 'endpoints', 'directories', 'manual'
+
+    Returns:
+        List of suggested components matching the source type
+    """
+    if source_type == "manual":
+        return []
+
+    all_suggestions = suggest_components(project_id)
+
+    # Map source_type to suggestion types
+    type_map = {
+        "pages": "page_group",
+        "endpoints": "endpoint_group",
+        "directories": "directory",
+    }
+
+    target_type = type_map.get(source_type)
+    if not target_type:
+        return []
+
+    return [s for s in all_suggestions if s.get("type") == target_type]
+
+
 # --- Helper functions ---
 
 
