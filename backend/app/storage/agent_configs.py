@@ -29,6 +29,9 @@ class AgentConfig(TypedDict, total=False):
     checkpoints_enabled: bool  # Session checkpoints
     context_injection_enabled: bool  # Auto-inject context at session start
 
+    # Component management
+    component_source: str  # "pages", "endpoints", "directories", or "manual"
+
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
@@ -43,6 +46,8 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "patterns_enabled": True,
     "checkpoints_enabled": True,
     "context_injection_enabled": True,
+    # Component management
+    "component_source": "manual",
 }
 
 
@@ -237,3 +242,45 @@ def get_memory_config(project_id: str) -> dict[str, bool]:
         "checkpoints_enabled": config.get("checkpoints_enabled", True),
         "context_injection_enabled": config.get("context_injection_enabled", True),
     }
+
+
+# Valid component source values
+COMPONENT_SOURCES = frozenset(["pages", "endpoints", "directories", "manual"])
+
+
+def get_component_source(project_id: str) -> str:
+    """Get the component source setting for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Component source: 'pages', 'endpoints', 'directories', or 'manual'
+    """
+    config = get_agent_config(project_id)
+    source = config.get("component_source", "manual")
+    if source not in COMPONENT_SOURCES:
+        return "manual"
+    return source
+
+
+def set_component_source(project_id: str, source: str) -> AgentConfig:
+    """Set the component source for a project.
+
+    Args:
+        project_id: Project ID
+        source: One of 'pages', 'endpoints', 'directories', 'manual'
+
+    Returns:
+        Updated config
+
+    Raises:
+        ValueError: If invalid source value
+    """
+    if source not in COMPONENT_SOURCES:
+        raise ValueError(
+            f"Invalid component source: {source}. "
+            f"Use one of: {', '.join(sorted(COMPONENT_SOURCES))}"
+        )
+
+    return update_agent_config(project_id, {"component_source": source})

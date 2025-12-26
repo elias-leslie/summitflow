@@ -418,6 +418,9 @@ class AgentConfigResponse(BaseModel):
     checkpoints_enabled: bool = True
     context_injection_enabled: bool = True
 
+    # Component management
+    component_source: str = "manual"
+
 
 class AgentConfigUpdate(BaseModel):
     """Request model for updating agent configuration."""
@@ -435,6 +438,9 @@ class AgentConfigUpdate(BaseModel):
     patterns_enabled: bool | None = None
     checkpoints_enabled: bool | None = None
     context_injection_enabled: bool | None = None
+
+    # Component management
+    component_source: str | None = None
 
 
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
@@ -511,6 +517,16 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
         config_update["checkpoints_enabled"] = update.checkpoints_enabled
     if update.context_injection_enabled is not None:
         config_update["context_injection_enabled"] = update.context_injection_enabled
+
+    # Component management
+    if update.component_source is not None:
+        valid_sources = ("pages", "endpoints", "directories", "manual")
+        if update.component_source not in valid_sources:
+            raise HTTPException(
+                status_code=400,
+                detail=f"component_source must be one of: {valid_sources}",
+            )
+        config_update["component_source"] = update.component_source
 
     if not config_update:
         raise HTTPException(status_code=400, detail="No fields to update")
