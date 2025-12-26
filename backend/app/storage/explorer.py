@@ -20,6 +20,24 @@ from psycopg import sql
 from .connection import get_connection
 
 
+def _build_where_clause(
+    conditions: list[str],
+) -> sql.Composable:
+    """Build a WHERE clause from a list of condition strings.
+
+    Joins conditions with AND. If conditions is empty, returns TRUE.
+
+    Args:
+        conditions: List of condition strings like ["project_id = %s", "type = %s"]
+
+    Returns:
+        sql.Composable ready to format into a query
+    """
+    if conditions:
+        return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+    return sql.SQL("TRUE")
+
+
 def upsert_entries(project_id: str, entry_type: str, entries: list[dict]) -> int:
     """Upsert explorer entries (insert or update on conflict).
 
@@ -120,11 +138,7 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
         having_clause = """HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0
                           AND MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 0"""
 
-    # Build WHERE clause from conditions
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
+    where_clause = _build_where_clause(conditions)
 
     # Sort and pagination
     sort_field = filters.get("sort", "path")
@@ -499,10 +513,7 @@ def get_relationships(
         conditions.append("target_path = %s")
         params.append(target_path)
 
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
+    where_clause = _build_where_clause(conditions)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
