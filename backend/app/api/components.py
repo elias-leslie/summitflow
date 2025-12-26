@@ -15,6 +15,7 @@ class ComponentCreate(BaseModel):
     name: str
     description: str | None = None
     priority: int = 2
+    explorer_entry_id: int | None = None
 
 
 class ComponentUpdate(BaseModel):
@@ -24,6 +25,7 @@ class ComponentUpdate(BaseModel):
     description: str | None = None
     priority: int | None = None
     status: str | None = None
+    explorer_entry_id: int | None = None
 
 
 class ComponentResponse(BaseModel):
@@ -38,6 +40,7 @@ class ComponentResponse(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+    explorer_entry_id: int | None = None
 
 
 @router.get("/{project_id}/components", response_model=list[ComponentResponse])
@@ -66,6 +69,7 @@ async def create_component(project_id: str, body: ComponentCreate) -> ComponentR
             name=body.name,
             description=body.description,
             priority=body.priority,
+            explorer_entry_id=body.explorer_entry_id,
         )
         return ComponentResponse(**component)
     except Exception as e:

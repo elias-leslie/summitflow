@@ -19,6 +19,7 @@ def create_component(
     name: str,
     description: str | None = None,
     priority: int = 2,
+    explorer_entry_id: int | None = None,
 ) -> dict[str, Any]:
     """Create a new component.
 
@@ -28,6 +29,7 @@ def create_component(
         name: Human-readable component name
         description: Optional description
         priority: Priority 0-4 (0=critical, 4=backlog), default 2
+        explorer_entry_id: Optional FK to explorer_entries
 
     Returns:
         The created component dict with all columns.
@@ -35,12 +37,13 @@ def create_component(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO components (project_id, component_id, name, description, priority)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO components (project_id, component_id, name, description, priority,
+                                    explorer_entry_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, component_id, name, description, priority, status,
-                      created_at, updated_at
+                      created_at, updated_at, explorer_entry_id
             """,
-            (project_id, component_id, name, description, priority),
+            (project_id, component_id, name, description, priority, explorer_entry_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -58,7 +61,7 @@ def get_component(project_id: str, component_id: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, project_id, component_id, name, description, priority, status,
-                   created_at, updated_at
+                   created_at, updated_at, explorer_entry_id
             FROM components
             WHERE project_id = %s AND component_id = %s
             """,
@@ -79,7 +82,7 @@ def get_component_by_id(component_db_id: int) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, project_id, component_id, name, description, priority, status,
-                   created_at, updated_at
+                   created_at, updated_at, explorer_entry_id
             FROM components
             WHERE id = %s
             """,
@@ -100,7 +103,7 @@ def list_components(project_id: str) -> list[dict[str, Any]]:
         cur.execute(
             """
             SELECT id, project_id, component_id, name, description, priority, status,
-                   created_at, updated_at
+                   created_at, updated_at, explorer_entry_id
             FROM components
             WHERE project_id = %s
             ORDER BY priority ASC, name ASC
@@ -122,12 +125,12 @@ def update_component(
     Args:
         project_id: Project ID
         component_id: Component ID
-        **kwargs: Fields to update (name, description, priority, status)
+        **kwargs: Fields to update (name, description, priority, status, explorer_entry_id)
 
     Returns:
         Updated component dict or None if not found.
     """
-    allowed_fields = {"name", "description", "priority", "status"}
+    allowed_fields = {"name", "description", "priority", "status", "explorer_entry_id"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
     if not updates:
@@ -146,7 +149,7 @@ def update_component(
             SET {set_clause}
             WHERE project_id = %s AND component_id = %s
             RETURNING id, project_id, component_id, name, description, priority, status,
-                      created_at, updated_at
+                      created_at, updated_at, explorer_entry_id
             """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             values,
         )
@@ -192,4 +195,5 @@ def _row_to_dict(row: tuple | None) -> dict[str, Any]:
         "status": row[6],
         "created_at": row[7].isoformat() if row[7] else None,
         "updated_at": row[8].isoformat() if row[8] else None,
+        "explorer_entry_id": row[9] if len(row) > 9 else None,
     }
