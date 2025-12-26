@@ -231,6 +231,26 @@ async def get_refactor_targets(
     )
 
 
+@router.get("/{project_id}/analysis/multi-capability-files")
+async def get_multi_capability_files(
+    project_id: str,
+    min_capabilities: int = Query(3, ge=2, le=20, description="Minimum capabilities per file"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+) -> dict[str, Any]:
+    """Get files linked to multiple capabilities (potential god files).
+
+    Returns files that implement or are involved in many capabilities,
+    which may indicate overly complex modules that should be split.
+    """
+    _validate_project_exists(project_id)
+
+    return explorer_storage.get_multi_capability_files(
+        project_id,
+        min_capabilities=min_capabilities,
+        limit=limit,
+    )
+
+
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")
 async def get_entry(
     project_id: str,
