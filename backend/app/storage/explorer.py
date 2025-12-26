@@ -815,6 +815,51 @@ def get_refactor_targets(
         return {"targets": targets, "summary": summary}
 
 
+def _get_unlinked_entries(
+    cur: Any, project_id: str, entry_type: str, check_components: bool = True
+) -> list[tuple[Any, ...]]:
+    """Get entries not linked to any capability.
+
+    Args:
+        cur: Database cursor
+        project_id: Project ID for scoping
+        entry_type: Entry type to query
+        check_components: If True, also exclude entries linked via components table
+
+    Returns:
+        List of tuples (path, name, metadata)
+    """
+    if check_components:
+        cur.execute(
+            """
+            SELECT ee.path, ee.name, ee.metadata
+            FROM explorer_entries ee
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
+            LEFT JOIN components c ON c.explorer_entry_id = ee.id
+            WHERE ee.project_id = %s
+              AND ee.entry_type = %s
+              AND ecl.id IS NULL
+              AND c.id IS NULL
+            ORDER BY ee.path
+            """,
+            (project_id, entry_type),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT ee.path, ee.name, ee.metadata
+            FROM explorer_entries ee
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
+            WHERE ee.project_id = %s
+              AND ee.entry_type = %s
+              AND ecl.id IS NULL
+            ORDER BY ee.path
+            """,
+            (project_id, entry_type),
+        )
+    return cur.fetchall()
+
+
 def get_coverage_gaps(project_id: str) -> dict[str, Any]:
     """Get endpoints, pages, and tables without capability links.
 
@@ -825,66 +870,26 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
         Dict with uncovered_endpoints, uncovered_pages, orphan_tables arrays
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # Query for uncovered endpoints
-        cur.execute(
-            """
-            SELECT ee.path, ee.name, ee.metadata
-            FROM explorer_entries ee
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            LEFT JOIN components c ON c.explorer_entry_id = ee.id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = 'endpoint'
-              AND ecl.id IS NULL
-              AND c.id IS NULL
-            ORDER BY ee.path
-            """,
-            (project_id,),
-        )
+        endpoint_rows = _get_unlinked_entries(cur, project_id, "endpoint")
         uncovered_endpoints = [
             {"path": row[0], "name": row[1], "method": (row[2] or {}).get("method", "")}
-            for row in cur.fetchall()
+            for row in endpoint_rows
         ]
 
-        # Query for uncovered pages
-        cur.execute(
-            """
-            SELECT ee.path, ee.name, ee.metadata
-            FROM explorer_entries ee
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            LEFT JOIN components c ON c.explorer_entry_id = ee.id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = 'page'
-              AND ecl.id IS NULL
-              AND c.id IS NULL
-            ORDER BY ee.path
-            """,
-            (project_id,),
-        )
+        page_rows = _get_unlinked_entries(cur, project_id, "page")
         uncovered_pages = [
             {"path": row[0], "name": row[1], "route": (row[2] or {}).get("route", "")}
-            for row in cur.fetchall()
+            for row in page_rows
         ]
 
-        # Query for orphan tables (tables not linked to any capability)
-        cur.execute(
-            """
-            SELECT ee.path, ee.name, ee.metadata
-            FROM explorer_entries ee
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = 'table'
-              AND ecl.id IS NULL
-            ORDER BY ee.path
-            """,
-            (project_id,),
-        )
+        table_rows = _get_unlinked_entries(cur, project_id, "table", check_components=False)
         orphan_tables = [
             {
                 "path": row[0],
                 "name": row[1],
                 "column_count": len((row[2] or {}).get("columns", [])),
             }
-            for row in cur.fetchall()
+            for row in table_rows
         ]
 
         return {
