@@ -40,7 +40,7 @@ def create_capability(
             INSERT INTO capabilities (project_id, component_id, capability_id, name, description, priority)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, created_at, updated_at
+                      priority, status, locked_at, verification_url, created_at, updated_at
             """,
             (project_id, component_id, capability_id, name, description, priority),
         )
@@ -60,7 +60,7 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
         cur.execute(
             """
             SELECT id, project_id, component_id, capability_id, name, description,
-                   priority, status, locked_at, created_at, updated_at
+                   priority, status, locked_at, verification_url, created_at, updated_at
             FROM capabilities
             WHERE project_id = %s AND capability_id = %s
             """,
@@ -81,7 +81,7 @@ def get_capability_by_id(capability_db_id: int) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT id, project_id, component_id, capability_id, name, description,
-                   priority, status, locked_at, created_at, updated_at
+                   priority, status, locked_at, verification_url, created_at, updated_at
             FROM capabilities
             WHERE id = %s
             """,
@@ -110,7 +110,7 @@ def list_capabilities(
             cur.execute(
                 """
                 SELECT id, project_id, component_id, capability_id, name, description,
-                       priority, status, locked_at, created_at, updated_at
+                       priority, status, locked_at, verification_url, created_at, updated_at
                 FROM capabilities
                 WHERE project_id = %s AND component_id = %s
                 ORDER BY priority ASC, name ASC
@@ -121,7 +121,7 @@ def list_capabilities(
             cur.execute(
                 """
                 SELECT id, project_id, component_id, capability_id, name, description,
-                       priority, status, locked_at, created_at, updated_at
+                       priority, status, locked_at, verification_url, created_at, updated_at
                 FROM capabilities
                 WHERE project_id = %s
                 ORDER BY priority ASC, name ASC
@@ -148,7 +148,7 @@ def update_capability(
     Returns:
         Updated capability dict or None if not found.
     """
-    allowed_fields = {"name", "description", "priority", "status"}
+    allowed_fields = {"name", "description", "priority", "status", "verification_url"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
     if not updates:
@@ -167,7 +167,7 @@ def update_capability(
             SET {set_clause}
             WHERE project_id = %s AND capability_id = %s
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, created_at, updated_at
+                      priority, status, locked_at, verification_url, created_at, updated_at
             """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             values,
         )
@@ -193,7 +193,7 @@ def lock_capability(project_id: str, capability_id: str) -> dict[str, Any] | Non
             SET locked_at = %s, status = 'locked', updated_at = %s
             WHERE project_id = %s AND capability_id = %s
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, created_at, updated_at
+                      priority, status, locked_at, verification_url, created_at, updated_at
             """,
             (now, now, project_id, capability_id),
         )
@@ -219,7 +219,7 @@ def unlock_capability(project_id: str, capability_id: str) -> dict[str, Any] | N
             SET locked_at = NULL, status = 'pending', updated_at = %s
             WHERE project_id = %s AND capability_id = %s
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, created_at, updated_at
+                      priority, status, locked_at, verification_url, created_at, updated_at
             """,
             (now, project_id, capability_id),
         )
@@ -265,6 +265,7 @@ def _row_to_dict(row: tuple | None) -> dict[str, Any]:
         "priority": row[6],
         "status": row[7],
         "locked_at": row[8].isoformat() if row[8] else None,
-        "created_at": row[9].isoformat() if row[9] else None,
-        "updated_at": row[10].isoformat() if row[10] else None,
+        "verification_url": row[9],
+        "created_at": row[10].isoformat() if row[10] else None,
+        "updated_at": row[11].isoformat() if row[11] else None,
     }
