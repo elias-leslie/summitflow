@@ -304,6 +304,36 @@ async def _execute_test_command(
     )
 
 
+def _build_test_result(
+    passed: bool,
+    stdout: str,
+    stderr: str,
+    evidence_path: str | None = None,
+) -> TestResult:
+    """Build a TestResult from command execution output.
+
+    Shared helper for consistent TestResult creation with proper
+    output truncation and error handling.
+
+    Args:
+        passed: Whether the test passed
+        stdout: Command stdout
+        stderr: Command stderr
+        evidence_path: Optional path to evidence files
+
+    Returns:
+        TestResult with truncated output and error handling.
+    """
+    output = _combine_outputs(stdout, stderr)
+    return TestResult(
+        passed=passed,
+        duration_ms=0,
+        output=_truncate_output(output),
+        error=stderr if not passed and stderr else None,
+        evidence_path=evidence_path,
+    )
+
+
 def resolve_browser_script(script_name: str, config: ProjectConfig | None = None) -> Path | None:
     """Resolve a browser-automation script name to its full path.
 
@@ -873,14 +903,7 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
                     stdout += f"\nAssertion failed: {jq_filter} = {actual}, expected {expected}"
                     break
 
-    output = _combine_outputs(stdout, stderr)
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,
-        output=_truncate_output(output),
-        error=stderr if not passed and stderr else None,
-    )
+    return _build_test_result(passed, stdout, stderr)
 
 
 async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult:
@@ -967,19 +990,9 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
             exit_code, stdout, stderr = await _execute_test_command(
                 command, config.root_path, timeout
             )
-            output = _combine_outputs(stdout, stderr)
             passed = exit_code == 0
-
-            # Try to find evidence path from output
             evidence_path = _extract_evidence_path(stdout)
-
-            return TestResult(
-                passed=passed,
-                duration_ms=0,
-                output=_truncate_output(output),
-                error=stderr if not passed and stderr else None,
-                evidence_path=evidence_path,
-            )
+            return _build_test_result(passed, stdout, stderr, evidence_path)
         finally:
             Path(temp_script_path).unlink(missing_ok=True)
 
@@ -988,15 +1001,8 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
     if command:
         timeout = test.get("timeout_seconds", 120)
         exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
-        output = _combine_outputs(stdout, stderr)
         passed = exit_code == 0
-
-        return TestResult(
-            passed=passed,
-            duration_ms=0,
-            output=_truncate_output(output),
-            error=stderr if not passed and stderr else None,
-        )
+        return _build_test_result(passed, stdout, stderr)
 
     return TestResult(
         passed=False,
