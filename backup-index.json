@@ -4,6 +4,85 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20251226-105439.tar.gz",
+      "timestamp": "2025-12-26T10:54:53-05:00",
+      "size_bytes": 230595846,
+      "db_size_bytes": 3143142,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2025-12-26T10:54:51-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 153
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 53
+          },
+          "scripts": {
+            "count": 22
+          },
+          ".summitflow": {
+            "count": 8
+          },
+          "frontend": {
+            "count": 168
+          },
+          ".claude": {
+            "count": 550
+          },
+          "tasks": {
+            "count": 73
+          },
+          "data": {
+            "count": 2837
+          },
+          "mockups": {
+            "count": 7
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "AGENTS.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          ".pre-commit-config.yaml": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          }
+        },
+        "total_files": 3920,
+        "checksum": "sha256:b6043b3d712328b670cdf48d4015fef6c7a69b7dbc08a247aecdd08c5ee44c73"
+      }
+    },
+    {
       "name": "summitflow-20251226-060635.tar.gz",
       "timestamp": "2025-12-26T06:14:28-05:00",
       "size_bytes": 230016139,
@@ -2533,5 +2612,5 @@
       }
     }
   ],
-  "last_updated": "2025-12-26T06:14:28-05:00"
+  "last_updated": "2025-12-26T10:54:53-05:00"
 }
