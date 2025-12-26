@@ -5,7 +5,6 @@ This module handles the session_diary table operations.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -14,6 +13,12 @@ from psycopg.rows import TupleRow
 
 from .agent_configs import is_memory_feature_enabled
 from .connection import get_connection
+from .memory_utils import (
+    build_where_clause as _build_where_clause,
+)
+from .memory_utils import (
+    json_or_default as _json_or_default,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,35 +30,6 @@ DIARY_COLUMNS = """
     user_corrections, patterns_used, reflected_at,
     reflection_notes, patterns_generated, created_at
 """.strip()
-
-
-def _json_or_default(obj: Any, default: str | None = None) -> str | None:
-    """Serialize object to JSON or return default if falsy."""
-    return json.dumps(obj) if obj else default
-
-
-def _build_where_clause(
-    filters: dict[str, Any],
-    special_conditions: list[str] | None = None,
-) -> tuple[sql.SQL | sql.Composed, list[Any]]:
-    """Build a WHERE clause from filters dict."""
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    for column, value in filters.items():
-        if value is not None:
-            conditions.append(f"{column} = %s")
-            params.append(value)
-
-    if special_conditions:
-        conditions.extend(special_conditions)
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
-
-    return where_clause, params
 
 
 # =============================================================================

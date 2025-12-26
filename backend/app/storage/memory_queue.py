@@ -12,17 +12,9 @@ from psycopg.rows import TupleRow
 
 from .agent_configs import is_memory_feature_enabled
 from .connection import get_connection
+from .memory_utils import json_or_default as _json_or_default
 
 logger = logging.getLogger(__name__)
-
-
-def _json_or_default(obj: Any, default: str | None = None) -> str | None:
-    """JSON-serialize an object, returning default if obj is None/empty."""
-    import json
-
-    if obj is None or obj == {}:
-        return default
-    return json.dumps(obj)
 
 
 # =============================================================================

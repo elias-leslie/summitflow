@@ -6,7 +6,6 @@ This module provides data access for the Context & Memory Intelligence system.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from decimal import Decimal
 from typing import Any
@@ -49,8 +48,13 @@ from .memory_queue import (
     reset_stuck_queue_items,
     update_queue_item_status,
 )
+from .memory_utils import build_where_clause, json_or_default
 
 logger = logging.getLogger(__name__)
+
+# Alias for internal use (maintains underscore convention)
+_json_or_default = json_or_default
+_build_where_clause = build_where_clause
 
 # Expose queue, diary, and pattern functions in __all__ for star imports
 __all__ = [
@@ -88,51 +92,6 @@ OBSERVATION_COLUMNS = """
     files_modified, tool_name, tool_input, discovery_tokens,
     extracted_by, raw_excerpt, created_at
 """.strip()
-
-
-def _json_or_default(obj: Any, default: str | None = None) -> str | None:
-    """Serialize object to JSON or return default if falsy.
-
-    Args:
-        obj: Object to serialize (list, dict, etc.)
-        default: Value to return if obj is falsy (None or "[]")
-
-    Returns:
-        JSON string or default value.
-    """
-    return json.dumps(obj) if obj else default
-
-
-def _build_where_clause(
-    filters: dict[str, Any],
-    special_conditions: list[str] | None = None,
-) -> tuple[sql.SQL | sql.Composed, list[Any]]:
-    """Build a WHERE clause from filters dict.
-
-    Args:
-        filters: Dict of {column_name: value} - None values are skipped
-        special_conditions: Additional raw SQL conditions (e.g., "reflected_at IS NULL")
-
-    Returns:
-        Tuple of (sql.SQL where clause, list of params)
-    """
-    conditions: list[str] = []
-    params: list[Any] = []
-
-    for column, value in filters.items():
-        if value is not None:
-            conditions.append(f"{column} = %s")
-            params.append(value)
-
-    if special_conditions:
-        conditions.extend(special_conditions)
-
-    if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
-    else:
-        where_clause = sql.SQL("TRUE")
-
-    return where_clause, params
 
 
 def _compute_observation_hash(title: str, observation_type: str, tool_name: str | None) -> str:
