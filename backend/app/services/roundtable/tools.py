@@ -12,6 +12,7 @@ Tools:
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from collections.abc import Callable
@@ -34,17 +35,19 @@ ALLOWED_BASES = [
 ]
 
 # Ignore patterns for directory tree rendering
-IGNORE_PATTERNS = frozenset({
-    ".git",
-    ".venv",
-    "node_modules",
-    "__pycache__",
-    ".next",
-    ".pytest_cache",
-    "dist",
-    "build",
-    ".mypy_cache",
-})
+IGNORE_PATTERNS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        ".next",
+        ".pytest_cache",
+        "dist",
+        "build",
+        ".mypy_cache",
+    }
+)
 
 # File type to glob pattern mapping for code search
 FILE_TYPE_MAP: dict[str, str] = {
@@ -116,9 +119,7 @@ def _should_ignore_item(name: str) -> bool:
     return name in IGNORE_PATTERNS
 
 
-def _build_directory_tree(
-    base: Path, max_depth: int
-) -> list[str]:
+def _build_directory_tree(base: Path, max_depth: int) -> list[str]:
     """Build a directory tree representation.
 
     Args:
@@ -1064,8 +1065,6 @@ class RoundtableToolExecutor:
                 stats["filtered_count"] = len(entries)
                 stats["filter_path"] = path_filter
 
-            import json
-
             return ToolResult(True, json.dumps(stats, indent=2, default=str))
         except Exception as e:
             return ToolResult(False, "", f"Failed to get metrics: {e}")
@@ -1087,8 +1086,6 @@ class RoundtableToolExecutor:
                 min_complexity=threshold,
                 limit=limit,
             )
-            import json
-
             return ToolResult(True, json.dumps(result, indent=2, default=str))
         except Exception as e:
             return ToolResult(False, "", f"Failed to find complex files: {e}")
@@ -1110,8 +1107,6 @@ class RoundtableToolExecutor:
                 priority=priority,
                 limit=limit,
             )
-            import json
-
             return ToolResult(True, json.dumps(result, indent=2, default=str))
         except Exception as e:
             return ToolResult(False, "", f"Failed to get refactor targets: {e}")
@@ -1126,8 +1121,6 @@ class RoundtableToolExecutor:
 
         try:
             result = tdd_suggestions.get_tdd_suggestions(project_id)
-            import json
-
             return ToolResult(True, json.dumps(result, indent=2, default=str))
         except Exception as e:
             return ToolResult(False, "", f"Failed to get TDD suggestions: {e}")
@@ -1142,8 +1135,6 @@ class RoundtableToolExecutor:
 
         try:
             result = explorer_storage.get_coverage_gaps(project_id)
-            import json
-
             return ToolResult(True, json.dumps(result, indent=2, default=str))
         except Exception as e:
             return ToolResult(False, "", f"Failed to get coverage gaps: {e}")
