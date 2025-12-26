@@ -149,7 +149,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_diary.is_memory_feature_enabled")
     def test_create_diary_entry_returns_none_when_disabled(self, mock_enabled):
         """create_diary_entry returns None when diary disabled."""
         from app.storage.memory import create_diary_entry
