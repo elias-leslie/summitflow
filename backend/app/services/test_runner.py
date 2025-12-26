@@ -279,6 +279,31 @@ def _truncate_output(output: str) -> str:
     return f"{output[:half]}\n\n... [truncated {len(output) - MAX_OUTPUT_LENGTH} chars] ...\n\n{output[-half:]}"
 
 
+async def _execute_test_command(
+    command: str,
+    working_dir: str,
+    timeout: int,
+) -> tuple[int, str, str]:
+    """Execute a test command with timeout handling.
+
+    Shared helper for API and UI test runners to eliminate duplicate
+    _run_command invocation patterns.
+
+    Args:
+        command: Shell command to execute
+        working_dir: Working directory for command
+        timeout: Timeout in seconds
+
+    Returns:
+        Tuple of (exit_code, stdout, stderr)
+    """
+    return await _run_command(
+        command=command,
+        working_dir=working_dir,
+        timeout=timeout,
+    )
+
+
 def resolve_browser_script(script_name: str, config: ProjectConfig | None = None) -> Path | None:
     """Resolve a browser-automation script name to its full path.
 
@@ -827,12 +852,7 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
         )
 
     timeout = test.get("timeout_seconds", 30)
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=config.root_path,
-        timeout=timeout,
-    )
+    exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
 
     # Check HTTP status code
     passed = exit_code == 0
@@ -912,11 +932,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
         )
 
         timeout = test.get("timeout_seconds", 120)
-        exit_code, stdout, stderr = await _run_command(
-            command=command,
-            working_dir=config.root_path,
-            timeout=timeout,
-        )
+        exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
 
         # Parse output for structured results
         result = _parse_browser_script_output(stdout, stderr, exit_code)
@@ -948,13 +964,9 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
         try:
             command = f"node {temp_script_path}"
             timeout = test.get("timeout_seconds", 120)
-
-            exit_code, stdout, stderr = await _run_command(
-                command=command,
-                working_dir=config.root_path,
-                timeout=timeout,
+            exit_code, stdout, stderr = await _execute_test_command(
+                command, config.root_path, timeout
             )
-
             output = _combine_outputs(stdout, stderr)
             passed = exit_code == 0
 
@@ -975,13 +987,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
     command = test.get("command")
     if command:
         timeout = test.get("timeout_seconds", 120)
-
-        exit_code, stdout, stderr = await _run_command(
-            command=command,
-            working_dir=config.root_path,
-            timeout=timeout,
-        )
-
+        exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
         output = _combine_outputs(stdout, stderr)
         passed = exit_code == 0
 
