@@ -107,6 +107,10 @@ class PageScanner(BaseScanner):
                 if not page_name or page_name == ".":
                     page_name = "home"
 
+                # Calculate hierarchy metadata
+                level = _calculate_level(display_path)
+                parent_path = _calculate_parent_path(display_path)
+
                 entries.append(
                     ExplorerEntryCreate(
                         path=display_path,
@@ -124,6 +128,8 @@ class PageScanner(BaseScanner):
                             "console_errors": None,
                             "console_warnings": None,
                             "last_health_check": None,
+                            "level": level,
+                            "parent_path": parent_path,
                         },
                     )
                 )
@@ -153,3 +159,46 @@ class PageScanner(BaseScanner):
 
         # Pages are healthy by default if no errors detected
         return "healthy"
+
+
+def _calculate_level(path: str) -> int:
+    """Calculate hierarchy level from path.
+
+    Level is determined by path depth:
+    - / = level 1 (app root)
+    - /projects, /settings = level 2 (sections)
+    - /projects/:id = level 3 (detail)
+    - /projects/:id/settings = level 4 (sub-detail)
+
+    Args:
+        path: Route path (e.g., "/projects/:id/settings")
+
+    Returns:
+        Hierarchy level (1-based)
+    """
+    if path == "/":
+        return 1
+
+    # Split by "/" and filter empty segments
+    segments = [s for s in path.split("/") if s]
+    return len(segments) + 1
+
+
+def _calculate_parent_path(path: str) -> str | None:
+    """Calculate parent path for hierarchy.
+
+    Args:
+        path: Route path (e.g., "/projects/:id/settings")
+
+    Returns:
+        Parent path (e.g., "/projects/:id") or None for root
+    """
+    if path == "/":
+        return None
+
+    # Split and remove last segment
+    segments = [s for s in path.split("/") if s]
+    if len(segments) <= 1:
+        return "/"
+
+    return "/" + "/".join(segments[:-1])
