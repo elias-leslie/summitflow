@@ -23,6 +23,7 @@ from .extraction import (
     get_effective_prompt,
 )
 from .permissions import permission_manager
+from .prompts import build_prompt_with_context, build_system_prompt
 from .session import RoundtableMessage, RoundtableSession
 from .tools import (
     WRITE_TOOL_NAMES,
@@ -80,36 +81,6 @@ class RoundtableService:
     - Maintaining conversation context
     - Turn-taking between agents
     """
-
-    # System prompt for roundtable context
-    ROUNDTABLE_SYSTEM = """You are participating in a collaborative roundtable discussion.
-Other participants include the user and potentially another AI assistant.
-Previous messages in the conversation are provided for context.
-
-Guidelines:
-1. Be collaborative and build on others' ideas
-2. If you disagree, explain your reasoning
-3. Be concise but thorough
-4. Focus on helping the user achieve their goals
-5. If the other AI has already addressed a point well, acknowledge it rather than repeating
-"""
-
-    # Tool access guidance (added when tools are enabled)
-    TOOL_GUIDANCE = """
-CODEBASE ACCESS:
-You have READ-ONLY access to the codebase via tools. Use them to:
-- Read specific files to understand existing patterns
-- Search for function definitions, classes, or patterns
-- Explore project structure to understand architecture
-
-When discussing code or features:
-1. USE TOOLS to verify your assumptions about the codebase
-2. Reference specific files and line numbers when relevant
-3. Base recommendations on actual code patterns, not generic advice
-4. If unsure, search the code first before making claims
-
-Available tools: read_file, search_code, list_files, get_project_structure
-"""
 
     # Re-export extraction functions as methods for backward compatibility
     SPEC_EXTRACTION_PROMPT = SPEC_EXTRACTION_PROMPT
@@ -312,33 +283,10 @@ Available tools: read_file, search_code, list_files, get_project_structure
         model = self.claude_model if agent_type == "claude" else self.gemini_model
         agent = get_agent(agent_type, model=model)
 
-        # Agent-specific identity
-        agent_identity = {
-            "claude": "You are CLAUDE (Anthropic). In conversation logs, you are labeled as [CLAUDE].",
-            "gemini": "You are GEMINI (Google). In conversation logs, you are labeled as [GEMINI].",
-        }
-
-        # Build system prompt with identity and optional tool guidance
-        tool_section = ""
-        if session and session.tools_enabled:
-            tool_section = self.TOOL_GUIDANCE
-
-        system_prompt = f"""{agent_identity.get(agent_type, "")}
-
-{self.ROUNDTABLE_SYSTEM}
-{tool_section}
-IMPORTANT: You are {agent_type.upper()}. Do NOT confuse yourself with the other AI assistant in this conversation."""
-
-        # Build prompt with context
-        prompt = message
-        if context:
-            prompt = f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
-
-{context}
-
-The user's most recent message that you should respond to is: "{message}"
-
-Provide your unique perspective as {agent_type.upper()}. Do not repeat what the other agent said - add new value."""
+        # Build prompts using shared utilities
+        tools_enabled = session.tools_enabled if session else False
+        system_prompt = build_system_prompt(agent_type, tools_enabled)
+        prompt = build_prompt_with_context(message, context, agent_type)
 
         # Check if tools are enabled
         if session and session.tools_enabled:
@@ -679,36 +627,10 @@ Provide your unique perspective as {agent_type.upper()}. Do not repeat what the 
 
         # Build context and prompts
         context = session.get_context()
-
-        # Build system prompt with identity
-        def build_system_prompt(agent_type: str) -> str:
-            agent_identity = {
-                "claude": "You are CLAUDE (Anthropic). In conversation logs, you are labeled as [CLAUDE].",
-                "gemini": "You are GEMINI (Google). In conversation logs, you are labeled as [GEMINI].",
-            }
-            tool_section = self.TOOL_GUIDANCE if session.tools_enabled else ""
-            return f"""{agent_identity.get(agent_type, "")}
-
-{self.ROUNDTABLE_SYSTEM}
-{tool_section}
-IMPORTANT: You are {agent_type.upper()}. Do NOT confuse yourself with the other AI assistant in this conversation."""
-
-        # Build prompt with context
-        def build_prompt(user_message: str) -> str:
-            if not context:
-                return user_message
-            return f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
-
-{context}
-
-The user's most recent message that you should respond to is: "{user_message}"
-
-Provide your unique perspective. Do not repeat what the other agent said - add new value."""
-
-        prompt = build_prompt(message)
+        prompt = build_prompt_with_context(message, context)
 
         if target in ("claude", "both"):
-            system = build_system_prompt("claude")
+            system = build_system_prompt("claude", session.tools_enabled)
             async for event in self._send_with_tools_native("claude", prompt, system, session):
                 yield event
 
@@ -716,19 +638,9 @@ Provide your unique perspective. Do not repeat what the other agent said - add n
             # Update context if Claude already responded
             if target == "both":
                 context_updated = session.get_context()
-                prompt = (
-                    build_prompt(message)
-                    if context == context_updated
-                    else f"""This is a multi-agent roundtable discussion. Here is the conversation so far:
+                prompt = build_prompt_with_context(message, context_updated)
 
-{context_updated}
-
-The user's most recent message that you should respond to is: "{message}"
-
-Provide your unique perspective. Do not repeat what the other agent said - add new value."""
-                )
-
-            system = build_system_prompt("gemini")
+            system = build_system_prompt("gemini", session.tools_enabled)
             async for event in self._send_with_tools_native("gemini", prompt, system, session):
                 yield event
 
