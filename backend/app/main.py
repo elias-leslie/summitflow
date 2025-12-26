@@ -26,6 +26,7 @@ from .api import (
     prompts,
     roundtable,
     tasks,
+    tdd,
     tdd_tests,
     terminal,
     terminal_sessions,
@@ -88,6 +89,7 @@ app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(accepted_specs.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(build.router, prefix="/api", tags=["build"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])
+app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 
 
 @app.get("/health")

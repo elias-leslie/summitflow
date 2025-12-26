@@ -1,0 +1,39 @@
+"""TDD API endpoints - Auto-suggest TDD structure.
+
+Provides endpoints for:
+- GET /projects/{project_id}/tdd/suggestions - Get TDD structure suggestions
+"""
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+
+from ..services import tdd_suggestions
+
+router = APIRouter()
+
+
+def _validate_project_exists(project_id: str) -> None:
+    """Validate project exists in database."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+
+@router.get("/projects/{project_id}/tdd/suggestions")
+async def get_suggestions(project_id: str) -> dict[str, Any]:
+    """Get TDD structure suggestions for a project.
+
+    Analyzes explorer data to suggest:
+    - Components: Groups of related files/endpoints
+    - Existing tests: Test files that match suggested capabilities
+    - Coverage summary: How much of the codebase is covered by capabilities
+
+    Returns suggestions to help bootstrap TDD structure.
+    """
+    _validate_project_exists(project_id)
+
+    return tdd_suggestions.get_tdd_suggestions(project_id)
