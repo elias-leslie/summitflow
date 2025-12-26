@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 """
+DEPRECATED: Use Explorer API instead. See /refactor_it command.
+
+This script is deprecated and will be removed in a future release.
+The functionality has been replaced by the Explorer API:
+
+  - Scan: POST /api/projects/{project_id}/explorer/scan?type=file
+  - Refactor targets: GET /api/projects/{project_id}/explorer/refactor-targets
+  - Multi-capability files: GET /api/projects/{project_id}/analysis/multi-capability-files
+
+Example usage:
+  curl -X POST "http://localhost:8001/api/projects/summitflow/explorer/scan?type=file"
+  curl "http://localhost:8001/api/projects/summitflow/explorer/refactor-targets"
+
+---
+ORIGINAL DESCRIPTION (deprecated):
 Project Scanner for /refactor_it workflow.
 
 Scans project files, calculates complexity metrics, and identifies refactor targets.
@@ -11,6 +26,15 @@ Modes:
   --refresh  Update current metrics and recalculate refactor targets
   --report   Generate before/after improvement report
 """
+
+import warnings
+
+warnings.warn(
+    "project_scanner.py is deprecated. Use Explorer API instead. "
+    "See: /refactor_it command or /api/projects/{project_id}/explorer/refactor-targets",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import argparse
 import json
@@ -431,8 +455,20 @@ def generate_report(index_path: Path) -> None:
 
 
 def main() -> None:
+    # Print deprecation warning
+    print(
+        "\n"
+        "⚠️  DEPRECATED: project_scanner.py is deprecated.\n"
+        "   Use Explorer API instead:\n"
+        "   - Scan: curl -X POST 'http://localhost:8001/api/projects/{project_id}/explorer/scan?type=file'\n"
+        "   - Targets: curl 'http://localhost:8001/api/projects/{project_id}/explorer/refactor-targets'\n"
+        "   See: /refactor_it command documentation\n"
+        "\n",
+        file=sys.stderr,
+    )
+
     parser = argparse.ArgumentParser(
-        description="Project Scanner for /refactor_it workflow"
+        description="[DEPRECATED] Project Scanner for /refactor_it workflow. Use Explorer API instead."
     )
     parser.add_argument(
         "--init",
