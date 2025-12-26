@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   RefreshCw,
+  Plus,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { ComponentList } from "@/components/tdd-components/ComponentList";
 import { CapabilityDrawer } from "@/components/tdd-components/CapabilityDrawer";
 import { BuildProgress } from "@/components/tdd-components/BuildProgress";
+import { CreateComponentModal } from "@/components/tdd-components/CreateComponentModal";
 import {
   fetchTddComponents,
   fetchTddCapabilities,

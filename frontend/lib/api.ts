@@ -945,6 +945,30 @@ export async function fetchTddComponents(projectId: string): Promise<TddComponen
   return res.json();
 }
 
+export interface CreateComponentRequest {
+  component_id: string;
+  name: string;
+  description?: string;
+  priority?: number;
+  explorer_entry_id?: number;
+}
+
+export async function createTddComponent(
+  projectId: string,
+  component: CreateComponentRequest
+): Promise<TddComponent> {
+  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(component),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Failed to create component");
+  }
+  return res.json();
+}
+
 export async function fetchTddComponent(
   projectId: string,
   componentId: string
