@@ -257,7 +257,59 @@ export default function ProjectSettingsPage() {
         )}
 
         {activeTab === "defaults" && (
-          <div className="max-w-md">
+          <div className="max-w-xl space-y-6">
+            {/* Component Source Setting */}
+            <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
+              <h3 className="text-sm font-medium text-slate-200 mb-2 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-slate-400" />
+                Component Source
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">
+                Choose how component suggestions are generated for this project.
+              </p>
+              {configLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {COMPONENT_SOURCE_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className={clsx(
+                        "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
+                        agentConfig?.component_source === option.value
+                          ? "border-phosphor-500 bg-phosphor-500/10"
+                          : "border-slate-600 hover:border-slate-500 bg-slate-800/50"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="component_source"
+                        value={option.value}
+                        checked={agentConfig?.component_source === option.value}
+                        onChange={() => handleComponentSourceChange(option.value)}
+                        disabled={savingComponentSource}
+                        className="mt-0.5 accent-phosphor-500"
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-slate-200">
+                          {option.label}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {option.description}
+                        </div>
+                      </div>
+                      {savingComponentSource && agentConfig?.component_source !== option.value && (
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Agent Defaults */}
             <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
               <h3 className="text-sm font-medium text-slate-200 mb-4">
                 Default Agent Configuration
