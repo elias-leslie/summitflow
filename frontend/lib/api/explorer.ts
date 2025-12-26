@@ -296,12 +296,23 @@ export interface MultiCapabilityFile {
 }
 
 export interface RefactorTarget {
-  entry_id: number;
   path: string;
   name: string;
   complexity_score: number;
+  lines_of_code: number;
+  function_count: number;
+  class_count: number;
+  priority: "high" | "medium" | "low";
   reason: string;
-  metrics: Record<string, number>;
+}
+
+export interface RefactorTargetsResponse {
+  targets: RefactorTarget[];
+  summary: {
+    high_priority_count: number;
+    medium_priority_count: number;
+    total_complexity: number;
+  };
 }
 
 // ============================================================================
@@ -337,7 +348,7 @@ export async function fetchMultiCapabilityFiles(
 /**
  * Fetch files that are refactoring candidates.
  */
-export async function fetchRefactorTargets(projectId: string): Promise<RefactorTarget[]> {
+export async function fetchRefactorTargets(projectId: string): Promise<RefactorTargetsResponse> {
   const res = await fetch(`/api/projects/${projectId}/explorer/refactor-targets`);
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to fetch refactor targets" }));

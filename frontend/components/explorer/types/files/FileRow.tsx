@@ -1,10 +1,10 @@
 /**
  * FileRow - Row content renderer for files
  *
- * Renders file/directory name with icon, LOC, size, and modified date.
+ * Renders file/directory name with icon, LOC, size, complexity badge, and modified date.
  */
 
-import { Folder, File } from "lucide-react";
+import { Folder, File, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ColumnValue } from "../../DataList";
 import type { ExplorerEntry } from "@/lib/api/explorer";
@@ -36,6 +36,29 @@ const formatTimeAgo = (dateStr: string | null) => {
   return `${Math.floor(diffDays / 30)}mo ago`;
 };
 
+// Complexity badge component
+function ComplexityBadge({ priority, score }: { priority: string | undefined; score: number | undefined }) {
+  if (!priority || priority === "low") return null;
+
+  const isHigh = priority === "high";
+  const displayScore = score ? Math.round(score) : "";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium",
+        isHigh
+          ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+          : "bg-amber-500/15 text-amber-400/80 border border-amber-500/20"
+      )}
+      title={`Complexity score: ${score?.toFixed(1) ?? "N/A"}`}
+    >
+      <AlertTriangle className="w-3 h-3" />
+      {isHigh ? "Complex" : displayScore}
+    </span>
+  );
+}
+
 export function FileRow({ entry }: FileRowProps) {
   const isDir = entry.metadata.is_directory;
   const loc = isDir
@@ -43,6 +66,8 @@ export function FileRow({ entry }: FileRowProps) {
     : entry.metadata.lines_of_code ?? 0;
   const size = entry.metadata.size_bytes ?? 0;
   const bloatLevel = entry.metadata.bloat_level;
+  const complexityScore = entry.metadata.complexity_score as number | undefined;
+  const refactorPriority = entry.metadata.refactor_priority as string | undefined;
 
   return (
     <>
@@ -55,16 +80,17 @@ export function FileRow({ entry }: FileRowProps) {
         )}
       </span>
 
-      {/* Name */}
+      {/* Name with complexity badge */}
       <ColumnValue
         className={cn(
-          "flex-1 truncate",
+          "flex-1 truncate flex items-center gap-2",
           isDir && "font-medium text-slate-200",
           bloatLevel === "critical" && "text-red-400",
           bloatLevel === "warning" && "text-amber-400"
         )}
       >
-        {entry.name}
+        <span className="truncate">{entry.name}</span>
+        <ComplexityBadge priority={refactorPriority} score={complexityScore} />
       </ColumnValue>
 
       {/* LOC */}

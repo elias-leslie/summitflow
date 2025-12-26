@@ -41,7 +41,7 @@ export function AnalysisSummary({ projectId, className }: AnalysisSummaryProps) 
     staleTime: 60000,
   });
 
-  const { data: refactorTargets = [], isLoading: targetsLoading } = useQuery({
+  const { data: refactorData, isLoading: targetsLoading } = useQuery({
     queryKey: ["refactor-targets", projectId],
     queryFn: () => fetchRefactorTargets(projectId),
     staleTime: 60000,
@@ -55,9 +55,12 @@ export function AnalysisSummary({ projectId, className }: AnalysisSummaryProps) 
 
   const isLoading = gapsLoading || targetsLoading || multiCapLoading;
 
+  // Extract refactor targets from response
+  const refactorTargets = refactorData?.targets ?? [];
+
   // Counts for summary
   const gapsCount = coverageGaps?.summary.total_uncovered ?? 0;
-  const targetsCount = refactorTargets.length;
+  const targetsCount = refactorData?.summary.high_priority_count ?? 0;
   const multiCapCount = multiCapFiles.length;
   const totalIssues = gapsCount + targetsCount + multiCapCount;
 
@@ -152,14 +155,14 @@ export function AnalysisSummary({ projectId, className }: AnalysisSummaryProps) 
               <div className="space-y-1">
                 {refactorTargets.slice(0, 3).map((target) => (
                   <div
-                    key={target.entry_id}
+                    key={target.path}
                     className="flex items-center justify-between text-xs bg-slate-800/50 rounded px-2 py-1.5"
                   >
                     <span className="text-slate-300 truncate max-w-[200px]">
                       {target.path}
                     </span>
                     <span className="text-orange-400 shrink-0">
-                      {target.complexity_score} complexity
+                      {Math.round(target.complexity_score)} complexity
                     </span>
                   </div>
                 ))}
