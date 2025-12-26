@@ -16,6 +16,12 @@ from .memory_utils import json_or_default as _json_or_default
 
 logger = logging.getLogger(__name__)
 
+# Column list for DRY queries (matches row converter indices)
+QUEUE_COLUMNS = """
+    id, project_id, session_id, agent_type, tool_name, tool_input,
+    tool_output, status, created_at, processed_at, error_message, retry_count
+""".strip()
+
 
 # =============================================================================
 # Queue Row Conversion
@@ -70,12 +76,11 @@ def create_queue_item(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             INSERT INTO observation_queue
                 (project_id, session_id, agent_type, tool_name, tool_input, tool_output)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, project_id, session_id, agent_type, tool_name, tool_input,
-                      tool_output, status, created_at, processed_at, error_message, retry_count
+            RETURNING {QUEUE_COLUMNS}
             """,
             (
                 project_id,
@@ -96,9 +101,8 @@ def get_pending_queue_items(limit: int = 10) -> list[dict[str, Any]]:
     """Get pending queue items for processing."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, tool_name, tool_input,
-                   tool_output, status, created_at, processed_at, error_message, retry_count
+            f"""
+            SELECT {QUEUE_COLUMNS}
             FROM observation_queue
             WHERE status = 'pending'
             ORDER BY created_at ASC
