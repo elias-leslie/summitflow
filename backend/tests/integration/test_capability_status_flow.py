@@ -176,17 +176,11 @@ class TestCapabilityStatusFlow:
             test_db_id=test2["id"],
         )
 
-        # Both tests pass
+        # Both tests pass - create_test_run updates last_result automatically
         runs_store.create_test_run(
             project_id=project_id,
             test_db_id=test1["id"],
             run_type="manual",
-            result="passed",
-            duration_ms=100,
-        )
-        test_store.update_test_result(
-            project_id=project_id,
-            test_id="test-status-flow-1",
             result="passed",
             duration_ms=100,
         )
@@ -195,12 +189,6 @@ class TestCapabilityStatusFlow:
             project_id=project_id,
             test_db_id=test2["id"],
             run_type="manual",
-            result="passed",
-            duration_ms=100,
-        )
-        test_store.update_test_result(
-            project_id=project_id,
-            test_id="test-status-flow-2",
             result="passed",
             duration_ms=100,
         )
@@ -218,6 +206,6 @@ class TestCapabilityStatusFlow:
             duration_ms=100,
         )
 
-        # Capability should be back to pending
+        # Capability should be back to pending (status computed from last_result)
         cap = cap_store.get_capability(project_id, "test-cap-status-flow")
         assert cap["status"] == "pending"
