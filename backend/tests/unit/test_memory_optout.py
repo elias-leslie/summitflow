@@ -165,7 +165,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_patterns.is_memory_feature_enabled")
     def test_create_pattern_returns_none_when_disabled(self, mock_enabled):
         """create_pattern returns None when patterns disabled."""
         from app.storage.memory import create_pattern
