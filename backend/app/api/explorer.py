@@ -231,6 +231,18 @@ async def get_refactor_targets(
     )
 
 
+@router.get("/{project_id}/analysis/coverage-gaps")
+async def get_coverage_gaps(project_id: str) -> dict[str, Any]:
+    """Get endpoints, pages, and tables without capability links.
+
+    Returns entities that are not covered by any capability,
+    indicating potential gaps in TDD coverage.
+    """
+    _validate_project_exists(project_id)
+
+    return explorer_storage.get_coverage_gaps(project_id)
+
+
 @router.get("/{project_id}/analysis/multi-capability-files")
 async def get_multi_capability_files(
     project_id: str,

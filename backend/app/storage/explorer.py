@@ -748,6 +748,93 @@ def get_refactor_targets(
         return {"targets": targets, "summary": summary}
 
 
+def get_coverage_gaps(project_id: str) -> dict[str, Any]:
+    """Get endpoints, pages, and tables without capability links.
+
+    Args:
+        project_id: Project ID for scoping
+
+    Returns:
+        Dict with uncovered_endpoints, uncovered_pages, orphan_tables arrays
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Query for uncovered endpoints
+        cur.execute(
+            """
+            SELECT ee.path, ee.name, ee.metadata
+            FROM explorer_entries ee
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
+            LEFT JOIN components c ON c.explorer_entry_id = ee.id
+            WHERE ee.project_id = %s
+              AND ee.entry_type = 'endpoint'
+              AND ecl.id IS NULL
+              AND c.id IS NULL
+            ORDER BY ee.path
+            """,
+            (project_id,),
+        )
+        uncovered_endpoints = [
+            {"path": row[0], "name": row[1], "method": (row[2] or {}).get("method", "")}
+            for row in cur.fetchall()
+        ]
+
+        # Query for uncovered pages
+        cur.execute(
+            """
+            SELECT ee.path, ee.name, ee.metadata
+            FROM explorer_entries ee
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
+            LEFT JOIN components c ON c.explorer_entry_id = ee.id
+            WHERE ee.project_id = %s
+              AND ee.entry_type = 'page'
+              AND ecl.id IS NULL
+              AND c.id IS NULL
+            ORDER BY ee.path
+            """,
+            (project_id,),
+        )
+        uncovered_pages = [
+            {"path": row[0], "name": row[1], "route": (row[2] or {}).get("route", "")}
+            for row in cur.fetchall()
+        ]
+
+        # Query for orphan tables (tables not linked to any capability)
+        cur.execute(
+            """
+            SELECT ee.path, ee.name, ee.metadata
+            FROM explorer_entries ee
+            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
+            WHERE ee.project_id = %s
+              AND ee.entry_type = 'table'
+              AND ecl.id IS NULL
+            ORDER BY ee.path
+            """,
+            (project_id,),
+        )
+        orphan_tables = [
+            {
+                "path": row[0],
+                "name": row[1],
+                "column_count": len((row[2] or {}).get("columns", [])),
+            }
+            for row in cur.fetchall()
+        ]
+
+        return {
+            "uncovered_endpoints": uncovered_endpoints,
+            "uncovered_pages": uncovered_pages,
+            "orphan_tables": orphan_tables,
+            "summary": {
+                "total_uncovered": len(uncovered_endpoints)
+                + len(uncovered_pages)
+                + len(orphan_tables),
+                "endpoint_count": len(uncovered_endpoints),
+                "page_count": len(uncovered_pages),
+                "table_count": len(orphan_tables),
+            },
+        }
+
+
 def get_multi_capability_files(
     project_id: str,
     min_capabilities: int = 3,
