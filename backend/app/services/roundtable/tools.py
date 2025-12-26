@@ -33,6 +33,70 @@ ALLOWED_BASES = [
     "/home/kasadis/portfolio-ai",
 ]
 
+# Ignore patterns for directory tree rendering
+IGNORE_PATTERNS = frozenset({
+    ".git",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".next",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".mypy_cache",
+})
+
+
+# =============================================================================
+# Tree Rendering Helpers
+# =============================================================================
+
+
+def _should_ignore_item(name: str) -> bool:
+    """Check if an item should be ignored in directory tree."""
+    return name in IGNORE_PATTERNS
+
+
+def _build_directory_tree(
+    base: Path, max_depth: int
+) -> list[str]:
+    """Build a directory tree representation.
+
+    Args:
+        base: Base directory path
+        max_depth: Maximum depth to traverse
+
+    Returns:
+        List of formatted tree lines.
+    """
+    output_lines: list[str] = []
+
+    def add_dir(path: Path, prefix: str, current_depth: int) -> None:
+        if current_depth > max_depth:
+            return
+
+        try:
+            items = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
+        except PermissionError:
+            return
+
+        # Filter ignored items
+        items = [i for i in items if not _should_ignore_item(i.name)]
+
+        for i, item in enumerate(items):
+            is_last = i == len(items) - 1
+            connector = "└── " if is_last else "├── "
+            child_prefix = "    " if is_last else "│   "
+
+            if item.is_dir():
+                output_lines.append(f"{prefix}{connector}{item.name}/")
+                add_dir(item, prefix + child_prefix, current_depth + 1)
+            else:
+                output_lines.append(f"{prefix}{connector}{item.name}")
+
+    add_dir(base, "", 1)
+    return output_lines
+
 
 # =============================================================================
 # Tool Definitions
@@ -814,46 +878,8 @@ class RoundtableToolExecutor:
         base = Path(result)
 
         try:
-            # Build tree structure
             output_lines = [f"{project}/"]
-
-            def add_dir(path: Path, prefix: str, current_depth: int) -> None:
-                if current_depth > depth:
-                    return
-
-                try:
-                    items = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
-                except PermissionError:
-                    return
-
-                # Filter out hidden and common ignore patterns
-                ignore_patterns = {
-                    ".git",
-                    ".venv",
-                    "node_modules",
-                    "__pycache__",
-                    ".next",
-                    ".pytest_cache",
-                    "dist",
-                    "build",
-                    ".mypy_cache",
-                }
-
-                items = [i for i in items if i.name not in ignore_patterns]
-
-                for i, item in enumerate(items):
-                    is_last = i == len(items) - 1
-                    connector = "└── " if is_last else "├── "
-                    child_prefix = "    " if is_last else "│   "
-
-                    if item.is_dir():
-                        output_lines.append(f"{prefix}{connector}{item.name}/")
-                        add_dir(item, prefix + child_prefix, current_depth + 1)
-                    else:
-                        output_lines.append(f"{prefix}{connector}{item.name}")
-
-            add_dir(base, "", 1)
-
+            output_lines.extend(_build_directory_tree(base, depth))
             return ToolResult(True, "\n".join(output_lines))
         except Exception as e:
             return ToolResult(False, "", f"Failed to get structure: {e}")
