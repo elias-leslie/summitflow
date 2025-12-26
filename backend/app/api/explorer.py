@@ -202,6 +202,35 @@ async def get_entry_capabilities(
     return caps
 
 
+@router.get("/{project_id}/explorer/refactor-targets")
+async def get_refactor_targets(
+    project_id: str,
+    priority: str | None = Query(None, description="Filter by priority: high, medium"),
+    min_complexity: float | None = Query(None, description="Minimum complexity score"),
+    min_lines: int | None = Query(None, description="Minimum lines of code"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+) -> dict[str, Any]:
+    """Get files that are candidates for refactoring.
+
+    Returns files with high complexity or line count, sorted by priority.
+    """
+    _validate_project_exists(project_id)
+
+    if priority and priority not in {"high", "medium"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid priority: {priority}. Must be: high, medium",
+        )
+
+    return explorer_storage.get_refactor_targets(
+        project_id,
+        priority=priority,
+        min_complexity=min_complexity,
+        min_lines=min_lines,
+        limit=limit,
+    )
+
+
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")
 async def get_entry(
     project_id: str,

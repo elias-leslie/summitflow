@@ -635,6 +635,119 @@ def get_capability_links(capability_id: int) -> list[dict[str, Any]]:
         ]
 
 
+def get_refactor_targets(
+    project_id: str,
+    priority: str | None = None,
+    min_complexity: float | None = None,
+    min_lines: int | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Get files that are candidates for refactoring based on complexity.
+
+    Args:
+        project_id: Project ID for scoping
+        priority: Filter by refactor_priority ('high', 'medium')
+        min_complexity: Minimum complexity_score
+        min_lines: Minimum lines_of_code
+        limit: Max results (default 50)
+
+    Returns:
+        Dict with targets list and summary stats
+    """
+    conditions = [
+        "project_id = %s",
+        "entry_type = 'file'",
+        "(metadata->>'refactor_priority') IS NOT NULL",
+        "(metadata->>'refactor_priority') != 'none'",
+    ]
+    params: list[Any] = [project_id]
+
+    if priority:
+        conditions.append("(metadata->>'refactor_priority') = %s")
+        params.append(priority)
+
+    if min_complexity:
+        conditions.append("(metadata->>'complexity_score')::float >= %s")
+        params.append(min_complexity)
+
+    if min_lines:
+        conditions.append("(metadata->>'lines_of_code')::int >= %s")
+        params.append(min_lines)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        where_clause_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+
+        cur.execute(
+            sql.SQL("""
+            SELECT path, name,
+                   (metadata->>'complexity_score')::float as complexity_score,
+                   (metadata->>'lines_of_code')::int as lines_of_code,
+                   (metadata->>'function_count')::int as function_count,
+                   (metadata->>'class_count')::int as class_count,
+                   (metadata->>'refactor_priority') as priority,
+                   CASE
+                       WHEN (metadata->>'complexity_score')::float > 15 THEN 'High complexity score'
+                       WHEN (metadata->>'lines_of_code')::int > 500 THEN 'High line count'
+                       WHEN (metadata->>'complexity_score')::float > 10 THEN 'Medium complexity'
+                       ELSE 'Medium line count'
+                   END as reason
+            FROM explorer_entries
+            WHERE {where_clause}
+            ORDER BY
+                CASE WHEN (metadata->>'refactor_priority') = 'high' THEN 0 ELSE 1 END,
+                (metadata->>'complexity_score')::float DESC
+            LIMIT %s
+            """).format(where_clause=where_clause_sql),
+            (*params, limit),
+        )
+        rows = cur.fetchall()
+
+        targets = [
+            {
+                "path": row[0],
+                "name": row[1],
+                "complexity_score": row[2],
+                "lines_of_code": row[3],
+                "function_count": row[4],
+                "class_count": row[5],
+                "priority": row[6],
+                "reason": row[7],
+            }
+            for row in rows
+        ]
+
+        # Get summary counts
+        cur.execute(
+            """
+            SELECT
+                (metadata->>'refactor_priority') as priority,
+                COUNT(*) as count,
+                SUM((metadata->>'complexity_score')::float) as total_complexity
+            FROM explorer_entries
+            WHERE project_id = %s
+              AND entry_type = 'file'
+              AND (metadata->>'refactor_priority') IS NOT NULL
+              AND (metadata->>'refactor_priority') != 'none'
+            GROUP BY (metadata->>'refactor_priority')
+            """,
+            (project_id,),
+        )
+        summary_rows = cur.fetchall()
+        summary = {
+            "high_priority_count": 0,
+            "medium_priority_count": 0,
+            "total_complexity": 0.0,
+        }
+        for row in summary_rows:
+            if row[0] == "high":
+                summary["high_priority_count"] = row[1]
+            elif row[0] == "medium":
+                summary["medium_priority_count"] = row[1]
+            summary["total_complexity"] += row[2] or 0
+
+        return {"targets": targets, "summary": summary}
+
+
 def get_entry_capabilities(explorer_entry_id: int) -> list[dict[str, Any]]:
     """Get all capabilities linked to an explorer entry.
 
