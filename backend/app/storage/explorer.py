@@ -363,6 +363,62 @@ def delete_entries(project_id: str, entry_type: str | None = None) -> int:
         return deleted
 
 
+def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[str]) -> int:
+    """Delete explorer entries that no longer exist in the codebase.
+
+    ARCHITECTURAL DECISION: The Explorer represents a current-state snapshot of the
+    codebase, NOT a historical accumulation. When files, pages, endpoints, or tables
+    are removed from the codebase, their corresponding explorer entries must be deleted.
+
+    This function is called after each scan to remove entries for paths that were
+    not found in the current scan. This ensures the Explorer always reflects the
+    actual state of the codebase.
+
+    Args:
+        project_id: Project ID for scoping
+        entry_type: Entry type ('file', 'page', 'endpoint', 'table', 'task')
+        current_paths: Set of paths found in the current scan
+
+    Returns:
+        Number of stale entries deleted
+    """
+    if not current_paths:
+        # Safety: if scan returned nothing, don't delete everything
+        # This prevents accidental data loss from failed scans
+        return 0
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get all existing paths for this project/type
+        cur.execute(
+            """
+            SELECT path FROM explorer_entries
+            WHERE project_id = %s AND entry_type = %s
+            """,
+            (project_id, entry_type),
+        )
+        existing_paths = {row[0] for row in cur.fetchall()}
+
+        # Find stale paths (in DB but not in current scan)
+        stale_paths = existing_paths - current_paths
+
+        if not stale_paths:
+            return 0
+
+        # Delete stale entries
+        cur.execute(
+            """
+            DELETE FROM explorer_entries
+            WHERE project_id = %s
+              AND entry_type = %s
+              AND path = ANY(%s)
+            """,
+            (project_id, entry_type, list(stale_paths)),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        return deleted
+
+
 def upsert_relationships(project_id: str, relationships: list[dict]) -> int:
     """Upsert explorer relationships.
 
