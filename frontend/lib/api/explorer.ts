@@ -268,3 +268,80 @@ export async function fetchScanStatus(
   }
   return res.json();
 }
+
+// ============================================================================
+// Analysis Types
+// ============================================================================
+
+export interface CoverageGapsSummary {
+  total_uncovered: number;
+  endpoint_count: number;
+  page_count: number;
+  table_count: number;
+}
+
+export interface CoverageGapsResponse {
+  summary: CoverageGapsSummary;
+  uncovered_endpoints: Array<{ id: number; path: string; name: string }>;
+  uncovered_pages: Array<{ id: number; path: string; name: string }>;
+  uncovered_tables: Array<{ id: number; path: string; name: string }>;
+}
+
+export interface MultiCapabilityFile {
+  entry_id: number;
+  path: string;
+  name: string;
+  capability_count: number;
+  capabilities: Array<{ id: number; capability_id: string; name: string }>;
+}
+
+export interface RefactorTarget {
+  entry_id: number;
+  path: string;
+  name: string;
+  complexity_score: number;
+  reason: string;
+  metrics: Record<string, number>;
+}
+
+// ============================================================================
+// Analysis API Functions
+// ============================================================================
+
+/**
+ * Fetch coverage gaps (uncovered endpoints, pages, tables).
+ */
+export async function fetchCoverageGaps(projectId: string): Promise<CoverageGapsResponse> {
+  const res = await fetch(`/api/projects/${projectId}/analysis/coverage-gaps`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch coverage gaps" }));
+    throw new Error(error.detail || "Failed to fetch coverage gaps");
+  }
+  return res.json();
+}
+
+/**
+ * Fetch files linked to multiple capabilities.
+ */
+export async function fetchMultiCapabilityFiles(
+  projectId: string
+): Promise<MultiCapabilityFile[]> {
+  const res = await fetch(`/api/projects/${projectId}/analysis/multi-capability-files`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch multi-capability files" }));
+    throw new Error(error.detail || "Failed to fetch multi-capability files");
+  }
+  return res.json();
+}
+
+/**
+ * Fetch files that are refactoring candidates.
+ */
+export async function fetchRefactorTargets(projectId: string): Promise<RefactorTarget[]> {
+  const res = await fetch(`/api/projects/${projectId}/explorer/refactor-targets`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch refactor targets" }));
+    throw new Error(error.detail || "Failed to fetch refactor targets");
+  }
+  return res.json();
+}
