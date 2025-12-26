@@ -1134,6 +1134,9 @@ cmd_capability() {
         lock)
             cmd_capability_lock "$@"
             ;;
+        verify)
+            cmd_capability_verify "$@"
+            ;;
         *)
             cat << 'EOF'
 st capability - Manage capabilities
@@ -1145,12 +1148,14 @@ SUBCOMMANDS:
     list                    List capabilities
     show <capability-id>    Show capability details
     lock <capability-id>    Lock a capability
+    verify <capability-id>  Verify capability (check tests, update status)
 
 EXAMPLES:
     st capability list
     st capability list --component comp-001
     st capability show cap-001
     st capability lock cap-001
+    st capability verify cap-001
 EOF
             ;;
     esac
@@ -1250,6 +1255,43 @@ cmd_capability_lock() {
     fi
 
     echo -e "${GREEN}Locked capability: $capability_id${NC}"
+}
+
+cmd_capability_verify() {
+    local capability_id="$1"
+    shift || true
+
+    if [[ -z "$capability_id" ]]; then
+        echo -e "${RED}Error: Capability ID required${NC}" >&2
+        echo "Usage: st capability verify <capability-id>"
+        return 1
+    fi
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/capabilities/${capability_id}/verify")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    if [[ -n "${JSON_OUTPUT:-}" ]]; then
+        echo "$response" | jq '.'
+    else
+        local status passed failed total
+        status=$(echo "$response" | jq -r '.capability_status')
+        passed=$(echo "$response" | jq -r '.tests_passed')
+        failed=$(echo "$response" | jq -r '.tests_failed')
+        total=$(echo "$response" | jq -r '.tests_total')
+
+        echo -e "${BLUE}Verification: $capability_id${NC}"
+        echo "tests:  $passed/$total passed"
+        if [[ "$failed" -gt 0 ]]; then
+            echo -e "status: ${RED}$status${NC} ($failed failed)"
+        else
+            echo -e "status: ${GREEN}$status${NC}"
+        fi
+    fi
 }
 
 # Test commands
