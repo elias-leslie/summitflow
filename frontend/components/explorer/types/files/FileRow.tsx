@@ -36,9 +36,10 @@ const formatTimeAgo = (dateStr: string | null) => {
   return `${Math.floor(diffDays / 30)}mo ago`;
 };
 
-// Complexity badge component
+// Complexity badge component - only shows for high/medium priority refactor targets
 function ComplexityBadge({ priority, score }: { priority: string | undefined; score: number | undefined }) {
-  if (!priority || priority === "low") return null;
+  // Only show badge for high or medium priority (skip low, none, null, undefined)
+  if (!priority || priority === "low" || priority === "none") return null;
 
   const isHigh = priority === "high";
   const displayScore = score ? Math.round(score) : "";
@@ -46,12 +47,12 @@ function ComplexityBadge({ priority, score }: { priority: string | undefined; sc
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium",
+        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium shrink-0",
         isHigh
           ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
           : "bg-amber-500/15 text-amber-400/80 border border-amber-500/20"
       )}
-      title={`Complexity score: ${score?.toFixed(1) ?? "N/A"}`}
+      title={`Complexity score: ${score?.toFixed(1) ?? "N/A"} - ${isHigh ? "High" : "Medium"} priority refactor target`}
     >
       <AlertTriangle className="w-3 h-3" />
       {isHigh ? "Complex" : displayScore}
