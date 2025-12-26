@@ -55,6 +55,10 @@ async def list_entries(
         None, description="Filter by health status (healthy, warning, error, unknown)"
     ),
     path: str | None = Query(None, description="Filter by path prefix"),
+    association: str | None = Query(
+        None,
+        description="Filter by association status (orphan, linked, is_component)",
+    ),
     sort: str = Query("path", description="Sort field: path, name, health_status, last_scanned_at"),
     dir: str = Query("asc", description="Sort direction: asc, desc"),
     limit: int = Query(1000, ge=1, le=10000, description="Results per page"),
@@ -62,18 +66,25 @@ async def list_entries(
 ) -> dict[str, Any]:
     """List explorer entries with filtering, sorting, and pagination.
 
-    Returns entries and statistics in a consistent format.
+    Returns entries with association_status field and statistics.
     """
     _validate_project_exists(project_id)
 
     if type:
         _validate_entry_type(type)
 
+    if association and association not in {"orphan", "linked", "is_component"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid association: {association}. Must be: orphan, linked, is_component",
+        )
+
     # Build filters dict
     filters = {
         "type": type,
         "health": health,
         "path": path,
+        "association": association,
         "sort": sort,
         "dir": dir,
         "limit": limit,
