@@ -780,6 +780,26 @@ class RoundtableToolExecutor:
         except Exception as e:
             return False, f"Invalid path: {e}"
 
+    def _require_valid_path(
+        self, path: str, default_base: str | None = None
+    ) -> tuple[Path, ToolResult | None]:
+        """Validate path and return Path object or error ToolResult.
+
+        Convenience wrapper around _validate_path that returns:
+            (Path, None) on success - path is always valid
+            (Path(""), ToolResult) on failure - caller should check err first
+
+        Usage:
+            path, err = self._require_valid_path(file_path)
+            if err:
+                return err
+            # Use path directly - guaranteed to be valid after err check
+        """
+        is_valid, result = self._validate_path(path, default_base)
+        if not is_valid:
+            return Path(""), ToolResult(False, "", result)
+        return Path(result), None
+
     def _execute_read_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute read_file tool."""
         file_path, err = self._require_param(params, "file_path")
@@ -787,11 +807,9 @@ class RoundtableToolExecutor:
             return err
 
         # Validate path
-        is_valid, result = self._validate_path(file_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        path = Path(result)
+        path, err = self._require_valid_path(file_path)
+        if err:
+            return err
 
         # Check file exists
         if err := self._validate_file_exists(path, file_path):
@@ -819,11 +837,11 @@ class RoundtableToolExecutor:
         file_type = params.get("file_type", "")
 
         # Validate path (handles relative paths)
-        is_valid, result = self._validate_path(search_path, default_base="/home/kasadis/summitflow")
-        if not is_valid:
-            return ToolResult(False, "", result)
+        path, err = self._require_valid_path(search_path, default_base="/home/kasadis/summitflow")
+        if err:
+            return err
 
-        cmd = _build_grep_command(pattern, result, file_type)
+        cmd = _build_grep_command(pattern, str(path), file_type)
 
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -851,11 +869,9 @@ class RoundtableToolExecutor:
         limit = min(params.get("limit", 50), 200)  # Max 200 files
 
         # Validate path (handles relative paths)
-        is_valid, result = self._validate_path(base_path, default_base="/home/kasadis/summitflow")
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        base = Path(result)
+        base, err = self._require_valid_path(base_path, default_base="/home/kasadis/summitflow")
+        if err:
+            return err
 
         try:
             # Use glob to find files
@@ -899,11 +915,9 @@ class RoundtableToolExecutor:
             return ToolResult(False, "", f"Unknown project: {project}")
 
         # Validate path
-        is_valid, result = self._validate_path(base_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        base = Path(result)
+        base, err = self._require_valid_path(base_path)
+        if err:
+            return err
 
         try:
             output_lines = [f"{project}/"]
@@ -924,11 +938,9 @@ class RoundtableToolExecutor:
         content = params.get("content", "")
 
         # Validate path
-        is_valid, result = self._validate_path(file_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        path = Path(result)
+        path, err = self._require_valid_path(file_path)
+        if err:
+            return err
 
         try:
             # Create parent directories if needed
@@ -955,11 +967,9 @@ class RoundtableToolExecutor:
         new_string = params.get("new_string", "")
 
         # Validate path
-        is_valid, result = self._validate_path(file_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        path = Path(result)
+        path, err = self._require_valid_path(file_path)
+        if err:
+            return err
 
         if err := self._validate_file_exists(path, file_path):
             return err
@@ -1003,11 +1013,9 @@ class RoundtableToolExecutor:
             return err
 
         # Validate path
-        is_valid, result = self._validate_path(dir_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        path = Path(result)
+        path, err = self._require_valid_path(dir_path)
+        if err:
+            return err
 
         try:
             path.mkdir(parents=True, exist_ok=True)
@@ -1022,11 +1030,9 @@ class RoundtableToolExecutor:
             return err
 
         # Validate path
-        is_valid, result = self._validate_path(file_path)
-        if not is_valid:
-            return ToolResult(False, "", result)
-
-        path = Path(result)
+        path, err = self._require_valid_path(file_path)
+        if err:
+            return err
 
         if err := self._validate_file_exists(
             path, file_path, is_dir_error="Not a file (use rmdir for directories)"
