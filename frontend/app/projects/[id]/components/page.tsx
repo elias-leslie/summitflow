@@ -60,6 +60,7 @@ export default function ComponentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedCapability, setSelectedCapability] = useState<TddCapability | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   // Fetch components and capabilities
   const { data: components = [], isLoading: componentsLoading, refetch: refetchComponents } = useQuery({
@@ -176,6 +177,11 @@ export default function ComponentsPage() {
           <RefreshCw className="h-4 w-4 mr-1.5" />
           Refresh
         </Button>
+
+        <Button onClick={() => setCreateModalOpen(true)}>
+          <Plus className="h-4 w-4 mr-1.5" />
+          Create Component
+        </Button>
       </div>
 
       {/* Results count */}
@@ -202,6 +208,14 @@ export default function ComponentsPage() {
         projectId={projectId}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
+      />
+
+      {/* Create Component Modal */}
+      <CreateComponentModal
+        projectId={projectId}
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onSuccess={refetchComponents}
       />
     </div>
   );
