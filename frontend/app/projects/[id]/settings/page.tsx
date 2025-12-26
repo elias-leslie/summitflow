@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Settings2, Download, FileText, Loader2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Settings2, Download, FileText, Loader2, Layers } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
 import {
@@ -12,6 +12,8 @@ import {
   updateExtractionPrompt,
   deleteExtractionPrompt,
   exportExtractionPrompts,
+  getAgentConfig,
+  updateAgentConfig,
   type ExtractionPrompt,
   type ExtractionPromptType,
   type ExtractionPromptUpdate,
@@ -21,12 +23,21 @@ import { AgentConfigPanel } from "@/components/settings/AgentConfigPanel";
 
 type SettingsTab = "prompts" | "defaults";
 
+const COMPONENT_SOURCE_OPTIONS = [
+  { value: "manual", label: "Manual", description: "Create components manually in the UI" },
+  { value: "pages", label: "Pages", description: "Suggest components from ungrouped pages" },
+  { value: "endpoints", label: "Endpoints", description: "Suggest components from API endpoint groups" },
+  { value: "directories", label: "Directories", description: "Suggest components from directory structure" },
+] as const;
+
 export default function ProjectSettingsPage() {
   const params = useParams();
   const projectId = params.id as string;
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("prompts");
   const [exporting, setExporting] = useState(false);
+  const [savingComponentSource, setSavingComponentSource] = useState(false);
 
   // Fetch project details
   const { data: project, isLoading: projectLoading } = useQuery({
@@ -44,9 +55,25 @@ export default function ProjectSettingsPage() {
     queryFn: () => getExtractionPrompts(projectId),
   });
 
+  // Fetch agent config
+  const { data: agentConfig, isLoading: configLoading } = useQuery({
+    queryKey: ["agent-config", projectId],
+    queryFn: () => getAgentConfig(projectId),
+  });
+
   // Agent config state (for defaults tab)
   const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
+
+  const handleComponentSourceChange = async (source: string) => {
+    setSavingComponentSource(true);
+    try {
+      await updateAgentConfig(projectId, { component_source: source });
+      queryClient.invalidateQueries({ queryKey: ["agent-config", projectId] });
+    } finally {
+      setSavingComponentSource(false);
+    }
+  };
 
   const handleSavePrompt = async (
     promptType: ExtractionPromptType,

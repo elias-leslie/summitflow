@@ -80,6 +80,56 @@ export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   });
 }
 
+// Project agent config (not roundtable session config)
+export interface ProjectAgentConfig {
+  claude_enabled: boolean;
+  gemini_enabled: boolean;
+  default_agent: string;
+  claude_model: string;
+  gemini_model: string;
+  memory_enabled: boolean;
+  observations_enabled: boolean;
+  diary_enabled: boolean;
+  patterns_enabled: boolean;
+  checkpoints_enabled: boolean;
+  context_injection_enabled: boolean;
+  component_source: string;
+}
+
+export interface ProjectAgentConfigUpdate {
+  claude_enabled?: boolean;
+  gemini_enabled?: boolean;
+  default_agent?: string;
+  claude_model?: string;
+  gemini_model?: string;
+  memory_enabled?: boolean;
+  observations_enabled?: boolean;
+  diary_enabled?: boolean;
+  patterns_enabled?: boolean;
+  checkpoints_enabled?: boolean;
+  context_injection_enabled?: boolean;
+  component_source?: string;
+}
+
+export async function getAgentConfig(projectId: string): Promise<ProjectAgentConfig> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
+    errorMessage: "Failed to fetch agent config",
+  });
+}
+
+export async function updateAgentConfig(
+  projectId: string,
+  config: ProjectAgentConfigUpdate
+): Promise<ProjectAgentConfig> {
+  const res = await fetch(`/api/projects/${projectId}/agents`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error("Failed to update agent config");
+  return res.json();
+}
+
 export async function createProject(project: {
   id: string;
   name: string;
