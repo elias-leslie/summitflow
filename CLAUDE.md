@@ -28,9 +28,9 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Claim work | `st update <id> --status running` |
 | Complete work | `st close <id> --reason "Done"` |
 | Force close | `st close <id> --force` (bypass criteria) |
-| List features | `st feature list` |
-| Show feature | `st feature show FEAT-001` |
-| Start feature | `st feature start FEAT-001` |
+| List capabilities | `st capability list` |
+| Show capability | `st capability show <id>` |
+| Verify capability | `st capability verify <id>` |
 | **End session** | See "Landing the Plane" in AGENTS.md |
 | Start services | `bash ~/summitflow/scripts/start.sh` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
@@ -40,7 +40,7 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Type check | `pyright backend/app/` (cross-project capable) |
 | Refactor workflow | `/refactor_it` (inventory, plan, execute) |
 
-**Task Types:** `feature` (linked to feature, validates criteria), `bug`, `task`
+**Task Types:** `feature` (feature implementation), `bug`, `task`
 
 **Global Hooks:** SessionStart (context injection), PreToolUse (git discipline), PostToolUse (observation capture), Stop (context monitoring)
 
@@ -201,7 +201,7 @@ bash ~/summitflow/scripts/start.sh
 | Document | Purpose |
 |----------|---------|
 | [AGENTS.md](AGENTS.md) | Task tracking, workflow |
-| [docs/workflow-guide.md](docs/workflow-guide.md) | SummitFlow Features/Tasks workflow |
+| [docs/workflow-guide.md](docs/workflow-guide.md) | SummitFlow Capabilities/Tasks workflow |
 | `~/.claude/docs/task-reference.md` | Tasks CLI reference (global) |
 | `.claude/rules/` | Project-specific rules |
 | `~/.claude/rules/` | Global rules (tasks-workflow, summitflow-vs-app) |
