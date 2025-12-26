@@ -40,8 +40,20 @@ class CapabilityResponse(BaseModel):
     priority: int
     status: str
     locked_at: str | None = None
+    verification_url: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class VerifyResult(BaseModel):
+    """Response model for capability verification result."""
+
+    capability_id: str
+    capability_status: str
+    tests_total: int
+    tests_passed: int
+    tests_failed: int
+    evidence_captured: bool
 
 
 class CapabilityWithTestsResponse(CapabilityResponse):
@@ -146,3 +158,51 @@ async def delete_capability(project_id: str, capability_id: str) -> dict[str, st
         raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
 
     return {"status": "deleted", "capability_id": capability_id}
+
+
+@router.post("/{project_id}/capabilities/{capability_id}/verify", response_model=VerifyResult)
+async def verify_capability(project_id: str, capability_id: str) -> VerifyResult:
+    """Verify a capability by checking its linked tests.
+
+    Returns the verification result including test counts and evidence status.
+    If all tests pass and verification_url is set, captures evidence.
+    """
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    # Get linked tests for this capability
+    tests = tests_storage.get_tests_for_capability(project_id, capability_id)
+
+    # Count test results based on last_result
+    tests_passed = 0
+    tests_failed = 0
+    for test in tests:
+        result = test.get("last_result")
+        if result == "passed":
+            tests_passed += 1
+        elif result in ("failed", "error", "timeout"):
+            tests_failed += 1
+        # If result is None/null, test hasn't been run yet (counts as failed)
+        else:
+            tests_failed += 1
+
+    tests_total = len(tests)
+    evidence_captured = False
+
+    # Note: Evidence capture is deferred - requires criterion_id integration
+    # For now, verification_url is stored but evidence capture happens via
+    # the existing /evidence/capture endpoint when needed.
+    # TODO: Add criterion-level or capability-level evidence capture
+
+    # Get latest capability status (may have been updated by test runs)
+    capability = storage.get_capability(project_id, capability_id)
+
+    return VerifyResult(
+        capability_id=capability_id,
+        capability_status=capability["status"] if capability else "pending",
+        tests_total=tests_total,
+        tests_passed=tests_passed,
+        tests_failed=tests_failed,
+        evidence_captured=evidence_captured,
+    )
