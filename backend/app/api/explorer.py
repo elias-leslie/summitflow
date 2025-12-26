@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from ..services import explorer
+from ..storage import explorer as explorer_storage
 
 router = APIRouter()
 
@@ -173,6 +174,21 @@ async def trigger_scan(
         + (f" (type: {type})" if type else " (all types)"),
         "type": type,
     }
+
+
+@router.get("/{project_id}/explorer/entry/{entry_id}/capabilities")
+async def get_entry_capabilities(
+    project_id: str,
+    entry_id: int,
+) -> list[dict[str, Any]]:
+    """Get all capabilities linked to an explorer entry.
+
+    Returns list of capabilities with link info.
+    """
+    _validate_project_exists(project_id)
+
+    caps = explorer_storage.get_entry_capabilities(entry_id)
+    return caps
 
 
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")

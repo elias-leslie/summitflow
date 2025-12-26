@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..storage import capabilities as storage
+from ..storage import explorer as explorer_storage
 from ..storage import tests as tests_storage
 
 router = APIRouter()
@@ -54,6 +55,22 @@ class VerifyResult(BaseModel):
     tests_passed: int
     tests_failed: int
     evidence_captured: bool
+
+
+class ExplorerLinkCreate(BaseModel):
+    """Request model for creating an explorer link."""
+
+    explorer_entry_id: int
+    link_type: str
+
+
+class ExplorerLinkResponse(BaseModel):
+    """Response model for an explorer link."""
+
+    link_id: int
+    link_type: str
+    link_created_at: str | None = None
+    entry: dict
 
 
 class CapabilityWithTestsResponse(CapabilityResponse):
@@ -206,3 +223,68 @@ async def verify_capability(project_id: str, capability_id: str) -> VerifyResult
         tests_failed=tests_failed,
         evidence_captured=evidence_captured,
     )
+
+
+# --- Explorer Link Endpoints ---
+
+
+@router.post(
+    "/{project_id}/capabilities/{capability_id}/explorer-links",
+    response_model=dict,
+)
+async def create_explorer_link(
+    project_id: str, capability_id: str, body: ExplorerLinkCreate
+) -> dict:
+    """Create a link between a capability and an explorer entry."""
+    # Verify capability exists
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    try:
+        link_id = explorer_storage.create_capability_link(
+            project_id=project_id,
+            explorer_entry_id=body.explorer_entry_id,
+            capability_id=capability["id"],
+            link_type=body.link_type,
+        )
+        return {"link_id": link_id, "status": "created"}
+    except Exception as e:
+        if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+            raise HTTPException(
+                status_code=409,
+                detail="Link already exists",
+            ) from e
+        if "violates foreign key constraint" in str(e).lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Explorer entry {body.explorer_entry_id} not found",
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/{project_id}/capabilities/{capability_id}/explorer-links/{link_id}")
+async def delete_explorer_link(project_id: str, capability_id: str, link_id: int) -> dict:
+    """Delete a link between a capability and an explorer entry."""
+    deleted = explorer_storage.delete_capability_link(link_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Link {link_id} not found")
+
+    return {"status": "deleted", "link_id": link_id}
+
+
+@router.get(
+    "/{project_id}/capabilities/{capability_id}/explorer-entries",
+    response_model=list[ExplorerLinkResponse],
+)
+async def get_capability_explorer_entries(
+    project_id: str, capability_id: str
+) -> list[ExplorerLinkResponse]:
+    """Get all explorer entries linked to a capability."""
+    # Verify capability exists
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    links = explorer_storage.get_capability_links(capability["id"])
+    return [ExplorerLinkResponse(**link) for link in links]
