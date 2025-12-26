@@ -60,9 +60,132 @@ TIER_TEST_TYPES: dict[str, tuple[str, ...]] = {
 }
 
 
+@dataclass(frozen=True)
+class TestToolSpec:
+    """Configuration for a test tool (pytest, mypy, ruff, vitest)."""
+
+    name: str
+    root_attr: str  # "backend_root" or "frontend_root"
+    default_path: str
+    command_template: str  # {tool_path} and {test_path} placeholders
+    default_timeout: int = 60
+    use_stderr_as_error: bool = False  # If True, use stderr; else use combined output
+
+
+# Tool specifications for generic test runner
+TEST_TOOL_SPECS: dict[str, TestToolSpec] = {
+    "pytest": TestToolSpec(
+        name="pytest",
+        root_attr="backend_root",
+        default_path="tests/",
+        command_template="{tool_path} {test_path} -v --tb=no -q",
+        default_timeout=60,
+        use_stderr_as_error=True,
+    ),
+    "mypy": TestToolSpec(
+        name="mypy",
+        root_attr="backend_root",
+        default_path="app/",
+        command_template="{tool_path} {test_path} --no-error-summary",
+        default_timeout=120,
+        use_stderr_as_error=False,
+    ),
+    "ruff": TestToolSpec(
+        name="ruff",
+        root_attr="backend_root",
+        default_path="app/",
+        command_template="ruff check {test_path} --output-format=concise",
+        default_timeout=60,
+        use_stderr_as_error=False,
+    ),
+    "vitest": TestToolSpec(
+        name="vitest",
+        root_attr="frontend_root",
+        default_path="",
+        command_template="{tool_path} vitest run --reporter=dot {test_path}",
+        default_timeout=120,
+        use_stderr_as_error=True,
+    ),
+}
+
+
 def _combine_outputs(stdout: str, stderr: str) -> str:
     """Combine stdout and stderr into a single output string."""
     return stdout + ("\n" + stderr if stderr else "")
+
+
+def _get_tool_path(tool_name: str, config: ProjectConfig) -> str:
+    """Get the executable path for a test tool."""
+    if tool_name == "pytest":
+        return config.pytest_path
+    elif tool_name == "mypy":
+        # Derive mypy path from pytest path (same venv)
+        return config.pytest_path.replace("pytest", "mypy")
+    elif tool_name == "vitest":
+        return config.node_path
+    else:
+        # For ruff and others, use tool name directly
+        return tool_name
+
+
+async def _run_generic_test(
+    tool_name: str,
+    test: dict[str, Any],
+    config: ProjectConfig,
+) -> TestResult:
+    """Run a generic test using TestToolSpec configuration.
+
+    Args:
+        tool_name: Name of the tool (pytest, mypy, ruff, vitest)
+        test: Test dict from registry
+        config: Project configuration
+
+    Returns:
+        TestResult with pass/fail status.
+    """
+    spec = TEST_TOOL_SPECS.get(tool_name)
+    if not spec:
+        return TestResult(
+            passed=False,
+            duration_ms=0,
+            output="",
+            error=f"Unknown test tool: {tool_name}",
+        )
+
+    # Build working directory
+    root_dir = getattr(config, spec.root_attr)
+    working_dir = os.path.join(config.root_path, root_dir)
+
+    # Get test path from command or name, fallback to default
+    test_path = test.get("command") or test.get("name") or spec.default_path
+
+    # Build command from template
+    tool_path = _get_tool_path(tool_name, config)
+    command = spec.command_template.format(tool_path=tool_path, test_path=test_path)
+
+    timeout = test.get("timeout_seconds", spec.default_timeout)
+
+    exit_code, stdout, stderr = await _run_command(
+        command=command,
+        working_dir=working_dir,
+        timeout=timeout,
+    )
+
+    output = _combine_outputs(stdout, stderr)
+    passed = exit_code == 0
+
+    # Determine error value based on spec
+    if not passed:
+        error = stderr if spec.use_stderr_as_error and stderr else output
+    else:
+        error = None
+
+    return TestResult(
+        passed=passed,
+        duration_ms=0,  # Will be set by caller
+        output=_truncate_output(output),
+        error=error,
+    )
 
 
 @dataclass
@@ -631,158 +754,28 @@ async def run_tests(
 
 
 # ============================================================
-# Type-Specific Runners
+# Type-Specific Runners (thin wrappers around _run_generic_test)
 # ============================================================
 
 
 async def run_pytest(test: dict[str, Any], config: ProjectConfig) -> TestResult:
-    """Run a pytest test.
-
-    Args:
-        test: Test dict from registry
-        config: Project configuration
-
-    Returns:
-        TestResult with pass/fail status.
-    """
-    import os
-
-    # Build working directory
-    working_dir = os.path.join(config.root_path, config.backend_root)
-
-    # Build command - minimal output for token efficiency
-    # Use test command if specified, otherwise use test name as path
-    test_path = test["command"] or test["name"]
-    command = f"{config.pytest_path} {test_path} -v --tb=no -q"
-
-    timeout = test.get("timeout_seconds", 60)
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-    output = _combine_outputs(stdout, stderr)
-    passed = exit_code == 0
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,  # Will be set by caller
-        output=_truncate_output(output),
-        error=stderr if not passed and stderr else None,
-    )
+    """Run a pytest test."""
+    return await _run_generic_test("pytest", test, config)
 
 
 async def run_mypy(test: dict[str, Any], config: ProjectConfig) -> TestResult:
-    """Run mypy type checking.
-
-    Args:
-        test: Test dict from registry
-        config: Project configuration
-
-    Returns:
-        TestResult with pass/fail status.
-    """
-    import os
-
-    working_dir = os.path.join(config.root_path, config.backend_root)
-
-    # Use test command if specified, otherwise default path
-    test_path = test["command"] or "app/"
-    command = f"{config.pytest_path.replace('pytest', 'mypy')} {test_path} --no-error-summary"
-
-    timeout = test.get("timeout_seconds", 120)
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-    output = _combine_outputs(stdout, stderr)
-    passed = exit_code == 0
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,
-        output=_truncate_output(output),
-        error=output if not passed else None,
-    )
+    """Run mypy type checking."""
+    return await _run_generic_test("mypy", test, config)
 
 
 async def run_ruff(test: dict[str, Any], config: ProjectConfig) -> TestResult:
-    """Run ruff linting.
-
-    Args:
-        test: Test dict from registry
-        config: Project configuration
-
-    Returns:
-        TestResult with pass/fail status.
-    """
-    import os
-
-    working_dir = os.path.join(config.root_path, config.backend_root)
-
-    # Use test command if specified, otherwise default path
-    test_path = test["command"] or "app/"
-    command = f"ruff check {test_path} --output-format=concise"
-
-    timeout = test.get("timeout_seconds", 60)
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-    output = _combine_outputs(stdout, stderr)
-    passed = exit_code == 0
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,
-        output=_truncate_output(output),
-        error=output if not passed else None,
-    )
+    """Run ruff linting."""
+    return await _run_generic_test("ruff", test, config)
 
 
 async def run_vitest(test: dict[str, Any], config: ProjectConfig) -> TestResult:
-    """Run vitest JavaScript/TypeScript tests.
-
-    Args:
-        test: Test dict from registry
-        config: Project configuration
-
-    Returns:
-        TestResult with pass/fail status.
-    """
-    import os
-
-    working_dir = os.path.join(config.root_path, config.frontend_root)
-
-    # Use test command if specified, otherwise use test name as path
-    test_path = test["command"] or test["name"]
-    command = f"{config.node_path} vitest run --reporter=dot {test_path}"
-
-    timeout = test.get("timeout_seconds", 120)
-
-    exit_code, stdout, stderr = await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-    output = _combine_outputs(stdout, stderr)
-    passed = exit_code == 0
-
-    return TestResult(
-        passed=passed,
-        duration_ms=0,
-        output=_truncate_output(output),
-        error=stderr if not passed and stderr else None,
-    )
+    """Run vitest JavaScript/TypeScript tests."""
+    return await _run_generic_test("vitest", test, config)
 
 
 async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResult:
