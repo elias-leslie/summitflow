@@ -46,6 +46,65 @@ IGNORE_PATTERNS = frozenset({
     ".mypy_cache",
 })
 
+# File type to glob pattern mapping for code search
+FILE_TYPE_MAP: dict[str, str] = {
+    "py": "*.py",
+    "ts": "*.ts",
+    "tsx": "*.tsx",
+    "js": "*.js",
+    "jsx": "*.jsx",
+    "json": "*.json",
+    "sql": "*.sql",
+    "md": "*.md",
+}
+
+
+# =============================================================================
+# Search Helpers
+# =============================================================================
+
+
+def _build_grep_command(pattern: str, search_path: str, file_type: str = "") -> list[str]:
+    """Build grep command with appropriate flags.
+
+    Args:
+        pattern: Search pattern (regex)
+        search_path: Path to search in
+        file_type: Optional file type filter (py, ts, etc.)
+
+    Returns:
+        Command list for subprocess.run()
+    """
+    # Use grep -r for recursive, -n for line numbers, -E for extended regex
+    if file_type:
+        glob_pattern = FILE_TYPE_MAP.get(file_type, f"*.{file_type}")
+        cmd = ["grep", "-r", "-n", "-E", f"--include={glob_pattern}"]
+    else:
+        cmd = ["grep", "-r", "-n", "-E", "--include=*"]
+    cmd.extend([pattern, search_path])
+    return cmd
+
+
+def _limit_search_results(output: str, max_results: int = MAX_SEARCH_RESULTS) -> str:
+    """Limit search results to max lines.
+
+    Args:
+        output: Raw output string
+        max_results: Maximum lines to include
+
+    Returns:
+        Truncated output with count of omitted lines.
+    """
+    if not output.strip():
+        return "No matches found"
+
+    lines = output.strip().split("\n")
+    if len(lines) > max_results:
+        result = "\n".join(lines[:max_results])
+        result += f"\n... ({len(lines) - max_results} more results)"
+        return result
+    return output.strip()
+
 
 # =============================================================================
 # Tree Rendering Helpers
@@ -750,7 +809,7 @@ class RoundtableToolExecutor:
             return ToolResult(False, "", f"Failed to read file: {e}")
 
     def _execute_search_code(self, params: dict[str, Any]) -> ToolResult:
-        """Execute search_code tool using ripgrep."""
+        """Execute search_code tool using grep."""
         pattern, err = self._require_param(params, "pattern")
         if err:
             return err
@@ -763,34 +822,10 @@ class RoundtableToolExecutor:
         if not is_valid:
             return ToolResult(False, "", result)
 
-        # Build grep command (more universally available than ripgrep)
-        # Use grep -r for recursive, -n for line numbers, -E for extended regex
-        cmd = ["grep", "-r", "-n", "-E", "--include=*"]
-
-        # Add file type filter
-        if file_type:
-            type_map = {
-                "py": "*.py",
-                "ts": "*.ts",
-                "tsx": "*.tsx",
-                "js": "*.js",
-                "jsx": "*.jsx",
-                "json": "*.json",
-                "sql": "*.sql",
-                "md": "*.md",
-            }
-            glob_pattern = type_map.get(file_type, f"*.{file_type}")
-            cmd = ["grep", "-r", "-n", "-E", f"--include={glob_pattern}"]
-
-        cmd.extend([pattern, result])
+        cmd = _build_grep_command(pattern, result, file_type)
 
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             # grep returns 1 for no matches, 0 for matches
             if proc.returncode == 1 and not proc.stdout:
@@ -799,15 +834,7 @@ class RoundtableToolExecutor:
             if proc.returncode not in (0, 1):
                 return ToolResult(False, "", f"Search failed: {proc.stderr}")
 
-            # Limit output
-            lines = proc.stdout.strip().split("\n")
-            if len(lines) > MAX_SEARCH_RESULTS:
-                output = "\n".join(lines[:MAX_SEARCH_RESULTS])
-                output += f"\n... ({len(lines) - MAX_SEARCH_RESULTS} more results)"
-            else:
-                output = proc.stdout.strip()
-
-            return ToolResult(True, output or "No matches found")
+            return ToolResult(True, _limit_search_results(proc.stdout))
         except subprocess.TimeoutExpired:
             return ToolResult(False, "", "Search timed out")
         except Exception as e:
