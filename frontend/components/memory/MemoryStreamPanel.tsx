@@ -28,7 +28,6 @@ import {
   Filter,
   X,
   Database,
-  Layers,
   Loader2,
   Zap,
 } from "lucide-react";
@@ -521,6 +520,7 @@ export function MemoryStreamPanel({
                   const isExpanding = expandingIds.has(item.id);
                   const expandedContent = expandedContents.get(item.id);
 
+                  const TypeIcon = getContextTypeIcon(item.type);
                   return (
                     <Card
                       key={item.id}
@@ -532,9 +532,9 @@ export function MemoryStreamPanel({
                           <div className="flex items-center gap-2">
                             <Badge
                               variant="outline"
-                              className={clsx("text-xs gap-1", getTypeColor(item.type))}
+                              className={clsx("text-xs gap-1", getContextTypeColor(item.type))}
                             >
-                              {getTypeIcon(item.type)}
+                              <TypeIcon className="h-3.5 w-3.5" />
                               {item.type}
                             </Badge>
                           </div>
