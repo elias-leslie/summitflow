@@ -278,17 +278,15 @@ export async function resolvePermission(
   permissionId: string,
   approved: boolean
 ): Promise<void> {
-  const res = await fetch(
+  await fetchWithErrorHandling(
     `/api/projects/${projectId}/roundtable/sessions/${sessionId}/permissions/${permissionId}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approved }),
+      errorMessage: "Failed to resolve permission",
     }
   );
-  if (!res.ok) {
-    await throwFromResponse(res, "Failed to resolve permission");
-  }
 }
 
 /**
