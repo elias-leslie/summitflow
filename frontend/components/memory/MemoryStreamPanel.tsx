@@ -42,6 +42,7 @@ import { ContextItemCard, type ContextItem, type ExpandedContent } from "./Conte
 import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 import { useObservationFilter } from "@/lib/hooks/useObservationFilter";
+import { useContextPanel, type ContextIndex } from "@/lib/hooks/useContextPanel";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
   observation_type: ObservationType;
@@ -52,19 +53,6 @@ interface MemoryStreamPanelProps {
   projectId: string;
   sessionId?: string;
   className?: string;
-}
-
-// Context index types
-interface ContextIndex {
-  project_id: string;
-  session_id: string | null;
-  items: ContextItem[];
-  item_count: number;
-  index_tokens: number;
-  full_tokens: number;
-  reduction_pct: number;
-  from_cache: boolean;
-  instructions: string;
 }
 
 // Token limit for display (configurable)
@@ -116,13 +104,17 @@ export function MemoryStreamPanel({
   // Tab state
   const [activeTab, setActiveTab] = useState<"stream" | "context">("stream");
 
-  // Context tab state
-  const [contextIndex, setContextIndex] = useState<ContextIndex | null>(null);
-  const [contextLoading, setContextLoading] = useState(false);
-  const [contextError, setContextError] = useState<string | null>(null);
-  const [expandedContextIds, setExpandedContextIds] = useState<Set<string>>(new Set());
-  const [expandedContents, setExpandedContents] = useState<Map<string, ExpandedContent>>(new Map());
-  const [expandingIds, setExpandingIds] = useState<Set<string>>(new Set());
+  // Context panel state
+  const {
+    contextIndex,
+    contextLoading,
+    contextError,
+    expandedContextIds,
+    expandedContents,
+    expandingIds,
+    loadContextIndex,
+    expandContextItem,
+  } = useContextPanel({ projectId, sessionId, activeTab });
 
   // Load initial observations
   useEffect(() => {
@@ -178,87 +170,6 @@ export function MemoryStreamPanel({
 
     return true;
   });
-
-  // Load context index
-  const loadContextIndex = useCallback(async () => {
-    setContextLoading(true);
-    setContextError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (sessionId) {
-        params.set("session_id", sessionId);
-      }
-
-      const response = await fetch(
-        `/api/projects/${projectId}/context/index?${params}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to load context: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setContextIndex(data);
-    } catch (err) {
-      setContextError(err instanceof Error ? err.message : "Failed to load context");
-    } finally {
-      setContextLoading(false);
-    }
-  }, [projectId, sessionId]);
-
-  // Load context when switching to Context tab
-  useEffect(() => {
-    if (activeTab === "context" && !contextIndex && !contextLoading) {
-      loadContextIndex();
-    }
-  }, [activeTab, contextIndex, contextLoading, loadContextIndex]);
-
-  // Expand a context item
-  const expandContextItem = async (entityId: string) => {
-    // Toggle if already expanded
-    if (expandedContextIds.has(entityId)) {
-      setExpandedContextIds((prev) => {
-        const next = new Set(prev);
-        next.delete(entityId);
-        return next;
-      });
-      return;
-    }
-
-    // Check if already have the content
-    if (expandedContents.has(entityId)) {
-      setExpandedContextIds((prev) => new Set(prev).add(entityId));
-      return;
-    }
-
-    // Fetch the content
-    setExpandingIds((prev) => new Set(prev).add(entityId));
-
-    try {
-      const response = await fetch(`/api/projects/${projectId}/context/expand`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entity_id: entityId }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to expand: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setExpandedContents((prev) => new Map(prev).set(entityId, data));
-      setExpandedContextIds((prev) => new Set(prev).add(entityId));
-    } catch (err) {
-      console.error("Failed to expand context item:", err);
-    } finally {
-      setExpandingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(entityId);
-        return next;
-      });
-    }
-  };
 
   return (
     <div className={clsx("flex flex-col h-full", className)}>
