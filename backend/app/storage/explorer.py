@@ -565,7 +565,7 @@ def delete_relationships(
     """
     # Build conditions dynamically
     conditions = ["project_id = %s"]
-    params: list[str] = [project_id]
+    params: list[Any] = [project_id]
 
     if source_type:
         conditions.append("source_type = %s")
