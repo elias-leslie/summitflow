@@ -39,9 +39,8 @@ import {
   CONCEPT_COLORS,
   OBSERVATION_TYPES,
   CONCEPT_TYPES,
-  getContextTypeIcon,
-  getContextTypeColor,
 } from "@/lib/formatters/observation-colors";
+import { ContextItemCard, type ContextItem, type ExpandedContent } from "./ContextItemCard";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
@@ -56,15 +55,6 @@ interface MemoryStreamPanelProps {
 }
 
 // Context index types
-interface ContextItem {
-  id: string;
-  type: string;
-  title: string;
-  summary?: string;
-  token_estimate: number;
-  created_at?: string;
-}
-
 interface ContextIndex {
   project_id: string;
   session_id: string | null;
@@ -75,13 +65,6 @@ interface ContextIndex {
   reduction_pct: number;
   from_cache: boolean;
   instructions: string;
-}
-
-interface ExpandedContent {
-  entity_id: string;
-  type: string;
-  content: Record<string, unknown>;
-  token_count: number;
 }
 
 // Token limit for display (configurable)
@@ -515,63 +498,16 @@ export function MemoryStreamPanel({
 
               {/* Context items */}
               <div className="space-y-2">
-                {contextIndex.items.map((item) => {
-                  const isExpanded = expandedContextIds.has(item.id);
-                  const isExpanding = expandingIds.has(item.id);
-                  const expandedContent = expandedContents.get(item.id);
-
-                  const TypeIcon = getContextTypeIcon(item.type);
-                  return (
-                    <Card
-                      key={item.id}
-                      className="overflow-hidden cursor-pointer"
-                      onClick={() => expandContextItem(item.id)}
-                    >
-                      <CardHeader className="p-3 pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={clsx("text-xs gap-1", getContextTypeColor(item.type))}
-                            >
-                              <TypeIcon className="h-3.5 w-3.5" />
-                              {item.type}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <span>~{item.token_estimate} tokens</span>
-                            {isExpanding ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : isExpanded ? (
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            )}
-                          </div>
-                        </div>
-                        <CardTitle className="text-sm leading-tight mt-1.5">
-                          {item.title}
-                        </CardTitle>
-                        {item.summary && (
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
-                            {item.summary}
-                          </p>
-                        )}
-                      </CardHeader>
-
-                      {isExpanded && expandedContent && (
-                        <CardContent className="p-3 pt-0 border-t border-slate-200 dark:border-slate-800">
-                          <div className="text-xs text-slate-400 mb-2">
-                            Loaded {expandedContent.token_count} tokens
-                          </div>
-                          <pre className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded p-2 overflow-x-auto whitespace-pre-wrap">
-                            {JSON.stringify(expandedContent.content, null, 2)}
-                          </pre>
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
+                {contextIndex.items.map((item) => (
+                  <ContextItemCard
+                    key={item.id}
+                    item={item}
+                    isExpanded={expandedContextIds.has(item.id)}
+                    isExpanding={expandingIds.has(item.id)}
+                    expandedContent={expandedContents.get(item.id)}
+                    onExpand={expandContextItem}
+                  />
+                ))}
               </div>
 
               {/* Instructions */}
