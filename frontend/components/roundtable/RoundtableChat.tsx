@@ -16,9 +16,6 @@ import { Textarea } from "../ui/textarea";
 import {
   Send,
   Loader2,
-  User,
-  Sparkles,
-  Bot,
   WifiOff,
   CircleDot,
   Paperclip,
@@ -36,6 +33,7 @@ import {
   Target,
   ChevronDown,
 } from "lucide-react";
+import { AGENT_STYLES, type AgentType, type AgentStyle } from "@/lib/constants/agentStyles";
 import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
 import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
 import { SpecPreview, GeneratedSpec, SpecComponent, SpecCapability, SpecTest } from "./SpecPreview";
@@ -126,44 +124,6 @@ interface RoundtableChatProps {
   onAgentConfigChange?: (config: AgentConfig) => void;
 }
 
-// Agent styling configuration
-const agentConfig: Record<
-  AgentType,
-  {
-    name: string;
-    icon: typeof User;
-    bgColor: string;
-    textColor: string;
-    borderColor: string;
-    iconBg: string;
-  }
-> = {
-  user: {
-    name: "You",
-    icon: User,
-    bgColor: "bg-slate-800/50",
-    textColor: "text-slate-200",
-    borderColor: "border-slate-700",
-    iconBg: "bg-slate-700",
-  },
-  claude: {
-    name: "Claude",
-    icon: Sparkles,
-    bgColor: "bg-amber-950/30",
-    textColor: "text-amber-200",
-    borderColor: "border-amber-900/50",
-    iconBg: "bg-amber-900/50",
-  },
-  gemini: {
-    name: "Gemini",
-    icon: Bot,
-    bgColor: "bg-blue-950/30",
-    textColor: "text-blue-200",
-    borderColor: "border-blue-900/50",
-    iconBg: "bg-blue-900/50",
-  },
-};
-
 function FilePreview({
   attachment,
   onRemove,
@@ -248,7 +208,7 @@ function MessageBubble({
   message: ChatMessage;
   isLast: boolean;
 }) {
-  const config = agentConfig[message.agent];
+  const config = AGENT_STYLES[message.agent];
   const Icon = config.icon;
   const isUser = message.agent === "user";
 
