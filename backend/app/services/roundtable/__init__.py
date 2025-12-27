@@ -14,7 +14,6 @@ Main components:
 
 # Import from executor module
 from .executor import (
-    ALLOWED_BASES,
     MAX_FILE_SIZE,
     MAX_SEARCH_RESULTS,
     READ_TOOL_NAMES,
@@ -59,6 +58,7 @@ from .tools import (
     WRITE_TOOLS,
     ToolCategory,
 )
+from .validation import ALLOWED_BASES
 
 __all__ = [
     "ALLOWED_BASES",

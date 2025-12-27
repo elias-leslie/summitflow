@@ -25,6 +25,11 @@ from .tools.categories import (
     READ_ONLY_TOOLS,
     WRITE_TOOLS,
 )
+from .validation import (
+    require_param,
+    require_valid_path,
+    validate_file_exists,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +38,6 @@ MAX_FILE_SIZE = 5 * 1024 * 1024
 
 # Maximum lines to return from search
 MAX_SEARCH_RESULTS = 100
-
-# Allowed base directories for file access
-ALLOWED_BASES = [
-    "/home/kasadis/summitflow",
-    "/home/kasadis/portfolio-ai",
-]
 
 # Ignore patterns for directory tree rendering
 IGNORE_PATTERNS = frozenset(
@@ -210,37 +209,6 @@ class RoundtableToolExecutor:
         """Check if write access is enabled."""
         return "write" in self.enabled_categories
 
-    def _require_param(self, params: dict[str, Any], key: str) -> tuple[str, ToolResult | None]:
-        """Extract a required parameter, returning error ToolResult if missing.
-
-        Returns:
-            (value, None) on success, ("", ToolResult) on failure.
-        """
-        value = params.get(key, "")
-        if not value:
-            return "", ToolResult(False, "", f"{key} is required")
-        return value, None
-
-    def _validate_file_exists(
-        self, path: Path, file_path: str, *, is_dir_error: str | None = None
-    ) -> ToolResult | None:
-        """Validate file exists and is a regular file.
-
-        Args:
-            path: Resolved Path object.
-            file_path: Original file path string for error messages.
-            is_dir_error: Custom error message if path is a directory. Defaults to "Not a file".
-
-        Returns:
-            None on success, ToolResult with error on failure.
-        """
-        if not path.exists():
-            return ToolResult(False, "", f"File not found: {file_path}")
-        if not path.is_file():
-            msg = is_dir_error or "Not a file"
-            return ToolResult(False, "", f"{msg}: {file_path}")
-        return None
-
     def enable_write_access(self) -> None:
         """Enable write access tools."""
         if "write" not in self.enabled_categories:
@@ -305,73 +273,44 @@ class RoundtableToolExecutor:
                 error=f"Tool execution failed: {e}",
             )
 
-    def _validate_path(self, path: str, default_base: str | None = None) -> tuple[bool, str]:
-        """Validate that a path is within allowed directories.
-
-        Handles both absolute and relative paths. Relative paths are resolved
-        against the default_base (typically /home/kasadis/summitflow).
-
-        Returns:
-            (is_valid, resolved_path or error_message)
-        """
-        try:
-            path_obj = Path(path)
-
-            # If relative path, try to resolve against allowed bases
-            if not path_obj.is_absolute():
-                # Try default base first
-                if default_base:
-                    candidate = Path(default_base) / path
-                    if candidate.exists():
-                        path_obj = candidate
-                    else:
-                        # Try other allowed bases
-                        for base in ALLOWED_BASES:
-                            candidate = Path(base) / path
-                            if candidate.exists():
-                                path_obj = candidate
-                                break
-                else:
-                    # Try all allowed bases
-                    for base in ALLOWED_BASES:
-                        candidate = Path(base) / path
-                        if candidate.exists():
-                            path_obj = candidate
-                            break
-
-            # Resolve to absolute path
-            resolved = path_obj.resolve()
-            resolved_str = str(resolved)
-
-            # Check against allowed bases
-            all_allowed = ALLOWED_BASES + self.allowed_paths
-            for base in all_allowed:
-                if resolved_str.startswith(base):
-                    return True, resolved_str
-
-            return False, f"Path not in allowed directories: {path}"
-        except Exception as e:
-            return False, f"Invalid path: {e}"
-
     def _require_valid_path(
         self, path: str, default_base: str | None = None
     ) -> tuple[Path, ToolResult | None]:
         """Validate path and return Path object or error ToolResult.
 
-        Convenience wrapper around _validate_path that returns:
-            (Path, None) on success - path is always valid
-            (Path(""), ToolResult) on failure - caller should check err first
+        Wrapper around validation.require_valid_path that converts to ToolResult.
 
         Usage:
             path, err = self._require_valid_path(file_path)
             if err:
                 return err
-            # Use path directly - guaranteed to be valid after err check
         """
-        is_valid, result = self._validate_path(path, default_base)
-        if not is_valid:
-            return Path(""), ToolResult(False, "", result)
-        return Path(result), None
+        path_obj, error = require_valid_path(path, default_base, self.allowed_paths)
+        if error:
+            return Path(""), ToolResult(False, "", error)
+        return path_obj, None  # type: ignore[return-value]
+
+    def _require_param(self, params: dict[str, Any], key: str) -> tuple[str, ToolResult | None]:
+        """Extract required parameter, returning ToolResult on error.
+
+        Wrapper around validation.require_param that converts to ToolResult.
+        """
+        value, error = require_param(params, key)
+        if error:
+            return "", ToolResult(False, "", error)
+        return value, None
+
+    def _validate_file_exists(
+        self, path: Path, file_path: str, *, is_dir_error: str | None = None
+    ) -> ToolResult | None:
+        """Validate file exists, returning ToolResult on error.
+
+        Wrapper around validation.validate_file_exists that converts to ToolResult.
+        """
+        error = validate_file_exists(path, file_path, is_dir_error=is_dir_error)
+        if error:
+            return ToolResult(False, "", error)
+        return None
 
     def _execute_read_file(self, params: dict[str, Any]) -> ToolResult:
         """Execute read_file tool."""
