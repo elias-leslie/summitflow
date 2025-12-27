@@ -41,6 +41,38 @@ from ..services.evidence_manager import (
 
 logger = get_logger(__name__)
 
+
+def _format_evidence_record(e: dict[str, Any], *, project_id: str | None = None) -> dict[str, Any]:
+    """Convert snake_case evidence record to camelCase for API response.
+
+    Args:
+        e: Evidence record from database
+        project_id: If provided, includes screenshotUrl in response
+    """
+    result = {
+        "id": e["id"],
+        "evidenceId": e.get("evidence_id"),
+        "artifactId": e.get("evidence_id"),  # Alias for legacy compatibility
+        "capabilityId": e["capability_id"],
+        "criterionId": e["criterion_id"],
+        "version": e["version"],
+        "isCurrent": e["is_current"],
+        "capturedAt": e["captured_at"],
+        "expiresAt": e["expires_at"],
+        "qualityStatus": e["quality_status"],
+        "confidence": e["confidence"],
+        "userApproved": e["user_approved"],
+        "userNotes": e["user_notes"],
+        "fileSizeBytes": e["file_size_bytes"],
+    }
+    if project_id:
+        result["screenshotUrl"] = (
+            f"/api/projects/{project_id}/evidence/{e['capability_id']}"
+            f"/{e['criterion_id']}/screenshot?version={e['version']}"
+        )
+    return result
+
+
 router = APIRouter()
 
 # Debug captures directory (project-scoped)
@@ -155,21 +187,7 @@ async def get_evidence_endpoint(
         raise HTTPException(status_code=404, detail="No evidence captured yet")
 
     result: dict[str, Any] = {
-        "artifact": {
-            "id": evidence["id"],
-            "artifactId": evidence["evidence_id"],
-            "capabilityId": evidence["capability_id"],
-            "criterionId": evidence["criterion_id"],
-            "version": evidence["version"],
-            "isCurrent": evidence["is_current"],
-            "capturedAt": evidence["captured_at"],
-            "expiresAt": evidence["expires_at"],
-            "qualityStatus": evidence["quality_status"],
-            "confidence": evidence["confidence"],
-            "userApproved": evidence["user_approved"],
-            "userNotes": evidence["user_notes"],
-            "fileSizeBytes": evidence["file_size_bytes"],
-        },
+        "artifact": _format_evidence_record(evidence),
         "versions": [],
         "screenshotUrl": f"/api/projects/{project_id}/evidence/{capability_id}/{criterion_id}/screenshot?version={evidence['version']}",
         "evidenceUrl": f"/api/projects/{project_id}/evidence/{capability_id}/{criterion_id}/data?version={evidence['version']}",
@@ -177,24 +195,7 @@ async def get_evidence_endpoint(
 
     # Get all versions
     versions = get_evidence_versions(project_id, capability_id, criterion_id)
-    result["versions"] = [
-        {
-            "id": v["id"],
-            "artifactId": v["evidence_id"],
-            "capabilityId": v["capability_id"],
-            "criterionId": v["criterion_id"],
-            "version": v["version"],
-            "isCurrent": v["is_current"],
-            "capturedAt": v["captured_at"],
-            "expiresAt": v["expires_at"],
-            "qualityStatus": v["quality_status"],
-            "confidence": v["confidence"],
-            "userApproved": v["user_approved"],
-            "userNotes": v["user_notes"],
-            "fileSizeBytes": v["file_size_bytes"],
-        }
-        for v in versions
-    ]
+    result["versions"] = [_format_evidence_record(v) for v in versions]
 
     # Include evidence data if requested
     if include_evidence:
@@ -576,25 +577,7 @@ async def list_evidence_endpoint(
     )
 
     return {
-        "evidence": [
-            {
-                "id": e["id"],
-                "evidenceId": e["evidence_id"],
-                "capabilityId": e["capability_id"],
-                "criterionId": e["criterion_id"],
-                "version": e["version"],
-                "isCurrent": e["is_current"],
-                "capturedAt": e["captured_at"],
-                "expiresAt": e["expires_at"],
-                "qualityStatus": e["quality_status"],
-                "confidence": e["confidence"],
-                "userApproved": e["user_approved"],
-                "userNotes": e["user_notes"],
-                "fileSizeBytes": e["file_size_bytes"],
-                "screenshotUrl": f"/api/projects/{project_id}/evidence/{e['capability_id']}/{e['criterion_id']}/screenshot?version={e['version']}",
-            }
-            for e in evidence_list
-        ],
+        "evidence": [_format_evidence_record(e, project_id=project_id) for e in evidence_list],
         "total": total,
         "limit": limit,
         "offset": offset,
