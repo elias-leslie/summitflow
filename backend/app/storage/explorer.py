@@ -558,32 +558,24 @@ def delete_relationships(
     Returns:
         Number of relationships deleted
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        if source_type and source_path:
-            cur.execute(
-                """
-                DELETE FROM explorer_relationships
-                WHERE project_id = %s AND source_type = %s AND source_path = %s
-                """,
-                (project_id, source_type, source_path),
-            )
-        elif source_type:
-            cur.execute(
-                """
-                DELETE FROM explorer_relationships
-                WHERE project_id = %s AND source_type = %s
-                """,
-                (project_id, source_type),
-            )
-        else:
-            cur.execute(
-                """
-                DELETE FROM explorer_relationships
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
+    # Build conditions dynamically
+    conditions = ["project_id = %s"]
+    params: list[str] = [project_id]
 
+    if source_type:
+        conditions.append("source_type = %s")
+        params.append(source_type)
+    if source_path:
+        conditions.append("source_path = %s")
+        params.append(source_path)
+
+    where_clause = _build_where_clause(conditions)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("DELETE FROM explorer_relationships WHERE {}").format(where_clause),
+            params,
+        )
         deleted = cur.rowcount
         conn.commit()
         return deleted
