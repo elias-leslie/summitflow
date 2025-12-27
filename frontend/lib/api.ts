@@ -1,7 +1,7 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
 // Build: 2025-12-26-v1
-import { fetchWithErrorHandling, getApiBase } from "./api/utils";
+import { fetchWithErrorHandling, getApiBase, throwFromResponse } from "./api/utils";
 import {
   fetchWithGenerationTimeout,
   roundtableSessionAction,
@@ -217,16 +217,15 @@ export async function updateRoundtableAgentConfig(
   sessionId: string,
   config: AgentConfigUpdate
 ): Promise<AgentConfigResponse> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/agent-config`,
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/sessions/${sessionId}/agent-config`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
+      errorMessage: "Failed to update agent config",
     }
   );
-  if (!res.ok) throw new Error("Failed to update agent config");
-  return res.json();
 }
 
 // SSE event types for roundtable streaming
@@ -280,7 +279,7 @@ export async function resolvePermission(
   approved: boolean
 ): Promise<void> {
   const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/permissions/${permissionId}`,
+    `/api/projects/${projectId}/roundtable/sessions/${sessionId}/permissions/${permissionId}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -288,8 +287,7 @@ export async function resolvePermission(
     }
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to resolve permission" }));
-    throw new Error(error.detail || "Failed to resolve permission");
+    await throwFromResponse(res, "Failed to resolve permission");
   }
 }
 
@@ -516,11 +514,10 @@ export async function getSpecFromRoundtable(
   projectId: string,
   sessionId: string
 ): Promise<{ session_id: string; spec: GeneratedSpec | null }> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/sessions/${sessionId}/spec`
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/sessions/${sessionId}/spec`,
+    { errorMessage: "Failed to get spec" }
   );
-  if (!res.ok) throw new Error("Failed to get spec");
-  return res.json();
 }
 
 export async function acceptSpecFromRoundtable(
@@ -569,22 +566,20 @@ export interface ExtractionPromptsExport {
 export async function getExtractionPrompts(
   projectId: string
 ): Promise<ExtractionPrompt[]> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts`
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/extraction-prompts`,
+    { errorMessage: "Failed to fetch extraction prompts" }
   );
-  if (!res.ok) throw new Error("Failed to fetch extraction prompts");
-  return res.json();
 }
 
 export async function getExtractionPrompt(
   projectId: string,
   promptType: ExtractionPromptType
 ): Promise<ExtractionPrompt> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
+    { errorMessage: "Failed to fetch extraction prompt" }
   );
-  if (!res.ok) throw new Error("Failed to fetch extraction prompt");
-  return res.json();
 }
 
 export async function updateExtractionPrompt(
@@ -592,8 +587,8 @@ export async function updateExtractionPrompt(
   promptType: ExtractionPromptType,
   config: ExtractionPromptUpdate
 ): Promise<ExtractionPrompt> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -602,33 +597,29 @@ export async function updateExtractionPrompt(
         primary_agent: config.primary_agent ?? "claude",
         primary_model: config.primary_model ?? "claude-sonnet-4-5",
       }),
+      errorMessage: "Failed to update extraction prompt",
     }
   );
-  if (!res.ok) throw new Error("Failed to update extraction prompt");
-  return res.json();
 }
 
 export async function deleteExtractionPrompt(
   projectId: string,
   promptType: ExtractionPromptType
 ): Promise<{ deleted: boolean; reverted_to_default: boolean; prompt_type: string }> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
-    { method: "DELETE" }
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/extraction-prompts/${promptType}`,
+    { method: "DELETE", errorMessage: "Failed to delete extraction prompt" }
   );
-  if (!res.ok) throw new Error("Failed to delete extraction prompt");
-  return res.json();
 }
 
 export async function exportExtractionPrompts(
   projectId: string,
   format: "json" = "json"
 ): Promise<ExtractionPromptsExport> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/roundtable/extraction-prompts/export?format=${format}`
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/roundtable/extraction-prompts/export?format=${format}`,
+    { errorMessage: "Failed to export extraction prompts" }
   );
-  if (!res.ok) throw new Error("Failed to export extraction prompts");
-  return res.json();
 }
 
 // =============================================================================
@@ -704,51 +695,44 @@ export async function fetchTddTests(
   projectId: string,
   type?: string
 ): Promise<TddTest[]> {
-  const params = new URLSearchParams();
-  if (type) params.append("type", type);
-
-  const queryString = params.toString();
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/tests${queryString ? `?${queryString}` : ""}`
-  );
-  if (!res.ok) throw new Error("Failed to fetch tests");
-  return res.json();
+  const query = type ? `?type=${type}` : "";
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tests${query}`, {
+    errorMessage: "Failed to fetch tests",
+  });
 }
 
 export async function fetchTddTest(
   projectId: string,
   testId: string
 ): Promise<TddTestWithHistory> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tests/${testId}`);
-  if (!res.ok) throw new Error("Failed to fetch test");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tests/${testId}`, {
+    errorMessage: "Failed to fetch test",
+  });
 }
 
 export async function runTddTest(
   projectId: string,
   testId: string
 ): Promise<TestRunResult> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tests/${testId}/run`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tests/${testId}/run`, {
     method: "POST",
+    errorMessage: "Failed to run test",
   });
-  if (!res.ok) throw new Error("Failed to run test");
-  return res.json();
 }
 
 export async function runTddTests(
   projectId: string,
   options: { testIds?: string[]; tier?: string }
 ): Promise<TestRunResult[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tests/run`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tests/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       test_ids: options.testIds,
       tier: options.tier,
     }),
+    errorMessage: "Failed to run tests",
   });
-  if (!res.ok) throw new Error("Failed to run tests");
-  return res.json();
 }
 
 export async function importTddTests(
@@ -756,16 +740,15 @@ export async function importTddTests(
   sourceType: string = "all",
   discover: boolean = true
 ): Promise<ImportTestsResult> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tests/import`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tests/import`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       source_type: sourceType,
       discover,
     }),
+    errorMessage: "Failed to import tests",
   });
-  if (!res.ok) throw new Error("Failed to import tests");
-  return res.json();
 }
 
 // =============================================================================
@@ -810,9 +793,9 @@ export interface TddCapabilityWithTests extends TddCapability {
 }
 
 export async function fetchTddComponents(projectId: string): Promise<TddComponent[]> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components`);
-  if (!res.ok) throw new Error("Failed to fetch components");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/components`, {
+    errorMessage: "Failed to fetch components",
+  });
 }
 
 export interface ComponentSuggestion {
@@ -827,11 +810,10 @@ export async function fetchComponentSuggestions(
   projectId: string,
   source: string
 ): Promise<ComponentSuggestion[]> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/tdd/component-suggestions?source=${source}`
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tdd/component-suggestions?source=${source}`,
+    { errorMessage: "Failed to fetch component suggestions" }
   );
-  if (!res.ok) throw new Error("Failed to fetch component suggestions");
-  return res.json();
 }
 
 export interface CreateComponentRequest {
@@ -846,61 +828,50 @@ export async function createTddComponent(
   projectId: string,
   component: CreateComponentRequest
 ): Promise<TddComponent> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/components`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(component),
+    errorMessage: "Failed to create component",
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || "Failed to create component");
-  }
-  return res.json();
 }
 
 export async function fetchTddComponent(
   projectId: string,
   componentId: string
 ): Promise<TddComponent> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/components/${componentId}`);
-  if (!res.ok) throw new Error("Failed to fetch component");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/components/${componentId}`, {
+    errorMessage: "Failed to fetch component",
+  });
 }
 
 export async function fetchTddCapabilities(
   projectId: string,
   componentDbId?: number
 ): Promise<TddCapability[]> {
-  const params = new URLSearchParams();
-  if (componentDbId !== undefined) params.append("component", componentDbId.toString());
-
-  const queryString = params.toString();
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/capabilities${queryString ? `?${queryString}` : ""}`
-  );
-  if (!res.ok) throw new Error("Failed to fetch capabilities");
-  return res.json();
+  const query = componentDbId !== undefined ? `?component=${componentDbId}` : "";
+  return fetchWithErrorHandling(`/api/projects/${projectId}/capabilities${query}`, {
+    errorMessage: "Failed to fetch capabilities",
+  });
 }
 
 export async function fetchTddCapability(
   projectId: string,
   capabilityId: string
 ): Promise<TddCapabilityWithTests> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/capabilities/${capabilityId}`);
-  if (!res.ok) throw new Error("Failed to fetch capability");
-  return res.json();
+  return fetchWithErrorHandling(`/api/projects/${projectId}/capabilities/${capabilityId}`, {
+    errorMessage: "Failed to fetch capability",
+  });
 }
 
 export async function lockTddCapability(
   projectId: string,
   capabilityId: string
 ): Promise<TddCapability> {
-  const res = await fetch(
-    `${getApiBase()}/api/projects/${projectId}/capabilities/${capabilityId}/lock`,
-    { method: "POST" }
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/capabilities/${capabilityId}/lock`,
+    { method: "POST", errorMessage: "Failed to lock capability" }
   );
-  if (!res.ok) throw new Error("Failed to lock capability");
-  return res.json();
 }
 
 // Re-export Prompts API
