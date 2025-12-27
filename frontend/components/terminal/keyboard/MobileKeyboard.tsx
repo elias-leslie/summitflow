@@ -18,8 +18,8 @@ interface MobileKeyboardProps {
 
 export function MobileKeyboard({
   onSend,
-  connectionStatus = "connected",
-  onReconnect,
+  connectionStatus: _connectionStatus = "connected",
+  onReconnect: _onReconnect,
   keyboardSize = "medium",
 }: MobileKeyboardProps) {
   const [ctrlActive, setCtrlActive] = useState(false);

@@ -52,13 +52,6 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const connectWebSocketRef = useRef<(() => void) | null>(null);
 
-  // Paste text into terminal
-  const handlePaste = useCallback((text: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(text);
-    }
-  }, []);
-
   // Store callback in ref to avoid re-render loops
   const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => {
