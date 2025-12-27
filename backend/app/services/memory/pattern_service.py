@@ -21,6 +21,18 @@ from app.storage import memory as memory_storage
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_iso_datetime(value: str | datetime | None) -> datetime | None:
+    """Parse ISO datetime string, handling Z suffix. Returns None if input is None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return None
+
+
 # Conciseness rules
 MAX_TITLE_LENGTH = 100
 MAX_CONTENT_LENGTH = 500
@@ -513,21 +525,15 @@ class PatternService:
 
         stale = []
         for p in patterns:
-            last_used = p.get("last_used_at")
+            last_used = _parse_iso_datetime(p.get("last_used_at"))
             if last_used:
-                # Parse datetime if string
-                if isinstance(last_used, str):
-                    last_used = datetime.fromisoformat(last_used.replace("Z", "+00:00"))
                 if last_used < cutoff:
                     stale.append(p)
             else:
                 # Never used - check if applied long ago
-                applied_at = p.get("applied_at") or p.get("created_at")
-                if applied_at:
-                    if isinstance(applied_at, str):
-                        applied_at = datetime.fromisoformat(applied_at.replace("Z", "+00:00"))
-                    if applied_at < cutoff:
-                        stale.append(p)
+                applied_at = _parse_iso_datetime(p.get("applied_at") or p.get("created_at"))
+                if applied_at and applied_at < cutoff:
+                    stale.append(p)
 
         return stale
 

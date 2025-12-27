@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC
+import math
+from datetime import UTC, datetime
 from typing import Any
 
 import redis
 
+from app.services.memory.pattern_service import _parse_iso_datetime
 from app.storage import memory as memory_storage
 
 logger = logging.getLogger(__name__)
@@ -402,8 +404,6 @@ class ContextBuilder:
         Returns:
             Combined score from 0.0 to 1.0
         """
-        import math
-        from datetime import datetime
 
         # Weight configuration
         w_fts = 0.60
@@ -417,19 +417,14 @@ class ContextBuilder:
 
         # 2. Recency decay: exp(-age_days / 30) => 30-day half-life
         recency_score = 0.5  # Default for missing created_at
-        created_at = obs.get("created_at")
-        if created_at:
-            try:
-                if isinstance(created_at, str):
-                    # Parse ISO timestamp
-                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                else:
-                    created_dt = created_at
+        try:
+            created_dt = _parse_iso_datetime(obs.get("created_at"))
+            if created_dt:
                 now = datetime.now(UTC)
                 age_days = (now - created_dt).total_seconds() / 86400
                 recency_score = math.exp(-age_days / 30)
-            except (ValueError, TypeError):
-                pass
+        except (ValueError, TypeError):
+            pass
 
         # 3. Confidence score (already 0-1)
         confidence = obs.get("confidence", 0.5)
