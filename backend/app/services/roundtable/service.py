@@ -130,6 +130,52 @@ class RoundtableService:
         self._sessions[session.id] = session
         return session
 
+    def _create_response_message(
+        self,
+        agent_type: AgentType,
+        response: LLMResponse,
+        session: RoundtableSession,
+    ) -> RoundtableMessage:
+        """Create and store a response message from an agent.
+
+        Args:
+            agent_type: The type of agent ("claude" or "gemini")
+            response: The LLM response object
+            session: The session to add the message to
+
+        Returns:
+            The created RoundtableMessage
+        """
+        msg = RoundtableMessage.create(
+            agent_type,
+            response.content,
+            tokens_used=response.usage.get("total_tokens", 0),
+            model=response.model,
+        )
+        session.add_message(msg)
+        return msg
+
+    def _create_error_message(
+        self,
+        agent_type: AgentType,
+        error: Exception,
+        session: RoundtableSession,
+    ) -> RoundtableMessage:
+        """Create and store an error message for an agent.
+
+        Args:
+            agent_type: The type of agent ("claude" or "gemini")
+            error: The exception that occurred
+            session: The session to add the message to
+
+        Returns:
+            The created error RoundtableMessage
+        """
+        logger.error(f"{agent_type.capitalize()} error: {error}")
+        error_msg = RoundtableMessage.create(agent_type, f"[Error: {error!s}]")
+        session.add_message(error_msg)
+        return error_msg
+
     def route_message(
         self,
         session: RoundtableSession,
@@ -158,19 +204,9 @@ class RoundtableService:
         if target in ("claude", "both"):
             try:
                 response = self._send_to_agent("claude", message, context)
-                msg = RoundtableMessage.create(
-                    "claude",
-                    response.content,
-                    tokens_used=response.usage.get("total_tokens", 0),
-                    model=response.model,
-                )
-                session.add_message(msg)
-                responses.append(msg)
+                responses.append(self._create_response_message("claude", response, session))
             except Exception as e:
-                logger.error(f"Claude error: {e}")
-                error_msg = RoundtableMessage.create("claude", f"[Error: {e!s}]")
-                session.add_message(error_msg)
-                responses.append(error_msg)
+                responses.append(self._create_error_message("claude", e, session))
 
         if target in ("gemini", "both"):
             # If both agents, update context with Claude's response
@@ -179,19 +215,9 @@ class RoundtableService:
 
             try:
                 response = self._send_to_agent("gemini", message, context)
-                msg = RoundtableMessage.create(
-                    "gemini",
-                    response.content,
-                    tokens_used=response.usage.get("total_tokens", 0),
-                    model=response.model,
-                )
-                session.add_message(msg)
-                responses.append(msg)
+                responses.append(self._create_response_message("gemini", response, session))
             except Exception as e:
-                logger.error(f"Gemini error: {e}")
-                error_msg = RoundtableMessage.create("gemini", f"[Error: {e!s}]")
-                session.add_message(error_msg)
-                responses.append(error_msg)
+                responses.append(self._create_error_message("gemini", e, session))
 
         return responses
 
@@ -228,22 +254,12 @@ class RoundtableService:
                     message,
                     context,
                 )
-                msg = RoundtableMessage.create(
-                    "claude",
-                    response.content,
-                    tokens_used=response.usage.get("total_tokens", 0),
-                    model=response.model,
-                )
-                session.add_message(msg)
-                yield msg
+                yield self._create_response_message("claude", response, session)
 
                 # Update context with Claude's response for Gemini
                 context = session.get_context()
             except Exception as e:
-                logger.error(f"Claude error: {e}")
-                error_msg = RoundtableMessage.create("claude", f"[Error: {e!s}]")
-                session.add_message(error_msg)
-                yield error_msg
+                yield self._create_error_message("claude", e, session)
 
         if target in ("gemini", "both"):
             try:
@@ -254,19 +270,9 @@ class RoundtableService:
                     message,
                     context,
                 )
-                msg = RoundtableMessage.create(
-                    "gemini",
-                    response.content,
-                    tokens_used=response.usage.get("total_tokens", 0),
-                    model=response.model,
-                )
-                session.add_message(msg)
-                yield msg
+                yield self._create_response_message("gemini", response, session)
             except Exception as e:
-                logger.error(f"Gemini error: {e}")
-                error_msg = RoundtableMessage.create("gemini", f"[Error: {e!s}]")
-                session.add_message(error_msg)
-                yield error_msg
+                yield self._create_error_message("gemini", e, session)
 
     def _send_to_agent(
         self,
