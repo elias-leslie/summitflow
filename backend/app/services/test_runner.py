@@ -23,9 +23,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..storage import projects as projects_storage
 from ..storage import test_runs as test_runs_storage
 from ..storage import tests as tests_storage
-from ..storage.connection import get_connection
 
 # Import from submodules
 from .test_runner_lib.base import (
@@ -197,17 +197,7 @@ async def _run_generic_test(
 
 def get_project_config(project_id: str) -> ProjectConfig | None:
     """Get project configuration for test execution."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT root_path, test_config
-            FROM projects
-            WHERE id = %s
-            """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-
+    row = projects_storage.get_project_test_config(project_id)
     if not row:
         return None
 
