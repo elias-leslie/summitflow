@@ -36,13 +36,22 @@ from .test_runner_lib.base import (
     TestResult,
 )
 from .test_runner_lib.ui_tests import (
+    UI_TEST_SCRIPTS_DOCS,
     build_browser_script_command,
     check_ui_assertions,
     extract_evidence_path,
     get_available_browser_scripts,
     parse_browser_script_output,
     resolve_browser_script,
+    validate_ui_test_config,
 )
+
+# Re-export for backwards compatibility
+__all__ = [
+    "UI_TEST_SCRIPTS_DOCS",
+    "get_available_browser_scripts",
+    "validate_ui_test_config",
+]
 
 logger = logging.getLogger(__name__)
 
