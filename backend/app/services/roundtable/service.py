@@ -137,6 +137,36 @@ class RoundtableService:
         user_msg = RoundtableMessage.create("user", message)
         session.add_message(user_msg)
 
+    def _persist_sdk_session_id(
+        self, agent_type: AgentType, new_id: str | None, session: RoundtableSession
+    ) -> None:
+        """Persist SDK session ID if it changed."""
+        if not new_id:
+            return
+
+        current_id = (
+            session.claude_sdk_session_id
+            if agent_type == "claude"
+            else session.gemini_sdk_session_id
+        )
+        if new_id == current_id:
+            return
+
+        # Import here to avoid circular imports
+        from app.storage import roundtable as roundtable_storage
+
+        if agent_type == "claude":
+            session.claude_sdk_session_id = new_id
+            roundtable_storage.update_sdk_session_ids(
+                session_id=session.id, claude_sdk_session_id=new_id
+            )
+        else:
+            session.gemini_sdk_session_id = new_id
+            roundtable_storage.update_sdk_session_ids(
+                session_id=session.id, gemini_sdk_session_id=new_id
+            )
+        logger.info(f"Persisted {agent_type} SDK session ID: {new_id}")
+
     def create_session(
         self,
         project_id: str,
@@ -558,8 +588,6 @@ class RoundtableService:
         Yields:
             Event dicts with message content, tool calls, and captured SDK session IDs
         """
-        from app.storage import roundtable as roundtable_storage
-
         tools = session.tool_executor.get_available_tools()
         write_enabled = session.tool_executor.has_write_access()
         yolo_mode = session.tool_executor.yolo_mode
@@ -576,15 +604,7 @@ class RoundtableService:
                 yolo_mode=yolo_mode,
                 session_id=session.claude_sdk_session_id,
             ):
-                # Capture and persist SDK session ID if we got a new one
-                if sdk_session_id and sdk_session_id != session.claude_sdk_session_id:
-                    session.claude_sdk_session_id = sdk_session_id
-                    roundtable_storage.update_sdk_session_ids(
-                        session_id=session.id,
-                        claude_sdk_session_id=sdk_session_id,
-                    )
-                    logger.info(f"Persisted Claude SDK session ID: {sdk_session_id}")
-
+                self._persist_sdk_session_id("claude", sdk_session_id, session)
                 yield {"agent": "claude", "event": event, "sdk_session_id": sdk_session_id}
 
         else:  # gemini
@@ -599,15 +619,7 @@ class RoundtableService:
                 yolo_mode=yolo_mode,
                 session_id=session.gemini_sdk_session_id,
             ):
-                # Capture and persist Gemini session ID if we got a new one
-                if gemini_session_id and gemini_session_id != session.gemini_sdk_session_id:
-                    session.gemini_sdk_session_id = gemini_session_id
-                    roundtable_storage.update_sdk_session_ids(
-                        session_id=session.id,
-                        gemini_sdk_session_id=gemini_session_id,
-                    )
-                    logger.info(f"Persisted Gemini SDK session ID: {gemini_session_id}")
-
+                self._persist_sdk_session_id("gemini", gemini_session_id, session)
                 yield {"agent": "gemini", "event": event, "sdk_session_id": gemini_session_id}
 
     async def route_message_with_native_tools(
