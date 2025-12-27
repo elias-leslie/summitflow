@@ -27,6 +27,11 @@ _ENTRY_COLUMNS = """id, project_id, entry_type, path, name, health_status,
 _ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "created_at"}
 
 
+def _to_iso_string(value: datetime | None) -> str | None:
+    """Convert datetime to ISO string, returning None if value is None."""
+    return value.isoformat() if value else None
+
+
 def _build_where_clause(
     conditions: list[str],
 ) -> sql.Composable:
@@ -339,7 +344,7 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict:
         )
         row = cur.fetchone()
         total = row[0] if row else 0
-        last_scanned = row[1].isoformat() if row and row[1] else None
+        last_scanned = _to_iso_string(row[1]) if row else None
 
         return {
             "by_type": by_type,
@@ -542,7 +547,7 @@ def get_relationships(
                 "target_type": row[4],
                 "target_path": row[5],
                 "relationship": row[6],
-                "created_at": row[7].isoformat() if row[7] else None,
+                "created_at": _to_iso_string(row[7]),
             }
             for row in rows
         ]
@@ -596,9 +601,9 @@ def _row_to_entry(row: tuple) -> dict:
         "name": row[4],
         "health_status": row[5],
         "metadata": row[6] if row[6] else {},
-        "last_scanned_at": row[7].isoformat() if row[7] else None,
-        "created_at": row[8].isoformat() if row[8] else None,
-        "updated_at": row[9].isoformat() if row[9] else None,
+        "last_scanned_at": _to_iso_string(row[7]),
+        "created_at": _to_iso_string(row[8]),
+        "updated_at": _to_iso_string(row[9]),
     }
 
 
@@ -692,7 +697,7 @@ def get_capability_links(capability_id: int) -> list[dict[str, Any]]:
             {
                 "link_id": row[0],
                 "link_type": row[1],
-                "link_created_at": row[2].isoformat() if row[2] else None,
+                "link_created_at": _to_iso_string(row[2]),
                 "entry": _row_to_entry(row[3:13]),
             }
             for row in rows
@@ -1004,7 +1009,7 @@ def get_entry_capabilities(explorer_entry_id: int) -> list[dict[str, Any]]:
             {
                 "link_id": row[0],
                 "link_type": row[1],
-                "link_created_at": row[2].isoformat() if row[2] else None,
+                "link_created_at": _to_iso_string(row[2]),
                 "capability": {
                     "id": row[3],
                     "project_id": row[4],
@@ -1015,8 +1020,8 @@ def get_entry_capabilities(explorer_entry_id: int) -> list[dict[str, Any]]:
                     "status": row[9],
                     "verification_url": row[10],
                     "priority": row[11],
-                    "created_at": row[12].isoformat() if row[12] else None,
-                    "updated_at": row[13].isoformat() if row[13] else None,
+                    "created_at": _to_iso_string(row[12]),
+                    "updated_at": _to_iso_string(row[13]),
                 },
             }
             for row in rows
