@@ -19,6 +19,13 @@ from psycopg import sql
 
 from .connection import get_connection
 
+# Standard column list for explorer_entries queries
+_ENTRY_COLUMNS = """id, project_id, entry_type, path, name, health_status,
+                   metadata, last_scanned_at, created_at, updated_at"""
+
+# Allowed sort fields for get_entries queries
+_ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "created_at"}
+
 
 def _build_where_clause(
     conditions: list[str],
@@ -142,9 +149,7 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
 
     # Sort and pagination
     sort_field = filters.get("sort", "path")
-    # Whitelist allowed sort fields to prevent SQL injection
-    allowed_sorts = {"path", "name", "health_status", "last_scanned_at", "created_at"}
-    if sort_field not in allowed_sorts:
+    if sort_field not in _ALLOWED_SORT_FIELDS:
         sort_field = "path"
 
     sort_dir = "DESC" if filters.get("dir", "asc").lower() == "desc" else "ASC"
