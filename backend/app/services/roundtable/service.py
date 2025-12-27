@@ -132,6 +132,11 @@ class RoundtableService:
         """Get an existing session by ID."""
         return self._sessions.get(session_id)
 
+    def _add_user_message(self, session: RoundtableSession, message: str) -> None:
+        """Add a user message to the session."""
+        user_msg = RoundtableMessage.create("user", message)
+        session.add_message(user_msg)
+
     def create_session(
         self,
         project_id: str,
@@ -205,9 +210,7 @@ class RoundtableService:
         Returns:
             List of response messages from agent(s)
         """
-        # Add user message to session
-        user_msg = RoundtableMessage.create("user", message)
-        session.add_message(user_msg)
+        self._add_user_message(session, message)
 
         responses: list[RoundtableMessage] = []
 
@@ -250,9 +253,7 @@ class RoundtableService:
         Yields:
             Response messages from agent(s) as they complete
         """
-        # Add user message to session
-        user_msg = RoundtableMessage.create("user", message)
-        session.add_message(user_msg)
+        self._add_user_message(session, message)
 
         # Build context from conversation history
         context = session.get_context()
@@ -628,9 +629,7 @@ class RoundtableService:
         Yields:
             Event dicts containing agent responses and tool calls
         """
-        # Add user message to session
-        user_msg = RoundtableMessage.create("user", message)
-        session.add_message(user_msg)
+        self._add_user_message(session, message)
 
         # Build context and prompts
         context = session.get_context()
@@ -660,9 +659,7 @@ class RoundtableService:
 
         Faster than sequential routing when both agents are needed.
         """
-        # Add user message to session
-        user_msg = RoundtableMessage.create("user", message)
-        session.add_message(user_msg)
+        self._add_user_message(session, message)
 
         context = session.get_context()
         loop = asyncio.get_event_loop()
