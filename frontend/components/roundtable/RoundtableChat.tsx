@@ -18,8 +18,6 @@ import {
   Loader2,
   Sparkles,
   Bot,
-  WifiOff,
-  CircleDot,
   Paperclip,
   X,
   FileText,
@@ -587,39 +585,12 @@ export function RoundtableChat({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Streaming indicator */}
-            {streamingAgent && (
-              <div className={clsx(
-                "flex items-center gap-1.5 text-xs",
-                streamingAgent === "claude" ? "text-amber-400" : "text-blue-400"
-              )}>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{streamingAgent === "claude" ? "Claude" : "Gemini"} is responding...</span>
-              </div>
-            )}
-            {/* Loading indicator (general) */}
-            {!streamingAgent && (isLoading || isGenerating) && (
-              <div className="flex items-center gap-1.5 text-blue-400 text-xs">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{isGenerating ? "Generating..." : "Thinking..."}</span>
-              </div>
-            )}
-
-            {/* Connection status */}
-            {!connected && (
-              <div className="flex items-center gap-1.5 text-rose-400 text-xs">
-                <WifiOff className="w-3.5 h-3.5" />
-                <span>Disconnected</span>
-              </div>
-            )}
-            {connected && !isLoading && !isGenerating && !streamingAgent && (
-              <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
-                <CircleDot className="w-3.5 h-3.5" />
-                <span>Ready</span>
-              </div>
-            )}
-          </div>
+          <ChatStatusIndicator
+            connected={connected}
+            isLoading={isLoading}
+            isGenerating={isGenerating}
+            streamingAgent={streamingAgent}
+          />
         </div>
 
         {/* Mode selector and tools toggle */}
