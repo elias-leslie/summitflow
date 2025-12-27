@@ -622,20 +622,41 @@ class RoundtableToolExecutor:
     # Explorer Tool Executors
     # =========================================================================
 
-    def _execute_get_codebase_metrics(self, params: dict[str, Any]) -> ToolResult:
-        """Execute get_codebase_metrics tool."""
-        from ...services import explorer as explorer_service
+    def _execute_explorer_tool(
+        self,
+        params: dict[str, Any],
+        executor_fn: Callable[[str, dict[str, Any]], Any],
+        error_msg: str,
+    ) -> ToolResult:
+        """Generic executor for explorer-backed tools.
 
+        Args:
+            params: Tool parameters (must include project_id)
+            executor_fn: Function to call with (project_id, params)
+            error_msg: Error message prefix on failure
+
+        Returns:
+            ToolResult with JSON-serialized result or error
+        """
         project_id, err = self._require_param(params, "project_id")
         if err:
             return err
 
-        path_filter = params.get("path")
-
         try:
+            result = executor_fn(project_id, params)
+            return ToolResult(True, json.dumps(result, indent=2, default=str))
+        except Exception as e:
+            return ToolResult(False, "", f"{error_msg}: {e}")
+
+    def _execute_get_codebase_metrics(self, params: dict[str, Any]) -> ToolResult:
+        """Execute get_codebase_metrics tool."""
+
+        def get_metrics(project_id: str, params: dict[str, Any]) -> dict[str, Any]:
+            from ...services import explorer as explorer_service
+
             stats = explorer_service.get_stats(project_id)
+            path_filter = params.get("path")
             if path_filter:
-                # Get filtered entries count
                 from ...storage import explorer as explorer_storage
 
                 entries = explorer_storage.get_entries(
@@ -643,80 +664,56 @@ class RoundtableToolExecutor:
                 )
                 stats["filtered_count"] = len(entries)
                 stats["filter_path"] = path_filter
+            return stats
 
-            return ToolResult(True, json.dumps(stats, indent=2, default=str))
-        except Exception as e:
-            return ToolResult(False, "", f"Failed to get metrics: {e}")
+        return self._execute_explorer_tool(params, get_metrics, "Failed to get metrics")
 
     def _execute_find_complex_files(self, params: dict[str, Any]) -> ToolResult:
         """Execute find_complex_files tool."""
-        from ...storage import explorer as explorer_storage
 
-        project_id, err = self._require_param(params, "project_id")
-        if err:
-            return err
+        def find_complex(project_id: str, params: dict[str, Any]) -> dict[str, Any]:
+            from ...storage import explorer as explorer_storage
 
-        threshold = float(params.get("threshold", 10))
-        limit = int(params.get("limit", 20))
-
-        try:
-            result = explorer_storage.get_refactor_targets(
-                project_id,
-                min_complexity=threshold,
-                limit=limit,
+            threshold = float(params.get("threshold", 10))
+            limit = int(params.get("limit", 20))
+            return explorer_storage.get_refactor_targets(
+                project_id, min_complexity=threshold, limit=limit
             )
-            return ToolResult(True, json.dumps(result, indent=2, default=str))
-        except Exception as e:
-            return ToolResult(False, "", f"Failed to find complex files: {e}")
+
+        return self._execute_explorer_tool(params, find_complex, "Failed to find complex files")
 
     def _execute_get_refactor_targets(self, params: dict[str, Any]) -> ToolResult:
         """Execute get_refactor_targets tool."""
-        from ...storage import explorer as explorer_storage
 
-        project_id, err = self._require_param(params, "project_id")
-        if err:
-            return err
+        def get_targets(project_id: str, params: dict[str, Any]) -> dict[str, Any]:
+            from ...storage import explorer as explorer_storage
 
-        priority = params.get("priority")
-        limit = int(params.get("limit", 20))
+            priority = params.get("priority")
+            limit = int(params.get("limit", 20))
+            return explorer_storage.get_refactor_targets(project_id, priority=priority, limit=limit)
 
-        try:
-            result = explorer_storage.get_refactor_targets(
-                project_id,
-                priority=priority,
-                limit=limit,
-            )
-            return ToolResult(True, json.dumps(result, indent=2, default=str))
-        except Exception as e:
-            return ToolResult(False, "", f"Failed to get refactor targets: {e}")
+        return self._execute_explorer_tool(params, get_targets, "Failed to get refactor targets")
 
     def _execute_get_tdd_suggestions(self, params: dict[str, Any]) -> ToolResult:
         """Execute get_tdd_suggestions tool."""
-        from ...services import tdd_suggestions
 
-        project_id, err = self._require_param(params, "project_id")
-        if err:
-            return err
+        def get_suggestions(project_id: str, _params: dict[str, Any]) -> dict[str, Any]:
+            from ...services import tdd_suggestions
 
-        try:
-            result = tdd_suggestions.get_tdd_suggestions(project_id)
-            return ToolResult(True, json.dumps(result, indent=2, default=str))
-        except Exception as e:
-            return ToolResult(False, "", f"Failed to get TDD suggestions: {e}")
+            return tdd_suggestions.get_tdd_suggestions(project_id)
+
+        return self._execute_explorer_tool(params, get_suggestions, "Failed to get TDD suggestions")
 
     def _execute_get_coverage_gaps(self, params: dict[str, Any]) -> ToolResult:
         """Execute get_coverage_gaps tool."""
-        from ...storage import explorer as explorer_storage
 
-        project_id, err = self._require_param(params, "project_id")
-        if err:
-            return err
+        def get_gaps(project_id: str, _params: dict[str, Any]) -> dict[str, Any]:
+            from ...storage import explorer as explorer_storage
 
-        try:
-            result = explorer_storage.get_coverage_gaps(project_id)
-            return ToolResult(True, json.dumps(result, indent=2, default=str))
-        except Exception as e:
-            return ToolResult(False, "", f"Failed to get coverage gaps: {e}")
+            gaps = explorer_storage.get_coverage_gaps(project_id)
+            return {"gaps": gaps, "count": len(gaps)}
+
+        return self._execute_explorer_tool(params, get_gaps, "Failed to get coverage gaps")
 
 
 # =============================================================================
