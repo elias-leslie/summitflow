@@ -38,11 +38,11 @@ import {
   OBSERVATION_TYPES,
   CONCEPT_TYPES,
 } from "@/lib/formatters/observation-colors";
-import { ContextItemCard, type ContextItem, type ExpandedContent } from "./ContextItemCard";
-import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
+import { ContextItemCard } from "./ContextItemCard";
+import { ConnectionStatusBadge } from "./ConnectionStatusBadge";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 import { useObservationFilter } from "@/lib/hooks/useObservationFilter";
-import { useContextPanel, type ContextIndex } from "@/lib/hooks/useContextPanel";
+import { useContextPanel } from "@/lib/hooks/useContextPanel";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
   observation_type: ObservationType;
