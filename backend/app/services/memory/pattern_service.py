@@ -383,9 +383,7 @@ class PatternService:
             # Update existing pattern in rules file
             if pattern.get("target_pattern_id"):
                 self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
-            pattern_entry = self._format_pattern_for_rules(pattern)
-            with open(rules_path, "a") as f:
-                f.write("\n\n" + pattern_entry)
+            self._append_pattern_to_file(rules_path, pattern)
             logger.info(
                 f"pattern_updated: id={pattern_id} target={pattern.get('target_pattern_id')}"
             )
@@ -395,20 +393,22 @@ class PatternService:
             source_ids = pattern.get("source_diary_ids") or []
             for source_id in source_ids:
                 self._remove_pattern_from_file(rules_path, source_id)
-            pattern_entry = self._format_pattern_for_rules(pattern)
-            with open(rules_path, "a") as f:
-                f.write("\n\n" + pattern_entry)
+            self._append_pattern_to_file(rules_path, pattern)
             logger.info(f"pattern_merged: id={pattern_id} sources={source_ids}")
 
         else:  # add
-            pattern_entry = self._format_pattern_for_rules(pattern)
-            with open(rules_path, "a") as f:
-                f.write("\n\n" + pattern_entry)
+            self._append_pattern_to_file(rules_path, pattern)
             logger.info(f"pattern_applied: id={pattern_id} file={rules_path}")
 
         # Update status
         memory_storage.mark_pattern_applied(pattern_id)
         return self.get_pattern(pattern_id)
+
+    def _append_pattern_to_file(self, rules_path: Path, pattern: dict[str, Any]) -> None:
+        """Append a formatted pattern to the rules file."""
+        pattern_entry = self._format_pattern_for_rules(pattern)
+        with open(rules_path, "a") as f:
+            f.write("\n\n" + pattern_entry)
 
     def _remove_pattern_from_file(self, rules_path: Path, pattern_id: str | None) -> bool:
         """Remove a pattern from the rules file by its ID.
