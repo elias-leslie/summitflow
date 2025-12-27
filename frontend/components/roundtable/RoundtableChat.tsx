@@ -16,6 +16,8 @@ import { Textarea } from "../ui/textarea";
 import {
   Send,
   Loader2,
+  Sparkles,
+  Bot,
   WifiOff,
   CircleDot,
   Paperclip,
@@ -33,7 +35,7 @@ import {
   Target,
   ChevronDown,
 } from "lucide-react";
-import { AGENT_STYLES, type AgentType, type AgentStyle } from "@/lib/constants/agentStyles";
+import { AGENT_STYLES } from "@/lib/constants/agentStyles";
 import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
 import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
 import { SpecPreview, GeneratedSpec, SpecComponent, SpecCapability, SpecTest } from "./SpecPreview";
