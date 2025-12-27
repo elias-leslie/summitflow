@@ -42,9 +42,9 @@ import { SpecPreview, GeneratedSpec, SpecComponent, SpecCapability, SpecTest } f
 
 // Re-export spec types for consumers
 export type { GeneratedSpec, SpecComponent, SpecCapability, SpecTest };
-import { Switch } from "../ui/switch";
 import { Layers } from "lucide-react";
 import { AgentConfigPanel, AgentConfig } from "../settings/AgentConfigPanel";
+import { ToolToggle } from "./ToolToggle";
 
 export type AgentType = "claude" | "gemini" | "user";
 export type RoundtableMode = "spec_driven" | "quick";
@@ -669,64 +669,32 @@ export function RoundtableChat({
 
           {/* Tools/Codebase access toggles */}
           <div className="flex items-center gap-4">
-            {/* Read access toggle */}
-            <div className="flex items-center gap-1.5">
-              <label
-                htmlFor="tools-toggle"
-                className={clsx(
-                  "flex items-center gap-1 text-xs cursor-pointer",
-                  toolsEnabled ? "text-phosphor-400" : "text-slate-500"
-                )}
-              >
-                <FolderCode className="w-3.5 h-3.5" />
-                <span>Read</span>
-              </label>
-              <Switch
-                id="tools-toggle"
-                checked={toolsEnabled}
-                onCheckedChange={(enabled) => onToolsChange?.({ toolsEnabled: enabled })}
-                disabled={isLoading || !!streamingAgent}
-              />
-            </div>
-
-            {/* Write access toggle */}
-            <div className="flex items-center gap-1.5">
-              <label
-                htmlFor="write-toggle"
-                className={clsx(
-                  "flex items-center gap-1 text-xs cursor-pointer",
-                  writeEnabled ? "text-amber-400" : "text-slate-500"
-                )}
-              >
-                <span>Write</span>
-              </label>
-              <Switch
-                id="write-toggle"
-                checked={writeEnabled}
-                onCheckedChange={(enabled) => onToolsChange?.({ writeEnabled: enabled })}
-                disabled={isLoading || !!streamingAgent || !toolsEnabled}
-              />
-            </div>
-
-            {/* YOLO mode toggle */}
-            <div className="flex items-center gap-1.5">
-              <label
-                htmlFor="yolo-toggle"
-                className={clsx(
-                  "flex items-center gap-1 text-xs cursor-pointer",
-                  yoloMode ? "text-rose-400" : "text-slate-500"
-                )}
-                title="Auto-approve all tool actions without prompts"
-              >
-                <span>YOLO</span>
-              </label>
-              <Switch
-                id="yolo-toggle"
-                checked={yoloMode}
-                onCheckedChange={(enabled) => onToolsChange?.({ yoloMode: enabled })}
-                disabled={isLoading || !!streamingAgent || !toolsEnabled}
-              />
-            </div>
+            <ToolToggle
+              id="tools-toggle"
+              label="Read"
+              checked={toolsEnabled}
+              color="phosphor-400"
+              icon={FolderCode}
+              disabled={isLoading || !!streamingAgent}
+              onChange={(enabled) => onToolsChange?.({ toolsEnabled: enabled })}
+            />
+            <ToolToggle
+              id="write-toggle"
+              label="Write"
+              checked={writeEnabled}
+              color="amber-400"
+              disabled={isLoading || !!streamingAgent || !toolsEnabled}
+              onChange={(enabled) => onToolsChange?.({ writeEnabled: enabled })}
+            />
+            <ToolToggle
+              id="yolo-toggle"
+              label="YOLO"
+              checked={yoloMode}
+              color="rose-400"
+              disabled={isLoading || !!streamingAgent || !toolsEnabled}
+              onChange={(enabled) => onToolsChange?.({ yoloMode: enabled })}
+              title="Auto-approve all tool actions without prompts"
+            />
 
             {/* Tool stats badge */}
             {toolStats && toolStats.total_calls > 0 && (
