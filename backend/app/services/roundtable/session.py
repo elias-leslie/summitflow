@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 from ..agents import AgentType
 
 if TYPE_CHECKING:
-    from .tools import RoundtableToolExecutor
+    from .executor import RoundtableToolExecutor
 
 
 @dataclass
@@ -48,7 +48,7 @@ class RoundtableMessage:
 
 def _get_default_executor() -> RoundtableToolExecutor:
     """Lazy import to avoid circular dependency."""
-    from .tools import get_default_executor
+    from .executor import get_default_executor
 
     return get_default_executor()
 
