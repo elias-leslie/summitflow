@@ -87,6 +87,15 @@ DEDUP_WINDOW_MINUTES = 60
 
 # Time interval constants
 STUCK_QUEUE_THRESHOLD = "1 hour"
+
+
+def _normalize_confidence(value: Decimal | float | None, default: float = 0.50) -> float:
+    """Convert Decimal confidence to float, or return default if None."""
+    if isinstance(value, Decimal):
+        return float(value)
+    return value if value is not None else default
+
+
 STALE_PATTERN_THRESHOLD = "30 days"
 DEFAULT_CHECKPOINT_RETENTION_DAYS = 30
 
@@ -470,10 +479,7 @@ def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str
     # Current format with entities (21 cols)
     if len(row) >= 21:
         result["priority"] = row[6] or "medium"
-        confidence = row[7]
-        result["confidence"] = (
-            float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
-        )
+        result["confidence"] = _normalize_confidence(row[7])
         result["entities"] = row[8] or []
         result["title"] = row[9]
         result["subtitle"] = row[10]
@@ -490,10 +496,7 @@ def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str
     # Previous format with confidence, no entities (20 cols)
     elif len(row) >= 20:
         result["priority"] = row[6] or "medium"
-        confidence = row[7]
-        result["confidence"] = (
-            float(confidence) if isinstance(confidence, Decimal) else (confidence or 0.50)
-        )
+        result["confidence"] = _normalize_confidence(row[7])
         result["entities"] = []
         result["title"] = row[8]
         result["subtitle"] = row[9]
