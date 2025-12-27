@@ -4,7 +4,8 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent, TerminalHandle, ConnectionStatus } from "./Terminal";
-import { Plus, X, Terminal as TerminalIcon, Loader2, Square, Rows2, Columns2, Minus, Settings2, RefreshCw } from "lucide-react";
+import { Plus, X, Terminal as TerminalIcon, Loader2, Minus, Settings2, RefreshCw } from "lucide-react";
+import { LayoutModeButtons } from "./LayoutModeButton";
 import { useTerminalSessions } from "@/lib/hooks/use-terminal-sessions";
 import { useTerminalState, LayoutMode } from "@/lib/hooks/use-terminal-state";
 import { useTerminalSettings, TERMINAL_FONTS, TERMINAL_FONT_SIZES, TerminalFontId, TerminalFontSize } from "@/lib/hooks/use-terminal-settings";
@@ -274,42 +275,7 @@ export function TerminalTabs({ projectId, projectPath, className }: TerminalTabs
         {/* Layout mode buttons - hidden on mobile */}
         {!isMobile && (
           <div className="ml-auto flex items-center gap-0.5 border-l border-slate-700 pl-2">
-            <button
-              onClick={() => handleLayoutModeChange("single")}
-              title="Single pane"
-              className={clsx(
-                "p-1.5 rounded transition-colors",
-                layoutMode === "single"
-                  ? "bg-slate-700 text-phosphor-400"
-                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-              )}
-            >
-              <Square className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleLayoutModeChange("horizontal")}
-              title="Horizontal split"
-              className={clsx(
-                "p-1.5 rounded transition-colors",
-                layoutMode === "horizontal"
-                  ? "bg-slate-700 text-phosphor-400"
-                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-              )}
-            >
-              <Rows2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleLayoutModeChange("vertical")}
-              title="Vertical split"
-              className={clsx(
-                "p-1.5 rounded transition-colors",
-                layoutMode === "vertical"
-                  ? "bg-slate-700 text-phosphor-400"
-                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-              )}
-            >
-              <Columns2 className="w-4 h-4" />
-            </button>
+            <LayoutModeButtons layoutMode={layoutMode} onLayoutChange={handleLayoutModeChange} />
           </div>
         )}
 
