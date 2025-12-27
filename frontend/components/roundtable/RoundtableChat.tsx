@@ -6,10 +6,8 @@ import {
   useState,
   useCallback,
   FormEvent,
-  DragEvent,
-  ClipboardEvent,
-  ChangeEvent,
 } from "react";
+import { useFileAttachments, FileAttachment } from "../../hooks/useFileAttachments";
 import { clsx } from "clsx";
 import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
@@ -51,12 +49,8 @@ import { AgentConfigPanel, AgentConfig } from "../settings/AgentConfigPanel";
 export type AgentType = "claude" | "gemini" | "user";
 export type RoundtableMode = "spec_driven" | "quick";
 
-export interface FileAttachment {
-  id: string;
-  file: File;
-  previewUrl?: string;
-  type: "image" | "document" | "other";
-}
+// Re-export FileAttachment for consumers
+export type { FileAttachment };
 
 export interface ChatMessage {
   id: string;
@@ -169,20 +163,6 @@ const agentConfig: Record<
     iconBg: "bg-blue-900/50",
   },
 };
-
-function getFileType(file: File): "image" | "document" | "other" {
-  if (file.type.startsWith("image/")) return "image";
-  if (
-    file.type.includes("pdf") ||
-    file.type.includes("text") ||
-    file.type.includes("document") ||
-    file.name.endsWith(".md") ||
-    file.name.endsWith(".txt") ||
-    file.name.endsWith(".json")
-  )
-    return "document";
-  return "other";
-}
 
 function FilePreview({
   attachment,
@@ -472,8 +452,6 @@ export function RoundtableChat({
   const [isGeneratingGoals, setIsGeneratingGoals] = useState(false);
   const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
   const [showSpecPreview, setShowSpecPreview] = useState(true);
-  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [generatedFeatures, setGeneratedFeatures] = useState<GeneratedFeature[]>([]);
   const [generatedVision, setGeneratedVision] = useState<GeneratedVision | null>(null);
   const [generatedGoals, setGeneratedGoals] = useState<GeneratedGoal[]>([]);
@@ -482,100 +460,25 @@ export function RoundtableChat({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Use the file attachments hook
+  const {
+    attachments,
+    isDragging,
+    removeAttachment,
+    clearAttachments,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handlePaste,
+    handleFileChange,
+  } = useFileAttachments();
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
-
-  // Cleanup preview URLs on unmount or attachment change
-  useEffect(() => {
-    return () => {
-      attachments.forEach((att) => {
-        if (att.previewUrl) {
-          URL.revokeObjectURL(att.previewUrl);
-        }
-      });
-    };
-  }, [attachments]);
-
-  const addFiles = useCallback((files: FileList | File[]) => {
-    const newAttachments: FileAttachment[] = Array.from(files).map((file) => {
-      const type = getFileType(file);
-      const previewUrl = type === "image" ? URL.createObjectURL(file) : undefined;
-      return {
-        id: crypto.randomUUID(),
-        file,
-        type,
-        previewUrl,
-      };
-    });
-    setAttachments((prev) => [...prev, ...newAttachments]);
-  }, []);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => {
-      const att = prev.find((a) => a.id === id);
-      if (att?.previewUrl) {
-        URL.revokeObjectURL(att.previewUrl);
-      }
-      return prev.filter((a) => a.id !== id);
-    });
-  }, []);
-
-  const handleDragOver = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragging(false);
-      if (e.dataTransfer.files?.length) {
-        addFiles(e.dataTransfer.files);
-      }
-    },
-    [addFiles]
-  );
-
-  const handlePaste = useCallback(
-    (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      const files: File[] = [];
-      for (const item of Array.from(items)) {
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) files.push(file);
-        }
-      }
-      if (files.length > 0) {
-        addFiles(files);
-      }
-    },
-    [addFiles]
-  );
-
-  const handleFileChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files?.length) {
-        addFiles(e.target.files);
-        e.target.value = ""; // Reset for re-selection
-      }
-    },
-    [addFiles]
-  );
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -591,13 +494,13 @@ export function RoundtableChat({
           attachments.length > 0 ? attachments : undefined
         );
         setInputValue("");
-        setAttachments([]);
+        clearAttachments();
       } finally {
         setIsSending(false);
         inputRef.current?.focus();
       }
     },
-    [inputValue, attachments, isSending, onSendMessage]
+    [inputValue, attachments, isSending, onSendMessage, clearAttachments]
   );
 
   const handleKeyDown = useCallback(
