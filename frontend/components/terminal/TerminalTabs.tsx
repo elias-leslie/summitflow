@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useState, useRef, useEffect, useMemo } from "react";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { clsx } from "clsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TerminalComponent, TerminalHandle, ConnectionStatus } from "./Terminal";
@@ -494,25 +495,11 @@ function SettingsDropdown({
 }: SettingsDropdownProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const closeDropdown = useCallback(() => setShowSettings(false), [setShowSettings]);
+  const clickOutsideRefs = useMemo(() => [buttonRef, dropdownRef], []);
 
   // Close dropdown when clicking outside
-  useEffect(() => {
-    if (!showSettings) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        buttonRef.current &&
-        !buttonRef.current.contains(e.target as Node) &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setShowSettings(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showSettings, setShowSettings]);
+  useClickOutside(clickOutsideRefs, closeDropdown, showSettings);
 
   // Calculate dropdown position
   const getDropdownStyle = (): React.CSSProperties => {
