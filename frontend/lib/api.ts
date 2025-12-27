@@ -1,7 +1,7 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
 // Build: 2025-12-26-v1
-import { fetchWithErrorHandling, getApiBase, throwFromResponse } from "./api/utils";
+import { buildQueryString, fetchWithErrorHandling, getApiBase, throwFromResponse } from "./api/utils";
 import {
   fetchWithGenerationTimeout,
   roundtableSessionAction,
@@ -151,7 +151,7 @@ export async function listRoundtableSessions(
   projectId: string,
   status?: "active" | "archived"
 ): Promise<RoundtableSessionInfo[]> {
-  const query = status ? `?status=${status}` : "";
+  const query = buildQueryString({ status });
   return fetchWithErrorHandling(`/api/projects/${projectId}/roundtable/sessions${query}`, {
     errorMessage: "Failed to list roundtable sessions",
   });
@@ -695,7 +695,7 @@ export async function fetchTddTests(
   projectId: string,
   type?: string
 ): Promise<TddTest[]> {
-  const query = type ? `?type=${type}` : "";
+  const query = buildQueryString({ type });
   return fetchWithErrorHandling(`/api/projects/${projectId}/tests${query}`, {
     errorMessage: "Failed to fetch tests",
   });
@@ -849,7 +849,7 @@ export async function fetchTddCapabilities(
   projectId: string,
   componentDbId?: number
 ): Promise<TddCapability[]> {
-  const query = componentDbId !== undefined ? `?component=${componentDbId}` : "";
+  const query = buildQueryString({ component: componentDbId });
   return fetchWithErrorHandling(`/api/projects/${projectId}/capabilities${query}`, {
     errorMessage: "Failed to fetch capabilities",
   });
