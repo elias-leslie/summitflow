@@ -1,7 +1,7 @@
 // API Base URL - always empty to use relative URLs
 // Next.js rewrites proxy /api/* to backend (works for both SSR and client-side)
 // Build: 2025-12-26-v1
-import { buildQueryString, fetchWithErrorHandling, getApiBase, throwFromResponse } from "./api/utils";
+import { buildQueryString, fetchWithErrorHandling, getApiBase } from "./api/utils";
 import {
   fetchWithGenerationTimeout,
   roundtableSessionAction,

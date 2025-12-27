@@ -144,7 +144,7 @@ export default function ProjectDetailPage() {
     setMode: setRoundtableMode,
     messages: roundtableMessages,
     setMessages: setRoundtableMessages,
-    sessionLoaded: _roundtableSessionLoaded,
+    sessionLoaded: _,
     toolsEnabled,
     setToolsEnabled,
     writeEnabled,
