@@ -80,6 +80,22 @@ function extractPath(url: string): string {
   }
 }
 
+/**
+ * Handle capture errors with consistent toast messages.
+ * Used by both captureDebug and captureForFeature.
+ */
+function handleCaptureError(error: unknown, context: "debug" | "feature" = "debug"): void {
+  console.error(`${context === "debug" ? "Debug" : "Feature"} capture failed:`, error);
+  if (error instanceof Error && error.name === "NotAllowedError") {
+    toast.error("Screen capture cancelled - permission required");
+  } else if (error instanceof Error && error.message.includes("chrome://flags")) {
+    toast.error(error.message, { duration: 10000 });
+  } else {
+    const defaultMsg = context === "debug" ? "Failed to capture" : "Failed to capture evidence";
+    toast.error(error instanceof Error ? error.message : defaultMsg);
+  }
+}
+
 // Check if a feature/criterion matches the current URL path
 function checkUrlMatch(
   feature: Feature,
@@ -296,14 +312,7 @@ export function EvidenceCaptureModal({
         ...result,
       });
     } catch (error) {
-      console.error("Debug capture failed:", error);
-      if (error instanceof Error && error.name === "NotAllowedError") {
-        toast.error("Screen capture cancelled - permission required");
-      } else if (error instanceof Error && error.message.includes("chrome://flags")) {
-        toast.error(error.message, { duration: 10000 });
-      } else {
-        toast.error(error instanceof Error ? error.message : "Failed to capture");
-      }
+      handleCaptureError(error, "debug");
     } finally {
       setIsCapturing(false);
     }
@@ -345,14 +354,7 @@ export function EvidenceCaptureModal({
       toast.success(`Evidence captured (v${result.version}) for ${capabilityId}`);
       onCaptured(result);
     } catch (error) {
-      console.error("Feature capture failed:", error);
-      if (error instanceof Error && error.name === "NotAllowedError") {
-        toast.error("Screen capture cancelled - permission required");
-      } else if (error instanceof Error && error.message.includes("chrome://flags")) {
-        toast.error(error.message, { duration: 10000 });
-      } else {
-        toast.error(error instanceof Error ? error.message : "Failed to capture evidence");
-      }
+      handleCaptureError(error, "feature");
     } finally {
       setIsCapturing(false);
     }
