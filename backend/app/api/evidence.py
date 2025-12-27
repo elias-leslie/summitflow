@@ -107,6 +107,39 @@ class DebugCaptureRequest(BaseModel):
     )
 
 
+def _extract_client_evidence(client_evidence: ClientEvidence | None) -> dict[str, Any]:
+    """Extract normalized client evidence dict from ClientEvidence model.
+
+    Returns console and network evidence with defaults if not provided.
+    """
+    if not client_evidence:
+        return {
+            "console": {
+                "errorCount": 0,
+                "warningCount": 0,
+                "errors": [],
+                "warnings": [],
+            },
+            "network": {
+                "failureCount": 0,
+                "failures": [],
+            },
+        }
+
+    return {
+        "console": {
+            "errorCount": client_evidence.console.get("errorCount", 0),
+            "warningCount": client_evidence.console.get("warningCount", 0),
+            "errors": client_evidence.console.get("errors", []),
+            "warnings": client_evidence.console.get("warnings", []),
+        },
+        "network": {
+            "failureCount": client_evidence.network.get("failureCount", 0),
+            "failures": client_evidence.network.get("failures", []),
+        },
+    }
+
+
 @router.get("/projects/{project_id}/evidence/{capability_id}/{criterion_id}")
 async def get_evidence_endpoint(
     project_id: str,
@@ -607,6 +640,9 @@ async def viewport_capture(
         screenshot_path = output_dir / "screenshot.png"
         screenshot_path.write_bytes(screenshot_data)
 
+        # Extract client evidence
+        client_ev = _extract_client_evidence(request.client_evidence)
+
         # Create evidence.json with viewport metadata
         evidence_data = {
             "metadata": {
@@ -628,40 +664,13 @@ async def viewport_capture(
                 "captureMethod": "client-side-screen-capture-api",
             },
             "console": {
-                "errorCount": (
-                    request.client_evidence.console.get("errorCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "warningCount": (
-                    request.client_evidence.console.get("warningCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "errors": (
-                    request.client_evidence.console.get("errors", [])
-                    if request.client_evidence
-                    else []
-                ),
-                "warnings": (
-                    request.client_evidence.console.get("warnings", [])
-                    if request.client_evidence
-                    else []
-                ),
+                **client_ev["console"],
                 "note": "Client-side evidence from visible error elements",
             },
             "network": {
                 "totalRequests": 0,
-                "failedRequests": (
-                    request.client_evidence.network.get("failureCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "failures": (
-                    request.client_evidence.network.get("failures", [])
-                    if request.client_evidence
-                    else []
-                ),
+                "failedRequests": client_ev["network"]["failureCount"],
+                "failures": client_ev["network"]["failures"],
                 "slowRequests": [],
                 "note": "Client-side evidence from Performance API",
             },
@@ -757,6 +766,7 @@ async def debug_capture(
         # Save evidence.json alongside screenshot
         evidence_filename = f"{timestamp}.json"
         evidence_path = debug_dir / evidence_filename
+        client_ev = _extract_client_evidence(request.client_evidence)
         evidence_data = {
             "metadata": {
                 "url": request.url,
@@ -765,39 +775,10 @@ async def debug_capture(
                 "capturedAt": datetime.now(UTC).isoformat(),
                 "captureMethod": "client-side-screen-capture-api",
             },
-            "console": {
-                "errorCount": (
-                    request.client_evidence.console.get("errorCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "warningCount": (
-                    request.client_evidence.console.get("warningCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "errors": (
-                    request.client_evidence.console.get("errors", [])
-                    if request.client_evidence
-                    else []
-                ),
-                "warnings": (
-                    request.client_evidence.console.get("warnings", [])
-                    if request.client_evidence
-                    else []
-                ),
-            },
+            "console": client_ev["console"],
             "network": {
-                "failedRequests": (
-                    request.client_evidence.network.get("failureCount", 0)
-                    if request.client_evidence
-                    else 0
-                ),
-                "failures": (
-                    request.client_evidence.network.get("failures", [])
-                    if request.client_evidence
-                    else []
-                ),
+                "failedRequests": client_ev["network"]["failureCount"],
+                "failures": client_ev["network"]["failures"],
             },
         }
         evidence_path.write_text(json.dumps(evidence_data, indent=2))
