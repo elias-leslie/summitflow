@@ -44,6 +44,19 @@ current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 
+def _run_async_in_sync_context[T](coro: Awaitable[T]) -> T:
+    """Run an async coroutine in a synchronous context.
+
+    Creates a new event loop, runs the coroutine, and cleans up.
+    Use when you need to call async code from sync code.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 async def default_permission_callback(tool_name: str, tool_args: dict[str, Any]) -> bool:
     """Default permission callback that uses the PermissionManager.
 
@@ -431,34 +444,22 @@ class RoundtableService:
                         if effective_session_id and self._permission_callback:
                             # Set the context for the permission callback
                             current_session_id.set(effective_session_id)
-                            # Use asyncio to run the async permission callback
-                            try:
-                                loop = asyncio.new_event_loop()
-                                approved = loop.run_until_complete(
-                                    self._permission_callback(tool_name, parameters)
-                                )
-                                loop.close()
+                            # Run async permission callback in sync context
+                            approved = _run_async_in_sync_context(
+                                self._permission_callback(tool_name, parameters)
+                            )
 
-                                if not approved:
-                                    result = ToolResult(
-                                        success=False,
-                                        output="",
-                                        error=f"Permission denied for {tool_name}",
-                                    )
-                                    tool_results.append((tool_name, result))
-                                    logger.info(f"Permission denied for {tool_name}")
-                                    continue
-
-                                logger.info(f"Permission granted for {tool_name}")
-                            except Exception as e:
-                                logger.error(f"Permission callback error: {e}")
+                            if not approved:
                                 result = ToolResult(
                                     success=False,
                                     output="",
-                                    error=f"Permission check failed: {e}",
+                                    error=f"Permission denied for {tool_name}",
                                 )
                                 tool_results.append((tool_name, result))
+                                logger.info(f"Permission denied for {tool_name}")
                                 continue
+
+                            logger.info(f"Permission granted for {tool_name}")
                         else:
                             # No session context or callback - deny for safety
                             logger.warning(f"No permission callback for {tool_name}, denying")
@@ -714,21 +715,17 @@ class RoundtableService:
 
             queue = ObservationQueue()
 
-            # Run async enqueue in a new event loop (we're in sync context)
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    queue.enqueue(
-                        project_id=project_id,
-                        session_id=session_id,
-                        agent_type=agent_type,
-                        tool_name=tool_name,
-                        tool_input=tool_input,
-                        tool_output=tool_output,
-                    )
+            # Run async enqueue in sync context
+            _run_async_in_sync_context(
+                queue.enqueue(
+                    project_id=project_id,
+                    session_id=session_id,
+                    agent_type=agent_type,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_output=tool_output,
                 )
-            finally:
-                loop.close()
+            )
         except Exception as e:
             # Don't break roundtable for observation capture failures
             logger.warning(f"Failed to capture observation: {e}")
