@@ -269,7 +269,7 @@ def list_tasks(
             WHERE {conditions}
             ORDER BY t.priority ASC, t.created_at DESC
             LIMIT %s OFFSET %s
-            """).format(conditions=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)),  # type: ignore[arg-type]
+            """).format(conditions=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)),
             tuple(params),
         )
         rows = cur.fetchall()

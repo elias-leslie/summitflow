@@ -334,9 +334,9 @@ class ClaudeClient(LLMClient):
             return {}
 
         # Build hooks dict
-        hooks: dict[str, list[HookMatcher]] = {"PreToolUse": [HookMatcher(hooks=[permission_hook])]}  # type: ignore[arg-type]
+        hooks: dict[str, list[HookMatcher]] = {"PreToolUse": [HookMatcher(hooks=[permission_hook])]}  # type: ignore[list-item]
         if after_tool_callback:
-            hooks["PostToolUse"] = [HookMatcher(hooks=[post_tool_hook])]  # type: ignore[arg-type]
+            hooks["PostToolUse"] = [HookMatcher(hooks=[post_tool_hook])]  # type: ignore[list-item]
 
         # Build options with hooks and optional session resume
         options = ClaudeAgentOptions(
@@ -364,10 +364,10 @@ class ClaudeClient(LLMClient):
                 # Capture session ID from init message
                 if (
                     hasattr(message, "subtype")
-                    and message.subtype == "init"  # type: ignore[attr-defined]
+                    and message.subtype == "init"
                     and hasattr(message, "data")
                 ):
-                    sdk_session_id = message.data.get("session_id")  # type: ignore[attr-defined]
+                    sdk_session_id = message.data.get("session_id")
                     if sdk_session_id:
                         logger.info(f"Claude SDK session ID: {sdk_session_id}")
 

@@ -41,7 +41,7 @@ def _build_where_clause(
         sql.Composable ready to format into a query
     """
     if conditions:
-        return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+        return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
     return sql.SQL("TRUE")
 
 
@@ -739,7 +739,7 @@ def get_refactor_targets(
         params.append(min_lines)
 
     with get_connection() as conn, conn.cursor() as cur:
-        where_clause_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+        where_clause_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
 
         cur.execute(
             sql.SQL("""

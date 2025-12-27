@@ -65,7 +65,7 @@ def build_where_clause(
         conditions.extend(special_conditions)
 
     if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)  # type: ignore[arg-type]
+        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
     else:
         where_clause = sql.SQL("TRUE")
 

@@ -557,7 +557,7 @@ def init_schema() -> None:
             try:
                 column.split()[0]
                 # Note: table and column names come from controlled internal list, not user input
-                cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")  # type: ignore[reportArgumentType]
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
             except Exception:
                 pass  # Column already exists
 
