@@ -130,19 +130,6 @@ async def _run_command(
         return -1, "", str(e)
 
 
-async def _execute_test_command(
-    command: str,
-    working_dir: str,
-    timeout: int,
-) -> tuple[int, str, str]:
-    """Execute a test command with timeout handling."""
-    return await _run_command(
-        command=command,
-        working_dir=working_dir,
-        timeout=timeout,
-    )
-
-
 def _build_test_result(
     passed: bool,
     stdout: str,
@@ -429,7 +416,7 @@ async def run_api_test(test: dict[str, Any], config: ProjectConfig) -> TestResul
         )
 
     timeout = test.get("timeout_seconds", 30)
-    exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
+    exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
 
     passed = exit_code == 0
 
@@ -479,7 +466,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
         )
 
         timeout = test.get("timeout_seconds", 120)
-        exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
+        exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
 
         result = parse_browser_script_output(stdout, stderr, exit_code)
 
@@ -509,9 +496,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
         try:
             command = f"node {temp_script_path}"
             timeout = test.get("timeout_seconds", 120)
-            exit_code, stdout, stderr = await _execute_test_command(
-                command, config.root_path, timeout
-            )
+            exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
             passed = exit_code == 0
             evidence_path = extract_evidence_path(stdout)
             return _build_test_result(passed, stdout, stderr, evidence_path)
@@ -522,7 +507,7 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
     command = test.get("command")
     if command:
         timeout = test.get("timeout_seconds", 120)
-        exit_code, stdout, stderr = await _execute_test_command(command, config.root_path, timeout)
+        exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
         passed = exit_code == 0
         return _build_test_result(passed, stdout, stderr)
 
