@@ -32,7 +32,7 @@ import {
   Loader2,
   Zap,
 } from "lucide-react";
-import { formatTime } from "@/lib/formatters/memory-formatters";
+import { formatTime, estimateTokens } from "@/lib/formatters/memory-formatters";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 
 // Observation types from the plan
@@ -220,11 +220,6 @@ export function MemoryStreamPanel({
       }
       return next;
     });
-  };
-
-  const estimateTokens = (text: string | null | undefined): number => {
-    if (!text) return 0;
-    return Math.ceil(text.length / 4);
   };
 
   // Toggle concept filter
