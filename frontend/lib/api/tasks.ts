@@ -173,32 +173,24 @@ export async function startTask(
     allow_delegation?: boolean;
   }
 ): Promise<StartTaskResult> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`, {
+  return fetchWithErrorHandling(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(options),
+    errorMessage: "Failed to start task",
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Failed to start task");
-  }
-  return res.json();
 }
 
 export async function updateTaskStatus(
   projectId: string,
   taskId: string,
   status: TaskStatus,
-  errorMessage?: string
+  taskErrorMessage?: string
 ): Promise<Task> {
-  const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`, {
+  return fetchWithErrorHandling(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, error_message: errorMessage }),
+    body: JSON.stringify({ status, error_message: taskErrorMessage }),
+    errorMessage: "Failed to update task status",
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Failed to update task status");
-  }
-  return res.json();
 }
