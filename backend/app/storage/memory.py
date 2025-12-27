@@ -106,6 +106,13 @@ CHECKPOINT_COLUMNS = """
 """.strip()
 
 
+def _fetch_count(cur: Any, sql: str, params: list[Any]) -> int:
+    """Execute SQL and return count from first row, or 0 if no result."""
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    return row[0] if row else 0
+
+
 def _compute_observation_hash(title: str, observation_type: str, tool_name: str | None) -> str:
     """Compute a short hash for observation deduplication.
 
@@ -774,7 +781,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
 
     with get_connection() as conn, conn.cursor() as cur:
         # Failed queue count
-        cur.execute(
+        failed_queue_count = _fetch_count(
+            cur,
             f"""
             SELECT COUNT(*)
             FROM observation_queue
@@ -783,11 +791,10 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        row = cur.fetchone()
-        failed_queue_count = row[0] if row else 0
 
         # Stuck queue count (processing for > 1 hour)
-        cur.execute(
+        stuck_queue_count = _fetch_count(
+            cur,
             f"""
             SELECT COUNT(*)
             FROM observation_queue
@@ -797,8 +804,6 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        row = cur.fetchone()
-        stuck_queue_count = row[0] if row else 0
 
         # Oldest pending age in minutes
         cur.execute(
@@ -815,7 +820,8 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
         oldest_pending_age_minutes = int(result) if result else None
 
         # Unreflected diary count
-        cur.execute(
+        unreflected_diary_count = _fetch_count(
+            cur,
             f"""
             SELECT COUNT(*)
             FROM session_diary
@@ -824,11 +830,10 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        row = cur.fetchone()
-        unreflected_diary_count = row[0] if row else 0
 
         # Stale patterns count (applied but unused for 30+ days)
-        cur.execute(
+        stale_patterns_count = _fetch_count(
+            cur,
             f"""
             SELECT COUNT(*)
             FROM learned_patterns
@@ -838,8 +843,6 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         )
-        row = cur.fetchone()
-        stale_patterns_count = row[0] if row else 0
 
         # Pattern status breakdown
         cur.execute(
