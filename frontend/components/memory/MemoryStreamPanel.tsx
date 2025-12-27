@@ -33,26 +33,17 @@ import {
   Zap,
 } from "lucide-react";
 import { formatTime, estimateTokens } from "@/lib/formatters/memory-formatters";
+import {
+  type ObservationType,
+  type ConceptType,
+  OBSERVATION_TYPE_COLORS,
+  CONCEPT_COLORS,
+  OBSERVATION_TYPES,
+  CONCEPT_TYPES,
+  getContextTypeIcon,
+  getContextTypeColor,
+} from "@/lib/formatters/observation-colors";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
-
-// Observation types from the plan
-type ObservationType =
-  | "bugfix"
-  | "feature"
-  | "refactor"
-  | "change"
-  | "discovery"
-  | "decision";
-
-// Concept types from the plan
-type ConceptType =
-  | "how-it-works"
-  | "why-it-exists"
-  | "what-changed"
-  | "problem-solution"
-  | "gotcha"
-  | "pattern"
-  | "trade-off";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
   observation_type: ObservationType;
@@ -96,48 +87,6 @@ interface ExpandedContent {
 
 // Token limit for display (configurable)
 const TOKEN_LIMIT = 8000;
-
-// Color mapping for observation types
-const OBSERVATION_TYPE_COLORS: Record<ObservationType, string> = {
-  bugfix: "bg-red-500/10 text-red-500 border-red-500/20",
-  feature: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-  refactor: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  change: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  discovery: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  decision: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-};
-
-// Color mapping for concepts
-const CONCEPT_COLORS: Record<ConceptType, string> = {
-  "how-it-works": "bg-slate-500/10 text-slate-500",
-  "why-it-exists": "bg-indigo-500/10 text-indigo-400",
-  "what-changed": "bg-amber-500/10 text-amber-400",
-  "problem-solution": "bg-emerald-500/10 text-emerald-400",
-  gotcha: "bg-red-500/10 text-red-400",
-  pattern: "bg-blue-500/10 text-blue-400",
-  "trade-off": "bg-purple-500/10 text-purple-400",
-};
-
-// All observation types for filtering
-const OBSERVATION_TYPES: ObservationType[] = [
-  "bugfix",
-  "feature",
-  "refactor",
-  "change",
-  "discovery",
-  "decision",
-];
-
-// All concept types for filtering
-const CONCEPT_TYPES: ConceptType[] = [
-  "how-it-works",
-  "why-it-exists",
-  "what-changed",
-  "problem-solution",
-  "gotcha",
-  "pattern",
-  "trade-off",
-];
 
 export function MemoryStreamPanel({
   projectId,
@@ -341,34 +290,6 @@ export function MemoryStreamPanel({
         next.delete(entityId);
         return next;
       });
-    }
-  };
-
-  // Get icon for context item type
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "observation":
-        return <Brain className="h-3.5 w-3.5" />;
-      case "checkpoint":
-        return <Clock className="h-3.5 w-3.5" />;
-      case "pattern":
-        return <Layers className="h-3.5 w-3.5" />;
-      default:
-        return <Database className="h-3.5 w-3.5" />;
-    }
-  };
-
-  // Get color for context item type
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "observation":
-        return "bg-purple-500/10 text-purple-500 border-purple-500/20";
-      case "checkpoint":
-        return "bg-amber-500/10 text-amber-500 border-amber-500/20";
-      case "pattern":
-        return "bg-blue-500/10 text-blue-500 border-blue-500/20";
-      default:
-        return "bg-slate-500/10 text-slate-500 border-slate-500/20";
     }
   };
 
