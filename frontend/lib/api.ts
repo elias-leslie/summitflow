@@ -338,7 +338,7 @@ export async function* streamRoundtableMessage(
 
         const lines = eventBlock.split("\n");
         let eventType: RoundtableSSEEventType = "done";
-        let eventData = {};
+        let eventData: Record<string, unknown> = {};
 
         for (const line of lines) {
           if (line.startsWith("event: ")) {
