@@ -17,6 +17,7 @@ Changes from source:
   - Added project_id parameter to all functions
   - Uses get_connection() context manager
   - Evidence paths are project-relative
+  - Database operations moved to storage/evidence.py
 """
 
 from __future__ import annotations
@@ -28,9 +29,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from psycopg import sql
-
 from ..logging_config import get_logger
+from ..storage import evidence as evidence_storage
 from ..storage.connection import get_connection
 
 logger = get_logger(__name__)
@@ -40,13 +40,6 @@ DEFAULT_EXPIRY_HOURS = 24
 MAX_VERSIONS_TO_KEEP = 5
 CAPTURE_TIMEOUT_SECONDS = 60
 
-# Shared SELECT columns for evidence queries (DRY)
-EVIDENCE_SELECT_COLUMNS = """id, evidence_id, capability_id, criterion_id, evidence_type,
-       file_path, file_size_bytes, version, is_current,
-       captured_at, expires_at, quality_status, quality_issues,
-       confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-       user_reviewed_at, user_approved, user_notes"""
-
 
 def get_evidence_base_dir(project_id: str) -> Path:
     """Get evidence base directory for a project.
@@ -54,7 +47,6 @@ def get_evidence_base_dir(project_id: str) -> Path:
     TODO: Fetch from project config in database.
     For now, use a standard path structure.
     """
-    # TODO: Query projects table for data_dir and use that
     return Path(f"/home/kasadis/summitflow/data/projects/{project_id}/evidence")
 
 
@@ -63,7 +55,6 @@ def get_browser_scripts_dir(project_id: str) -> Path:
 
     TODO: Fetch from project config in database.
     """
-    # TODO: Query projects table for browser_scripts_dir
     return Path("/home/kasadis/summitflow/.claude/skills/browser-automation/scripts")
 
 
@@ -99,7 +90,6 @@ async def capture_evidence(
             "error": f"Capture script not found: {script_path}",
         }
 
-    # Ensure evidence directory exists
     evidence_base.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -121,7 +111,6 @@ async def capture_evidence(
 
         output = stdout.decode()
 
-        # Parse JSON result from script output
         result_line = None
         for line in output.split("\n"):
             if line.startswith("{") and '"success"' in line:
@@ -147,63 +136,6 @@ async def capture_evidence(
             "success": False,
             "error": str(e),
         }
-
-
-def _mark_previous_as_stale(
-    cur: Any,
-    project_id: str,
-    capability_id: str,
-    criterion_id: str,
-) -> None:
-    """Mark previous evidence versions as not current."""
-    cur.execute(
-        """
-        UPDATE evidence
-        SET is_current = FALSE, updated_at = NOW()
-        WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE
-        """,
-        (project_id, capability_id, criterion_id),
-    )
-
-
-def _insert_evidence_record(
-    cur: Any,
-    project_id: str,
-    evidence_id: str,
-    capability_id: str,
-    criterion_id: str,
-    file_path: str,
-    file_size_bytes: int | None,
-    version: int,
-    expires_at: datetime,
-) -> tuple[int, str, datetime | None]:
-    """Insert a new evidence record and return (id, evidence_id, captured_at)."""
-    cur.execute(
-        """
-        INSERT INTO evidence (
-            project_id, evidence_id, capability_id, criterion_id, evidence_type,
-            file_path, file_size_bytes, version, is_current,
-            captured_at, expires_at, quality_status
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), %s, 'pending')
-        RETURNING id, evidence_id, captured_at
-        """,
-        (
-            project_id,
-            evidence_id,
-            capability_id,
-            criterion_id,
-            "evidence",
-            file_path,
-            file_size_bytes,
-            version,
-            expires_at,
-        ),
-    )
-    result = cur.fetchone()
-    if not result:
-        raise RuntimeError("Failed to create evidence record")
-    return result[0], result[1], result[2]
 
 
 def save_evidence(
@@ -235,8 +167,8 @@ def save_evidence(
     expires_at = datetime.now(UTC) + timedelta(hours=expires_hours)
 
     with get_connection() as conn, conn.cursor() as cur:
-        _mark_previous_as_stale(cur, project_id, capability_id, criterion_id)
-        rec_id, rec_evidence_id, captured_ts = _insert_evidence_record(
+        evidence_storage.mark_previous_as_stale(cur, project_id, capability_id, criterion_id)
+        rec_id, rec_evidence_id, captured_ts = evidence_storage.insert_evidence_record(
             cur,
             project_id,
             evidence_id,
@@ -271,254 +203,18 @@ def save_evidence(
         }
 
 
-def get_evidence(
-    project_id: str,
-    capability_id: str,
-    criterion_id: str,
-    version: int | None = None,
-) -> dict[str, Any] | None:
-    """Get evidence metadata (current version or specific version).
-
-    Args:
-        project_id: Project ID for scoping
-        capability_id: Feature ID
-        criterion_id: Criterion ID
-        version: Optional specific version (defaults to current)
-
-    Returns:
-        Evidence record or None
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        if version:
-            cur.execute(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND version = %s",
-                (project_id, capability_id, criterion_id, version),
-            )
-        else:
-            cur.execute(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE",
-                (project_id, capability_id, criterion_id),
-            )
-        row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return _row_to_evidence(row)
-
-
-def get_latest_evidence(project_id: str) -> dict[str, Any] | None:
-    """Get the most recently captured evidence for a project.
-
-    Args:
-        project_id: Project ID for scoping
-
-    Returns:
-        Most recent evidence record or None
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND is_current = TRUE "
-            "ORDER BY captured_at DESC LIMIT 1",
-            (project_id,),
-        )
-        row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return _row_to_evidence(row)
-
-
-def get_next_version(project_id: str, capability_id: str, criterion_id: str) -> int:
-    """Get the next version number for a feature/criterion pair.
-
-    Args:
-        project_id: Project ID for scoping
-        capability_id: Feature ID
-        criterion_id: Criterion ID
-
-    Returns:
-        Next version number (1 if no existing versions)
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT MAX(version) as max_version
-            FROM evidence
-            WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
-            """,
-            (project_id, capability_id, criterion_id),
-        )
-        row = cur.fetchone()
-
-        if row and row[0]:
-            return row[0] + 1
-        return 1
-
-
-def get_evidence_versions(
-    project_id: str,
-    capability_id: str,
-    criterion_id: str,
-) -> list[dict[str, Any]]:
-    """Get all versions of evidence for a criterion.
-
-    Args:
-        project_id: Project ID for scoping
-        capability_id: Feature ID
-        criterion_id: Criterion ID
-
-    Returns:
-        List of evidence records ordered by version desc
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s "
-            "ORDER BY version DESC",
-            (project_id, capability_id, criterion_id),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
-
-
-def list_evidence(
-    project_id: str,
-    limit: int = 100,
-    offset: int = 0,
-    capability_id: str | None = None,
-    quality_status: str | None = None,
-    search: str | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    """List all current evidence for a project with filtering.
-
-    Args:
-        project_id: Project ID for scoping
-        limit: Maximum number of results
-        offset: Offset for pagination
-        capability_id: Optional filter by feature ID
-        quality_status: Optional filter by quality status
-        search: Optional search term (matches capability_id, criterion_id)
-
-    Returns:
-        Tuple of (list of evidence records, total count)
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        # Build WHERE clause
-        where_clauses = ["project_id = %s", "is_current = TRUE"]
-        params: list[Any] = [project_id]
-
-        if capability_id:
-            where_clauses.append("capability_id = %s")
-            params.append(capability_id)
-
-        if quality_status:
-            where_clauses.append("quality_status = %s")
-            params.append(quality_status)
-
-        if search:
-            where_clauses.append(
-                "(capability_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
-            )
-            search_pattern = f"%{search}%"
-            params.extend([search_pattern, search_pattern, search_pattern])
-
-        if where_clauses:
-            where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)  # type: ignore[arg-type]
-        else:
-            where_sql = sql.SQL("TRUE")
-
-        # Get total count
-        cur.execute(
-            sql.SQL("SELECT COUNT(*) FROM evidence WHERE {where_sql}").format(where_sql=where_sql),
-            params,
-        )
-        count_row = cur.fetchone()
-        total = int(count_row[0]) if count_row and count_row[0] else 0
-
-        # Get paginated results
-        params.extend([limit, offset])
-        cur.execute(
-            sql.SQL(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE {where_sql} ORDER BY captured_at DESC LIMIT %s OFFSET %s"
-            ).format(where_sql=where_sql),
-            params,
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows], total
-
-
-def get_pending_review(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get evidence pending AI review.
-
-    Args:
-        project_id: Project ID for scoping
-        limit: Maximum number of results
-
-    Returns:
-        List of evidence with quality_status = 'pending'
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND quality_status = 'pending' AND is_current = TRUE "
-            "ORDER BY captured_at DESC LIMIT %s",
-            (project_id, limit),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
-
-
-def get_needs_user_review(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get evidence that needs user review (low confidence or flagged).
-
-    Args:
-        project_id: Project ID for scoping
-        limit: Maximum number of results
-
-    Returns:
-        List of evidence with quality_status = 'needs_review'
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND quality_status = 'needs_review' AND is_current = TRUE "
-            "ORDER BY captured_at DESC LIMIT %s",
-            (project_id, limit),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
-
-
-def get_with_user_notes(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get evidence that has user notes/feedback.
-
-    Args:
-        project_id: Project ID for scoping
-        limit: Maximum number of results
-
-    Returns:
-        List of evidence with user_notes IS NOT NULL
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND user_notes IS NOT NULL AND is_current = TRUE "
-            "ORDER BY user_reviewed_at DESC LIMIT %s",
-            (project_id, limit),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
+# Re-export storage functions for backwards compatibility
+get_evidence = evidence_storage.get_evidence
+get_latest_evidence = evidence_storage.get_latest_evidence
+get_next_version = evidence_storage.get_next_version
+get_evidence_versions = evidence_storage.get_evidence_versions
+list_evidence = evidence_storage.list_evidence
+get_pending_review = evidence_storage.get_pending_review
+get_needs_user_review = evidence_storage.get_needs_user_review
+get_with_user_notes = evidence_storage.get_with_user_notes
+get_expired_evidence = evidence_storage.get_expired_evidence
+get_summary = evidence_storage.get_summary
+get_test_evidence = evidence_storage.get_test_evidence
 
 
 def update_ai_review(
@@ -530,58 +226,25 @@ def update_ai_review(
     quality_issues: list[str] | None = None,
     reviewed_by: str = "claude",
 ) -> bool:
-    """Record AI review result for evidence.
-
-    Args:
-        project_id: Project ID for scoping
-        evidence_id: The evidence ID
-        quality_status: New status ('passed', 'failed', 'needs_review')
-        confidence: Confidence score 0.0-1.0
-        ai_evidence: AI's reasoning/notes
-        quality_issues: List of detected issues
-        reviewed_by: Model/agent name
-
-    Returns:
-        True if updated successfully
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE evidence
-            SET quality_status = %s,
-                confidence = %s,
-                ai_evidence = %s,
-                quality_issues = %s,
-                ai_reviewed_at = NOW(),
-                ai_reviewed_by = %s,
-                updated_at = NOW()
-            WHERE project_id = %s AND evidence_id = %s
-            RETURNING id
-            """,
-            (
-                quality_status,
-                confidence,
-                ai_evidence,
-                json.dumps(quality_issues) if quality_issues else "[]",
-                reviewed_by,
-                project_id,
-                evidence_id,
-            ),
+    """Record AI review result for evidence."""
+    result = evidence_storage.update_ai_review(
+        project_id=project_id,
+        evidence_id=evidence_id,
+        quality_status=quality_status,
+        confidence=confidence,
+        ai_evidence=ai_evidence,
+        quality_issues=quality_issues,
+        reviewed_by=reviewed_by,
+    )
+    if result:
+        logger.info(
+            "ai_review_recorded",
+            project_id=project_id,
+            evidence_id=evidence_id,
+            quality_status=quality_status,
+            confidence=confidence,
         )
-        result = cur.fetchone()
-        conn.commit()
-
-        if result:
-            logger.info(
-                "ai_review_recorded",
-                project_id=project_id,
-                evidence_id=evidence_id,
-                quality_status=quality_status,
-                confidence=confidence,
-            )
-            return True
-
-        return False
+    return result
 
 
 def update_user_review(
@@ -590,159 +253,21 @@ def update_user_review(
     approved: bool | None,
     notes: str | None = None,
 ) -> bool:
-    """Record user review for evidence.
-
-    Args:
-        project_id: Project ID for scoping
-        evidence_id: The evidence ID
-        approved: True=approved, False=rejected, None=pending
-        notes: User feedback/notes
-
-    Returns:
-        True if updated successfully
-    """
-    # Also update quality_status based on user decision
-    new_status = None
-    if approved is True:
-        new_status = "passed"
-    elif approved is False:
-        new_status = "failed"
-
-    with get_connection() as conn, conn.cursor() as cur:
-        if new_status:
-            cur.execute(
-                """
-                UPDATE evidence
-                SET user_approved = %s,
-                    user_notes = %s,
-                    user_reviewed_at = NOW(),
-                    quality_status = %s,
-                    updated_at = NOW()
-                WHERE project_id = %s AND evidence_id = %s
-                RETURNING id
-                """,
-                (approved, notes, new_status, project_id, evidence_id),
-            )
-        else:
-            cur.execute(
-                """
-                UPDATE evidence
-                SET user_notes = %s,
-                    user_reviewed_at = NOW(),
-                    updated_at = NOW()
-                WHERE project_id = %s AND evidence_id = %s
-                RETURNING id
-                """,
-                (notes, project_id, evidence_id),
-            )
-        result = cur.fetchone()
-        conn.commit()
-
-        if result:
-            logger.info(
-                "user_review_recorded",
-                project_id=project_id,
-                evidence_id=evidence_id,
-                approved=approved,
-            )
-            return True
-
-        return False
-
-
-def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
-    """Get evidence that has expired and needs refresh.
-
-    Args:
-        project_id: Project ID for scoping
-
-    Returns:
-        List of expired current evidence
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND expires_at < NOW() AND is_current = TRUE "
-            "ORDER BY expires_at ASC",
-            (project_id,),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
-
-
-def _get_evidence_pairs_to_clean(
-    cur: Any,
-    project_id: str,
-    capability_id: str | None = None,
-) -> list[tuple[str, str]]:
-    """Get all capability/criterion pairs that have evidence to potentially clean."""
-    if capability_id:
-        cur.execute(
-            """
-            SELECT DISTINCT capability_id, criterion_id
-            FROM evidence
-            WHERE project_id = %s AND capability_id = %s
-            """,
-            (project_id, capability_id),
-        )
-    else:
-        cur.execute(
-            """
-            SELECT DISTINCT capability_id, criterion_id
-            FROM evidence
-            WHERE project_id = %s
-            """,
-            (project_id,),
-        )
-    result: list[tuple[str, str]] = cur.fetchall()
-    return result
-
-
-def _delete_old_versions_for_pair(
-    cur: Any,
-    project_id: str,
-    feat_id: str,
-    crit_id: str,
-    max_versions: int,
-    evidence_base: Path,
-    dry_run: bool,
-) -> tuple[int, int]:
-    """Delete old versions for a single capability/criterion pair.
-
-    Returns:
-        Tuple of (deleted_count, deleted_size_bytes)
-    """
-    cur.execute(
-        """
-        SELECT id, evidence_id, file_path, file_size_bytes, version
-        FROM evidence
-        WHERE project_id = %s AND capability_id = %s AND criterion_id = %s
-        ORDER BY version DESC
-        OFFSET %s
-        """,
-        (project_id, feat_id, crit_id, max_versions),
+    """Record user review for evidence."""
+    result = evidence_storage.update_user_review(
+        project_id=project_id,
+        evidence_id=evidence_id,
+        approved=approved,
+        notes=notes,
     )
-    old_versions = cur.fetchall()
-
-    deleted_count = 0
-    deleted_size = 0
-
-    for row in old_versions:
-        ev_id, _evidence_id, _file_path, size, version_val = row
-
-        if not dry_run:
-            version_str = str(version_val) if version_val is not None else "0"
-            version_dir = evidence_base / str(feat_id) / str(crit_id) / f"v{version_str}"
-            if version_dir.exists():
-                shutil.rmtree(version_dir)
-            cur.execute("DELETE FROM evidence WHERE id = %s", (ev_id,))
-
-        deleted_count += 1
-        if isinstance(size, int | float):
-            deleted_size += int(size)
-
-    return deleted_count, deleted_size
+    if result:
+        logger.info(
+            "user_review_recorded",
+            project_id=project_id,
+            evidence_id=evidence_id,
+            approved=approved,
+        )
+    return result
 
 
 def cleanup_old_versions(
@@ -767,10 +292,10 @@ def cleanup_old_versions(
     deleted_size = 0
 
     with get_connection() as conn, conn.cursor() as cur:
-        pairs = _get_evidence_pairs_to_clean(cur, project_id, capability_id)
+        pairs = evidence_storage.get_evidence_pairs_to_clean(cur, project_id, capability_id)
 
         for feat_id, crit_id in pairs:
-            count, size = _delete_old_versions_for_pair(
+            count, size = evidence_storage.delete_old_versions_for_pair(
                 cur, project_id, feat_id, crit_id, max_versions, evidence_base, dry_run
             )
             deleted_count += count
@@ -792,63 +317,6 @@ def cleanup_old_versions(
         "deleted_size_bytes": deleted_size,
         "dry_run": dry_run,
     }
-
-
-def get_summary(project_id: str) -> dict[str, Any]:
-    """Get summary statistics for evidence in a project.
-
-    Args:
-        project_id: Project ID for scoping
-
-    Returns:
-        Dict with counts and breakdowns
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        # Single query for all aggregations
-        cur.execute(
-            """
-            SELECT
-                COUNT(*) FILTER (WHERE is_current = TRUE) as total_current,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND expires_at < NOW()) as expired_count,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND user_notes IS NOT NULL) as with_notes,
-                COALESCE(SUM(file_size_bytes), 0) as total_size,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'pending') as status_pending,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'passed') as status_passed,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'failed') as status_failed,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'needs_review') as status_needs_review
-            FROM evidence
-            WHERE project_id = %s
-            """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-
-        if not row:
-            return {
-                "total_current": 0,
-                "by_status": {},
-                "expired_count": 0,
-                "with_user_notes": 0,
-                "total_storage_bytes": 0,
-            }
-
-        by_status: dict[str, int] = {}
-        if row[4]:
-            by_status["pending"] = int(row[4])
-        if row[5]:
-            by_status["passed"] = int(row[5])
-        if row[6]:
-            by_status["failed"] = int(row[6])
-        if row[7]:
-            by_status["needs_review"] = int(row[7])
-
-        return {
-            "total_current": int(row[0]) if row[0] else 0,
-            "by_status": by_status,
-            "expired_count": int(row[1]) if row[1] else 0,
-            "with_user_notes": int(row[2]) if row[2] else 0,
-            "total_storage_bytes": int(row[3]) if row[3] else 0,
-        }
 
 
 def read_evidence_file(
@@ -889,32 +357,6 @@ def read_evidence_file(
         return None
 
 
-def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert database row to evidence dict."""
-    return {
-        "id": row[0],
-        "evidence_id": row[1],
-        "capability_id": row[2],
-        "criterion_id": row[3],
-        "evidence_type": row[4],
-        "file_path": row[5],
-        "file_size_bytes": row[6],
-        "version": row[7],
-        "is_current": row[8],
-        "captured_at": row[9].isoformat() if row[9] else None,
-        "expires_at": row[10].isoformat() if row[10] else None,
-        "quality_status": row[11],
-        "quality_issues": row[12] if row[12] else [],
-        "confidence": row[13],
-        "ai_reviewed_at": row[14].isoformat() if row[14] else None,
-        "ai_reviewed_by": row[15],
-        "ai_evidence": row[16],
-        "user_reviewed_at": row[17].isoformat() if row[17] else None,
-        "user_approved": row[18],
-        "user_notes": row[19],
-    }
-
-
 # ============================================================
 # Test Evidence Integration
 # ============================================================
@@ -942,9 +384,7 @@ def register_test_evidence(
     Returns:
         Created evidence record or None if path doesn't exist
     """
-    from pathlib import Path as PathLib
-
-    evidence_file = PathLib(evidence_path)
+    evidence_file = Path(evidence_path)
     if not evidence_file.exists():
         logger.warning(
             "test_evidence_not_found",
@@ -955,18 +395,18 @@ def register_test_evidence(
         return None
 
     # Use test_id as capability_id and "test-run-{id}" as criterion for uniqueness
-    capability_id = f"test-{test_id}"
+    test_capability_id = f"test-{test_id}"
     criterion_id = f"run-{test_run_id}"
 
     # Get next version
-    version = get_next_version(project_id, capability_id, criterion_id)
+    version = evidence_storage.get_next_version(project_id, test_capability_id, criterion_id)
 
     # Get file size
     file_size = evidence_file.stat().st_size if evidence_file.exists() else 0
 
     # Copy evidence to standard location
     evidence_base = get_evidence_base_dir(project_id)
-    dest_dir = evidence_base / capability_id / criterion_id / f"v{version}"
+    dest_dir = evidence_base / test_capability_id / criterion_id / f"v{version}"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest_path = dest_dir / evidence_file.name
@@ -975,7 +415,7 @@ def register_test_evidence(
     # Save evidence record
     result = save_evidence(
         project_id=project_id,
-        capability_id=capability_id,
+        capability_id=test_capability_id,
         criterion_id=criterion_id,
         version=version,
         file_path=str(dest_dir.relative_to(evidence_base)),
@@ -984,16 +424,7 @@ def register_test_evidence(
     )
 
     # Update test_runs with evidence_path
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE test_runs
-            SET evidence_path = %s, updated_at = NOW()
-            WHERE id = %s
-            """,
-            (str(dest_path), test_run_id),
-        )
-        conn.commit()
+    evidence_storage.update_test_run_evidence_path(test_run_id, str(dest_path))
 
     logger.info(
         "test_evidence_registered",
@@ -1005,37 +436,3 @@ def register_test_evidence(
     )
 
     return result
-
-
-def get_test_evidence(
-    project_id: str,
-    test_id: str,
-    test_run_id: int | None = None,
-) -> list[dict[str, Any]]:
-    """Get evidence for a test or test run.
-
-    Args:
-        project_id: Project ID for scoping
-        test_id: The test ID
-        test_run_id: Optional specific test run ID
-
-    Returns:
-        List of evidence records
-    """
-    capability_id = f"test-{test_id}"
-
-    if test_run_id:
-        criterion_id = f"run-{test_run_id}"
-        return get_evidence_versions(project_id, capability_id, criterion_id)
-
-    # Get all evidence for this test
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-            "WHERE project_id = %s AND capability_id = %s AND is_current = TRUE "
-            "ORDER BY captured_at DESC",
-            (project_id, capability_id),
-        )
-        rows = cur.fetchall()
-
-        return [_row_to_evidence(row) for row in rows]
