@@ -26,10 +26,14 @@ from .tools.categories import (
     WRITE_TOOLS,
 )
 from .validation import (
+    ALLOWED_BASES,
     require_param,
     require_valid_path,
     validate_file_exists,
 )
+
+# Default project path (first allowed base)
+DEFAULT_PROJECT_PATH = ALLOWED_BASES[0]
 
 logger = logging.getLogger(__name__)
 
@@ -345,11 +349,11 @@ class RoundtableToolExecutor:
         if err:
             return err
 
-        search_path = params.get("path", "/home/kasadis/summitflow")
+        search_path = params.get("path", DEFAULT_PROJECT_PATH)
         file_type = params.get("file_type", "")
 
         # Validate path (handles relative paths)
-        path, err = self._require_valid_path(search_path, default_base="/home/kasadis/summitflow")
+        path, err = self._require_valid_path(search_path, default_base=DEFAULT_PROJECT_PATH)
         if err:
             return err
 
@@ -377,11 +381,11 @@ class RoundtableToolExecutor:
         if err:
             return err
 
-        base_path = params.get("path", "/home/kasadis/summitflow")
+        base_path = params.get("path", DEFAULT_PROJECT_PATH)
         limit = min(params.get("limit", 50), 200)  # Max 200 files
 
         # Validate path (handles relative paths)
-        base, err = self._require_valid_path(base_path, default_base="/home/kasadis/summitflow")
+        base, err = self._require_valid_path(base_path, default_base=DEFAULT_PROJECT_PATH)
         if err:
             return err
 
@@ -417,10 +421,8 @@ class RoundtableToolExecutor:
         project = params.get("project", "summitflow")
         depth = min(params.get("depth", 2), 4)
 
-        project_paths = {
-            "summitflow": "/home/kasadis/summitflow",
-            "portfolio-ai": "/home/kasadis/portfolio-ai",
-        }
+        # Build project paths from allowed bases (project name = directory name)
+        project_paths = {Path(p).name: p for p in ALLOWED_BASES}
 
         base_path = project_paths.get(project)
         if not base_path:
