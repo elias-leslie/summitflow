@@ -41,6 +41,7 @@ import {
 import { ContextItemCard, type ContextItem, type ExpandedContent } from "./ContextItemCard";
 import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
+import { useObservationFilter } from "@/lib/hooks/useObservationFilter";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
   observation_type: ObservationType;
@@ -101,9 +102,16 @@ export function MemoryStreamPanel({
   const reconnecting = status === 'reconnecting';
 
   // Filtering state
-  const [typeFilter, setTypeFilter] = useState<ObservationType | "all">("all");
-  const [conceptFilters, setConceptFilters] = useState<Set<ConceptType>>(new Set());
-  const [showFilters, setShowFilters] = useState(false);
+  const {
+    typeFilter,
+    setTypeFilter,
+    conceptFilters,
+    showFilters,
+    setShowFilters,
+    toggleConceptFilter,
+    clearFilters,
+    hasActiveFilters,
+  } = useObservationFilter();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<"stream" | "context">("stream");
@@ -151,28 +159,6 @@ export function MemoryStreamPanel({
       return next;
     });
   };
-
-  // Toggle concept filter
-  const toggleConceptFilter = (concept: ConceptType) => {
-    setConceptFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(concept)) {
-        next.delete(concept);
-      } else {
-        next.add(concept);
-      }
-      return next;
-    });
-  };
-
-  // Clear all filters
-  const clearFilters = () => {
-    setTypeFilter("all");
-    setConceptFilters(new Set());
-  };
-
-  // Check if any filters are active
-  const hasActiveFilters = typeFilter !== "all" || conceptFilters.size > 0;
 
   // Filter observations
   const filteredObservations = observations.filter((obs) => {
