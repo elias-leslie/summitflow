@@ -93,6 +93,13 @@ OBSERVATION_COLUMNS = """
     extracted_by, raw_excerpt, created_at
 """.strip()
 
+CHECKPOINT_COLUMNS = """
+    id, project_id, session_id, agent_type, current_action,
+    question, options, recommendation, completed_steps,
+    remaining_steps, files_modified, decisions_made,
+    conversation_summary, context_snapshot, tokens_used, created_at
+""".strip()
+
 
 def _compute_observation_hash(title: str, observation_type: str, tool_name: str | None) -> str:
     """Compute a short hash for observation deduplication.
@@ -658,11 +665,8 @@ def get_latest_checkpoint(session_id: str) -> dict[str, Any] | None:
     """Get the most recent checkpoint for a session."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, current_action,
-                   question, options, recommendation, completed_steps,
-                   remaining_steps, files_modified, decisions_made,
-                   conversation_summary, context_snapshot, tokens_used, created_at
+            f"""
+            SELECT {CHECKPOINT_COLUMNS}
             FROM agent_checkpoints
             WHERE session_id = %s
             ORDER BY created_at DESC
@@ -685,11 +689,8 @@ def list_checkpoints(
     """List checkpoints for a project."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, session_id, agent_type, current_action,
-                   question, options, recommendation, completed_steps,
-                   remaining_steps, files_modified, decisions_made,
-                   conversation_summary, context_snapshot, tokens_used, created_at
+            f"""
+            SELECT {CHECKPOINT_COLUMNS}
             FROM agent_checkpoints
             WHERE project_id = %s
             ORDER BY created_at DESC
