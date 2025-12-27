@@ -39,6 +39,7 @@ import { AGENT_STYLES } from "@/lib/constants/agentStyles";
 import { VisionPreview, GeneratedMission, GeneratedNarrative } from "./VisionPreview";
 import { GoalsPreview, GeneratedGoal } from "./GoalsPreview";
 import { SpecPreview, GeneratedSpec, SpecComponent, SpecCapability, SpecTest } from "./SpecPreview";
+import { ChatStatusIndicator } from "./ChatStatusIndicator";
 
 // Re-export spec types for consumers
 export type { GeneratedSpec, SpecComponent, SpecCapability, SpecTest };
