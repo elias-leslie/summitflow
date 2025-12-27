@@ -20,7 +20,6 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
-  WifiOff,
   Clock,
   Tag,
   FileCode,
@@ -29,7 +28,6 @@ import {
   X,
   Database,
   Loader2,
-  Zap,
 } from "lucide-react";
 import { formatTime, estimateTokens } from "@/lib/formatters/memory-formatters";
 import {
@@ -41,6 +39,7 @@ import {
   CONCEPT_TYPES,
 } from "@/lib/formatters/observation-colors";
 import { ContextItemCard, type ContextItem, type ExpandedContent } from "./ContextItemCard";
+import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
 import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
 
 interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
@@ -299,22 +298,15 @@ export function MemoryStreamPanel({
               </Button>
             )}
             {activeTab === "stream" && (
-              connected ? (
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 text-xs">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Live
-                </Badge>
-              ) : reconnecting ? (
-                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 text-xs">
-                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                  Reconnecting
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="bg-red-500/10 text-red-500 text-xs">
-                  <WifiOff className="h-3 w-3 mr-1" />
-                  Disconnected
-                </Badge>
-              )
+              <ConnectionStatusBadge
+                status={
+                  connected
+                    ? "connected"
+                    : reconnecting
+                      ? "reconnecting"
+                      : "disconnected"
+                }
+              />
             )}
             {activeTab === "context" && (
               <Button
