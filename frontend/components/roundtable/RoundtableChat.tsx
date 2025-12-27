@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   FormEvent,
+  memo,
 } from "react";
 import { useFileAttachments, FileAttachment } from "../../hooks/useFileAttachments";
 import { clsx } from "clsx";
@@ -125,7 +126,7 @@ interface RoundtableChatProps {
   onAgentConfigChange?: (config: AgentConfig) => void;
 }
 
-function FilePreview({
+const FilePreview = memo(function FilePreview({
   attachment,
   onRemove,
 }: {
@@ -170,9 +171,9 @@ function FilePreview({
       </span>
     </div>
   );
-}
+});
 
-function MessageAttachments({
+const MessageAttachments = memo(function MessageAttachments({
   attachments,
 }: {
   attachments: FileAttachment[];
@@ -200,9 +201,9 @@ function MessageAttachments({
       ))}
     </div>
   );
-}
+});
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   isLast,
 }: {
@@ -277,7 +278,7 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 function ModeSelector({
   mode,
