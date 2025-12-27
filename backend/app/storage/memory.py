@@ -85,6 +85,11 @@ __all__ = [
 # Deduplication window in minutes
 DEDUP_WINDOW_MINUTES = 60
 
+# Time interval constants
+STUCK_QUEUE_THRESHOLD = "1 hour"
+STALE_PATTERN_THRESHOLD = "30 days"
+DEFAULT_CHECKPOINT_RETENTION_DAYS = 30
+
 # Column lists for DRY queries
 OBSERVATION_COLUMNS = """
     id, project_id, session_id, agent_type, observation_type,
@@ -787,7 +792,7 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             SELECT COUNT(*)
             FROM observation_queue
             WHERE status = 'processing'
-              AND created_at < NOW() - INTERVAL '1 hour'
+              AND created_at < NOW() - INTERVAL '{STUCK_QUEUE_THRESHOLD}'
             {project_filter}
             """,
             params,
@@ -828,7 +833,7 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
             SELECT COUNT(*)
             FROM learned_patterns
             WHERE status = 'applied'
-              AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '30 days')
+              AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '{STALE_PATTERN_THRESHOLD}')
             {project_filter}
             """,
             params,
@@ -864,7 +869,7 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
 # =============================================================================
 
 
-def cleanup_old_checkpoints(max_age_days: int = 30) -> int:
+def cleanup_old_checkpoints(max_age_days: int = DEFAULT_CHECKPOINT_RETENTION_DAYS) -> int:
     """Delete old checkpoints beyond the retention period.
 
     Args:
