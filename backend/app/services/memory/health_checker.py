@@ -1922,18 +1922,104 @@ Return ONLY the JSON array, no explanation.
     def _calculate_token_waste(self, report: DeepReviewReport) -> dict[str, Any]:
         """Calculate token waste from stale/redundant content.
 
-        Placeholder - will be implemented in task 7.4.
+        Estimates token counts for each instruction source and identifies
+        waste from:
+        - Stale sections (identified by LLM or staleness check)
+        - Broken references (indicating outdated content)
+        - Redundant content between sources
+
+        Uses tiktoken-like estimation (4 chars ≈ 1 token).
 
         Args:
             report: The deep review report with sections
 
         Returns:
-            Dict with token waste metrics
+            Dict with:
+                - total_tokens: Estimated total tokens across all sources
+                - waste_tokens: Estimated tokens that are stale/broken
+                - waste_pct: Percentage of waste
+                - by_source: Token breakdown by source (claude_md, agents_md, rules, etc.)
         """
-        # Will be implemented in task 7.4
+
+        def estimate_tokens(text: str) -> int:
+            """Estimate tokens using 4 chars per token heuristic."""
+            return len(text) // 4
+
+        total_tokens = 0
+        waste_tokens = 0
+        by_source: dict[str, dict[str, int]] = {}
+
+        # Calculate CLAUDE.md tokens
+        claude_md_tokens = sum(
+            estimate_tokens(s.get("content", "")) for s in report.claude_md_sections
+        )
+        by_source["claude_md"] = {"total": claude_md_tokens, "waste": 0}
+        total_tokens += claude_md_tokens
+
+        # Calculate AGENTS.md tokens
+        agents_md_tokens = sum(
+            estimate_tokens(s.get("content", "")) for s in report.agents_md_sections
+        )
+        by_source["agents_md"] = {"total": agents_md_tokens, "waste": 0}
+        total_tokens += agents_md_tokens
+
+        # Calculate project rules tokens
+        rules_tokens = sum(r.get("size_bytes", 0) // 4 for r in report.rules_files)
+        by_source["rules"] = {"total": rules_tokens, "waste": 0}
+        total_tokens += rules_tokens
+
+        # Calculate global rules tokens
+        global_rules_tokens = sum(r.get("size_bytes", 0) // 4 for r in report.global_rules_files)
+        by_source["global_rules"] = {"total": global_rules_tokens, "waste": 0}
+        total_tokens += global_rules_tokens
+
+        # Calculate waste from stale sections
+        for stale in report.stale_sections:
+            # Find the section content
+            source = None
+            section_tokens = 0
+
+            if stale.doc_file == "CLAUDE.md":
+                source = "claude_md"
+                matching = [
+                    s
+                    for s in report.claude_md_sections
+                    if s.get("section_title") == stale.section_title
+                ]
+                if matching:
+                    section_tokens = estimate_tokens(matching[0].get("content", ""))
+            elif stale.doc_file == "AGENTS.md":
+                source = "agents_md"
+                matching = [
+                    s
+                    for s in report.agents_md_sections
+                    if s.get("section_title") == stale.section_title
+                ]
+                if matching:
+                    section_tokens = estimate_tokens(matching[0].get("content", ""))
+
+            if source and section_tokens > 0:
+                # Weight by confidence
+                waste_contribution = int(section_tokens * stale.confidence)
+                by_source[source]["waste"] += waste_contribution
+                waste_tokens += waste_contribution
+
+        # Add waste estimate for broken references (rough: 20 tokens per broken ref)
+        broken_ref_waste = len(report.broken_refs) * 20
+        waste_tokens += broken_ref_waste
+
+        # Distribute broken ref waste to sources
+        for ref in report.broken_refs:
+            if ref.doc_file == "CLAUDE.md" and "claude_md" in by_source:
+                by_source["claude_md"]["waste"] += 20
+            elif ref.doc_file == "AGENTS.md" and "agents_md" in by_source:
+                by_source["agents_md"]["waste"] += 20
+
+        waste_pct = (waste_tokens / total_tokens * 100) if total_tokens > 0 else 0.0
+
         return {
-            "total_tokens": 0,
-            "waste_tokens": 0,
-            "waste_pct": 0.0,
-            "by_source": {},
+            "total_tokens": total_tokens,
+            "waste_tokens": waste_tokens,
+            "waste_pct": round(waste_pct, 2),
+            "by_source": by_source,
         }
