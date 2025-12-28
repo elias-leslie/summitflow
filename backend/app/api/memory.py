@@ -804,3 +804,45 @@ async def get_memory_health(
         metrics=metrics,
         timestamp=datetime.now(UTC).isoformat(),
     )
+
+
+@router.post("/memory/health/check", response_model=HealthResponse)
+async def run_health_check(
+    project_id: str = Query(..., description="Project ID to check"),
+) -> HealthResponse:
+    """Run health check with auto-correction.
+
+    This endpoint:
+    1. Checks for approved patterns and applies them
+    2. Checks filter rate and adds warnings if too high
+    3. Checks for missing observation types
+    4. Returns the full report with corrections and warnings
+    """
+    from ..services.memory.health_checker import MemoryHealthChecker
+
+    checker = MemoryHealthChecker(project_id)
+    report = checker.check_and_correct()
+
+    return HealthResponse(
+        status=report.status,
+        corrections=[
+            HealthCorrection(
+                type=c.correction_type,
+                description=c.description,
+                details=c.details,
+                timestamp=c.timestamp,
+            )
+            for c in report.corrections
+        ],
+        warnings=[
+            HealthWarning(
+                type=w.warning_type,
+                message=w.message,
+                severity=w.severity,
+                details=w.details,
+            )
+            for w in report.warnings
+        ],
+        metrics=report.metrics,
+        timestamp=report.timestamp,
+    )
