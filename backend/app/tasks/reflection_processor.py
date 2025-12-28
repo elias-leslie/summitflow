@@ -241,6 +241,67 @@ def trigger_capability_reflection(
         }
 
 
+@shared_task(
+    name="summitflow.process_pending_reflections",
+    bind=True,
+)
+def process_pending_reflections(
+    self,
+    threshold: int = DEFAULT_DIARY_THRESHOLD,
+    auto_apply: bool = True,
+) -> dict[str, Any]:
+    """Process pending reflections for all projects with unreflected entries.
+
+    Scheduled task that runs periodically to catch any unreflected diary entries
+    that weren't processed by the event-driven trigger.
+
+    Args:
+        threshold: Min unreflected entries to trigger reflection
+        auto_apply: Whether to auto-apply high-confidence patterns
+
+    Returns:
+        Summary dict with projects processed
+    """
+    logger.info("process_pending_reflections_started")
+
+    try:
+        # Get all projects with unreflected diary entries above threshold
+        projects = memory_storage.get_projects_needing_reflection(threshold=threshold)
+
+        if not projects:
+            logger.debug("no_projects_need_reflection")
+            return {"projects_checked": 0, "reflections_triggered": 0}
+
+        reflections_triggered = 0
+        for project in projects:
+            project_id = project["project_id"]
+            count = project["unreflected_count"]
+
+            logger.info(
+                "triggering_reflection_for_project",
+                project_id=project_id,
+                unreflected_count=count,
+            )
+
+            # Trigger async reflection
+            process_reflection.delay(  # type: ignore[reportCallIssue]
+                project_id=project_id,
+                auto_apply=auto_apply,
+            )
+            reflections_triggered += 1
+
+        result = {
+            "projects_checked": len(projects),
+            "reflections_triggered": reflections_triggered,
+        }
+        logger.info("process_pending_reflections_completed", **result)
+        return result
+
+    except Exception as e:
+        logger.error("process_pending_reflections_error", error=str(e))
+        return {"error": str(e)}
+
+
 def _publish_reflection_event(project_id: str, data: dict[str, Any]) -> None:
     """Publish reflection event to Redis for notifications."""
     try:

@@ -202,6 +202,34 @@ def get_unreflected_diary_count(project_id: str) -> int:
     return result[0] if result else 0
 
 
+def get_projects_needing_reflection(threshold: int = 3) -> list[dict[str, Any]]:
+    """Get all projects with unreflected diary entries above threshold.
+
+    Args:
+        threshold: Minimum unreflected entries to include project.
+
+    Returns:
+        List of dicts with project_id and unreflected_count.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT project_id, COUNT(*) as unreflected_count
+            FROM session_diary
+            WHERE reflected_at IS NULL
+            GROUP BY project_id
+            HAVING COUNT(*) >= %s
+            ORDER BY unreflected_count DESC
+            """,
+            (threshold,),
+        )
+        results = cur.fetchall()
+
+    return (
+        [{"project_id": row[0], "unreflected_count": row[1]} for row in results] if results else []
+    )
+
+
 def count_diary_entries_since(
     project_id: str,
     hours: int = 24,

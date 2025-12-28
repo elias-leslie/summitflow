@@ -93,6 +93,11 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60,  # Hourly
         "kwargs": {"threshold_minutes": 60},
     },
+    # Reflection processing - catch unreflected diary entries
+    "process-pending-reflections": {
+        "task": "summitflow.process_pending_reflections",
+        "schedule": 60 * 60 * 2,  # Every 2 hours
+    },
 }
 
 
