@@ -80,7 +80,7 @@ def upsert_entries(project_id: str, entry_type: str, entries: list[dict]) -> int
                 DO UPDATE SET
                     name = EXCLUDED.name,
                     health_status = EXCLUDED.health_status,
-                    metadata = EXCLUDED.metadata,
+                    metadata = explorer_entries.metadata || EXCLUDED.metadata,
                     last_scanned_at = EXCLUDED.last_scanned_at,
                     updated_at = EXCLUDED.updated_at
                 """,
