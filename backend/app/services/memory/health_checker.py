@@ -760,3 +760,146 @@ class MemoryHealthChecker:
             )
 
         return recommendations
+
+    def _check_rule_staleness(self, project_id: str) -> list[dict[str, Any]]:
+        """Check for stale rules in the project's .claude/rules/ directory.
+
+        A rule is considered stale if:
+        - Not modified in 90+ days AND not referenced in observations
+        - Has 0% adherence rate for 60+ days
+
+        Args:
+            project_id: Project to check
+
+        Returns:
+            List of stale rule dicts with:
+                - rule_file: filename
+                - path: full path
+                - last_modified_days: days since last modification
+                - last_referenced_days: days since last observation reference (or None)
+                - adherence_rate: adherence rate if tracked (or None)
+                - staleness_score: 0.0-1.0 (1.0 = definitely stale)
+                - reason: why it's considered stale
+        """
+        from datetime import datetime
+
+        stale_rules: list[dict[str, Any]] = []
+
+        # Get project root path
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT root_path FROM projects WHERE id = %s",
+                    (project_id,),
+                )
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    return []
+                project_root = Path(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to get project root for staleness check: {e}")
+            return []
+
+        rules_dir = project_root / ".claude" / "rules"
+        if not rules_dir.exists():
+            return []
+
+        now = datetime.now()
+
+        # Get rule adherence data
+        adherence_data = self._calculate_rule_adherence(project_id)
+        by_rule = adherence_data.get("by_rule", {})
+
+        # Scan rule files
+        for rule_file in rules_dir.glob("*.md"):
+            if rule_file.name == "learned-patterns.md":
+                # Skip learned-patterns.md - it's auto-managed
+                continue
+
+            filename = rule_file.name
+            stat = rule_file.stat()
+            mtime = datetime.fromtimestamp(stat.st_mtime)
+            days_since_modified = (now - mtime).days
+
+            # Check for references in observations
+            last_referenced_days = None
+            try:
+                with get_connection() as conn, conn.cursor() as cur:
+                    # Check if rule is mentioned in any observation's files_modified or narrative
+                    cur.execute(
+                        """
+                        SELECT MAX(created_at)
+                        FROM observations
+                        WHERE project_id = %s
+                          AND (
+                            files_modified::text ILIKE %s
+                            OR narrative ILIKE %s
+                            OR title ILIKE %s
+                          )
+                        """,
+                        (project_id, f"%{filename}%", f"%{filename}%", f"%{filename}%"),
+                    )
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        last_ref_date = row[0]
+                        if hasattr(last_ref_date, "replace"):
+                            # It's a datetime
+                            last_referenced_days = (now - last_ref_date.replace(tzinfo=None)).days
+            except Exception as e:
+                logger.debug(f"Failed to check references for {filename}: {e}")
+
+            # Get adherence rate for this rule
+            adherence_rate = None
+            if filename in by_rule:
+                adherence_rate = by_rule[filename].get("rate")
+
+            # Calculate staleness score
+            staleness_score = 0.0
+            reason = ""
+
+            # Factor 1: Days since modification (max 0.4)
+            if days_since_modified > 90:
+                staleness_score += min(0.4, (days_since_modified - 90) / 180 * 0.4)
+
+            # Factor 2: Days since referenced (max 0.3)
+            if last_referenced_days is not None and last_referenced_days > 60:
+                staleness_score += min(0.3, (last_referenced_days - 60) / 120 * 0.3)
+            elif last_referenced_days is None and days_since_modified > 60:
+                # Never referenced and old = likely stale
+                staleness_score += 0.2
+
+            # Factor 3: Low adherence rate (max 0.3)
+            if adherence_rate is not None and adherence_rate < 0.2:
+                staleness_score += 0.3 * (1 - adherence_rate / 0.2)
+
+            # Build reason
+            reasons = []
+            if days_since_modified > 90:
+                reasons.append(f"not modified in {days_since_modified} days")
+            if last_referenced_days is not None and last_referenced_days > 60:
+                reasons.append(f"not referenced in {last_referenced_days} days")
+            elif last_referenced_days is None and days_since_modified > 30:
+                reasons.append("never referenced in observations")
+            if adherence_rate is not None and adherence_rate < 0.2:
+                reasons.append(f"low adherence rate ({adherence_rate:.0%})")
+
+            reason = "; ".join(reasons) if reasons else "rule appears active"
+
+            # Only include if staleness score is significant
+            if staleness_score >= 0.3:
+                stale_rules.append(
+                    {
+                        "rule_file": filename,
+                        "path": str(rule_file),
+                        "last_modified_days": days_since_modified,
+                        "last_referenced_days": last_referenced_days,
+                        "adherence_rate": adherence_rate,
+                        "staleness_score": round(staleness_score, 2),
+                        "reason": reason,
+                    }
+                )
+
+        # Sort by staleness score descending
+        stale_rules.sort(key=lambda x: x["staleness_score"], reverse=True)
+
+        return stale_rules
