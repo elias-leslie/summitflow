@@ -901,3 +901,89 @@ def cleanup_old_checkpoints(max_age_days: int = DEFAULT_CHECKPOINT_RETENTION_DAY
         f"cleanup_old_checkpoints: deleted {deleted} checkpoints older than {max_age_days} days"
     )
     return deleted
+
+
+# =============================================================================
+# Embedding Functions for Semantic Search
+# =============================================================================
+
+
+def get_observations_without_embeddings(
+    project_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Get observations that don't have embeddings yet.
+
+    Args:
+        project_id: Optional project ID to filter by
+        limit: Maximum number of results
+
+    Returns:
+        List of observations needing embeddings (id, title, narrative)
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if project_id:
+            cur.execute(
+                """
+                SELECT id, project_id, title, narrative
+                FROM observations
+                WHERE embedding_narrative IS NULL
+                  AND narrative IS NOT NULL
+                  AND project_id = %s
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (project_id, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, project_id, title, narrative
+                FROM observations
+                WHERE embedding_narrative IS NULL
+                  AND narrative IS NOT NULL
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        return [
+            {
+                "id": str(row[0]),
+                "project_id": row[1],
+                "title": row[2],
+                "narrative": row[3],
+            }
+            for row in cur.fetchall()
+        ]
+
+
+def bulk_update_observation_embeddings(
+    updates: list[tuple[str, list[float], list[float]]],
+) -> int:
+    """Bulk update embeddings for multiple observations.
+
+    Args:
+        updates: List of (observation_id, embedding_narrative, embedding_title) tuples
+
+    Returns:
+        Number of observations updated
+    """
+    if not updates:
+        return 0
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Use executemany for batch update
+        cur.executemany(
+            """
+            UPDATE observations
+            SET embedding_narrative = %s,
+                embedding_title = %s
+            WHERE id = %s
+            """,
+            [(emb_narrative, emb_title, obs_id) for obs_id, emb_narrative, emb_title in updates],
+        )
+        conn.commit()
+        updated = cur.rowcount
+        logger.info(f"Bulk updated {updated} observation embeddings")
+        return updated

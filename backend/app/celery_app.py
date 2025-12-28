@@ -98,6 +98,11 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.process_pending_reflections",
         "schedule": 60 * 60 * 2,  # Every 2 hours
     },
+    # Embedding processing - generate embeddings for observations and prompts
+    "process-pending-embeddings": {
+        "task": "summitflow.process_pending_embeddings",
+        "schedule": 60 * 5,  # Every 5 minutes
+    },
 }
 
 
@@ -133,6 +138,7 @@ def setup_celery_task_logger(logger: logging.Logger, *args, **kwargs) -> None:  
 # Import tasks to register them with Celery
 from app.tasks import (  # noqa: F401, E402
     agent_runner,
+    embedding_processor,
     evidence_tasks,
     explorer_tasks,
     lifecycle_cleanup,
