@@ -651,3 +651,55 @@ class PatternService:
         """
         result = memory_storage.increment_pattern_usage(pattern_id)
         return result is not None
+
+    # =========================================================================
+    # Global Pattern Promotion
+    # =========================================================================
+
+    def promote_to_global(self, pattern_id: str) -> dict[str, Any]:
+        """Promote a pattern to global scope for use across all projects.
+
+        Creates a copy of the pattern with project_id='_global_'. Global patterns
+        are written to ~/.claude/rules/learned-patterns.md and apply to all projects.
+
+        Args:
+            pattern_id: The pattern ID to promote.
+
+        Returns:
+            The newly created global pattern.
+
+        Raises:
+            ValueError: If pattern not found or confidence < 0.9.
+        """
+        pattern = self.get_pattern(pattern_id)
+        if not pattern:
+            raise ValueError(f"Pattern {pattern_id} not found")
+
+        confidence = pattern.get("confidence", 0)
+        if confidence < 0.9:
+            raise ValueError(
+                f"Pattern confidence ({confidence:.2f}) must be >= 0.9 for global promotion"
+            )
+
+        # Create global copy using memory_storage directly (bypasses project_id check)
+        global_pattern = memory_storage.create_pattern(
+            project_id="_global_",
+            pattern_type=pattern.get("pattern_type", "rule"),
+            title=pattern["title"],
+            content=pattern["content"],
+            action="add",
+            rationale=f"Promoted from {self.project_id}: {pattern.get('rationale', '')}",
+            source_diary_ids=[pattern_id],  # Reference source pattern
+            confidence=confidence,
+            reflected_by=pattern.get("reflected_by"),
+        )
+
+        if not global_pattern:
+            raise ValueError("Failed to create global pattern")
+
+        logger.info(
+            f"pattern_promoted_to_global: "
+            f"source={pattern_id} global={global_pattern['id']} project={self.project_id}"
+        )
+
+        return global_pattern
