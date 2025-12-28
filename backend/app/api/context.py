@@ -7,6 +7,7 @@ This module provides REST API endpoints for the context system:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -16,6 +17,8 @@ from pydantic import BaseModel
 
 from ..services.memory import ContextBuilder
 from ..storage.agent_configs import is_memory_feature_enabled
+
+logger = logging.getLogger(__name__)
 
 
 def format_relative_time(timestamp: str | None) -> str:
@@ -294,12 +297,30 @@ async def get_session_start_context(
         token_estimate: Estimated tokens in the block
         items_included: Number of items included
     """
+    import time
+
     from ..storage.memory import (
         count_diary_entries_since,
         count_observations_since,
         list_diary_entries,
         list_observations,
     )
+
+    # Run quick health check (auto-applies approved patterns)
+    # Target: <100ms impact
+    try:
+        from ..services.memory.health_checker import MemoryHealthChecker
+
+        health_start = time.time()
+        checker = MemoryHealthChecker(project_id)
+        checker.quick_check()
+        health_elapsed = (time.time() - health_start) * 1000
+        if health_elapsed > 100:
+            logger.warning(
+                f"Session-start health check took {health_elapsed:.1f}ms (target: <100ms)"
+            )
+    except Exception as e:
+        logger.warning(f"Session-start health check failed: {e}")
 
     # Check if context injection is enabled for this project
     if not is_memory_feature_enabled(project_id, "context_injection"):
