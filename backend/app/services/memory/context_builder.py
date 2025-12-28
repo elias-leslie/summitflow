@@ -389,28 +389,28 @@ class ContextBuilder:
     ) -> float:
         """Compute multi-signal ranking score for an observation.
 
-        Combines multiple signals:
-        - FTS score (60%): Full-text search relevance
-        - Recency (10%): Exponential decay with 30-day half-life
+        Combines multiple signals with recency-weighted ranking:
+        - FTS score (50%): Full-text search relevance
+        - Recency (30%): Exponential decay with 30-day half-life
         - Confidence (15%): LLM extraction confidence
-        - Usage (10%): Capped at 10 uses
-        - Type boost (5%): Query-aware type boosting
+        - Usage (5%): Capped at 10 uses
 
         Args:
             obs: Observation dict with created_at, confidence, etc.
             fts_score: Normalized FTS score (0-1), from ts_rank
-            query_types: Optional list of observation types to boost
+            query_types: Optional list of observation types to boost (unused, kept for API compat)
 
         Returns:
             Combined score from 0.0 to 1.0
         """
+        # Suppress unused parameter warning
+        _ = query_types
 
-        # Weight configuration
-        w_fts = 0.60
-        w_recency = 0.10
+        # Weight configuration - recency-weighted for semantic search
+        w_fts = 0.50
+        w_recency = 0.30
         w_confidence = 0.15
-        w_usage = 0.10
-        w_type = 0.05
+        w_usage = 0.05
 
         # 1. FTS score (already 0-1, or normalize if needed)
         fts_norm = min(1.0, max(0.0, fts_score))
@@ -434,23 +434,12 @@ class ContextBuilder:
         usage = obs.get("usage_count", 0)
         usage_score = min(1.0, usage / 10.0)
 
-        # 5. Type boost (if query prefers certain types)
-        type_score = 0.0
-        if query_types:
-            obs_type = obs.get("observation_type", "")
-            if obs_type in query_types:
-                type_score = 1.0
-            # Boost errors and decisions by default
-            elif obs_type in ("error", "decision", "user_preference"):
-                type_score = 0.5
-
         # Combine signals
         combined = (
             w_fts * fts_norm
             + w_recency * recency_score
             + w_confidence * confidence_score
             + w_usage * usage_score
-            + w_type * type_score
         )
 
         return round(combined, 4)
