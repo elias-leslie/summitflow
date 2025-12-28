@@ -919,6 +919,69 @@ async def apply_approved_patterns(
     )
 
 
+class DeepReviewResponse(BaseModel):
+    """Response from deep review endpoint."""
+
+    claude_md_sections: list[dict[str, Any]] = []
+    agents_md_sections: list[dict[str, Any]] = []
+    rules_files: list[dict[str, Any]] = []
+    global_rules_files: list[dict[str, Any]] = []
+    broken_refs: list[dict[str, Any]] = []
+    stale_sections: list[dict[str, Any]] = []
+    token_waste: dict[str, Any] = {}
+    timestamp: str
+
+
+@router.get("/memory/deep-review", response_model=DeepReviewResponse)
+async def get_deep_review(
+    project_id: str = Query(..., description="Project ID to review"),
+) -> DeepReviewResponse:
+    """Get comprehensive deep review of project instruction surfaces.
+
+    Analyzes:
+    - CLAUDE.md and AGENTS.md sections
+    - Project and global rules files
+    - Broken references to files/functions
+    - Token waste calculation
+
+    Note: LLM review is not included in this sync endpoint.
+    Use POST /memory/deep-review for full LLM-powered analysis.
+    """
+    from ..services.memory.health_checker import MemoryHealthChecker
+
+    checker = MemoryHealthChecker(project_id)
+    report = checker.deep_review()
+
+    return DeepReviewResponse(
+        claude_md_sections=report.claude_md_sections,
+        agents_md_sections=report.agents_md_sections,
+        rules_files=report.rules_files,
+        global_rules_files=report.global_rules_files,
+        broken_refs=[
+            {
+                "doc_file": r.doc_file,
+                "line_number": r.line_number,
+                "reference": r.reference,
+                "ref_type": r.ref_type,
+                "reason": r.reason,
+            }
+            for r in report.broken_refs
+        ],
+        stale_sections=[
+            {
+                "doc_file": s.doc_file,
+                "section_title": s.section_title,
+                "line_start": s.line_start,
+                "staleness_reason": s.staleness_reason,
+                "confidence": s.confidence,
+            }
+            for s in report.stale_sections
+        ],
+        token_waste=report.token_waste,
+        timestamp=report.timestamp,
+    )
+
+
 class PromotePatternResponse(BaseModel):
     """Response for pattern promotion endpoint."""
 
