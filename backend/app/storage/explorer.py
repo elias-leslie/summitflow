@@ -29,6 +29,9 @@ _ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "cre
 # Extensions for code files that can be refactored
 REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
 
+# Path patterns to exclude from refactor targets (tests, config, etc.)
+REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
+
 
 def _to_iso_string(value: datetime | None) -> str | None:
     """Convert datetime to ISO string, returning None if value is None."""
@@ -746,6 +749,11 @@ def get_refactor_targets(
         conditions.append("(metadata->>'extension') = ANY(%s)")
         params.append(list(REFACTORABLE_EXTENSIONS))
 
+    # Exclude test files and other non-production code
+    for pattern in REFACTOR_EXCLUDE_PATTERNS:
+        conditions.append("path NOT LIKE %s")
+        params.append(f"%{pattern}%")
+
     if priority:
         conditions.append("(metadata->>'refactor_priority') = %s")
         params.append(priority)
@@ -815,6 +823,11 @@ def get_refactor_targets(
         elif code_only:
             summary_conditions.append("(metadata->>'extension') = ANY(%s)")
             summary_params.append(list(REFACTORABLE_EXTENSIONS))
+
+        # Exclude test files (same as main query)
+        for pattern in REFACTOR_EXCLUDE_PATTERNS:
+            summary_conditions.append("path NOT LIKE %s")
+            summary_params.append(f"%{pattern}%")
 
         summary_where = sql.SQL(" AND ").join(sql.SQL(c) for c in summary_conditions)
         cur.execute(
