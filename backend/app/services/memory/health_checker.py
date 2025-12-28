@@ -53,6 +53,8 @@ class HealthReport:
     corrections: list[Correction] = field(default_factory=list)
     warnings: list[Warning] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
+    stale_rules: list[dict[str, Any]] = field(default_factory=list)
+    auto_archived: list[dict[str, Any]] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def add_correction(self, correction_type: str, description: str, **details: Any) -> None:
@@ -95,6 +97,8 @@ class HealthReport:
                 for w in self.warnings
             ],
             "metrics": self.metrics,
+            "stale_rules": self.stale_rules,
+            "auto_archived": self.auto_archived,
             "timestamp": self.timestamp,
         }
 
@@ -353,6 +357,34 @@ class MemoryHealthChecker:
                 severity="medium",
                 approved=approved_count,
             )
+
+        # Check 5: Rule staleness and auto-archive
+        stale_rules = self._check_rule_staleness(pid)
+        report.stale_rules = stale_rules
+
+        if stale_rules:
+            # Auto-archive highly stale rules
+            archived = self._auto_archive_stale_rules(pid, stale_rules)
+            report.auto_archived = archived
+
+            if archived:
+                report.add_correction(
+                    "auto_archived_rules",
+                    f"Auto-archived {len(archived)} stale rules",
+                    count=len(archived),
+                    rules=[r["rule_file"] for r in archived],
+                )
+
+            # Warn about remaining stale rules not auto-archived
+            remaining_stale = [r for r in stale_rules if r not in archived]
+            if remaining_stale:
+                report.add_warning(
+                    "stale_rules",
+                    f"{len(remaining_stale)} stale rules detected. Consider reviewing.",
+                    severity="low",
+                    count=len(remaining_stale),
+                    rules=[r["rule_file"] for r in remaining_stale[:5]],  # Top 5
+                )
 
         # Determine overall status
         high_warnings = sum(1 for w in report.warnings if w.severity == "high")
