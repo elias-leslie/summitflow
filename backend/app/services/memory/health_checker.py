@@ -395,14 +395,30 @@ class MemoryHealthChecker:
             logger.error(f"quick_check failed: {e}")
             return False
 
+    def _get_global_approved_patterns(self) -> list[dict[str, Any]]:
+        """Get approved patterns from global scope.
+
+        Returns:
+            List of approved global patterns with confidence >= MIN_CONFIDENCE_FOR_AUTO_APPLY
+        """
+        patterns = memory_storage.list_patterns(
+            project_id="_global_",
+            status="approved",
+            limit=100,
+        )
+        return [p for p in patterns if p.get("confidence", 0) >= MIN_CONFIDENCE_FOR_AUTO_APPLY]
+
     def _apply_approved_patterns(self, project_id: str, patterns: list[dict[str, Any]]) -> int:
         """Apply approved patterns by writing to learned-patterns.md.
 
         Uses PatternService.apply_pattern() for each approved pattern.
         Updates database status to 'applied' and records timestamp.
 
+        For global patterns (project_id='_global_'), writes to ~/.claude/rules/learned-patterns.md
+        For project patterns, writes to project/.claude/rules/learned-patterns.md
+
         Args:
-            project_id: Project ID
+            project_id: Project ID (or '_global_' for global patterns)
             patterns: List of approved patterns to apply
 
         Returns:
@@ -414,9 +430,10 @@ class MemoryHealthChecker:
         from .pattern_service import PatternService
 
         # Determine project path from project_id
-        # For summitflow, the path is ~/summitflow
-        # For other projects, we'd need to look up the path
-        if project_id == "summitflow":
+        if project_id == "_global_":
+            # Global patterns go to ~/.claude/rules/
+            project_path = Path.home()
+        elif project_id == "summitflow":
             project_path = Path.home() / "summitflow"
         else:
             # Try to get from projects table
@@ -450,6 +467,21 @@ class MemoryHealthChecker:
                 continue
 
         return applied_count
+
+    def _apply_global_patterns(self) -> int:
+        """Apply approved global patterns to ~/.claude/rules/learned-patterns.md.
+
+        Returns:
+            Number of global patterns applied
+        """
+        global_patterns = self._get_global_approved_patterns()
+        if not global_patterns:
+            return 0
+
+        applied = self._apply_approved_patterns("_global_", global_patterns)
+        if applied > 0:
+            logger.info(f"Applied {applied} global patterns to ~/.claude/rules/learned-patterns.md")
+        return applied
 
     def get_threshold_recommendations(self, project_id: str | None = None) -> list[dict[str, Any]]:
         """Get recommendations for adjusting thresholds.
