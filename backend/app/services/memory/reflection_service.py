@@ -197,29 +197,16 @@ class ReflectionService:
         self.diary_service = DiaryService(project_id)
         self.pattern_service = PatternService(project_id, project_path)
 
-    def _get_client(self) -> Any:
-        """Get or create LLM client."""
+    def _get_client(self):
+        """Get or create dual provider LLM client with automatic failover."""
         if self._client is None:
-            import os
+            from ..agents import DualProviderClient
 
-            from google import genai
-
-            # Load API key from environment or ~/.gemini/.env
-            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-            if not api_key:
-                gemini_env = os.path.expanduser("~/.gemini/.env")
-                if os.path.exists(gemini_env):
-                    with open(gemini_env) as f:
-                        for line in f:
-                            if line.startswith("GEMINI_API_KEY="):
-                                api_key = line.strip().split("=", 1)[1]
-                                break
-
-            if api_key:
-                self._client = genai.Client(api_key=api_key)
-            else:
-                self._client = genai.Client()
-
+            self._client = DualProviderClient(
+                primary="gemini",
+                gemini_model="gemini-2.0-flash",
+                claude_model="claude-haiku-4-5",
+            )
         return self._client
 
     def analyze_diary(
@@ -264,19 +251,14 @@ class ReflectionService:
             existing_patterns=patterns_text,
         )
 
-        # Call LLM
+        # Call LLM using DualProviderClient
         try:
             client = self._get_client()
-            response = client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-            )
+            response = client.generate(prompt=prompt)
 
-            tokens_used = 0
-            if hasattr(response, "usage_metadata"):
-                tokens_used = getattr(response.usage_metadata, "total_token_count", 0)
+            tokens_used = response.usage.get("total_tokens", 0)
 
-            content = response.text.strip()
+            content = response.content.strip()
             suggestions = self._parse_suggestions(content)
 
         except Exception as e:
