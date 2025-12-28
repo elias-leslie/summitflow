@@ -776,6 +776,7 @@ class HealthResponse(BaseModel):
     corrections: list[HealthCorrection]
     warnings: list[HealthWarning]
     metrics: dict[str, Any]
+    recommendations: list[dict[str, Any]] | None = None
     timestamp: str
 
 
@@ -796,12 +797,14 @@ async def get_memory_health(
 
     checker = MemoryHealthChecker(project_id)
     metrics = checker.get_health_metrics()
+    recommendations = checker.get_threshold_recommendations()
 
     return HealthResponse(
         status="healthy",
         corrections=[],
         warnings=[],
         metrics=metrics,
+        recommendations=recommendations if recommendations else None,
         timestamp=datetime.now(UTC).isoformat(),
     )
 

@@ -450,3 +450,99 @@ class MemoryHealthChecker:
                 continue
 
         return applied_count
+
+    def get_threshold_recommendations(self, project_id: str | None = None) -> list[dict[str, Any]]:
+        """Get recommendations for adjusting thresholds.
+
+        Analyzes filter statistics and recommends threshold changes
+        to improve observation capture rate.
+
+        Args:
+            project_id: Project to analyze (uses default if not provided)
+
+        Returns:
+            List of recommendation dicts with type, current, recommended, reason
+        """
+        pid = project_id or self.project_id
+        if not pid:
+            return []
+
+        recommendations: list[dict[str, Any]] = []
+
+        try:
+            filter_stats = self._get_filter_stats(pid)
+        except Exception as e:
+            logger.warning(f"Failed to get filter stats for recommendations: {e}")
+            return []
+
+        skip_reasons = filter_stats.get("skip_reasons", {})
+        total_skipped = filter_stats.get("tools_skipped", 0)
+        total_received = filter_stats.get("tools_received", 1)
+
+        if total_skipped == 0:
+            return []
+
+        # Check tiny_output ratio
+        tiny_output_count = skip_reasons.get("tiny_output", 0)
+        tiny_output_ratio = tiny_output_count / max(total_skipped, 1)
+
+        if tiny_output_ratio > 0.5:
+            # More than 50% of skips are due to tiny_output
+            # Recommend lowering MIN_OUTPUT_LENGTH
+
+            # Current threshold is 200 chars (from hooks.py)
+            current_threshold = 200
+
+            # Calculate what threshold would capture 80% of currently skipped
+            # This is a heuristic - we'd need output length distribution for accuracy
+            # For now, recommend halving if high skip rate
+            skip_rate = filter_stats.get("skip_rate", 0)
+
+            if skip_rate > 0.5:
+                recommended = current_threshold // 2  # 100
+                confidence = "high"
+            elif skip_rate > 0.3:
+                recommended = int(current_threshold * 0.75)  # 150
+                confidence = "medium"
+            else:
+                recommended = current_threshold
+                confidence = "low"
+
+            if recommended != current_threshold:
+                recommendations.append(
+                    {
+                        "type": "min_output_length",
+                        "current": current_threshold,
+                        "recommended": recommended,
+                        "confidence": confidence,
+                        "reason": f"Tiny output causes {tiny_output_ratio:.0%} of skips. "
+                        f"Lowering threshold could capture {tiny_output_count} more observations.",
+                        "impact": {
+                            "additional_observations": tiny_output_count,
+                            "pct_of_skipped": tiny_output_ratio * 100,
+                        },
+                    }
+                )
+
+        # Check bash pattern skips
+        bash_skip_count = skip_reasons.get("skip_bash_pattern", 0)
+        bash_skip_ratio = bash_skip_count / max(total_received, 1)
+
+        if bash_skip_ratio > 0.1:
+            # More than 10% of all tools are bash pattern skips
+            recommendations.append(
+                {
+                    "type": "bash_skip_patterns",
+                    "current": "default patterns",
+                    "recommended": "review patterns",
+                    "confidence": "medium",
+                    "reason": f"Bash pattern filter is skipping {bash_skip_ratio:.1%} of all tools. "
+                    "Consider reviewing SKIP_BASH_PATTERNS in hooks.py.",
+                    "impact": {
+                        "skipped_count": bash_skip_count,
+                        "pct_of_total": bash_skip_ratio * 100,
+                    },
+                }
+            )
+
+        return recommendations
