@@ -25,6 +25,7 @@ OBSERVATION_TYPES = [
     "operational",  # Operational knowledge: commands, connection strings, environment setup
     "rule_adherence",  # Whether agent followed a rule from .claude/rules/
     "doc_version",  # Version tracking for CLAUDE.md and other docs
+    "refactoring_finding",  # Issues found during /refactor_it analysis (security, DRY, complexity)
 ]
 
 # History mining extraction focus - prioritized for backfill analysis
