@@ -61,19 +61,28 @@ class MemoryStats(BaseModel):
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
-async def get_memory_stats() -> MemoryStats:
+async def get_memory_stats(
+    project_id: str | None = Query(None, description="Filter by project"),
+) -> MemoryStats:
     """Get memory system statistics.
 
     Returns queue depth, observation counts, success rates, and health status.
+    Optionally filter by project_id.
     """
     now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = now - timedelta(days=1)
 
+    # Build project filter for SQL queries
+    project_filter = "AND project_id = %s" if project_id else ""
+
     with get_connection() as conn, conn.cursor() as cur:
         # Queue statistics
+        queue_params: list[datetime | str] = [yesterday, yesterday, yesterday]
+        if project_id:
+            queue_params.append(project_id)
         cur.execute(
-            """
+            f"""
             SELECT
                 COUNT(*) FILTER (WHERE status = 'pending') as pending,
                 COUNT(*) FILTER (WHERE status = 'processing') as processing,
@@ -83,8 +92,9 @@ async def get_memory_stats() -> MemoryStats:
                     AND processed_at >= %s) as failed_24h
             FROM observation_queue
             WHERE created_at >= %s
+            {project_filter}
             """,
-            (yesterday, yesterday, yesterday),
+            tuple(queue_params),
         )
         queue_row = cur.fetchone()
         pending = queue_row[0] if queue_row else 0
@@ -99,25 +109,33 @@ async def get_memory_stats() -> MemoryStats:
         success_rate = (processed_24h / total_completed * 100) if total_completed > 0 else 100.0
 
         # Observations today
+        obs_params: list = [today_start]
+        if project_id:
+            obs_params.append(project_id)
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*)
             FROM observations
             WHERE created_at >= %s
+            {project_filter}
             """,
-            (today_start,),
+            tuple(obs_params),
         )
         obs_row = cur.fetchone()
         observations_today = obs_row[0] if obs_row else 0
 
         # Token spend (discovery_tokens from observations in last 24h)
+        token_params: list = [yesterday]
+        if project_id:
+            token_params.append(project_id)
         cur.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(discovery_tokens), 0)
             FROM observations
             WHERE created_at >= %s
+            {project_filter}
             """,
-            (yesterday,),
+            tuple(token_params),
         )
         token_row = cur.fetchone()
         token_spend_24h = token_row[0] if token_row else 0
@@ -145,7 +163,7 @@ async def get_memory_stats() -> MemoryStats:
     filter_metrics = get_filtering_metrics()
 
     # Get lifecycle stats
-    lifecycle_data = memory_storage.get_lifecycle_stats()
+    lifecycle_data = memory_storage.get_lifecycle_stats(project_id)
     lifecycle = LifecycleStats(
         failed_queue_count=lifecycle_data["failed_queue_count"],
         stuck_queue_count=lifecycle_data["stuck_queue_count"],

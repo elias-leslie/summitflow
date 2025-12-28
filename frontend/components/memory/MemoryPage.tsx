@@ -273,8 +273,11 @@ export default function MemoryPage() {
       try {
         setLoading(true);
 
-        // Fetch stats
-        const statsRes = await fetch('/api/memory/stats');
+        // Fetch stats (filtered by project if selected)
+        const statsUrl = selectedProject
+          ? `/api/memory/stats?project_id=${selectedProject}`
+          : '/api/memory/stats';
+        const statsRes = await fetch(statsUrl);
         if (statsRes.ok) {
           const statsData = await statsRes.json();
           setStats(statsData);
