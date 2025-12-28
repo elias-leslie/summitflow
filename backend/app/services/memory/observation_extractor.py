@@ -160,38 +160,21 @@ class ObservationExtractor:
         """Initialize extractor.
 
         Args:
-            model: LLM model to use for extraction
+            model: LLM model to use for extraction (kept for API compatibility, ignored)
         """
-        self.model = model
+        self.model = model  # Kept for logging compatibility
         self._client = None
 
-    def _get_client(self) -> Any:
-        """Get or create LLM client."""
+    def _get_client(self):
+        """Get or create dual provider LLM client with automatic failover."""
         if self._client is None:
-            try:
-                import os
+            from ..agents import DualProviderClient
 
-                from google import genai
-
-                # Load API key from environment or ~/.gemini/.env
-                api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-                if not api_key:
-                    gemini_env = os.path.expanduser("~/.gemini/.env")
-                    if os.path.exists(gemini_env):
-                        with open(gemini_env) as f:
-                            for line in f:
-                                if line.startswith("GEMINI_API_KEY="):
-                                    api_key = line.strip().split("=", 1)[1]
-                                    break
-
-                if api_key:
-                    self._client = genai.Client(api_key=api_key)
-                else:
-                    # Fall back to default credentials
-                    self._client = genai.Client()
-            except ImportError:
-                logger.error("google-genai not installed")
-                raise
+            self._client = DualProviderClient(
+                primary="gemini",
+                gemini_model="gemini-2.0-flash",
+                claude_model="claude-haiku-4-5",
+            )
         return self._client
 
     def _truncate_output(self, output: str, max_chars: int = 2000) -> str:
@@ -230,20 +213,14 @@ class ObservationExtractor:
         try:
             client = self._get_client()
 
-            # Generate extraction
-            response = client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-            )
+            # Generate extraction using DualProviderClient
+            response = client.generate(prompt=prompt)
 
-            # Extract token usage
-            discovery_tokens = 0
-            if hasattr(response, "usage_metadata"):
-                usage = response.usage_metadata
-                discovery_tokens = getattr(usage, "total_token_count", 0)
+            # Extract token usage from LLMResponse
+            discovery_tokens = response.usage.get("total_tokens", 0)
 
             # Parse response
-            content = response.text.strip()
+            content = response.content.strip()
 
             # Try to extract JSON from response
             observation = self._parse_json_response(content)
@@ -257,7 +234,7 @@ class ObservationExtractor:
                     skipped=True,
                     skip_reason=observation.get("reason", "Trivial execution"),
                     discovery_tokens=discovery_tokens,
-                    extracted_by=self.model,
+                    extracted_by=response.model,
                 )
 
             # Validate and build observation
@@ -278,7 +255,7 @@ class ObservationExtractor:
                 files_read=observation.get("files_read"),
                 files_modified=observation.get("files_modified"),
                 discovery_tokens=discovery_tokens,
-                extracted_by=self.model,
+                extracted_by=response.model,
             )
 
         except Exception as e:
@@ -411,20 +388,14 @@ class ObservationExtractor:
         try:
             client = self._get_client()
 
-            # Generate batch extraction
-            response = client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-            )
+            # Generate batch extraction using DualProviderClient
+            response = client.generate(prompt=prompt)
 
-            # Extract token usage
-            discovery_tokens = 0
-            if hasattr(response, "usage_metadata"):
-                usage = response.usage_metadata
-                discovery_tokens = getattr(usage, "total_token_count", 0)
+            # Extract token usage from LLMResponse
+            discovery_tokens = response.usage.get("total_tokens", 0)
 
             # Parse response array
-            content = response.text.strip()
+            content = response.content.strip()
             results = self._parse_json_array(content)
 
             # Build index map for matching results to items
@@ -449,7 +420,7 @@ class ObservationExtractor:
                             skipped=True,
                             skip_reason=result.get("reason", "Trivial execution"),
                             discovery_tokens=per_item_tokens,
-                            extracted_by=self.model,
+                            extracted_by=response.model,
                         )
                     )
                     continue
@@ -503,7 +474,7 @@ class ObservationExtractor:
                         files_read=result.get("files_read"),
                         files_modified=result.get("files_modified"),
                         discovery_tokens=per_item_tokens,
-                        extracted_by=self.model,
+                        extracted_by=response.model,
                         raw_excerpt=raw_excerpts[idx],
                     )
                 )
