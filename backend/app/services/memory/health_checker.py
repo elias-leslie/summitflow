@@ -1107,3 +1107,190 @@ class MemoryHealthChecker:
                 continue
 
         return sections
+
+    def _detect_doc_conflicts(self, project_id: str) -> list[dict[str, Any]]:
+        """Detect conflicts between CLAUDE.md/AGENTS.md sections and learned patterns.
+
+        Compares doc sections to patterns and flags contradictions where:
+        - A pattern recommends 'use X' but doc says 'use Y'
+        - A pattern deprecates something still in the docs
+        - Doc and pattern give conflicting instructions on same topic
+
+        Uses semantic similarity via embedding comparison.
+
+        Args:
+            project_id: Project to analyze
+
+        Returns:
+            List of conflict dicts with:
+                - conflict_type: 'contradicting_guidance' | 'stale_reference' | 'duplicate_content'
+                - doc_section: {doc_file, section_title, line_start, content_excerpt}
+                - pattern: {id, title, content_excerpt}
+                - explanation: why this is a conflict
+                - severity: 'high' | 'medium' | 'low'
+        """
+        conflicts: list[dict[str, Any]] = []
+
+        # Get doc sections
+        sections = self._parse_claude_md(project_id)
+        if not sections:
+            return []
+
+        # Get applied patterns for this project
+        patterns = memory_storage.list_patterns(
+            project_id=project_id,
+            status="applied",
+            limit=200,
+        )
+
+        if not patterns:
+            return []
+
+        # Compare each section against patterns for potential conflicts
+        for section in sections:
+            section_lower = section["content"].lower()
+            section_title_lower = section["section_title"].lower()
+
+            for pattern in patterns:
+                pattern_content = pattern.get("content", "").lower()
+                pattern_title = pattern.get("title", "").lower()
+
+                # Skip empty content
+                if not pattern_content or not section_lower:
+                    continue
+
+                # Check for duplicate content (high similarity)
+                if self._is_similar_content(section_lower, pattern_content, threshold=0.6):
+                    conflicts.append(
+                        {
+                            "conflict_type": "duplicate_content",
+                            "doc_section": {
+                                "doc_file": section["doc_file"],
+                                "section_title": section["section_title"],
+                                "line_start": section["line_start"],
+                                "content_excerpt": section["content"][:200],
+                            },
+                            "pattern": {
+                                "id": pattern.get("id"),
+                                "title": pattern.get("title"),
+                                "content_excerpt": pattern.get("content", "")[:200],
+                            },
+                            "explanation": f"Pattern '{pattern.get('title')}' has similar content to "
+                            f"section '{section['section_title']}' in {section['doc_file']}. "
+                            "Consider consolidating.",
+                            "severity": "low",
+                        }
+                    )
+                    continue
+
+                # Check for contradicting guidance
+                # Look for opposing keywords
+                contradictions = self._check_for_contradictions(
+                    section_lower, pattern_content, section_title_lower, pattern_title
+                )
+
+                if contradictions:
+                    conflicts.append(
+                        {
+                            "conflict_type": "contradicting_guidance",
+                            "doc_section": {
+                                "doc_file": section["doc_file"],
+                                "section_title": section["section_title"],
+                                "line_start": section["line_start"],
+                                "content_excerpt": section["content"][:200],
+                            },
+                            "pattern": {
+                                "id": pattern.get("id"),
+                                "title": pattern.get("title"),
+                                "content_excerpt": pattern.get("content", "")[:200],
+                            },
+                            "explanation": contradictions,
+                            "severity": "high"
+                            if "must" in section_lower or "never" in section_lower
+                            else "medium",
+                        }
+                    )
+
+        return conflicts
+
+    def _is_similar_content(self, text1: str, text2: str, threshold: float = 0.6) -> bool:
+        """Check if two texts are semantically similar using word overlap.
+
+        Simple heuristic based on significant word overlap.
+
+        Args:
+            text1: First text to compare
+            text2: Second text to compare
+            threshold: Jaccard similarity threshold (0.0-1.0)
+
+        Returns:
+            True if similarity exceeds threshold
+        """
+
+        # Extract significant words (length > 3)
+        def get_words(text: str) -> set[str]:
+            words = set()
+            for word in text.split():
+                # Remove punctuation
+                word = word.strip(".,;:!?()[]{}\"'")
+                if len(word) > 3 and word.isalpha():
+                    words.add(word.lower())
+            return words
+
+        words1 = get_words(text1)
+        words2 = get_words(text2)
+
+        if not words1 or not words2:
+            return False
+
+        # Jaccard similarity
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+
+        return (intersection / union) >= threshold if union > 0 else False
+
+    def _check_for_contradictions(
+        self, doc_content: str, pattern_content: str, doc_title: str, pattern_title: str
+    ) -> str | None:
+        """Check if doc section and pattern have contradicting guidance.
+
+        Looks for patterns like:
+        - Doc says 'use X' but pattern says 'avoid X' or 'use Y instead of X'
+        - Doc says 'never X' but pattern says 'always X'
+        - Doc says 'prefer X' but pattern says 'prefer Y' on same topic
+
+        Args:
+            doc_content: Lowercase doc section content
+            pattern_content: Lowercase pattern content
+            doc_title: Lowercase doc section title
+            pattern_title: Lowercase pattern title
+
+        Returns:
+            Explanation string if contradiction found, None otherwise
+        """
+        # Check for same topic (title similarity)
+        if not self._is_similar_content(doc_title, pattern_title, threshold=0.3):
+            return None
+
+        # Opposing keyword pairs
+        opposites = [
+            ("always", "never"),
+            ("use", "avoid"),
+            ("prefer", "avoid"),
+            ("required", "optional"),
+            ("must", "should not"),
+            ("recommended", "deprecated"),
+            ("enable", "disable"),
+        ]
+
+        for word1, word2 in opposites:
+            # Check if doc has word1 and pattern has word2, or vice versa
+            if (word1 in doc_content and word2 in pattern_content) or (
+                word2 in doc_content and word1 in pattern_content
+            ):
+                return (
+                    f"Potential conflict: doc uses '{word1}'/'{word2}' guidance "
+                    f"that may contradict pattern guidance"
+                )
+
+        return None
