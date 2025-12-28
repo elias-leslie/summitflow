@@ -846,3 +846,45 @@ async def run_health_check(
         metrics=report.metrics,
         timestamp=report.timestamp,
     )
+
+
+class ApplyApprovedResponse(BaseModel):
+    """Response from apply-approved endpoint."""
+
+    applied_count: int
+    pattern_ids: list[str]
+    errors: list[str]
+
+
+@router.post("/memory/patterns/apply-approved", response_model=ApplyApprovedResponse)
+async def apply_approved_patterns(
+    project_id: str = Query(..., description="Project ID"),
+) -> ApplyApprovedResponse:
+    """Bulk apply all approved patterns with confidence >= 0.7.
+
+    This endpoint:
+    1. Gets all approved patterns with high confidence
+    2. Writes each to learned-patterns.md
+    3. Updates database status to 'applied'
+    4. Returns count and list of applied pattern IDs
+    """
+    from ..services.memory.health_checker import MemoryHealthChecker
+
+    checker = MemoryHealthChecker(project_id)
+    patterns = checker._get_approved_patterns(project_id)
+
+    if not patterns:
+        return ApplyApprovedResponse(
+            applied_count=0,
+            pattern_ids=[],
+            errors=["No approved patterns found with confidence >= 0.7"],
+        )
+
+    applied_count = checker._apply_approved_patterns(project_id, patterns)
+    pattern_ids = [str(p.get("id")) for p in patterns[:applied_count] if p.get("id")]
+
+    return ApplyApprovedResponse(
+        applied_count=applied_count,
+        pattern_ids=pattern_ids,
+        errors=[],
+    )
