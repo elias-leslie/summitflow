@@ -40,12 +40,25 @@ export interface Recommendation {
   impact: Record<string, unknown>;
 }
 
+export interface RuleAdherenceStats {
+  followed: number;
+  violated: number;
+  rate: number;
+}
+
+export interface RuleAdherence {
+  by_rule: Record<string, RuleAdherenceStats>;
+  overall_rate: number;
+  total_observations: number;
+}
+
 export interface HealthMetrics {
   filter_stats: FilterStats;
   observation_distribution: Record<string, number>;
   pattern_status: Record<string, number>;
   embedding_coverage: EmbeddingCoverage;
   approved_patterns_waiting: number;
+  rule_adherence?: RuleAdherence;
 }
 
 export interface HealthReport {

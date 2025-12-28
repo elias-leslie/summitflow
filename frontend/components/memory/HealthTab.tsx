@@ -15,6 +15,7 @@ import {
   useMemoryHealth,
   useRunHealthCheck,
   type HealthReport,
+  type RuleAdherence,
 } from '@/lib/hooks/useMemoryHealth';
 
 // Status indicator component
@@ -89,6 +90,111 @@ function StatCard({
         {trend === 'down' && <TrendingDown className="w-4 h-4 text-rose-400" />}
       </div>
       {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
+    </div>
+  );
+}
+
+// Adherence progress bar component
+function AdherenceProgressBar({
+  label,
+  stats,
+}: {
+  label: string;
+  stats: { followed: number; violated: number; rate: number };
+}) {
+  const rate = stats.rate * 100;
+  const total = stats.followed + stats.violated;
+
+  // Color coding: green >80%, yellow 50-80%, red <50%
+  const getBarColor = (pct: number) => {
+    if (pct >= 80) return 'bg-emerald-500';
+    if (pct >= 50) return 'bg-amber-500';
+    return 'bg-rose-500';
+  };
+
+  const getTextColor = (pct: number) => {
+    if (pct >= 80) return 'text-emerald-400';
+    if (pct >= 50) return 'text-amber-400';
+    return 'text-rose-400';
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-400 font-medium truncate max-w-[200px]" title={label}>
+          {label.replace('.md', '')}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={clsx('font-semibold', getTextColor(rate))}>
+            {rate.toFixed(0)}%
+          </span>
+          <span className="text-slate-600">
+            ({stats.followed}/{total})
+          </span>
+        </div>
+      </div>
+      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+        <div
+          className={clsx('h-full rounded-full transition-all', getBarColor(rate))}
+          style={{ width: `${rate}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Rule Adherence section component
+function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
+  const { by_rule, overall_rate, total_observations } = adherence;
+  const rules = Object.entries(by_rule);
+
+  if (total_observations === 0) {
+    return (
+      <div>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-slate-500" />
+          Rule Adherence
+        </h3>
+        <div className="px-4 py-6 bg-slate-800/30 border border-slate-700/50 rounded-lg text-center">
+          <p className="text-sm text-slate-500">No rule adherence data yet</p>
+          <p className="text-xs text-slate-600 mt-1">
+            Rule adherence observations will appear as the agent works
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Sort rules by adherence rate (lowest first for attention)
+  const sortedRules = rules.sort(([, a], [, b]) => a.rate - b.rate);
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-blue-400" />
+        Rule Adherence
+        <Badge
+          variant="secondary"
+          className={clsx(
+            'ml-auto text-xs',
+            overall_rate >= 0.8
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+              : overall_rate >= 0.5
+              ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+          )}
+        >
+          Overall: {(overall_rate * 100).toFixed(0)}%
+        </Badge>
+      </h3>
+      <div className="space-y-3 bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+        {sortedRules.map(([ruleName, stats]) => (
+          <AdherenceProgressBar key={ruleName} label={ruleName} stats={stats} />
+        ))}
+        <div className="pt-2 mt-2 border-t border-slate-700/50 text-xs text-slate-500">
+          Based on {total_observations} observation{total_observations !== 1 ? 's' : ''}
+        </div>
+      </div>
     </div>
   );
 }
@@ -267,6 +373,11 @@ export function HealthTab({ projectId }: { projectId: string }) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Rule Adherence */}
+      {metrics.rule_adherence && (
+        <RuleAdherenceSection adherence={metrics.rule_adherence} />
       )}
 
       {/* Warnings */}
