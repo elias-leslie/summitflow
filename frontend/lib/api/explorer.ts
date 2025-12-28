@@ -313,6 +313,10 @@ export interface RefactorTargetsResponse {
     medium_priority_count: number;
     total_complexity: number;
   };
+  warning?: {
+    message: string;
+    stale_count: number;
+  };
 }
 
 // ============================================================================
@@ -347,9 +351,36 @@ export async function fetchMultiCapabilityFiles(
 
 /**
  * Fetch files that are refactoring candidates.
+ *
+ * @param projectId - Project to fetch targets for
+ * @param options - Optional filters
+ * @param options.codeOnly - Filter to code files only (default: true)
+ * @param options.extensions - Comma-separated list of extensions to include
+ * @param options.limit - Max results (default: 50)
  */
-export async function fetchRefactorTargets(projectId: string): Promise<RefactorTargetsResponse> {
-  const res = await fetch(`/api/projects/${projectId}/explorer/refactor-targets`);
+export async function fetchRefactorTargets(
+  projectId: string,
+  options: {
+    codeOnly?: boolean;
+    extensions?: string;
+    limit?: number;
+  } = {}
+): Promise<RefactorTargetsResponse> {
+  const params = new URLSearchParams();
+
+  // Default to code_only=true
+  params.append("code_only", String(options.codeOnly ?? true));
+
+  if (options.extensions) {
+    params.append("extensions", options.extensions);
+  }
+  if (options.limit !== undefined) {
+    params.append("limit", String(options.limit));
+  }
+
+  const res = await fetch(
+    `/api/projects/${projectId}/explorer/refactor-targets?${params}`
+  );
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to fetch refactor targets" }));
     throw new Error(error.detail || "Failed to fetch refactor targets");

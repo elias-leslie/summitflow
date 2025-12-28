@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Folder, Database, Globe, FileText, Zap } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
 import { SummaryBar, ScanningOverlay } from "./SummaryBar";
-import { AnalysisSummary } from "./AnalysisSummary";
+import { CodeHealthPanel } from "./CodeHealthPanel";
 import {
   fetchExplorerEntries,
   triggerExplorerScan,
@@ -296,8 +296,8 @@ export function ExplorerShell({
           isScanning={isScanning}
         />
 
-        {/* Analysis summary */}
-        <AnalysisSummary projectId={projectId} />
+        {/* Code Health Panel */}
+        <CodeHealthPanel projectId={projectId} />
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden">
