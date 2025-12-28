@@ -782,11 +782,19 @@ def get_refactor_targets(
                        WHEN (metadata->>'lines_of_code')::int > 500 THEN 'High line count'
                        WHEN (metadata->>'complexity_score')::float > 10 THEN 'Medium complexity'
                        ELSE 'Medium line count'
-                   END as reason
+                   END as reason,
+                   COALESCE((metadata->>'commit_count_90d')::int, 0) as commit_count_90d,
+                   COALESCE((metadata->>'test_file_exists')::boolean, false) as test_file_exists,
+                   -- Hotspot score: high churn + high complexity = high priority
+                   ROUND(COALESCE((metadata->>'commit_count_90d')::int, 0) *
+                         COALESCE((metadata->>'complexity_score')::float, 0), 2) as hotspot_score
             FROM explorer_entries
             WHERE {where_clause}
             ORDER BY
                 CASE WHEN (metadata->>'refactor_priority') = 'high' THEN 0 ELSE 1 END,
+                -- Sort by hotspot_score DESC, then complexity
+                COALESCE((metadata->>'commit_count_90d')::int, 0) *
+                COALESCE((metadata->>'complexity_score')::float, 0) DESC,
                 (metadata->>'complexity_score')::float DESC
             LIMIT %s
             """).format(where_clause=where_clause_sql),
@@ -804,6 +812,9 @@ def get_refactor_targets(
                 "class_count": row[5],
                 "priority": row[6],
                 "reason": row[7],
+                "commit_count_90d": row[8],
+                "test_file_exists": row[9],
+                "hotspot_score": row[10],
             }
             for row in rows
         ]

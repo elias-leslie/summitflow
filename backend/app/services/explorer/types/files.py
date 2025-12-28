@@ -322,6 +322,7 @@ class FileScanner(BaseScanner):
                 continue
 
             try:
+                # Get last commit info
                 result = subprocess.run(
                     ["git", "log", "-1", "--format=%at|%h|%s", "--follow", "--", entry.path],
                     cwd=str(self.root_path),
@@ -350,8 +351,84 @@ class FileScanner(BaseScanner):
                     if len(parts) >= 3:
                         entry.metadata["last_commit_message"] = parts[2][:100]
 
+                # Get commit count in last 90 days (churn metric)
+                commit_count = self._get_commit_count(entry.path)
+                entry.metadata["commit_count_90d"] = commit_count
+
+                # Check if test file exists
+                test_file_exists = self._has_test_file(entry.path, entry.name)
+                entry.metadata["test_file_exists"] = test_file_exists
+
             except (subprocess.TimeoutExpired, ValueError, OSError):
                 entry.metadata["stale_status"] = "unknown"
+
+    def _get_commit_count(self, file_path: str) -> int:
+        """Get number of commits to a file in the last 90 days."""
+        if not self.root_path:
+            return 0
+
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "--oneline",
+                    "--since=90 days ago",
+                    "--follow",
+                    "--",
+                    file_path,
+                ],
+                cwd=str(self.root_path),
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")
+                return len([line for line in lines if line.strip()])
+            return 0
+        except (subprocess.TimeoutExpired, OSError):
+            return 0
+
+    def _has_test_file(self, file_path: str, file_name: str) -> bool:
+        """Check if a test file exists for this source file."""
+        if not self.root_path:
+            return False
+
+        # Get base name without extension
+        stem = Path(file_name).stem
+        ext = Path(file_name).suffix
+
+        # Skip if file is already a test file
+        if stem.startswith("test_") or stem.endswith("_test"):
+            return True  # It IS a test file
+
+        # Get directory of the source file
+        file_dir = Path(file_path).parent
+
+        # Test file patterns to check
+        test_patterns = [
+            f"test_{stem}{ext}",  # test_module.py
+            f"{stem}_test{ext}",  # module_test.py
+        ]
+
+        # Directories to check for tests
+        test_dirs = [
+            file_dir,  # Same directory
+            Path("tests") / file_dir,  # tests/app/module/
+            Path("tests"),  # tests/test_module.py
+            file_dir / "tests",  # app/tests/test_module.py
+        ]
+
+        for test_dir in test_dirs:
+            for pattern in test_patterns:
+                test_path = self.root_path / test_dir / pattern
+                if test_path.exists():
+                    return True
+
+        return False
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a file entry."""
