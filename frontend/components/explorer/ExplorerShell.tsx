@@ -296,8 +296,8 @@ export function ExplorerShell({
           isScanning={isScanning}
         />
 
-        {/* Code Health Panel */}
-        <CodeHealthPanel projectId={projectId} />
+        {/* Code Health Panel - only shown for files view */}
+        {activeType === "files" && <CodeHealthPanel projectId={projectId} />}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden">
