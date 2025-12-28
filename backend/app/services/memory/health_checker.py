@@ -416,6 +416,17 @@ class MemoryHealthChecker:
                 count=len(sync_suggestions),
             )
 
+        # Check 8: Track doc versions
+        doc_versions = self._track_doc_versions(pid)
+        new_versions = [d for d in doc_versions if d.get("is_new_version")]
+        if new_versions:
+            report.add_correction(
+                "doc_versions_tracked",
+                f"Tracked {len(new_versions)} doc version changes",
+                count=len(new_versions),
+                docs=[d["doc_file"] for d in new_versions],
+            )
+
         # Determine overall status
         high_warnings = sum(1 for w in report.warnings if w.severity == "high")
         medium_warnings = sum(1 for w in report.warnings if w.severity == "medium")
@@ -1426,3 +1437,97 @@ class MemoryHealthChecker:
                     )
 
         return suggestions
+
+    def _track_doc_versions(self, project_id: str) -> list[dict[str, Any]]:
+        """Track document versions by storing content hashes as observations.
+
+        Stores CLAUDE.md and AGENTS.md content hashes to enable:
+        - Detecting when docs have changed
+        - Querying version history
+        - Triggering sync suggestions on changes
+
+        Args:
+            project_id: Project to track
+
+        Returns:
+            List of tracked doc dicts with:
+                - doc_file: filename
+                - content_hash: SHA-256 hash
+                - is_new_version: whether this is a new hash
+        """
+        import hashlib
+
+        tracked: list[dict[str, Any]] = []
+
+        # Get project root path
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT root_path FROM projects WHERE id = %s",
+                    (project_id,),
+                )
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    return []
+                project_root = Path(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to get project root for doc version tracking: {e}")
+            return []
+
+        doc_files = ["CLAUDE.md", "AGENTS.md"]
+
+        for doc_file in doc_files:
+            doc_path = project_root / doc_file
+            if not doc_path.exists():
+                continue
+
+            try:
+                content = doc_path.read_text(encoding="utf-8")
+                content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+                # Check if we already have this version tracked
+                with get_connection() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT narrative FROM observations
+                        WHERE project_id = %s
+                          AND observation_type = 'doc_version'
+                          AND title = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """,
+                        (project_id, doc_file),
+                    )
+                    row = cur.fetchone()
+                    existing_hash = row[0] if row else None
+
+                is_new_version = existing_hash != content_hash
+
+                if is_new_version:
+                    # Store new version observation
+                    memory_storage.create_observation(
+                        project_id=project_id,
+                        session_id="health-check",
+                        agent_type="health-checker",
+                        observation_type="doc_version",
+                        title=doc_file,
+                        narrative=content_hash,
+                        priority="low",
+                        confidence=1.0,
+                        facts={"content_length": len(content), "previous_hash": existing_hash},
+                    )
+                    logger.info(f"Tracked new doc version: {doc_file} -> {content_hash}")
+
+                tracked.append(
+                    {
+                        "doc_file": doc_file,
+                        "content_hash": content_hash,
+                        "is_new_version": is_new_version,
+                    }
+                )
+
+            except Exception as e:
+                logger.warning(f"Failed to track version for {doc_file}: {e}")
+                continue
+
+        return tracked
