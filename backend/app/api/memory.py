@@ -109,7 +109,7 @@ async def get_memory_stats(
         success_rate = (processed_24h / total_completed * 100) if total_completed > 0 else 100.0
 
         # Observations today
-        obs_params: list = [today_start]
+        obs_params: list[datetime | str] = [today_start]
         if project_id:
             obs_params.append(project_id)
         cur.execute(
@@ -125,7 +125,7 @@ async def get_memory_stats(
         observations_today = obs_row[0] if obs_row else 0
 
         # Token spend (discovery_tokens from observations in last 24h)
-        token_params: list = [yesterday]
+        token_params: list[datetime | str] = [yesterday]
         if project_id:
             token_params.append(project_id)
         cur.execute(
