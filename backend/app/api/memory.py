@@ -795,6 +795,8 @@ class HealthResponse(BaseModel):
     warnings: list[HealthWarning]
     metrics: dict[str, Any]
     recommendations: list[dict[str, Any]] | None = None
+    stale_rules: list[dict[str, Any]] = []
+    auto_archived: list[dict[str, Any]] = []
     timestamp: str
 
 
@@ -865,6 +867,8 @@ async def run_health_check(
             for w in report.warnings
         ],
         metrics=report.metrics,
+        stale_rules=report.stale_rules,
+        auto_archived=report.auto_archived,
         timestamp=report.timestamp,
     )
 
