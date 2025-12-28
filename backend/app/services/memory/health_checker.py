@@ -356,6 +356,44 @@ class MemoryHealthChecker:
 
         return report
 
+    def quick_check(self, project_id: str | None = None) -> bool:
+        """Fast health check for SessionStart hook (<100ms target).
+
+        Only checks for approved patterns and applies them. Skips expensive
+        operations like filter stats, observation distribution, etc.
+
+        Args:
+            project_id: Project to check (uses default if not provided)
+
+        Returns:
+            True if check completed successfully
+        """
+        import time
+
+        start = time.time()
+        pid = project_id or self.project_id
+        if not pid:
+            logger.warning("quick_check called without project_id")
+            return False
+
+        try:
+            # Only check for approved patterns
+            approved_patterns = self._get_approved_patterns(pid)
+            if approved_patterns:
+                applied_count = self._apply_approved_patterns(pid, approved_patterns)
+                if applied_count > 0:
+                    logger.info(f"quick_check: auto-applied {applied_count} patterns for {pid}")
+
+            elapsed_ms = (time.time() - start) * 1000
+            if elapsed_ms > 100:
+                logger.warning(f"quick_check took {elapsed_ms:.1f}ms (target: <100ms)")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"quick_check failed: {e}")
+            return False
+
     def _apply_approved_patterns(self, project_id: str, patterns: list[dict[str, Any]]) -> int:
         """Apply approved patterns by writing to learned-patterns.md.
 
