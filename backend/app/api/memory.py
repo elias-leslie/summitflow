@@ -797,6 +797,8 @@ class HealthResponse(BaseModel):
     recommendations: list[dict[str, Any]] | None = None
     stale_rules: list[dict[str, Any]] = []
     auto_archived: list[dict[str, Any]] = []
+    sync_suggestions: list[dict[str, Any]] = []
+    doc_conflicts: list[dict[str, Any]] = []
     timestamp: str
 
 
@@ -869,6 +871,8 @@ async def run_health_check(
         metrics=report.metrics,
         stale_rules=report.stale_rules,
         auto_archived=report.auto_archived,
+        sync_suggestions=report.sync_suggestions,
+        doc_conflicts=report.doc_conflicts,
         timestamp=report.timestamp,
     )
 
