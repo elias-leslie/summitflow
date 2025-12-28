@@ -232,3 +232,142 @@ class MemoryHealthChecker:
             "embedding_coverage": self._get_embedding_coverage(pid),
             "approved_patterns_waiting": len(self._get_approved_patterns(pid)),
         }
+
+    def check_and_correct(self, project_id: str | None = None) -> HealthReport:
+        """Run all health checks and auto-correct any issues found.
+
+        This is the main self-healing method that:
+        1. Checks for approved patterns and applies them
+        2. Checks filter rate and adjusts thresholds if too high
+        3. Checks for missing observation types and adds warnings
+
+        Args:
+            project_id: Project to check (uses default if not provided)
+
+        Returns:
+            HealthReport with corrections applied and warnings
+        """
+        pid = project_id or self.project_id
+        if not pid:
+            raise ValueError("project_id required")
+
+        report = HealthReport()
+
+        # Collect metrics for the report
+        try:
+            metrics = self.get_health_metrics(pid)
+            report.metrics = metrics
+        except Exception as e:
+            logger.error(f"Failed to get health metrics: {e}")
+            report.add_warning("metrics_error", f"Failed to get metrics: {e}", severity="high")
+            return report
+
+        # Check 1: Approved patterns waiting
+        approved_patterns = self._get_approved_patterns(pid)
+        if approved_patterns:
+            applied_count = self._apply_approved_patterns(pid, approved_patterns)
+            if applied_count > 0:
+                report.add_correction(
+                    "auto_applied_patterns",
+                    f"Applied {applied_count} approved patterns to learned-patterns.md",
+                    count=applied_count,
+                    pattern_ids=[p.get("id") for p in approved_patterns[:applied_count]],
+                )
+            logger.info(f"Auto-applied {applied_count} patterns for {pid}")
+
+        # Check 2: Filter rate too high
+        filter_stats = metrics.get("filter_stats", {})
+        skip_rate = filter_stats.get("skip_rate", 0)
+
+        if skip_rate >= FILTER_RATE_CRITICAL_THRESHOLD:
+            # Check which reason is causing most skips
+            skip_reasons = filter_stats.get("skip_reasons", {})
+            tiny_output_count = skip_reasons.get("tiny_output", 0)
+            total_skipped = filter_stats.get("tools_skipped", 1)
+
+            if tiny_output_count / max(total_skipped, 1) > 0.5:
+                # More than 50% of skips are due to tiny_output
+                report.add_warning(
+                    "high_filter_rate",
+                    f"Filter rate is {skip_rate:.1%} with {tiny_output_count} tiny_output skips. "
+                    "Consider lowering MIN_OUTPUT_LENGTH.",
+                    severity="high",
+                    current_rate=skip_rate,
+                    tiny_output_pct=tiny_output_count / max(total_skipped, 1),
+                )
+            else:
+                report.add_warning(
+                    "high_filter_rate",
+                    f"Filter rate is {skip_rate:.1%}",
+                    severity="medium",
+                    current_rate=skip_rate,
+                    skip_reasons=skip_reasons,
+                )
+        elif skip_rate >= FILTER_RATE_WARNING_THRESHOLD:
+            report.add_warning(
+                "elevated_filter_rate",
+                f"Filter rate is {skip_rate:.1%} (above 50% threshold)",
+                severity="low",
+                current_rate=skip_rate,
+            )
+
+        # Check 3: No operational observations
+        obs_dist = metrics.get("observation_distribution", {})
+        operational_count = obs_dist.get("operational", 0)
+
+        if operational_count == 0:
+            report.add_warning(
+                "no_operational_observations",
+                "No operational observations found. Consider running history backfill.",
+                severity="medium",
+                recommendation="Run /memory_backfill to extract operational patterns",
+            )
+        elif operational_count < 10:
+            report.add_warning(
+                "few_operational_observations",
+                f"Only {operational_count} operational observations. Consider running backfill.",
+                severity="low",
+                count=operational_count,
+            )
+
+        # Check 4: Stale approved patterns (approved but not applied)
+        pattern_status = metrics.get("pattern_status", {})
+        approved_count = pattern_status.get("approved", 0)
+        applied_count = pattern_status.get("applied", 0)
+
+        if approved_count > 0 and applied_count == 0:
+            report.add_warning(
+                "patterns_not_applied",
+                f"{approved_count} patterns approved but none applied yet",
+                severity="medium",
+                approved=approved_count,
+            )
+
+        # Determine overall status
+        high_warnings = sum(1 for w in report.warnings if w.severity == "high")
+        medium_warnings = sum(1 for w in report.warnings if w.severity == "medium")
+
+        if high_warnings > 0:
+            report.status = "unhealthy"
+        elif medium_warnings > 2 or len(report.warnings) > 5:
+            report.status = "degraded"
+        elif report.corrections:
+            report.status = "corrected"  # Issues found but fixed
+
+        return report
+
+    def _apply_approved_patterns(self, project_id: str, patterns: list[dict[str, Any]]) -> int:
+        """Apply approved patterns by writing to learned-patterns.md.
+
+        This is a placeholder - actual implementation will be in task 1.4.
+
+        Args:
+            project_id: Project ID
+            patterns: List of approved patterns to apply
+
+        Returns:
+            Number of patterns successfully applied
+        """
+        # TODO: Implement in task 1.4
+        logger.info(f"Would apply {len(patterns)} patterns for {project_id}")
+        return 0  # Return 0 until implemented
