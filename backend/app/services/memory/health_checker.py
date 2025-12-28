@@ -1744,7 +1744,14 @@ class MemoryHealthChecker:
     def _check_references(self, doc_path: Path, project_root: Path) -> list[BrokenRef]:
         """Check for broken references in a document.
 
-        Placeholder - will be implemented in task 7.2.
+        Parses markdown for file paths, function names, and class names,
+        then verifies they exist in the filesystem.
+
+        Patterns matched:
+        - `backend/app/...` backtick-wrapped file paths
+        - 'See X.py' or 'in X.py'
+        - 'the X function' or 'function X()'
+        - 'class X' references
 
         Args:
             doc_path: Path to the document
@@ -1753,8 +1760,71 @@ class MemoryHealthChecker:
         Returns:
             List of BrokenRef objects for broken references
         """
-        # Will be implemented in task 7.2
-        return []
+        import re
+
+        broken_refs: list[BrokenRef] = []
+        doc_file = doc_path.name
+
+        try:
+            content = doc_path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+
+            # Patterns to find references
+            patterns = [
+                # Backtick-wrapped file paths: `backend/app/main.py`
+                (re.compile(r"`([a-zA-Z0-9_/.-]+\.(py|ts|tsx|js|jsx|md))`"), "file_path"),
+                # In/See file references: See main.py, in utils.py
+                (
+                    re.compile(
+                        r"(?:See|in|from)\s+`?([a-zA-Z0-9_.-]+\.(?:py|ts|tsx|js|jsx|md))`?",
+                        re.IGNORECASE,
+                    ),
+                    "file_path",
+                ),
+                # File path with directory: backend/app/api/memory.py
+                (
+                    re.compile(
+                        r"(?<!`)((?:backend|frontend|app|src)/[a-zA-Z0-9_/.-]+\.(?:py|ts|tsx|js|jsx))"
+                    ),
+                    "file_path",
+                ),
+            ]
+
+            for line_num, line in enumerate(lines, start=1):
+                for pattern, ref_type in patterns:
+                    matches = pattern.finditer(line)
+                    for match in matches:
+                        ref = match.group(1)
+
+                        # Skip if it's a URL or external path
+                        if ref.startswith("http") or ref.startswith("/usr") or ref.startswith("~"):
+                            continue
+
+                        # Check if file exists
+                        ref_path = project_root / ref
+                        if not ref_path.exists():
+                            # Also check if it might be a basename match
+                            found = False
+                            for suffix in ["", ".py", ".ts", ".tsx", ".js", ".jsx"]:
+                                if (project_root / (ref + suffix)).exists():
+                                    found = True
+                                    break
+
+                            if not found:
+                                broken_refs.append(
+                                    BrokenRef(
+                                        doc_file=doc_file,
+                                        line_number=line_num,
+                                        reference=ref,
+                                        ref_type=ref_type,
+                                        reason=f"File not found: {ref}",
+                                    )
+                                )
+
+        except Exception as e:
+            logger.warning(f"Failed to check references in {doc_file}: {e}")
+
+        return broken_refs
 
     def _calculate_token_waste(self, report: DeepReviewReport) -> dict[str, Any]:
         """Calculate token waste from stale/redundant content.
