@@ -4,8 +4,11 @@ import {
   Activity,
   AlertTriangle,
   Archive,
+  ArrowRight,
   CheckCircle2,
   Clock,
+  FileText,
+  Link2,
   RefreshCw,
   Shield,
   TrendingDown,
@@ -20,6 +23,8 @@ import {
   type RuleAdherence,
   type StaleRule,
   type ArchivedRule,
+  type SyncSuggestion,
+  type DocConflict,
 } from '@/lib/hooks/useMemoryHealth';
 
 // Status indicator component
@@ -307,6 +312,122 @@ function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
   );
 }
 
+// Sync Suggestions section component
+function SyncSuggestionsSection({
+  syncSuggestions,
+  docConflicts,
+}: {
+  syncSuggestions: SyncSuggestion[];
+  docConflicts: DocConflict[];
+}) {
+  if (syncSuggestions.length === 0 && docConflicts.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Doc Conflicts */}
+      {docConflicts.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+            Doc Conflicts
+            <Badge variant="secondary" className="ml-auto bg-rose-500/15 text-rose-400 border-rose-500/30">
+              {docConflicts.length} detected
+            </Badge>
+          </h3>
+          <div className="space-y-2">
+            {docConflicts.map((conflict, idx) => (
+              <div
+                key={idx}
+                className={clsx(
+                  'px-4 py-3 rounded-lg border',
+                  conflict.severity === 'high'
+                    ? 'bg-rose-500/5 border-rose-500/20'
+                    : conflict.severity === 'medium'
+                    ? 'bg-amber-500/5 border-amber-500/20'
+                    : 'bg-slate-800/50 border-slate-700/50'
+                )}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge
+                    variant="secondary"
+                    className={clsx(
+                      'text-[10px] uppercase',
+                      conflict.severity === 'high' && 'bg-rose-500/20 text-rose-400',
+                      conflict.severity === 'medium' && 'bg-amber-500/20 text-amber-400',
+                      conflict.severity === 'low' && 'bg-slate-700 text-slate-400'
+                    )}
+                  >
+                    {conflict.conflict_type.replace('_', ' ')}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  <span className="text-slate-300">{conflict.doc_section.doc_file}</span>
+                  <span className="text-slate-600">→</span>
+                  <span className="text-slate-400">{conflict.doc_section.section_title}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm mt-1">
+                  <Link2 className="w-4 h-4 text-purple-400" />
+                  <span className="text-slate-400">Pattern: {conflict.pattern.title}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">{conflict.explanation}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sync Suggestions */}
+      {syncSuggestions.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <ArrowRight className="w-4 h-4 text-blue-400" />
+            Sync Suggestions
+            <Badge variant="secondary" className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30">
+              {syncSuggestions.length} available
+            </Badge>
+          </h3>
+          <div className="space-y-2">
+            {syncSuggestions.map((suggestion, idx) => (
+              <div
+                key={idx}
+                className="px-4 py-3 bg-blue-500/5 border border-blue-500/20 rounded-lg"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge
+                    variant="secondary"
+                    className={clsx(
+                      'text-[10px] uppercase',
+                      suggestion.action === 'add_to_claude_md' && 'bg-emerald-500/20 text-emerald-400',
+                      suggestion.action === 'create_pattern' && 'bg-purple-500/20 text-purple-400',
+                      suggestion.action === 'consolidate' && 'bg-amber-500/20 text-amber-400'
+                    )}
+                  >
+                    {suggestion.action.replace(/_/g, ' ')}
+                  </Badge>
+                  {suggestion.pattern_title && (
+                    <span className="text-xs text-slate-500 truncate max-w-[200px]">
+                      Pattern: {suggestion.pattern_title}
+                    </span>
+                  )}
+                  {suggestion.doc_file && (
+                    <span className="text-xs text-slate-500">
+                      {suggestion.doc_file} → {suggestion.section_title}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-300">{suggestion.suggestion}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Main HealthTab component
 export function HealthTab({ projectId }: { projectId: string }) {
   // Use hooks for data fetching
@@ -492,6 +613,12 @@ export function HealthTab({ projectId }: { projectId: string }) {
       <StaleRulesSection
         staleRules={health.stale_rules || []}
         archivedRules={health.auto_archived || []}
+      />
+
+      {/* Sync Suggestions */}
+      <SyncSuggestionsSection
+        syncSuggestions={health.sync_suggestions || []}
+        docConflicts={health.doc_conflicts || []}
       />
 
       {/* Warnings */}

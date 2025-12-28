@@ -77,6 +77,33 @@ export interface ArchivedRule extends StaleRule {
   archived_at: string;
 }
 
+export interface SyncSuggestion {
+  suggestion_type: 'pattern_should_be_in_claude_md' | 'doc_section_could_be_pattern';
+  pattern_id: string | null;
+  pattern_title: string | null;
+  doc_file: string | null;
+  section_title: string | null;
+  suggestion: string;
+  action: 'add_to_claude_md' | 'create_pattern' | 'consolidate';
+}
+
+export interface DocConflict {
+  conflict_type: 'contradicting_guidance' | 'stale_reference' | 'duplicate_content';
+  doc_section: {
+    doc_file: string;
+    section_title: string;
+    line_start: number;
+    content_excerpt: string;
+  };
+  pattern: {
+    id: string;
+    title: string;
+    content_excerpt: string;
+  };
+  explanation: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
 export interface HealthReport {
   status: 'healthy' | 'corrected' | 'degraded' | 'unhealthy';
   corrections: Correction[];
@@ -85,6 +112,8 @@ export interface HealthReport {
   recommendations: Recommendation[] | null;
   stale_rules: StaleRule[];
   auto_archived: ArchivedRule[];
+  sync_suggestions: SyncSuggestion[];
+  doc_conflicts: DocConflict[];
   timestamp: string;
 }
 
