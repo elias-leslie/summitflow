@@ -227,7 +227,7 @@ async def get_refactor_targets(
 
     ext_list = extensions.split(",") if extensions else None
 
-    return explorer_storage.get_refactor_targets(
+    result = explorer_storage.get_refactor_targets(
         project_id,
         priority=priority,
         min_complexity=min_complexity,
@@ -236,6 +236,16 @@ async def get_refactor_targets(
         code_only=code_only,
         extensions=ext_list,
     )
+
+    # Add stale metadata warning if applicable
+    stale_count = explorer_storage.count_stale_metadata_entries(project_id)
+    if stale_count > 0:
+        result["warning"] = {
+            "message": f"{stale_count} files have outdated metadata. Run a fresh scan.",
+            "stale_count": stale_count,
+        }
+
+    return result
 
 
 @router.get("/{project_id}/analysis/coverage-gaps")
