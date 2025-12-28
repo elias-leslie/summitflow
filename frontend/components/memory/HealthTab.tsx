@@ -3,7 +3,9 @@
 import {
   Activity,
   AlertTriangle,
+  Archive,
   CheckCircle2,
+  Clock,
   RefreshCw,
   Shield,
   TrendingDown,
@@ -16,6 +18,8 @@ import {
   useRunHealthCheck,
   type HealthReport,
   type RuleAdherence,
+  type StaleRule,
+  type ArchivedRule,
 } from '@/lib/hooks/useMemoryHealth';
 
 // Status indicator component
@@ -139,6 +143,110 @@ function AdherenceProgressBar({
           style={{ width: `${rate}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+// Stale Rules section component
+function StaleRulesSection({
+  staleRules,
+  archivedRules,
+}: {
+  staleRules: StaleRule[];
+  archivedRules: ArchivedRule[];
+}) {
+  if (staleRules.length === 0 && archivedRules.length === 0) {
+    return null;
+  }
+
+  const formatDays = (days: number | null) => {
+    if (days === null) return 'Never';
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    return `${days} days ago`;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Stale Rules Warning */}
+      {staleRules.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-400" />
+            Stale Rules
+            <Badge variant="secondary" className="ml-auto bg-amber-500/15 text-amber-400 border-amber-500/30">
+              {staleRules.length} detected
+            </Badge>
+          </h3>
+          <div className="space-y-2">
+            {staleRules.map((rule) => (
+              <div
+                key={rule.rule_file}
+                className="px-4 py-3 bg-amber-500/5 border border-amber-500/20 rounded-lg"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-200">{rule.rule_file}</span>
+                  <Badge
+                    variant="secondary"
+                    className={clsx(
+                      'text-xs',
+                      rule.staleness_score >= 0.7
+                        ? 'bg-rose-500/15 text-rose-400'
+                        : rule.staleness_score >= 0.5
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-slate-700 text-slate-400'
+                    )}
+                  >
+                    {(rule.staleness_score * 100).toFixed(0)}% stale
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{rule.reason}</p>
+                <div className="flex gap-4 mt-2 text-xs text-slate-600">
+                  <span>Modified: {formatDays(rule.last_modified_days)}</span>
+                  <span>Referenced: {formatDays(rule.last_referenced_days)}</span>
+                  {rule.adherence_rate !== null && (
+                    <span>Adherence: {(rule.adherence_rate * 100).toFixed(0)}%</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recently Archived */}
+      {archivedRules.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <Archive className="w-4 h-4 text-blue-400" />
+            Auto-Archived Rules
+            <Badge variant="secondary" className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30">
+              {archivedRules.length} archived
+            </Badge>
+          </h3>
+          <div className="space-y-2">
+            {archivedRules.map((rule) => (
+              <div
+                key={rule.archive_path}
+                className="px-4 py-3 bg-blue-500/5 border border-blue-500/20 rounded-lg"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-200">{rule.rule_file}</span>
+                  <span className="text-xs text-slate-500">
+                    {new Date(rule.archived_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Reason: {rule.archive_reason}
+                </p>
+                <p className="text-xs text-slate-600 mt-1 font-mono truncate" title={rule.archive_path}>
+                  {rule.archive_path.split('/').slice(-2).join('/')}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

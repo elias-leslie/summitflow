@@ -61,12 +61,30 @@ export interface HealthMetrics {
   rule_adherence?: RuleAdherence;
 }
 
+export interface StaleRule {
+  rule_file: string;
+  path: string;
+  last_modified_days: number;
+  last_referenced_days: number | null;
+  adherence_rate: number | null;
+  staleness_score: number;
+  reason: string;
+}
+
+export interface ArchivedRule extends StaleRule {
+  archive_path: string;
+  archive_reason: string;
+  archived_at: string;
+}
+
 export interface HealthReport {
   status: 'healthy' | 'corrected' | 'degraded' | 'unhealthy';
   corrections: Correction[];
   warnings: Warning[];
   metrics: HealthMetrics;
   recommendations: Recommendation[] | null;
+  stale_rules: StaleRule[];
+  auto_archived: ArchivedRule[];
   timestamp: string;
 }
 
