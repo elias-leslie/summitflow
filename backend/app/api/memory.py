@@ -982,6 +982,84 @@ async def get_deep_review(
     )
 
 
+class BulkObservationItem(BaseModel):
+    """Single observation item for bulk creation."""
+
+    observation_type: str
+    title: str
+    narrative: str | None = None
+    confidence: float = 0.7
+    files_modified: list[str] | None = None
+    concepts: list[str] | None = None
+    facts: dict[str, Any] | None = None
+
+
+class BulkObservationRequest(BaseModel):
+    """Request body for bulk observation creation."""
+
+    project_id: str
+    session_id: str
+    agent_type: str = "refactor"
+    observations: list[BulkObservationItem]
+
+
+class BulkObservationResponse(BaseModel):
+    """Response from bulk observation creation."""
+
+    created_count: int
+    skipped_count: int
+    errors: list[str]
+
+
+@router.post("/memory/observations/bulk", response_model=BulkObservationResponse)
+async def create_observations_bulk(
+    request: BulkObservationRequest,
+) -> BulkObservationResponse:
+    """Bulk create observations from refactoring or other analysis findings.
+
+    This endpoint accepts an array of observations and creates them in batch,
+    reusing the existing create_observation logic for each.
+
+    Useful for:
+    - /refactor_it analysis findings capture
+    - Bulk migration of external data
+    - Importing observations from other tools
+
+    Returns created count, skipped count (duplicates), and any errors.
+    """
+    created_count = 0
+    skipped_count = 0
+    errors: list[str] = []
+
+    for idx, obs in enumerate(request.observations):
+        try:
+            result = memory_storage.create_observation(
+                project_id=request.project_id,
+                session_id=request.session_id,
+                agent_type=request.agent_type,
+                observation_type=obs.observation_type,
+                title=obs.title,
+                narrative=obs.narrative,
+                confidence=obs.confidence,
+                files_modified=obs.files_modified,
+                concepts=obs.concepts,
+                facts=obs.facts,
+                skip_memory_check=True,  # Bulk ops bypass memory check
+            )
+            if result:
+                created_count += 1
+            else:
+                skipped_count += 1  # Duplicate or filtered
+        except Exception as e:
+            errors.append(f"Observation {idx} ({obs.title[:30]}...): {e!s}")
+
+    return BulkObservationResponse(
+        created_count=created_count,
+        skipped_count=skipped_count,
+        errors=errors[:20],  # Limit errors returned
+    )
+
+
 class PromotePatternResponse(BaseModel):
     """Response for pattern promotion endpoint."""
 
