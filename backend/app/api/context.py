@@ -350,3 +350,82 @@ async def get_session_start_context(
         token_estimate=token_estimate,
         items_included=items_count,
     )
+
+
+class TimelineResponse(BaseModel):
+    """Response model for timeline/context-around endpoint."""
+
+    anchor: dict[str, Any]
+    before: list[dict[str, Any]]
+    after: list[dict[str, Any]]
+    total_tokens: int
+
+
+@router.get("/{project_id}/context/timeline", response_model=TimelineResponse)
+async def get_context_timeline(
+    project_id: str,
+    anchor_id: str = Query(..., description="Observation ID to center timeline on"),
+    before: int = Query(5, ge=0, le=20, description="Number of items before anchor"),
+    after: int = Query(5, ge=0, le=20, description="Number of items after anchor"),
+) -> TimelineResponse:
+    """Get observations around a specific anchor point in time.
+
+    Useful for understanding the context around a particular observation.
+    Returns the anchor observation plus observations before and after it.
+
+    Args:
+        anchor_id: The observation ID to center the timeline on
+        before: Number of observations to fetch before the anchor
+        after: Number of observations to fetch after the anchor
+
+    Returns:
+        anchor: The anchor observation
+        before: Observations before the anchor (descending order)
+        after: Observations after the anchor (ascending order)
+        total_tokens: Estimated token count for all content
+    """
+    from ..storage import memory as memory_storage
+
+    # Get the anchor observation
+    anchor_obs = memory_storage.get_observation(anchor_id)
+    if anchor_obs is None:
+        raise HTTPException(status_code=404, detail=f"Observation {anchor_id} not found")
+
+    # Verify project match
+    if anchor_obs.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail=f"Observation {anchor_id} not found")
+
+    anchor_time = anchor_obs.get("created_at")
+    if not anchor_time:
+        raise HTTPException(status_code=400, detail=f"Observation {anchor_id} has no timestamp")
+
+    # Get observations before and after
+    before_obs = memory_storage.get_observations_before_time(
+        project_id=project_id,
+        before_time=anchor_time,
+        exclude_id=anchor_id,
+        limit=before,
+    )
+
+    after_obs = memory_storage.get_observations_after_time(
+        project_id=project_id,
+        after_time=anchor_time,
+        exclude_id=anchor_id,
+        limit=after,
+    )
+
+    # Calculate token estimate (rough: 4 chars per token)
+    def estimate_tokens(obs: dict[str, Any]) -> int:
+        content = f"{obs.get('title', '')} {obs.get('narrative', '')}"
+        return len(content) // 4
+
+    total_tokens = estimate_tokens(anchor_obs)
+    total_tokens += sum(estimate_tokens(o) for o in before_obs)
+    total_tokens += sum(estimate_tokens(o) for o in after_obs)
+
+    return TimelineResponse(
+        anchor=anchor_obs,
+        before=before_obs,
+        after=after_obs,
+        total_tokens=total_tokens,
+    )
