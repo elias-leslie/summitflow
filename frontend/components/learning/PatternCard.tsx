@@ -16,6 +16,7 @@ import {
   FileCode,
   ChevronDown,
   ChevronUp,
+  Globe,
 } from "lucide-react";
 
 interface PatternCardProps {
@@ -25,6 +26,7 @@ interface PatternCardProps {
   onReject?: (patternId: string) => Promise<void>;
   onApply?: (patternId: string) => Promise<void>;
   onUndo?: (patternId: string) => Promise<void>;
+  onPromote?: (patternId: string) => Promise<void>;
   className?: string;
 }
 
@@ -100,6 +102,7 @@ export function PatternCard({
   onReject,
   onApply,
   onUndo,
+  onPromote,
   className,
 }: PatternCardProps) {
   const [expanded, setExpanded] = useState(false);
@@ -112,6 +115,13 @@ export function PatternCard({
   const confidencePercent = pattern.confidence
     ? Math.round(pattern.confidence * 100)
     : null;
+
+  const isGlobal = pattern.project_id === "_global_";
+  const canPromote =
+    pattern.status === "applied" &&
+    pattern.confidence !== null &&
+    pattern.confidence >= 0.9 &&
+    !isGlobal;
 
   const handleAction = async (
     action: string,
@@ -155,6 +165,15 @@ export function PatternCard({
                 )}
               >
                 {confidencePercent}% confidence
+              </Badge>
+            )}
+            {isGlobal && (
+              <Badge
+                variant="outline"
+                className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20 gap-1"
+              >
+                <Globe className="h-3 w-3" />
+                Global
               </Badge>
             )}
           </div>
@@ -283,16 +302,30 @@ export function PatternCard({
           )}
 
           {pattern.status === "applied" && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleAction("undo", onUndo)}
-              disabled={loading !== null}
-              className="gap-1"
-            >
-              <Undo2 className="h-3 w-3" />
-              {loading === "undo" ? "Undoing..." : "Undo"}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleAction("undo", onUndo)}
+                disabled={loading !== null}
+                className="gap-1"
+              >
+                <Undo2 className="h-3 w-3" />
+                {loading === "undo" ? "Undoing..." : "Undo"}
+              </Button>
+              {canPromote && onPromote && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAction("promote", onPromote)}
+                  disabled={loading !== null}
+                  className="gap-1 border-indigo-500/30 text-indigo-500 hover:bg-indigo-500/10"
+                >
+                  <Globe className="h-3 w-3" />
+                  {loading === "promote" ? "Promoting..." : "Promote to Global"}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </CardContent>
