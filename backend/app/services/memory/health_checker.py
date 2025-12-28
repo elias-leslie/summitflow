@@ -422,7 +422,7 @@ class MemoryHealthChecker:
             # Try to get from projects table
             with get_connection() as conn, conn.cursor() as cur:
                 cur.execute(
-                    "SELECT local_path FROM projects WHERE id = %s",
+                    "SELECT root_path FROM projects WHERE id = %s",
                     (project_id,),
                 )
                 row = cur.fetchone()
