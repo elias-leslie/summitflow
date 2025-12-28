@@ -845,6 +845,34 @@ def get_refactor_targets(
         return {"targets": targets, "summary": summary}
 
 
+def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
+    """Count entries with outdated or missing schema version.
+
+    Args:
+        project_id: Project ID for scoping
+        min_version: Minimum schema version to be considered current
+
+    Returns:
+        Count of entries with stale metadata
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM explorer_entries
+            WHERE project_id = %s
+              AND entry_type = 'file'
+              AND (
+                  (metadata->>'_schema_version') IS NULL
+                  OR (metadata->>'_schema_version')::int < %s
+              )
+            """,
+            (project_id, min_version),
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+
 def _get_unlinked_entries(
     cur: Any, project_id: str, entry_type: str, check_components: bool = True
 ) -> list[tuple[Any, ...]]:

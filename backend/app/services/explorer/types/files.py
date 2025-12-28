@@ -97,6 +97,9 @@ BLOAT_THRESHOLDS: dict[str, tuple[int, int]] = {
 
 STALE_THRESHOLD_DAYS = 90
 
+# Schema version for metadata - increment when adding new fields
+METADATA_SCHEMA_VERSION = 2
+
 # Regex patterns for complexity metrics
 FUNCTION_PATTERNS: dict[str, re.Pattern] = {
     ".py": re.compile(r"^\s*def\s+", re.MULTILINE),
@@ -225,6 +228,7 @@ class FileScanner(BaseScanner):
                 name=file_path.name,
                 health_status="unknown",  # Will be set by get_health_status
                 metadata={
+                    "_schema_version": METADATA_SCHEMA_VERSION,
                     "is_directory": False,
                     "extension": ext if ext else None,
                     "size_bytes": size_bytes,
