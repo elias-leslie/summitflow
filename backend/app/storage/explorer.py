@@ -786,8 +786,8 @@ def get_refactor_targets(
                    COALESCE((metadata->>'commit_count_90d')::int, 0) as commit_count_90d,
                    COALESCE((metadata->>'test_file_exists')::boolean, false) as test_file_exists,
                    -- Hotspot score: high churn + high complexity = high priority
-                   ROUND(COALESCE((metadata->>'commit_count_90d')::int, 0) *
-                         COALESCE((metadata->>'complexity_score')::float, 0), 2) as hotspot_score
+                   ROUND((COALESCE((metadata->>'commit_count_90d')::int, 0) *
+                         COALESCE((metadata->>'complexity_score')::float, 0))::numeric, 2) as hotspot_score
             FROM explorer_entries
             WHERE {where_clause}
             ORDER BY
