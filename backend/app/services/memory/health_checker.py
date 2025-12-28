@@ -276,6 +276,15 @@ class MemoryHealthChecker:
                 )
             logger.info(f"Auto-applied {applied_count} patterns for {pid}")
 
+        # Check 1b: Auto-promote high-confidence patterns used in 2+ projects
+        promoted_count = self._auto_promote_patterns()
+        if promoted_count > 0:
+            report.add_correction(
+                "auto_promoted_patterns",
+                f"Promoted {promoted_count} patterns to global scope",
+                count=promoted_count,
+            )
+
         # Check 2: Filter rate too high
         filter_stats = metrics.get("filter_stats", {})
         skip_rate = filter_stats.get("skip_rate", 0)
@@ -482,6 +491,102 @@ class MemoryHealthChecker:
         if applied > 0:
             logger.info(f"Applied {applied} global patterns to ~/.claude/rules/learned-patterns.md")
         return applied
+
+    def _check_auto_promotion_candidates(self) -> list[dict[str, Any]]:
+        """Find patterns eligible for auto-promotion to global scope.
+
+        Criteria for auto-promotion:
+        - Confidence >= 0.95
+        - Applied (status='applied')
+        - Same pattern title exists and is applied in 2+ different projects
+
+        Returns:
+            List of patterns eligible for auto-promotion
+        """
+        # Get all applied patterns with high confidence
+        from ...storage.connection import get_connection
+
+        candidates = []
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.id, p.project_id, p.title, p.content, p.confidence
+                FROM learned_patterns p
+                WHERE p.status = 'applied'
+                  AND p.confidence >= 0.95
+                  AND p.project_id != '_global_'
+                  AND NOT EXISTS (
+                    -- Skip if already promoted to global
+                    SELECT 1 FROM learned_patterns g
+                    WHERE g.project_id = '_global_'
+                      AND g.title = p.title
+                  )
+                """
+            )
+            rows = cur.fetchall()
+
+            # Group by title to find those applied in 2+ projects
+            title_projects: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                pattern = {
+                    "id": row[0],
+                    "project_id": row[1],
+                    "title": row[2],
+                    "content": row[3],
+                    "confidence": row[4],
+                }
+                title = pattern["title"]
+                if title not in title_projects:
+                    title_projects[title] = []
+                title_projects[title].append(pattern)
+
+            # Find patterns with same title in 2+ projects
+            for _title, patterns in title_projects.items():
+                unique_projects = set(p["project_id"] for p in patterns)
+                if len(unique_projects) >= 2:
+                    # Pick the highest confidence version
+                    best = max(patterns, key=lambda p: p["confidence"])
+                    candidates.append(
+                        {
+                            **best,
+                            "project_count": len(unique_projects),
+                        }
+                    )
+
+        return candidates
+
+    def _auto_promote_patterns(self) -> int:
+        """Auto-promote eligible patterns to global scope.
+
+        Returns:
+            Number of patterns promoted
+        """
+        from .pattern_service import PatternService
+
+        candidates = self._check_auto_promotion_candidates()
+        if not candidates:
+            return 0
+
+        promoted = 0
+        for pattern in candidates:
+            try:
+                # Use the source project's service to promote
+                service = PatternService(project_id=pattern["project_id"])
+                global_pattern = service.promote_to_global(pattern["id"])
+
+                logger.info(
+                    f"auto_promoted_pattern: "
+                    f"id={pattern['id']} title='{pattern['title']}' "
+                    f"projects={pattern['project_count']} "
+                    f"global_id={global_pattern.get('id')}"
+                )
+                promoted += 1
+
+            except ValueError as e:
+                logger.warning(f"Auto-promotion failed for {pattern['id']}: {e}")
+                continue
+
+        return promoted
 
     def get_threshold_recommendations(self, project_id: str | None = None) -> list[dict[str, Any]]:
         """Get recommendations for adjusting thresholds.
