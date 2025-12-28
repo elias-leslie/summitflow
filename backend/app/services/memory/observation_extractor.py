@@ -222,7 +222,7 @@ class ObservationExtractor:
 
             self._client = DualProviderClient(
                 primary="gemini",
-                gemini_model="gemini-2.0-flash",
+                gemini_model="gemini-3-flash-preview",
                 claude_model="claude-haiku-4-5",
             )
         return self._client
