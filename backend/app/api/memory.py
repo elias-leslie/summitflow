@@ -746,3 +746,61 @@ async def run_memory_backfill(
     )
 
     return result
+
+
+# --- Memory Health API ---
+
+
+class HealthWarning(BaseModel):
+    """A health warning."""
+
+    type: str
+    message: str
+    severity: str
+    details: dict[str, Any] | None = None
+
+
+class HealthCorrection(BaseModel):
+    """A correction that was applied."""
+
+    type: str
+    description: str
+    details: dict[str, Any] | None = None
+    timestamp: str | None = None
+
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+
+    status: str
+    corrections: list[HealthCorrection]
+    warnings: list[HealthWarning]
+    metrics: dict[str, Any]
+    timestamp: str
+
+
+@router.get("/memory/health", response_model=HealthResponse)
+async def get_memory_health(
+    project_id: str = Query(..., description="Project ID to check"),
+) -> HealthResponse:
+    """Get comprehensive memory health status.
+
+    Returns health metrics including:
+    - Filter statistics (received, queued, skipped)
+    - Observation distribution by type
+    - Pattern status breakdown
+    - Embedding coverage
+    - Approved patterns waiting to be applied
+    """
+    from ..services.memory.health_checker import MemoryHealthChecker
+
+    checker = MemoryHealthChecker(project_id)
+    metrics = checker.get_health_metrics()
+
+    return HealthResponse(
+        status="healthy",
+        corrections=[],
+        warnings=[],
+        metrics=metrics,
+        timestamp=datetime.now(UTC).isoformat(),
+    )
