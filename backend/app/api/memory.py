@@ -13,7 +13,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Query
+from fastapi import APIRouter, BackgroundTasks, Path, Query
 from pydantic import BaseModel
 
 from ..api.hooks import get_filtering_metrics
@@ -891,3 +891,49 @@ async def apply_approved_patterns(
         pattern_ids=pattern_ids,
         errors=[],
     )
+
+
+class PromotePatternResponse(BaseModel):
+    """Response for pattern promotion endpoint."""
+
+    promoted: bool
+    global_pattern_id: str | None
+    source_pattern_id: str
+    error: str | None
+
+
+@router.post("/memory/patterns/{pattern_id}/promote", response_model=PromotePatternResponse)
+async def promote_pattern_to_global(
+    pattern_id: str = Path(..., description="Pattern ID to promote"),
+    project_id: str = Query(..., description="Source project ID"),
+) -> PromotePatternResponse:
+    """Promote a pattern to global scope for use across all projects.
+
+    Requirements:
+    - Pattern must have confidence >= 0.9
+    - Creates a copy with project_id='_global_'
+    - Global patterns are written to ~/.claude/rules/learned-patterns.md
+
+    Args:
+        pattern_id: ID of the pattern to promote
+        project_id: The source project the pattern belongs to
+    """
+    from ..services.memory.pattern_service import PatternService
+
+    try:
+        service = PatternService(project_id=project_id)
+        global_pattern = service.promote_to_global(pattern_id)
+
+        return PromotePatternResponse(
+            promoted=True,
+            global_pattern_id=global_pattern.get("id"),
+            source_pattern_id=pattern_id,
+            error=None,
+        )
+    except ValueError as e:
+        return PromotePatternResponse(
+            promoted=False,
+            global_pattern_id=None,
+            source_pattern_id=pattern_id,
+            error=str(e),
+        )
