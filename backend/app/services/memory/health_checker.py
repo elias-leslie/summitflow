@@ -903,3 +903,86 @@ class MemoryHealthChecker:
         stale_rules.sort(key=lambda x: x["staleness_score"], reverse=True)
 
         return stale_rules
+
+    def _auto_archive_stale_rules(
+        self, project_id: str, stale_rules: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Auto-archive rules that meet high-confidence staleness criteria.
+
+        Auto-archives if:
+        - 0% adherence for 60+ days (rule_adherence tracked but never followed)
+        - No references in 90+ days AND not modified in 90+ days
+        - staleness_score >= 0.7
+
+        Args:
+            project_id: Project to archive rules for
+            stale_rules: List of stale rules from _check_rule_staleness()
+
+        Returns:
+            List of archived rule dicts with archive_path added
+        """
+        import shutil
+        from datetime import datetime
+
+        archived: list[dict[str, Any]] = []
+
+        for rule in stale_rules:
+            # Check auto-archive criteria
+            should_archive = False
+            archive_reason = ""
+
+            # Criterion 1: Very high staleness score
+            if rule["staleness_score"] >= 0.7:
+                should_archive = True
+                archive_reason = f"high staleness score ({rule['staleness_score']})"
+
+            # Criterion 2: 0% adherence (tracked but never followed)
+            elif rule.get("adherence_rate") == 0.0:
+                should_archive = True
+                archive_reason = "0% adherence rate"
+
+            # Criterion 3: Never referenced AND old
+            elif (
+                rule.get("last_referenced_days") is None and rule.get("last_modified_days", 0) > 90
+            ):
+                should_archive = True
+                archive_reason = "never referenced and not modified in 90+ days"
+
+            if not should_archive:
+                continue
+
+            # Archive the rule
+            rule_path = Path(rule["path"])
+            if not rule_path.exists():
+                continue
+
+            # Create archived directory
+            archived_dir = rule_path.parent / "archived"
+            archived_dir.mkdir(exist_ok=True)
+
+            # Generate archive filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_name = f"{rule_path.stem}.{timestamp}{rule_path.suffix}"
+            archive_path = archived_dir / archive_name
+
+            try:
+                # Move the file
+                shutil.move(str(rule_path), str(archive_path))
+
+                logger.info(
+                    f"Auto-archived stale rule: {rule['rule_file']} -> {archive_path} "
+                    f"(reason: {archive_reason})"
+                )
+
+                archived.append(
+                    {
+                        **rule,
+                        "archive_path": str(archive_path),
+                        "archive_reason": archive_reason,
+                        "archived_at": datetime.now().isoformat(),
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to archive rule {rule['rule_file']}: {e}")
+
+        return archived
