@@ -23,6 +23,7 @@ OBSERVATION_TYPES = [
     "user_preference",  # User preferences, style choices
     "refactoring",  # Refactoring changes, code improvements, technical debt fixes
     "operational",  # Operational knowledge: commands, connection strings, environment setup
+    "rule_adherence",  # Whether agent followed a rule from .claude/rules/
 ]
 
 # History mining extraction focus - prioritized for backfill analysis
@@ -53,7 +54,7 @@ For EACH item below, extract an observation. Return a JSON array with one result
 
 For each item, return a JSON object with:
 - "index": <the item index for matching>
-- "observation_type": <one of: pattern, decision, error, constraint, architecture, user_preference, refactoring, operational>
+- "observation_type": <one of: pattern, decision, error, constraint, architecture, user_preference, refactoring, operational, rule_adherence>
 - "priority": <one of: high, medium, low>
 - "confidence": <float 0.0-1.0, how certain you are about this extraction>
 - "concepts": [<list from: debugging, code_patterns, dependencies, security, performance, testing, configuration>]
@@ -98,7 +99,7 @@ Output (truncated if long):
 Extract a SINGLE observation from this tool execution. Return JSON with:
 
 {{
-    "observation_type": "<one of: pattern, decision, error, constraint, architecture, user_preference, refactoring, operational>",
+    "observation_type": "<one of: pattern, decision, error, constraint, architecture, user_preference, refactoring, operational, rule_adherence>",
     "concepts": ["<list of relevant concepts from: debugging, code_patterns, dependencies, security, performance, testing, configuration>"],
     "title": "<concise title, 5-10 words>",
     "subtitle": "<optional one-line clarification>",
@@ -108,11 +109,13 @@ Extract a SINGLE observation from this tool execution. Return JSON with:
         ...
     }},
     "files_read": ["<list of files that were read>"],
-    "files_modified": ["<list of files that were modified>"]
+    "files_modified": ["<list of files that were modified>"],
+    "rule_followed": "<optional: true/false if this relates to following a project rule>"
 }}
 
 Rules:
-- observation_type MUST be one of the 8 types listed
+- observation_type MUST be one of the 9 types listed
+- Use rule_adherence when agent followed or violated a rule from .claude/rules/
 - concepts MUST be from the 7 concepts listed (can be empty if none apply)
 - title should be specific and searchable
 - narrative should explain the significance, not just describe what happened
