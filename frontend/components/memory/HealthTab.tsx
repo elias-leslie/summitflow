@@ -488,6 +488,12 @@ export function HealthTab({ projectId }: { projectId: string }) {
         <RuleAdherenceSection adherence={metrics.rule_adherence} />
       )}
 
+      {/* Stale Rules */}
+      <StaleRulesSection
+        staleRules={health.stale_rules || []}
+        archivedRules={health.auto_archived || []}
+      />
+
       {/* Warnings */}
       {warnings.length > 0 && (
         <div>
