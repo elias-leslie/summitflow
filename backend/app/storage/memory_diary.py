@@ -28,7 +28,9 @@ DIARY_COLUMNS = """
     duration_seconds, tokens_used, discovery_tokens, outcome,
     observation_type, concepts, what_worked, what_failed,
     user_corrections, patterns_used, reflected_at,
-    reflection_notes, patterns_generated, created_at
+    reflection_notes, patterns_generated, created_at,
+    summary_request, summary_investigated, summary_learned,
+    summary_completed, summary_next_steps
 """.strip()
 
 
@@ -52,6 +54,11 @@ def create_diary_entry(
     what_failed: list[str] | None = None,
     user_corrections: list[str] | None = None,
     patterns_used: list[str] | None = None,
+    summary_request: str | None = None,
+    summary_investigated: str | None = None,
+    summary_learned: str | None = None,
+    summary_completed: str | None = None,
+    summary_next_steps: str | None = None,
     skip_memory_check: bool = False,
 ) -> dict[str, Any] | None:
     """Create a session diary entry.
@@ -75,13 +82,17 @@ def create_diary_entry(
             INSERT INTO session_diary
                 (project_id, session_id, task_id, agent_type, duration_seconds,
                  tokens_used, discovery_tokens, outcome, observation_type, concepts,
-                 what_worked, what_failed, user_corrections, patterns_used)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 what_worked, what_failed, user_corrections, patterns_used,
+                 summary_request, summary_investigated, summary_learned,
+                 summary_completed, summary_next_steps)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, session_id, task_id, agent_type,
                       duration_seconds, tokens_used, discovery_tokens, outcome,
                       observation_type, concepts, what_worked, what_failed,
                       user_corrections, patterns_used, reflected_at,
-                      reflection_notes, patterns_generated, created_at
+                      reflection_notes, patterns_generated, created_at,
+                      summary_request, summary_investigated, summary_learned,
+                      summary_completed, summary_next_steps
             """,
             (
                 project_id,
@@ -98,6 +109,11 @@ def create_diary_entry(
                 _json_or_default(what_failed),
                 _json_or_default(user_corrections),
                 _json_or_default(patterns_used),
+                summary_request,
+                summary_investigated,
+                summary_learned,
+                summary_completed,
+                summary_next_steps,
             ),
         )
         row = cur.fetchone()
@@ -316,10 +332,13 @@ def get_diary_entry_by_session(project_id: str, session_id: str) -> dict[str, An
 
 
 def _diary_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
-    """Convert diary row to dict."""
+    """Convert diary row to dict.
+
+    Handles both legacy (19 columns) and new format (24 columns with summaries).
+    """
     if row is None:
         raise ValueError("Row cannot be None")
-    return {
+    result = {
         "id": str(row[0]),
         "project_id": row[1],
         "session_id": row[2],
@@ -340,3 +359,20 @@ def _diary_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]
         "patterns_generated": row[17],
         "created_at": row[18].isoformat() if row[18] else None,
     }
+
+    # Add structured summary fields if present (new format with 24 columns)
+    if len(row) >= 24:
+        result["summary_request"] = row[19]
+        result["summary_investigated"] = row[20]
+        result["summary_learned"] = row[21]
+        result["summary_completed"] = row[22]
+        result["summary_next_steps"] = row[23]
+    else:
+        # Legacy format - set to None
+        result["summary_request"] = None
+        result["summary_investigated"] = None
+        result["summary_learned"] = None
+        result["summary_completed"] = None
+        result["summary_next_steps"] = None
+
+    return result
