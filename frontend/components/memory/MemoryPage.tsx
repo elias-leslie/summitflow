@@ -10,7 +10,9 @@ import {
   Clock,
   FileText,
   Lightbulb,
-  BookOpen
+  BookOpen,
+  X,
+  Sparkles
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
@@ -24,6 +26,9 @@ import {
   PatternRow, type Pattern,
   DiaryRow, type DiaryEntry
 } from './rows';
+import { SearchBar } from './SearchBar';
+import { FilterPanel, type SearchFilters } from './FilterPanel';
+import { useMemorySearch, type SearchResult } from '@/lib/hooks/useMemorySearch';
 
 // Types
 interface LifecycleStats {
@@ -249,6 +254,17 @@ export default function MemoryPage() {
   const [patternsTotal, setPatternsTotal] = useState(0);
   const [diaryTotal, setDiaryTotal] = useState(0);
 
+  // Search state
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<SearchFilters>({
+    type: 'all',
+    concepts: [],
+    useSemantic: false,
+  });
+  const { results, total: searchTotal, usedSemantic, isLoading: searchLoading, error: searchError, search, clear: clearSearch } = useMemorySearch();
+
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
@@ -350,6 +366,38 @@ export default function MemoryPage() {
     setDiaryPage(1);
   }, [selectedProject]);
 
+  // Handle search
+  const handleSearch = async (query: string) => {
+    if (!selectedProject) {
+      // Search requires a project context
+      return;
+    }
+    setSearchQuery(query);
+    setIsSearching(true);
+    await search({
+      q: query,
+      project_id: selectedProject,
+      type: filters.type,
+      concepts: filters.concepts,
+      use_semantic: filters.useSemantic,
+    });
+  };
+
+  // Clear search and return to default view
+  const handleClearSearch = () => {
+    setIsSearching(false);
+    setSearchQuery('');
+    clearSearch();
+  };
+
+  // Group search results by entity type
+  const searchResultsByType = {
+    observations: results.filter(r => r.entity_type === 'observation'),
+    patterns: results.filter(r => r.entity_type === 'pattern'),
+    diary: results.filter(r => r.entity_type === 'diary'),
+    user_prompts: results.filter(r => r.entity_type === 'user_prompt'),
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 p-8">
       <div className="max-w-[1400px] mx-auto">
@@ -407,6 +455,75 @@ export default function MemoryPage() {
             </AnimatePresence>
           </div>
         </header>
+
+        {/* Search Section */}
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center gap-4">
+            <SearchBar
+              onSearch={handleSearch}
+              isLoading={searchLoading}
+              placeholder={selectedProject ? 'Search observations, patterns, diary...' : 'Select a project to search'}
+            />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={clsx(
+                'px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                showFilters
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:border-slate-600'
+              )}
+            >
+              Filters
+            </button>
+          </div>
+
+          {/* Collapsible Filter Panel */}
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-4 bg-slate-800/30 border border-slate-700/50 rounded-lg">
+                  <FilterPanel filters={filters} onChange={setFilters} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Search Results Indicator */}
+          {isSearching && (
+            <div className="flex items-center justify-between px-4 py-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <div className="flex items-center gap-3">
+                {usedSemantic && (
+                  <span className="flex items-center gap-1 text-xs text-blue-400">
+                    <Sparkles className="w-3 h-3" />
+                    Semantic
+                  </span>
+                )}
+                <span className="text-sm text-slate-300">
+                  Showing <span className="font-medium text-blue-400">{searchTotal}</span> results for &quot;{searchQuery}&quot;
+                </span>
+              </div>
+              <button
+                onClick={handleClearSearch}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                <X className="w-3 h-3" />
+                Clear Search
+              </button>
+            </div>
+          )}
+
+          {/* Search Error */}
+          {searchError && (
+            <div className="px-4 py-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-sm text-rose-400">
+              {searchError}
+            </div>
+          )}
+        </div>
 
         {/* Metrics Grid */}
         <div className="grid grid-cols-4 gap-4 mb-8">
@@ -511,7 +628,7 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'observations' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {observationsTotal}
+                {isSearching ? searchResultsByType.observations.length : observationsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="patterns" className="gap-2">
@@ -521,7 +638,7 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'patterns' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {patternsTotal}
+                {isSearching ? searchResultsByType.patterns.length : patternsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="diary" className="gap-2">
@@ -531,14 +648,46 @@ export default function MemoryPage() {
                 'text-[11px] font-semibold px-2 py-0.5 rounded-full',
                 activeTab === 'diary' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
               )}>
-                {diaryTotal}
+                {isSearching ? searchResultsByType.diary.length : diaryTotal}
               </span>
             </TabsTrigger>
           </TabsList>
 
           {/* Observations Tab */}
           <TabsContent value="observations">
-            {loading ? (
+            {isSearching ? (
+              // Search Results View
+              searchResultsByType.observations.length === 0 ? (
+                <div className="text-center py-16 text-slate-500">
+                  <FileText className="w-10 h-10 mx-auto mb-4 opacity-30" />
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching observations</h3>
+                  <p className="text-sm">Try different search terms or filters</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {searchResultsByType.observations.map((result) => (
+                    <ObservationRow
+                      key={result.id}
+                      observation={{
+                        id: result.id,
+                        project_id: (result.data.project_id as string) || '',
+                        session_id: (result.data.session_id as string) || '',
+                        agent_type: (result.data.agent_type as string) || 'unknown',
+                        observation_type: (result.data.observation_type as string) || 'pattern',
+                        title: result.title || 'Untitled',
+                        concepts: (result.data.concepts as string[]) || [],
+                        subtitle: result.summary || undefined,
+                        narrative: (result.data.narrative as string) || undefined,
+                        facts: (result.data.facts as Record<string, unknown>) || undefined,
+                        files_modified: (result.data.files_modified as string[]) || undefined,
+                        discovery_tokens: (result.data.discovery_tokens as number) || 0,
+                        created_at: result.created_at || new Date().toISOString(),
+                      }}
+                    />
+                  ))}
+                </div>
+              )
+            ) : loading ? (
               <div className="flex items-center justify-center py-16 text-slate-500">
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading observations...
@@ -567,7 +716,38 @@ export default function MemoryPage() {
 
           {/* Patterns Tab */}
           <TabsContent value="patterns">
-            {loading ? (
+            {isSearching ? (
+              // Search Results View
+              searchResultsByType.patterns.length === 0 ? (
+                <div className="text-center py-16 text-slate-500">
+                  <Lightbulb className="w-10 h-10 mx-auto mb-4 opacity-30" />
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching patterns</h3>
+                  <p className="text-sm">Try different search terms or filters</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {searchResultsByType.patterns.map((result) => (
+                    <PatternRow
+                      key={result.id}
+                      pattern={{
+                        id: result.id,
+                        project_id: (result.data.project_id as string) || '',
+                        pattern_type: (result.data.pattern_type as string) || 'learned',
+                        title: result.title || 'Untitled',
+                        content: (result.data.content as string) || '',
+                        rationale: result.summary || undefined,
+                        action: (result.data.action as string) || 'add',
+                        status: (result.data.status as string) || 'pending',
+                        confidence: (result.data.confidence as number) || 0,
+                        created_at: result.created_at || new Date().toISOString(),
+                      }}
+                      onApprove={handleApprovePattern}
+                      onReject={handleRejectPattern}
+                    />
+                  ))}
+                </div>
+              )
+            ) : loading ? (
               <div className="flex items-center justify-center py-16 text-slate-500">
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading patterns...
@@ -620,7 +800,41 @@ export default function MemoryPage() {
 
           {/* Diary Tab */}
           <TabsContent value="diary">
-            {loading ? (
+            {isSearching ? (
+              // Search Results View
+              searchResultsByType.diary.length === 0 ? (
+                <div className="text-center py-16 text-slate-500">
+                  <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching diary entries</h3>
+                  <p className="text-sm">Try different search terms or filters</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {searchResultsByType.diary.map((result) => (
+                    <DiaryRow
+                      key={result.id}
+                      entry={{
+                        id: result.id,
+                        project_id: (result.data.project_id as string) || '',
+                        session_id: (result.data.session_id as string) || '',
+                        task_id: (result.data.task_id as string | null) || null,
+                        agent_type: (result.data.agent_type as string) || 'unknown',
+                        duration_seconds: (result.data.duration_seconds as number | null) || null,
+                        tokens_used: (result.data.tokens_used as number | null) || null,
+                        discovery_tokens: (result.data.discovery_tokens as number | null) || null,
+                        outcome: ((result.data.outcome as string) || 'neutral') as 'success' | 'failure' | 'partial' | 'neutral',
+                        observation_type: (result.data.observation_type as string | null) || null,
+                        concepts: (result.data.concepts as string[]) || [],
+                        what_worked: (result.data.what_worked as string[] | null) || null,
+                        what_failed: (result.data.what_failed as string[] | null) || null,
+                        user_corrections: (result.data.user_corrections as string[] | null) || null,
+                        created_at: result.created_at || new Date().toISOString(),
+                      }}
+                    />
+                  ))}
+                </div>
+              )
+            ) : loading ? (
               <div className="flex items-center justify-center py-16 text-slate-500">
                 <Activity className="w-5 h-5 animate-spin mr-2" />
                 Loading diary entries...
