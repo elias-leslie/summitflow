@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from ...storage import memory as memory_storage
@@ -397,7 +398,8 @@ class MemoryHealthChecker:
     def _apply_approved_patterns(self, project_id: str, patterns: list[dict[str, Any]]) -> int:
         """Apply approved patterns by writing to learned-patterns.md.
 
-        This is a placeholder - actual implementation will be in task 1.4.
+        Uses PatternService.apply_pattern() for each approved pattern.
+        Updates database status to 'applied' and records timestamp.
 
         Args:
             project_id: Project ID
@@ -406,6 +408,45 @@ class MemoryHealthChecker:
         Returns:
             Number of patterns successfully applied
         """
-        # TODO: Implement in task 1.4
-        logger.info(f"Would apply {len(patterns)} patterns for {project_id}")
-        return 0  # Return 0 until implemented
+        if not patterns:
+            return 0
+
+        from .pattern_service import PatternService
+
+        # Determine project path from project_id
+        # For summitflow, the path is ~/summitflow
+        # For other projects, we'd need to look up the path
+        if project_id == "summitflow":
+            project_path = Path.home() / "summitflow"
+        else:
+            # Try to get from projects table
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT local_path FROM projects WHERE id = %s",
+                    (project_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    project_path = Path(row[0])
+                else:
+                    logger.warning(f"No project path found for {project_id}")
+                    return 0
+
+        service = PatternService(project_id=project_id, project_path=str(project_path))
+        applied_count = 0
+
+        for pattern in patterns:
+            pattern_id = pattern.get("id")
+            if not pattern_id:
+                continue
+
+            try:
+                result = service.apply_pattern(pattern_id)
+                if result:
+                    applied_count += 1
+                    logger.info(f"Applied pattern {pattern_id}: {pattern.get('title')}")
+            except Exception as e:
+                logger.error(f"Failed to apply pattern {pattern_id}: {e}")
+                continue
+
+        return applied_count
