@@ -209,10 +209,13 @@ async def get_refactor_targets(
     min_complexity: float | None = Query(None, description="Minimum complexity score"),
     min_lines: int | None = Query(None, description="Minimum lines of code"),
     limit: int = Query(50, ge=1, le=200, description="Max results"),
+    code_only: bool = Query(True, description="Filter to code files only (.py, .ts, etc)"),
+    extensions: str | None = Query(None, description="Comma-separated extensions (.py,.ts)"),
 ) -> dict[str, Any]:
     """Get files that are candidates for refactoring.
 
     Returns files with high complexity or line count, sorted by priority.
+    By default, only returns code files (Python, TypeScript, JavaScript).
     """
     _validate_project_exists(project_id)
 
@@ -222,12 +225,16 @@ async def get_refactor_targets(
             detail=f"Invalid priority: {priority}. Must be: high, medium",
         )
 
+    ext_list = extensions.split(",") if extensions else None
+
     return explorer_storage.get_refactor_targets(
         project_id,
         priority=priority,
         min_complexity=min_complexity,
         min_lines=min_lines,
         limit=limit,
+        code_only=code_only,
+        extensions=ext_list,
     )
 
 

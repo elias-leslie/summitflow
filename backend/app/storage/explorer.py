@@ -26,6 +26,9 @@ _ENTRY_COLUMNS = """id, project_id, entry_type, path, name, health_status,
 # Allowed sort fields for get_entries queries
 _ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "created_at"}
 
+# Extensions for code files that can be refactored
+REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
+
 
 def _to_iso_string(value: datetime | None) -> str | None:
     """Convert datetime to ISO string, returning None if value is None."""
@@ -710,6 +713,8 @@ def get_refactor_targets(
     min_complexity: float | None = None,
     min_lines: int | None = None,
     limit: int = 50,
+    code_only: bool = True,
+    extensions: list[str] | None = None,
 ) -> dict[str, Any]:
     """Get files that are candidates for refactoring based on complexity.
 
@@ -719,6 +724,8 @@ def get_refactor_targets(
         min_complexity: Minimum complexity_score
         min_lines: Minimum lines_of_code
         limit: Max results (default 50)
+        code_only: If True and extensions is None, filter to REFACTORABLE_EXTENSIONS
+        extensions: Explicit list of extensions to include (overrides code_only)
 
     Returns:
         Dict with targets list and summary stats
@@ -730,6 +737,14 @@ def get_refactor_targets(
         "(metadata->>'refactor_priority') != 'none'",
     ]
     params: list[Any] = [project_id]
+
+    # Filter by extensions
+    if extensions:
+        conditions.append("(metadata->>'extension') = ANY(%s)")
+        params.append(extensions)
+    elif code_only:
+        conditions.append("(metadata->>'extension') = ANY(%s)")
+        params.append(list(REFACTORABLE_EXTENSIONS))
 
     if priority:
         conditions.append("(metadata->>'refactor_priority') = %s")
@@ -785,21 +800,34 @@ def get_refactor_targets(
             for row in rows
         ]
 
-        # Get summary counts
+        # Get summary counts (same extension filter as main query)
+        summary_conditions = [
+            "project_id = %s",
+            "entry_type = 'file'",
+            "(metadata->>'refactor_priority') IS NOT NULL",
+            "(metadata->>'refactor_priority') != 'none'",
+        ]
+        summary_params: list[Any] = [project_id]
+
+        if extensions:
+            summary_conditions.append("(metadata->>'extension') = ANY(%s)")
+            summary_params.append(extensions)
+        elif code_only:
+            summary_conditions.append("(metadata->>'extension') = ANY(%s)")
+            summary_params.append(list(REFACTORABLE_EXTENSIONS))
+
+        summary_where = sql.SQL(" AND ").join(sql.SQL(c) for c in summary_conditions)
         cur.execute(
-            """
+            sql.SQL("""
             SELECT
                 (metadata->>'refactor_priority') as priority,
                 COUNT(*) as count,
                 SUM((metadata->>'complexity_score')::float) as total_complexity
             FROM explorer_entries
-            WHERE project_id = %s
-              AND entry_type = 'file'
-              AND (metadata->>'refactor_priority') IS NOT NULL
-              AND (metadata->>'refactor_priority') != 'none'
+            WHERE {where_clause}
             GROUP BY (metadata->>'refactor_priority')
-            """,
-            (project_id,),
+            """).format(where_clause=summary_where),
+            summary_params,
         )
         summary_rows = cur.fetchall()
         summary = {
