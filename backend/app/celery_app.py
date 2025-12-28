@@ -109,6 +109,13 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 6,  # Every 6 hours
         "kwargs": {"project_id": "summitflow"},
     },
+    # Weekly deep review - comprehensive instruction surface analysis
+    "run-weekly-deep-review": {
+        "task": "summitflow.run_weekly_deep_review",
+        "schedule": 60 * 60 * 24 * 7,  # Weekly (every 7 days)
+        # Runs Sundays at 2am via crontab below would be ideal,
+        # but simple interval works for now
+    },
 }
 
 
