@@ -21,6 +21,12 @@ pkill -9 -f "summitflow/frontend.*next dev" 2>/dev/null || true
 log_time "Restarting backend..."
 systemctl --user restart summitflow-backend.service
 
+log_time "Restarting celery worker..."
+systemctl --user restart summitflow-celery.service
+
+log_time "Restarting celery beat..."
+systemctl --user restart summitflow-celery-beat.service
+
 log_time "Restarting frontend..."
 systemctl --user restart summitflow-frontend.service
 
@@ -50,6 +56,8 @@ echo "================================"
 echo ""
 echo "Service Status (User Mode):"
 echo "  Backend:      $(systemctl --user is-active summitflow-backend.service 2>/dev/null && echo '✓ Running' || echo '✗ Stopped')"
+echo "  Celery:       $(systemctl --user is-active summitflow-celery.service 2>/dev/null && echo '✓ Running' || echo '✗ Stopped')"
+echo "  Celery Beat:  $(systemctl --user is-active summitflow-celery-beat.service 2>/dev/null && echo '✓ Running' || echo '✗ Stopped')"
 echo "  Frontend:     $(systemctl --user is-active summitflow-frontend.service 2>/dev/null && echo '✓ Running' || echo '✗ Stopped')"
 echo ""
 echo "Port Status:"
@@ -63,5 +71,6 @@ echo "  HTTPS (nginx):  https://192.168.8.233:444"
 echo ""
 echo "Logs (via journalctl):"
 echo "  Backend:  journalctl --user -u summitflow-backend -f"
+echo "  Celery:   journalctl --user -u summitflow-celery -f"
 echo "  Frontend: journalctl --user -u summitflow-frontend -f"
 echo ""
