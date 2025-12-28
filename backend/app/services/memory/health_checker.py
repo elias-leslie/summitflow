@@ -1018,3 +1018,92 @@ class MemoryHealthChecker:
                 logger.warning(f"Failed to archive rule {rule['rule_file']}: {e}")
 
         return archived
+
+    def _parse_claude_md(self, project_id: str) -> list[dict[str, Any]]:
+        """Parse CLAUDE.md into structured sections.
+
+        Extracts ## headers and their content from CLAUDE.md and AGENTS.md
+        to enable conflict detection and sync suggestions.
+
+        Args:
+            project_id: Project to parse
+
+        Returns:
+            List of section dicts with:
+                - doc_file: 'CLAUDE.md' or 'AGENTS.md'
+                - section_title: the ## header text
+                - content: text content under that header
+                - line_start: line number where section starts
+                - line_end: line number where section ends
+        """
+        import re
+
+        sections: list[dict[str, Any]] = []
+
+        # Get project root path
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT root_path FROM projects WHERE id = %s",
+                    (project_id,),
+                )
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    logger.warning(f"No project path found for {project_id}")
+                    return []
+                project_root = Path(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to get project root for CLAUDE.md parsing: {e}")
+            return []
+
+        # Parse both CLAUDE.md and AGENTS.md
+        doc_files = ["CLAUDE.md", "AGENTS.md"]
+
+        for doc_file in doc_files:
+            doc_path = project_root / doc_file
+            if not doc_path.exists():
+                continue
+
+            try:
+                content = doc_path.read_text(encoding="utf-8")
+                lines = content.split("\n")
+
+                # Pattern to match ## headers (level 2)
+                header_pattern = re.compile(r"^##\s+(.+)$")
+
+                current_section: dict[str, Any] | None = None
+                section_content_lines: list[str] = []
+
+                for i, line in enumerate(lines, start=1):
+                    header_match = header_pattern.match(line)
+
+                    if header_match:
+                        # Save previous section if exists
+                        if current_section:
+                            current_section["content"] = "\n".join(section_content_lines).strip()
+                            current_section["line_end"] = i - 1
+                            sections.append(current_section)
+
+                        # Start new section
+                        current_section = {
+                            "doc_file": doc_file,
+                            "section_title": header_match.group(1).strip(),
+                            "content": "",
+                            "line_start": i,
+                            "line_end": i,
+                        }
+                        section_content_lines = []
+                    elif current_section:
+                        section_content_lines.append(line)
+
+                # Don't forget the last section
+                if current_section:
+                    current_section["content"] = "\n".join(section_content_lines).strip()
+                    current_section["line_end"] = len(lines)
+                    sections.append(current_section)
+
+            except Exception as e:
+                logger.warning(f"Failed to parse {doc_file}: {e}")
+                continue
+
+        return sections
