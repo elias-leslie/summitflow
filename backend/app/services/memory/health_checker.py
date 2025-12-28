@@ -107,6 +107,77 @@ class HealthReport:
         }
 
 
+@dataclass
+class BrokenRef:
+    """A broken reference found in documentation."""
+
+    doc_file: str
+    line_number: int
+    reference: str
+    ref_type: str  # 'file_path', 'function', 'class'
+    reason: str  # Why it's broken
+
+
+@dataclass
+class StaleSection:
+    """A stale section identified by LLM review."""
+
+    doc_file: str
+    section_title: str
+    line_start: int
+    staleness_reason: str
+    confidence: float
+
+
+@dataclass
+class DeepReviewReport:
+    """Comprehensive deep review of all instruction surfaces.
+
+    Includes analysis of CLAUDE.md, AGENTS.md, rules files, and global rules.
+    Identifies broken references, stale content, and token waste.
+    """
+
+    claude_md_sections: list[dict[str, Any]] = field(default_factory=list)
+    agents_md_sections: list[dict[str, Any]] = field(default_factory=list)
+    rules_files: list[dict[str, Any]] = field(default_factory=list)
+    global_rules_files: list[dict[str, Any]] = field(default_factory=list)
+    broken_refs: list[BrokenRef] = field(default_factory=list)
+    stale_sections: list[StaleSection] = field(default_factory=list)
+    token_waste: dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert report to dictionary for JSON serialization."""
+        return {
+            "claude_md_sections": self.claude_md_sections,
+            "agents_md_sections": self.agents_md_sections,
+            "rules_files": self.rules_files,
+            "global_rules_files": self.global_rules_files,
+            "broken_refs": [
+                {
+                    "doc_file": r.doc_file,
+                    "line_number": r.line_number,
+                    "reference": r.reference,
+                    "ref_type": r.ref_type,
+                    "reason": r.reason,
+                }
+                for r in self.broken_refs
+            ],
+            "stale_sections": [
+                {
+                    "doc_file": s.doc_file,
+                    "section_title": s.section_title,
+                    "line_start": s.line_start,
+                    "staleness_reason": s.staleness_reason,
+                    "confidence": s.confidence,
+                }
+                for s in self.stale_sections
+            ],
+            "token_waste": self.token_waste,
+            "timestamp": self.timestamp,
+        }
+
+
 class MemoryHealthChecker:
     """Self-healing health checker for context memory system.
 
@@ -1531,3 +1602,175 @@ class MemoryHealthChecker:
                 continue
 
         return tracked
+
+    def deep_review(self, project_id: str | None = None) -> DeepReviewReport:
+        """Perform comprehensive deep review of all instruction surfaces.
+
+        Analyzes:
+        - CLAUDE.md sections
+        - AGENTS.md sections
+        - Project .claude/rules/ files
+        - Global ~/.claude/rules/ files
+        - Broken references to files/functions/classes
+        - Token waste calculation
+
+        Args:
+            project_id: Project to review (uses default if not provided)
+
+        Returns:
+            DeepReviewReport with findings
+        """
+        pid = project_id or self.project_id
+        if not pid:
+            raise ValueError("Project ID required for deep review")
+
+        report = DeepReviewReport()
+
+        # Get project root path
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT root_path FROM projects WHERE id = %s",
+                    (pid,),
+                )
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    logger.warning(f"No project path found for {pid}")
+                    return report
+                project_root = Path(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to get project root for deep review: {e}")
+            return report
+
+        # Review CLAUDE.md
+        claude_md_path = project_root / "CLAUDE.md"
+        if claude_md_path.exists():
+            report.claude_md_sections = self._parse_claude_md(pid)
+            # Check for broken refs
+            broken = self._check_references(claude_md_path, project_root)
+            report.broken_refs.extend(broken)
+
+        # Review AGENTS.md
+        agents_md_path = project_root / "AGENTS.md"
+        if agents_md_path.exists():
+            agents_sections = self._parse_doc_sections(agents_md_path, "AGENTS.md")
+            report.agents_md_sections = agents_sections
+            broken = self._check_references(agents_md_path, project_root)
+            report.broken_refs.extend(broken)
+
+        # Review project rules (.claude/rules/)
+        rules_dir = project_root / ".claude" / "rules"
+        if rules_dir.exists():
+            for rule_file in rules_dir.glob("*.md"):
+                rule_info = {
+                    "name": rule_file.name,
+                    "path": str(rule_file),
+                    "size_bytes": rule_file.stat().st_size,
+                    "last_modified": datetime.fromtimestamp(rule_file.stat().st_mtime).isoformat(),
+                }
+                report.rules_files.append(rule_info)
+                broken = self._check_references(rule_file, project_root)
+                report.broken_refs.extend(broken)
+
+        # Review global rules (~/.claude/rules/)
+        global_rules_dir = Path.home() / ".claude" / "rules"
+        if global_rules_dir.exists():
+            for rule_file in global_rules_dir.glob("*.md"):
+                rule_info = {
+                    "name": rule_file.name,
+                    "path": str(rule_file),
+                    "size_bytes": rule_file.stat().st_size,
+                    "last_modified": datetime.fromtimestamp(rule_file.stat().st_mtime).isoformat(),
+                }
+                report.global_rules_files.append(rule_info)
+
+        # Calculate token waste
+        report.token_waste = self._calculate_token_waste(report)
+
+        return report
+
+    def _parse_doc_sections(self, doc_path: Path, doc_file: str) -> list[dict[str, Any]]:
+        """Parse a markdown document into sections.
+
+        Args:
+            doc_path: Path to the markdown file
+            doc_file: Name for the doc_file field
+
+        Returns:
+            List of section dicts with doc_file, section_title, content, line_start, line_end
+        """
+        import re
+
+        sections: list[dict[str, Any]] = []
+
+        try:
+            content = doc_path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+
+            header_pattern = re.compile(r"^##\s+(.+)$")
+            current_section: dict[str, Any] | None = None
+            section_content_lines: list[str] = []
+
+            for i, line in enumerate(lines, start=1):
+                header_match = header_pattern.match(line)
+
+                if header_match:
+                    if current_section:
+                        current_section["content"] = "\n".join(section_content_lines).strip()
+                        current_section["line_end"] = i - 1
+                        sections.append(current_section)
+
+                    current_section = {
+                        "doc_file": doc_file,
+                        "section_title": header_match.group(1).strip(),
+                        "content": "",
+                        "line_start": i,
+                        "line_end": i,
+                    }
+                    section_content_lines = []
+                elif current_section:
+                    section_content_lines.append(line)
+
+            if current_section:
+                current_section["content"] = "\n".join(section_content_lines).strip()
+                current_section["line_end"] = len(lines)
+                sections.append(current_section)
+
+        except Exception as e:
+            logger.warning(f"Failed to parse {doc_file}: {e}")
+
+        return sections
+
+    def _check_references(self, doc_path: Path, project_root: Path) -> list[BrokenRef]:
+        """Check for broken references in a document.
+
+        Placeholder - will be implemented in task 7.2.
+
+        Args:
+            doc_path: Path to the document
+            project_root: Project root for resolving references
+
+        Returns:
+            List of BrokenRef objects for broken references
+        """
+        # Will be implemented in task 7.2
+        return []
+
+    def _calculate_token_waste(self, report: DeepReviewReport) -> dict[str, Any]:
+        """Calculate token waste from stale/redundant content.
+
+        Placeholder - will be implemented in task 7.4.
+
+        Args:
+            report: The deep review report with sections
+
+        Returns:
+            Dict with token waste metrics
+        """
+        # Will be implemented in task 7.4
+        return {
+            "total_tokens": 0,
+            "waste_tokens": 0,
+            "waste_pct": 0.0,
+            "by_source": {},
+        }
