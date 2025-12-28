@@ -232,6 +232,7 @@ class MemoryHealthChecker:
             "pattern_status": self._get_pattern_status_breakdown(pid),
             "embedding_coverage": self._get_embedding_coverage(pid),
             "approved_patterns_waiting": len(self._get_approved_patterns(pid)),
+            "rule_adherence": self._calculate_rule_adherence(pid),
         }
 
     def check_and_correct(self, project_id: str | None = None) -> HealthReport:
@@ -587,6 +588,82 @@ class MemoryHealthChecker:
                 continue
 
         return promoted
+
+    def _calculate_rule_adherence(self, project_id: str) -> dict[str, Any]:
+        """Calculate rule adherence rates from observations.
+
+        Queries observations with type='rule_adherence' and calculates
+        the percentage of times each rule was followed vs violated.
+
+        Args:
+            project_id: Project to analyze
+
+        Returns:
+            Dict with:
+                - by_rule: {rule_file: {followed: N, violated: N, rate: 0.0-1.0}}
+                - overall_rate: 0.0-1.0
+                - total_observations: N
+        """
+        from ...storage.connection import get_connection
+
+        result: dict[str, Any] = {
+            "by_rule": {},
+            "overall_rate": 1.0,
+            "total_observations": 0,
+        }
+
+        try:
+            with get_connection() as conn, conn.cursor() as cur:
+                # Query rule_adherence observations with their facts
+                cur.execute(
+                    """
+                    SELECT
+                        o.facts->>'rule_file' as rule_file,
+                        (o.facts->>'rule_followed')::boolean as followed,
+                        COUNT(*) as count
+                    FROM observations o
+                    WHERE o.project_id = %s
+                      AND o.observation_type = 'rule_adherence'
+                      AND o.facts->>'rule_file' IS NOT NULL
+                    GROUP BY o.facts->>'rule_file', (o.facts->>'rule_followed')::boolean
+                    """,
+                    (project_id,),
+                )
+                rows = cur.fetchall()
+
+                # Aggregate by rule file
+                by_rule: dict[str, dict[str, int | float]] = {}
+                total_followed = 0
+                total_violated = 0
+
+                for row in rows:
+                    rule_file, followed, count = row
+                    if rule_file not in by_rule:
+                        by_rule[rule_file] = {"followed": 0, "violated": 0, "rate": 1.0}
+
+                    if followed:
+                        by_rule[rule_file]["followed"] += count
+                        total_followed += count
+                    else:
+                        by_rule[rule_file]["violated"] += count
+                        total_violated += count
+
+                # Calculate rates
+                for _rule_file, stats in by_rule.items():
+                    total = stats["followed"] + stats["violated"]
+                    if total > 0:
+                        stats["rate"] = round(stats["followed"] / total, 2)
+
+                total = total_followed + total_violated
+                result["by_rule"] = by_rule
+                result["total_observations"] = total
+                if total > 0:
+                    result["overall_rate"] = round(total_followed / total, 2)
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate rule adherence: {e}")
+
+        return result
 
     def get_threshold_recommendations(self, project_id: str | None = None) -> list[dict[str, Any]]:
         """Get recommendations for adjusting thresholds.
