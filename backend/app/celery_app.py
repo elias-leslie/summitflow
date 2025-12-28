@@ -103,6 +103,12 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.process_pending_embeddings",
         "schedule": 60 * 5,  # Every 5 minutes
     },
+    # Memory health check - auto-apply patterns and detect issues
+    "run-memory-health-check": {
+        "task": "summitflow.run_memory_health_check",
+        "schedule": 60 * 60 * 6,  # Every 6 hours
+        "kwargs": {"project_id": "summitflow"},
+    },
 }
 
 
@@ -142,6 +148,7 @@ from app.tasks import (  # noqa: F401, E402
     evidence_tasks,
     explorer_tasks,
     lifecycle_cleanup,
+    memory_health_task,
     observation_processor,
     reflection_processor,
 )
