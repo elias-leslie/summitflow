@@ -393,3 +393,85 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
         queued=True,
         queue_item_id=item["id"],
     )
+
+
+# ============================================================================
+# User Prompt Capture - For semantic search across user queries
+# ============================================================================
+
+
+class UserPromptSubmitRequest(BaseModel):
+    """Request model for user prompt submit hook."""
+
+    project_id: str
+    session_id: str
+    prompt_number: int
+    prompt_text: str
+
+
+class UserPromptSubmitResponse(BaseModel):
+    """Response model for user prompt submit hook."""
+
+    status: str  # "captured", "skipped", "error"
+    prompt_id: str | None = None
+    skip_reason: str | None = None
+
+
+@router.post(
+    "/hooks/user-prompt-submit",
+    response_model=UserPromptSubmitResponse,
+    status_code=202,
+)
+async def hook_user_prompt_submit(
+    request: UserPromptSubmitRequest,
+) -> UserPromptSubmitResponse:
+    """Capture user prompts for semantic search.
+
+    Called by UserPromptSubmit hooks to capture what users ask.
+    Enables semantic search across user queries for context retrieval.
+
+    Returns 202 Accepted for fire-and-forget behavior.
+    """
+    from ..storage.agent_configs import is_memory_feature_enabled
+    from ..storage.memory_prompts import create_user_prompt
+
+    # Skip if project doesn't exist
+    if not _ensure_project_exists(request.project_id):
+        logger.debug(f"user_prompt_skipped: unknown project {request.project_id}")
+        return UserPromptSubmitResponse(
+            status="skipped",
+            skip_reason="unknown_project",
+        )
+
+    # Check if user prompts feature is enabled
+    if not is_memory_feature_enabled(request.project_id, "user_prompts"):
+        logger.debug(f"user_prompt_skipped: feature disabled for {request.project_id}")
+        return UserPromptSubmitResponse(
+            status="skipped",
+            skip_reason="user_prompts_disabled",
+        )
+
+    # Store the prompt (embedding will be added later by batch processor)
+    result = create_user_prompt(
+        project_id=request.project_id,
+        session_id=request.session_id,
+        prompt_number=request.prompt_number,
+        prompt_text=request.prompt_text,
+        skip_memory_check=True,  # Already checked above
+    )
+
+    if result is None:
+        return UserPromptSubmitResponse(
+            status="error",
+            skip_reason="storage_error",
+        )
+
+    logger.debug(
+        f"user_prompt_captured: {request.session_id}:{request.prompt_number} "
+        f"({len(request.prompt_text)} chars)"
+    )
+
+    return UserPromptSubmitResponse(
+        status="captured",
+        prompt_id=result["id"],
+    )
