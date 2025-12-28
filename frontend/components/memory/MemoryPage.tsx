@@ -12,7 +12,8 @@ import {
   Lightbulb,
   BookOpen,
   X,
-  Sparkles
+  Sparkles,
+  Shield
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
@@ -29,6 +30,7 @@ import {
 import { SearchBar } from './SearchBar';
 import { FilterPanel, type SearchFilters } from './FilterPanel';
 import { useMemorySearch, type SearchResult } from '@/lib/hooks/useMemorySearch';
+import { HealthTab } from './HealthTab';
 
 // Types
 interface LifecycleStats {
@@ -651,6 +653,10 @@ export default function MemoryPage() {
                 {isSearching ? searchResultsByType.diary.length : diaryTotal}
               </span>
             </TabsTrigger>
+            <TabsTrigger value="health" className="gap-2">
+              <Shield className="w-4 h-4" />
+              Health
+            </TabsTrigger>
           </TabsList>
 
           {/* Observations Tab */}
@@ -857,6 +863,19 @@ export default function MemoryPage() {
                   totalItems={diaryTotal}
                   onPageChange={setDiaryPage}
                 />
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Health Tab */}
+          <TabsContent value="health">
+            {selectedProject ? (
+              <HealthTab projectId={selectedProject} />
+            ) : (
+              <div className="text-center py-16 text-slate-500">
+                <Shield className="w-10 h-10 mx-auto mb-4 opacity-30" />
+                <h3 className="text-lg font-medium text-slate-400 mb-2">Select a project</h3>
+                <p className="text-sm">Choose a project from the dropdown to view health status</p>
               </div>
             )}
           </TabsContent>
