@@ -1091,3 +1091,137 @@ def bulk_update_observation_embeddings(
         updated = cur.rowcount
         logger.info(f"Bulk updated {updated} observation embeddings")
         return updated
+
+
+def has_embeddings(project_id: str | None = None) -> bool:
+    """Check if any observations have embeddings.
+
+    Args:
+        project_id: Optional project ID to check
+
+    Returns:
+        True if at least one observation has embedding_narrative
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if project_id:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM observations
+                    WHERE embedding_narrative IS NOT NULL
+                      AND project_id = %s
+                    LIMIT 1
+                )
+                """,
+                (project_id,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM observations
+                    WHERE embedding_narrative IS NOT NULL
+                    LIMIT 1
+                )
+                """
+            )
+        result = cur.fetchone()
+        return bool(result and result[0])
+
+
+def search_observations_semantic(
+    project_id: str,
+    query_embedding: list[float],
+    limit: int = 20,
+    min_similarity: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Semantic search observations using vector similarity.
+
+    Uses pgvector's cosine distance operator (<=>) for similarity search.
+    Combines similarity score with recency and confidence for final ranking.
+
+    Args:
+        project_id: Project to search in
+        query_embedding: 768-dimensional embedding vector for the query
+        limit: Max results
+        min_similarity: Minimum similarity threshold (0-1)
+
+    Returns:
+        List of observations with similarity_score and combined_score
+    """
+    import math
+    from datetime import UTC, datetime
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Cosine distance to similarity: 1 - distance
+        # Filter by minimum similarity threshold
+        cur.execute(
+            f"""
+            SELECT {OBSERVATION_COLUMNS},
+                   1 - (embedding_narrative <=> %s::vector) AS similarity
+            FROM observations
+            WHERE project_id = %s
+              AND embedding_narrative IS NOT NULL
+              AND 1 - (embedding_narrative <=> %s::vector) >= %s
+            ORDER BY embedding_narrative <=> %s::vector
+            LIMIT %s
+            """,
+            (
+                query_embedding,
+                project_id,
+                query_embedding,
+                min_similarity,
+                query_embedding,
+                limit,
+            ),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return []
+
+    # Apply recency-weighted ranking
+    # Weights: similarity=0.50, recency=0.30, confidence=0.15, usage=0.05
+    results = []
+    now = datetime.now(UTC)
+
+    for row in rows:
+        obs = _observation_row_to_dict(row[:21])
+        similarity = float(row[21])
+
+        # Recency score: exp(-age_days / 30)
+        recency_score = 0.5
+        try:
+            created_at = obs.get("created_at")
+            if created_at:
+                if isinstance(created_at, str):
+                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                else:
+                    created_dt = created_at
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=UTC)
+                age_days = (now - created_dt).total_seconds() / 86400
+                recency_score = math.exp(-age_days / 30)
+        except (ValueError, TypeError):
+            pass
+
+        # Confidence score
+        confidence = obs.get("confidence", 0.5)
+        confidence_score = min(1.0, max(0.0, float(confidence)))
+
+        # Usage score (capped at 10)
+        usage = obs.get("usage_count", 0)
+        usage_score = min(1.0, usage / 10.0) if usage else 0.0
+
+        # Combined score with semantic similarity as primary signal
+        combined = (
+            0.50 * similarity + 0.30 * recency_score + 0.15 * confidence_score + 0.05 * usage_score
+        )
+
+        obs["similarity_score"] = round(similarity, 4)
+        obs["combined_score"] = round(combined, 4)
+        results.append(obs)
+
+    # Sort by combined score descending
+    results.sort(key=lambda x: x["combined_score"], reverse=True)
+    return results
