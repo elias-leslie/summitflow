@@ -55,6 +55,8 @@ class HealthReport:
     metrics: dict[str, Any] = field(default_factory=dict)
     stale_rules: list[dict[str, Any]] = field(default_factory=list)
     auto_archived: list[dict[str, Any]] = field(default_factory=list)
+    sync_suggestions: list[dict[str, Any]] = field(default_factory=list)
+    doc_conflicts: list[dict[str, Any]] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def add_correction(self, correction_type: str, description: str, **details: Any) -> None:
@@ -99,6 +101,8 @@ class HealthReport:
             "metrics": self.metrics,
             "stale_rules": self.stale_rules,
             "auto_archived": self.auto_archived,
+            "sync_suggestions": self.sync_suggestions,
+            "doc_conflicts": self.doc_conflicts,
             "timestamp": self.timestamp,
         }
 
@@ -385,6 +389,32 @@ class MemoryHealthChecker:
                     count=len(remaining_stale),
                     rules=[r["rule_file"] for r in remaining_stale[:5]],  # Top 5
                 )
+
+        # Check 6: Doc conflicts
+        conflicts = self._detect_doc_conflicts(pid)
+        report.doc_conflicts = conflicts
+
+        if conflicts:
+            high_severity = [c for c in conflicts if c.get("severity") == "high"]
+            if high_severity:
+                report.add_warning(
+                    "doc_conflicts",
+                    f"{len(high_severity)} high-severity conflicts between docs and patterns",
+                    severity="high",
+                    count=len(high_severity),
+                )
+
+        # Check 7: Generate sync suggestions
+        sync_suggestions = self._generate_sync_suggestions(pid)
+        report.sync_suggestions = sync_suggestions
+
+        if sync_suggestions:
+            report.add_warning(
+                "sync_suggestions",
+                f"{len(sync_suggestions)} sync suggestions available",
+                severity="low",
+                count=len(sync_suggestions),
+            )
 
         # Determine overall status
         high_warnings = sum(1 for w in report.warnings if w.severity == "high")
@@ -1294,3 +1324,105 @@ class MemoryHealthChecker:
                 )
 
         return None
+
+    def _generate_sync_suggestions(self, project_id: str) -> list[dict[str, Any]]:
+        """Generate suggestions for synchronizing patterns with CLAUDE.md.
+
+        Suggests:
+        - pattern_should_be_in_claude_md: High-confidence patterns not in docs
+        - doc_section_could_be_pattern: Doc sections that could become patterns
+        - pattern_duplicates_doc: Pattern content already in docs
+
+        Args:
+            project_id: Project to analyze
+
+        Returns:
+            List of suggestion dicts with:
+                - suggestion_type: Type of suggestion
+                - pattern_id: Pattern ID (if applicable)
+                - pattern_title: Pattern title (if applicable)
+                - doc_file: Doc file (if applicable)
+                - section_title: Doc section title (if applicable)
+                - suggestion: Human-readable suggestion text
+                - action: Recommended action ('add_to_claude_md', 'create_pattern', 'consolidate')
+        """
+        suggestions: list[dict[str, Any]] = []
+
+        # Get doc sections
+        sections = self._parse_claude_md(project_id)
+
+        # Get high-confidence applied patterns
+        patterns = memory_storage.list_patterns(
+            project_id=project_id,
+            status="applied",
+            limit=200,
+        )
+
+        # Suggestion 1: High-confidence patterns not covered by CLAUDE.md
+        section_content_combined = " ".join(s["content"].lower() for s in sections).lower()
+
+        for pattern in patterns:
+            confidence = pattern.get("confidence", 0)
+            pattern_title = pattern.get("title", "")
+            pattern_content = pattern.get("content", "")
+
+            # Skip low confidence patterns
+            if confidence < 0.85:
+                continue
+
+            # Check if pattern content is already covered in docs
+            if not self._is_similar_content(
+                pattern_content.lower(), section_content_combined, threshold=0.4
+            ):
+                # High-confidence pattern not in docs
+                suggestions.append(
+                    {
+                        "suggestion_type": "pattern_should_be_in_claude_md",
+                        "pattern_id": pattern.get("id"),
+                        "pattern_title": pattern_title,
+                        "doc_file": None,
+                        "section_title": None,
+                        "suggestion": f"Pattern '{pattern_title}' (confidence: {confidence:.0%}) "
+                        "has proven useful and should be added to CLAUDE.md for visibility.",
+                        "action": "add_to_claude_md",
+                    }
+                )
+
+        # Suggestion 2: Doc sections that look like they could be learned patterns
+        # (imperative guidance not tracked as patterns)
+        guidance_keywords = ["must", "always", "never", "required", "mandatory", "forbidden"]
+
+        for section in sections:
+            section_content_lower = section["content"].lower()
+
+            # Check if section has strong guidance
+            has_guidance = any(kw in section_content_lower for kw in guidance_keywords)
+
+            if has_guidance and len(section["content"]) < 500:  # Concise enough for pattern
+                # Check if there's already a matching pattern
+                matching_pattern = None
+                for pattern in patterns:
+                    if self._is_similar_content(
+                        section["content"].lower(),
+                        pattern.get("content", "").lower(),
+                        threshold=0.5,
+                    ):
+                        matching_pattern = pattern
+                        break
+
+                if not matching_pattern:
+                    suggestions.append(
+                        {
+                            "suggestion_type": "doc_section_could_be_pattern",
+                            "pattern_id": None,
+                            "pattern_title": None,
+                            "doc_file": section["doc_file"],
+                            "section_title": section["section_title"],
+                            "suggestion": f"Section '{section['section_title']}' in {section['doc_file']} "
+                            "contains guidance that could be tracked as a learned pattern "
+                            "for adherence monitoring.",
+                            "action": "create_pattern",
+                        }
+                    )
+
+        return suggestions
