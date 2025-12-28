@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -12,59 +11,11 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Badge } from '@/components/ui/badge';
-
-// Types
-interface FilterStats {
-  tools_received: number;
-  tools_queued: number;
-  tools_skipped: number;
-  skip_reasons: Record<string, number>;
-  skip_rate: number;
-}
-
-interface EmbeddingCoverage {
-  total: number;
-  with_embeddings: number;
-  coverage_pct: number;
-}
-
-interface Correction {
-  type: string;
-  description: string;
-  details: Record<string, unknown>;
-  timestamp: string;
-}
-
-interface Warning {
-  type: string;
-  message: string;
-  severity: 'low' | 'medium' | 'high';
-  details: Record<string, unknown>;
-}
-
-interface Recommendation {
-  type: string;
-  current: string | number;
-  recommended: string | number;
-  confidence: 'low' | 'medium' | 'high';
-  reason: string;
-  impact: Record<string, unknown>;
-}
-
-interface HealthReport {
-  status: 'healthy' | 'corrected' | 'degraded' | 'unhealthy';
-  corrections: Correction[];
-  warnings: Warning[];
-  metrics: {
-    filter_stats: FilterStats;
-    observation_distribution: Record<string, number>;
-    pattern_status: Record<string, number>;
-    embedding_coverage: EmbeddingCoverage;
-    approved_patterns_waiting: number;
-  };
-  recommendations: Recommendation[] | null;
-  timestamp: string;
-}
+import {
+  useMemoryHealth,
+  useRunHealthCheck,
+  type HealthReport,
+} from '@/lib/hooks/useMemoryHealth';
 
 // Status indicator component
 function StatusIndicator({ status }: { status: HealthReport['status'] }) {
@@ -144,48 +95,18 @@ function StatCard({
 
 // Main HealthTab component
 export function HealthTab({ projectId }: { projectId: string }) {
-  const [health, setHealth] = useState<HealthReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Use hooks for data fetching
+  const { health: fetchedHealth, isLoading: loading, error: fetchError, refresh } = useMemoryHealth(projectId);
+  const { run: runCheck, isRunning: running, error: runError, result: checkResult } = useRunHealthCheck(projectId);
 
-  // Fetch health data
-  const fetchHealth = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`/api/memory/health?project_id=${projectId}`);
-      if (!res.ok) throw new Error(`Failed to fetch health: ${res.status}`);
-      const data = await res.json();
-      setHealth(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch health');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Use check result if available, otherwise use fetched health
+  const health = checkResult || fetchedHealth;
+  const error = runError || fetchError;
 
-  // Run health check
+  // Run health check and update state
   const runHealthCheck = async () => {
-    try {
-      setRunning(true);
-      setError(null);
-      const res = await fetch(`/api/memory/health/check?project_id=${projectId}`, {
-        method: 'POST',
-      });
-      if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
-      const data = await res.json();
-      setHealth(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Health check failed');
-    } finally {
-      setRunning(false);
-    }
+    await runCheck();
   };
-
-  useEffect(() => {
-    fetchHealth();
-  }, [projectId]);
 
   if (loading) {
     return (
@@ -203,7 +124,7 @@ export function HealthTab({ projectId }: { projectId: string }) {
         <h3 className="text-lg font-medium text-slate-400 mb-2">Error loading health data</h3>
         <p className="text-sm text-rose-400">{error}</p>
         <button
-          onClick={fetchHealth}
+          onClick={refresh}
           className="mt-4 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
         >
           Retry
