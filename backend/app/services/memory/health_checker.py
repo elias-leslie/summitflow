@@ -1826,6 +1826,99 @@ class MemoryHealthChecker:
 
         return broken_refs
 
+    def _llm_review_content(self, doc_path: Path, codebase_summary: str = "") -> list[StaleSection]:
+        """Use LLM to identify stale/outdated sections in a document.
+
+        Prompts the LLM to analyze the document content and identify sections
+        that are outdated, redundant, or reference things that no longer exist.
+
+        Args:
+            doc_path: Path to the document to review
+            codebase_summary: Optional summary of codebase structure
+
+        Returns:
+            List of StaleSection objects with staleness analysis
+        """
+        stale_sections: list[StaleSection] = []
+        doc_file = doc_path.name
+
+        try:
+            content = doc_path.read_text(encoding="utf-8")
+
+            # Limit content to avoid token limits
+            if len(content) > 10000:
+                content = content[:10000] + "\n\n[... truncated for analysis ...]"
+
+            # Build prompt
+            prompt = f"""Analyze this documentation file for staleness and relevance issues.
+
+Document: {doc_file}
+{f"Codebase Context: {codebase_summary}" if codebase_summary else ""}
+
+Document Content:
+{content}
+
+Identify sections (## headers) that appear to be:
+1. Outdated - references old patterns, deprecated tools, or removed features
+2. Redundant - duplicates information found elsewhere
+3. Broken - references files, functions, or endpoints that likely don't exist
+
+For each problematic section, return a JSON array:
+[
+  {{
+    "section_title": "The ## header text",
+    "line_start": 10,
+    "staleness_reason": "Why this section appears stale or problematic",
+    "confidence": 0.8
+  }}
+]
+
+If no sections are stale, return: []
+
+Return ONLY the JSON array, no explanation.
+"""
+
+            # Get or create LLM client
+            from ..agents import DualProviderClient
+
+            client = DualProviderClient(
+                primary="gemini",
+                gemini_model="gemini-3-flash-preview",
+                claude_model="claude-haiku-4-5",
+            )
+
+            response = client.generate(prompt=prompt)
+            response_text = response.content.strip()
+
+            # Parse response
+            import json
+
+            # Try to extract JSON from response
+            if response_text.startswith("["):
+                results = json.loads(response_text)
+            else:
+                # Try to find JSON array in response
+                import re
+
+                json_match = re.search(r"\[.*\]", response_text, re.DOTALL)
+                results = json.loads(json_match.group()) if json_match else []
+
+            for result in results:
+                stale_sections.append(
+                    StaleSection(
+                        doc_file=doc_file,
+                        section_title=result.get("section_title", "Unknown"),
+                        line_start=result.get("line_start", 0),
+                        staleness_reason=result.get("staleness_reason", "No reason provided"),
+                        confidence=result.get("confidence", 0.5),
+                    )
+                )
+
+        except Exception as e:
+            logger.warning(f"LLM review failed for {doc_file}: {e}")
+
+        return stale_sections
+
     def _calculate_token_waste(self, report: DeepReviewReport) -> dict[str, Any]:
         """Calculate token waste from stale/redundant content.
 
