@@ -4,22 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 // ============================================================================
-// Terminal API Base URL
-// ============================================================================
-
-function getTerminalApiBase(): string {
-  if (typeof window === "undefined") return "";
-
-  // Map frontend hosts to terminal service endpoints
-  if (window.location.host === "dev.summitflow.dev") {
-    return "https://terminal.summitflow.dev";
-  } else if (window.location.host.includes("localhost:3001")) {
-    return "http://localhost:8002";
-  }
-  return "";
-}
-
-// ============================================================================
 // Types
 // ============================================================================
 
