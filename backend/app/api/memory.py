@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Path, Query
+from psycopg import sql
 from pydantic import BaseModel
 
 from ..api.hooks import get_filtering_metrics
@@ -73,8 +74,8 @@ async def get_memory_stats(
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = now - timedelta(days=1)
 
-    # Build project filter for SQL queries
-    project_filter = "AND project_id = %s" if project_id else ""
+    # Build project filter using sql.SQL for safe composition
+    project_filter = sql.SQL("AND project_id = %s") if project_id else sql.SQL("")
 
     with get_connection() as conn, conn.cursor() as cur:
         # Queue statistics
@@ -82,7 +83,7 @@ async def get_memory_stats(
         if project_id:
             queue_params.append(project_id)
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT
                 COUNT(*) FILTER (WHERE status = 'pending') as pending,
                 COUNT(*) FILTER (WHERE status = 'processing') as processing,
@@ -93,7 +94,7 @@ async def get_memory_stats(
             FROM observation_queue
             WHERE created_at >= %s
             {project_filter}
-            """,
+            """).format(project_filter=project_filter),
             tuple(queue_params),
         )
         queue_row = cur.fetchone()
@@ -113,12 +114,12 @@ async def get_memory_stats(
         if project_id:
             obs_params.append(project_id)
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT COUNT(*)
             FROM observations
             WHERE created_at >= %s
             {project_filter}
-            """,
+            """).format(project_filter=project_filter),
             tuple(obs_params),
         )
         obs_row = cur.fetchone()
@@ -129,12 +130,12 @@ async def get_memory_stats(
         if project_id:
             token_params.append(project_id)
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT COALESCE(SUM(discovery_tokens), 0)
             FROM observations
             WHERE created_at >= %s
             {project_filter}
-            """,
+            """).format(project_filter=project_filter),
             tuple(token_params),
         )
         token_row = cur.fetchone()
