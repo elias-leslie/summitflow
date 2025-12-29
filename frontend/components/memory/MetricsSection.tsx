@@ -121,4 +121,5 @@ export function MetricsSection({ stats, loading }: MetricsSectionProps) {
   );
 }
 
+export { MetricCard };
 export type { MemoryStats, LifecycleStats };
