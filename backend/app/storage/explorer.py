@@ -307,45 +307,47 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict:
             - total: total count
             - last_scanned: most recent scan timestamp
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        # Build WHERE clause
-        where_clause = "WHERE project_id = %s"
-        params: list[Any] = [project_id]
-        if entry_type:
-            where_clause += " AND entry_type = %s"
-            params.append(entry_type)
+    # Build WHERE clause using parameterized conditions
+    conditions = ["project_id = %s"]
+    params: list[Any] = [project_id]
+    if entry_type:
+        conditions.append("entry_type = %s")
+        params.append(entry_type)
 
+    where_clause = _build_where_clause(conditions)
+
+    with get_connection() as conn, conn.cursor() as cur:
         # Count by type
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT entry_type, COUNT(*) as count
             FROM explorer_entries
-            {where_clause}
+            WHERE {where_clause}
             GROUP BY entry_type
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         by_type = {row[0]: row[1] for row in cur.fetchall()}
 
         # Count by health
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT health_status, COUNT(*) as count
             FROM explorer_entries
-            {where_clause}
+            WHERE {where_clause}
             GROUP BY health_status
-            """,
+            """).format(where_clause=where_clause),
             params,
         )
         by_health = {row[0]: row[1] for row in cur.fetchall()}
 
         # Total and last scanned
         cur.execute(
-            f"""
+            sql.SQL("""
             SELECT COUNT(*), MAX(last_scanned_at)
             FROM explorer_entries
-            {where_clause}
-            """,
+            WHERE {where_clause}
+            """).format(where_clause=where_clause),
             params,
         )
         row = cur.fetchone()
