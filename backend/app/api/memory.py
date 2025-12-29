@@ -1104,3 +1104,97 @@ async def promote_pattern_to_global(
             source_pattern_id=pattern_id,
             error=str(e),
         )
+
+
+class PatternFeedbackRequest(BaseModel):
+    """Request body for pattern feedback."""
+
+    outcome: str  # 'success' or 'failure'
+    context: str | None = None  # Optional context about what happened
+
+
+class PatternFeedbackResponse(BaseModel):
+    """Response from pattern feedback."""
+
+    pattern_id: str
+    previous_confidence: float
+    new_confidence: float
+    new_status: str | None  # Only set if status changed
+    feedback_count: int  # Total feedback entries for this pattern
+
+
+@router.post("/memory/patterns/{pattern_id}/feedback", response_model=PatternFeedbackResponse)
+async def record_pattern_feedback(
+    request: PatternFeedbackRequest,
+    pattern_id: str = Path(..., description="Pattern ID to provide feedback for"),
+) -> PatternFeedbackResponse:
+    """Record feedback for a pattern to adjust its confidence.
+
+    This endpoint:
+    - On success: Increases confidence by 0.05 (max 1.0)
+    - On failure: Decreases confidence by 0.1 (min 0.0)
+    - After 3 consecutive failures: Auto-flags pattern for review
+
+    The feedback is stored in the pattern's feedback_history JSONB field
+    with timestamp, outcome, context, and confidence delta.
+
+    Args:
+        pattern_id: ID of the pattern to provide feedback for
+        request: Feedback with outcome ('success' or 'failure') and optional context
+    """
+    if request.outcome not in ("success", "failure"):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="outcome must be 'success' or 'failure'")
+
+    # Get current pattern
+    pattern = memory_storage.get_pattern(pattern_id)
+    if not pattern:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Pattern {pattern_id} not found")
+
+    previous_confidence = pattern.get("confidence", 0.7)
+    feedback_history = pattern.get("feedback_history") or []
+
+    # Calculate new confidence
+    if request.outcome == "success":
+        new_confidence = min(1.0, previous_confidence + 0.05)
+    else:
+        new_confidence = max(0.0, previous_confidence - 0.1)
+
+    # Add feedback entry
+    feedback_entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "outcome": request.outcome,
+        "context": request.context,
+        "confidence_before": previous_confidence,
+        "confidence_after": new_confidence,
+    }
+    feedback_history.append(feedback_entry)
+
+    # Check for 3 consecutive failures -> needs_review
+    new_status = None
+    recent_outcomes = [f.get("outcome") for f in feedback_history[-3:]]
+    if (
+        len(recent_outcomes) >= 3
+        and all(o == "failure" for o in recent_outcomes)
+        and pattern.get("status") != "needs_review"
+    ):
+        new_status = "needs_review"
+
+    # Update pattern in database
+    memory_storage.update_pattern_feedback(
+        pattern_id=pattern_id,
+        confidence=new_confidence,
+        feedback_history=feedback_history,
+        status=new_status,
+    )
+
+    return PatternFeedbackResponse(
+        pattern_id=pattern_id,
+        previous_confidence=previous_confidence,
+        new_confidence=new_confidence,
+        new_status=new_status,
+        feedback_count=len(feedback_history),
+    )

@@ -38,6 +38,7 @@ from .memory_patterns import (
     increment_pattern_usage,
     list_patterns,
     mark_pattern_applied,
+    update_pattern_feedback,
     update_pattern_status,
 )
 
@@ -79,6 +80,7 @@ __all__ = [
     "mark_diary_entries_reflected",
     "mark_pattern_applied",
     "reset_stuck_queue_items",
+    "update_pattern_feedback",
     "update_pattern_status",
     "update_queue_item_status",
 ]

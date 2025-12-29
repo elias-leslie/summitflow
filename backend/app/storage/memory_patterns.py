@@ -28,7 +28,8 @@ PATTERN_COLUMNS = """
     id, project_id, pattern_type, title, content, rationale,
     source_diary_ids, source_observation_ids, action, target_pattern_id,
     status, confidence, usage_count, last_used_at, superseded_by,
-    applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by
+    applied_to_rules_at, created_at, reviewed_at, reviewed_by, reflected_by,
+    feedback_history
 """.strip()
 
 
@@ -280,6 +281,53 @@ def increment_pattern_usage(pattern_id: str) -> bool:
     return updated
 
 
+def update_pattern_feedback(
+    pattern_id: str,
+    confidence: float,
+    feedback_history: list[dict[str, Any]],
+    status: str | None = None,
+) -> bool:
+    """Update pattern confidence and feedback history.
+
+    Args:
+        pattern_id: The pattern to update
+        confidence: New confidence value (0.0-1.0)
+        feedback_history: Updated feedback history list
+        status: Optional new status (e.g., 'needs_review')
+
+    Returns:
+        True if updated, False if not found.
+    """
+    import json
+
+    with get_connection() as conn, conn.cursor() as cur:
+        if status:
+            cur.execute(
+                """
+                UPDATE learned_patterns
+                SET confidence = %s,
+                    feedback_history = %s::jsonb,
+                    status = %s
+                WHERE id = %s
+                """,
+                (confidence, json.dumps(feedback_history), status, pattern_id),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE learned_patterns
+                SET confidence = %s,
+                    feedback_history = %s::jsonb
+                WHERE id = %s
+                """,
+                (confidence, json.dumps(feedback_history), pattern_id),
+            )
+        updated = cur.rowcount > 0
+        conn.commit()
+
+    return updated
+
+
 def _pattern_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert pattern row to dict.
 
@@ -312,9 +360,18 @@ def _pattern_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, An
         "reviewed_at": row[17].isoformat() if row[17] else None,
         "reviewed_by": row[18],
     }
-    # Handle both old (19 cols) and new (20 cols with reflected_by) row formats
+    # Handle column count variations:
+    # - 19 cols: original format
+    # - 20 cols: with reflected_by
+    # - 21 cols: with reflected_by and feedback_history
     if len(row) >= 20:
         result["reflected_by"] = row[19]
     else:
         result["reflected_by"] = None
+
+    if len(row) >= 21:
+        result["feedback_history"] = row[20] or []
+    else:
+        result["feedback_history"] = []
+
     return result
