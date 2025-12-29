@@ -4,6 +4,85 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20251229-060757.tar.gz",
+      "timestamp": "2025-12-29T06:16:05-05:00",
+      "size_bytes": 312469530,
+      "db_size_bytes": 84945347,
+      "status": "pending",
+      "verification": {
+        "verified": true,
+        "verified_at": "2025-12-29T06:08:20-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 199
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 53
+          },
+          "scripts": {
+            "count": 22
+          },
+          ".summitflow": {
+            "count": 8
+          },
+          "frontend": {
+            "count": 194
+          },
+          ".claude": {
+            "count": 549
+          },
+          "tasks": {
+            "count": 123
+          },
+          "data": {
+            "count": 2837
+          },
+          "mockups": {
+            "count": 7
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "AGENTS.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          ".pre-commit-config.yaml": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          }
+        },
+        "total_files": 4041,
+        "checksum": "sha256:e3002027aab23c46a87ad94a62f4c8dcdd73967fb7ae800917ececa49ac8bf28"
+      }
+    },
+    {
       "name": "summitflow-20251228-213817.tar.gz",
       "timestamp": "2025-12-28T21:38:44-05:00",
       "size_bytes": 306673666,
@@ -3718,5 +3797,5 @@
       }
     }
   ],
-  "last_updated": "2025-12-28T21:38:44-05:00"
+  "last_updated": "2025-12-29T06:16:05-05:00"
 }
