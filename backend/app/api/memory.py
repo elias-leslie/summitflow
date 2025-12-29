@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Path, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Query
 from psycopg import sql
 from pydantic import BaseModel
 
@@ -1100,7 +1100,7 @@ async def promote_pattern_to_global(
 class PatternFeedbackRequest(BaseModel):
     """Request body for pattern feedback."""
 
-    outcome: str  # 'success' or 'failure'
+    outcome: Literal["success", "failure"]
     context: str | None = None  # Optional context about what happened
 
 
@@ -1133,16 +1133,9 @@ async def record_pattern_feedback(
         pattern_id: ID of the pattern to provide feedback for
         request: Feedback with outcome ('success' or 'failure') and optional context
     """
-    if request.outcome not in ("success", "failure"):
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=400, detail="outcome must be 'success' or 'failure'")
-
-    # Get current pattern
+    # Get current pattern (validation of outcome is handled by Pydantic Literal type)
     pattern = memory_storage.get_pattern(pattern_id)
     if not pattern:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail=f"Pattern {pattern_id} not found")
 
     previous_confidence = pattern.get("confidence", 0.7)
