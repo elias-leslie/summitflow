@@ -224,49 +224,6 @@ class RoundtableService:
         session.add_message(error_msg)
         return error_msg
 
-    def route_message(
-        self,
-        session: RoundtableSession,
-        message: str,
-        target: TargetAgent = "both",
-    ) -> list[RoundtableMessage]:
-        """Route a message to target agent(s) and get responses.
-
-        Args:
-            session: The roundtable session
-            message: User's message
-            target: Target agent ("claude", "gemini", or "both")
-
-        Returns:
-            List of response messages from agent(s)
-        """
-        self._add_user_message(session, message)
-
-        responses: list[RoundtableMessage] = []
-
-        # Build context from conversation history
-        context = session.get_context()
-
-        if target in ("claude", "both"):
-            try:
-                response = self._send_to_agent("claude", message, context)
-                responses.append(self._create_response_message("claude", response, session))
-            except Exception as e:
-                responses.append(self._create_error_message("claude", e, session))
-
-        if target in ("gemini", "both"):
-            # If both agents, update context with Claude's response
-            if target == "both" and responses:
-                context = session.get_context()
-
-            try:
-                response = self._send_to_agent("gemini", message, context)
-                responses.append(self._create_response_message("gemini", response, session))
-            except Exception as e:
-                responses.append(self._create_error_message("gemini", e, session))
-
-        return responses
-
     async def route_message_async(
         self,
         session: RoundtableSession,
@@ -661,45 +618,6 @@ class RoundtableService:
             system = build_system_prompt("gemini", session.tools_enabled)
             async for event in self._send_with_tools_native("gemini", prompt, system, session):
                 yield event
-
-    async def get_parallel_responses(
-        self,
-        session: RoundtableSession,
-        message: str,
-    ) -> list[RoundtableMessage]:
-        """Get responses from both agents in parallel.
-
-        Faster than sequential routing when both agents are needed.
-        """
-        self._add_user_message(session, message)
-
-        context = session.get_context()
-        loop = asyncio.get_event_loop()
-
-        # Run both agents in parallel
-        claude_task = loop.run_in_executor(None, self._send_to_agent, "claude", message, context)
-        gemini_task = loop.run_in_executor(None, self._send_to_agent, "gemini", message, context)
-
-        results = await asyncio.gather(claude_task, gemini_task, return_exceptions=True)
-        responses: list[RoundtableMessage] = []
-
-        for agent_type, result in zip(["claude", "gemini"], results, strict=True):
-            if isinstance(result, Exception):
-                msg = RoundtableMessage.create(
-                    agent_type,  # type: ignore[arg-type]
-                    f"[Error: {result!s}]",
-                )
-            else:
-                msg = RoundtableMessage.create(
-                    agent_type,  # type: ignore[arg-type]
-                    result.content,  # type: ignore[attr-defined]
-                    tokens_used=result.usage.get("total_tokens", 0),  # type: ignore[attr-defined]
-                    model=result.model,  # type: ignore[attr-defined]
-                )
-            session.add_message(msg)
-            responses.append(msg)
-
-        return responses
 
     # =========================================================================
     # Observation Capture
