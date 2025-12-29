@@ -4,6 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 // ============================================================================
+// Terminal API Base URL
+// ============================================================================
+
+function getTerminalApiBase(): string {
+  if (typeof window === "undefined") return "";
+
+  // Map frontend hosts to terminal service endpoints
+  if (window.location.host === "dev.summitflow.dev") {
+    return "https://terminal.summitflow.dev";
+  } else if (window.location.host.includes("localhost:3001")) {
+    return "http://localhost:8002";
+  }
+  return "";
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -40,16 +56,21 @@ interface UpdateSessionRequest {
 // ============================================================================
 
 async function fetchSessions(): Promise<TerminalSession[]> {
-  const res = await fetch("/api/terminal/sessions");
+  const base = getTerminalApiBase();
+  const res = await fetch(`${base}/api/terminal/sessions`, {
+    credentials: "include", // Include cookies for Cloudflare Access
+  });
   if (!res.ok) throw new Error("Failed to fetch terminal sessions");
   const data: SessionListResponse = await res.json();
   return data.items;
 }
 
 async function createSession(request: CreateSessionRequest): Promise<TerminalSession> {
-  const res = await fetch("/api/terminal/sessions", {
+  const base = getTerminalApiBase();
+  const res = await fetch(`${base}/api/terminal/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -63,9 +84,11 @@ async function updateSession(
   sessionId: string,
   request: UpdateSessionRequest
 ): Promise<TerminalSession> {
-  const res = await fetch(`/api/terminal/sessions/${sessionId}`, {
+  const base = getTerminalApiBase();
+  const res = await fetch(`${base}/api/terminal/sessions/${sessionId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -76,8 +99,10 @@ async function updateSession(
 }
 
 async function deleteSession(sessionId: string): Promise<void> {
-  const res = await fetch(`/api/terminal/sessions/${sessionId}`, {
+  const base = getTerminalApiBase();
+  const res = await fetch(`${base}/api/terminal/sessions/${sessionId}`, {
     method: "DELETE",
+    credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to delete session");
 }
