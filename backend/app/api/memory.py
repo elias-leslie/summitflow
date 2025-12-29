@@ -273,24 +273,22 @@ class BulkPatternResponse(BaseModel):
     errors: list[str]
 
 
-@router.post("/patterns/bulk-approve", response_model=BulkPatternResponse)
-async def bulk_approve_patterns(
-    request: BulkPatternRequest,
+def _bulk_update_pattern_status(
+    pattern_ids: list[str],
+    status: str,
+    reviewed_by: str,
 ) -> BulkPatternResponse:
-    """Bulk approve multiple patterns.
-
-    Transitions patterns from 'pending' to 'approved'.
-    """
+    """Helper to update multiple patterns with the same status."""
     updated = 0
     failed = 0
-    errors = []
+    errors: list[str] = []
 
-    for pattern_id in request.pattern_ids:
+    for pattern_id in pattern_ids:
         try:
             success = memory_storage.update_pattern_status(
                 pattern_id=pattern_id,
-                status="approved",
-                reviewed_by=request.reason or "bulk-approve",
+                status=status,
+                reviewed_by=reviewed_by,
             )
             if success:
                 updated += 1
@@ -302,6 +300,21 @@ async def bulk_approve_patterns(
             errors.append(f"Pattern {pattern_id}: {e!s}")
 
     return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
+
+
+@router.post("/patterns/bulk-approve", response_model=BulkPatternResponse)
+async def bulk_approve_patterns(
+    request: BulkPatternRequest,
+) -> BulkPatternResponse:
+    """Bulk approve multiple patterns.
+
+    Transitions patterns from 'pending' to 'approved'.
+    """
+    return _bulk_update_pattern_status(
+        pattern_ids=request.pattern_ids,
+        status="approved",
+        reviewed_by=request.reason or "bulk-approve",
+    )
 
 
 @router.post("/patterns/bulk-reject", response_model=BulkPatternResponse)
@@ -312,27 +325,11 @@ async def bulk_reject_patterns(
 
     Transitions patterns from 'pending' to 'rejected'.
     """
-    updated = 0
-    failed = 0
-    errors = []
-
-    for pattern_id in request.pattern_ids:
-        try:
-            success = memory_storage.update_pattern_status(
-                pattern_id=pattern_id,
-                status="rejected",
-                reviewed_by=request.reason or "bulk-reject",
-            )
-            if success:
-                updated += 1
-            else:
-                failed += 1
-                errors.append(f"Pattern {pattern_id} not found")
-        except Exception as e:
-            failed += 1
-            errors.append(f"Pattern {pattern_id}: {e!s}")
-
-    return BulkPatternResponse(updated=updated, failed=failed, errors=errors)
+    return _bulk_update_pattern_status(
+        pattern_ids=request.pattern_ids,
+        status="rejected",
+        reviewed_by=request.reason or "bulk-reject",
+    )
 
 
 @router.get("/diary", response_model=PaginatedResponse)
