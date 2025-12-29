@@ -76,13 +76,7 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Local Terminal API | http://localhost:8002 |
 | API Docs | http://localhost:8001/docs |
 
-### Cloudflare Access (Service Auth)
-
-Production URLs are protected by Cloudflare Access. Use service credentials for programmatic access:
-
-```bash
-source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.summitflow.dev/api/health
-```
+**Note:** Production URLs require Cloudflare Access auth. See `~/.claude/rules/cloudflare-access.md`.
 
 ---
 
