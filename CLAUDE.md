@@ -68,9 +68,21 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Service | URL |
 |---------|-----|
 | Production (Cloudflare) | https://dev.summitflow.dev |
+| Terminal (Cloudflare) | https://terminal.summitflow.dev |
+| Terminal API (Cloudflare) | https://terminalapi.summitflow.dev |
 | Local Frontend | http://localhost:3001 |
 | Local Backend | http://localhost:8001 |
+| Local Terminal Frontend | http://localhost:3002 |
+| Local Terminal API | http://localhost:8002 |
 | API Docs | http://localhost:8001/docs |
+
+### Cloudflare Access (Service Auth)
+
+Production URLs are protected by Cloudflare Access. Use service credentials for programmatic access:
+
+```bash
+source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.summitflow.dev/api/health
+```
 
 ---
 
@@ -208,4 +220,4 @@ bash ~/summitflow/scripts/start.sh
 
 ---
 
-**Version**: 2.2.0 | **Updated**: 2025-12-23
+**Version**: 2.3.0 | **Updated**: 2025-12-29
