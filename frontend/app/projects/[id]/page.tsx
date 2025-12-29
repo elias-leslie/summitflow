@@ -19,6 +19,7 @@ import {
   updateRoundtableTools,
   updateRoundtableAgentConfig,
   resolvePermission,
+  type GeneratedFeature,
   type GeneratedMission,
   type GeneratedNarrative,
   type GeneratedGoal,
@@ -32,11 +33,7 @@ import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import type { ExplorerType } from "@/components/explorer/types";
 import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
 import { TaskDetailDrawer } from "@/components/kanban/TaskDetailDrawer";
-import {
-  RoundtableChat,
-  type ChatMessage,
-  type RoundtableMode,
-} from "@/components/roundtable/RoundtableChat";
+import { RoundtableChat, type ChatMessage, type GeneratedVision } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { SessionList } from "@/components/roundtable/SessionList";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
@@ -54,7 +51,7 @@ export default function ProjectDetailPage() {
   // Tab persistence hook (handles localStorage and URL sync)
   const urlTab = searchParams.get("tab") as TabId | null;
   const urlExplorerType = searchParams.get("type") as ExplorerType | null;
-  const { activeTab, setActiveTab, explorerType, setExplorerType } = useTabPersistence({
+  const { activeTab, explorerType, setExplorerType } = useTabPersistence({
     projectId,
     urlTab,
     urlExplorerType,
@@ -392,65 +389,29 @@ export default function ProjectDetailPage() {
       return result.goals;
     });
 
-  const handleSaveVision = async (
-    mission: GeneratedMission | null,
-    narratives: GeneratedNarrative[]
-  ): Promise<void> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return;
-    }
+  const handleSaveVision = (mission: GeneratedMission | null, narratives: GeneratedNarrative[]): Promise<void> =>
+    withGeneration(undefined, "save vision", async (sessionId) => {
+      await saveVisionFromRoundtable(projectId, sessionId, mission, narratives);
+    });
 
-    try {
-      await saveVisionFromRoundtable(projectId, roundtableSessionId, mission, narratives);
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to save vision");
-    }
-  };
+  const handleSaveGoals = (goals: GeneratedGoal[]): Promise<void> =>
+    withGeneration(undefined, "save goals", async (sessionId) => {
+      await saveGoalsFromRoundtable(projectId, sessionId, goals);
+    });
 
-  const handleSaveGoals = async (goals: GeneratedGoal[]): Promise<void> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return;
-    }
-
-    try {
-      await saveGoalsFromRoundtable(projectId, roundtableSessionId, goals);
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to save goals");
-    }
-  };
-
-  const handleGenerateSpec = (): Promise<GeneratedSpec> =>
+  const handleGenerateSpec = () =>
     withGeneration({ components: [] }, "generate spec", async (sessionId) => {
       const result = await generateSpecFromRoundtable(projectId, sessionId, "gemini");
       setGeneratedSpec(result.spec);
       return result.spec;
     });
 
-  const handleAcceptSpec = async (): Promise<void> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return;
-    }
-
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-
-    try {
-      const result = await acceptSpecFromRoundtable(projectId, roundtableSessionId, "user");
-      // Clear spec after acceptance
+  const handleAcceptSpec = (): Promise<void> =>
+    withGeneration(undefined, "accept spec", async (sessionId) => {
+      const result = await acceptSpecFromRoundtable(projectId, sessionId, "user");
       setGeneratedSpec(null);
-      // Show success message (could be toast, for now just log)
-      console.log(
-        `Spec accepted: ${result.components_created} components, ${result.capabilities_created} capabilities, ${result.tests_created} tests`
-      );
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to accept spec");
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
+      console.log(`Spec accepted: ${result.components_created} components, ${result.capabilities_created} capabilities, ${result.tests_created} tests`);
+    });
 
   if (isLoading) {
     return (
@@ -502,7 +463,7 @@ export default function ProjectDetailPage() {
                 sessionId={roundtableSessionId ?? undefined}
                 className="flex-1"
                 mode={roundtableMode}
-                onModeChange={handleRoundtableModeChange}
+                onModeChange={setRoundtableMode}
                 onSendMessage={handleSendMessage}
                 onGenerateFeatures={handleGenerateFeatures}
                 onGenerateVision={handleGenerateVision}
