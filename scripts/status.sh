@@ -83,19 +83,6 @@ else
     echo -e "${RED}✗ Not running${NC}"
 fi
 
-# Check nginx (system service)
-echo ""
-echo -n "nginx:         "
-if systemctl is-active --quiet nginx 2>/dev/null; then
-    if curl -sk https://192.168.8.233:444/health > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Running (https://192.168.8.233:444)${NC}"
-    else
-        echo -e "${YELLOW}⚠ Running (port 444 may not be configured)${NC}"
-    fi
-else
-    echo -e "${RED}✗ Not running${NC}"
-fi
-
 echo ""
 echo "================================"
 
@@ -106,8 +93,8 @@ if [ $ERRORS -eq 0 ]; then
     echo "  - Backend API:  http://localhost:8001"
     echo "  - API Docs:     http://localhost:8001/docs"
     echo "  - Frontend:     http://localhost:3001"
-    echo "  - HTTPS:        https://192.168.8.233:444"
     echo "  - Terminal:     http://localhost:3002"
+    echo "  - Production:   https://dev.summitflow.dev"
 else
     echo -e "${RED}⚠ $ERRORS service(s) not running properly${NC}"
     echo ""
