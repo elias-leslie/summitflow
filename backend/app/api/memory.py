@@ -564,16 +564,6 @@ class BackfillResponse(BaseModel):
     session_stats: dict[str, Any] | None = None
 
 
-class BackfillProgress(BaseModel):
-    """Progress update for backfill operation."""
-
-    session_index: int
-    total_sessions: int
-    session_id: str
-    patterns_found: int
-    errors: list[str]
-
-
 async def _run_backfill_async(
     project_id: str,
     sessions_limit: int,
