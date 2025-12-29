@@ -14,6 +14,12 @@ systemctl --user start summitflow-backend.service
 echo "Starting frontend..."
 systemctl --user start summitflow-frontend.service
 
+echo "Starting terminal backend..."
+systemctl --user start summitflow-terminal.service
+
+echo "Starting terminal frontend..."
+systemctl --user start summitflow-terminal-frontend.service
+
 echo ""
 echo "Waiting for services to be ready..."
 sleep 3

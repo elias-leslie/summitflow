@@ -1,0 +1,20 @@
+[Unit]
+Description=SummitFlow Terminal Frontend (Next.js)
+After=network.target summitflow-terminal.service
+Wants=summitflow-terminal.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/summitflow/services/terminal/frontend
+Environment="PATH=%h/.nvm/versions/node/v20.11.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="NODE_ENV=production"
+Environment="PORT=3002"
+ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port 3002
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-terminal-frontend
+
+[Install]
+WantedBy=default.target
