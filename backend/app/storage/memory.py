@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from psycopg import sql
 from psycopg.rows import TupleRow
@@ -51,6 +53,62 @@ from .memory_queue import (
     update_queue_item_status,
 )
 from .memory_utils import build_where_clause, json_or_default
+
+# =============================================================================
+# TypedDicts for documentation/IDE support
+# =============================================================================
+
+
+class ObservationDict(TypedDict, total=False):
+    """Type definition for observation data."""
+
+    id: str
+    project_id: str
+    session_id: str
+    agent_type: str
+    observation_type: str
+    concepts: list[str]
+    priority: str
+    confidence: float
+    entities: list[str]
+    title: str | None
+    subtitle: str | None
+    narrative: str | None
+    facts: list[str] | None
+    files_read: list[str]
+    files_modified: list[str]
+    tool_name: str | None
+    tool_input: str | None
+    discovery_tokens: int | None
+    extracted_by: str | None
+    raw_excerpt: str | None
+    created_at: str | None
+    # Optional fields added by search functions
+    fts_score: float
+    combined_score: float
+    similarity_score: float
+
+
+class CheckpointDict(TypedDict, total=False):
+    """Type definition for checkpoint data."""
+
+    id: str
+    project_id: str
+    session_id: str
+    agent_type: str
+    current_action: str | None
+    question: str | None
+    options: list[str] | None
+    recommendation: str | None
+    completed_steps: list[str] | None
+    remaining_steps: list[str] | None
+    files_modified: list[str] | None
+    decisions_made: list[str] | None
+    conversation_summary: str | None
+    context_snapshot: dict[str, Any] | None
+    tokens_used: int | None
+    created_at: str | None
+
 
 logger = logging.getLogger(__name__)
 
@@ -488,7 +546,7 @@ def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str
         else:
             format_info = (0, False, False, False)  # Fallback to oldest
 
-    offset, has_priority, has_confidence, has_entities = format_info
+    _, has_priority, has_confidence, has_entities = format_info
 
     # Base fields (always present)
     result: dict[str, Any] = {
@@ -1092,9 +1150,6 @@ def search_observations_semantic(
     Returns:
         List of observations with similarity_score and combined_score
     """
-    import math
-    from datetime import UTC, datetime
-
     with get_connection() as conn, conn.cursor() as cur:
         # Cosine distance to similarity: 1 - distance
         # Filter by minimum similarity threshold
