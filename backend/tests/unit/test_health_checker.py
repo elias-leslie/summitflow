@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 class TestGetHealthMetrics:
     """Tests for get_health_metrics method."""
 
-    @patch("app.services.memory.health_checker.memory_storage")
+    @patch("app.services.memory.pattern_applier.memory_storage")
     @patch("app.services.memory.health_checker.get_connection")
     def test_returns_expected_structure(self, mock_get_conn, mock_storage):
         """Health metrics dict has expected keys."""
@@ -54,7 +54,7 @@ class TestGetHealthMetrics:
 class TestCheckAndCorrect:
     """Tests for check_and_correct method."""
 
-    @patch("app.services.memory.health_checker.memory_storage")
+    @patch("app.services.memory.pattern_applier.memory_storage")
     @patch("app.services.memory.health_checker.get_connection")
     def test_applies_approved_patterns(self, mock_get_conn, mock_storage):
         """Applies approved patterns and records correction."""
@@ -97,7 +97,7 @@ class TestCheckAndCorrect:
 class TestQuickCheck:
     """Tests for quick_check method - must be fast (<100ms)."""
 
-    @patch("app.services.memory.health_checker.memory_storage")
+    @patch("app.services.memory.pattern_applier.memory_storage")
     def test_completes_under_100ms(self, mock_storage):
         """Quick check completes in under 100ms."""
         from app.services.memory.health_checker import MemoryHealthChecker
@@ -123,13 +123,13 @@ class TestQuickCheck:
 
 
 class TestApplyPatternsUsesRootPath:
-    """Tests that _apply_approved_patterns uses root_path column."""
+    """Tests that apply_approved_patterns uses root_path column."""
 
     @patch("app.services.memory.pattern_service.PatternService")
-    @patch("app.services.memory.health_checker.get_connection")
+    @patch("app.storage.connection.get_connection")
     def test_queries_root_path_not_local_path(self, mock_get_conn, mock_service_class):
         """Database query uses root_path column for project lookup."""
-        from app.services.memory.health_checker import MemoryHealthChecker
+        from app.services.memory.pattern_applier import apply_approved_patterns
 
         # Setup mock to capture the SQL query
         mock_cursor = MagicMock()
@@ -145,10 +145,9 @@ class TestApplyPatternsUsesRootPath:
         mock_service.apply_pattern.return_value = True
         mock_service_class.return_value = mock_service
 
-        checker = MemoryHealthChecker()
         patterns = [{"id": "pat-1", "title": "Test", "confidence": 0.8}]
 
-        checker._apply_approved_patterns("portfolio-ai", patterns)
+        apply_approved_patterns("portfolio-ai", patterns)
 
         # Check the query used root_path
         call_args = mock_cursor.execute.call_args
