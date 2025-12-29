@@ -28,19 +28,14 @@ from .api import (
     tasks,
     tdd,
     tdd_tests,
-    terminal,
-    terminal_sessions,
 )
-from .services import terminal_lifecycle
 from .storage.connection import init_schema
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Initialize database and services on startup."""
     init_schema()
-    # Reconcile terminal sessions DB with tmux state
-    terminal_lifecycle.reconcile_on_startup()
     yield
 
 
@@ -73,8 +68,6 @@ app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
-app.include_router(terminal.router, tags=["terminal"])
-app.include_router(terminal_sessions.router, tags=["terminal"])
 app.include_router(observations.router, prefix="/api/projects", tags=["observations"])
 app.include_router(context.router, prefix="/api/projects", tags=["context"])
 app.include_router(checkpoints.router, prefix="/api/projects", tags=["checkpoints"])
