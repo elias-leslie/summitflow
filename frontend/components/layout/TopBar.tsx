@@ -3,11 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, Terminal, Camera, Settings, Info, Brain } from "lucide-react";
+import { Search, Terminal, Camera, Settings, Info, Brain, ExternalLink } from "lucide-react";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
-import { useTerminalState } from "@/lib/hooks/use-terminal-state";
 import { ProjectSelector, useSelectedProject } from "./ProjectSelector";
 import { NavPills } from "./NavPills";
 
@@ -32,7 +31,6 @@ export function TopBar() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
-  const { isOpen, toggle } = useTerminalState();
   const selectedProjectId = useSelectedProject();
 
   // Logo animation state
@@ -209,18 +207,22 @@ export function TopBar() {
             <Info className="w-5 h-5" />
           </Link>
 
-          {/* Terminal toggle */}
-          <button
-            onClick={toggle}
-            className={`p-3 rounded-lg transition-all duration-200 ${
-              isOpen
-                ? "bg-outrun-500/20 text-outrun-400 shadow-outrun-sm"
-                : "text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400"
-            }`}
-            title={isOpen ? "Close Terminal" : "Open Terminal"}
+          {/* Terminal - external link */}
+          <a
+            href={(() => {
+              const params = new URLSearchParams();
+              if (selectedProjectId) params.set("project", selectedProjectId);
+              const query = params.toString();
+              return `https://terminal.summitflow.dev${query ? `?${query}` : ""}`;
+            })()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200 flex items-center gap-1"
+            title="Open Terminal (new tab)"
           >
             <Terminal className="w-5 h-5" />
-          </button>
+            <ExternalLink className="w-3 h-3" />
+          </a>
 
           {/* Memory - link to global Memory page */}
           <Link
