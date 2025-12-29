@@ -115,7 +115,7 @@ export function MetricsSection({ stats, loading }: MetricsSectionProps) {
         subtitle={`${Math.round(stats.observation_success_rate * 100)}% success`}
         accent="green"
       />
-      <MetricCard label="Token Spend (24h)" value={formatTokens(stats.token_spend_24h)} subtitle="extraction cost" accent="blue" />
+      <MetricCard label="Token Spend (24h)" value={formatTokens(stats.token_spend_24h) ?? '-'} subtitle="extraction cost" accent="blue" />
       <MetricCard label="System Health" value="" accent="health" isHealth healthStatus={stats.health} />
     </div>
   );

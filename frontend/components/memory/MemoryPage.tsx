@@ -14,7 +14,7 @@ import { SearchBar } from './SearchBar';
 import { FilterPanel, type SearchFilters } from './FilterPanel';
 import { useMemorySearch } from '@/lib/hooks/useMemorySearch';
 import { HealthTab } from './HealthTab';
-import { MetricsSection, MetricCard, type MemoryStats } from './MetricsSection';
+import { MetricCard, type MemoryStats } from './MetricsSection';
 import { Pagination, ITEMS_PER_PAGE } from './Pagination';
 
 // Main Memory Page Component
