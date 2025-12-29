@@ -285,8 +285,8 @@ export const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(funct
         // Map frontend hosts to their backend WebSocket endpoints
         // Terminal service runs on port 8002 (separate from main backend on 8001)
         if (window.location.host === "dev.summitflow.dev") {
-          // Production: use dedicated terminal endpoint (or fallback to devapi for now)
-          wsHost = "devapi.summitflow.dev";
+          // Production: use dedicated terminal service endpoint
+          wsHost = "terminal.summitflow.dev";
         } else if (window.location.host.includes("localhost:3001")) {
           // Local development: connect to terminal service on port 8002
           wsHost = "localhost:8002";
