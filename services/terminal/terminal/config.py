@@ -19,5 +19,7 @@ TERMINAL_PORT = int(os.getenv("TERMINAL_PORT", "8002"))
 # CORS origins
 CORS_ORIGINS = [
     "http://localhost:3001",
+    "http://localhost:3002",  # Standalone terminal frontend (local)
     "https://dev.summitflow.dev",
+    "https://terminal.summitflow.dev",  # Standalone terminal frontend (production)
 ]
