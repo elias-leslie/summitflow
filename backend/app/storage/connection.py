@@ -1,5 +1,6 @@
 """Database connection management."""
 
+import logging
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -7,6 +8,8 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment from ~/.env.local (same pattern as ~/.smbcredentials)
 _env_file = Path.home() / ".env.local"
@@ -555,11 +558,14 @@ def init_schema() -> None:
             ("capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL", "tasks"),
         ]:
             try:
-                column.split()[0]
                 # Note: table and column names come from controlled internal list, not user input
                 cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
-            except Exception:
-                pass  # Column already exists
+            except psycopg.errors.DuplicateColumn:
+                pass  # Expected with IF NOT EXISTS on older PostgreSQL
+            except Exception as e:
+                # Log unexpected errors (type mismatches, constraint failures, etc.)
+                column_name = column.split()[0]
+                logger.warning("Failed to add column %s to %s: %s", column_name, table, e)
 
         conn.commit()
 
