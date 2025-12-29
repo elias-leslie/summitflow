@@ -178,6 +178,29 @@ class DeepReviewReport:
         }
 
 
+def _get_project_root(project_id: str) -> Path | None:
+    """Get project root path from database.
+
+    Args:
+        project_id: Project ID to look up
+
+    Returns:
+        Path to project root, or None if not found
+    """
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT root_path FROM projects WHERE id = %s",
+                (project_id,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                return Path(row[0])
+    except Exception as e:
+        logger.warning(f"Failed to get project root for {project_id}: {e}")
+    return None
+
+
 class MemoryHealthChecker:
     """Self-healing health checker for context memory system.
 
@@ -591,17 +614,10 @@ class MemoryHealthChecker:
             project_path = Path.home() / "summitflow"
         else:
             # Try to get from projects table
-            with get_connection() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT root_path FROM projects WHERE id = %s",
-                    (project_id,),
-                )
-                row = cur.fetchone()
-                if row and row[0]:
-                    project_path = Path(row[0])
-                else:
-                    logger.warning(f"No project path found for {project_id}")
-                    return 0
+            project_path = _get_project_root(project_id)
+            if not project_path:
+                logger.warning(f"No project path found for {project_id}")
+                return 0
 
         service = PatternService(project_id=project_id, project_path=str(project_path))
         applied_count = 0
@@ -930,18 +946,8 @@ class MemoryHealthChecker:
         stale_rules: list[dict[str, Any]] = []
 
         # Get project root path
-        try:
-            with get_connection() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT root_path FROM projects WHERE id = %s",
-                    (project_id,),
-                )
-                row = cur.fetchone()
-                if not row or not row[0]:
-                    return []
-                project_root = Path(row[0])
-        except Exception as e:
-            logger.warning(f"Failed to get project root for staleness check: {e}")
+        project_root = _get_project_root(project_id)
+        if not project_root:
             return []
 
         rules_dir = project_root / ".claude" / "rules"
@@ -1153,19 +1159,8 @@ class MemoryHealthChecker:
         sections: list[dict[str, Any]] = []
 
         # Get project root path
-        try:
-            with get_connection() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT root_path FROM projects WHERE id = %s",
-                    (project_id,),
-                )
-                row = cur.fetchone()
-                if not row or not row[0]:
-                    logger.warning(f"No project path found for {project_id}")
-                    return []
-                project_root = Path(row[0])
-        except Exception as e:
-            logger.warning(f"Failed to get project root for CLAUDE.md parsing: {e}")
+        project_root = _get_project_root(project_id)
+        if not project_root:
             return []
 
         # Parse both CLAUDE.md and AGENTS.md
@@ -1531,18 +1526,8 @@ class MemoryHealthChecker:
         tracked: list[dict[str, Any]] = []
 
         # Get project root path
-        try:
-            with get_connection() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT root_path FROM projects WHERE id = %s",
-                    (project_id,),
-                )
-                row = cur.fetchone()
-                if not row or not row[0]:
-                    return []
-                project_root = Path(row[0])
-        except Exception as e:
-            logger.warning(f"Failed to get project root for doc version tracking: {e}")
+        project_root = _get_project_root(project_id)
+        if not project_root:
             return []
 
         doc_files = ["CLAUDE.md", "AGENTS.md"]
@@ -1627,19 +1612,8 @@ class MemoryHealthChecker:
         report = DeepReviewReport()
 
         # Get project root path
-        try:
-            with get_connection() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT root_path FROM projects WHERE id = %s",
-                    (pid,),
-                )
-                row = cur.fetchone()
-                if not row or not row[0]:
-                    logger.warning(f"No project path found for {pid}")
-                    return report
-                project_root = Path(row[0])
-        except Exception as e:
-            logger.warning(f"Failed to get project root for deep review: {e}")
+        project_root = _get_project_root(pid)
+        if not project_root:
             return report
 
         # Review CLAUDE.md
