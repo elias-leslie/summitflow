@@ -14,29 +14,12 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 
 from celery import Celery  # celery doesn't ship type stubs
 from celery.signals import after_setup_logger, after_setup_task_logger
-from dotenv import load_dotenv
 
+from app.config import DATABASE_URL, REDIS_URL
 from app.logging_config import _parse_log_level
-
-# Load environment from ~/.env.local (same pattern as ~/.smbcredentials)
-_env_file = Path.home() / ".env.local"
-if _env_file.exists():
-    load_dotenv(_env_file)
-
-# Get Redis URL from environment (default to localhost if not set)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-
-# Get DATABASE_URL for result backend - REQUIRED
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL environment variable is required. "
-        "Create ~/.env.local with DATABASE_URL=postgresql://..."
-    )
 
 # Create Celery application with Redis broker + PostgreSQL backend
 # Uses Redis DB 1 to avoid conflicts with portfolio-ai (which uses DB 0)
