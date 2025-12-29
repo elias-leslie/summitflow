@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from psycopg import sql
 from psycopg.rows import TupleRow
@@ -960,56 +960,69 @@ def get_observations_without_embeddings(
         ]
 
 
+def _get_observations_by_time(
+    project_id: str,
+    reference_time: str,
+    direction: Literal["before", "after"],
+    exclude_id: str | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Get observations before or after a specific time.
+
+    Args:
+        project_id: The project ID
+        reference_time: ISO timestamp to query around
+        direction: 'before' or 'after' the reference time
+        exclude_id: Optional observation ID to exclude
+        limit: Maximum number of results
+
+    Returns:
+        List of observations (DESC for before, ASC for after)
+    """
+    comparison = "<" if direction == "before" else ">"
+    sort_order = "DESC" if direction == "before" else "ASC"
+
+    query = sql.SQL("""
+        SELECT id, project_id, session_id, agent_type,
+               observation_type, concepts, title, subtitle,
+               narrative, facts, files_read, files_modified,
+               tool_name, tool_input, discovery_tokens, created_at
+        FROM observations
+        WHERE project_id = %s
+          AND created_at {comparison} %s
+          {exclude_clause}
+        ORDER BY created_at {sort_order}
+        LIMIT %s
+    """).format(
+        comparison=sql.SQL(comparison),
+        exclude_clause=sql.SQL("AND id != %s") if exclude_id else sql.SQL(""),
+        sort_order=sql.SQL(sort_order),
+    )
+
+    params: list[Any] = [project_id, reference_time]
+    if exclude_id:
+        params.append(exclude_id)
+    params.append(limit)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, tuple(params))
+        return [_observation_row_to_dict(row) for row in cur.fetchall()]
+
+
 def get_observations_before_time(
     project_id: str,
     before_time: str,
     exclude_id: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Get observations before a specific time.
-
-    Args:
-        project_id: The project ID
-        before_time: ISO timestamp to query before
-        exclude_id: Optional observation ID to exclude
-        limit: Maximum number of results
-
-    Returns:
-        List of observations (descending order, newest first)
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        if exclude_id:
-            cur.execute(
-                """
-                SELECT id, project_id, session_id, agent_type,
-                       observation_type, concepts, title, subtitle,
-                       narrative, facts, files_read, files_modified,
-                       tool_name, tool_input, discovery_tokens, created_at
-                FROM observations
-                WHERE project_id = %s
-                  AND created_at < %s
-                  AND id != %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (project_id, before_time, exclude_id, limit),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, project_id, session_id, agent_type,
-                       observation_type, concepts, title, subtitle,
-                       narrative, facts, files_read, files_modified,
-                       tool_name, tool_input, discovery_tokens, created_at
-                FROM observations
-                WHERE project_id = %s
-                  AND created_at < %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (project_id, before_time, limit),
-            )
-        return [_observation_row_to_dict(row) for row in cur.fetchall()]
+    """Get observations before a specific time."""
+    return _get_observations_by_time(
+        project_id=project_id,
+        reference_time=before_time,
+        direction="before",
+        exclude_id=exclude_id,
+        limit=limit,
+    )
 
 
 def get_observations_after_time(
@@ -1018,50 +1031,14 @@ def get_observations_after_time(
     exclude_id: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Get observations after a specific time.
-
-    Args:
-        project_id: The project ID
-        after_time: ISO timestamp to query after
-        exclude_id: Optional observation ID to exclude
-        limit: Maximum number of results
-
-    Returns:
-        List of observations (ascending order, oldest first)
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        if exclude_id:
-            cur.execute(
-                """
-                SELECT id, project_id, session_id, agent_type,
-                       observation_type, concepts, title, subtitle,
-                       narrative, facts, files_read, files_modified,
-                       tool_name, tool_input, discovery_tokens, created_at
-                FROM observations
-                WHERE project_id = %s
-                  AND created_at > %s
-                  AND id != %s
-                ORDER BY created_at ASC
-                LIMIT %s
-                """,
-                (project_id, after_time, exclude_id, limit),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, project_id, session_id, agent_type,
-                       observation_type, concepts, title, subtitle,
-                       narrative, facts, files_read, files_modified,
-                       tool_name, tool_input, discovery_tokens, created_at
-                FROM observations
-                WHERE project_id = %s
-                  AND created_at > %s
-                ORDER BY created_at ASC
-                LIMIT %s
-                """,
-                (project_id, after_time, limit),
-            )
-        return [_observation_row_to_dict(row) for row in cur.fetchall()]
+    """Get observations after a specific time."""
+    return _get_observations_by_time(
+        project_id=project_id,
+        reference_time=after_time,
+        direction="after",
+        exclude_id=exclude_id,
+        limit=limit,
+    )
 
 
 def bulk_update_observation_embeddings(
