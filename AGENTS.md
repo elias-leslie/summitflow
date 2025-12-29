@@ -251,8 +251,8 @@ git status  # Should show: "nothing to commit, working tree clean"
 | Start work | `st update <id> --status running` |
 | Complete work | `st close <id> --reason "Done"` |
 | Force close | `st close <id> --force` (bypass criteria) |
-| List features | `st feature list` |
-| Start feature | `st feature start FEAT-001` |
+| List capabilities | `st capability list` |
+| Start capability | `st capability start FEAT-001` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
 | Check health | `bash ~/summitflow/scripts/status.sh` |
 | Run tests | `cd backend && pytest tests/ -v` |
@@ -283,17 +283,17 @@ Checks:
 - Feature-type tasks have linked feature with ≥1 criterion
 
 ### Close Validation (Criteria Enforcement)
-For feature-type tasks linked to a feature, closing requires all acceptance criteria to pass:
+For feature-type tasks linked to a capability, closing requires all acceptance criteria to pass:
 ```bash
 st close <id> --reason "Done"    # Fails if criteria unsatisfied
 st close <id> --force            # Bypass validation
 ```
 
-### Feature Workflow
+### Capability Workflow
 ```bash
-st feature list                  # List all features
-st feature show FEAT-001         # Show feature with criteria
-st feature start FEAT-001 -p 1   # Create task linked to feature
+st capability list                  # List all capabilities
+st capability show FEAT-001         # Show capability with criteria
+st capability start FEAT-001 -p 1   # Create task linked to capability
 ```
 
 ---
