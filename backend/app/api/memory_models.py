@@ -5,7 +5,7 @@ Pydantic models used across memory API endpoints.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -205,8 +205,6 @@ class PromotePatternResponse(BaseModel):
 
 class PatternFeedbackRequest(BaseModel):
     """Request body for pattern feedback."""
-
-    from typing import Literal
 
     outcome: Literal["success", "failure"]
     context: str | None = None  # Optional context about what happened
