@@ -35,6 +35,45 @@ REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
 REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
 
 
+def _build_refactor_filter_conditions(
+    project_id: str,
+    extensions: list[str] | None = None,
+    code_only: bool = True,
+) -> tuple[list[str], list[Any]]:
+    """Build WHERE conditions for refactor target queries.
+
+    Args:
+        project_id: Project ID for scoping
+        extensions: Explicit list of extensions to include
+        code_only: If True and extensions is None, filter to REFACTORABLE_EXTENSIONS
+
+    Returns:
+        Tuple of (conditions list, params list)
+    """
+    conditions = [
+        "project_id = %s",
+        "entry_type = 'file'",
+        "(metadata->>'refactor_priority') IS NOT NULL",
+        "(metadata->>'refactor_priority') != 'none'",
+    ]
+    params: list[Any] = [project_id]
+
+    # Filter by extensions
+    if extensions:
+        conditions.append("(metadata->>'extension') = ANY(%s)")
+        params.append(extensions)
+    elif code_only:
+        conditions.append("(metadata->>'extension') = ANY(%s)")
+        params.append(list(REFACTORABLE_EXTENSIONS))
+
+    # Exclude test files and other non-production code
+    for pattern in REFACTOR_EXCLUDE_PATTERNS:
+        conditions.append("path NOT LIKE %s")
+        params.append(f"%{pattern}%")
+
+    return conditions, params
+
+
 def _to_iso_string(value: datetime | None) -> str | None:
     """Convert datetime to ISO string, returning None if value is None."""
     return value.isoformat() if value else None
@@ -586,27 +625,14 @@ def get_refactor_targets(
     Returns:
         Dict with targets list and summary stats
     """
-    conditions = [
-        "project_id = %s",
-        "entry_type = 'file'",
-        "(metadata->>'refactor_priority') IS NOT NULL",
-        "(metadata->>'refactor_priority') != 'none'",
-    ]
-    params: list[Any] = [project_id]
+    # Build base filter conditions
+    conditions, params = _build_refactor_filter_conditions(
+        project_id=project_id,
+        extensions=extensions,
+        code_only=code_only,
+    )
 
-    # Filter by extensions
-    if extensions:
-        conditions.append("(metadata->>'extension') = ANY(%s)")
-        params.append(extensions)
-    elif code_only:
-        conditions.append("(metadata->>'extension') = ANY(%s)")
-        params.append(list(REFACTORABLE_EXTENSIONS))
-
-    # Exclude test files and other non-production code
-    for pattern in REFACTOR_EXCLUDE_PATTERNS:
-        conditions.append("path NOT LIKE %s")
-        params.append(f"%{pattern}%")
-
+    # Add optional filters for main query
     if priority:
         conditions.append("(metadata->>'refactor_priority') = %s")
         params.append(priority)
@@ -672,27 +698,12 @@ def get_refactor_targets(
             for row in rows
         ]
 
-        # Get summary counts (same extension filter as main query)
-        summary_conditions = [
-            "project_id = %s",
-            "entry_type = 'file'",
-            "(metadata->>'refactor_priority') IS NOT NULL",
-            "(metadata->>'refactor_priority') != 'none'",
-        ]
-        summary_params: list[Any] = [project_id]
-
-        if extensions:
-            summary_conditions.append("(metadata->>'extension') = ANY(%s)")
-            summary_params.append(extensions)
-        elif code_only:
-            summary_conditions.append("(metadata->>'extension') = ANY(%s)")
-            summary_params.append(list(REFACTORABLE_EXTENSIONS))
-
-        # Exclude test files (same as main query)
-        for pattern in REFACTOR_EXCLUDE_PATTERNS:
-            summary_conditions.append("path NOT LIKE %s")
-            summary_params.append(f"%{pattern}%")
-
+        # Get summary counts using same base filter
+        summary_conditions, summary_params = _build_refactor_filter_conditions(
+            project_id=project_id,
+            extensions=extensions,
+            code_only=code_only,
+        )
         summary_where = sql.SQL(" AND ").join(sql.SQL(c) for c in summary_conditions)
         cur.execute(
             sql.SQL("""
