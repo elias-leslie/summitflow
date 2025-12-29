@@ -20,8 +20,10 @@ from psycopg import sql
 from .connection import get_connection
 
 # Standard column list for explorer_entries queries
-_ENTRY_COLUMNS = """id, project_id, entry_type, path, name, health_status,
-                   metadata, last_scanned_at, created_at, updated_at"""
+_ENTRY_COLUMNS = (
+    "id, project_id, entry_type, path, name, health_status, "
+    "metadata, last_scanned_at, created_at, updated_at"
+)
 
 # Allowed sort fields for get_entries queries
 _ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "created_at"}
@@ -219,9 +221,8 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, entry_type, path, name, health_status,
-                   metadata, last_scanned_at, created_at, updated_at
+            f"""
+            SELECT {_ENTRY_COLUMNS}
             FROM explorer_entries
             WHERE project_id = %s AND entry_type = %s AND path = %s
             """,
@@ -257,9 +258,8 @@ def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dic
         if not parent_path:
             # Root level - find top-level entries
             cur.execute(
-                """
-                SELECT id, project_id, entry_type, path, name, health_status,
-                       metadata, last_scanned_at, created_at, updated_at
+                f"""
+                SELECT {_ENTRY_COLUMNS}
                 FROM explorer_entries
                 WHERE project_id = %s
                   AND entry_type = %s
@@ -271,9 +271,8 @@ def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dic
         else:
             # Find immediate children of parent_path
             cur.execute(
-                """
-                SELECT id, project_id, entry_type, path, name, health_status,
-                       metadata, last_scanned_at, created_at, updated_at
+                f"""
+                SELECT {_ENTRY_COLUMNS}
                 FROM explorer_entries
                 WHERE project_id = %s
                   AND entry_type = %s
