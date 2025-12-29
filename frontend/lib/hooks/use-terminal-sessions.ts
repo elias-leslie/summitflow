@@ -40,21 +40,16 @@ interface UpdateSessionRequest {
 // ============================================================================
 
 async function fetchSessions(): Promise<TerminalSession[]> {
-  const base = getTerminalApiBase();
-  const res = await fetch(`${base}/api/terminal/sessions`, {
-    credentials: "include", // Include cookies for Cloudflare Access
-  });
+  const res = await fetch("/api/terminal/sessions");
   if (!res.ok) throw new Error("Failed to fetch terminal sessions");
   const data: SessionListResponse = await res.json();
   return data.items;
 }
 
 async function createSession(request: CreateSessionRequest): Promise<TerminalSession> {
-  const base = getTerminalApiBase();
-  const res = await fetch(`${base}/api/terminal/sessions`, {
+  const res = await fetch("/api/terminal/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -68,11 +63,9 @@ async function updateSession(
   sessionId: string,
   request: UpdateSessionRequest
 ): Promise<TerminalSession> {
-  const base = getTerminalApiBase();
-  const res = await fetch(`${base}/api/terminal/sessions/${sessionId}`, {
+  const res = await fetch(`/api/terminal/sessions/${sessionId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -83,10 +76,8 @@ async function updateSession(
 }
 
 async function deleteSession(sessionId: string): Promise<void> {
-  const base = getTerminalApiBase();
-  const res = await fetch(`${base}/api/terminal/sessions/${sessionId}`, {
+  const res = await fetch(`/api/terminal/sessions/${sessionId}`, {
     method: "DELETE",
-    credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to delete session");
 }
