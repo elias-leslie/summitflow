@@ -4,8 +4,8 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/summitflow/services/terminal
-ExecStart=%h/summitflow/services/terminal/.venv/bin/python -m terminal
+WorkingDirectory=%h/terminal
+ExecStart=%h/terminal/.venv/bin/python -m terminal
 EnvironmentFile=-%h/.env.local
 Restart=always
 RestartSec=10
