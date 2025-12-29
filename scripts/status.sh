@@ -55,6 +55,34 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
+echo ""
+echo "--- Terminal Service (Independent) ---"
+echo ""
+
+# Check Terminal Backend (user service)
+echo -n "Term Backend:  "
+if systemctl --user is-active --quiet summitflow-terminal.service 2>/dev/null; then
+    if curl -s http://localhost:8002/health > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Running (http://localhost:8002)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Running but health check failed${NC}"
+    fi
+else
+    echo -e "${RED}✗ Not running${NC}"
+fi
+
+# Check Terminal Frontend (user service)
+echo -n "Term Frontend: "
+if systemctl --user is-active --quiet summitflow-terminal-frontend.service 2>/dev/null; then
+    if curl -s http://localhost:3002 > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Running (http://localhost:3002)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Running but not responding${NC}"
+    fi
+else
+    echo -e "${RED}✗ Not running${NC}"
+fi
+
 # Check nginx (system service)
 echo ""
 echo -n "nginx:         "
@@ -79,16 +107,18 @@ if [ $ERRORS -eq 0 ]; then
     echo "  - API Docs:     http://localhost:8001/docs"
     echo "  - Frontend:     http://localhost:3001"
     echo "  - HTTPS:        https://192.168.8.233:444"
+    echo "  - Terminal:     http://localhost:3002"
 else
     echo -e "${RED}⚠ $ERRORS service(s) not running properly${NC}"
     echo ""
-    echo "To start all services: bash ~/summitflow/scripts/restart.sh"
+    echo "To start all services: bash ~/summitflow/scripts/start.sh"
 fi
 
 echo ""
 echo "Logs (via journalctl):"
 echo "  Backend:  journalctl --user -u summitflow-backend -f"
 echo "  Frontend: journalctl --user -u summitflow-frontend -f"
+echo "  Terminal: journalctl --user -u summitflow-terminal -f"
 echo ""
 
 exit $ERRORS
