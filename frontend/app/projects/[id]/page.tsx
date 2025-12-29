@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
@@ -19,11 +19,9 @@ import {
   updateRoundtableTools,
   updateRoundtableAgentConfig,
   resolvePermission,
-  type GeneratedFeature,
   type GeneratedMission,
   type GeneratedNarrative,
   type GeneratedGoal,
-  type GeneratedSpec,
   type PermissionRequest,
 } from "@/lib/api";
 import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
@@ -38,7 +36,6 @@ import {
   RoundtableChat,
   type ChatMessage,
   type RoundtableMode,
-  type GeneratedVision,
 } from "@/components/roundtable/RoundtableChat";
 import { PermissionDialog } from "@/components/roundtable/PermissionDialog";
 import { SessionList } from "@/components/roundtable/SessionList";
@@ -46,14 +43,7 @@ import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import { fetchTasks, updateTaskStatus, type Task, type TaskStatus } from "@/lib/api";
 import { useRoundtableSession } from "@/lib/hooks/useRoundtableSession";
-
-type TabId = "roundtable" | "kanban" | "tasks" | "evidence" | "explorer";
-
-const VALID_EXPLORER_TYPES: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
-const VALID_TABS: TabId[] = ["roundtable", "kanban", "tasks", "evidence", "explorer"];
-
-// localStorage key for remembering last tab per project
-const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`;
+import { useTabPersistence, type TabId } from "@/lib/hooks/useTabPersistence";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -61,16 +51,14 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const projectId = params.id as string;
 
-  // Get initial tab from URL query param
+  // Tab persistence hook (handles localStorage and URL sync)
   const urlTab = searchParams.get("tab") as TabId | null;
-  const [activeTab, setActiveTab] = useState<TabId>(urlTab || "roundtable");
-  const [hasRestoredTab, setHasRestoredTab] = useState(false);
-
-  // Get explorer type from URL (for context preservation)
   const urlExplorerType = searchParams.get("type") as ExplorerType | null;
-  const [explorerType, setExplorerType] = useState<ExplorerType>(
-    urlExplorerType && VALID_EXPLORER_TYPES.includes(urlExplorerType) ? urlExplorerType : "files"
-  );
+  const { activeTab, setActiveTab, explorerType, setExplorerType } = useTabPersistence({
+    projectId,
+    urlTab,
+    urlExplorerType,
+  });
 
   // Get task filter params from URL
   const urlTaskStatus = searchParams.get("status");
@@ -83,50 +71,9 @@ export default function ProjectDetailPage() {
     taskInitialFilters.type = urlTaskType as TaskFilterValues["type"];
   }
 
-  // Restore last tab from localStorage on mount (if no URL tab specified)
-  useEffect(() => {
-    if (!urlTab && !hasRestoredTab) {
-      const lastTab = localStorage.getItem(getLastTabKey(projectId)) as TabId | null;
-      if (lastTab && VALID_TABS.includes(lastTab)) {
-        setActiveTab(lastTab);
-        // Also restore explorer type if it was the explorer tab
-        if (lastTab === "explorer") {
-          const lastType = localStorage.getItem(`${getLastTabKey(projectId)}_explorer_type`) as ExplorerType | null;
-          if (lastType && VALID_EXPLORER_TYPES.includes(lastType)) {
-            setExplorerType(lastType);
-          }
-        }
-      }
-      setHasRestoredTab(true);
-    }
-  }, [projectId, urlTab, hasRestoredTab]);
-
-  // Sync with URL changes
-  useEffect(() => {
-    if (urlTab && VALID_TABS.includes(urlTab)) {
-      setActiveTab(urlTab);
-    }
-    // Sync explorer type from URL
-    if (urlExplorerType && VALID_EXPLORER_TYPES.includes(urlExplorerType)) {
-      setExplorerType(urlExplorerType);
-    }
-  }, [urlTab, urlExplorerType]);
-
-  // Save active tab to localStorage whenever it changes
-  useEffect(() => {
-    if (hasRestoredTab) {
-      localStorage.setItem(getLastTabKey(projectId), activeTab);
-      // Also save explorer type if on explorer tab
-      if (activeTab === "explorer") {
-        localStorage.setItem(`${getLastTabKey(projectId)}_explorer_type`, explorerType);
-      }
-    }
-  }, [activeTab, explorerType, projectId, hasRestoredTab]);
-
   // Update URL when explorer type changes (without full navigation)
   const handleExplorerTypeChange = (type: ExplorerType) => {
     setExplorerType(type);
-    // Update URL to preserve context
     const newUrl = `/projects/${projectId}?tab=explorer&type=${type}`;
     router.replace(newUrl, { scroll: false });
   };
@@ -214,11 +161,6 @@ export default function ProjectDetailPage() {
       // Refetch tasks when dialog closes (after create)
       refetchKanbanTasks();
     }
-  };
-
-  // Roundtable handlers (session management extracted to useRoundtableSession hook)
-  const handleRoundtableModeChange = (mode: RoundtableMode) => {
-    setRoundtableMode(mode);
   };
 
   // Wrapper to clear error when starting new session
