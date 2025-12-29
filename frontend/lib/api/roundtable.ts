@@ -1,5 +1,6 @@
 import { buildQueryString, fetchWithErrorHandling, getApiBase } from "./utils";
 import { fetchWithGenerationTimeout, roundtableSessionAction, buildRoundtableGenerationUrl } from "./wrappers";
+import { parseSSEEvent } from "../utils/sse";
 
 // =============================================================================
 // Roundtable Types
@@ -324,29 +325,15 @@ export async function* streamRoundtableMessage(
 
       buffer += decoder.decode(value, { stream: true });
 
+      // Process complete events (separated by double newlines)
       const events = buffer.split("\n\n");
       buffer = events.pop() || "";
 
       for (const eventBlock of events) {
-        if (!eventBlock.trim()) continue;
-
-        const lines = eventBlock.split("\n");
-        let eventType: RoundtableSSEEventType = "done";
-        let eventData: Record<string, unknown> = {};
-
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7) as RoundtableSSEEventType;
-          } else if (line.startsWith("data: ")) {
-            try {
-              eventData = JSON.parse(line.slice(6));
-            } catch {
-              console.warn("Failed to parse SSE data:", line);
-            }
-          }
+        const parsed = parseSSEEvent<RoundtableSSEEventType>(eventBlock, "done");
+        if (parsed) {
+          yield parsed as RoundtableSSEEvent;
         }
-
-        yield { type: eventType, data: eventData };
       }
     }
   } finally {

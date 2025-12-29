@@ -457,21 +457,41 @@ def count_observations_since(
         return row[0] if row else 0
 
 
+# Column mappings by row length (version-based parser selection)
+# Format: (offset_from_concepts, has_priority, has_confidence, has_entities)
+_OBSERVATION_ROW_FORMATS: dict[int, tuple[int, bool, bool, bool]] = {
+    21: (1, True, True, True),  # current: priority, confidence, entities
+    20: (1, True, True, False),  # priority, confidence, no entities
+    19: (1, True, False, False),  # priority, raw_excerpt, no confidence
+    18: (1, True, False, False),  # priority, extracted_by, no raw_excerpt
+    17: (0, False, False, False),  # extracted_by, no priority
+    16: (0, False, False, False),  # oldest: no extracted_by, no priority
+}
+
+
 def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert observation row to dict.
 
-    Handles row formats with varying columns:
-    - 21 cols: with priority, confidence, entities, extracted_by, raw_excerpt (current)
-    - 20 cols: with priority, confidence, no entities
-    - 19 cols: with priority, raw_excerpt but no confidence
-    - 18 cols: with priority and extracted_by, no raw_excerpt
-    - 17 cols: with extracted_by, no priority (legacy)
-    - 16 cols: no extracted_by, no priority (oldest)
+    Handles legacy row formats using version-based parser selection.
     """
     if row is None:
         raise ValueError("Row cannot be None")
 
-    result = {
+    row_len = len(row)
+    format_info = _OBSERVATION_ROW_FORMATS.get(row_len)
+    if format_info is None:
+        # Find closest known format
+        for known_len in sorted(_OBSERVATION_ROW_FORMATS.keys(), reverse=True):
+            if row_len >= known_len:
+                format_info = _OBSERVATION_ROW_FORMATS[known_len]
+                break
+        else:
+            format_info = (0, False, False, False)  # Fallback to oldest
+
+    offset, has_priority, has_confidence, has_entities = format_info
+
+    # Base fields (always present)
+    result: dict[str, Any] = {
         "id": str(row[0]),
         "project_id": row[1],
         "session_id": row[2],
@@ -480,108 +500,52 @@ def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str
         "concepts": row[5] or [],
     }
 
-    # Current format with entities (21 cols)
-    if len(row) >= 21:
-        result["priority"] = row[6] or "medium"
-        result["confidence"] = _normalize_confidence(row[7])
-        result["entities"] = row[8] or []
-        result["title"] = row[9]
-        result["subtitle"] = row[10]
-        result["narrative"] = row[11]
-        result["facts"] = row[12]
-        result["files_read"] = row[13] or []
-        result["files_modified"] = row[14] or []
-        result["tool_name"] = row[15]
-        result["tool_input"] = row[16]
-        result["discovery_tokens"] = row[17]
-        result["extracted_by"] = row[18]
-        result["raw_excerpt"] = row[19]
-        result["created_at"] = row[20].isoformat() if row[20] else None
-    # Previous format with confidence, no entities (20 cols)
-    elif len(row) >= 20:
-        result["priority"] = row[6] or "medium"
-        result["confidence"] = _normalize_confidence(row[7])
-        result["entities"] = []
-        result["title"] = row[8]
-        result["subtitle"] = row[9]
-        result["narrative"] = row[10]
-        result["facts"] = row[11]
-        result["files_read"] = row[12] or []
-        result["files_modified"] = row[13] or []
-        result["tool_name"] = row[14]
-        result["tool_input"] = row[15]
-        result["discovery_tokens"] = row[16]
-        result["extracted_by"] = row[17]
-        result["raw_excerpt"] = row[18]
-        result["created_at"] = row[19].isoformat() if row[19] else None
-    # Previous format with raw_excerpt, no confidence (19 cols)
-    elif len(row) >= 19:
-        result["priority"] = row[6] or "medium"
-        result["confidence"] = 0.50  # Default for legacy
-        result["entities"] = []
-        result["title"] = row[7]
-        result["subtitle"] = row[8]
-        result["narrative"] = row[9]
-        result["facts"] = row[10]
-        result["files_read"] = row[11] or []
-        result["files_modified"] = row[12] or []
-        result["tool_name"] = row[13]
-        result["tool_input"] = row[14]
-        result["discovery_tokens"] = row[15]
-        result["extracted_by"] = row[16]
-        result["raw_excerpt"] = row[17]
-        result["created_at"] = row[18].isoformat() if row[18] else None
-    # Previous format with priority, no raw_excerpt (18 cols)
-    elif len(row) >= 18:
-        result["priority"] = row[6] or "medium"
-        result["confidence"] = 0.50
-        result["entities"] = []
-        result["title"] = row[7]
-        result["subtitle"] = row[8]
-        result["narrative"] = row[9]
-        result["facts"] = row[10]
-        result["files_read"] = row[11] or []
-        result["files_modified"] = row[12] or []
-        result["tool_name"] = row[13]
-        result["tool_input"] = row[14]
-        result["discovery_tokens"] = row[15]
-        result["extracted_by"] = row[16]
-        result["raw_excerpt"] = None
-        result["created_at"] = row[17].isoformat() if row[17] else None
-    # Old format with extracted_by but no priority (17 cols)
-    elif len(row) >= 17:
-        result["priority"] = "medium"  # Default for legacy data
-        result["confidence"] = 0.50
-        result["entities"] = []
-        result["title"] = row[6]
-        result["subtitle"] = row[7]
-        result["narrative"] = row[8]
-        result["facts"] = row[9]
-        result["files_read"] = row[10] or []
-        result["files_modified"] = row[11] or []
-        result["tool_name"] = row[12]
-        result["tool_input"] = row[13]
-        result["discovery_tokens"] = row[14]
-        result["extracted_by"] = row[15]
-        result["raw_excerpt"] = None
-        result["created_at"] = row[16].isoformat() if row[16] else None
+    # Parse based on format version
+    idx = 6  # Start after concepts
+    if has_priority:
+        result["priority"] = row[idx] or "medium"
+        idx += 1
     else:
-        # Oldest format (16 cols)
         result["priority"] = "medium"
+
+    if has_confidence:
+        result["confidence"] = _normalize_confidence(row[idx])
+        idx += 1
+    else:
         result["confidence"] = 0.50
+
+    if has_entities:
+        result["entities"] = row[idx] or []
+        idx += 1
+    else:
         result["entities"] = []
-        result["title"] = row[6]
-        result["subtitle"] = row[7]
-        result["narrative"] = row[8]
-        result["facts"] = row[9]
-        result["files_read"] = row[10] or []
-        result["files_modified"] = row[11] or []
-        result["tool_name"] = row[12]
-        result["tool_input"] = row[13]
-        result["discovery_tokens"] = row[14]
+
+    # Remaining fields follow sequentially
+    result["title"] = row[idx]
+    result["subtitle"] = row[idx + 1]
+    result["narrative"] = row[idx + 2]
+    result["facts"] = row[idx + 3]
+    result["files_read"] = row[idx + 4] or []
+    result["files_modified"] = row[idx + 5] or []
+    result["tool_name"] = row[idx + 6]
+    result["tool_input"] = row[idx + 7]
+    result["discovery_tokens"] = row[idx + 8]
+
+    # extracted_by and raw_excerpt depend on row length
+    remaining = row_len - (idx + 9)
+    if remaining >= 3:  # extracted_by, raw_excerpt, created_at
+        result["extracted_by"] = row[idx + 9]
+        result["raw_excerpt"] = row[idx + 10]
+        result["created_at"] = row[idx + 11].isoformat() if row[idx + 11] else None
+    elif remaining >= 2:  # extracted_by, created_at (no raw_excerpt)
+        result["extracted_by"] = row[idx + 9]
+        result["raw_excerpt"] = None
+        result["created_at"] = row[idx + 10].isoformat() if row[idx + 10] else None
+    else:  # Only created_at
         result["extracted_by"] = None
         result["raw_excerpt"] = None
-        result["created_at"] = row[15].isoformat() if row[15] else None
+        result["created_at"] = row[idx + 9].isoformat() if row[idx + 9] else None
+
     return result
 
 

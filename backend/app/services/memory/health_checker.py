@@ -237,36 +237,8 @@ class MemoryHealthChecker:
             "rule_adherence": self._calculate_rule_adherence(pid),
         }
 
-    def check_and_correct(self, project_id: str | None = None) -> HealthReport:
-        """Run all health checks and auto-correct any issues found.
-
-        This is the main self-healing method that:
-        1. Checks for approved patterns and applies them
-        2. Checks filter rate and adjusts thresholds if too high
-        3. Checks for missing observation types and adds warnings
-
-        Args:
-            project_id: Project to check (uses default if not provided)
-
-        Returns:
-            HealthReport with corrections applied and warnings
-        """
-        pid = project_id or self.project_id
-        if not pid:
-            raise ValueError("project_id required")
-
-        report = HealthReport()
-
-        # Collect metrics for the report
-        try:
-            metrics = self.get_health_metrics(pid)
-            report.metrics = metrics
-        except Exception as e:
-            logger.error(f"Failed to get health metrics: {e}")
-            report.add_warning("metrics_error", f"Failed to get metrics: {e}", severity="high")
-            return report
-
-        # Check 1: Approved patterns waiting
+    def _check_approved_patterns(self, pid: str, report: HealthReport) -> None:
+        """Check and apply approved patterns."""
         approved_patterns = self._get_approved_patterns(pid)
         if approved_patterns:
             applied_count = self._apply_approved_patterns(pid, approved_patterns)
@@ -279,7 +251,7 @@ class MemoryHealthChecker:
                 )
             logger.info(f"Auto-applied {applied_count} patterns for {pid}")
 
-        # Check 1b: Auto-promote high-confidence patterns used in 2+ projects
+        # Auto-promote high-confidence patterns used in 2+ projects
         promoted_count = self._auto_promote_patterns()
         if promoted_count > 0:
             report.add_correction(
@@ -288,18 +260,17 @@ class MemoryHealthChecker:
                 count=promoted_count,
             )
 
-        # Check 2: Filter rate too high
+    def _check_filter_rate(self, metrics: dict[str, Any], report: HealthReport) -> None:
+        """Check filter rate and add warnings if too high."""
         filter_stats = metrics.get("filter_stats", {})
         skip_rate = filter_stats.get("skip_rate", 0)
 
         if skip_rate >= FILTER_RATE_CRITICAL_THRESHOLD:
-            # Check which reason is causing most skips
             skip_reasons = filter_stats.get("skip_reasons", {})
             tiny_output_count = skip_reasons.get("tiny_output", 0)
             total_skipped = filter_stats.get("tools_skipped", 1)
 
             if tiny_output_count / max(total_skipped, 1) > 0.5:
-                # More than 50% of skips are due to tiny_output
                 report.add_warning(
                     "high_filter_rate",
                     f"Filter rate is {skip_rate:.1%} with {tiny_output_count} tiny_output skips. "
@@ -324,7 +295,10 @@ class MemoryHealthChecker:
                 current_rate=skip_rate,
             )
 
-        # Check 3: No operational observations
+    def _check_operational_observations(
+        self, metrics: dict[str, Any], report: HealthReport
+    ) -> None:
+        """Check for missing operational observations."""
         obs_dist = metrics.get("observation_distribution", {})
         operational_count = obs_dist.get("operational", 0)
 
@@ -343,7 +317,7 @@ class MemoryHealthChecker:
                 count=operational_count,
             )
 
-        # Check 4: Stale approved patterns (approved but not applied)
+        # Check stale approved patterns
         pattern_status = metrics.get("pattern_status", {})
         approved_count = pattern_status.get("approved", 0)
         applied_count = pattern_status.get("applied", 0)
@@ -356,12 +330,13 @@ class MemoryHealthChecker:
                 approved=approved_count,
             )
 
-        # Check 5: Rule staleness and auto-archive
+    def _check_rules_and_docs(self, pid: str, report: HealthReport) -> None:
+        """Check rule staleness and doc conflicts."""
+        # Rule staleness and auto-archive
         stale_rules = self._check_rule_staleness(pid)
         report.stale_rules = stale_rules
 
         if stale_rules:
-            # Auto-archive highly stale rules
             archived = self._auto_archive_stale_rules(pid, stale_rules)
             report.auto_archived = archived
 
@@ -373,7 +348,6 @@ class MemoryHealthChecker:
                     rules=[r["rule_file"] for r in archived],
                 )
 
-            # Warn about remaining stale rules not auto-archived
             remaining_stale = [r for r in stale_rules if r not in archived]
             if remaining_stale:
                 report.add_warning(
@@ -381,10 +355,10 @@ class MemoryHealthChecker:
                     f"{len(remaining_stale)} stale rules detected. Consider reviewing.",
                     severity="low",
                     count=len(remaining_stale),
-                    rules=[r["rule_file"] for r in remaining_stale[:5]],  # Top 5
+                    rules=[r["rule_file"] for r in remaining_stale[:5]],
                 )
 
-        # Check 6: Doc conflicts
+        # Doc conflicts
         conflicts = self._detect_doc_conflicts(pid)
         report.doc_conflicts = conflicts
 
@@ -398,7 +372,7 @@ class MemoryHealthChecker:
                     count=len(high_severity),
                 )
 
-        # Check 7: Generate sync suggestions
+        # Sync suggestions
         sync_suggestions = self._generate_sync_suggestions(pid)
         report.sync_suggestions = sync_suggestions
 
@@ -410,7 +384,7 @@ class MemoryHealthChecker:
                 count=len(sync_suggestions),
             )
 
-        # Check 8: Track doc versions
+        # Track doc versions
         doc_versions = self._track_doc_versions(pid)
         new_versions = [d for d in doc_versions if d.get("is_new_version")]
         if new_versions:
@@ -421,6 +395,36 @@ class MemoryHealthChecker:
                 docs=[d["doc_file"] for d in new_versions],
             )
 
+    def check_and_correct(self, project_id: str | None = None) -> HealthReport:
+        """Run all health checks and auto-correct any issues found.
+
+        Args:
+            project_id: Project to check (uses default if not provided)
+
+        Returns:
+            HealthReport with corrections applied and warnings
+        """
+        pid = project_id or self.project_id
+        if not pid:
+            raise ValueError("project_id required")
+
+        report = HealthReport()
+
+        # Collect metrics for the report
+        try:
+            metrics = self.get_health_metrics(pid)
+            report.metrics = metrics
+        except Exception as e:
+            logger.error(f"Failed to get health metrics: {e}")
+            report.add_warning("metrics_error", f"Failed to get metrics: {e}", severity="high")
+            return report
+
+        # Run checks (each modifies report in place)
+        self._check_approved_patterns(pid, report)
+        self._check_filter_rate(metrics, report)
+        self._check_operational_observations(metrics, report)
+        self._check_rules_and_docs(pid, report)
+
         # Determine overall status
         high_warnings = sum(1 for w in report.warnings if w.severity == "high")
         medium_warnings = sum(1 for w in report.warnings if w.severity == "medium")
@@ -430,7 +434,7 @@ class MemoryHealthChecker:
         elif medium_warnings > 2 or len(report.warnings) > 5:
             report.status = "degraded"
         elif report.corrections:
-            report.status = "corrected"  # Issues found but fixed
+            report.status = "corrected"
 
         return report
 
