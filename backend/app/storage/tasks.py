@@ -440,6 +440,9 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
+EXPECTED_TASK_COLUMNS = 23
+
+
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
@@ -451,6 +454,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """
     if row is None:
         raise ValueError("Row cannot be None")
+    if len(row) != EXPECTED_TASK_COLUMNS:
+        raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS} columns, got {len(row)}")
     return {
         "id": row[0],
         "project_id": row[1],
