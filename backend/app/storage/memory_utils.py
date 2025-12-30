@@ -7,10 +7,42 @@ memory_queue, and memory.py to eliminate code duplication.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import math
+from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import sql
+
+
+def calculate_recency_score(
+    created_at: str | datetime | None,
+    half_life_days: float = 30.0,
+    default: float = 0.5,
+) -> float:
+    """Calculate recency score using exponential decay.
+
+    Args:
+        created_at: Creation timestamp (ISO string or datetime)
+        half_life_days: Decay half-life in days (default 30)
+        default: Default score if created_at is None/invalid
+
+    Returns:
+        Recency score between 0 and 1.
+    """
+    if created_at is None:
+        return default
+    try:
+        if isinstance(created_at, str):
+            created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        else:
+            created_dt = created_at
+        if created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        age_days = (now - created_dt).total_seconds() / 86400
+        return math.exp(-age_days / half_life_days)
+    except (ValueError, TypeError):
+        return default
 
 
 def json_or_default(obj: Any, default: str | None = None) -> str | None:

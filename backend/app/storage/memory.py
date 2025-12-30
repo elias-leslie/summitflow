@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, TypedDict
 
@@ -52,7 +50,7 @@ from .memory_queue import (
     reset_stuck_queue_items,
     update_queue_item_status,
 )
-from .memory_utils import build_where_clause, json_or_default
+from .memory_utils import build_where_clause, calculate_recency_score, json_or_default
 
 # =============================================================================
 # TypedDicts for documentation/IDE support
@@ -1181,27 +1179,11 @@ def search_observations_semantic(
     # Apply recency-weighted ranking
     # Weights: similarity=0.50, recency=0.30, confidence=0.15, usage=0.05
     results = []
-    now = datetime.now(UTC)
 
     for row in rows:
         obs = _observation_row_to_dict(row[:21])
         similarity = float(row[21])
-
-        # Recency score: exp(-age_days / 30)
-        recency_score = 0.5
-        try:
-            created_at = obs.get("created_at")
-            if created_at:
-                if isinstance(created_at, str):
-                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                else:
-                    created_dt = created_at
-                if created_dt.tzinfo is None:
-                    created_dt = created_dt.replace(tzinfo=UTC)
-                age_days = (now - created_dt).total_seconds() / 86400
-                recency_score = math.exp(-age_days / 30)
-        except (ValueError, TypeError):
-            pass
+        recency_score = calculate_recency_score(obs.get("created_at"))
 
         # Confidence score
         confidence = obs.get("confidence", 0.5)

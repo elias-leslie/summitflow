@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import json
 import logging
-import math
-from datetime import UTC, datetime
 from typing import Any
 
 import redis
 
-from app.services.memory.pattern_service import _parse_iso_datetime
 from app.storage import memory as memory_storage
+from app.storage.memory_utils import calculate_recency_score
 
 logger = logging.getLogger(__name__)
 
@@ -416,15 +414,7 @@ class ContextBuilder:
         fts_norm = min(1.0, max(0.0, fts_score))
 
         # 2. Recency decay: exp(-age_days / 30) => 30-day half-life
-        recency_score = 0.5  # Default for missing created_at
-        try:
-            created_dt = _parse_iso_datetime(obs.get("created_at"))
-            if created_dt:
-                now = datetime.now(UTC)
-                age_days = (now - created_dt).total_seconds() / 86400
-                recency_score = math.exp(-age_days / 30)
-        except (ValueError, TypeError):
-            pass
+        recency_score = calculate_recency_score(obs.get("created_at"))
 
         # 3. Confidence score (already 0-1)
         confidence = obs.get("confidence", 0.5)
