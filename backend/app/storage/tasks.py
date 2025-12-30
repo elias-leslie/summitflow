@@ -357,37 +357,23 @@ def update_task_status(
                 )
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Build update based on status
-        if status == "running":
-            cur.execute(
-                f"""
-                UPDATE tasks
-                SET status = %s, started_at = COALESCE(started_at, NOW()), error_message = NULL
-                WHERE id = %s
-                RETURNING {TASK_COLUMNS}
-                """,
-                (status, task_id),
-            )
-        elif status in ("completed", "failed"):
-            cur.execute(
-                f"""
-                UPDATE tasks
-                SET status = %s, completed_at = NOW(), error_message = %s
-                WHERE id = %s
-                RETURNING {TASK_COLUMNS}
-                """,
-                (status, error_message, task_id),
-            )
-        else:
-            cur.execute(
-                f"""
-                UPDATE tasks
-                SET status = %s
-                WHERE id = %s
-                RETURNING {TASK_COLUMNS}
-                """,
-                (status, task_id),
-            )
+        # Single UPDATE with CASE expressions for conditional field updates
+        cur.execute(
+            f"""
+            UPDATE tasks
+            SET status = %s,
+                started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
+                completed_at = CASE WHEN %s IN ('completed', 'failed') THEN NOW() ELSE completed_at END,
+                error_message = CASE
+                    WHEN %s = 'running' THEN NULL
+                    WHEN %s IN ('completed', 'failed') THEN %s
+                    ELSE error_message
+                END
+            WHERE id = %s
+            RETURNING {TASK_COLUMNS}
+            """,
+            (status, status, status, status, status, error_message, task_id),
+        )
 
         row = cur.fetchone()
         conn.commit()
