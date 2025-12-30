@@ -278,26 +278,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
     """
     existing = _verify_task_project(task_id, project_id)
 
-    # Build update dict from non-None fields
-    update_fields = {}
-    if update.title is not None:
-        update_fields["title"] = update.title
-    if update.description is not None:
-        update_fields["description"] = update.description
-    if update.branch_name is not None:
-        update_fields["branch_name"] = update.branch_name
-    if update.pull_request_url is not None:
-        update_fields["pull_request_url"] = update.pull_request_url
-    # Issue tracking fields
-    if update.priority is not None:
-        update_fields["priority"] = update.priority
-    if update.labels is not None:
-        update_fields["labels"] = update.labels
-    if update.task_type is not None:
-        update_fields["task_type"] = update.task_type
-    if update.parent_task_id is not None:
-        update_fields["parent_task_id"] = update.parent_task_id
-
+    update_fields = update.model_dump(exclude_unset=True)
     if not update_fields:
         return _task_to_response(existing)
 
