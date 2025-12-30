@@ -276,14 +276,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
         task_id: Task ID
         update: Fields to update
     """
-    # Verify task exists and belongs to project
-    existing = task_store.get_task(task_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    existing = _verify_task_project(task_id, project_id)
 
     # Build update dict from non-None fields
     update_fields = {}
