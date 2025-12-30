@@ -50,7 +50,12 @@ from .memory_queue import (
     reset_stuck_queue_items,
     update_queue_item_status,
 )
-from .memory_utils import build_where_clause, calculate_recency_score, json_or_default
+from .memory_utils import (
+    build_where_clause,
+    calculate_recency_score,
+    json_or_default,
+    normalize_timestamp,
+)
 
 # =============================================================================
 # TypedDicts for documentation/IDE support
@@ -587,15 +592,15 @@ def _observation_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str
     if remaining >= 3:  # extracted_by, raw_excerpt, created_at
         result["extracted_by"] = row[idx + 9]
         result["raw_excerpt"] = row[idx + 10]
-        result["created_at"] = row[idx + 11].isoformat() if row[idx + 11] else None
+        result["created_at"] = normalize_timestamp(row[idx + 11])
     elif remaining >= 2:  # extracted_by, created_at (no raw_excerpt)
         result["extracted_by"] = row[idx + 9]
         result["raw_excerpt"] = None
-        result["created_at"] = row[idx + 10].isoformat() if row[idx + 10] else None
+        result["created_at"] = normalize_timestamp(row[idx + 10])
     else:  # Only created_at
         result["extracted_by"] = None
         result["raw_excerpt"] = None
-        result["created_at"] = row[idx + 9].isoformat() if row[idx + 9] else None
+        result["created_at"] = normalize_timestamp(row[idx + 9])
 
     return result
 
@@ -774,7 +779,7 @@ def _checkpoint_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str,
         "conversation_summary": row[12],
         "context_snapshot": row[13],
         "tokens_used": row[14],
-        "created_at": row[15].isoformat() if row[15] else None,
+        "created_at": normalize_timestamp(row[15]),
     }
 
 
