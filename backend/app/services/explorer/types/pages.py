@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
@@ -33,7 +34,7 @@ class PageScanner(BaseScanner):
 
     entry_type = "page"
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.frontend_dir: str = "frontend"
@@ -71,7 +72,7 @@ class PageScanner(BaseScanner):
 
     def _scan_frontend_pages(self) -> list[ExplorerEntryCreate]:
         """Scan Next.js app router for frontend pages."""
-        entries = []
+        entries: list[ExplorerEntryCreate] = []
 
         if not self.root_path:
             return entries

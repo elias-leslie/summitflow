@@ -103,7 +103,7 @@ def _get_unlinked_entries(
             """,
             (project_id, entry_type),
         )
-    return cur.fetchall()
+    return list(cur.fetchall())
 
 
 def get_refactor_targets(

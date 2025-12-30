@@ -75,7 +75,7 @@ def normalize_timestamp(value: datetime | None) -> str | None:
 def build_where_clause(
     filters: dict[str, Any],
     special_conditions: list[str] | None = None,
-) -> tuple[sql.SQL | sql.Composed, list[Any]]:
+) -> tuple[sql.Composable, list[Any]]:
     """Build a WHERE clause from filters dict.
 
     Args:
@@ -83,7 +83,7 @@ def build_where_clause(
         special_conditions: Additional raw SQL conditions (e.g., "reflected_at IS NULL")
 
     Returns:
-        Tuple of (sql.SQL where clause, list of params)
+        Tuple of (sql.Composable where clause, list of params)
     """
     conditions: list[str] = []
     params: list[Any] = []
@@ -97,7 +97,7 @@ def build_where_clause(
         conditions.extend(special_conditions)
 
     if conditions:
-        where_clause = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
+        where_clause: sql.Composable = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
     else:
         where_clause = sql.SQL("TRUE")
 
@@ -156,4 +156,4 @@ def rank_observation(
         + w_usage * usage_score
     )
 
-    return round(combined, 4)
+    return float(round(combined, 4))

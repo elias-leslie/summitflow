@@ -85,7 +85,7 @@ class GeminiClient(LLMClient):
         try:
             import google.auth
 
-            google.auth.default()
+            google.auth.default()  # type: ignore[no-untyped-call]
             return True
         except Exception:
             return False
@@ -331,7 +331,7 @@ class GeminiClient(LLMClient):
 
         # Initialize class-level session service if needed
         if GeminiClient._session_service is None:
-            GeminiClient._session_service = InMemorySessionService()
+            GeminiClient._session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
 
         # Use the shared session service for persistence
         runner = Runner(

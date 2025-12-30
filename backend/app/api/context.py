@@ -421,14 +421,19 @@ async def get_context_timeline(
         raise HTTPException(status_code=400, detail=f"Observation {anchor_id} has no timestamp")
 
     # Get observations before and after
-    before_obs = memory_storage.get_observations_before_time(
+    from ..storage.memory_embeddings import (
+        get_observations_after_time,
+        get_observations_before_time,
+    )
+
+    before_obs = get_observations_before_time(
         project_id=project_id,
         before_time=anchor_time,
         exclude_id=anchor_id,
         limit=before,
     )
 
-    after_obs = memory_storage.get_observations_after_time(
+    after_obs = get_observations_after_time(
         project_id=project_id,
         after_time=anchor_time,
         exclude_id=anchor_id,

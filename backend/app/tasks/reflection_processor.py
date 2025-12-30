@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import redis
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory import ReflectionService
@@ -32,7 +32,7 @@ DEFAULT_AUTO_APPLY_THRESHOLD = 0.9
 REDIS_URL = "redis://localhost:6379/1"
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.process_reflection",
     bind=True,
     autoretry_for=(Exception,),
@@ -41,7 +41,7 @@ REDIS_URL = "redis://localhost:6379/1"
     max_retries=3,
 )
 def process_reflection(
-    self,
+    self: Any,
     project_id: str,
     project_path: str | None = None,
     auto_apply: bool = True,
@@ -112,12 +112,12 @@ def process_reflection(
         raise
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.check_reflection_trigger",
     bind=True,
 )
 def check_reflection_trigger(
-    self,
+    self: Any,
     project_id: str,
     project_path: str | None = None,
     threshold: int = DEFAULT_DIARY_THRESHOLD,
@@ -157,7 +157,7 @@ def check_reflection_trigger(
             )
 
             # Trigger reflection
-            result = process_reflection.delay(  # type: ignore[reportCallIssue]
+            result = process_reflection.delay(
                 project_id=project_id,
                 project_path=project_path,
                 auto_apply=auto_apply,
@@ -183,12 +183,12 @@ def check_reflection_trigger(
         }
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.trigger_feature_reflection",
     bind=True,
 )
 def trigger_capability_reflection(
-    self,
+    self: Any,
     project_id: str,
     capability_id: str,
     project_path: str | None = None,
@@ -216,7 +216,7 @@ def trigger_capability_reflection(
 
     try:
         # Trigger reflection with higher limit for capabilities
-        result = process_reflection.delay(  # type: ignore[reportCallIssue]
+        result = process_reflection.delay(
             project_id=project_id,
             project_path=project_path,
             auto_apply=auto_apply,
@@ -241,12 +241,12 @@ def trigger_capability_reflection(
         }
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.process_pending_reflections",
     bind=True,
 )
 def process_pending_reflections(
-    self,
+    self: Any,
     threshold: int = DEFAULT_DIARY_THRESHOLD,
     auto_apply: bool = True,
 ) -> dict[str, Any]:
@@ -284,7 +284,7 @@ def process_pending_reflections(
             )
 
             # Trigger async reflection
-            process_reflection.delay(  # type: ignore[reportCallIssue]
+            process_reflection.delay(
                 project_id=project_id,
                 auto_apply=auto_apply,
             )

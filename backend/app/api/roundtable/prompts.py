@@ -1,6 +1,7 @@
 """Extraction prompts management endpoints for roundtable."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -152,7 +153,7 @@ async def update_extraction_prompt(
 @router.delete(
     "/projects/{project_id}/roundtable/extraction-prompts/{prompt_type}",
 )
-async def delete_extraction_prompt(project_id: str, prompt_type: str) -> dict:
+async def delete_extraction_prompt(project_id: str, prompt_type: str) -> dict[str, Any]:
     """Delete a custom extraction prompt (revert to default).
 
     Valid prompt types: feature_extraction, vision_extraction, goals_extraction

@@ -466,7 +466,9 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
     # Build config update dict from non-None values
-    config_update = {}
+    from typing import Any
+
+    config_update: dict[str, Any] = {}
     if update.claude_enabled is not None:
         config_update["claude_enabled"] = update.claude_enabled
     if update.gemini_enabled is not None:

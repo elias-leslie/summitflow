@@ -436,7 +436,7 @@ class PatternService:
             # Find the pattern section boundaries
             # Patterns start with "## title" and end before next "## " or end of file
             lines = content.split("\n")
-            new_lines = []
+            new_lines: list[str] = []
             skip_until_next_section = False
             found_pattern = False
 

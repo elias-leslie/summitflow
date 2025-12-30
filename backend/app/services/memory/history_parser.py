@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -316,7 +317,7 @@ class HistoryParser:
         session_paths: list[Path],
         *,
         yield_progress: bool = False,
-    ):
+    ) -> Generator[tuple[int, int, ParsedSession] | ParsedSession, None, None]:
         """Parse multiple session files.
 
         Args:

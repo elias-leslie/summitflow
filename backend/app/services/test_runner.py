@@ -311,19 +311,20 @@ async def run_tests(
     Returns:
         List of {test_id, result, duration_ms, output, error} dicts.
     """
+    tests_to_run: list[dict[str, Any]]
     if test_ids:
-        tests = [tests_storage.get_test(project_id, tid) for tid in test_ids]
-        tests = [t for t in tests if t is not None]
+        tests_list = [tests_storage.get_test(project_id, tid) for tid in test_ids]
+        tests_to_run = [t for t in tests_list if t is not None]
     else:
         all_tests = tests_storage.list_tests(project_id)
         if tier and tier in TIER_TEST_TYPES:
             allowed_types = TIER_TEST_TYPES[tier]
-            tests = [t for t in all_tests if t["test_type"] in allowed_types]
+            tests_to_run = [t for t in all_tests if t["test_type"] in allowed_types]
         else:
-            tests = all_tests
+            tests_to_run = all_tests
 
     results = []
-    for test in tests:
+    for test in tests_to_run:
         try:
             result = await run_test(
                 project_id=project_id,
@@ -331,25 +332,27 @@ async def run_tests(
                 triggered_by=triggered_by,
                 session_id=session_id,
             )
-            results.append(
-                {
-                    "test_id": test["test_id"],
-                    "result": "passed" if result.passed else "failed",
-                    "duration_ms": result.duration_ms,
-                    "output": result.output,
-                    "error": result.error,
-                }
-            )
+            if test is not None:
+                results.append(
+                    {
+                        "test_id": test["test_id"],
+                        "result": "passed" if result.passed else "failed",
+                        "duration_ms": result.duration_ms,
+                        "output": result.output,
+                        "error": result.error,
+                    }
+                )
         except Exception as e:
-            results.append(
-                {
-                    "test_id": test["test_id"],
-                    "result": "error",
-                    "duration_ms": 0,
-                    "output": "",
-                    "error": str(e),
-                }
-            )
+            if test is not None:
+                results.append(
+                    {
+                        "test_id": test["test_id"],
+                        "result": "error",
+                        "duration_ms": 0,
+                        "output": "",
+                        "error": str(e),
+                    }
+                )
 
     return results
 
@@ -498,16 +501,16 @@ async def run_ui_test(test: dict[str, Any], config: ProjectConfig) -> TestResult
             timeout = test.get("timeout_seconds", 120)
             exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
             passed = exit_code == 0
-            evidence_path = extract_evidence_path(stdout)
+            evidence_path: str | None = extract_evidence_path(stdout)
             return _build_test_result(passed, stdout, stderr, evidence_path)
         finally:
             Path(temp_script_path).unlink(missing_ok=True)
 
     # Priority 3: Raw command
-    command = test.get("command")
-    if command:
+    raw_command: str | None = test.get("command")
+    if raw_command:
         timeout = test.get("timeout_seconds", 120)
-        exit_code, stdout, stderr = await _run_command(command, config.root_path, timeout)
+        exit_code, stdout, stderr = await _run_command(raw_command, config.root_path, timeout)
         passed = exit_code == 0
         return _build_test_result(passed, stdout, stderr)
 

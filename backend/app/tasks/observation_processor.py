@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import redis
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory import ContextBuilder, ObservationExtractor
@@ -28,7 +28,7 @@ MAX_RETRIES = 3
 REDIS_URL = "redis://localhost:6379/1"
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.process_observation_queue",
     bind=True,
     autoretry_for=(Exception,),
@@ -36,7 +36,7 @@ REDIS_URL = "redis://localhost:6379/1"
     retry_backoff_max=300,
     max_retries=3,
 )
-def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
+def process_observation_queue(self: Any, limit: int = BATCH_SIZE) -> dict[str, Any]:
     """Process pending items in observation queue.
 
     Fetches pending items, runs extraction, and saves observations.
@@ -210,7 +210,7 @@ def _schedule_diary_aggregation(items: list[dict[str, Any]]) -> None:
 
         # Schedule with delay
         try:
-            aggregate_session_diary.apply_async(  # type: ignore[reportCallIssue]
+            aggregate_session_diary.apply_async(
                 args=[project_id, session_id],
                 countdown=DIARY_AGGREGATION_DELAY,
             )

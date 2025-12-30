@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from decimal import Decimal
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
 from psycopg import sql
 from psycopg.rows import TupleRow
@@ -28,6 +28,15 @@ from .memory_diary import (
     list_diary_entries,
     mark_diary_entries_reflected,
 )
+
+# Re-export embedding functions for backward compatibility
+from .memory_embeddings import (
+    has_embeddings,
+    search_observations_semantic,
+)
+
+# Re-export health functions for backward compatibility
+from .memory_health import get_lifecycle_stats
 
 # Re-export pattern functions for backward compatibility
 from .memory_patterns import (
@@ -50,22 +59,8 @@ from .memory_queue import (
     reset_stuck_queue_items,
     update_queue_item_status,
 )
-
-# Re-export embedding functions for backward compatibility
-from .memory_embeddings import (
-    bulk_update_observation_embeddings,
-    get_observations_after_time,
-    get_observations_before_time,
-    get_observations_without_embeddings,
-    has_embeddings,
-    search_observations_semantic,
-)
-
-# Re-export health functions for backward compatibility
-from .memory_health import get_lifecycle_stats
 from .memory_utils import (
     build_where_clause,
-    calculate_recency_score,
     json_or_default,
     normalize_timestamp,
 )
@@ -139,17 +134,21 @@ __all__ = [
     "create_queue_item",
     "get_diary_entry",
     "get_diary_entry_by_session",
+    "get_lifecycle_stats",
     "get_pattern",
     "get_pending_queue_items",
     "get_projects_needing_reflection",
     "get_stale_patterns",
     "get_unreflected_diary_count",
+    "has_embeddings",
     "increment_pattern_usage",
     "list_diary_entries",
     "list_patterns",
     "mark_diary_entries_reflected",
     "mark_pattern_applied",
     "reset_stuck_queue_items",
+    "search_observations_fts",
+    "search_observations_semantic",
     "update_pattern_feedback",
     "update_pattern_status",
     "update_queue_item_status",

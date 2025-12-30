@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -67,7 +67,7 @@ class TaskScanner(BaseScanner):
 
     entry_type = "task"
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.backend_dir: str = "backend"
@@ -124,8 +124,9 @@ class TaskScanner(BaseScanner):
                 with httpx.Client(timeout=10.0) as client:
                     response = client.get(self.beat_schedule_endpoint)
                     if response.status_code == 200:
-                        data = response.json()
-                        return data.get("schedule", data)
+                        data = cast(dict[str, Any], response.json())
+                        schedule = data.get("schedule", data)
+                        return cast(dict[str, Any], schedule)
             except Exception as e:
                 logger.warning(f"Beat schedule fetch failed: {e}")
 

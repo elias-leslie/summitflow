@@ -534,9 +534,9 @@ def init_schema() -> None:
                 # Note: table and column names come from controlled internal list, not user input
                 query = sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS {}").format(
                     sql.Identifier(table),
-                    sql.SQL(column),  # type: ignore[arg-type]
+                    sql.SQL(column),
                 )
-                cur.execute(query)  # type: ignore[arg-type]
+                cur.execute(query)
             except psycopg.errors.DuplicateColumn:
                 pass  # Expected with IF NOT EXISTS on older PostgreSQL
             except Exception as e:

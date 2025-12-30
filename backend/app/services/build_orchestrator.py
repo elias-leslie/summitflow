@@ -28,7 +28,8 @@ from .recovery import (
     classify_failure,
     rollback_to_commit,
 )
-from .test_runner import TestResult, get_project_config, run_test
+from .test_runner import get_project_config, run_test
+from .test_runner_lib.base import TestResult
 
 logger = logging.getLogger(__name__)
 

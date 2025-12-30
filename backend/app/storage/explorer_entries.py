@@ -52,7 +52,7 @@ def _build_where_clause(
     return sql.SQL("TRUE")
 
 
-def _row_to_entry(row: tuple) -> dict:
+def _row_to_entry(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert a database row to an entry dict."""
     return {
         "id": row[0],
@@ -68,14 +68,14 @@ def _row_to_entry(row: tuple) -> dict:
     }
 
 
-def _row_to_entry_with_association(row: tuple) -> dict:
+def _row_to_entry_with_association(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert a database row with association_status to an entry dict."""
     entry = _row_to_entry(row[:10])
     entry["association_status"] = row[10] if len(row) > 10 else "orphan"
     return entry
 
 
-def upsert_entries(project_id: str, entry_type: str, entries: list[dict]) -> int:
+def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any]]) -> int:
     """Upsert explorer entries (insert or update on conflict).
 
     Args:
@@ -127,7 +127,7 @@ def upsert_entries(project_id: str, entry_type: str, entries: list[dict]) -> int
         return count
 
 
-def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
+def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Get explorer entries with optional filters.
 
     Args:
@@ -218,7 +218,7 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
         return [_row_to_entry_with_association(row) for row in rows]
 
 
-def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
+def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | None:
     """Get a single explorer entry by type and path.
 
     Args:
@@ -246,7 +246,7 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
         return _row_to_entry(row)
 
 
-def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict]:
+def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict[str, Any]]:
     """Get direct children of a path (for tree navigation).
 
     For files: returns entries where path starts with parent_path/ and has no
@@ -302,7 +302,7 @@ def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dic
         return [_row_to_entry(row) for row in rows]
 
 
-def get_stats(project_id: str, entry_type: str | None = None) -> dict:
+def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
     """Get aggregated statistics for explorer entries.
 
     Args:

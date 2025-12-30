@@ -7,7 +7,7 @@ Both use CLI tools with cached credentials - no API keys needed.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from .base import LLMClient, LLMResponse
 from .claude import ClaudeClient
@@ -113,7 +113,7 @@ class DualProviderClient(LLMClient):
         system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Generate with automatic failover.
 

@@ -1,5 +1,7 @@
 """Tests API - CRUD for TDD test registry."""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -22,7 +24,7 @@ class TestCreate(BaseModel):
     test_type: str
     command: str | None = None
     script: str | None = None
-    config: dict | None = None
+    config: dict[str, Any] | None = None
     working_dir: str | None = None
     timeout_seconds: int = 60
 
@@ -34,7 +36,7 @@ class TestUpdate(BaseModel):
     test_type: str | None = None
     command: str | None = None
     script: str | None = None
-    config: dict | None = None
+    config: dict[str, Any] | None = None
     working_dir: str | None = None
     timeout_seconds: int | None = None
 
@@ -49,7 +51,7 @@ class TestResponse(BaseModel):
     test_type: str
     command: str | None = None
     script: str | None = None
-    config: dict = {}
+    config: dict[str, Any] = {}
     working_dir: str | None = None
     timeout_seconds: int
     last_run_at: str | None = None
@@ -68,8 +70,8 @@ class TestResponse(BaseModel):
 class TestWithHistoryResponse(TestResponse):
     """Response model for test with run history."""
 
-    run_history: list[dict] = []
-    linked_capabilities: list[dict] = []
+    run_history: list[dict[str, Any]] = []
+    linked_capabilities: list[dict[str, Any]] = []
 
 
 @router.get("/{project_id}/tests", response_model=list[TestResponse])
@@ -363,7 +365,7 @@ class UIScriptInfo(BaseModel):
     name: str
     description: str
     args: dict[str, str]
-    example: dict
+    example: dict[str, Any]
 
 
 class UIScriptsResponse(BaseModel):
@@ -382,15 +384,17 @@ async def get_ui_scripts(project_id: str) -> UIScriptsResponse:
     """
     available = get_available_browser_scripts()
 
-    scripts = {}
+    scripts: dict[str, UIScriptInfo] = {}
     for name in available:
         if name in UI_TEST_SCRIPTS_DOCS:
             doc = UI_TEST_SCRIPTS_DOCS[name]
+            doc_args = doc.get("args", {})
+            doc_example = doc.get("example", {})
             scripts[name] = UIScriptInfo(
                 name=name,
-                description=doc["description"],
-                args=doc["args"],
-                example=doc["example"],
+                description=str(doc.get("description", "")),
+                args={k: str(v) for k, v in doc_args.items()} if isinstance(doc_args, dict) else {},
+                example=dict(doc_example) if isinstance(doc_example, dict) else {},
             )
 
     return UIScriptsResponse(available=available, scripts=scripts)

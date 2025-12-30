@@ -6,7 +6,9 @@ for the reflection system to analyze.
 
 from __future__ import annotations
 
-from celery import shared_task
+from typing import Any
+
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory import DiaryService
@@ -18,7 +20,7 @@ logger = get_logger(__name__)
 _pending_sessions: dict[str, float] = {}
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.aggregate_session_diary",
     bind=True,
     autoretry_for=(Exception,),
@@ -26,7 +28,7 @@ _pending_sessions: dict[str, float] = {}
     retry_backoff_max=300,
     max_retries=3,
 )
-def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
+def aggregate_session_diary(self: Any, project_id: str, session_id: str) -> dict[str, Any]:
     """Aggregate observations from a session into a diary entry.
 
     Called after session observations have been processed. Creates a diary
@@ -126,7 +128,7 @@ def aggregate_session_diary(self, project_id: str, session_id: str) -> dict:
     from .reflection_processor import check_reflection_trigger
 
     try:
-        check_reflection_trigger.delay(project_id=project_id)  # type: ignore[reportCallIssue]
+        check_reflection_trigger.delay(project_id=project_id)
         logger.debug(f"reflection_trigger_check_scheduled: project={project_id}")
     except Exception as e:
         # Don't fail diary aggregation for reflection trigger failures

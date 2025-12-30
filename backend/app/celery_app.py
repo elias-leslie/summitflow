@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
-from celery import Celery  # celery doesn't ship type stubs
-from celery.signals import after_setup_logger, after_setup_task_logger
+from celery import Celery  # type: ignore[import-untyped]
+from celery.signals import (  # type: ignore[import-untyped]
+    after_setup_logger,
+    after_setup_task_logger,
+)
 
 from app.config import DATABASE_URL, REDIS_URL
 from app.logging_config import _parse_log_level
@@ -103,8 +107,8 @@ celery_app.conf.beat_schedule = {
 
 
 # Configure Celery logging
-@after_setup_logger.connect
-def setup_celery_logger(logger: logging.Logger, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+@after_setup_logger.connect  # type: ignore[untyped-decorator]
+def setup_celery_logger(logger: logging.Logger, *args: Any, **kwargs: Any) -> None:
     """Configure Celery logger with proper formatting.
 
     This signal handler is called after Celery sets up its logger.
@@ -119,8 +123,8 @@ def setup_celery_logger(logger: logging.Logger, *args, **kwargs) -> None:  # typ
         )
 
 
-@after_setup_task_logger.connect
-def setup_celery_task_logger(logger: logging.Logger, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+@after_setup_task_logger.connect  # type: ignore[untyped-decorator]
+def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) -> None:
     """Configure Celery task logger with proper formatting."""
     log_level = _parse_log_level(os.getenv("LOG_LEVEL"))
 

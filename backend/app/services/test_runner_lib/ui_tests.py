@@ -313,13 +313,19 @@ def extract_evidence_path(output: str) -> str | None:
     - {"screenshot": "/path/to/file.png"}
     """
     import re
+    from typing import cast
 
     try:
         for line in output.split("\n"):
             line = line.strip()
             if line.startswith("{"):
                 data = json.loads(line)
-                return data.get("screenshot") or data.get("evidence_path")
+                screenshot = data.get("screenshot")
+                evidence = data.get("evidence_path")
+                if screenshot:
+                    return cast(str, screenshot)
+                if evidence:
+                    return cast(str, evidence)
     except (json.JSONDecodeError, AttributeError):
         pass
 

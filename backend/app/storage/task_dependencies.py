@@ -248,7 +248,7 @@ def is_blocked(task_id: str) -> bool:
     return result[0] if result else False
 
 
-def _dep_row_to_dict(row: tuple) -> dict[str, Any]:
+def _dep_row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert a dependency row to dict."""
     return {
         "id": row[0],

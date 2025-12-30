@@ -27,7 +27,7 @@ async def generate_spec(
     project_id: str,
     session_id: str,
     request: GenerateSpecRequest,
-):
+) -> GenerateSpecResponse:
     """Generate a TDD spec from the roundtable conversation.
 
     This extracts components, capabilities, and tests from the conversation
@@ -71,7 +71,7 @@ async def generate_spec(
 async def get_spec(
     project_id: str,
     session_id: str,
-):
+) -> GetSpecResponse:
     """Get the generated spec for a session.
 
     Returns the ephemeral spec that has been generated from the conversation.
@@ -89,7 +89,7 @@ async def accept_spec(
     project_id: str,
     session_id: str,
     request: AcceptSpecRequest,
-):
+) -> AcceptSpecResponse:
     """Accept the generated spec and create permanent entities.
 
     This converts the ephemeral generated_spec into permanent:

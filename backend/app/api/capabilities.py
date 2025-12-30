@@ -1,5 +1,7 @@
 """Capabilities API - CRUD for TDD capabilities."""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -70,13 +72,13 @@ class ExplorerLinkResponse(BaseModel):
     link_id: int
     link_type: str
     link_created_at: str | None = None
-    entry: dict
+    entry: dict[str, Any]
 
 
 class CapabilityWithTestsResponse(CapabilityResponse):
     """Response model for capability with linked tests."""
 
-    tests: list[dict] = []
+    tests: list[dict[str, Any]] = []
 
 
 @router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse])
@@ -230,11 +232,11 @@ async def verify_capability(project_id: str, capability_id: str) -> VerifyResult
 
 @router.post(
     "/{project_id}/capabilities/{capability_id}/explorer-links",
-    response_model=dict,
+    response_model=dict[str, Any],
 )
 async def create_explorer_link(
     project_id: str, capability_id: str, body: ExplorerLinkCreate
-) -> dict:
+) -> dict[str, Any]:
     """Create a link between a capability and an explorer entry."""
     # Verify capability exists
     capability = storage.get_capability(project_id, capability_id)
@@ -264,7 +266,7 @@ async def create_explorer_link(
 
 
 @router.delete("/{project_id}/capabilities/{capability_id}/explorer-links/{link_id}")
-async def delete_explorer_link(project_id: str, capability_id: str, link_id: int) -> dict:
+async def delete_explorer_link(project_id: str, capability_id: str, link_id: int) -> dict[str, Any]:
     """Delete a link between a capability and an explorer entry."""
     deleted = explorer_storage.delete_capability_link(link_id)
     if not deleted:

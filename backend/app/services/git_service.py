@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
@@ -203,13 +204,13 @@ def commit_changes(
             raise RuntimeError(f"Failed to stage changes: {result.stderr}")
 
     # Check if there are changes to commit
-    result = subprocess.run(
+    check_result: subprocess.CompletedProcess[bytes] = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
         cwd=project_path,
         capture_output=True,
     )
 
-    if result.returncode == 0:
+    if check_result.returncode == 0:
         # No changes staged
         logger.info("no_changes_to_commit")
         return None
@@ -281,7 +282,7 @@ def push_branch(
 
 
 def create_pull_request(
-    task: dict,
+    task: dict[str, Any],
     project_path: str | Path,
     base_branch: str = "main",
 ) -> str | None:
@@ -374,7 +375,7 @@ def create_pull_request(
     return pr_url
 
 
-def _build_pr_body(task: dict, capability: dict | None) -> str:
+def _build_pr_body(task: dict[str, Any], capability: dict[str, Any] | None) -> str:
     """Build the PR body with tests checklist.
 
     Args:

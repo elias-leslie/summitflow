@@ -9,6 +9,8 @@ Endpoints:
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -70,7 +72,7 @@ class BuildCapabilityResponse(BaseModel):
     attempts: int | None = None
     tests_run: int | None = None
     tests_passed: int | None = None
-    failure_info: dict | None = None
+    failure_info: dict[str, Any] | None = None
     reason: str | None = None
 
 
@@ -86,7 +88,7 @@ class StopBuildResponse(BaseModel):
 async def api_start_build(
     project_id: str,
     request: StartBuildRequest,
-):
+) -> StartBuildResponse:
     """Start a new TDD build for the project.
 
     This creates a build session and identifies all capabilities that need work
@@ -104,7 +106,7 @@ async def api_start_build(
 
 
 @router.get("/status", response_model=BuildStatusResponse)
-async def api_get_build_status(project_id: str):
+async def api_get_build_status(project_id: str) -> BuildStatusResponse:
     """Get the current build status for the project.
 
     Returns the status of any running build, or status='idle' if no build is active.
@@ -116,7 +118,7 @@ async def api_get_build_status(project_id: str):
 
 
 @router.post("/stop", response_model=StopBuildResponse)
-async def api_stop_build(project_id: str):
+async def api_stop_build(project_id: str) -> StopBuildResponse:
     """Stop the current build for the project.
 
     Gracefully stops the build and returns the final status.
@@ -139,7 +141,7 @@ async def api_stop_build(project_id: str):
 async def api_build_capability(
     project_id: str,
     request: BuildCapabilityRequest,
-):
+) -> BuildCapabilityResponse:
     """Build a single capability using the TDD loop.
 
     If no session_id is provided, a new session will be created.
@@ -169,7 +171,7 @@ async def api_build_capability(
 async def api_run_full_build(
     project_id: str,
     request: StartBuildRequest,
-):
+) -> dict[str, Any]:
     """Run a complete build for all failing capabilities.
 
     This is a long-running operation that will build all capabilities
@@ -198,7 +200,7 @@ class EscalationResponse(BaseModel):
 async def api_get_escalations(
     project_id: str,
     session_id: str,
-):
+) -> list[EscalationResponse]:
     """Get escalations for a build session.
 
     Returns list of escalated capabilities and their reasons.

@@ -306,7 +306,7 @@ def delete_capability(project_id: str, capability_id: str) -> bool:
     return deleted
 
 
-def _row_to_dict(row: tuple | None) -> dict[str, Any]:
+def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a dict."""
     if row is None:
         return {}

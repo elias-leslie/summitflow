@@ -52,7 +52,7 @@ class ProjectConfig:
     browser_scripts_path: str = field(default_factory=lambda: BROWSER_AUTOMATION_SCRIPTS_PATH)
 
     @classmethod
-    def from_db_row(cls, project_id: str, row: tuple) -> ProjectConfig:
+    def from_db_row(cls, project_id: str, row: tuple[Any, ...]) -> ProjectConfig:
         """Create from database row (root_path, test_config)."""
         root_path = row[0] or "."
         test_config = row[1] or {}

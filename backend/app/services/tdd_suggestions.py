@@ -38,7 +38,7 @@ def suggest_components(project_id: str) -> list[dict[str, Any]]:
     components: list[dict[str, Any]] = []
 
     # Group files by directory (first 2 levels)
-    dir_groups: dict[str, list[dict]] = defaultdict(list)
+    dir_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for f in files:
         path = f.get("path", "")
         parts = path.split("/")
@@ -71,7 +71,7 @@ def suggest_components(project_id: str) -> list[dict[str, Any]]:
         )
 
     # Group endpoints by path prefix
-    endpoint_groups: dict[str, list[dict]] = defaultdict(list)
+    endpoint_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for ep in endpoints:
         path = ep.get("path", "")
         # Extract route prefix (e.g., /api/users/... -> users)
@@ -95,7 +95,7 @@ def suggest_components(project_id: str) -> list[dict[str, Any]]:
         )
 
     # Group pages by route prefix
-    page_groups: dict[str, list[dict]] = defaultdict(list)
+    page_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for pg in pages:
         path = pg.get("path", "")
         parts = path.strip("/").split("/")
@@ -121,7 +121,7 @@ def suggest_components(project_id: str) -> list[dict[str, Any]]:
     return sorted(components, key=lambda c: c["entry_count"], reverse=True)
 
 
-def suggest_capabilities(component_entries: list[dict]) -> list[dict[str, Any]]:
+def suggest_capabilities(component_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Suggest capabilities for a set of component entries.
 
     Args:
@@ -368,9 +368,9 @@ def _extract_test_subject(path: str, name: str) -> str:
 
 
 def _generate_recommendation(
-    components: list[dict],
-    tests: list[dict],
-    coverage: dict,
+    components: list[dict[str, Any]],
+    tests: list[dict[str, Any]],
+    coverage: dict[str, Any],
 ) -> str:
     """Generate a natural language recommendation."""
     parts = []

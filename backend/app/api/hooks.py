@@ -30,10 +30,10 @@ METRICS_KEY_PREFIX = "obs_filter_metrics"
 METRICS_TTL = 86400 * 7  # 7 days
 
 
-def _get_metrics_redis() -> redis.Redis | None:
+def _get_metrics_redis() -> redis.Redis[str] | None:
     """Get Redis connection for metrics tracking."""
     try:
-        r = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)
+        r: redis.Redis[str] = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)
         r.ping()
         return r
     except redis.RedisError as e:

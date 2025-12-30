@@ -1,5 +1,7 @@
 """Accepted Specs API - Query accepted spec definitions."""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -13,7 +15,7 @@ class SpecResponse(BaseModel):
 
     id: int
     project_id: str
-    spec_json: dict
+    spec_json: dict[str, Any]
     accepted_at: str | None = None
     accepted_by: str | None = None
     notes: str | None = None

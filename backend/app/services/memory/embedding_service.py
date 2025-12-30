@@ -9,6 +9,10 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ class EmbeddingService:
 
     def __init__(self) -> None:
         """Initialize embedding service."""
-        self._client = None
+        self._client: genai.Client | None = None
         self._has_credentials = self._check_credentials()
         logger.info(f"EmbeddingService initialized (available={self._has_credentials})")
 
@@ -64,12 +68,12 @@ class EmbeddingService:
         try:
             import google.auth
 
-            google.auth.default()
+            google.auth.default()  # type: ignore[no-untyped-call]
             return True
         except Exception:
             return False
 
-    def _get_client(self):
+    def _get_client(self) -> genai.Client:
         """Get or create the Gemini client."""
         if self._client is None:
             from google import genai

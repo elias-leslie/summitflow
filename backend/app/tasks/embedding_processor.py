@@ -8,12 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory.embedding_service import EmbeddingService
-from ..storage import memory as memory_storage
 from ..storage import memory_prompts
+from ..storage.memory_embeddings import (
+    bulk_update_observation_embeddings,
+    get_observations_without_embeddings,
+)
 
 logger = get_logger(__name__)
 
@@ -21,7 +24,7 @@ logger = get_logger(__name__)
 BATCH_SIZE = 100
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.process_pending_embeddings",
     bind=True,
     autoretry_for=(Exception,),
@@ -29,7 +32,7 @@ BATCH_SIZE = 100
     retry_backoff_max=300,
     max_retries=3,
 )
-def process_pending_embeddings(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
+def process_pending_embeddings(self: Any, limit: int = BATCH_SIZE) -> dict[str, Any]:
     """Process pending items that need embeddings.
 
     Fetches observations and user prompts without embeddings,
@@ -89,7 +92,7 @@ def _process_observation_embeddings(service: EmbeddingService, limit: int) -> in
         Number of observations processed
     """
     # Get observations without embeddings
-    observations = memory_storage.get_observations_without_embeddings(limit=limit)
+    observations = get_observations_without_embeddings(limit=limit)
 
     if not observations:
         logger.debug("no_observations_need_embeddings")
@@ -111,7 +114,7 @@ def _process_observation_embeddings(service: EmbeddingService, limit: int) -> in
         updates.append((obs["id"], narrative_embeddings[i], title_embeddings[i]))
 
     # Bulk update
-    updated = memory_storage.bulk_update_observation_embeddings(updates)
+    updated = bulk_update_observation_embeddings(updates)
 
     logger.info(f"observation_embeddings_updated: {updated}")
     return updated

@@ -1,7 +1,7 @@
 """Session management endpoints for roundtable."""
 
 import logging
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, HTTPException
 
@@ -37,7 +37,7 @@ MAX_SESSIONS_PER_PROJECT = 25
 async def create_session(
     project_id: str,
     request: CreateSessionRequest,
-):
+) -> CreateSessionResponse:
     """Create a new roundtable session.
 
     Enforces a limit of 25 sessions per project. When the limit is reached,
@@ -123,7 +123,7 @@ async def list_sessions(project_id: str, status: str | None = None) -> list[Sess
 
 
 @router.get("/projects/{project_id}/roundtable/sessions/{session_id}")
-async def get_session(project_id: str, session_id: str):
+async def get_session(project_id: str, session_id: str) -> dict[str, Any]:
     """Get a roundtable session with all messages."""
     session = roundtable_storage.load_session(session_id)
     if not session:
@@ -149,7 +149,7 @@ async def get_session(project_id: str, session_id: str):
 
 
 @router.delete("/projects/{project_id}/roundtable/sessions/{session_id}")
-async def delete_session(project_id: str, session_id: str):
+async def delete_session(project_id: str, session_id: str) -> dict[str, Any]:
     """Delete a roundtable session."""
     deleted = roundtable_storage.delete_session(session_id)
     if not deleted:
@@ -293,7 +293,7 @@ async def update_tools(
     project_id: str,
     session_id: str,
     request: UpdateToolsRequest,
-):
+) -> UpdateToolsResponse:
     """Update tools access settings for a roundtable session.
 
     This allows enabling/disabling codebase access, write access, or YOLO mode mid-session.

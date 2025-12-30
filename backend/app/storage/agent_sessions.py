@@ -492,7 +492,7 @@ def get_build_state(
         row = cur.fetchone()
 
     if row and row[0]:
-        return row[0]
+        return dict(row[0])
     return {}
 
 
@@ -562,7 +562,7 @@ def merge_build_state(
     return row[0] if row else None
 
 
-def _row_to_dict(row: tuple | None) -> dict[str, Any]:
+def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a dict."""
     if row is None:
         return {}

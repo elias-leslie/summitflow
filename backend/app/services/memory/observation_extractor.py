@@ -9,9 +9,12 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from ..agents import DualProviderClient
 
 # Observation taxonomy
 OBSERVATION_TYPES = [
@@ -218,9 +221,9 @@ class ObservationExtractor:
             model: LLM model to use for extraction (kept for API compatibility, ignored)
         """
         self.model = model  # Kept for logging compatibility
-        self._client = None
+        self._client: DualProviderClient | None = None
 
-    def _get_client(self):
+    def _get_client(self) -> DualProviderClient:
         """Get or create dual provider LLM client with automatic failover."""
         if self._client is None:
             from ..agents import DualProviderClient
@@ -329,7 +332,8 @@ class ObservationExtractor:
         """Parse JSON from LLM response, handling common issues."""
         # Try direct parse
         try:
-            return json.loads(content)
+            result = json.loads(content)
+            return dict(result) if isinstance(result, dict) else {}
         except json.JSONDecodeError:
             pass
 
@@ -337,7 +341,8 @@ class ObservationExtractor:
         json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", content, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group(1))
+                result = json.loads(json_match.group(1))
+                return dict(result) if isinstance(result, dict) else {}
             except json.JSONDecodeError:
                 pass
 
@@ -345,7 +350,8 @@ class ObservationExtractor:
         json_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", content, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group(0))
+                result = json.loads(json_match.group(0))
+                return dict(result) if isinstance(result, dict) else {}
             except json.JSONDecodeError:
                 pass
 

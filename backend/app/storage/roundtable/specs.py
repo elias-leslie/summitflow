@@ -57,4 +57,4 @@ def get_generated_spec(session_id: str) -> dict[str, Any] | None:
     if not row or not row[0]:
         return None
 
-    return row[0]
+    return dict(row[0])

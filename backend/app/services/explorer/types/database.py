@@ -92,7 +92,7 @@ class DatabaseScanner(BaseScanner):
 
     entry_type = "table"
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.db_url: str | None = None
 

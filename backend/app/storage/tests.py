@@ -21,7 +21,7 @@ def create_test(
     test_type: str,
     command: str | None = None,
     script: str | None = None,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     working_dir: str | None = None,
     timeout_seconds: int = 60,
 ) -> dict[str, Any]:
@@ -198,7 +198,7 @@ def update_test(
         return get_test(project_id, test_id)
 
     # Always update updated_at
-    updates["updated_at"] = datetime.now(UTC)
+    updates["updated_at"] = datetime.now(UTC).isoformat()
 
     set_clauses = [sql.SQL("{} = %s").format(sql.Identifier(k)) for k in updates]
     values = [*list(updates.values()), project_id, test_id]
@@ -469,7 +469,7 @@ def get_capabilities_for_test(
     return result
 
 
-def _row_to_dict(row: tuple | None) -> dict[str, Any]:
+def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a dict."""
     if row is None:
         return {}

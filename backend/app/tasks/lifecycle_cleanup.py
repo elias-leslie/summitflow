@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..storage import memory as memory_storage
@@ -18,7 +18,7 @@ from ..storage import memory as memory_storage
 logger = get_logger(__name__)
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.cleanup_failed_queue_items",
     bind=True,
     autoretry_for=(Exception,),
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
     max_retries=2,
 )
 def cleanup_failed_queue_items(
-    self,
+    self: Any,
     max_age_days: int = 14,
 ) -> dict[str, Any]:
     """Archive failed queue items older than max_age_days.
@@ -53,7 +53,7 @@ def cleanup_failed_queue_items(
     return summary
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.cleanup_old_checkpoints",
     bind=True,
     autoretry_for=(Exception,),
@@ -61,7 +61,7 @@ def cleanup_failed_queue_items(
     max_retries=2,
 )
 def cleanup_old_checkpoints(
-    self,
+    self: Any,
     max_age_days: int = 30,
 ) -> dict[str, Any]:
     """Delete checkpoints older than max_age_days.
@@ -88,7 +88,7 @@ def cleanup_old_checkpoints(
     return summary
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.reset_stuck_queue_items",
     bind=True,
     autoretry_for=(Exception,),
@@ -96,7 +96,7 @@ def cleanup_old_checkpoints(
     max_retries=2,
 )
 def reset_stuck_queue_items(
-    self,
+    self: Any,
     threshold_minutes: int = 60,
 ) -> dict[str, Any]:
     """Reset queue items stuck in 'processing' status.

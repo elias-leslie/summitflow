@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import redis
@@ -128,7 +129,7 @@ async def stream_observations(
     Sends heartbeat every 30 seconds to keep connection alive.
     """
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events from Redis pub/sub."""
         r = redis.from_url(REDIS_URL)
         pubsub = r.pubsub()

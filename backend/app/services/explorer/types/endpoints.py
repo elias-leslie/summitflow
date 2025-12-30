@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
@@ -73,7 +74,7 @@ class EndpointScanner(BaseScanner):
 
     entry_type = "endpoint"
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.backend_dir: str = "backend"
@@ -112,7 +113,7 @@ class EndpointScanner(BaseScanner):
 
     def _scan_api_routes(self) -> list[ExplorerEntryCreate]:
         """Scan FastAPI route files for endpoints."""
-        entries = []
+        entries: list[ExplorerEntryCreate] = []
 
         if not self.root_path:
             return entries

@@ -107,7 +107,9 @@ async def import_tests(
 
     root_path, backend_root, frontend_root = paths
 
-    importers = {
+    from collections.abc import Callable
+
+    importers: dict[str, Callable[[], Any]] = {
         "pytest": lambda: discover_pytest_tests(project_id, root_path, backend_root),
         "vitest": lambda: discover_vitest_tests(project_id, root_path, frontend_root),
     }

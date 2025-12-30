@@ -149,7 +149,7 @@ def extract_spec_from_conversation(
     agent_type: AgentType = "gemini",
     claude_model: str = "claude-sonnet-4-5",
     gemini_model: str = "gemini-3-flash-preview",
-) -> dict:
+) -> dict[str, Any]:
     """Extract TDD spec (components, capabilities, tests) from a Roundtable conversation.
 
     Args:
@@ -201,7 +201,9 @@ def extract_spec_from_conversation(
         # Store the spec in the session for review
         roundtable_storage.update_generated_spec(session.id, spec)
 
-        return spec
+        from typing import cast
+
+        return cast(dict[Any, Any], spec)
 
     except Exception as e:
         logger.error(f"Spec extraction failed: {e}")
@@ -212,7 +214,7 @@ def accept_spec(
     project_id: str,
     session_id: str,
     accepted_by: str = "user",
-) -> dict:
+) -> dict[str, Any]:
     """Accept the generated spec and create permanent entities.
 
     This converts the ephemeral generated_spec into permanent:

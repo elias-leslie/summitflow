@@ -25,7 +25,7 @@ Usage:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from ...storage import explorer as storage
 from .base import BaseScanner, get_project_config, get_project_root
@@ -73,7 +73,7 @@ __all__ = [
 ScanStatus = Literal["idle", "running", "completed", "failed"]
 
 
-def get_scan_status(project_id: str) -> dict:
+def get_scan_status(project_id: str) -> dict[str, Any]:
     """Get current scan status for a project.
 
     Reads from database for persistence across backend restarts.
@@ -112,7 +112,7 @@ def get_scan_status(project_id: str) -> dict:
     }
 
 
-def start_scan(project_id: str, entry_type: str | None = None) -> dict:
+def start_scan(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
     """Start a scan and track its state.
 
     Persists state to database for resilience across restarts.
@@ -138,7 +138,7 @@ def start_scan(project_id: str, entry_type: str | None = None) -> dict:
     return get_scan_status(project_id)
 
 
-def scan(project_id: str, entry_type: str, config: dict | None = None) -> ScanResult:
+def scan(project_id: str, entry_type: str, config: dict[str, Any] | None = None) -> ScanResult:
     """Trigger a scan for a project and entry type.
 
     Args:
@@ -175,7 +175,7 @@ def run_scan_with_tracking(project_id: str, entry_type: str | None = None) -> No
         entry_type: Optional specific type (scans all if None)
     """
     types_to_scan = [entry_type] if entry_type else list_registered_types()
-    scan_results: list[dict] = []
+    scan_results: list[dict[str, Any]] = []
     error_msg: str | None = None
 
     # Get current state to preserve types_total
@@ -233,7 +233,7 @@ def run_scan_with_tracking(project_id: str, entry_type: str | None = None) -> No
     )
 
 
-def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
+def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Get explorer entries with optional filters.
 
     Args:
@@ -246,7 +246,7 @@ def get_entries(project_id: str, filters: dict | None = None) -> list[dict]:
     return storage.get_entries(project_id, filters)
 
 
-def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
+def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | None:
     """Get a single explorer entry.
 
     Args:
@@ -260,7 +260,7 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict | None:
     return storage.get_entry(project_id, entry_type, path)
 
 
-def get_children(project_id: str, entry_type: str, parent_path: str = "") -> list[dict]:
+def get_children(project_id: str, entry_type: str, parent_path: str = "") -> list[dict[str, Any]]:
     """Get direct children for tree navigation.
 
     Args:
@@ -274,7 +274,7 @@ def get_children(project_id: str, entry_type: str, parent_path: str = "") -> lis
     return storage.get_children(project_id, entry_type, parent_path)
 
 
-def get_stats(project_id: str, entry_type: str | None = None) -> dict:
+def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
     """Get aggregated statistics.
 
     Args:

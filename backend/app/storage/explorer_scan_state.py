@@ -62,7 +62,7 @@ def update_scan_state(
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
     error: str | None = None,
-    results: dict | None = None,
+    results: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Update (or create) the scan state for a project.
 

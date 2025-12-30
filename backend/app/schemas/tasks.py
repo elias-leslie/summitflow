@@ -3,7 +3,7 @@
 Extracted from app/api/tasks.py for reuse across the codebase.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -117,7 +117,7 @@ class TaskResponse(BaseModel):
     status: str
     current_criterion_id: str | None
     spec_content: str | None
-    plan_content: dict | None
+    plan_content: dict[str, Any] | None
     progress_log: str | None
     error_message: str | None
     branch_name: str | None

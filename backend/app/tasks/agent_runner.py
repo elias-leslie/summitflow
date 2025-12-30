@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.agents import AgentType, get_agent
@@ -39,7 +39,7 @@ Format code changes as:
 ```"""
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.run_agent_task",
     bind=True,
     max_retries=3,
@@ -48,7 +48,7 @@ Format code changes as:
     time_limit=300,  # 5 minutes hard limit
 )
 def run_agent_task(
-    self,
+    self: Any,
     task_id: str,
     agent_type: AgentType,
     model: str | None = None,
@@ -269,7 +269,7 @@ Be specific and actionable. Reference exact file paths and code locations where 
 Format your response clearly with sections for each criterion you're addressing."""
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.run_agent_tdd",
     bind=True,
     max_retries=2,
@@ -278,7 +278,7 @@ Format your response clearly with sections for each criterion you're addressing.
     time_limit=300,
 )
 def run_agent_tdd(
-    self,
+    self: Any,
     project_id: str,
     capability_id: str,
     test_results: list[dict[str, Any]],

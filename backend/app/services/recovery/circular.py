@@ -196,7 +196,7 @@ def find_similar_errors(
         List of (index, similarity) tuples for errors above threshold.
     """
     current_keywords = extract_keywords(current_error)
-    similar = []
+    similar: list[tuple[int, float]] = []
 
     if not current_keywords:
         return similar

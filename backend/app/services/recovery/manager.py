@@ -57,7 +57,9 @@ class RecoveryManager:
     @property
     def good_commits(self) -> list[str]:
         """Get list of known good commit SHAs."""
-        return self._state.get("good_commits", [])
+        from typing import cast
+
+        return cast(list[str], self._state.get("good_commits", []))
 
     @property
     def last_good_commit(self) -> str | None:
@@ -173,9 +175,16 @@ class RecoveryManager:
         history = self._state.get("attempt_history", [])
 
         if capability_id:
-            return [a for a in history if a.get("capability_id") == capability_id]
+            from typing import cast
 
-        return history
+            return cast(
+                list[dict[str, Any]],
+                [a for a in history if a.get("capability_id") == capability_id],
+            )
+
+        from typing import cast
+
+        return cast(list[dict[str, Any]], history)
 
     def _save_state(self) -> None:
         """Persist state to database."""
@@ -201,10 +210,13 @@ async def rollback_to_commit(
     """
     import asyncio
 
-    from ...storage import projects as projects_storage  # type: ignore[attr-defined]
+    from ...storage.connection import get_connection
 
     # Get project config for root path
-    project = projects_storage.get_project(project_id)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        project = {"root_path": row[0]} if row else None
     if not project:
         return {
             "success": False,

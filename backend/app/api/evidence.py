@@ -107,8 +107,8 @@ class AgentReviewRequest(BaseModel):
 class ClientEvidence(BaseModel):
     """Client-side evidence gathered before screenshot."""
 
-    console: dict = Field(default_factory=dict, description="Console errors/warnings")
-    network: dict = Field(default_factory=dict, description="Network failures")
+    console: dict[str, Any] = Field(default_factory=dict, description="Console errors/warnings")
+    network: dict[str, Any] = Field(default_factory=dict, description="Network failures")
 
 
 class ViewportCaptureRequest(BaseModel):

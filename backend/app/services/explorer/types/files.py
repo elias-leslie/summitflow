@@ -29,6 +29,7 @@ import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
@@ -84,7 +85,7 @@ STALE_THRESHOLD_DAYS = 90
 METADATA_SCHEMA_VERSION = 2
 
 # Regex patterns for complexity metrics
-FUNCTION_PATTERNS: dict[str, re.Pattern] = {
+FUNCTION_PATTERNS: dict[str, re.Pattern[str]] = {
     ".py": re.compile(r"^\s*def\s+", re.MULTILINE),
     ".ts": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
     ".tsx": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
@@ -92,7 +93,7 @@ FUNCTION_PATTERNS: dict[str, re.Pattern] = {
     ".jsx": re.compile(r"function\s+\w+|=>\s*\{|\bconst\s+\w+\s*=\s*\(", re.MULTILINE),
 }
 
-CLASS_PATTERNS: dict[str, re.Pattern] = {
+CLASS_PATTERNS: dict[str, re.Pattern[str]] = {
     ".py": re.compile(r"^\s*class\s+\w+", re.MULTILINE),
     ".ts": re.compile(r"class\s+\w+", re.MULTILINE),
     ".tsx": re.compile(r"class\s+\w+", re.MULTILINE),
@@ -100,7 +101,7 @@ CLASS_PATTERNS: dict[str, re.Pattern] = {
     ".jsx": re.compile(r"class\s+\w+", re.MULTILINE),
 }
 
-IMPORT_PATTERNS: dict[str, re.Pattern] = {
+IMPORT_PATTERNS: dict[str, re.Pattern[str]] = {
     ".py": re.compile(r"^\s*(import|from)\s+", re.MULTILINE),
     ".ts": re.compile(r"^\s*import\s+", re.MULTILINE),
     ".tsx": re.compile(r"^\s*import\s+", re.MULTILINE),
@@ -120,7 +121,7 @@ class FileScanner(BaseScanner):
 
     entry_type = "file"
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.root_path: Path | None = None
 
@@ -140,7 +141,7 @@ class FileScanner(BaseScanner):
         logger.info(f"File scan started for {self.project_id}: {self.root_path}")
 
         entries: list[ExplorerEntryCreate] = []
-        dir_stats: dict[str, dict] = {}  # path -> {file_count, total_loc}
+        dir_stats: dict[str, dict[str, Any]] = {}  # path -> {file_count, total_loc}
 
         # Walk directory tree
         for root_dir, dirnames, filenames in os.walk(self.root_path):
@@ -240,7 +241,7 @@ class FileScanner(BaseScanner):
             return "warning"
         return None
 
-    def _count_matches(self, ext: str, patterns: dict[str, re.Pattern], content: str) -> int:
+    def _count_matches(self, ext: str, patterns: dict[str, re.Pattern[str]], content: str) -> int:
         """Count regex matches for the given extension."""
         pattern = patterns.get(ext)
         if not pattern or not content:
@@ -262,7 +263,7 @@ class FileScanner(BaseScanner):
         return "none"
 
     def _aggregate_to_parents(
-        self, rel_path: str, entry: ExplorerEntryCreate, dir_stats: dict[str, dict]
+        self, rel_path: str, entry: ExplorerEntryCreate, dir_stats: dict[str, dict[str, Any]]
     ) -> None:
         """Aggregate file stats to parent directories."""
         path_parts = Path(rel_path).parts[:-1]
@@ -275,7 +276,9 @@ class FileScanner(BaseScanner):
             dir_stats[dir_path]["file_count"] += 1
             dir_stats[dir_path]["total_loc"] += lines
 
-    def _create_directory_entries(self, dir_stats: dict[str, dict]) -> list[ExplorerEntryCreate]:
+    def _create_directory_entries(
+        self, dir_stats: dict[str, dict[str, Any]]
+    ) -> list[ExplorerEntryCreate]:
         """Create entries for directories."""
         entries = []
         for path, stats in dir_stats.items():

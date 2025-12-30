@@ -66,6 +66,7 @@ def apply_approved_patterns(project_id: str, patterns: list[dict[str, Any]]) -> 
     from .pattern_service import PatternService
 
     # Determine project path from project_id
+    project_path: Path | None
     if project_id == "_global_":
         # Global patterns go to ~/.claude/rules/
         project_path = Path.home()

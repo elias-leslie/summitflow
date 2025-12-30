@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from typing import Literal, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -38,7 +39,7 @@ async def resolve_permission(
     session_id: str,
     permission_id: str,
     request: PermissionResolution,
-):
+) -> PermissionResolutionResponse:
     """Resolve a pending permission request.
 
     Called by the frontend when the user approves or denies a write tool operation.
@@ -86,7 +87,7 @@ async def send_message(
     project_id: str,
     session_id: str,
     request: MessageRequest,
-):
+) -> SendMessageResponse:
     """Send a message in a roundtable session."""
     service = get_roundtable_service()
 
@@ -235,7 +236,7 @@ async def stream_message(
                     # Use functools.partial to pass session as kwarg
                     agent_func = functools.partial(
                         service._send_to_agent,
-                        agent_type,
+                        cast(Literal["claude", "gemini"], agent_type),
                         request_body.message,
                         context,
                         session=session,

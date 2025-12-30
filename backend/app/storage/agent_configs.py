@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
@@ -120,7 +120,8 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
             raise ValueError(f"Project {project_id} not found")
 
         conn.commit()
-        return row[0]
+        # psycopg3 JSONB returns dict that matches AgentConfig structure
+        return cast(AgentConfig, row[0])
 
 
 def set_default_agent(project_id: str, agent_type: str) -> AgentConfig:
@@ -213,7 +214,7 @@ def is_memory_feature_enabled(project_id: str, feature: str) -> bool:
 
     # Feature-specific check
     feature_key = f"{feature}_enabled"
-    return config.get(feature_key, True)
+    return bool(config.get(feature_key, True))
 
 
 def get_memory_config(project_id: str) -> dict[str, bool]:

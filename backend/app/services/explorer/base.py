@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ...logging_config import get_logger
 from ...storage import explorer as storage
@@ -37,7 +37,7 @@ class BaseScanner(ABC):
 
     entry_type: str  # Must be set by subclass: 'file', 'table', 'task', 'endpoint'
 
-    def __init__(self, project_id: str, config: dict | None = None) -> None:
+    def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         """Initialize the scanner.
 
         Args:
@@ -182,7 +182,7 @@ def get_project_root(project_id: str) -> str | None:
         return row[0] if row else None
 
 
-def get_project_config(project_id: str) -> dict | None:
+def get_project_config(project_id: str) -> dict[str, Any] | None:
     """Get full project configuration from database.
 
     Args:

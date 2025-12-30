@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.evidence_manager import get_evidence_base_dir
@@ -18,7 +18,7 @@ from ..storage.connection import get_connection
 logger = get_logger(__name__)
 
 
-@shared_task(name="summitflow.cleanup_debug_captures")
+@shared_task(name="summitflow.cleanup_debug_captures")  # type: ignore[untyped-decorator]
 def cleanup_debug_captures(
     project_id: str | None = None,
     max_age_days: int = 7,

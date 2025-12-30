@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory.health_checker import MemoryHealthChecker
@@ -18,7 +18,7 @@ from ..services.memory.health_checker import MemoryHealthChecker
 logger = get_logger(__name__)
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.run_memory_health_check",
     bind=True,
     autoretry_for=(Exception,),
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
     max_retries=2,
 )
 def run_memory_health_check(
-    self,
+    self: Any,
     project_id: str = "summitflow",
 ) -> dict[str, Any]:
     """Run memory health check and auto-correct any issues.
@@ -81,14 +81,14 @@ def run_memory_health_check(
         raise
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.run_weekly_deep_review",
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
     max_retries=1,
 )
-def run_weekly_deep_review(self) -> dict[str, Any]:
+def run_weekly_deep_review(self: Any) -> dict[str, Any]:
     """Run comprehensive deep review of all projects' instruction surfaces.
 
     Runs weekly (Sundays at 2am) to:

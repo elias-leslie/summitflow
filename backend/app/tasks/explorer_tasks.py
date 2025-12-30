@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services import explorer
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 INTER_PROJECT_DELAY = 5
 
 
-@shared_task(name="summitflow.scan_all_projects")
+@shared_task(name="summitflow.scan_all_projects")  # type: ignore[untyped-decorator]
 def scan_all_projects(
     project_id: str | None = None,
     entry_type: str | None = None,

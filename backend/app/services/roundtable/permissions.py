@@ -11,6 +11,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class PendingPermission:
     id: str
     session_id: str
     tool_name: str
-    tool_args: dict
+    tool_args: dict[str, Any]
     event: asyncio.Event = field(default_factory=asyncio.Event)
     approved: bool | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -56,7 +57,7 @@ class PermissionManager:
         self,
         session_id: str,
         tool_name: str,
-        tool_args: dict,
+        tool_args: dict[str, Any],
     ) -> bool:
         """
         Create a permission request and wait for resolution.

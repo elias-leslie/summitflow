@@ -442,7 +442,7 @@ class RoundtableService:
         self,
         session: RoundtableSession,
         agent_type: AgentType = "gemini",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Extract TDD spec (components, capabilities, tests) from a Roundtable conversation.
 
         Args:
@@ -464,7 +464,7 @@ class RoundtableService:
         project_id: str,
         session_id: str,
         accepted_by: str = "user",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Accept the generated spec and create permanent entities.
 
         This converts the ephemeral generated_spec into permanent:
@@ -599,7 +599,7 @@ class RoundtableService:
             from ...tasks.reflection_processor import check_reflection_trigger
 
             # Fire and forget - don't wait for result
-            check_reflection_trigger.delay(project_id=project_id)  # type: ignore[operator]
+            check_reflection_trigger.delay(project_id=project_id)
             logger.debug(f"Reflection trigger check scheduled for {project_id}")
         except Exception as e:
             logger.warning(f"Failed to schedule reflection check: {e}")
