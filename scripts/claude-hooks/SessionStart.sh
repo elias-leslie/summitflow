@@ -28,18 +28,34 @@ UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l)
 MESSAGES=""
 
 if [[ "$UNCOMMITTED" -gt 0 ]]; then
-    # Auto-commit leftover changes
-    if git add -A 2>/dev/null && SKIP=mypy,pyright git commit -m "checkpoint: auto-save from previous session
+    # Check if last commit was a checkpoint (deduplication)
+    LAST_MSG=$(git log -1 --format=%s 2>/dev/null || echo "")
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)" 2>/dev/null; then
-        # Try to push
-        if git push 2>/dev/null; then
-            MESSAGES="✅ Recovered ${UNCOMMITTED} uncommitted files from previous session (committed + pushed)."
+    if [[ "$LAST_MSG" == "checkpoint: auto-save from previous session" ]]; then
+        # Amend the existing checkpoint instead of creating a new one
+        if git add -A 2>/dev/null && git commit --amend --no-edit 2>/dev/null; then
+            if git push --force-with-lease 2>/dev/null; then
+                MESSAGES="✅ Recovered ${UNCOMMITTED} uncommitted files (amended existing checkpoint + pushed)."
+            else
+                MESSAGES="⚠️ Recovered ${UNCOMMITTED} uncommitted files (amended, push failed - run 'git push')."
+            fi
         else
-            MESSAGES="⚠️ Recovered ${UNCOMMITTED} uncommitted files (committed, push failed - run 'git push')."
+            MESSAGES="📁 Found ${UNCOMMITTED} uncommitted files from previous session. Consider committing."
         fi
     else
-        MESSAGES="📁 Found ${UNCOMMITTED} uncommitted files from previous session. Consider committing."
+        # Create new checkpoint commit
+        if git add -A 2>/dev/null && git commit -m "checkpoint: auto-save from previous session
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)" 2>/dev/null; then
+            # Try to push
+            if git push 2>/dev/null; then
+                MESSAGES="✅ Recovered ${UNCOMMITTED} uncommitted files from previous session (committed + pushed)."
+            else
+                MESSAGES="⚠️ Recovered ${UNCOMMITTED} uncommitted files (committed, push failed - run 'git push')."
+            fi
+        else
+            MESSAGES="📁 Found ${UNCOMMITTED} uncommitted files from previous session. Consider committing."
+        fi
     fi
 fi
 

@@ -28,7 +28,7 @@ LOG_FILE="$HOME/.claude/hooks/summitflow.log"
 
 # Auto-commit configuration: commit after every 5 Write/Edit ops if 3+ uncommitted files
 COMMIT_REMINDER_COUNTER_FILE="$HOME/.claude/hooks/.write-edit-counter"
-COMMIT_REMINDER_INTERVAL=5
+COMMIT_REMINDER_INTERVAL=15
 UNCOMMITTED_THRESHOLD=3
 
 # Exit if disabled
