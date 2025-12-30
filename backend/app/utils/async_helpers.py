@@ -13,7 +13,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-def run_async_in_sync_context(coro: Awaitable[T]) -> T:
+def run_async_in_sync_context[T](coro: Awaitable[T]) -> T:
     """Run an async coroutine in a synchronous context.
 
     Creates a new event loop, runs the coroutine, and cleans up.

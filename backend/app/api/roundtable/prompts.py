@@ -124,11 +124,10 @@ async def update_extraction_prompt(
             detail=f"Invalid prompt type. Must be one of: {', '.join(valid_types)}",
         )
 
-    valid_agents = ["claude", "gemini"]
-    if request.primary_agent not in valid_agents:
+    if request.primary_agent not in VALID_AGENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid primary_agent. Must be one of: {', '.join(valid_agents)}",
+            detail=f"Invalid primary_agent. Must be one of: {', '.join(VALID_AGENT_TYPES)}",
         )
 
     result = prompts_storage.upsert_prompt(

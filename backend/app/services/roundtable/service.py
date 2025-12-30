@@ -13,6 +13,7 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any, Literal
 
+from ...utils.async_helpers import run_async_in_sync_context
 from ..agents import AgentType, LLMResponse, get_agent
 from ..agents.claude import ClaudeClient
 from ..agents.gemini import GeminiClient
@@ -38,19 +39,6 @@ PermissionCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_session_id", default=None
 )
-
-
-def _run_async_in_sync_context[T](coro: Awaitable[T]) -> T:
-    """Run an async coroutine in a synchronous context.
-
-    Creates a new event loop, runs the coroutine, and cleans up.
-    Use when you need to call async code from sync code.
-    """
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 async def default_permission_callback(tool_name: str, tool_args: dict[str, Any]) -> bool:
@@ -416,7 +404,7 @@ class RoundtableService:
             queue = ObservationQueue()
 
             # Run async enqueue in sync context
-            _run_async_in_sync_context(
+            run_async_in_sync_context(
                 queue.enqueue(
                     project_id=project_id,
                     session_id=session_id,

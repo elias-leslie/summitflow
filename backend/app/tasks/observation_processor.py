@@ -6,7 +6,6 @@ Tasks:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import redis
@@ -15,6 +14,7 @@ from celery import shared_task
 from ..logging_config import get_logger
 from ..services.memory import ContextBuilder, ObservationExtractor
 from ..storage import memory as memory_storage
+from ..utils.async_helpers import run_async_in_sync_context
 
 logger = get_logger(__name__)
 
@@ -26,15 +26,6 @@ MAX_RETRIES = 3
 
 # Redis connection for pub/sub
 REDIS_URL = "redis://localhost:6379/1"
-
-
-def _run_async(coro):
-    """Run async function in sync context."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 @shared_task(
@@ -79,7 +70,7 @@ def process_observation_queue(self, limit: int = BATCH_SIZE) -> dict[str, Any]:
 
         # Create extractor and run batch extraction (single LLM call)
         extractor = ObservationExtractor()
-        observations = _run_async(extractor.extract_batch(pending_items))
+        observations = run_async_in_sync_context(extractor.extract_batch(pending_items))
 
         # Process results - each observation corresponds to the item at same index
         for _idx, (item, observation) in enumerate(zip(pending_items, observations, strict=False)):
