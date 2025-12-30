@@ -13,8 +13,11 @@ from ..storage import tasks as task_store
 
 
 @dataclass
-class ValidationResult:
-    """Result of task validation."""
+class TaskValidationResult:
+    """Result of task readiness validation.
+
+    Used for pre-work checks (dependencies, criteria, etc.)
+    """
 
     ready: bool
     issues: list[str] = field(default_factory=list)
@@ -29,7 +32,11 @@ class ValidationResult:
         }
 
 
-def validate_task_ready(task_id: str, project_id: str) -> ValidationResult:
+# Alias for backward compatibility
+ValidationResult = TaskValidationResult
+
+
+def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     """Validate if a task is ready to be worked on.
 
     Performs the following checks:

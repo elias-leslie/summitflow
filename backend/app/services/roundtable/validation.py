@@ -15,10 +15,10 @@ ALLOWED_BASES = [
 ]
 
 
-class ValidationResult:
-    """Result from validation operations.
+class ToolValidationResult:
+    """Result from tool parameter validation operations.
 
-    Similar to ToolResult but specific to validation.
+    Used for validating tool inputs (paths, parameters, etc.)
     """
 
     def __init__(self, success: bool, value: str = "", error: str | None = None):
@@ -29,6 +29,10 @@ class ValidationResult:
     @property
     def failed(self) -> bool:
         return not self.success
+
+
+# Alias for backward compatibility
+ValidationResult = ToolValidationResult
 
 
 def require_param(params: dict[str, Any], key: str) -> tuple[str, str | None]:
