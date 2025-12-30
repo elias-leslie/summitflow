@@ -15,6 +15,21 @@ from psycopg.rows import TupleRow
 
 from .connection import get_connection
 
+# Column list for all task SELECT/RETURNING queries (23 columns)
+# Order must match _row_to_dict index mapping
+TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
+    current_criterion_id, spec_content, plan_content, progress_log,
+    error_message, branch_name, commits, pull_request_url,
+    total_sessions, total_tokens_used, created_at, started_at, completed_at,
+    priority, labels, task_type, parent_task_id"""
+
+# Aliased version for JOINs (prefixed with t.)
+TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
+    t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+    t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+    t.priority, t.labels, t.task_type, t.parent_task_id"""
+
 
 def _generate_task_id() -> str:
     """Generate a unique task ID."""
@@ -56,15 +71,11 @@ def create_task(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, labels, task_type, parent_task_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, project_id, capability_id, title, description, status,
-                      current_criterion_id, spec_content, plan_content, progress_log,
-                      error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                      priority, labels, task_type, parent_task_id
+            RETURNING {TASK_COLUMNS}
             """,
             (
                 task_id,
@@ -92,12 +103,8 @@ def get_task(task_id: str) -> dict[str, Any] | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, capability_id, title, description, status,
-                   current_criterion_id, spec_content, plan_content, progress_log,
-                   error_message, branch_name, commits, pull_request_url,
-                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                   priority, labels, task_type, parent_task_id
+            f"""
+            SELECT {TASK_COLUMNS}
             FROM tasks
             WHERE id = %s
             """,
@@ -172,15 +179,11 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            sql.SQL("""
+            sql.SQL(f"""
             UPDATE tasks
-            SET {set_clause}
+            SET {{set_clause}}
             WHERE id = %s
-            RETURNING id, project_id, capability_id, title, description, status,
-                      current_criterion_id, spec_content, plan_content, progress_log,
-                      error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                      priority, labels, task_type, parent_task_id
+            RETURNING {TASK_COLUMNS}
             """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             tuple(params),
         )
@@ -257,14 +260,10 @@ def list_tasks(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            sql.SQL("""
-            SELECT t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-                   t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
-                   t.error_message, t.branch_name, t.commits, t.pull_request_url,
-                   t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
-                   t.priority, t.labels, t.task_type, t.parent_task_id
+            sql.SQL(f"""
+            SELECT {TASK_COLUMNS_ALIASED}
             FROM tasks t
-            WHERE {conditions}
+            WHERE {{conditions}}
             ORDER BY t.priority ASC, t.created_at DESC
             LIMIT %s OFFSET %s
             """).format(conditions=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)),
@@ -286,12 +285,8 @@ def get_tasks_by_capability(capability_id: int) -> list[dict[str, Any]]:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, capability_id, title, description, status,
-                   current_criterion_id, spec_content, plan_content, progress_log,
-                   error_message, branch_name, commits, pull_request_url,
-                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                   priority, labels, task_type, parent_task_id
+            f"""
+            SELECT {TASK_COLUMNS}
             FROM tasks
             WHERE capability_id = %s
             ORDER BY created_at DESC
@@ -365,43 +360,31 @@ def update_task_status(
         # Build update based on status
         if status == "running":
             cur.execute(
-                """
+                f"""
                 UPDATE tasks
                 SET status = %s, started_at = COALESCE(started_at, NOW()), error_message = NULL
                 WHERE id = %s
-                RETURNING id, project_id, capability_id, title, description, status,
-                          current_criterion_id, spec_content, plan_content, progress_log,
-                          error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                          priority, labels, task_type, parent_task_id
+                RETURNING {TASK_COLUMNS}
                 """,
                 (status, task_id),
             )
         elif status in ("completed", "failed"):
             cur.execute(
-                """
+                f"""
                 UPDATE tasks
                 SET status = %s, completed_at = NOW(), error_message = %s
                 WHERE id = %s
-                RETURNING id, project_id, capability_id, title, description, status,
-                          current_criterion_id, spec_content, plan_content, progress_log,
-                          error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                          priority, labels, task_type, parent_task_id
+                RETURNING {TASK_COLUMNS}
                 """,
                 (status, error_message, task_id),
             )
         else:
             cur.execute(
-                """
+                f"""
                 UPDATE tasks
                 SET status = %s
                 WHERE id = %s
-                RETURNING id, project_id, capability_id, title, description, status,
-                          current_criterion_id, spec_content, plan_content, progress_log,
-                          error_message, branch_name, commits, pull_request_url,
-                          total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                          priority, labels, task_type, parent_task_id
+                RETURNING {TASK_COLUMNS}
                 """,
                 (status, task_id),
             )
@@ -429,15 +412,11 @@ def append_progress_log(task_id: str, entry: str) -> dict[str, Any] | None:
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             UPDATE tasks
             SET progress_log = COALESCE(progress_log, '') || %s
             WHERE id = %s
-            RETURNING id, project_id, capability_id, title, description, status,
-                      current_criterion_id, spec_content, plan_content, progress_log,
-                      error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                      priority, labels, task_type, parent_task_id
+            RETURNING {TASK_COLUMNS}
             """,
             (log_entry, task_id),
         )
@@ -461,15 +440,11 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             UPDATE tasks
             SET commits = array_append(commits, %s)
             WHERE id = %s
-            RETURNING id, project_id, capability_id, title, description, status,
-                      current_criterion_id, spec_content, plan_content, progress_log,
-                      error_message, branch_name, commits, pull_request_url,
-                      total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                      priority, labels, task_type, parent_task_id
+            RETURNING {TASK_COLUMNS}
             """,
             (commit_sha, task_id),
         )
