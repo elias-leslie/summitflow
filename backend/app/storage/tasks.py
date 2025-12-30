@@ -216,7 +216,6 @@ def list_tasks(
     priority_filter: int | None = None,
     labels_filter: list[str] | None = None,
     orphans_only: bool = False,
-    include_capability: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:

@@ -24,7 +24,6 @@ from .executor import (
     to_claude_sdk_tools,
 )
 from .extraction import (
-    SPEC_EXTRACTION_PROMPT,
     accept_spec,
     extract_spec_from_conversation,
     get_effective_prompt,
@@ -94,9 +93,6 @@ class RoundtableService:
     - Maintaining conversation context
     - Turn-taking between agents
     """
-
-    # Re-export extraction functions as methods for backward compatibility
-    SPEC_EXTRACTION_PROMPT = SPEC_EXTRACTION_PROMPT
 
     def __init__(
         self,
