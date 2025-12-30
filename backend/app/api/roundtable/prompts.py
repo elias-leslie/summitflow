@@ -4,6 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
+from ...constants import VALID_AGENT_TYPES
 from ...storage import prompts as prompts_storage
 from .models import (
     ExtractionPromptConfig,
