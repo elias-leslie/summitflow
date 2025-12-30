@@ -158,7 +158,7 @@ if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
             # Auto-commit
             COMMIT_STATUS="failed"
             PUSH_STATUS=""
-            if git add -A 2>/dev/null && SKIP=mypy,pyright git commit -m "checkpoint: auto-save after ${NEW_COUNT} edits (${UNCOMMITTED} files)
+            if git add -A 2>/dev/null && git commit -m "checkpoint: auto-save after ${NEW_COUNT} edits (${UNCOMMITTED} files)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)" 2>/dev/null; then
                 COMMIT_STATUS="committed"

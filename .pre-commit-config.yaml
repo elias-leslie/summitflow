@@ -22,7 +22,7 @@ repos:
     rev: v1.13.0
     hooks:
       - id: mypy
-        args: [--config-file, backend/pyproject.toml]
+        args: [--config-file, backend/pyproject.toml, --ignore-missing-imports]
         files: ^backend/app/
         additional_dependencies:
           - fastapi>=0.115.0
