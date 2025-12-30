@@ -5,12 +5,11 @@ This module provides data access for notification alerts.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Literal
 
 from psycopg.rows import TupleRow
 
-from .connection import get_connection
+from .connection import generate_prefixed_id, get_connection
 
 NotificationType = Literal["task_failed", "task_needs_input", "task_completed", "system"]
 NotificationSeverity = Literal["info", "warning", "error", "critical"]
@@ -19,7 +18,7 @@ NotificationStatus = Literal["pending", "read", "dismissed"]
 
 def _generate_notification_id() -> str:
     """Generate a unique notification ID."""
-    return f"notif-{uuid.uuid4().hex[:8]}"
+    return generate_prefixed_id("notif")
 
 
 def create_notification(

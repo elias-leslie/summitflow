@@ -1,11 +1,24 @@
 """Database connection management."""
 
+import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 
 import psycopg
 
 from ..config import DATABASE_URL
+
+
+def generate_prefixed_id(prefix: str) -> str:
+    """Generate a unique ID with the given prefix.
+
+    Args:
+        prefix: ID prefix (e.g., 'task', 'sess', 'notif')
+
+    Returns:
+        ID in format "{prefix}-{8_char_uuid}"
+    """
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
 @contextmanager

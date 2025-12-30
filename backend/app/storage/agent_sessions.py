@@ -5,19 +5,17 @@ This module provides data access for agent build session tracking.
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import sql
 
-from .connection import get_connection
+from .connection import generate_prefixed_id, get_connection
 
 
 def _generate_session_id() -> str:
     """Generate a unique session ID."""
-    short_uuid = str(uuid.uuid4())[:8]
-    return f"sess-{short_uuid}"
+    return generate_prefixed_id("sess")
 
 
 def create_session(

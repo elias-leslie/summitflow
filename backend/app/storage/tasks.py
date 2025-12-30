@@ -6,14 +6,13 @@ This module provides data access for agent execution tasks.
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import sql
 from psycopg.rows import TupleRow
 
-from .connection import get_connection
+from .connection import generate_prefixed_id, get_connection
 
 # Column list for all task SELECT/RETURNING queries (23 columns)
 # Order must match _row_to_dict index mapping
@@ -33,8 +32,7 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
 
 def _generate_task_id() -> str:
     """Generate a unique task ID."""
-    short_uuid = str(uuid.uuid4())[:8]
-    return f"task-{short_uuid}"
+    return generate_prefixed_id("task")
 
 
 def create_task(
