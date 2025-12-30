@@ -465,7 +465,7 @@ def search_observations_fts(
         return [_observation_row_to_dict(row[:21]) for row in rows]
 
     # Multi-signal ranking
-    from app.services.memory.context_builder import ContextBuilder
+    from .memory_utils import rank_observation
 
     results = []
     # Get max rank for normalization
@@ -475,9 +475,7 @@ def search_observations_fts(
         obs = _observation_row_to_dict(row[:21])
         fts_score = row[21] / max_rank  # Normalize FTS score to 0-1
         obs["fts_score"] = round(fts_score, 4)
-        obs["combined_score"] = ContextBuilder.rank_observation(
-            obs, fts_score=fts_score, query_types=query_types
-        )
+        obs["combined_score"] = rank_observation(obs, fts_score=fts_score, query_types=query_types)
         results.append(obs)
 
     # Sort by combined score descending

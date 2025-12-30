@@ -17,7 +17,7 @@ from typing import Any
 import redis
 
 from app.storage import memory as memory_storage
-from app.storage.memory_utils import calculate_recency_score
+from app.storage.memory_utils import rank_observation
 
 logger = logging.getLogger(__name__)
 
@@ -387,49 +387,7 @@ class ContextBuilder:
     ) -> float:
         """Compute multi-signal ranking score for an observation.
 
-        Combines multiple signals with recency-weighted ranking:
-        - FTS score (50%): Full-text search relevance
-        - Recency (30%): Exponential decay with 30-day half-life
-        - Confidence (15%): LLM extraction confidence
-        - Usage (5%): Capped at 10 uses
-
-        Args:
-            obs: Observation dict with created_at, confidence, etc.
-            fts_score: Normalized FTS score (0-1), from ts_rank
-            query_types: Optional list of observation types to boost (unused, kept for API compat)
-
-        Returns:
-            Combined score from 0.0 to 1.0
+        Delegates to shared utility in memory_utils.py.
+        Kept as static method for backward compatibility.
         """
-        # Suppress unused parameter warning
-        _ = query_types
-
-        # Weight configuration - recency-weighted for semantic search
-        w_fts = 0.50
-        w_recency = 0.30
-        w_confidence = 0.15
-        w_usage = 0.05
-
-        # 1. FTS score (already 0-1, or normalize if needed)
-        fts_norm = min(1.0, max(0.0, fts_score))
-
-        # 2. Recency decay: exp(-age_days / 30) => 30-day half-life
-        recency_score = calculate_recency_score(obs.get("created_at"))
-
-        # 3. Confidence score (already 0-1)
-        confidence = obs.get("confidence", 0.5)
-        confidence_score = min(1.0, max(0.0, confidence))
-
-        # 4. Usage frequency (capped at 10)
-        usage = obs.get("usage_count", 0)
-        usage_score = min(1.0, usage / 10.0)
-
-        # Combine signals
-        combined = (
-            w_fts * fts_norm
-            + w_recency * recency_score
-            + w_confidence * confidence_score
-            + w_usage * usage_score
-        )
-
-        return round(combined, 4)
+        return rank_observation(obs, fts_score, query_types)
