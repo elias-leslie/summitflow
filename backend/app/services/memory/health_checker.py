@@ -19,7 +19,11 @@ import logging
 import time
 from typing import Any
 
-from ...storage.connection import get_connection
+from ...storage.memory_health import (
+    get_embedding_coverage,
+    get_observation_distribution,
+    get_pattern_status_breakdown,
+)
 
 # Import from submodules
 from .deep_review import deep_review as _deep_review
@@ -109,69 +113,16 @@ class MemoryHealthChecker:
         }
 
     def _get_observation_distribution(self, project_id: str) -> dict[str, int]:
-        """Get observation count by type.
-
-        Returns:
-            Dict mapping observation_type to count
-        """
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT observation_type, COUNT(*) as count
-                FROM observations
-                WHERE project_id = %s
-                GROUP BY observation_type
-                ORDER BY count DESC
-                """,
-                (project_id,),
-            )
-            rows = cur.fetchall()
-            return {row[0]: row[1] for row in rows}
+        """Get observation count by type."""
+        return get_observation_distribution(project_id)
 
     def _get_pattern_status_breakdown(self, project_id: str) -> dict[str, int]:
-        """Get pattern count by status.
-
-        Returns:
-            Dict mapping status to count
-        """
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT status, COUNT(*) as count
-                FROM learned_patterns
-                WHERE project_id = %s
-                GROUP BY status
-                """,
-                (project_id,),
-            )
-            rows = cur.fetchall()
-            return {row[0]: row[1] for row in rows}
+        """Get pattern count by status."""
+        return get_pattern_status_breakdown(project_id)
 
     def _get_embedding_coverage(self, project_id: str) -> dict[str, Any]:
-        """Get embedding coverage statistics.
-
-        Returns:
-            Dict with total, with_embeddings, coverage_pct
-        """
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*) as total,
-                    COUNT(*) FILTER (WHERE embedding IS NOT NULL) as with_embeddings
-                FROM observations
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
-            row = cur.fetchone()
-            total = row[0] if row else 0
-            with_emb = row[1] if row else 0
-            return {
-                "total": total,
-                "with_embeddings": with_emb,
-                "coverage_pct": (with_emb / max(total, 1)) * 100,
-            }
+        """Get embedding coverage statistics."""
+        return get_embedding_coverage(project_id)
 
     def _calculate_rule_adherence(self, project_id: str) -> dict[str, Any]:
         """Calculate rule adherence rates from observations."""

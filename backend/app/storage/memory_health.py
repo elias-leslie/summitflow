@@ -127,3 +127,80 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
         "stale_patterns_count": stale_patterns_count,
         "pattern_status_breakdown": pattern_status_breakdown,
     }
+
+
+def get_observation_distribution(project_id: str) -> dict[str, int]:
+    """Get observation count by type.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Dict mapping observation_type to count
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT observation_type, COUNT(*) as count
+            FROM observations
+            WHERE project_id = %s
+            GROUP BY observation_type
+            ORDER BY count DESC
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+        return {row[0]: row[1] for row in rows}
+
+
+def get_pattern_status_breakdown(project_id: str) -> dict[str, int]:
+    """Get pattern count by status.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Dict mapping status to count
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT status, COUNT(*) as count
+            FROM learned_patterns
+            WHERE project_id = %s
+            GROUP BY status
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+        return {row[0]: row[1] for row in rows}
+
+
+def get_embedding_coverage(project_id: str) -> dict[str, Any]:
+    """Get embedding coverage statistics.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Dict with total, with_embeddings, coverage_pct
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE embedding_narrative IS NOT NULL) as with_embeddings
+            FROM observations
+            WHERE project_id = %s
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+        total = row[0] if row else 0
+        with_emb = row[1] if row else 0
+        return {
+            "total": total,
+            "with_embeddings": with_emb,
+            "coverage_pct": (with_emb / max(total, 1)) * 100,
+        }
