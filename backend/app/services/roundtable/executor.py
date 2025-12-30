@@ -220,8 +220,7 @@ class RoundtableToolExecutor:
             ToolResult with output or error
         """
         # Check if tool requires write access
-        write_tools = {"write_file", "edit_file", "create_directory", "delete_file"}
-        if tool_name in write_tools and not self.has_write_access():
+        if tool_name in WRITE_TOOL_NAMES and not self.has_write_access():
             return ToolResult(
                 success=False,
                 output="",

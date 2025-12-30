@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from ..constants import VALID_AGENT_TYPES
 from ..logging_config import get_logger
 from ..schemas.tasks import (
     AcceptanceCriterion,
@@ -535,11 +536,10 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
         )
 
     # Validate agent type
-    valid_agents = {"claude", "gemini"}
-    if request.agent_type not in valid_agents:
+    if request.agent_type not in VALID_AGENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid agent_type '{request.agent_type}'. Must be one of: {valid_agents}",
+            detail=f"Invalid agent_type '{request.agent_type}'. Must be one of: {VALID_AGENT_TYPES}",
         )
 
     # Start the Celery task

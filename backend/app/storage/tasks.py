@@ -500,12 +500,8 @@ def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-                   t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
-                   t.error_message, t.branch_name, t.commits, t.pull_request_url,
-                   t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
-                   t.priority, t.labels, t.task_type, t.parent_task_id
+            f"""
+            SELECT {TASK_COLUMNS_ALIASED}
             FROM tasks t
             WHERE t.project_id = %s
               AND t.status = 'pending'
