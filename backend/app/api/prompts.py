@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from ..constants import VALID_AGENT_TYPES
 from ..storage import prompts as prompts_storage
 
 router = APIRouter(tags=["prompts"])
@@ -225,11 +226,10 @@ async def update_prompt(
     project_id: str, prompt_type: str, request: UpdatePromptRequest
 ) -> PromptConfig:
     """Create or update a prompt."""
-    valid_agents = ["claude", "gemini"]
-    if request.primary_agent not in valid_agents:
+    if request.primary_agent not in VALID_AGENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid primary_agent. Must be one of: {', '.join(valid_agents)}",
+            detail=f"Invalid primary_agent. Must be one of: {', '.join(VALID_AGENT_TYPES)}",
         )
 
     valid_categories = ["spec", "recovery", "qa", "extraction"]
