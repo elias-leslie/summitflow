@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..explorer.constants import SKIP_DIRS
 from .tools.categories import (
     EXPLORER_TOOLS,
     READ_ONLY_TOOLS,
@@ -43,20 +44,8 @@ MAX_FILE_SIZE = 5 * 1024 * 1024
 # Maximum lines to return from search
 MAX_SEARCH_RESULTS = 100
 
-# Ignore patterns for directory tree rendering
-IGNORE_PATTERNS = frozenset(
-    {
-        ".git",
-        ".venv",
-        "node_modules",
-        "__pycache__",
-        ".next",
-        ".pytest_cache",
-        "dist",
-        "build",
-        ".mypy_cache",
-    }
-)
+# Alias for backward compatibility
+IGNORE_PATTERNS = SKIP_DIRS
 
 # File type to glob pattern mapping for code search
 FILE_TYPE_MAP: dict[str, str] = {

@@ -32,27 +32,10 @@ from pathlib import Path
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
+from ..constants import SKIP_DIRS
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
-
-# Directories to skip during scan
-SKIP_DIRS = {
-    "node_modules",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".git",
-    ".next",
-    "dist",
-    "build",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "data",
-    "solution_state",
-    ".beads",
-}
 
 # File extensions to skip
 SKIP_EXTENSIONS = {
