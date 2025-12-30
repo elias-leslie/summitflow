@@ -315,14 +315,7 @@ async def delete_task(project_id: str, task_id: str) -> dict[str, Any]:
         project_id: Project ID
         task_id: Task ID
     """
-    # Verify task exists and belongs to project
-    existing = task_store.get_task(task_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     deleted = task_store.delete_task(task_id)
     if not deleted:
@@ -350,14 +343,7 @@ async def update_task_status(
         When completing a feature-type task linked to a feature with acceptance
         criteria, all criteria must pass unless force=true.
     """
-    # Verify task exists and belongs to project
-    existing = task_store.get_task(task_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     try:
         updated = task_store.update_task_status(
@@ -408,14 +394,7 @@ async def append_task_log(project_id: str, task_id: str, log_entry: TaskLogEntry
         task_id: Task ID
         log_entry: Log entry text
     """
-    # Verify task exists and belongs to project
-    existing = task_store.get_task(task_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
+    _verify_task_project(task_id, project_id)
 
     updated = task_store.append_progress_log(task_id, log_entry.entry)
     if not updated:
