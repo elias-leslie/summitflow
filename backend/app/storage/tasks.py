@@ -228,7 +228,6 @@ def list_tasks(
         priority_filter: Optional priority filter (0-4)
         labels_filter: Optional labels filter (task must have ALL specified labels)
         orphans_only: Only return tasks not linked to a capability
-        include_capability: Include capability data (not yet implemented)
         limit: Max results (default 50)
         offset: Result offset
 

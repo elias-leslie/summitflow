@@ -176,7 +176,6 @@ async def list_tasks(
     """
     labels_list = labels.split(",") if labels else None
     includes = include.split(",") if include else []
-    include_capability = "capability" in includes
     include_blockers = "blockers" in includes
 
     tasks = task_store.list_tasks(
@@ -186,7 +185,6 @@ async def list_tasks(
         priority_filter=priority,
         labels_filter=labels_list,
         orphans_only=orphans_only,
-        include_capability=include_capability,
         limit=limit,
         offset=offset,
     )
