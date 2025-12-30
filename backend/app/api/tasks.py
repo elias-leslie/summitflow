@@ -14,7 +14,6 @@ This module provides REST API endpoints for tasks:
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -41,6 +40,7 @@ from ..schemas.tasks import (
 from ..services.task_validation import validate_task_ready
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
+from ..utils.sse import format_sse_event as _sse_event
 
 logger = get_logger(__name__)
 
@@ -494,19 +494,6 @@ async def stream_task_log(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
-
-
-def _sse_event(event_type: str, data: dict[str, Any]) -> str:
-    """Format an SSE event.
-
-    Args:
-        event_type: Event type (log, status, complete, error, connected)
-        data: Event data dict
-
-    Returns:
-        Formatted SSE event string
-    """
-    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/start", response_model=dict[str, Any])

@@ -1,10 +1,8 @@
 """Message handling endpoints for roundtable."""
 
 import asyncio
-import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -16,6 +14,7 @@ from ...services.roundtable import (
     permission_manager,
 )
 from ...storage import roundtable as roundtable_storage
+from ...utils.sse import format_sse_event as _sse_event
 from .helpers import get_preview, restore_session_from_db
 from .models import (
     MessageRequest,
@@ -28,19 +27,6 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _sse_event(event_type: str, data: dict[str, Any]) -> str:
-    """Format an SSE event.
-
-    Args:
-        event_type: Event type (user_message, agent_start, agent_chunk, agent_complete, done, error)
-        data: Event data dict
-
-    Returns:
-        Formatted SSE event string
-    """
-    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 @router.post(
