@@ -145,8 +145,8 @@ __all__ = [
 # Deduplication window in minutes
 DEDUP_WINDOW_MINUTES = 60
 
-# Time interval constants
-STUCK_QUEUE_THRESHOLD = "1 hour"
+# Time interval constants (hours for parameterized queries)
+STUCK_QUEUE_THRESHOLD_HOURS = 1
 
 
 def _normalize_confidence(value: Decimal | float | None, default: float = 0.50) -> float:
@@ -156,7 +156,8 @@ def _normalize_confidence(value: Decimal | float | None, default: float = 0.50) 
     return value if value is not None else default
 
 
-STALE_PATTERN_THRESHOLD = "30 days"
+# Stale pattern threshold (days for parameterized queries)
+STALE_PATTERN_THRESHOLD_DAYS = 30
 DEFAULT_CHECKPOINT_RETENTION_DAYS = 30
 
 # Column lists for DRY queries
@@ -818,16 +819,17 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
         )
 
         # Stuck queue count (processing for > 1 hour)
+        stuck_params = [STUCK_QUEUE_THRESHOLD_HOURS, *params]
         stuck_queue_count = _fetch_count(
             cur,
             f"""
             SELECT COUNT(*)
             FROM observation_queue
             WHERE status = 'processing'
-              AND created_at < NOW() - INTERVAL '{STUCK_QUEUE_THRESHOLD}'
+              AND created_at < NOW() - make_interval(hours := %s)
             {project_filter}
             """,
-            params,
+            stuck_params,
         )
 
         # Oldest pending age in minutes
@@ -857,16 +859,17 @@ def get_lifecycle_stats(project_id: str | None = None) -> dict[str, Any]:
         )
 
         # Stale patterns count (applied but unused for 30+ days)
+        stale_params = [STALE_PATTERN_THRESHOLD_DAYS, *params]
         stale_patterns_count = _fetch_count(
             cur,
             f"""
             SELECT COUNT(*)
             FROM learned_patterns
             WHERE status = 'applied'
-              AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '{STALE_PATTERN_THRESHOLD}')
+              AND (last_used_at IS NULL OR last_used_at < NOW() - make_interval(days := %s))
             {project_filter}
             """,
-            params,
+            stale_params,
         )
 
         # Pattern status breakdown
