@@ -37,5 +37,28 @@ repos:
         args: [--project, backend/pyrightconfig.json]
         files: ^backend/app/
 
+  # Frontend validation hooks
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: tsc
+        name: typescript
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: bash -c 'cd frontend && npx prettier --write --ignore-unknown'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css|md)$
+
 ci:
   autoupdate_schedule: weekly
