@@ -44,9 +44,6 @@ MAX_FILE_SIZE = 5 * 1024 * 1024
 # Maximum lines to return from search
 MAX_SEARCH_RESULTS = 100
 
-# Alias for backward compatibility
-IGNORE_PATTERNS = SKIP_DIRS
-
 # File type to glob pattern mapping for code search
 FILE_TYPE_MAP: dict[str, str] = {
     "py": "*.py",
@@ -114,7 +111,7 @@ def _limit_search_results(output: str, max_results: int = MAX_SEARCH_RESULTS) ->
 
 def _should_ignore_item(name: str) -> bool:
     """Check if an item should be ignored in directory tree."""
-    return name in IGNORE_PATTERNS
+    return name in SKIP_DIRS
 
 
 def _build_directory_tree(base: Path, max_depth: int) -> list[str]:

@@ -110,10 +110,6 @@ class CheckpointDict(TypedDict, total=False):
 
 logger = logging.getLogger(__name__)
 
-# Alias for internal use (maintains underscore convention)
-_json_or_default = json_or_default
-_build_where_clause = build_where_clause
-
 # Expose queue, diary, and pattern functions in __all__ for star imports
 __all__ = [
     "archive_failed_queue_items",
@@ -293,14 +289,14 @@ def create_observation(
                 concepts,
                 priority,
                 confidence,
-                _json_or_default(entities, "[]"),
+                json_or_default(entities, "[]"),
                 subtitle,
                 narrative,
-                _json_or_default(facts),
+                json_or_default(facts),
                 files_read,
                 files_modified,
                 tool_name,
-                _json_or_default(tool_input),
+                json_or_default(tool_input),
                 discovery_tokens,
                 extracted_by,
                 raw_excerpt,
@@ -355,7 +351,7 @@ def list_observations(
     if min_confidence is not None:
         special_conditions.append("confidence >= %s")
 
-    where_clause, params = _build_where_clause(
+    where_clause, params = build_where_clause(
         {
             "project_id": project_id,
             "agent_type": agent_type,
@@ -402,7 +398,7 @@ def count_observations(
     Returns:
         Total count of matching observations.
     """
-    where_clause, params = _build_where_clause(
+    where_clause, params = build_where_clause(
         {
             "project_id": project_id,
             "agent_type": agent_type,
@@ -682,14 +678,14 @@ def create_checkpoint(
                 agent_type,
                 current_action,
                 question,
-                _json_or_default(options),
+                json_or_default(options),
                 recommendation,
-                _json_or_default(completed_steps),
-                _json_or_default(remaining_steps),
-                _json_or_default(files_modified),
-                _json_or_default(decisions_made),
+                json_or_default(completed_steps),
+                json_or_default(remaining_steps),
+                json_or_default(files_modified),
+                json_or_default(decisions_made),
                 conversation_summary,
-                _json_or_default(context_snapshot),
+                json_or_default(context_snapshot),
                 tokens_used,
             ),
         )

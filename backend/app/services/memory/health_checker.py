@@ -49,7 +49,6 @@ from .types import (
     HealthReport,
     StaleSection,
     Warning,
-    get_project_root,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,9 +66,6 @@ __all__ = [
     "StaleSection",
     "Warning",
 ]
-
-# Keep private function for backwards compatibility
-_get_project_root = get_project_root
 
 
 class MemoryHealthChecker:

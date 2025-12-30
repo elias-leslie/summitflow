@@ -17,9 +17,6 @@ from ..agents import AgentType, LLMResponse, get_agent
 from ..agents.claude import ClaudeClient
 from ..agents.gemini import GeminiClient
 from .executor import (
-    WRITE_TOOL_NAMES,
-    ToolResult,
-    format_tool_results_for_prompt,
     to_adk_function_tools,
     to_claude_sdk_tools,
 )
@@ -278,247 +275,27 @@ class RoundtableService:
         context: str,
         session: RoundtableSession | None = None,
     ) -> LLMResponse:
-        """Send message to a specific agent with context and optional tool access.
+        """Send message to a specific agent with context.
 
-        If session has tools_enabled=True, agents can use read-only codebase tools.
-        The agent may call tools multiple times before providing a final response.
+        Note: Tool access has been migrated to the async route_message_with_native_tools()
+        path which uses SDK-native tool calling. This method provides non-tool generation
+        for backward compatibility. New code should use route_message_with_native_tools().
         """
         model = self.claude_model if agent_type == "claude" else self.gemini_model
         agent = get_agent(agent_type, model=model)
 
         # Build prompts using shared utilities
-        tools_enabled = session.tools_enabled if session else False
-        system_prompt = build_system_prompt(agent_type, tools_enabled)
+        # Note: tools_enabled flag is ignored in this path (deprecated)
+        system_prompt = build_system_prompt(agent_type, False)
         prompt = build_prompt_with_context(message, context, agent_type)
 
-        # Check if tools are enabled
-        if session and session.tools_enabled:
-            return self._send_with_tools(
-                agent=agent,
-                prompt=prompt,
-                system=system_prompt,
-                session=session,
-                session_id=session.id,
-            )
-
-        # No tools - simple generation
+        # Simple generation without tools
         return agent.generate(
             prompt=prompt,
             system=system_prompt,
             max_tokens=4096,
             temperature=0.7,
         )
-
-    def _send_with_tools(
-        self,
-        agent: Any,
-        prompt: str,
-        system: str,
-        session: RoundtableSession,
-        max_iterations: int = 30,
-        max_tool_calls: int = 100,
-        detect_duplicates: bool = True,
-        session_id: str | None = None,
-    ) -> LLMResponse:
-        """Send message with tool access, handling tool calls in a loop.
-
-        .. deprecated::
-            This method uses the legacy JSON-based tool protocol. For new code,
-            use `_send_with_tools_native()` which uses Claude SDK hooks and
-            Google ADK callbacks for native tool support and better session
-            management.
-
-        Uses multiple safeguards to prevent runaway agents:
-        - max_iterations: Maximum rounds of tool calls (safety net)
-        - max_tool_calls: Total tool calls allowed across all iterations
-        - detect_duplicates: Stop if agent calls same tool with same params
-
-        Args:
-            agent: LLM client to use
-            prompt: User prompt
-            system: System prompt
-            session: Session with tool executor
-            max_iterations: Maximum tool call rounds (default 30)
-            max_tool_calls: Maximum total tool calls (default 100)
-            detect_duplicates: Stop on repeated identical calls (default True)
-            session_id: Session ID for permission callbacks (optional)
-
-        Returns:
-            Final LLMResponse after all tool calls are complete
-        """
-        import json as json_module
-        import warnings
-
-        warnings.warn(
-            "_send_with_tools() uses the legacy JSON protocol. "
-            "Use _send_with_tools_native() for SDK-native tool support.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        tools = session.tool_executor.get_available_tools()
-        current_prompt = prompt
-        conversation_history: list[dict[str, Any]] = []
-
-        # Track tool usage for limits
-        total_tool_calls = 0
-        seen_calls: set[str] = set()
-        response = None
-
-        for iteration in range(max_iterations):
-            # Generate with tools
-            response = agent.generate_with_tools(
-                prompt=current_prompt,
-                tools=tools,
-                system=system,
-                conversation_history=conversation_history,
-                max_tokens=4096,
-                temperature=0.7,
-            )
-
-            # If no tool calls, we're done
-            if response.stop_reason != "tool_use" or not response.tool_calls:
-                logger.info(
-                    f"Agent completed after {iteration} iterations, "
-                    f"{total_tool_calls} total tool calls"
-                )
-                return response
-
-            # Execute tool calls with safety checks
-            tool_results = []
-            should_stop = False
-
-            for tool_call in response.tool_calls:
-                tool_name = tool_call.get("name", "")
-                parameters = tool_call.get("parameters", {})
-
-                # Check for duplicate calls (agent confusion)
-                if detect_duplicates:
-                    call_key = f"{tool_name}:{json_module.dumps(parameters, sort_keys=True)}"
-                    if call_key in seen_calls:
-                        logger.warning(f"Duplicate tool call detected: {tool_name}, stopping")
-                        should_stop = True
-                        break
-                    seen_calls.add(call_key)
-
-                # Check tool call budget
-                total_tool_calls += 1
-                if total_tool_calls > max_tool_calls:
-                    logger.warning(f"Tool call budget exhausted ({max_tool_calls} calls)")
-                    should_stop = True
-                    break
-
-                logger.info(f"Executing tool [{total_tool_calls}/{max_tool_calls}]: {tool_name}")
-
-                # Check if this is a write tool that needs permission
-                if tool_name in WRITE_TOOL_NAMES:
-                    if not session.tool_executor.has_write_access():
-                        # Write access not enabled - block
-                        result = ToolResult(
-                            success=False,
-                            output="",
-                            error=f"Write access not enabled for {tool_name}",
-                        )
-                        tool_results.append((tool_name, result))
-                        continue
-
-                    if not session.tool_executor.yolo_mode:
-                        # Need to request permission
-                        effective_session_id = session_id or current_session_id.get()
-                        if effective_session_id and self._permission_callback:
-                            # Set the context for the permission callback
-                            current_session_id.set(effective_session_id)
-                            # Run async permission callback in sync context
-                            approved = _run_async_in_sync_context(
-                                self._permission_callback(tool_name, parameters)
-                            )
-
-                            if not approved:
-                                result = ToolResult(
-                                    success=False,
-                                    output="",
-                                    error=f"Permission denied for {tool_name}",
-                                )
-                                tool_results.append((tool_name, result))
-                                logger.info(f"Permission denied for {tool_name}")
-                                continue
-
-                            logger.info(f"Permission granted for {tool_name}")
-                        else:
-                            # No session context or callback - deny for safety
-                            logger.warning(f"No permission callback for {tool_name}, denying")
-                            result = ToolResult(
-                                success=False,
-                                output="",
-                                error="Permission required but no callback configured",
-                            )
-                            tool_results.append((tool_name, result))
-                            continue
-
-                result = session.tool_executor.execute(tool_name, parameters)
-                tool_results.append((tool_name, result))
-
-                logger.info(
-                    f"Tool {tool_name} result: success={result.success}, "
-                    f"output_len={len(result.output)}"
-                )
-
-                # Capture observation (fire-and-forget)
-                if result.success:
-                    self._capture_observation(
-                        project_id=session.project_id,
-                        session_id=session.id,
-                        agent_type=session.agent_override or "unknown",
-                        tool_name=tool_name,
-                        tool_input=parameters,
-                        tool_output=result.output,
-                    )
-
-            # If we hit a limit, return current response
-            if should_stop:
-                return response
-
-            # Add to conversation history
-            conversation_history.append(
-                {
-                    "role": "assistant",
-                    "content": response.content,
-                }
-            )
-
-            # Format tool results for next prompt
-            results_text = format_tool_results_for_prompt(tool_results)
-            conversation_history.append(
-                {
-                    "role": "user",
-                    "content": f"Tool results:\n\n{results_text}\n\nContinue with your analysis.",
-                }
-            )
-
-            # Update prompt for next iteration
-            current_prompt = (
-                f"You called the following tools. Here are the results:\n\n"
-                f"{results_text}\n\n"
-                f"Based on these results, continue your analysis. "
-                f"If you need more information, call additional tools. "
-                f"When you have enough information, provide your final response as plain text."
-            )
-
-        # Max iterations reached
-        logger.warning(
-            f"Agent reached max iterations ({max_iterations}), {total_tool_calls} tool calls made"
-        )
-        if response is None:
-            # Fallback in case max_iterations was 0
-            from ..agents.base import LLMResponse
-
-            response = LLMResponse(
-                content="No iterations were executed (max_iterations=0)",
-                provider="unknown",
-                model="unknown",
-                stop_reason="max_iterations_zero",
-            )
-        return response
 
     async def _send_with_tools_native(
         self,
