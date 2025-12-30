@@ -8,20 +8,19 @@ class TestGetHealthMetrics:
     """Tests for get_health_metrics method."""
 
     @patch("app.services.memory.pattern_applier.memory_storage")
-    @patch("app.services.memory.health_checker.get_connection")
-    def test_returns_expected_structure(self, mock_get_conn, mock_storage):
+    @patch("app.services.memory.health_checker.get_embedding_coverage")
+    @patch("app.services.memory.health_checker.get_pattern_status_breakdown")
+    @patch("app.services.memory.health_checker.get_observation_distribution")
+    def test_returns_expected_structure(
+        self, mock_obs_dist, mock_pattern_status, mock_embed_cov, mock_storage
+    ):
         """Health metrics dict has expected keys."""
         from app.services.memory.health_checker import MemoryHealthChecker
 
-        # Mock DB calls
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [("refactoring", 5), ("operational", 3)]
-        mock_cursor.fetchone.return_value = (10, 8)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        # Mock DB function return values
+        mock_obs_dist.return_value = {"refactoring": 5, "operational": 3}
+        mock_pattern_status.return_value = {"approved": 2, "applied": 1}
+        mock_embed_cov.return_value = {"total": 10, "with_embeddings": 8}
 
         # Mock storage
         mock_storage.list_patterns.return_value = []
@@ -55,8 +54,12 @@ class TestCheckAndCorrect:
     """Tests for check_and_correct method."""
 
     @patch("app.services.memory.pattern_applier.memory_storage")
-    @patch("app.services.memory.health_checker.get_connection")
-    def test_applies_approved_patterns(self, mock_get_conn, mock_storage):
+    @patch("app.services.memory.health_checker.get_embedding_coverage")
+    @patch("app.services.memory.health_checker.get_pattern_status_breakdown")
+    @patch("app.services.memory.health_checker.get_observation_distribution")
+    def test_applies_approved_patterns(
+        self, mock_obs_dist, mock_pattern_status, mock_embed_cov, mock_storage
+    ):
         """Applies approved patterns and records correction."""
         from app.services.memory.health_checker import MemoryHealthChecker
 
@@ -65,15 +68,10 @@ class TestCheckAndCorrect:
             {"id": "pat-1", "title": "Test Pattern", "confidence": 0.8},
         ]
 
-        # Mock DB calls
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = []
-        mock_cursor.fetchone.return_value = (0, 0)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        # Mock DB function return values
+        mock_obs_dist.return_value = {}
+        mock_pattern_status.return_value = {"approved": 1}
+        mock_embed_cov.return_value = {"total": 0, "with_embeddings": 0}
 
         checker = MemoryHealthChecker(project_id="summitflow")
 
