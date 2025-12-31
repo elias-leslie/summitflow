@@ -24,6 +24,9 @@ from ..constants import VALID_AGENT_TYPES
 from ..logging_config import get_logger
 from ..schemas.tasks import (
     AcceptanceCriterion,
+    BatchTaskRequest,
+    BatchTaskResponse,
+    BatchTaskResult,
     BlockerInfo,
     CapabilityContext,
     ClaimTaskRequest,
@@ -332,6 +335,58 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         acceptance_criteria=acceptance_criteria_dicts,
     )
     return _task_to_response(created)
+
+
+@router.post("/projects/{project_id}/tasks/batch", response_model=BatchTaskResponse)
+async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTaskResponse:
+    """Create multiple tasks in a single request.
+
+    Handles partial failures: returns both created tasks and errors.
+    Each task is created independently, so failures don't rollback successes.
+
+    Note: This endpoint does NOT validate acceptance_criteria for batch creates.
+    For tasks with acceptance criteria, use the single create endpoint.
+
+    Args:
+        project_id: Project ID
+        body: List of tasks to create (with optional capability_id linkages)
+
+    Returns:
+        BatchTaskResponse with created tasks and any errors.
+    """
+    created: list[TaskResponse] = []
+    errors: list[BatchTaskResult] = []
+
+    for item in body.items:
+        try:
+            task = task_store.create_task(
+                project_id=project_id,
+                title=item.title,
+                description=item.description,
+                capability_id=item.capability_id,
+                priority=item.priority,
+                labels=item.labels,
+                task_type=item.task_type,
+                parent_task_id=item.parent_task_id,
+                objective=item.objective,
+            )
+            created.append(_task_to_response(task))
+        except Exception as e:
+            error_msg = str(e)
+            if "violates foreign key constraint" in error_msg.lower():
+                if "capability_id" in error_msg.lower():
+                    error_msg = f"Capability with id {item.capability_id} not found"
+                elif "parent_task_id" in error_msg.lower():
+                    error_msg = f"Parent task {item.parent_task_id} not found"
+            errors.append(
+                BatchTaskResult(
+                    title=item.title,
+                    success=False,
+                    error=error_msg,
+                )
+            )
+
+    return BatchTaskResponse(created=created, errors=errors)
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)

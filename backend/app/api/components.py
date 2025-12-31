@@ -105,3 +105,75 @@ async def delete_component(project_id: str, component_id: str) -> dict[str, str]
         raise HTTPException(status_code=404, detail=f"Component {component_id} not found")
 
     return {"status": "deleted", "component_id": component_id}
+
+
+# =============================================================================
+# Batch Endpoints
+# =============================================================================
+
+
+class BatchComponentCreate(BaseModel):
+    """Request model for batch component creation."""
+
+    items: list[ComponentCreate]
+
+
+class BatchCreateResult(BaseModel):
+    """Result for a single item in batch create."""
+
+    component_id: str
+    success: bool
+    id: int | None = None
+    error: str | None = None
+
+
+class BatchComponentResponse(BaseModel):
+    """Response model for batch component creation."""
+
+    created: list[ComponentResponse]
+    errors: list[BatchCreateResult]
+
+
+@router.post("/{project_id}/components/batch", response_model=BatchComponentResponse)
+async def batch_create_components(
+    project_id: str, body: BatchComponentCreate
+) -> BatchComponentResponse:
+    """Create multiple components in a single request.
+
+    Handles partial failures: returns both created components and errors.
+    Each component is created independently, so failures don't rollback successes.
+
+    Args:
+        project_id: Project ID
+        body: List of components to create
+
+    Returns:
+        BatchComponentResponse with created components and any errors.
+    """
+    created: list[ComponentResponse] = []
+    errors: list[BatchCreateResult] = []
+
+    for item in body.items:
+        try:
+            component = storage.create_component(
+                project_id=project_id,
+                component_id=item.component_id,
+                name=item.name,
+                description=item.description,
+                priority=item.priority,
+                explorer_entry_id=item.explorer_entry_id,
+            )
+            created.append(ComponentResponse(**component))
+        except Exception as e:
+            error_msg = str(e)
+            if "duplicate key" in error_msg.lower() or "unique constraint" in error_msg.lower():
+                error_msg = f"Component {item.component_id} already exists"
+            errors.append(
+                BatchCreateResult(
+                    component_id=item.component_id,
+                    success=False,
+                    error=error_msg,
+                )
+            )
+
+    return BatchComponentResponse(created=created, errors=errors)

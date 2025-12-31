@@ -272,3 +272,43 @@ class VerifyTaskCriterionRequest(BaseModel):
 
     verified: bool = True
     verified_by: Literal["opus", "test", "human", "agent"] = "human"
+
+
+# =============================================================================
+# Batch Creation Models
+# =============================================================================
+
+
+class BatchTaskCreate(BaseModel):
+    """Request model for a single task in batch creation."""
+
+    title: str
+    description: str | None = None
+    capability_id: int | None = None  # Database ID of capability (optional)
+    priority: int = Field(default=2, ge=0, le=4)
+    labels: list[str] = Field(default_factory=list)
+    task_type: Literal["feature", "bug", "task"] = "task"
+    parent_task_id: str | None = None
+    objective: str | None = None
+
+
+class BatchTaskRequest(BaseModel):
+    """Request model for batch task creation."""
+
+    items: list[BatchTaskCreate]
+
+
+class BatchTaskResult(BaseModel):
+    """Result for a single item in batch task create."""
+
+    title: str
+    success: bool
+    id: str | None = None
+    error: str | None = None
+
+
+class BatchTaskResponse(BaseModel):
+    """Response model for batch task creation."""
+
+    created: list[TaskResponse]
+    errors: list[BatchTaskResult]

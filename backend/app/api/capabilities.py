@@ -459,3 +459,123 @@ async def link_test_to_criterion(
             raise HTTPException(status_code=400, detail="Failed to link test")
 
     return {"status": "linked", "criterion_id": criterion_id, "test_id": body.test_id}
+
+
+# =============================================================================
+# Batch Endpoints
+# =============================================================================
+
+
+class BatchCriterionCreate(BaseModel):
+    """Criterion to create and link to capability during batch creation."""
+
+    criterion: str = Field(min_length=10, description="Specific measurable condition")
+    category: str = Field(
+        default="correctness", description="performance, correctness, security, quality"
+    )
+    measurement: str = Field(default="test", description="test, metric, tool, manual")
+    threshold: str | None = Field(default=None, description="Specific value e.g., '<200ms'")
+
+
+class BatchCapabilityCreate(BaseModel):
+    """Request model for a single capability in batch creation."""
+
+    component_id: int
+    capability_id: str
+    name: str
+    description: str | None = None
+    priority: int = 2
+    criteria: list[BatchCriterionCreate] = Field(default_factory=list)
+
+
+class BatchCapabilityRequest(BaseModel):
+    """Request model for batch capability creation."""
+
+    items: list[BatchCapabilityCreate]
+
+
+class BatchCapabilityResult(BaseModel):
+    """Result for a single item in batch create."""
+
+    capability_id: str
+    success: bool
+    id: int | None = None
+    criteria_created: int = 0
+    error: str | None = None
+
+
+class BatchCapabilityResponse(BaseModel):
+    """Response model for batch capability creation."""
+
+    created: list[CapabilityResponse]
+    errors: list[BatchCapabilityResult]
+
+
+@router.post("/{project_id}/capabilities/batch", response_model=BatchCapabilityResponse)
+async def batch_create_capabilities(
+    project_id: str, body: BatchCapabilityRequest
+) -> BatchCapabilityResponse:
+    """Create multiple capabilities in a single request.
+
+    Each capability can optionally include nested criteria that will be
+    created and linked automatically.
+
+    Handles partial failures: returns both created capabilities and errors.
+    Each capability is created independently, so failures don't rollback successes.
+
+    Args:
+        project_id: Project ID
+        body: List of capabilities to create (with optional nested criteria)
+
+    Returns:
+        BatchCapabilityResponse with created capabilities and any errors.
+    """
+    created: list[CapabilityResponse] = []
+    errors: list[BatchCapabilityResult] = []
+
+    for item in body.items:
+        try:
+            # Create the capability
+            capability = storage.create_capability(
+                project_id=project_id,
+                component_id=item.component_id,
+                capability_id=item.capability_id,
+                name=item.name,
+                description=item.description,
+                priority=item.priority,
+            )
+
+            # Create and link criteria if provided
+            criteria_count = 0
+            if item.criteria:
+                with get_connection() as conn:
+                    for crit in item.criteria:
+                        criterion = criteria_storage.create_criterion(
+                            conn=conn,
+                            project_id=project_id,
+                            criterion=crit.criterion,
+                            category=crit.category,
+                            measurement=crit.measurement,
+                            threshold=crit.threshold,
+                        )
+                        criteria_storage.link_criterion_to_capability(
+                            conn, capability["id"], criterion["id"]
+                        )
+                        criteria_count += 1
+
+            created.append(CapabilityResponse(**capability))
+        except Exception as e:
+            error_msg = str(e)
+            if "duplicate key" in error_msg.lower() or "unique constraint" in error_msg.lower():
+                error_msg = f"Capability {item.capability_id} already exists"
+            elif "violates foreign key constraint" in error_msg.lower():
+                error_msg = f"Component with id {item.component_id} not found"
+            errors.append(
+                BatchCapabilityResult(
+                    capability_id=item.capability_id,
+                    success=False,
+                    error=error_msg,
+                )
+            )
+
+    return BatchCapabilityResponse(created=created, errors=errors)
