@@ -746,3 +746,40 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
         )
         result = cur.fetchone()
         return bool(result[0]) if result else False
+
+
+def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
+    """Check if a bug task already exists for a specific error.
+
+    Used for deduplication when auto-generating bug tasks from error observations.
+
+    Args:
+        project_id: Project to check
+        error_title: Error title to look for in task titles
+
+    Returns:
+        True if a pending/running bug task exists for this error
+    """
+    # Normalize the error title for matching (extract first 60 chars, lowercase)
+    normalized_title = error_title[:60].lower().strip()
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM tasks
+                WHERE project_id = %s
+                AND status IN ('pending', 'running', 'paused', 'pending_review')
+                AND task_type = 'bug'
+                AND (
+                    -- Check title contains error title (case-insensitive)
+                    LOWER(title) LIKE %s
+                    -- Or check description contains error title
+                    OR LOWER(description) LIKE %s
+                )
+            )
+            """,
+            (project_id, f"%{normalized_title}%", f"%{normalized_title}%"),
+        )
+        result = cur.fetchone()
+        return bool(result[0]) if result else False

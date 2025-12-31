@@ -156,3 +156,142 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error generating tasks from scan: {e}")
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
+
+
+@celery_app.task(name="summitflow.generate_bug_tasks")  # type: ignore[misc]
+def generate_bug_tasks(project_id: str) -> dict[str, Any]:
+    """Generate bug tasks from error observations.
+
+    Fetches high-confidence error observations from the memory system
+    and creates bug tasks for each (if not already tracked).
+
+    Args:
+        project_id: Project to generate tasks for
+
+    Returns:
+        Dict with created_count, errors_scanned, skipped_count
+    """
+    # Import here to avoid circular imports
+    from app.storage.memory import query_observations
+
+    try:
+        # Fetch recent high-confidence error observations
+        errors = query_observations(
+            project_id=project_id,
+            observation_type="error",
+            min_confidence=0.8,
+            days=7,
+            limit=20,
+        )
+
+        created = 0
+        scanned = 0
+        skipped = 0
+
+        for error in errors:
+            scanned += 1
+            error_title = error.get("title", "")
+            narrative = error.get("narrative", "")
+            files = error.get("files", [])
+            confidence = error.get("confidence", 0.0)
+            observation_id = str(error.get("id", ""))  # Convert UUID to string
+
+            if not error_title:
+                skipped += 1
+                continue
+
+            # Skip if bug task already exists for this error
+            if task_store.bug_task_exists_for_error(project_id, error_title):
+                skipped += 1
+                logger.debug(f"Bug task already exists for: {error_title[:50]}...")
+                continue
+
+            # Create task title (prefix with "Fix:")
+            title = f"Fix: {error_title[:80]}"
+
+            # Determine category based on affected files
+            category = "backend"
+            if files:
+                first_file = files[0] if isinstance(files[0], str) else files[0].get("path", "")
+                if any(ext in first_file for ext in [".tsx", ".ts", ".jsx", ".js"]):
+                    category = "frontend"
+
+            # Generate plan_content with investigation and fix tasks
+            plan_content = {
+                "tasks": [
+                    {
+                        "id": "1.1",
+                        "category": category,
+                        "description": f"Investigate: {error_title[:60]}",
+                        "steps": [
+                            "Read the error observation narrative for context",
+                            f"Examine affected files: {', '.join(files[:3]) if files else 'N/A'}",
+                            "Identify root cause of the error",
+                            "Document findings in progress log",
+                        ],
+                        "passes": False,
+                    },
+                    {
+                        "id": "1.2",
+                        "category": category,
+                        "description": f"Fix: {error_title[:60]}",
+                        "steps": [
+                            "Implement fix based on investigation findings",
+                            "Run tests to verify fix works",
+                            "Ensure no regressions introduced",
+                            "Commit changes with descriptive message",
+                        ],
+                        "passes": False,
+                    },
+                ],
+                "current_task_id": "1.1",
+                "context": {
+                    "affected_files": files[:5] if files else [],
+                    "capability_id": None,
+                    "source": "error_observation",
+                    "observation_id": observation_id,
+                    "confidence": confidence,
+                },
+            }
+
+            # Build description from narrative
+            description = (
+                f"Auto-generated from error observation.\n\n"
+                f"**Error:** {error_title}\n\n"
+                f"**Confidence:** {confidence:.0%}\n\n"
+            )
+            if narrative:
+                description += f"**Details:**\n{narrative[:500]}\n\n"
+            if files:
+                description += "**Affected Files:**\n" + "\n".join(f"- {f}" for f in files[:5])
+
+            # Create the bug task
+            task = task_store.create_task(
+                project_id=project_id,
+                title=title,
+                description=description,
+                priority=2,  # Default medium priority for auto-generated bugs
+                task_type="bug",
+                labels=["auto-generated", "bug", "tier:2"],
+            )
+
+            if task:
+                # Update with plan_content
+                task_store.update_task(task["id"], plan_content=plan_content)
+                created += 1
+                logger.info(f"Created bug task {task['id']}: {title[:60]}...")
+
+        logger.info(
+            f"Bug task generation complete for {project_id}: "
+            f"created={created}, scanned={scanned}, skipped={skipped}"
+        )
+
+        return {
+            "created_count": created,
+            "errors_scanned": scanned,
+            "skipped_count": skipped,
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating bug tasks: {e}")
+        return {"error": str(e), "created_count": 0, "errors_scanned": 0, "skipped_count": 0}
