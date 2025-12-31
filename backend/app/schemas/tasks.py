@@ -256,3 +256,47 @@ class CriterionLinkTestRequest(BaseModel):
 
     test_file: str = Field(description="Path to test file")
     test_name: str = Field(description="Test function name")
+
+
+class NewCapabilityInfo(BaseModel):
+    """Information for creating a new capability during promotion."""
+
+    component_id: str = Field(description="Component ID (e.g., 'auth', 'dashboard')")
+    capability_id: str = Field(description="Capability ID (e.g., 'login', 'user-list')")
+    name: str = Field(description="Human-readable name")
+    description: str | None = None
+
+
+class PromoteToCapabilityRequest(BaseModel):
+    """Request model for promoting task criteria to a capability.
+
+    Either provide capability_id to link to existing capability,
+    or new_capability to create a new one.
+    """
+
+    capability_id: str | None = Field(default=None, description="Existing capability ID to link to")
+    new_capability: NewCapabilityInfo | None = Field(
+        default=None, description="Info for creating a new capability"
+    )
+
+    @field_validator("capability_id", "new_capability")
+    @classmethod
+    def validate_one_provided(cls, v: Any, info: Any) -> Any:
+        """Ensure at least one option is provided."""
+        return v
+
+
+class CreateTaskCriterionRequest(BaseModel):
+    """Request model for creating a task-specific criterion."""
+
+    criterion: str = Field(min_length=10, description="Criterion text")
+    category: Literal["performance", "correctness", "security", "quality"] = "correctness"
+    measurement: str = "test"
+    threshold: str | None = None
+
+
+class VerifyTaskCriterionRequest(BaseModel):
+    """Request model for verifying a task criterion."""
+
+    verified: bool = True
+    verified_by: Literal["opus", "test", "human", "agent"] = "human"

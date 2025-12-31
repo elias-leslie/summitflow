@@ -27,6 +27,7 @@ from ..schemas.tasks import (
     BlockerInfo,
     CapabilityContext,
     ClaimTaskRequest,
+    CreateTaskCriterionRequest,
     CriteriaValidateRequest,
     CriteriaValidateResponse,
     CriterionFailure,
@@ -34,6 +35,7 @@ from ..schemas.tasks import (
     CriterionVerifyRequest,
     DependencyCreate,
     DependencyResponse,
+    PromoteToCapabilityRequest,
     StartTaskRequest,
     TaskCreate,
     TaskListResponse,
@@ -42,11 +44,23 @@ from ..schemas.tasks import (
     TaskStatusUpdate,
     TaskUpdate,
     ValidationResultResponse,
+    VerifyTaskCriterionRequest,
 )
 from ..services.criteria_validator import validate_criteria
 from ..services.task_validation import validate_task_ready
+from ..storage import capabilities as cap_store
+from ..storage import components as comp_store
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
+from ..storage.connection import get_connection
+from ..storage.criteria import (
+    create_criterion,
+    get_criteria_for_task,
+    link_criterion_to_capability,
+    link_criterion_to_task,
+    unlink_criterion_from_task,
+    update_task_criterion_verification,
+)
 from ..utils.sse import format_sse_event as _sse_event
 
 logger = get_logger(__name__)
@@ -285,7 +299,7 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         task: Task data (title, description, priority, labels, task_type, etc.)
     """
     # Validate acceptance criteria if provided
-    acceptance_criteria_dicts: list[dict] | None = None
+    acceptance_criteria_dicts: list[dict[str, Any]] | None = None
     if task.acceptance_criteria:
         if not task.objective:
             raise HTTPException(
@@ -977,3 +991,275 @@ async def link_test_to_criterion(
         raise HTTPException(status_code=500, detail="Failed to update task")
 
     return _task_to_response(updated)
+
+
+# =============================================================================
+# Task Criteria Junction Table Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/promote-to-capability",
+    response_model=TaskResponse,
+)
+async def promote_task_to_capability(
+    project_id: str,
+    task_id: str,
+    request: PromoteToCapabilityRequest,
+) -> TaskResponse:
+    """Promote task-specific criteria to a capability.
+
+    Transfers criteria from task_criteria junction to capability_criteria junction.
+    This makes the criteria reusable across multiple tasks.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID with task-specific criteria
+        request: Either capability_id (existing) or new_capability info
+
+    Returns:
+        Updated task with capability_id set.
+
+    Raises:
+        HTTPException(400): If neither capability_id nor new_capability provided
+        HTTPException(404): Task or capability not found
+        HTTPException(422): Task has no task-specific criteria to promote
+    """
+    if not request.capability_id and not request.new_capability:
+        raise HTTPException(
+            status_code=400,
+            detail="Either capability_id or new_capability must be provided",
+        )
+
+    _verify_task_project(task_id, project_id)
+
+    with get_connection() as conn:
+        # Get task-specific criteria
+        task_criteria = get_criteria_for_task(conn, project_id, task_id)
+
+        if not task_criteria:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Task {task_id} has no task-specific criteria to promote",
+            )
+
+        # Get or create capability
+        if request.capability_id:
+            capability = cap_store.get_capability(project_id, request.capability_id)
+            if not capability:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Capability {request.capability_id} not found",
+                )
+            capability_db_id = capability["id"]
+        else:
+            # Create new capability (new_capability is guaranteed non-None here)
+            new_cap = request.new_capability
+            assert new_cap is not None  # Type narrowing for mypy
+
+            # Look up or create component by string ID
+            component = comp_store.get_component(project_id, new_cap.component_id)
+            if not component:
+                # Create the component
+                component = comp_store.create_component(
+                    project_id=project_id,
+                    component_id=new_cap.component_id,
+                    name=new_cap.component_id.replace("-", " ").title(),
+                )
+                logger.info(
+                    "component_created_for_promotion",
+                    task_id=task_id,
+                    component_id=new_cap.component_id,
+                )
+
+            capability = cap_store.create_capability(
+                project_id=project_id,
+                component_id=component["id"],  # Use database ID
+                capability_id=new_cap.capability_id,
+                name=new_cap.name,
+                description=new_cap.description,
+            )
+            capability_db_id = capability["id"]
+            logger.info(
+                "capability_created_for_promotion",
+                task_id=task_id,
+                capability_id=new_cap.capability_id,
+            )
+
+        # Link each criterion to the capability
+        for criterion in task_criteria:
+            criterion_db_id = criterion["id"]
+            link_criterion_to_capability(conn, capability_db_id, criterion_db_id)
+            # Remove from task_criteria (criterion persists via capability link)
+            unlink_criterion_from_task(conn, task_id, criterion_db_id)
+
+        logger.info(
+            "criteria_promoted",
+            task_id=task_id,
+            capability_id=capability["capability_id"],
+            count=len(task_criteria),
+        )
+
+    # Update task to point to the capability
+    updated = task_store.update_task(task_id, capability_id=capability_db_id)
+
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update task")
+
+    return _task_to_response(updated)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/criteria",
+    response_model=dict[str, Any],
+)
+async def create_task_criterion(
+    project_id: str,
+    task_id: str,
+    request: CreateTaskCriterionRequest,
+) -> dict[str, Any]:
+    """Create a criterion and link it to a task.
+
+    Creates a new entry in acceptance_criteria and links it via task_criteria.
+    These are "standalone" criteria that exist only for this task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        request: Criterion details
+
+    Returns:
+        Created criterion with id and criterion_id.
+    """
+    _verify_task_project(task_id, project_id)
+
+    with get_connection() as conn:
+        # Create the criterion
+        criterion = create_criterion(
+            conn=conn,
+            project_id=project_id,
+            criterion=request.criterion,
+            category=request.category,
+            measurement=request.measurement,
+            threshold=request.threshold,
+            created_by_task_id=task_id,
+        )
+
+        # Link to task
+        link_criterion_to_task(conn, task_id, criterion["id"])
+
+        logger.info(
+            "task_criterion_created",
+            task_id=task_id,
+            criterion_id=criterion["criterion_id"],
+        )
+
+    return {
+        "id": criterion["id"],
+        "criterion_id": criterion["criterion_id"],
+        "criterion": criterion["criterion"],
+        "category": criterion["category"],
+        "measurement": criterion["measurement"],
+        "threshold": criterion["threshold"],
+        "task_id": task_id,
+    }
+
+
+@router.delete(
+    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}",
+    response_model=dict[str, Any],
+)
+async def delete_task_criterion(
+    project_id: str,
+    task_id: str,
+    criterion_id: str,
+) -> dict[str, Any]:
+    """Unlink a criterion from a task.
+
+    Removes the link from task_criteria. If criterion becomes orphaned
+    (no links in capability_criteria or task_criteria), it's deleted.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        criterion_id: Criterion ID (format: ac-NNN)
+
+    Returns:
+        Status dict.
+    """
+    from ..storage.criteria import get_criterion
+
+    _verify_task_project(task_id, project_id)
+
+    with get_connection() as conn:
+        criterion = get_criterion(conn, project_id, criterion_id)
+        if not criterion:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Criterion {criterion_id} not found",
+            )
+
+        removed = unlink_criterion_from_task(conn, task_id, criterion["id"])
+
+    return {
+        "status": "removed" if removed else "not_found",
+        "task_id": task_id,
+        "criterion_id": criterion_id,
+    }
+
+
+@router.patch(
+    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/verify",
+    response_model=dict[str, Any],
+)
+async def verify_task_criterion_junction(
+    project_id: str,
+    task_id: str,
+    criterion_id: str,
+    request: VerifyTaskCriterionRequest,
+) -> dict[str, Any]:
+    """Update verification status for a task's criterion.
+
+    Updates the verified/verified_at/verified_by fields in task_criteria.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        criterion_id: Criterion ID (format: ac-NNN)
+        request: Verification details
+
+    Returns:
+        Status dict with updated verification info.
+    """
+    from ..storage.criteria import get_criterion
+
+    _verify_task_project(task_id, project_id)
+
+    with get_connection() as conn:
+        criterion = get_criterion(conn, project_id, criterion_id)
+        if not criterion:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Criterion {criterion_id} not found",
+            )
+
+        updated = update_task_criterion_verification(
+            conn=conn,
+            task_id=task_id,
+            criterion_db_id=criterion["id"],
+            verified=request.verified,
+            verified_by=request.verified_by,
+        )
+
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Criterion {criterion_id} not linked to task {task_id}",
+            )
+
+    return {
+        "status": "verified" if request.verified else "unverified",
+        "task_id": task_id,
+        "criterion_id": criterion_id,
+        "verified_by": request.verified_by,
+    }

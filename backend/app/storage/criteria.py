@@ -505,3 +505,76 @@ def get_criteria_for_test(conn: psycopg.Connection, test_db_id: int) -> list[dic
         }
         for row in rows
     ]
+
+
+# =============================================================================
+# Effective Criteria Retrieval (dual-source)
+# =============================================================================
+
+
+def get_effective_criteria(
+    conn: psycopg.Connection,
+    project_id: str,
+    task: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Get effective criteria for a task from capability or task junction tables.
+
+    Sources criteria from:
+    1. Capability (if task.capability_id is set) via capability_criteria junction
+    2. Task-specific criteria via task_criteria junction
+    3. JSONB fallback (for backward compatibility during migration)
+
+    Args:
+        conn: Database connection
+        project_id: Project ID
+        task: Task dict with id, capability_id, acceptance_criteria fields
+
+    Returns:
+        List of criterion dicts with id, criterion_id, criterion, category,
+        measurement, threshold, and optionally verified/verified_at/verified_by
+    """
+    task_id = task.get("id")
+    capability_id = task.get("capability_id")
+
+    # Source 1: Capability-linked criteria
+    if capability_id:
+        criteria = get_criteria_for_capability(conn, project_id, capability_id)
+        if criteria:
+            logger.debug(
+                f"criteria_from_capability: task_id={task_id}, capability_id={capability_id}, "
+                f"count={len(criteria)}"
+            )
+            return criteria
+
+    # Source 2: Task-specific criteria
+    if task_id:
+        criteria = get_criteria_for_task(conn, project_id, task_id)
+        if criteria:
+            logger.debug(f"criteria_from_task: task_id={task_id}, count={len(criteria)}")
+            return criteria
+
+    # Source 3: JSONB fallback (bridge until Phase 7 migration)
+    jsonb_criteria = task.get("acceptance_criteria") or []
+    if jsonb_criteria:
+        logger.debug(
+            f"criteria_from_jsonb_fallback: task_id={task_id}, count={len(jsonb_criteria)}"
+        )
+        # Normalize JSONB format to match junction table format
+        return [
+            {
+                "id": None,  # No DB id for JSONB
+                "criterion_id": c.get("id", f"legacy-{i}"),
+                "criterion": c.get("criterion", c.get("description", "")),
+                "category": c.get("category", "correctness"),
+                "measurement": c.get("measurement", "test"),
+                "threshold": c.get("threshold"),
+                "verified": c.get("verified", False),
+                "verified_at": c.get("verified_at"),
+                "verified_by": c.get("verified_by"),
+            }
+            for i, c in enumerate(jsonb_criteria)
+        ]
+
+    # No criteria found
+    logger.debug(f"no_criteria_found: task_id={task_id}, capability_id={capability_id}")
+    return []

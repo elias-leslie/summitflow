@@ -20,6 +20,8 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
 from ..storage.agent_sessions import create_session, get_session, update_session
+from ..storage.connection import get_connection
+from ..storage.criteria import get_effective_criteria
 from .agents import get_agent
 from .autonomous.prompt_builder import build_execution_prompt
 from .autonomous.tier_classifier import classify_tier, select_model_for_tier
@@ -481,6 +483,9 @@ class ImplementationExecutor:
     def _check_acceptance_criteria(self, task_id: str) -> dict[str, Any]:
         """Check if all acceptance criteria are verified.
 
+        Uses get_effective_criteria to source from capability or task junction
+        tables, with JSONB fallback for backward compatibility.
+
         Args:
             task_id: Task ID
 
@@ -495,12 +500,15 @@ class ImplementationExecutor:
         if not task:
             return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
 
-        criteria = task.get("acceptance_criteria") or []
+        # Use get_effective_criteria for dual-source support
+        with get_connection() as conn:
+            criteria = get_effective_criteria(conn, self.project_id, task)
+
         if not criteria:
             return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
 
         verified_count = sum(1 for c in criteria if c.get("verified"))
-        unverified = [c.get("id") for c in criteria if not c.get("verified")]
+        unverified = [c.get("criterion_id") for c in criteria if not c.get("verified")]
 
         return {
             "all_verified": len(unverified) == 0,
