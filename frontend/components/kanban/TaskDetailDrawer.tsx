@@ -384,26 +384,6 @@ export function TaskDetailDrawer({
                       </div>
                     );
                   })()}
-                  {/* Promote to Capability button for standalone tasks */}
-                  {!capability && task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
-                    <div className="pt-3 border-t border-slate-700/50">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full gap-2 text-xs border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
-                        onClick={() => {
-                          // TODO: Open modal for capability selection/creation
-                          console.log("Promote to capability:", task.id);
-                        }}
-                      >
-                        <Package className="h-3.5 w-3.5" />
-                        Promote to Capability
-                      </Button>
-                      <p className="text-xs text-slate-500 mt-2 text-center">
-                        Make these criteria reusable across multiple tasks
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

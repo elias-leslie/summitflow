@@ -35,7 +35,6 @@ from ..schemas.tasks import (
     CriterionVerifyRequest,
     DependencyCreate,
     DependencyResponse,
-    PromoteToCapabilityRequest,
     StartTaskRequest,
     TaskCreate,
     TaskListResponse,
@@ -48,15 +47,11 @@ from ..schemas.tasks import (
 )
 from ..services.criteria_validator import validate_criteria
 from ..services.task_validation import validate_task_ready
-from ..storage import capabilities as cap_store
-from ..storage import components as comp_store
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
 from ..storage.connection import get_connection
 from ..storage.criteria import (
     create_criterion,
-    get_criteria_for_task,
-    link_criterion_to_capability,
     link_criterion_to_task,
     unlink_criterion_from_task,
     update_task_criterion_verification,
@@ -996,117 +991,6 @@ async def link_test_to_criterion(
 # =============================================================================
 # Task Criteria Junction Table Endpoints
 # =============================================================================
-
-
-@router.post(
-    "/projects/{project_id}/tasks/{task_id}/promote-to-capability",
-    response_model=TaskResponse,
-)
-async def promote_task_to_capability(
-    project_id: str,
-    task_id: str,
-    request: PromoteToCapabilityRequest,
-) -> TaskResponse:
-    """Promote task-specific criteria to a capability.
-
-    Transfers criteria from task_criteria junction to capability_criteria junction.
-    This makes the criteria reusable across multiple tasks.
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID with task-specific criteria
-        request: Either capability_id (existing) or new_capability info
-
-    Returns:
-        Updated task with capability_id set.
-
-    Raises:
-        HTTPException(400): If neither capability_id nor new_capability provided
-        HTTPException(404): Task or capability not found
-        HTTPException(422): Task has no task-specific criteria to promote
-    """
-    if not request.capability_id and not request.new_capability:
-        raise HTTPException(
-            status_code=400,
-            detail="Either capability_id or new_capability must be provided",
-        )
-
-    _verify_task_project(task_id, project_id)
-
-    with get_connection() as conn:
-        # Get task-specific criteria
-        task_criteria = get_criteria_for_task(conn, project_id, task_id)
-
-        if not task_criteria:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Task {task_id} has no task-specific criteria to promote",
-            )
-
-        # Get or create capability
-        if request.capability_id:
-            capability = cap_store.get_capability(project_id, request.capability_id)
-            if not capability:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Capability {request.capability_id} not found",
-                )
-            capability_db_id = capability["id"]
-        else:
-            # Create new capability (new_capability is guaranteed non-None here)
-            new_cap = request.new_capability
-            assert new_cap is not None  # Type narrowing for mypy
-
-            # Look up or create component by string ID
-            component = comp_store.get_component(project_id, new_cap.component_id)
-            if not component:
-                # Create the component
-                component = comp_store.create_component(
-                    project_id=project_id,
-                    component_id=new_cap.component_id,
-                    name=new_cap.component_id.replace("-", " ").title(),
-                )
-                logger.info(
-                    "component_created_for_promotion",
-                    task_id=task_id,
-                    component_id=new_cap.component_id,
-                )
-
-            capability = cap_store.create_capability(
-                project_id=project_id,
-                component_id=component["id"],  # Use database ID
-                capability_id=new_cap.capability_id,
-                name=new_cap.name,
-                description=new_cap.description,
-            )
-            capability_db_id = capability["id"]
-            logger.info(
-                "capability_created_for_promotion",
-                task_id=task_id,
-                capability_id=new_cap.capability_id,
-            )
-
-        # Link each criterion to the capability
-        for criterion in task_criteria:
-            criterion_db_id = criterion["id"]
-            link_criterion_to_capability(conn, capability_db_id, criterion_db_id)
-            # Remove from task_criteria (criterion persists via capability link)
-            unlink_criterion_from_task(conn, task_id, criterion_db_id)
-
-        logger.info(
-            "criteria_promoted",
-            task_id=task_id,
-            capability_id=capability["capability_id"],
-            count=len(task_criteria),
-        )
-
-    # Update task to point to the capability
-    updated = task_store.update_task(task_id, capability_id=capability_db_id)
-
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update task")
-
-    return _task_to_response(updated)
 
 
 @router.post(
