@@ -573,3 +573,78 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
+
+
+def claim_task(
+    task_id: str,
+    worker_id: str,
+    lock_duration_minutes: int = 30,
+) -> dict[str, Any] | None:
+    """Atomically claim a task for execution.
+
+    Uses SELECT FOR UPDATE to prevent race conditions when multiple workers
+    try to claim the same task.
+
+    Args:
+        task_id: Task ID to claim
+        worker_id: Identifier for the worker claiming the task
+        lock_duration_minutes: How long the claim is valid (default 30 min)
+
+    Returns:
+        Claimed task dict if successful, None if:
+        - Task not found
+        - Task status not claimable (not pending/paused/failed)
+        - Task already claimed by another worker with valid lock
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # SELECT FOR UPDATE locks the row until transaction commits
+        cur.execute(
+            f"""
+            SELECT {TASK_COLUMNS}
+            FROM tasks
+            WHERE id = %s
+            FOR UPDATE
+            """,
+            (task_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            return None
+
+        task = _row_to_dict(row)
+
+        # Check if task is in a claimable status
+        claimable_statuses = {"pending", "paused", "failed"}
+        if task["status"] not in claimable_statuses:
+            return None
+
+        # Check if already claimed with valid lock
+        if task["claimed_by"] and task["lock_expires_at"]:
+            # Check if lock is still valid
+            cur.execute("SELECT NOW()")
+            now = cur.fetchone()[0]
+            if task["lock_expires_at"] > now:
+                # Another worker has a valid claim
+                return None
+
+        # Claim the task
+        cur.execute(
+            f"""
+            UPDATE tasks
+            SET claimed_by = %s,
+                claimed_at = NOW(),
+                lock_expires_at = NOW() + INTERVAL '%s minutes',
+                status = 'running',
+                started_at = COALESCE(started_at, NOW())
+            WHERE id = %s
+            RETURNING {TASK_COLUMNS}
+            """,
+            (worker_id, lock_duration_minutes, task_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+    return _row_to_dict(row)
