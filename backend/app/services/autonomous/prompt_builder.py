@@ -45,6 +45,30 @@ def build_execution_prompt(
 
     lines.append("")
 
+    # Objective - single measurable goal
+    if task.get("objective"):
+        lines.append("## OBJECTIVE")
+        lines.append("")
+        lines.append(task["objective"])
+        lines.append("")
+
+    # Acceptance Criteria - specific pass/fail conditions
+    criteria = task.get("acceptance_criteria") or []
+    if criteria:
+        lines.append("## ACCEPTANCE CRITERIA")
+        lines.append("")
+        lines.append("Each criterion must be verified before task completion.")
+        lines.append("Write tests to verify each criterion. Link test to criterion when done.")
+        lines.append("")
+        for c in criteria:
+            verified = "x" if c.get("verified") else " "
+            crit_id = c.get("id", "?")
+            crit_text = c.get("criterion", "")
+            threshold = c.get("threshold")
+            threshold_str = f" (threshold: {threshold})" if threshold else ""
+            lines.append(f"- [{verified}] {crit_id}: {crit_text}{threshold_str}")
+        lines.append("")
+
     # Files affected
     files = task.get("files_affected") or context.get("files") or []
     if files:

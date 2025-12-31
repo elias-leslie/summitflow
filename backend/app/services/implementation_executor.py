@@ -93,10 +93,14 @@ class ImplementationExecutor:
             "status": "running",
             "completed_tasks": [],
             "current_task_id": None,
+            "current_phase": "implement",  # Phase: plan → implement → test → verify → complete
             "iteration": 0,
             "pre_merge_sha": None,
             "started_at": datetime.now(UTC).isoformat(),
         }
+
+        # Update task current_phase
+        task_store.update_task(task_id, current_phase="implement")
 
         # Create session
         session = create_session(
@@ -304,7 +308,8 @@ class ImplementationExecutor:
                 }
                 continue
 
-            # Run external verification
+            # Run external verification - update phase to "test"
+            self._update_phase(task_id, "test", build_state)
             test_result = self._run_verification(files, capability_id)
 
             if test_result["success"]:
@@ -312,6 +317,10 @@ class ImplementationExecutor:
                 completed.add(current_task.get("id"))
                 build_state["completed_tasks"] = list(completed)
                 self._update_build_state(session_id, build_state)
+
+                # Check acceptance criteria - update phase to "verify"
+                self._update_phase(task_id, "verify", build_state)
+                criteria_check = self._check_acceptance_criteria(task_id)
 
                 # Observability: Store execution metrics in review_result
                 execution_time = (datetime.now(UTC) - execution_start).total_seconds()
@@ -325,8 +334,21 @@ class ImplementationExecutor:
                         "handoff": was_handoff,
                         "reason": "success",
                         "execution_time_seconds": round(execution_time, 2),
+                        "criteria_verified": criteria_check["verified_count"],
+                        "criteria_total": criteria_check["total"],
+                        "unverified_criteria": criteria_check["unverified"],
                     },
                 )
+
+                # Update phase to complete if all criteria verified
+                if criteria_check["all_verified"]:
+                    self._update_phase(task_id, "complete", build_state)
+                else:
+                    logger.warning(
+                        "criteria_not_verified",
+                        task_id=task_id,
+                        unverified=criteria_check["unverified"],
+                    )
 
                 return ExecutionResult(
                     success=True,
@@ -436,6 +458,56 @@ class ImplementationExecutor:
     def _update_build_state(self, session_id: str, build_state: dict[str, Any]) -> None:
         """Update build_state in session."""
         update_session(self.project_id, session_id, build_state=build_state)
+
+    def _update_phase(self, task_id: str, phase: str, build_state: dict[str, Any]) -> None:
+        """Update task phase based on execution progress.
+
+        Phase values:
+        - plan: Task has plan_content, not started
+        - implement: Executing subtasks
+        - test: Running verification tests
+        - verify: Checking acceptance criteria
+        - complete: All done
+
+        Args:
+            task_id: Task ID
+            phase: New phase value
+            build_state: Current build_state to update
+        """
+        build_state["current_phase"] = phase
+        task_store.update_task(task_id, current_phase=phase)
+        logger.info("phase_updated", task_id=task_id, phase=phase)
+
+    def _check_acceptance_criteria(self, task_id: str) -> dict[str, Any]:
+        """Check if all acceptance criteria are verified.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            Dict with:
+            - all_verified: bool
+            - total: int
+            - verified_count: int
+            - unverified: list of criterion IDs
+        """
+        task = task_store.get_task(task_id)
+        if not task:
+            return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
+
+        criteria = task.get("acceptance_criteria") or []
+        if not criteria:
+            return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
+
+        verified_count = sum(1 for c in criteria if c.get("verified"))
+        unverified = [c.get("id") for c in criteria if not c.get("verified")]
+
+        return {
+            "all_verified": len(unverified) == 0,
+            "total": len(criteria),
+            "verified_count": verified_count,
+            "unverified": unverified,
+        }
 
     def _execute_agent(self, model: Any, prompt: str) -> str:
         """Execute agent with model and prompt.
