@@ -312,3 +312,32 @@ class STClient:
         """
         response = self._client.post(self._url(f"/capabilities/{capability_id}/verify"))
         return self._handle_response(response)
+
+    # Tests
+
+    def list_tests(self, test_type: str | None = None) -> list[dict[str, Any]]:
+        """List tests for the project.
+
+        Args:
+            test_type: Filter by test type
+
+        Returns:
+            List of test dicts.
+        """
+        params = {}
+        if test_type:
+            params["type"] = test_type
+        response = self._client.get(self._url("/tests"), params=params)
+        return self._handle_response(response)
+
+    def import_tests(self, framework: str) -> dict[str, Any]:
+        """Import tests from a framework.
+
+        Args:
+            framework: Framework to import from (pytest, mypy, ruff, etc.)
+
+        Returns:
+            Import result dict.
+        """
+        response = self._client.post(self._url("/tests/import"), json={"framework": framework})
+        return self._handle_response(response)

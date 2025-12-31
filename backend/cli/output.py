@@ -201,6 +201,41 @@ def output_capabilities(caps: list[dict[str, Any]], json_mode: bool = False) -> 
     console.print(table)
 
 
+def output_tests(tests: list[dict[str, Any]], json_mode: bool = False) -> None:
+    """Output test table.
+
+    Args:
+        tests: List of test dicts
+        json_mode: If True, output as JSON
+    """
+    if json_mode:
+        output_json(tests)
+        return
+
+    if not tests:
+        console.print("[dim]No tests found.[/dim]")
+        return
+
+    table = Table(title="Tests", show_header=True, header_style="bold")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Status", justify="center")
+    table.add_column("Capability")
+
+    for test in tests:
+        status = test.get("last_status", "unknown")
+        color = {"passed": "green", "failed": "red", "error": "red"}.get(status, "dim")
+
+        table.add_row(
+            test.get("name", "")[:50],
+            test.get("type", ""),
+            f"[{color}]{status}[/]",
+            test.get("capability_id", "")[:20] or "-",
+        )
+
+    console.print(table)
+
+
 def output_error(message: str) -> None:
     """Output error message in red."""
     console.print(f"[red bold]Error:[/] {message}")
