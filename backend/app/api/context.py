@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from ..services.context_helpers import (
+    filter_rules_by_files,
+    get_observations_for_files,
+    get_patterns_for_files,
+)
 from ..services.memory import ContextBuilder
 from ..storage.agent_configs import is_memory_feature_enabled
 
@@ -454,4 +460,80 @@ async def get_context_timeline(
         before=before_obs,
         after=after_obs,
         total_tokens=total_tokens,
+    )
+
+
+class TaskContextResponse(BaseModel):
+    """Response model for task context."""
+
+    files: list[str]
+    rules: list[str]
+    rule_contents: dict[str, str]
+    patterns: list[dict[str, Any]]
+    observations: list[dict[str, Any]]
+
+
+# Rules directory (project-level and global)
+PROJECT_RULES_DIR = Path("/home/kasadis/summitflow/.claude/rules")
+GLOBAL_RULES_DIR = Path("/home/kasadis/.claude/rules")
+
+
+def _read_rule_file(filename: str) -> str | None:
+    """Read a rule file from project or global rules directory."""
+    # Try project rules first
+    project_path = PROJECT_RULES_DIR / filename
+    if project_path.exists():
+        return project_path.read_text()
+
+    # Fall back to global rules
+    global_path = GLOBAL_RULES_DIR / filename
+    if global_path.exists():
+        return global_path.read_text()
+
+    return None
+
+
+@router.get("/{project_id}/context/for-task", response_model=TaskContextResponse)
+async def get_context_for_task(
+    project_id: str,
+    files: str = Query(..., description="Comma-separated list of file paths affected by the task"),
+) -> TaskContextResponse:
+    """Get context relevant to a specific task based on files it affects.
+
+    Returns:
+        - rules: List of relevant rule filenames
+        - rule_contents: Dict mapping rule filename to content
+        - patterns: List of relevant learned patterns
+        - observations: List of relevant observations (errors, decisions)
+    """
+    # Parse files list
+    file_list = [f.strip() for f in files.split(",") if f.strip()]
+
+    if not file_list:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    # Get relevant rules
+    rule_names = filter_rules_by_files(file_list)
+
+    # Read rule contents
+    rule_contents: dict[str, str] = {}
+    for rule in rule_names:
+        content = _read_rule_file(rule)
+        if content:
+            rule_contents[rule] = content
+
+    # Get relevant patterns
+    patterns = get_patterns_for_files(project_id, file_list, min_confidence=0.7)
+
+    # Get relevant observations
+    observations = get_observations_for_files(
+        project_id, file_list, types=["error", "decision"], limit=10
+    )
+
+    return TaskContextResponse(
+        files=file_list,
+        rules=rule_names,
+        rule_contents=rule_contents,
+        patterns=patterns,
+        observations=observations,
     )
