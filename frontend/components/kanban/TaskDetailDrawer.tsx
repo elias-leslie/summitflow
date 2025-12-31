@@ -15,6 +15,9 @@ import {
   CheckSquare,
   Link2,
   ExternalLink,
+  Target,
+  Circle,
+  FileCode,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } from "@/components/ui/sheet";
@@ -283,6 +286,98 @@ export function TaskDetailDrawer({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Objective & Acceptance Criteria */}
+          {(task.objective || (task.acceptance_criteria && task.acceptance_criteria.length > 0)) && (
+            <div>
+              <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
+                <Target className="h-4 w-4" />
+                Objective & Criteria
+              </h3>
+
+              {task.objective && (
+                <p className="text-sm text-slate-300 mb-3 px-3 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                  {task.objective}
+                </p>
+              )}
+
+              {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
+                <div className="space-y-2">
+                  {task.acceptance_criteria.map((criterion) => {
+                    const verified = criterion.verified;
+                    return (
+                      <div
+                        key={criterion.id}
+                        className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${
+                          verified
+                            ? "bg-phosphor-500/10 border-phosphor-500/30"
+                            : "bg-slate-800/30 border-slate-700/50"
+                        }`}
+                      >
+                        {verified ? (
+                          <CheckCircle2 className="h-4 w-4 mt-0.5 text-phosphor-400 shrink-0" />
+                        ) : (
+                          <Circle className="h-4 w-4 mt-0.5 text-slate-500 shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-slate-500">{criterion.id}</span>
+                            {criterion.category && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-400">
+                                {criterion.category}
+                              </span>
+                            )}
+                            {criterion.threshold && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                {criterion.threshold}
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-sm ${verified ? "text-phosphor-300" : "text-slate-300"}`}>
+                            {criterion.criterion}
+                          </p>
+                          {criterion.test_file && (
+                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                              <FileCode className="h-3 w-3" />
+                              {criterion.test_file}::{criterion.test_name}
+                            </p>
+                          )}
+                          {verified && criterion.verified_by && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Verified by: {criterion.verified_by}
+                              {criterion.verified_at && ` • ${new Date(criterion.verified_at).toLocaleDateString()}`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* Progress summary */}
+                  {(() => {
+                    const total = task.acceptance_criteria?.length || 0;
+                    const verified = task.acceptance_criteria?.filter((c) => c.verified).length || 0;
+                    const pct = total > 0 ? (verified / total) * 100 : 0;
+                    return (
+                      <div className="pt-2 border-t border-slate-700/50">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-slate-500">Progress</span>
+                          <span className={`text-xs mono font-medium ${pct === 100 ? "text-phosphor-400" : "text-slate-400"}`}>
+                            {verified}/{total}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${pct === 100 ? "bg-phosphor-500" : "bg-blue-500"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 

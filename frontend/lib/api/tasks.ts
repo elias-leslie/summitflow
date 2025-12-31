@@ -14,8 +14,15 @@ export type AgentType = "claude" | "gemini";
 
 export interface TaskAcceptanceCriterion {
   id: string;
-  description: string;
-  passes: boolean;
+  criterion: string;
+  category?: "performance" | "correctness" | "security" | "quality";
+  measurement?: string;
+  threshold?: string | null;
+  test_file?: string | null;
+  test_name?: string | null;
+  verified: boolean;
+  verified_at?: string | null;
+  verified_by?: "opus" | "test" | "human" | null;
 }
 
 export interface CapabilityContext {
@@ -61,6 +68,10 @@ export interface Task {
   capability?: CapabilityContext | null;
   blockers?: BlockerInfo[] | null;
   blocked_by_incomplete?: boolean | null;
+  // AI agent reliability fields
+  objective?: string | null;
+  acceptance_criteria?: TaskAcceptanceCriterion[] | null;
+  current_phase?: "plan" | "implement" | "test" | "verify" | "complete" | null;
 }
 
 export interface TaskListResponse {
