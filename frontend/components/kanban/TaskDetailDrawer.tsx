@@ -292,10 +292,18 @@ export function TaskDetailDrawer({
           {/* Objective & Acceptance Criteria */}
           {(task.objective || (task.acceptance_criteria && task.acceptance_criteria.length > 0)) && (
             <div>
-              <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                <Target className="h-4 w-4" />
-                Objective & Criteria
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Objective & Criteria
+                </h3>
+                {/* Criteria source indicator */}
+                {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                    {capability ? `From capability: ${capability.capability_id}` : "Task-specific"}
+                  </span>
+                )}
+              </div>
 
               {task.objective && (
                 <p className="text-sm text-slate-300 mb-3 px-3 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
@@ -376,6 +384,26 @@ export function TaskDetailDrawer({
                       </div>
                     );
                   })()}
+                  {/* Promote to Capability button for standalone tasks */}
+                  {!capability && task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
+                    <div className="pt-3 border-t border-slate-700/50">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2 text-xs border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
+                        onClick={() => {
+                          // TODO: Open modal for capability selection/creation
+                          console.log("Promote to capability:", task.id);
+                        }}
+                      >
+                        <Package className="h-3.5 w-3.5" />
+                        Promote to Capability
+                      </Button>
+                      <p className="text-xs text-slate-500 mt-2 text-center">
+                        Make these criteria reusable across multiple tasks
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
