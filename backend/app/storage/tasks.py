@@ -312,12 +312,13 @@ def get_tasks_by_capability(capability_id: int) -> list[dict[str, Any]]:
 
 # Valid task status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"running", "paused"},
-    "running": {"paused", "failed", "completed", "pending_review"},
-    "paused": {"running", "pending", "failed"},
-    "failed": {"pending", "running"},  # Allow retry
+    "pending": {"running", "paused", "cancelled"},
+    "running": {"paused", "failed", "completed", "pending_review", "cancelled"},
+    "paused": {"running", "pending", "failed", "cancelled"},
+    "failed": {"pending", "running", "cancelled"},  # Allow retry or cancel
     "completed": set(),  # Terminal - no transitions allowed
-    "pending_review": {"completed", "failed", "running"},  # Opus review gate
+    "pending_review": {"completed", "failed", "running", "cancelled"},  # Opus review gate
+    "cancelled": set(),  # Terminal - task was invalid/obsolete
 }
 
 
@@ -344,7 +345,7 @@ def update_task_status(
 
     Args:
         task_id: Task ID
-        status: New status (pending, running, paused, failed, completed)
+        status: New status (pending, running, paused, failed, completed, pending_review, cancelled)
         error_message: Optional error message (for failed status)
         validate_transition: Whether to validate status transition (default True)
 
@@ -354,7 +355,15 @@ def update_task_status(
     Raises:
         ValueError: If invalid status or invalid transition.
     """
-    valid_statuses = {"pending", "running", "paused", "failed", "completed", "pending_review"}
+    valid_statuses = {
+        "pending",
+        "running",
+        "paused",
+        "failed",
+        "completed",
+        "pending_review",
+        "cancelled",
+    }
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {valid_statuses}")
 
@@ -376,7 +385,7 @@ def update_task_status(
             UPDATE tasks
             SET status = %s,
                 started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
-                completed_at = CASE WHEN %s IN ('completed', 'failed') THEN NOW() ELSE completed_at END,
+                completed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NOW() ELSE completed_at END,
                 error_message = CASE
                     WHEN %s = 'running' THEN NULL
                     WHEN %s IN ('completed', 'failed') THEN %s

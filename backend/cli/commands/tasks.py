@@ -248,6 +248,34 @@ def close(
 
 
 @app.command()
+def cancel(
+    task_id: str,
+    reason: Annotated[str, typer.Option("-r", "--reason")],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Cancel a task (mark as cancelled from any state).
+
+    Use this for tasks that are invalid, obsolete, or no longer needed.
+    Works from any non-terminal state (pending, running, paused, failed).
+
+    Examples:
+        st cancel task-abc123 -r "Invalid: file doesn't exist"
+        st cancel task-abc123 --reason "Obsolete: already fixed"
+    """
+    client = STClient()
+
+    try:
+        task = client.cancel_task(task_id)
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    output_task(task, json_output)
+    if not json_output:
+        output_success(f"Cancelled task {task_id}: {reason}")
+
+
+@app.command()
 def claim(
     task_id: str,
     lock: Annotated[int, typer.Option("--lock")] = 30,

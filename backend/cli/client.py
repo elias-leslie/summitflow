@@ -184,6 +184,17 @@ class STClient:
         """
         return self.update_status(task_id, "completed", force=force)
 
+    def cancel_task(self, task_id: str) -> dict[str, Any]:
+        """Cancel a task (mark as cancelled from any non-terminal state).
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            Updated task dict.
+        """
+        return self.update_status(task_id, "cancelled")
+
     def delete_task(self, task_id: str) -> dict[str, Any]:
         """Delete a task.
 

@@ -44,7 +44,7 @@ class TaskUpdate(BaseModel):
 class TaskStatusUpdate(BaseModel):
     """Request model for updating task status."""
 
-    status: str  # pending, running, paused, failed, completed
+    status: str  # pending, running, paused, failed, completed, pending_review, cancelled
     error_message: str | None = None
     force: bool = False  # Bypass criteria validation on close
 
