@@ -232,3 +232,83 @@ class STClient:
         """
         response = self._client.post(self._url(f"/tasks/{task_id}/release"))
         return self._handle_response(response)
+
+    # Dependencies
+
+    def add_dependency(
+        self,
+        task_id: str,
+        depends_on: str,
+        dep_type: str = "blocks",
+    ) -> dict[str, Any]:
+        """Add a dependency to a task.
+
+        Args:
+            task_id: Task that depends on another
+            depends_on: Task ID being depended on
+            dep_type: Dependency type (blocks, discovered-from)
+
+        Returns:
+            Created dependency dict.
+        """
+        data = {"depends_on_task_id": depends_on, "dependency_type": dep_type}
+        response = self._client.post(self._url(f"/tasks/{task_id}/dependencies"), json=data)
+        return self._handle_response(response)
+
+    def list_dependencies(self, task_id: str) -> list[dict[str, Any]]:
+        """List dependencies for a task.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of dependency dicts.
+        """
+        response = self._client.get(self._url(f"/tasks/{task_id}/dependencies"))
+        return self._handle_response(response)
+
+    def remove_dependency(
+        self,
+        task_id: str,
+        depends_on: str,
+        dep_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove a dependency from a task.
+
+        Args:
+            task_id: Task ID
+            depends_on: Task ID being depended on
+            dep_type: Dependency type (optional, removes all if not specified)
+
+        Returns:
+            Status dict.
+        """
+        url = f"/tasks/{task_id}/dependencies/{depends_on}"
+        params = {}
+        if dep_type:
+            params["dependency_type"] = dep_type
+        response = self._client.delete(self._url(url), params=params)
+        return self._handle_response(response)
+
+    # Capabilities
+
+    def list_capabilities(self) -> list[dict[str, Any]]:
+        """List all capabilities for the project.
+
+        Returns:
+            List of capability dicts.
+        """
+        response = self._client.get(self._url("/capabilities"))
+        return self._handle_response(response)
+
+    def verify_capability(self, capability_id: str) -> dict[str, Any]:
+        """Verify a capability's tests.
+
+        Args:
+            capability_id: Capability ID
+
+        Returns:
+            Verification result dict.
+        """
+        response = self._client.post(self._url(f"/capabilities/{capability_id}/verify"))
+        return self._handle_response(response)
