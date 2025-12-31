@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import (
     accepted_specs,
     agent_sessions,
+    autonomous,
     build,
     capabilities,
     celery_endpoints,
@@ -85,6 +86,7 @@ app.include_router(build.router, prefix="/api", tags=["build"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
+app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 
 
 @app.get("/health")
