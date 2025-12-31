@@ -399,7 +399,7 @@ def delete_entries(project_id: str, entry_type: str | None = None) -> int:
                 (project_id,),
             )
 
-        deleted = cur.rowcount
+        deleted: int = cur.rowcount or 0
         conn.commit()
         return deleted
 
@@ -455,6 +455,6 @@ def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[s
             """,
             (project_id, entry_type, list(stale_paths)),
         )
-        deleted = cur.rowcount
+        deleted: int = cur.rowcount or 0
         conn.commit()
         return deleted

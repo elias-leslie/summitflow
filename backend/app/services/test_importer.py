@@ -192,8 +192,9 @@ async def discover_pytest_tests(
         return []
 
     # Run pytest --collect-only to discover tests
+    # Use --quiet --quiet (-qq) to get parseable "file::test" format
     proc = await asyncio.create_subprocess_shell(
-        ".venv/bin/pytest --collect-only -q 2>/dev/null || pytest --collect-only -q 2>/dev/null",
+        ".venv/bin/pytest --collect-only --quiet --quiet 2>/dev/null || pytest --collect-only --quiet --quiet 2>/dev/null",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=working_dir,
