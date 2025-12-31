@@ -398,6 +398,56 @@ def list_observations(
     return [_observation_row_to_dict(row) for row in rows]
 
 
+def query_observations(
+    project_id: str,
+    observation_type: str,
+    min_confidence: float = 0.0,
+    days: int = 7,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Query observations by type with confidence and time filters.
+
+    Optimized for autonomous task generation from error observations.
+
+    Args:
+        project_id: Project to query.
+        observation_type: Filter by observation type (e.g., 'error', 'decision').
+        min_confidence: Minimum confidence score (0.0 - 1.0).
+        days: Only include observations from the last N days.
+        limit: Maximum results to return.
+
+    Returns:
+        List of observations with id, title, narrative, files, confidence, created_at.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, title, narrative, files_modified, confidence, created_at
+            FROM observations
+            WHERE project_id = %s
+              AND observation_type = %s
+              AND confidence >= %s
+              AND created_at >= NOW() - INTERVAL '%s days'
+            ORDER BY confidence DESC, created_at DESC
+            LIMIT %s
+            """,
+            (project_id, observation_type, min_confidence, days, limit),
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "title": row[1],
+            "narrative": row[2],
+            "files": row[3] or [],
+            "confidence": float(row[4]) if row[4] else 0.0,
+            "created_at": row[5].isoformat() if row[5] else None,
+        }
+        for row in rows
+    ]
+
+
 def count_observations(
     project_id: str | None = None,
     agent_type: str | None = None,
