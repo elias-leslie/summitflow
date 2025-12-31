@@ -297,86 +297,166 @@ class FileScanner(BaseScanner):
         return entries
 
     def _add_git_info_batch(self, entries: list[ExplorerEntryCreate]) -> None:
-        """Add git commit info to file entries."""
+        """Add git commit info to file entries using batch git operations.
+
+        Optimized to use only 2 git calls total instead of 2 per file.
+        For 25k files, this reduces git calls from 50k to 2.
+        """
         if not self.root_path:
             return
 
         now = datetime.now(UTC)
 
+        # Build set of file paths for quick lookup
+        file_paths = {entry.path for entry in entries if not entry.metadata.get("is_directory")}
+        if not file_paths:
+            return
+
+        # Batch 1: Get last commit info for ALL files (single git call)
+        # Maps: path -> (timestamp, hash, message)
+        last_commit_map = self._get_all_last_commits()
+
+        # Batch 2: Get 90-day commit counts for ALL files (single git call)
+        # Maps: path -> count
+        commit_count_map = self._get_all_commit_counts_90d()
+
+        # Apply git info to entries
         for entry in entries:
             if entry.metadata.get("is_directory"):
                 continue
 
-            try:
-                # Get last commit info
-                result = subprocess.run(
-                    ["git", "log", "-1", "--format=%at|%h|%s", "--follow", "--", entry.path],
-                    cwd=str(self.root_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
+            path = entry.path
+
+            # Apply last commit info
+            if path in last_commit_map:
+                timestamp, commit_hash, message = last_commit_map[path]
+                commit_time = datetime.fromtimestamp(timestamp, tz=UTC)
+                days = (now - commit_time).days
+                entry.metadata["last_commit_days"] = days
+                entry.metadata["last_commit_hash"] = commit_hash
+                entry.metadata["last_commit_message"] = message[:100] if message else ""
+                entry.metadata["stale_status"] = (
+                    "stale" if days >= STALE_THRESHOLD_DAYS else "fresh"
                 )
-
-                if result.returncode == 0 and result.stdout.strip():
-                    parts = result.stdout.strip().split("|", 2)
-                    if len(parts) >= 1 and parts[0]:
-                        timestamp = int(parts[0])
-                        commit_time = datetime.fromtimestamp(timestamp, tz=UTC)
-                        entry.metadata["last_commit_days"] = (now - commit_time).days
-
-                        # Determine stale status
-                        days = entry.metadata["last_commit_days"]
-                        if days >= STALE_THRESHOLD_DAYS:
-                            entry.metadata["stale_status"] = "stale"
-                        else:
-                            entry.metadata["stale_status"] = "fresh"
-
-                    if len(parts) >= 2:
-                        entry.metadata["last_commit_hash"] = parts[1]
-                    if len(parts) >= 3:
-                        entry.metadata["last_commit_message"] = parts[2][:100]
-
-                # Get commit count in last 90 days (churn metric)
-                commit_count = self._get_commit_count(entry.path)
-                entry.metadata["commit_count_90d"] = commit_count
-
-                # Check if test file exists
-                test_file_exists = self._has_test_file(entry.path, entry.name)
-                entry.metadata["test_file_exists"] = test_file_exists
-
-            except (subprocess.TimeoutExpired, ValueError, OSError):
+            else:
                 entry.metadata["stale_status"] = "unknown"
 
-    def _get_commit_count(self, file_path: str) -> int:
-        """Get number of commits to a file in the last 90 days."""
+            # Apply commit count
+            entry.metadata["commit_count_90d"] = commit_count_map.get(path, 0)
+
+            # Check if test file exists (filesystem check - fast)
+            entry.metadata["test_file_exists"] = self._has_test_file(path, entry.name)
+
+    def _get_all_last_commits(self) -> dict[str, tuple[int, str, str]]:
+        """Get last commit info for ALL files in one git call.
+
+        Uses git log with --name-only to get commit info with filenames.
+        Returns dict mapping path -> (timestamp, hash, message).
+        """
         if not self.root_path:
-            return 0
+            return {}
 
         try:
+            # Use null separators for reliable parsing
+            # Format: timestamp|hash|subject, then files on separate lines
             result = subprocess.run(
                 [
                     "git",
                     "log",
-                    "--oneline",
-                    "--since=90 days ago",
-                    "--follow",
-                    "--",
-                    file_path,
+                    "--all",
+                    "--name-only",
+                    "--format=%x00%at|%h|%s",  # null byte before each commit
+                    "--diff-filter=ACMRT",  # Added, Copied, Modified, Renamed, Type-changed
                 ],
                 cwd=str(self.root_path),
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=60,  # Allow more time for full history
                 check=False,
             )
 
-            if result.returncode == 0:
-                lines = result.stdout.strip().split("\n")
-                return len([line for line in lines if line.strip()])
-            return 0
-        except (subprocess.TimeoutExpired, OSError):
-            return 0
+            if result.returncode != 0:
+                logger.warning(f"git log for last commits failed: {result.stderr}")
+                return {}
+
+            # Parse output to build file -> latest commit map
+            # We only keep the FIRST (most recent) commit for each file
+            file_commits: dict[str, tuple[int, str, str]] = {}
+            current_commit: tuple[int, str, str] | None = None
+
+            for line in result.stdout.split("\n"):
+                if line.startswith("\x00"):
+                    # New commit header
+                    parts = line[1:].split("|", 2)
+                    if len(parts) >= 3 and parts[0]:
+                        try:
+                            current_commit = (int(parts[0]), parts[1], parts[2])
+                        except ValueError:
+                            current_commit = None
+                elif line.strip() and current_commit:
+                    # File name - only record if we haven't seen this file yet
+                    file_path = line.strip()
+                    if file_path not in file_commits:
+                        file_commits[file_path] = current_commit
+
+            logger.info(f"Batch git: got last commit info for {len(file_commits)} files")
+            return file_commits
+
+        except subprocess.TimeoutExpired:
+            logger.warning("git log for last commits timed out")
+            return {}
+        except OSError as e:
+            logger.warning(f"git log for last commits failed: {e}")
+            return {}
+
+    def _get_all_commit_counts_90d(self) -> dict[str, int]:
+        """Get 90-day commit counts for ALL files in one git call.
+
+        Returns dict mapping path -> commit_count.
+        """
+        if not self.root_path:
+            return {}
+
+        try:
+            # Get all files changed in commits from last 90 days
+            result = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "--since=90 days ago",
+                    "--name-only",
+                    "--format=",  # No commit info, just filenames
+                    "--diff-filter=ACMRT",
+                ],
+                cwd=str(self.root_path),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+
+            if result.returncode != 0:
+                logger.warning(f"git log for commit counts failed: {result.stderr}")
+                return {}
+
+            # Count occurrences of each file
+            from collections import Counter
+
+            file_counts: Counter[str] = Counter()
+            for line in result.stdout.split("\n"):
+                path = line.strip()
+                if path:
+                    file_counts[path] += 1
+
+            logger.info(f"Batch git: got 90-day commit counts for {len(file_counts)} files")
+            return dict(file_counts)
+
+        except subprocess.TimeoutExpired:
+            logger.warning("git log for commit counts timed out")
+            return {}
+        except OSError as e:
+            logger.warning(f"git log for commit counts failed: {e}")
+            return {}
 
     def _has_test_file(self, file_path: str, file_name: str) -> bool:
         """Check if a test file exists for this source file."""

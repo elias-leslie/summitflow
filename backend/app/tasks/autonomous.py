@@ -305,6 +305,24 @@ SECURITY_DIRS = ["auth", "security", "payment", "credentials", "secret", "crypto
 # Exploratory task indicators
 EXPLORATORY_KEYWORDS = ["investigate", "explore", "understand", "research", "analyze"]
 
+# Standalone task labels that require manual execution
+STANDALONE_LABELS = ["standalone", "exploratory"]
+
+
+def _is_standalone(task: dict[str, Any]) -> bool:
+    """Check if task is standalone (no capability linkage).
+
+    Standalone tasks require manual execution via /do_it because they lack
+    capability-driven acceptance criteria for autonomous verification.
+    """
+    return task.get("capability_id") is None
+
+
+def _has_standalone_label(task: dict[str, Any]) -> bool:
+    """Check if task has a standalone or exploratory label."""
+    labels = task.get("labels") or []
+    return any(label in STANDALONE_LABELS for label in labels)
+
 
 def _is_security_sensitive(files: list[str]) -> bool:
     """Check if any files are in security-sensitive directories."""
@@ -360,9 +378,13 @@ def _check_exclusion(task: dict[str, Any]) -> str | None:
     if "needs-human-review" in labels:
         return "needs-human-review label"
 
-    # EXCLUDE: no capability_id (ambiguous requirements)
-    # NOTE: For auto-generated tasks, capability_id may be None - this is expected
-    # We still allow execution but note this for future TDD improvements
+    # EXCLUDE: standalone tasks (no capability_id) - require manual /do_it
+    if _is_standalone(task):
+        return "standalone (no capability_id)"
+
+    # EXCLUDE: 'standalone' or 'exploratory' labels
+    if _has_standalone_label(task):
+        return "standalone/exploratory label"
 
     # EXCLUDE: tier=4 OR labels contain 'architecture' (architectural)
     if tier == 4:

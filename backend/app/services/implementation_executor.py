@@ -123,12 +123,16 @@ class ImplementationExecutor:
         self,
         session_id: str,
         max_iterations: int = 5,
+        is_manual_execution: bool = False,
     ) -> ExecutionResult:
         """Execute the next task in the plan with iteration loop.
 
         Args:
             session_id: Session ID from start_execution
             max_iterations: Maximum iterations before giving up
+            is_manual_execution: True when called via /do_it or API,
+                                 False when called by Celery autonomous pickup.
+                                 Standalone tasks (no capability_id) require manual execution.
 
         Returns:
             ExecutionResult with success status and details
@@ -176,23 +180,34 @@ class ImplementationExecutor:
 
         labels = list(task.get("labels") or [])
         is_auto_generated = "auto-generated" in labels
+        is_standalone = not capability_id
 
-        if not capability_id and not is_auto_generated:
-            # For non-auto-generated tasks, require capability_id for TDD verification
-            if "needs-tests" not in labels:
-                labels.append("needs-tests")
-                task_store.update_task(task_id, labels=labels)
-
-            return ExecutionResult(
-                success=False,
-                iterations=0,
-                model_used="none",
-                reason="no_capability_id",
-                error="Task has no capability_id - cannot verify completion",
-            )
+        # Standalone task handling
+        if is_standalone and not is_auto_generated:
+            if not is_manual_execution:
+                # Autonomous pickup should not execute standalone tasks
+                logger.warning(
+                    "standalone_task_rejected",
+                    task_id=task_id,
+                    reason="Standalone tasks require manual execution via /do_it",
+                )
+                return ExecutionResult(
+                    success=False,
+                    iterations=0,
+                    model_used="none",
+                    reason="standalone_requires_manual",
+                    error="Standalone tasks require manual execution via /do_it",
+                )
+            else:
+                # Manual execution of standalone task - log warning and continue
+                logger.warning(
+                    "executing_standalone_task",
+                    task_id=task_id,
+                    message="Executing standalone task - no capability verification available",
+                )
 
         # For auto-generated tasks without capability_id, use general verification
-        if not capability_id:
+        if is_standalone:
             capability_id = "general"  # Sentinel for general verification
 
         # Capture pre_merge_sha once at task start

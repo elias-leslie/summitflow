@@ -27,5 +27,15 @@ SKIP_DIRS: frozenset[str] = frozenset(
         "data",
         "solution_state",
         ".beads",
+        # Backup and external content
+        "backups",
+        "references",
+        "logs",
+        # Test artifacts
+        "test-results",
+        "playwright-report",
+        # IDE/editor
+        ".idea",
+        ".vscode",
     }
 )
