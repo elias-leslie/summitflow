@@ -30,6 +30,7 @@ COMMANDS:
     show <id>          Show task details
     update <id>        Update task fields
     close <id>         Close/complete a task (--force to bypass criteria check)
+    log <id> <msg>     Append to task progress log
     dep add            Add dependency
     dep list           List dependencies
     dep rm             Remove dependency
@@ -617,6 +618,40 @@ Closed: $reason"
         echo -e "${GREEN}Closed task: $task_id${NC}"
         [[ -n "$reason" ]] && echo -e "  Reason: $reason"
     fi
+}
+
+# Log command - append to progress log
+cmd_log() {
+    local task_id="$1"
+    shift || true
+    local message="$*"
+
+    if [[ -z "$task_id" ]]; then
+        echo -e "${RED}Error: Task ID required${NC}" >&2
+        echo "Usage: st log <task-id> <message>"
+        return 1
+    fi
+
+    if [[ -z "$message" ]]; then
+        echo -e "${RED}Error: Message required${NC}" >&2
+        echo "Usage: st log <task-id> <message>"
+        return 1
+    fi
+
+    local json_data
+    json_data=$(jq -n --arg entry "$message" '{entry: $entry}')
+
+    local response
+    response=$(curl -s -X POST "${API_BASE}/projects/${PROJECT_ID}/tasks/${task_id}/log" \
+        -H "Content-Type: application/json" \
+        -d "$json_data")
+
+    if echo "$response" | jq -e '.detail' >/dev/null 2>&1; then
+        echo -e "${RED}Error: $(echo "$response" | jq -r '.detail')${NC}" >&2
+        return 1
+    fi
+
+    echo -e "${GREEN}Logged to ${task_id}:${NC} $message"
 }
 
 # Dependency commands
@@ -1547,6 +1582,9 @@ main() {
             ;;
         close|done|complete)
             cmd_close "$@"
+            ;;
+        log)
+            cmd_log "$@"
             ;;
         dep|dependency)
             cmd_dep "$@"
