@@ -14,7 +14,6 @@ from celery import shared_task  # type: ignore[import-untyped]
 from ..logging_config import get_logger
 from ..services import explorer
 from ..storage.connection import get_connection
-from .autonomous import generate_bug_tasks, generate_tasks_from_scan
 
 logger = get_logger(__name__)
 
@@ -103,12 +102,15 @@ def scan_all_projects(
                 )
 
                 # Trigger task generation after successful scan
+                # Use send_task to avoid circular import with autonomous.py
+                from celery import current_app
+
                 logger.info(
                     "triggering_task_generation",
                     project_id=proj_id,
                 )
-                generate_tasks_from_scan.delay(proj_id)
-                generate_bug_tasks.delay(proj_id)
+                current_app.send_task("summitflow.generate_tasks_from_scan", args=[proj_id])
+                current_app.send_task("summitflow.generate_bug_tasks", args=[proj_id])
             except Exception as e:
                 errors += 1
                 details.append(

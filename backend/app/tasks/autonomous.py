@@ -295,3 +295,210 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error generating bug tasks: {e}")
         return {"error": str(e), "created_count": 0, "errors_scanned": 0, "skipped_count": 0}
+
+
+# Security-sensitive directory names that require human review
+SECURITY_DIRS = ["auth", "security", "payment", "credentials", "secret", "crypto", "oauth"]
+
+# Exploratory task indicators
+EXPLORATORY_KEYWORDS = ["investigate", "explore", "understand", "research", "analyze"]
+
+
+def _is_security_sensitive(files: list[str]) -> bool:
+    """Check if any files are in security-sensitive directories."""
+    for f in files:
+        parts = f.lower().split("/")
+        for part in parts:
+            if any(sec in part for sec in SECURITY_DIRS):
+                return True
+    return False
+
+
+def _is_exploratory(task: dict[str, Any]) -> bool:
+    """Check if task is exploratory (requires human reasoning)."""
+    task_type = task.get("task_type", "")
+    if task_type == "research":
+        return True
+    title = (task.get("title") or "").lower()
+    return any(kw in title for kw in EXPLORATORY_KEYWORDS)
+
+
+def _count_domains(files: list[str]) -> int:
+    """Count how many domains a task affects."""
+    domains = set()
+    for f in files:
+        if f.startswith("backend/") or f.endswith(".py"):
+            domains.add("backend")
+        elif f.startswith("frontend/") or f.endswith((".tsx", ".ts", ".jsx", ".js")):
+            domains.add("frontend")
+        elif "migration" in f or f.endswith(".sql"):
+            domains.add("database")
+        elif f.startswith("infra/") or f.endswith((".yaml", ".yml", ".tf")):
+            domains.add("infra")
+    return len(domains)
+
+
+def _check_exclusion(task: dict[str, Any]) -> str | None:
+    """Check if task should be excluded from autonomous execution.
+
+    Returns:
+        Exclusion reason string, or None if task is eligible
+    """
+    labels = task.get("labels") or []
+    tier = task.get("tier") or 2
+
+    # Get affected files from plan_content or description
+    plan_content = task.get("plan_content") or {}
+    context = plan_content.get("context") or {}
+    affected_files = context.get("affected_files") or []
+
+    # EXCLUDE: labels contain 'needs-tests' or 'needs-human-review'
+    if "needs-tests" in labels:
+        return "needs-tests label"
+    if "needs-human-review" in labels:
+        return "needs-human-review label"
+
+    # EXCLUDE: no capability_id (ambiguous requirements)
+    # NOTE: For auto-generated tasks, capability_id may be None - this is expected
+    # We still allow execution but note this for future TDD improvements
+
+    # EXCLUDE: tier=4 OR labels contain 'architecture' (architectural)
+    if tier == 4:
+        return "tier 4 (architecture)"
+    if "architecture" in labels:
+        return "architecture label"
+
+    # EXCLUDE: files match security patterns
+    if affected_files and _is_security_sensitive(affected_files):
+        return "security-sensitive files"
+
+    # EXCLUDE: task_type='research' OR title matches explore keywords
+    if _is_exploratory(task):
+        return "exploratory task"
+
+    # EXCLUDE: affects 3+ domains (multi_domain)
+    if affected_files and _count_domains(affected_files) >= 3:
+        return "multi-domain (3+ areas)"
+
+    return None  # No exclusion - task is eligible
+
+
+@celery_app.task(name="summitflow.autonomous_work_pickup")  # type: ignore[misc]
+def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
+    """Pick up and execute eligible tasks autonomously.
+
+    Finds tasks that:
+    - tier <= 3 (mechanical, not architectural)
+    - status in (pending, paused, failed)
+    - Pass all exclusion criteria
+
+    Claims one task atomically and executes it via ImplementationExecutor.
+
+    Args:
+        project_id: Project to pick up work for
+
+    Returns:
+        Dict with execution results and exclusion stats
+    """
+    from app.services.implementation_executor import ImplementationExecutor
+    from app.storage.agent_configs import is_autonomous_enabled
+
+    try:
+        # Check if autonomous execution is enabled
+        if not is_autonomous_enabled(project_id):
+            logger.debug(f"Autonomous execution disabled for {project_id}")
+            return {"status": "disabled", "reason": "autonomous_enabled=false"}
+
+        # Get ready tasks with tier <= 3
+        ready_tasks = task_store.list_ready_tasks(project_id, limit=50)
+
+        # Filter by tier and status
+        eligible_tasks = [
+            t
+            for t in ready_tasks
+            if (t.get("tier") or 2) <= 3 and t.get("status") in ("pending", "paused", "failed")
+        ]
+
+        if not eligible_tasks:
+            return {"status": "no_work", "tasks_checked": len(ready_tasks)}
+
+        # Apply exclusion criteria
+        exclusion_stats: dict[str, int] = {}
+        selected_task = None
+
+        for task in eligible_tasks:
+            exclusion_reason = _check_exclusion(task)
+            if exclusion_reason:
+                logger.debug(f"Excluded task {task['id']}: {exclusion_reason}")
+                exclusion_stats[exclusion_reason] = exclusion_stats.get(exclusion_reason, 0) + 1
+            else:
+                selected_task = task
+                break  # Take first eligible task
+
+        if not selected_task:
+            return {
+                "status": "all_excluded",
+                "tasks_checked": len(eligible_tasks),
+                "exclusion_stats": exclusion_stats,
+            }
+
+        # Claim task atomically
+        worker_id = f"autonomous-{project_id}"
+        claimed = task_store.claim_task(selected_task["id"], worker_id, lock_duration_minutes=60)
+
+        if not claimed:
+            logger.info(f"Failed to claim task {selected_task['id']} - already claimed")
+            return {"status": "claim_failed", "task_id": selected_task["id"]}
+
+        logger.info(f"Claimed task {claimed['id']} for autonomous execution")
+
+        # Execute via ImplementationExecutor
+        executor = ImplementationExecutor(project_id)
+
+        try:
+            session_id = executor.start_execution(claimed["id"], agent_type="gemini")
+            result = executor.execute_next_task(session_id, max_iterations=5)
+
+            if result.success:
+                # Transition to pending_review for Opus gate
+                task_store.update_task_status(claimed["id"], "pending_review")
+                logger.info(f"Task {claimed['id']} succeeded, moved to pending_review")
+                return {
+                    "status": "success",
+                    "task_id": claimed["id"],
+                    "iterations": result.iterations,
+                    "model_used": result.model_used,
+                    "exclusion_stats": exclusion_stats,
+                }
+            else:
+                # Mark failed with error message
+                task_store.update_task_status(
+                    claimed["id"],
+                    "failed",
+                    error_message=result.reason or result.error or "Unknown error",
+                )
+                task_store.release_task(claimed["id"])
+                logger.warning(f"Task {claimed['id']} failed: {result.reason}")
+                return {
+                    "status": "execution_failed",
+                    "task_id": claimed["id"],
+                    "iterations": result.iterations,
+                    "reason": result.reason,
+                    "error": result.error,
+                    "exclusion_stats": exclusion_stats,
+                }
+
+        except Exception as exec_error:
+            # Release task on execution error
+            task_store.release_task(claimed["id"])
+            logger.error(f"Execution error for task {claimed['id']}: {exec_error}")
+            return {
+                "status": "execution_error",
+                "task_id": claimed["id"],
+                "error": str(exec_error),
+                "exclusion_stats": exclusion_stats,
+            }
+
+    except Exception as e:
+        logger.error(f"Error in autonomous_work_pickup: {e}")
+        return {"status": "error", "error": str(e)}

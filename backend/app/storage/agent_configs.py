@@ -32,6 +32,9 @@ class AgentConfig(TypedDict, total=False):
     # Component management
     component_source: str  # "pages", "endpoints", "directories", or "manual"
 
+    # Autonomous execution controls
+    autonomous_enabled: bool  # Enable autonomous task pickup and execution
+
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
@@ -48,6 +51,8 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "context_injection_enabled": True,
     # Component management
     "component_source": "manual",
+    # Autonomous execution - disabled by default (opt-in)
+    "autonomous_enabled": False,
 }
 
 
@@ -285,3 +290,16 @@ def set_component_source(project_id: str, source: str) -> AgentConfig:
         )
 
     return update_agent_config(project_id, {"component_source": source})
+
+
+def is_autonomous_enabled(project_id: str) -> bool:
+    """Check if autonomous execution is enabled for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        True if autonomous execution is enabled
+    """
+    config = get_agent_config(project_id)
+    return bool(config.get("autonomous_enabled", False))

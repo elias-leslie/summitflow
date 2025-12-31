@@ -108,6 +108,12 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.reset_expired_task_claims",
         "schedule": 60 * 60,  # Hourly
     },
+    # Autonomous work pickup - pick up and execute eligible tasks
+    "autonomous-work-pickup-summitflow": {
+        "task": "summitflow.autonomous_work_pickup",
+        "schedule": 60 * 30,  # Every 30 minutes
+        "kwargs": {"project_id": "summitflow"},
+    },
 }
 
 
