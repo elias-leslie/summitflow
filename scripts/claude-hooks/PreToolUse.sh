@@ -60,10 +60,10 @@ main() {
     uncommitted=$(get_uncommitted_count)
     minutes_since_commit=$(get_minutes_since_commit)
 
-    # Check if we should warn
+    # Check if we should block
     if (( uncommitted > UNCOMMITTED_THRESHOLD && minutes_since_commit > MINUTES_THRESHOLD )); then
         cat <<EOF
-{"systemMessage": "⚠️ Git discipline: ${uncommitted} uncommitted files and last commit was ${minutes_since_commit} minutes ago. Consider committing your progress."}
+{"decision": "block", "reason": "⚠️ Git discipline: ${uncommitted} uncommitted files and last commit was ${minutes_since_commit} minutes ago. Please commit your progress before continuing."}
 EOF
     fi
 }
