@@ -21,29 +21,34 @@ def _generate_session_id() -> str:
 def create_session(
     project_id: str,
     agent_type: str,
+    build_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new agent build session.
 
     Args:
         project_id: Project ID
         agent_type: Type of agent ('claude', 'gemini', 'human')
+        build_state: Optional initial build state for implementation sessions
 
     Returns:
         The created session dict.
     """
+    from psycopg.types.json import Jsonb
+
     session_id = _generate_session_id()
+    build_state_json = Jsonb(build_state) if build_state else Jsonb({})
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO agent_sessions (project_id, session_id, agent_type)
-            VALUES (%s, %s, %s)
+            INSERT INTO agent_sessions (project_id, session_id, agent_type, build_state)
+            VALUES (%s, %s, %s, %s)
             RETURNING id, project_id, session_id, agent_type, status, started_at, ended_at,
                       capabilities_attempted, capabilities_passed, capabilities_failed,
                       tests_run, tests_passed, tests_failed, notes, git_commit_sha,
-                      created_at, updated_at
+                      created_at, updated_at, build_state
             """,
-            (project_id, session_id, agent_type),
+            (project_id, session_id, agent_type, build_state_json),
         )
         row = cur.fetchone()
         conn.commit()
@@ -63,7 +68,7 @@ def get_session(project_id: str, session_id: str) -> dict[str, Any] | None:
             SELECT id, project_id, session_id, agent_type, status, started_at, ended_at,
                    capabilities_attempted, capabilities_passed, capabilities_failed,
                    tests_run, tests_passed, tests_failed, notes, git_commit_sha,
-                   created_at, updated_at
+                   created_at, updated_at, build_state
             FROM agent_sessions
             WHERE project_id = %s AND session_id = %s
             """,
@@ -567,7 +572,7 @@ def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
     if row is None:
         return {}
 
-    return {
+    result = {
         "id": row[0],
         "project_id": row[1],
         "session_id": row[2],
@@ -586,3 +591,9 @@ def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
         "created_at": row[15].isoformat() if row[15] else None,
         "updated_at": row[16].isoformat() if row[16] else None,
     }
+
+    # Include build_state if present in query result
+    if len(row) > 17:
+        result["build_state"] = row[17] if row[17] else {}
+
+    return result

@@ -88,6 +88,7 @@ class ImplementationExecutor:
 
         # Initialize build_state
         build_state = {
+            "task_id": task_id,  # Store task_id for execute_next_task to find
             "status": "running",
             "completed_tasks": [],
             "current_task_id": None,
@@ -99,7 +100,6 @@ class ImplementationExecutor:
         # Create session
         session = create_session(
             project_id=self.project_id,
-            session_type="implementation",
             agent_type=agent_type,
             build_state=build_state,
         )
@@ -107,10 +107,10 @@ class ImplementationExecutor:
         logger.info(
             "execution_started",
             task_id=task_id,
-            session_id=session["id"],
+            session_id=session["session_id"],
         )
 
-        return session["id"]
+        return session["session_id"]
 
     def execute_next_task(
         self,
@@ -127,7 +127,7 @@ class ImplementationExecutor:
             ExecutionResult with success status and details
         """
         # Load session
-        session = get_session(session_id)
+        session = get_session(self.project_id, session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
@@ -349,7 +349,7 @@ class ImplementationExecutor:
         Returns:
             Session ID (same as input)
         """
-        session = get_session(session_id)
+        session = get_session(self.project_id, session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
@@ -388,7 +388,7 @@ class ImplementationExecutor:
 
     def _update_build_state(self, session_id: str, build_state: dict[str, Any]) -> None:
         """Update build_state in session."""
-        update_session(session_id, build_state=build_state)
+        update_session(self.project_id, session_id, build_state=build_state)
 
     def _execute_agent(self, model: dict[str, Any], prompt: str) -> str:
         """Execute agent with model and prompt.

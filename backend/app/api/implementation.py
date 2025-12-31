@@ -134,7 +134,7 @@ async def execute_next(
         Execution result with success status
     """
     # Verify session exists
-    session = get_session(request.session_id)
+    session = get_session(project_id, request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {request.session_id} not found")
 
@@ -179,7 +179,7 @@ async def get_execution_status(
     Returns:
         Current execution status
     """
-    session = get_session(session_id)
+    session = get_session(project_id, session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -214,7 +214,7 @@ async def resume_execution(
     Returns:
         Resumed session info
     """
-    session = get_session(session_id)
+    session = get_session(project_id, session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
