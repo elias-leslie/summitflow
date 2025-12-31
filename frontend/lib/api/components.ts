@@ -297,3 +297,81 @@ export async function linkTestToCriterion(
     }
   );
 }
+
+// =============================================================================
+// Batch Creation API
+// =============================================================================
+
+export interface BatchComponentCreateItem {
+  component_id: string;
+  name: string;
+  description?: string;
+  priority?: number;
+  explorer_entry_id?: number;
+}
+
+export interface BatchCreateResult {
+  component_id: string;
+  success: boolean;
+  id?: number;
+  error?: string;
+}
+
+export interface BatchComponentResponse {
+  created: TddComponent[];
+  errors: BatchCreateResult[];
+}
+
+export async function batchCreateComponents(
+  projectId: string,
+  items: BatchComponentCreateItem[]
+): Promise<BatchComponentResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/components/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+    errorMessage: "Failed to batch create components",
+  });
+}
+
+// Capability batch creation
+export interface BatchCriterionCreate {
+  criterion: string;
+  category?: "performance" | "correctness" | "security" | "quality";
+  measurement?: "test" | "metric" | "tool" | "manual";
+  threshold?: string;
+}
+
+export interface BatchCapabilityCreateItem {
+  component_id: number;
+  capability_id: string;
+  name: string;
+  description?: string;
+  priority?: number;
+  criteria?: BatchCriterionCreate[];
+}
+
+export interface BatchCapabilityResult {
+  capability_id: string;
+  success: boolean;
+  id?: number;
+  criteria_created?: number;
+  error?: string;
+}
+
+export interface BatchCapabilityResponse {
+  created: TddCapability[];
+  errors: BatchCapabilityResult[];
+}
+
+export async function batchCreateCapabilities(
+  projectId: string,
+  items: BatchCapabilityCreateItem[]
+): Promise<BatchCapabilityResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/capabilities/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+    errorMessage: "Failed to batch create capabilities",
+  });
+}

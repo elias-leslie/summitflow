@@ -205,3 +205,42 @@ export async function updateTaskStatus(
     errorMessage: "Failed to update task status",
   });
 }
+
+// ============================================================================
+// Batch Task Creation
+// ============================================================================
+
+export interface BatchTaskCreateItem {
+  title: string;
+  description?: string;
+  capability_id?: number;
+  priority?: number;
+  labels?: string[];
+  task_type?: TaskType;
+  parent_task_id?: string;
+  objective?: string;
+}
+
+export interface BatchTaskResult {
+  title: string;
+  success: boolean;
+  id?: string;
+  error?: string;
+}
+
+export interface BatchTaskResponse {
+  created: Task[];
+  errors: BatchTaskResult[];
+}
+
+export async function batchCreateTasks(
+  projectId: string,
+  items: BatchTaskCreateItem[]
+): Promise<BatchTaskResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+    errorMessage: "Failed to batch create tasks",
+  });
+}
