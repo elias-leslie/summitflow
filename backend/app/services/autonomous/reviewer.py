@@ -350,8 +350,10 @@ def handle_approval(
     if not task_id:
         raise ValueError("Task must have an id")
 
-    # Store review result
-    task_store.update_task(task_id, review_result=review_result)
+    # Merge review result with existing execution metrics (iterations, consulted, etc.)
+    existing_result = task.get("review_result") or {}
+    merged_result = {**existing_result, **review_result}
+    task_store.update_task(task_id, review_result=merged_result)
 
     # Mark complete
     updated = task_store.update_task_status(task_id, "completed")
@@ -405,8 +407,10 @@ def handle_rejection(
         except RuntimeError as e:
             logger.error("task_revert_failed", task_id=task_id, error=str(e))
 
-    # Store review result
-    task_store.update_task(task_id, review_result=review_result)
+    # Merge review result with existing execution metrics (iterations, consulted, etc.)
+    existing_result = task.get("review_result") or {}
+    merged_result = {**existing_result, **review_result}
+    task_store.update_task(task_id, review_result=merged_result)
 
     # Add needs-human label
     current_labels = task.get("labels", []) or []
@@ -442,8 +446,10 @@ def handle_fix_request(
     if not task_id:
         raise ValueError("Task must have an id")
 
-    # Store review result
-    task_store.update_task(task_id, review_result=review_result)
+    # Merge review result with existing execution metrics (iterations, consulted, etc.)
+    existing_result = task.get("review_result") or {}
+    merged_result = {**existing_result, **review_result}
+    task_store.update_task(task_id, review_result=merged_result)
 
     # Append feedback to progress log
     issues = review_result.get("issues", [])

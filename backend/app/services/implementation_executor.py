@@ -218,6 +218,11 @@ class ImplementationExecutor:
         last_error_signature = None
         iteration_context: dict[str, Any] | None = None
 
+        # Observability: Track consultation and handoff for metrics
+        was_consulted = False
+        was_handoff = False
+        execution_start = datetime.now(UTC)
+
         for iteration in range(1, max_iterations + 1):
             build_state["iteration"] = iteration
             self._update_build_state(session_id, build_state)
@@ -227,6 +232,7 @@ class ImplementationExecutor:
                 if iteration == 5:
                     # Full handoff
                     current_model = alternate_model
+                    was_handoff = True  # Observability: Track handoff
                     if iteration_context:
                         iteration_context["handoff_context"] = (
                             f"Failed after {iteration - 1} attempts with errors:\n"
@@ -235,6 +241,7 @@ class ImplementationExecutor:
                 else:
                     # Consult alternate for advice
                     current_model = primary_model
+                    was_consulted = True  # Observability: Track consultation
                     advice = self._consult_alternate(
                         alternate_model,
                         current_task,
@@ -306,6 +313,21 @@ class ImplementationExecutor:
                 build_state["completed_tasks"] = list(completed)
                 self._update_build_state(session_id, build_state)
 
+                # Observability: Store execution metrics in review_result
+                execution_time = (datetime.now(UTC) - execution_start).total_seconds()
+                task_store.update_task(
+                    task_id,
+                    review_result={
+                        "iterations": iteration,
+                        "model_used": model_name,
+                        "models_tried": models_tried,
+                        "consulted": was_consulted,
+                        "handoff": was_handoff,
+                        "reason": "success",
+                        "execution_time_seconds": round(execution_time, 2),
+                    },
+                )
+
                 return ExecutionResult(
                     success=True,
                     iterations=iteration,
@@ -336,6 +358,24 @@ class ImplementationExecutor:
                 logger.info("reverted_after_exhaustion", sha=pre_merge_sha[:8])
             except Exception as e:
                 logger.error("revert_failed", error=str(e))
+
+        # Observability: Store execution metrics for exhausted case
+        execution_time = (datetime.now(UTC) - execution_start).total_seconds()
+        task_store.update_task(
+            task_id,
+            review_result={
+                "iterations": max_iterations,
+                "model_used": models_tried[-1] if models_tried else "none",
+                "models_tried": models_tried,
+                "consulted": was_consulted,
+                "handoff": was_handoff,
+                "reason": "exhausted",
+                "execution_time_seconds": round(execution_time, 2),
+                "last_error": (
+                    iteration_context.get("test_failures", "")[:500] if iteration_context else None
+                ),
+            },
+        )
 
         return ExecutionResult(
             success=False,
