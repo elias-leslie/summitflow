@@ -116,7 +116,7 @@ class AcceptanceCriterion(BaseModel):
     )
     verified: bool = Field(default=False, description="Whether criterion has been verified")
     verified_at: datetime | None = Field(default=None, description="When criterion was verified")
-    verified_by: Literal["opus", "test", "human"] | None = Field(
+    verified_by: Literal["opus", "test", "human", "agent"] | None = Field(
         default=None, description="Who verified the criterion"
     )
 
@@ -187,6 +187,11 @@ class TaskResponse(BaseModel):
     labels: list[str]
     task_type: str
     parent_task_id: str | None
+    # AI agent reliability fields (added for TDD architecture coherence)
+    objective: str | None = None
+    acceptance_criteria: list[AcceptanceCriterion] | None = None
+    current_phase: str | None = None
+    verification_result: dict[str, Any] | None = None
     # Optional capability context (when include=capability)
     capability: CapabilityContext | None = None
     # Optional blockers context (when include=blockers)

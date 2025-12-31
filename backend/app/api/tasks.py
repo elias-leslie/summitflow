@@ -88,9 +88,14 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         if c.get("acceptance_criteria"):
             criteria_list = [
                 AcceptanceCriterion(
-                    id=crit.get("id", ""),
-                    description=crit.get("description", ""),
-                    passes=crit.get("passes", False),
+                    id=crit.get("id", "ac-000"),
+                    criterion=crit.get("criterion", crit.get("description", "")),
+                    category=crit.get("category", "correctness"),
+                    measurement=crit.get("measurement", "test"),
+                    threshold=crit.get("threshold"),
+                    verified=crit.get("verified", crit.get("passes", False)),
+                    verified_at=crit.get("verified_at"),
+                    verified_by=crit.get("verified_by"),
                 )
                 for crit in c["acceptance_criteria"]
             ]
@@ -118,6 +123,27 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         ]
         blocked_by_incomplete = len(blockers_list) > 0
 
+    # Handle task-level acceptance criteria (JSONB from storage)
+    task_criteria_list = None
+    if task.get("acceptance_criteria"):
+        raw_criteria = task["acceptance_criteria"]
+        # Storage returns list of dicts from JSONB
+        if isinstance(raw_criteria, list):
+            task_criteria_list = [
+                AcceptanceCriterion(
+                    id=crit.get("id", "ac-000"),
+                    criterion=crit.get("criterion", crit.get("description", "")),
+                    category=crit.get("category", "correctness"),
+                    measurement=crit.get("measurement", "test"),
+                    threshold=crit.get("threshold"),
+                    verified=crit.get("verified", False),
+                    verified_at=crit.get("verified_at"),
+                    verified_by=crit.get("verified_by"),
+                )
+                for crit in raw_criteria
+                if crit.get("id") or crit.get("criterion") or crit.get("description")
+            ]
+
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
@@ -143,6 +169,11 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         labels=task.get("labels") or [],
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
+        # AI agent reliability fields
+        objective=task.get("objective"),
+        acceptance_criteria=task_criteria_list,
+        current_phase=task.get("current_phase"),
+        verification_result=task.get("verification_result"),
         # Optional feature context
         capability=capability_context,
         # Optional blockers context
@@ -360,10 +391,29 @@ async def update_task_status(
         update: New status, optional error message, and force flag
 
     Note:
-        When completing a feature-type task linked to a feature with acceptance
-        criteria, all criteria must pass unless force=true.
+        When completing a task with acceptance_criteria, all criteria must have
+        verified=true unless force=true.
     """
-    _verify_task_project(task_id, project_id)
+    task = _verify_task_project(task_id, project_id)
+
+    # Validate acceptance criteria when completing (unless force=true)
+    if update.status == "completed" and not update.force:
+        acceptance_criteria = task.get("acceptance_criteria") or []
+        if isinstance(acceptance_criteria, list) and acceptance_criteria:
+            unverified = [
+                crit.get("id", "unknown")
+                for crit in acceptance_criteria
+                if not crit.get("verified", False)
+            ]
+            if unverified:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "message": "Cannot complete task with unverified acceptance criteria",
+                        "unverified_criteria": unverified,
+                        "hint": "Use force=true to bypass this check",
+                    },
+                )
 
     try:
         updated = task_store.update_task_status(
