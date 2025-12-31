@@ -255,6 +255,19 @@ Tasks start with human review. As approval rate increases:
 | `/task_it <name>` | Create task with plan_content from planning session |
 | `/do_it <task-id>` | Execute task via ImplementationExecutor |
 
+### Standalone Execution (Fallback)
+
+When SummitFlow services are unavailable or for standalone JSON-based execution:
+
+| Command | Purpose |
+|---------|---------|
+| `/og_task_it` | Generate implementation.json from plan (no API) |
+| `/og_do_it` | Execute from implementation.json (no API) |
+| `/og_refactor_it` | Refactor workflow with local files |
+
+**Use when:** SummitFlow backend is down, working offline, or need simpler file-based tracking.
+**Location:** `~/.claude/commands/og_*.md`
+
 ---
 
 ## First-Time Setup
