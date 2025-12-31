@@ -53,10 +53,10 @@ def create_capability(
 def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None:
     """Get a capability by project_id and capability_id.
 
-    Status is computed on read:
+    Status is computed on read via capability_criteria -> criterion_tests -> tests:
     - 'locked' if locked_at is set
-    - 'tests_passing' if all linked tests have last_result='passed'
-    - 'pending' otherwise (no tests, or any test not passing)
+    - 'tests_passing' if all criteria have at least one passing test
+    - 'pending' otherwise (no criteria, or any criterion without passing tests)
 
     Returns:
         Capability dict or None if not found.
@@ -69,13 +69,19 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
                    CASE
                        WHEN c.locked_at IS NOT NULL THEN 'locked'
                        WHEN NOT EXISTS (
-                           SELECT 1 FROM capability_tests WHERE capability_id = c.id
+                           SELECT 1 FROM capability_criteria WHERE capability_id = c.id
                        ) THEN 'pending'
                        WHEN EXISTS (
-                           SELECT 1 FROM capability_tests ct
-                           JOIN tests t ON ct.test_id = t.id
-                           WHERE ct.capability_id = c.id
-                             AND (t.last_result IS NULL OR t.last_result != 'passed')
+                           -- Check for any criterion without a passing test
+                           SELECT 1 FROM capability_criteria cc
+                           JOIN acceptance_criteria ac ON cc.criterion_id = ac.id
+                           WHERE cc.capability_id = c.id
+                             AND NOT EXISTS (
+                               SELECT 1 FROM criterion_tests ct
+                               JOIN tests t ON ct.test_id = t.id
+                               WHERE ct.criterion_id = ac.id
+                                 AND t.last_result = 'passed'
+                             )
                        ) THEN 'pending'
                        ELSE 'tests_passing'
                    END as status,
@@ -106,13 +112,18 @@ def get_capability_by_id(capability_db_id: int) -> dict[str, Any] | None:
                    CASE
                        WHEN c.locked_at IS NOT NULL THEN 'locked'
                        WHEN NOT EXISTS (
-                           SELECT 1 FROM capability_tests WHERE capability_id = c.id
+                           SELECT 1 FROM capability_criteria WHERE capability_id = c.id
                        ) THEN 'pending'
                        WHEN EXISTS (
-                           SELECT 1 FROM capability_tests ct
-                           JOIN tests t ON ct.test_id = t.id
-                           WHERE ct.capability_id = c.id
-                             AND (t.last_result IS NULL OR t.last_result != 'passed')
+                           SELECT 1 FROM capability_criteria cc
+                           JOIN acceptance_criteria ac ON cc.criterion_id = ac.id
+                           WHERE cc.capability_id = c.id
+                             AND NOT EXISTS (
+                               SELECT 1 FROM criterion_tests ct
+                               JOIN tests t ON ct.test_id = t.id
+                               WHERE ct.criterion_id = ac.id
+                                 AND t.last_result = 'passed'
+                             )
                        ) THEN 'pending'
                        ELSE 'tests_passing'
                    END as status,
@@ -142,18 +153,23 @@ def list_capabilities(
     Returns:
         List of capability dicts, ordered by priority then name.
     """
-    # Common SQL for computed status
+    # Common SQL for computed status via capability_criteria -> criterion_tests -> tests
     status_sql = """
         CASE
             WHEN c.locked_at IS NOT NULL THEN 'locked'
             WHEN NOT EXISTS (
-                SELECT 1 FROM capability_tests WHERE capability_id = c.id
+                SELECT 1 FROM capability_criteria WHERE capability_id = c.id
             ) THEN 'pending'
             WHEN EXISTS (
-                SELECT 1 FROM capability_tests ct
-                JOIN tests t ON ct.test_id = t.id
-                WHERE ct.capability_id = c.id
-                  AND (t.last_result IS NULL OR t.last_result != 'passed')
+                SELECT 1 FROM capability_criteria cc
+                JOIN acceptance_criteria ac ON cc.criterion_id = ac.id
+                WHERE cc.capability_id = c.id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM criterion_tests ct
+                    JOIN tests t ON ct.test_id = t.id
+                    WHERE ct.criterion_id = ac.id
+                      AND t.last_result = 'passed'
+                  )
             ) THEN 'pending'
             ELSE 'tests_passing'
         END as status

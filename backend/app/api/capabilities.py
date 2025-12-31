@@ -3,11 +3,13 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..storage import capabilities as storage
+from ..storage import criteria as criteria_storage
 from ..storage import explorer as explorer_storage
 from ..storage import tests as tests_storage
+from ..storage.connection import get_connection
 
 router = APIRouter()
 
@@ -49,7 +51,7 @@ class CapabilityResponse(BaseModel):
 
 
 class VerifyResult(BaseModel):
-    """Response model for capability verification result."""
+    """DEPRECATED: Response model for capability verification result."""
 
     capability_id: str
     capability_status: str
@@ -79,6 +81,38 @@ class CapabilityWithTestsResponse(CapabilityResponse):
     """Response model for capability with linked tests."""
 
     tests: list[dict[str, Any]] = []
+    criteria: list[dict[str, Any]] = []  # Linked acceptance criteria
+
+
+class CreateCriterionRequest(BaseModel):
+    """Request model for creating a criterion and linking to capability."""
+
+    criterion: str = Field(min_length=10, description="Specific measurable condition")
+    category: str = Field(
+        default="correctness", description="performance, correctness, security, quality"
+    )
+    measurement: str = Field(default="test", description="test, metric, tool, manual")
+    threshold: str | None = Field(default=None, description="Specific value e.g., '<200ms'")
+
+
+class CriterionResponse(BaseModel):
+    """Response model for an acceptance criterion."""
+
+    id: int
+    criterion_id: str
+    criterion: str
+    category: str
+    measurement: str
+    threshold: str | None = None
+    created_at: str | None = None
+    tests: list[dict[str, Any]] = []
+
+
+class LinkTestRequest(BaseModel):
+    """Request model for linking a test to a criterion."""
+
+    test_id: int = Field(description="Database ID of the test to link")
+    is_primary: bool = Field(default=False, description="Whether this is the primary test")
 
 
 @router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse])
@@ -95,15 +129,23 @@ async def list_capabilities(
     "/{project_id}/capabilities/{capability_id}", response_model=CapabilityWithTestsResponse
 )
 async def get_capability(project_id: str, capability_id: str) -> CapabilityWithTestsResponse:
-    """Get a specific capability with linked tests."""
+    """Get a specific capability with linked tests and criteria."""
     capability = storage.get_capability(project_id, capability_id)
     if not capability:
         raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
 
-    # Get linked tests for this capability
-    tests = tests_storage.get_tests_for_capability(project_id, capability["id"])
+    # Get linked tests for this capability (via old capability_tests table)
+    tests = tests_storage.get_tests_for_capability(project_id, capability["capability_id"])
 
-    return CapabilityWithTestsResponse(**capability, tests=tests)
+    # Get linked criteria (new unified criteria)
+    with get_connection() as conn:
+        criteria = criteria_storage.get_criteria_for_capability(conn, project_id, capability_id)
+        # Enrich each criterion with its linked tests
+        for crit in criteria:
+            crit["tests"] = criteria_storage.get_tests_for_criterion(conn, crit["id"])
+            crit["created_at"] = crit["created_at"].isoformat() if crit.get("created_at") else None
+
+    return CapabilityWithTestsResponse(**capability, tests=tests, criteria=criteria)
 
 
 @router.post("/{project_id}/capabilities", response_model=CapabilityResponse)
@@ -179,51 +221,83 @@ async def delete_capability(project_id: str, capability_id: str) -> dict[str, st
     return {"status": "deleted", "capability_id": capability_id}
 
 
-@router.post("/{project_id}/capabilities/{capability_id}/verify", response_model=VerifyResult)
-async def verify_capability(project_id: str, capability_id: str) -> VerifyResult:
-    """Verify a capability by checking its linked tests.
+class CriterionVerifyResult(BaseModel):
+    """Verification result for a single criterion."""
 
-    Returns the verification result including test counts and evidence status.
-    If all tests pass and verification_url is set, captures evidence.
+    criterion_id: str
+    criterion: str
+    passed: bool
+    tests: list[dict[str, Any]] = []
+
+
+class VerifyResultV2(BaseModel):
+    """Response model for capability verification with criteria details."""
+
+    capability_id: str
+    capability_status: str
+    criteria_total: int
+    criteria_passed: int
+    criteria_details: list[CriterionVerifyResult]
+    evidence_captured: bool
+
+
+@router.post("/{project_id}/capabilities/{capability_id}/verify", response_model=VerifyResultV2)
+async def verify_capability(project_id: str, capability_id: str) -> VerifyResultV2:
+    """Verify a capability by checking its linked criteria and tests.
+
+    Returns per-criterion pass/fail status with test details.
+    A criterion passes if at least one linked test has last_result='passed'.
     """
     capability = storage.get_capability(project_id, capability_id)
     if not capability:
         raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
 
-    # Get linked tests for this capability
-    tests = tests_storage.get_tests_for_capability(project_id, capability_id)
+    criteria_details: list[CriterionVerifyResult] = []
+    criteria_passed = 0
 
-    # Count test results based on last_result
-    tests_passed = 0
-    tests_failed = 0
-    for test in tests:
-        result = test.get("last_result")
-        if result == "passed":
-            tests_passed += 1
-        elif result in ("failed", "error", "timeout"):
-            tests_failed += 1
-        # If result is None/null, test hasn't been run yet (counts as failed)
-        else:
-            tests_failed += 1
+    with get_connection() as conn:
+        # Get all criteria for this capability
+        criteria = criteria_storage.get_criteria_for_capability(conn, project_id, capability_id)
 
-    tests_total = len(tests)
-    evidence_captured = False
+        for crit in criteria:
+            # Get tests for this criterion
+            tests = criteria_storage.get_tests_for_criterion(conn, crit["id"])
 
-    # Note: Evidence capture is deferred - requires criterion_id integration
-    # For now, verification_url is stored but evidence capture happens via
-    # the existing /evidence/capture endpoint when needed.
-    # TODO: Add criterion-level or capability-level evidence capture
+            # Check if any test passed
+            passed = any(t.get("last_result") == "passed" for t in tests)
+            if passed:
+                criteria_passed += 1
 
-    # Get latest capability status (may have been updated by test runs)
+            # Convert test data for response
+            test_details = [
+                {
+                    "test_id": t["test_id"],
+                    "name": t["name"],
+                    "last_result": t.get("last_result"),
+                    "is_primary": t.get("is_primary", False),
+                }
+                for t in tests
+            ]
+
+            criteria_details.append(
+                CriterionVerifyResult(
+                    criterion_id=crit["criterion_id"],
+                    criterion=crit["criterion"],
+                    passed=passed,
+                    tests=test_details,
+                )
+            )
+
+    # Get latest capability status (computed status based on criteria/tests)
     capability = storage.get_capability(project_id, capability_id)
 
-    return VerifyResult(
+    return VerifyResultV2(
         capability_id=capability_id,
         capability_status=capability["status"] if capability else "pending",
-        tests_total=tests_total,
-        tests_passed=tests_passed,
-        tests_failed=tests_failed,
-        evidence_captured=evidence_captured,
+        criteria_total=len(criteria_details),
+        criteria_passed=criteria_passed,
+        criteria_details=criteria_details,
+        evidence_captured=False,  # TODO: Implement auto-capture
     )
 
 
@@ -290,3 +364,98 @@ async def get_capability_explorer_entries(
 
     links = explorer_storage.get_capability_links(capability["id"])
     return [ExplorerLinkResponse(**link) for link in links]
+
+
+# --- Criteria Endpoints ---
+
+
+@router.post(
+    "/{project_id}/capabilities/{capability_id}/criteria",
+    response_model=CriterionResponse,
+)
+async def create_capability_criterion(
+    project_id: str, capability_id: str, body: CreateCriterionRequest
+) -> CriterionResponse:
+    """Create a new criterion and link it to a capability."""
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    with get_connection() as conn:
+        # Create the criterion
+        criterion = criteria_storage.create_criterion(
+            conn,
+            project_id,
+            body.criterion,
+            category=body.category,
+            measurement=body.measurement,
+            threshold=body.threshold,
+        )
+
+        # Link to capability
+        criteria_storage.link_criterion_to_capability(conn, capability["id"], criterion["id"])
+
+        return CriterionResponse(
+            id=criterion["id"],
+            criterion_id=criterion["criterion_id"],
+            criterion=criterion["criterion"],
+            category=criterion["category"],
+            measurement=criterion["measurement"],
+            threshold=criterion["threshold"],
+            created_at=criterion["created_at"].isoformat() if criterion.get("created_at") else None,
+            tests=[],
+        )
+
+
+@router.delete("/{project_id}/capabilities/{capability_id}/criteria/{criterion_id}")
+async def delete_capability_criterion(
+    project_id: str, capability_id: str, criterion_id: str
+) -> dict[str, Any]:
+    """Unlink and delete a criterion from a capability.
+
+    The criterion is deleted if it becomes orphaned (no other links).
+    """
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    with get_connection() as conn:
+        # Find criterion by criterion_id string
+        criterion = criteria_storage.get_criterion(conn, project_id, criterion_id)
+        if not criterion:
+            raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+
+        # Unlink (this handles orphan cleanup)
+        unlinked = criteria_storage.unlink_criterion_from_capability(
+            conn, capability["id"], criterion["id"]
+        )
+        if not unlinked:
+            raise HTTPException(status_code=404, detail="Criterion not linked to capability")
+
+    return {"status": "deleted", "criterion_id": criterion_id}
+
+
+@router.post(
+    "/{project_id}/capabilities/{capability_id}/criteria/{criterion_id}/link-test",
+    response_model=dict[str, Any],
+)
+async def link_test_to_criterion(
+    project_id: str, capability_id: str, criterion_id: str, body: LinkTestRequest
+) -> dict[str, Any]:
+    """Link an existing test to a criterion."""
+    capability = storage.get_capability(project_id, capability_id)
+    if not capability:
+        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
+
+    with get_connection() as conn:
+        criterion = criteria_storage.get_criterion(conn, project_id, criterion_id)
+        if not criterion:
+            raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+
+        linked = criteria_storage.link_test_to_criterion(
+            conn, criterion["id"], body.test_id, is_primary=body.is_primary
+        )
+        if not linked:
+            raise HTTPException(status_code=400, detail="Failed to link test")
+
+    return {"status": "linked", "criterion_id": criterion_id, "test_id": body.test_id}
