@@ -345,24 +345,9 @@ def init_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_criterion_tests_criterion ON criterion_tests(criterion_id)"
         )
 
-        # Capability-Tests junction table (many-to-many) - DEPRECATED, use criterion_tests
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS capability_tests (
-                    capability_id INTEGER NOT NULL REFERENCES capabilities(id) ON DELETE CASCADE,
-                    test_id INTEGER NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-                    is_primary BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    PRIMARY KEY (capability_id, test_id)
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_capability_tests_capability ON capability_tests(capability_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_capability_tests_test ON capability_tests(test_id)"
-        )
+        # NOTE: capability_tests table REMOVED in migration 035
+        # Tests are now linked to capabilities via criterion_tests junction table:
+        #   capability -> capability_criteria -> acceptance_criteria -> criterion_tests -> test
 
         # Test runs - Historical test execution records
         cur.execute(

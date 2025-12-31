@@ -327,7 +327,10 @@ def link_test_to_capability(
     test_db_id: int,
     is_primary: bool = False,
 ) -> dict[str, Any]:
-    """Link a test to a capability.
+    """Link a test to a capability via criterion_tests junction.
+
+    This creates an auto-generated criterion for the test and links it
+    to the capability via capability_criteria.
 
     Args:
         capability_db_id: Database ID of the capability
@@ -337,57 +340,132 @@ def link_test_to_capability(
     Returns:
         Dict with capability_id, test_id, is_primary, created_at
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO capability_tests (capability_id, test_id, is_primary)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (capability_id, test_id) DO UPDATE
-            SET is_primary = EXCLUDED.is_primary
-            RETURNING capability_id, test_id, is_primary, created_at
-            """,
-            (capability_db_id, test_db_id, is_primary),
+    from .criteria import (
+        create_criterion,
+        link_criterion_to_capability,
+        link_test_to_criterion,
+    )
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Get capability and test info
+            cur.execute(
+                "SELECT project_id FROM capabilities WHERE id = %s",
+                (capability_db_id,),
+            )
+            cap_row = cur.fetchone()
+            if not cap_row:
+                raise ValueError(f"Capability {capability_db_id} not found")
+            project_id = cap_row[0]
+
+            cur.execute("SELECT name FROM tests WHERE id = %s", (test_db_id,))
+            test_row = cur.fetchone()
+            if not test_row:
+                raise ValueError(f"Test {test_db_id} not found")
+            test_name = test_row[0]
+
+            # Check if this test is already linked via criterion_tests
+            cur.execute(
+                """
+                SELECT ct.criterion_id FROM criterion_tests ct
+                JOIN capability_criteria cc ON ct.criterion_id = cc.criterion_id
+                WHERE cc.capability_id = %s AND ct.test_id = %s
+                """,
+                (capability_db_id, test_db_id),
+            )
+            existing = cur.fetchone()
+            if existing:
+                # Already linked, just update is_primary
+                cur.execute(
+                    "UPDATE criterion_tests SET is_primary = %s WHERE criterion_id = %s AND test_id = %s",
+                    (is_primary, existing[0], test_db_id),
+                )
+                conn.commit()
+                return {
+                    "capability_id": capability_db_id,
+                    "test_id": test_db_id,
+                    "is_primary": is_primary,
+                    "created_at": None,
+                }
+
+        # Create a new criterion for this test (still inside the connection context)
+        criterion = create_criterion(
+            conn,
+            project_id,
+            f"Test passes: {test_name}",
+            category="correctness",
+            measurement="test",
         )
-        row = cur.fetchone()
-        conn.commit()
+        criterion_db_id = criterion["id"]
 
-    if not row:
-        raise ValueError("Failed to link test to capability")
+        # Link criterion to capability and test
+        link_criterion_to_capability(conn, capability_db_id, criterion_db_id)
+        link_test_to_criterion(conn, criterion_db_id, test_db_id, is_primary)
 
-    return {
-        "capability_id": row[0],
-        "test_id": row[1],
-        "is_primary": row[2],
-        "created_at": row[3].isoformat() if row[3] else None,
-    }
+        return {
+            "capability_id": capability_db_id,
+            "test_id": test_db_id,
+            "is_primary": is_primary,
+            "created_at": criterion["created_at"].isoformat()
+            if criterion.get("created_at")
+            else None,
+        }
 
 
 def unlink_test_from_capability(capability_db_id: int, test_db_id: int) -> bool:
-    """Unlink a test from a capability.
+    """Unlink a test from a capability via criterion_tests junction.
+
+    Removes the criterion_tests link and deletes the criterion if orphaned.
 
     Returns:
         True if unlinked, False if link didn't exist.
     """
+    from .criteria import check_and_delete_orphan
+
     with get_connection() as conn, conn.cursor() as cur:
+        # Find the criterion linking this test to this capability
         cur.execute(
             """
-            DELETE FROM capability_tests
-            WHERE capability_id = %s AND test_id = %s
-            RETURNING capability_id
+            SELECT ct.criterion_id FROM criterion_tests ct
+            JOIN capability_criteria cc ON ct.criterion_id = cc.criterion_id
+            WHERE cc.capability_id = %s AND ct.test_id = %s
             """,
             (capability_db_id, test_db_id),
         )
-        deleted = cur.fetchone() is not None
+        row = cur.fetchone()
+        if not row:
+            return False
+
+        criterion_db_id = row[0]
+
+        # Remove the test link
+        cur.execute(
+            "DELETE FROM criterion_tests WHERE criterion_id = %s AND test_id = %s",
+            (criterion_db_id, test_db_id),
+        )
         conn.commit()
 
-    return deleted
+        # Check if criterion is orphaned (no more tests linked)
+        cur.execute(
+            "SELECT 1 FROM criterion_tests WHERE criterion_id = %s LIMIT 1",
+            (criterion_db_id,),
+        )
+        if not cur.fetchone():
+            # No more tests, remove capability link and delete criterion
+            cur.execute(
+                "DELETE FROM capability_criteria WHERE criterion_id = %s",
+                (criterion_db_id,),
+            )
+            check_and_delete_orphan(conn, criterion_db_id)
+
+    return True
 
 
 def get_tests_for_capability(
     project_id: str,
     capability_id: str,
 ) -> list[dict[str, Any]]:
-    """Get all tests linked to a capability.
+    """Get all tests linked to a capability via criterion_tests.
 
     Args:
         project_id: Project ID
@@ -404,8 +482,10 @@ def get_tests_for_capability(
                    t.last_duration_ms, t.last_output, t.last_error, t.run_count, t.pass_count,
                    t.fail_count, t.flaky_score, t.created_at, t.updated_at, ct.is_primary
             FROM tests t
-            INNER JOIN capability_tests ct ON t.id = ct.test_id
-            INNER JOIN capabilities c ON ct.capability_id = c.id
+            INNER JOIN criterion_tests ct ON t.id = ct.test_id
+            INNER JOIN acceptance_criteria ac ON ct.criterion_id = ac.id
+            INNER JOIN capability_criteria cc ON ac.id = cc.criterion_id
+            INNER JOIN capabilities c ON cc.capability_id = c.id
             WHERE c.project_id = %s AND c.capability_id = %s
             ORDER BY ct.is_primary DESC, t.name ASC
             """,
@@ -425,7 +505,7 @@ def get_capabilities_for_test(
     project_id: str,
     test_id: str,
 ) -> list[dict[str, Any]]:
-    """Get all capabilities linked to a test.
+    """Get all capabilities linked to a test via criterion_tests.
 
     Args:
         project_id: Project ID
@@ -440,7 +520,9 @@ def get_capabilities_for_test(
             SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
                    c.priority, c.status, c.locked_at, c.created_at, c.updated_at, ct.is_primary
             FROM capabilities c
-            INNER JOIN capability_tests ct ON c.id = ct.capability_id
+            INNER JOIN capability_criteria cc ON c.id = cc.capability_id
+            INNER JOIN acceptance_criteria ac ON cc.criterion_id = ac.id
+            INNER JOIN criterion_tests ct ON ac.id = ct.criterion_id
             INNER JOIN tests t ON ct.test_id = t.id
             WHERE t.project_id = %s AND t.test_id = %s
             ORDER BY c.name ASC

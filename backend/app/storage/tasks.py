@@ -15,15 +15,16 @@ from psycopg.rows import TupleRow
 
 from .connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (33 columns)
+# Column list for all task SELECT/RETURNING queries (32 columns)
 # Order must match _row_to_dict index mapping
+# Note: acceptance_criteria removed (migrated to task_criteria junction table)
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     current_criterion_id, spec_content, plan_content, progress_log,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
     priority, labels, task_type, parent_task_id,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
-    objective, acceptance_criteria, current_phase, verification_result"""
+    objective, current_phase, verification_result"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -32,7 +33,7 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.labels, t.task_type, t.parent_task_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
-    t.objective, t.acceptance_criteria, t.current_phase, t.verification_result"""
+    t.objective, t.current_phase, t.verification_result"""
 
 
 def _generate_task_id() -> str:
@@ -52,7 +53,6 @@ def create_task(
     parent_task_id: str | None = None,
     tier: int | None = None,
     objective: str | None = None,
-    acceptance_criteria: list[dict[str, Any]] | None = None,
     current_phase: str = "plan",
 ) -> dict[str, Any]:
     """Create a new task.
@@ -69,8 +69,11 @@ def create_task(
         parent_task_id: Parent task ID for subtasks
         tier: Execution tier 1-4 for autonomous execution (defaults to 2)
         objective: Single measurable goal statement
-        acceptance_criteria: List of criteria dicts with id, criterion, verified fields
         current_phase: Task phase: plan, implement, test, verify, complete
+
+    Note:
+        Acceptance criteria are now managed via task_criteria junction table.
+        Use storage.criteria.link_criterion_to_task() to add criteria.
 
     Returns:
         The created task dict with all columns.
@@ -79,16 +82,14 @@ def create_task(
         task_id = _generate_task_id()
     if labels is None:
         labels = []
-    if acceptance_criteria is None:
-        acceptance_criteria = []
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, labels, task_type, parent_task_id, tier,
-                               objective, acceptance_criteria, current_phase)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                               objective, current_phase)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -103,7 +104,6 @@ def create_task(
                 parent_task_id,
                 tier,
                 objective,
-                json.dumps(acceptance_criteria),
                 current_phase,
             ),
         )
@@ -184,7 +184,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "review_result",
         # AI agent reliability fields
         "objective",
-        "acceptance_criteria",
+        # acceptance_criteria removed (migrated to task_criteria junction)
         "current_phase",
         "verification_result",
     }
@@ -199,10 +199,9 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         if field in ("commits", "labels") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
-        elif (
-            field in ("plan_content", "review_result", "verification_result")
-            and isinstance(value, dict)
-        ) or (field == "acceptance_criteria" and isinstance(value, list)):
+        elif field in ("plan_content", "review_result", "verification_result") and isinstance(
+            value, dict
+        ):
             set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
             params.append(json.dumps(value))
         else:
@@ -486,19 +485,22 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-EXPECTED_TASK_COLUMNS = 33
+EXPECTED_TASK_COLUMNS = 32
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order: id, project_id, capability_id, title, description, status,
-                  current_criterion_id, spec_content, plan_content, progress_log,
-                  error_message, branch_name, commits, pull_request_url,
-                  total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                  priority, labels, task_type, parent_task_id,
-                  claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
-                  objective, acceptance_criteria, current_phase, verification_result
+    Column order (32 columns):
+        id, project_id, capability_id, title, description, status,
+        current_criterion_id, spec_content, plan_content, progress_log,
+        error_message, branch_name, commits, pull_request_url,
+        total_sessions, total_tokens_used, created_at, started_at, completed_at,
+        priority, labels, task_type, parent_task_id,
+        claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
+        objective, current_phase, verification_result
+
+    Note: acceptance_criteria removed (migrated to task_criteria junction table)
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -538,9 +540,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "review_result": row[28],
         # AI agent reliability fields
         "objective": row[29],
-        "acceptance_criteria": row[30] or [],
-        "current_phase": row[31],
-        "verification_result": row[32],
+        "current_phase": row[30],
+        "verification_result": row[31],
     }
 
 
