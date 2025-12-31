@@ -41,6 +41,7 @@ interface Evidence {
   criterionDbId: number | null;
   testRunId: number | null;
   autoCaptured: boolean;
+  criterionText: string | null;
 }
 
 interface EvidenceSummary {
@@ -338,6 +339,11 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                     </span>
                   )}
                 </div>
+                {evidence.criterionText && (
+                  <div className="text-2xs text-slate-400 truncate" title={evidence.criterionText}>
+                    Verifies: {evidence.criterionText}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -381,8 +387,13 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   <td className="px-3 py-2 font-mono text-xs text-white">
                     {evidence.capabilityId}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-400">
-                    {evidence.criterionId}
+                  <td className="px-3 py-2">
+                    <div className="font-mono text-xs text-slate-400">{evidence.criterionId}</div>
+                    {evidence.criterionText && (
+                      <div className="text-2xs text-slate-500 truncate max-w-[200px]" title={evidence.criterionText}>
+                        {evidence.criterionText}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <StatusBadge status={evidence.qualityStatus} />

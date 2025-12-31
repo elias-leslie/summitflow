@@ -23,6 +23,7 @@ export interface Evidence {
   criterionDbId: number | null; // FK to acceptance_criteria.id
   testRunId: number | null; // FK to test_runs.id
   autoCaptured: boolean; // True if auto-captured on test pass
+  criterionText: string | null; // Human-readable criterion text from JOIN
 }
 
 /**

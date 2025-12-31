@@ -67,6 +67,8 @@ def _format_evidence_record(e: dict[str, Any], *, project_id: str | None = None)
         "criterionDbId": e.get("criterion_db_id"),
         "testRunId": e.get("test_run_id"),
         "autoCaptured": e.get("auto_captured", False),
+        # Criterion text from LEFT JOIN (shows what this evidence verifies)
+        "criterionText": e.get("criterion_text"),
     }
     if project_id:
         result["screenshotUrl"] = (

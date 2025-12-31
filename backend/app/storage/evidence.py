@@ -18,7 +18,7 @@ from psycopg import sql
 
 from .connection import get_connection
 
-# Shared SELECT columns for evidence queries
+# Base SELECT columns for evidence queries (without JOIN)
 EVIDENCE_SELECT_COLUMNS = """id, evidence_id, capability_id, criterion_id, evidence_type,
        file_path, file_size_bytes, version, is_current,
        captured_at, quality_status, quality_issues,
@@ -26,10 +26,26 @@ EVIDENCE_SELECT_COLUMNS = """id, evidence_id, capability_id, criterion_id, evide
        user_reviewed_at, user_approved, user_notes,
        criterion_db_id, test_run_id, auto_captured"""
 
+# SELECT columns with LEFT JOIN to acceptance_criteria for criterion text
+EVIDENCE_SELECT_WITH_CRITERION = """e.id, e.evidence_id, e.capability_id, e.criterion_id, e.evidence_type,
+       e.file_path, e.file_size_bytes, e.version, e.is_current,
+       e.captured_at, e.quality_status, e.quality_issues,
+       e.confidence, e.ai_reviewed_at, e.ai_reviewed_by, e.ai_evidence,
+       e.user_reviewed_at, e.user_approved, e.user_notes,
+       e.criterion_db_id, e.test_run_id, e.auto_captured,
+       ac.criterion as criterion_text"""
 
-def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert database row to evidence dict."""
-    return {
+
+def _row_to_evidence(
+    row: tuple[Any, ...], *, include_criterion_text: bool = False
+) -> dict[str, Any]:
+    """Convert database row to evidence dict.
+
+    Args:
+        row: Database row tuple
+        include_criterion_text: If True, expects row[22] to contain criterion text from JOIN
+    """
+    result = {
         "id": row[0],
         "evidence_id": row[1],
         "capability_id": row[2],
@@ -53,6 +69,9 @@ def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
         "test_run_id": row[20],
         "auto_captured": row[21],
     }
+    if include_criterion_text and len(row) > 22:
+        result["criterion_text"] = row[22]
+    return result
 
 
 # ============================================================
@@ -146,18 +165,23 @@ def get_evidence(
     criterion_id: str,
     version: int | None = None,
 ) -> dict[str, Any] | None:
-    """Get evidence metadata (current version or specific version)."""
+    """Get evidence metadata (current version or specific version).
+
+    Includes criterion_text via LEFT JOIN to acceptance_criteria if criterion_db_id is set.
+    """
     with get_connection() as conn, conn.cursor() as cur:
         if version:
             cur.execute(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND version = %s",
+                f"SELECT {EVIDENCE_SELECT_WITH_CRITERION} FROM evidence e "
+                "LEFT JOIN acceptance_criteria ac ON e.criterion_db_id = ac.id "
+                "WHERE e.project_id = %s AND e.capability_id = %s AND e.criterion_id = %s AND e.version = %s",
                 (project_id, capability_id, criterion_id, version),
             )
         else:
             cur.execute(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE project_id = %s AND capability_id = %s AND criterion_id = %s AND is_current = TRUE",
+                f"SELECT {EVIDENCE_SELECT_WITH_CRITERION} FROM evidence e "
+                "LEFT JOIN acceptance_criteria ac ON e.criterion_db_id = ac.id "
+                "WHERE e.project_id = %s AND e.capability_id = %s AND e.criterion_id = %s AND e.is_current = TRUE",
                 (project_id, capability_id, criterion_id),
             )
         row = cur.fetchone()
@@ -165,7 +189,7 @@ def get_evidence(
         if not row:
             return None
 
-        return _row_to_evidence(row)
+        return _row_to_evidence(row, include_criterion_text=True)
 
 
 def get_latest_evidence(project_id: str) -> dict[str, Any] | None:
@@ -231,30 +255,34 @@ def list_evidence(
     criterion_db_id: int | None = None,
     test_run_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """List all current evidence for a project with filtering."""
+    """List all current evidence for a project with filtering.
+
+    Includes criterion_text via LEFT JOIN to acceptance_criteria.
+    """
     with get_connection() as conn, conn.cursor() as cur:
-        where_clauses = ["project_id = %s", "is_current = TRUE"]
+        # Use table prefix for JOIN compatibility
+        where_clauses = ["e.project_id = %s", "e.is_current = TRUE"]
         params: list[Any] = [project_id]
 
         if capability_id:
-            where_clauses.append("capability_id = %s")
+            where_clauses.append("e.capability_id = %s")
             params.append(capability_id)
 
         if quality_status:
-            where_clauses.append("quality_status = %s")
+            where_clauses.append("e.quality_status = %s")
             params.append(quality_status)
 
         if criterion_db_id:
-            where_clauses.append("criterion_db_id = %s")
+            where_clauses.append("e.criterion_db_id = %s")
             params.append(criterion_db_id)
 
         if test_run_id:
-            where_clauses.append("test_run_id = %s")
+            where_clauses.append("e.test_run_id = %s")
             params.append(test_run_id)
 
         if search:
             where_clauses.append(
-                "(capability_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
+                "(e.capability_id ILIKE %s OR e.criterion_id ILIKE %s OR e.evidence_id ILIKE %s)"
             )
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern, search_pattern])
@@ -262,25 +290,27 @@ def list_evidence(
         # Build WHERE clause - clauses are safe literals defined in this function
         where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
 
-        # Get total count
+        # Get total count (no join needed for count)
+        count_params = params.copy()
         cur.execute(
-            sql.SQL("SELECT COUNT(*) FROM evidence WHERE ") + where_sql,
-            params,
+            sql.SQL("SELECT COUNT(*) FROM evidence e WHERE ") + where_sql,
+            count_params,
         )
         count_row = cur.fetchone()
         total = int(count_row[0]) if count_row and count_row[0] else 0
 
-        # Get paginated results
+        # Get paginated results with LEFT JOIN for criterion text
         params.extend([limit, offset])
         cur.execute(
-            sql.SQL(f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence WHERE ")
+            sql.SQL(f"SELECT {EVIDENCE_SELECT_WITH_CRITERION} FROM evidence e ")
+            + sql.SQL("LEFT JOIN acceptance_criteria ac ON e.criterion_db_id = ac.id WHERE ")
             + where_sql
-            + sql.SQL(" ORDER BY captured_at DESC LIMIT %s OFFSET %s"),
+            + sql.SQL(" ORDER BY e.captured_at DESC LIMIT %s OFFSET %s"),
             params,
         )
         rows = cur.fetchall()
 
-        return [_row_to_evidence(row) for row in rows], total
+        return [_row_to_evidence(row, include_criterion_text=True) for row in rows], total
 
 
 def _query_evidence_with_filter(
