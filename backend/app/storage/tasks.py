@@ -51,6 +51,9 @@ def create_task(
     task_type: str = "task",
     parent_task_id: str | None = None,
     tier: int | None = None,
+    objective: str | None = None,
+    acceptance_criteria: list[dict[str, Any]] | None = None,
+    current_phase: str = "plan",
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -65,6 +68,9 @@ def create_task(
         task_type: Type: 'task', 'bug', 'chore'
         parent_task_id: Parent task ID for subtasks
         tier: Execution tier 1-4 for autonomous execution (defaults to 2)
+        objective: Single measurable goal statement
+        acceptance_criteria: List of criteria dicts with id, criterion, verified fields
+        current_phase: Task phase: plan, implement, test, verify, complete
 
     Returns:
         The created task dict with all columns.
@@ -73,13 +79,16 @@ def create_task(
         task_id = _generate_task_id()
     if labels is None:
         labels = []
+    if acceptance_criteria is None:
+        acceptance_criteria = []
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
-                               priority, labels, task_type, parent_task_id, tier)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               priority, labels, task_type, parent_task_id, tier,
+                               objective, acceptance_criteria, current_phase)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -93,6 +102,9 @@ def create_task(
                 task_type,
                 parent_task_id,
                 tier,
+                objective,
+                json.dumps(acceptance_criteria),
+                current_phase,
             ),
         )
         row = cur.fetchone()
@@ -170,6 +182,11 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "tier",
         "pre_merge_sha",
         "review_result",
+        # AI agent reliability fields
+        "objective",
+        "acceptance_criteria",
+        "current_phase",
+        "verification_result",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -182,7 +199,10 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         if field in ("commits", "labels") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
-        elif field in ("plan_content", "review_result") and isinstance(value, dict):
+        elif (
+            field in ("plan_content", "review_result", "verification_result")
+            and isinstance(value, dict)
+        ) or (field == "acceptance_criteria" and isinstance(value, list)):
             set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
             params.append(json.dumps(value))
         else:
