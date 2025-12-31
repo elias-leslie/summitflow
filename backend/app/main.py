@@ -18,6 +18,7 @@ from .api import (
     evidence,
     explorer,
     hooks,
+    implementation,
     memory,
     notifications,
     observations,
@@ -83,6 +84,7 @@ app.include_router(accepted_specs.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(build.router, prefix="/api", tags=["build"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
+app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
 
 
 @app.get("/health")
