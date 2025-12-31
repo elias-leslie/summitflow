@@ -84,7 +84,7 @@ export default function ComponentsPage() {
     // Status filter for capabilities
     if (statusFilter !== "all") {
       filteredCapabilities = capabilities.filter((c) => {
-        if (statusFilter === "passing") return c.status === "passing";
+        if (statusFilter === "passing") return c.status === "tests_passing";
         if (statusFilter === "failing") return c.status === "failing";
         if (statusFilter === "pending") return c.status === "pending" || c.status === "not_implemented";
         if (statusFilter === "locked") return c.locked_at !== null;

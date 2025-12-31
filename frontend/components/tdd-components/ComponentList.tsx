@@ -61,6 +61,7 @@ function ComponentListSkeleton() {
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
     passing: "bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30",
+    tests_passing: "bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30",
     failing: "bg-rose-500/20 text-rose-400 border-rose-500/30",
     pending: "bg-amber-500/20 text-amber-400 border-amber-500/30",
     not_implemented: "bg-slate-500/20 text-slate-400 border-slate-500/30",
@@ -69,7 +70,7 @@ function getStatusColor(status: string): string {
 }
 
 function getStatusIcon(status: string) {
-  if (status === "passing") {
+  if (status === "tests_passing") {
     return <CheckCircle2 className="h-4 w-4 text-phosphor-400" />;
   }
   if (status === "failing") {
@@ -103,7 +104,7 @@ export function ComponentList({
     return components.map((component) => {
       const compCapabilities = capabilities.filter((c) => c.component_id === component.id);
       const stats = {
-        passing: compCapabilities.filter((c) => c.status === "passing").length,
+        passing: compCapabilities.filter((c) => c.status === "tests_passing").length,
         failing: compCapabilities.filter((c) => c.status === "failing").length,
         pending: compCapabilities.filter((c) => c.status === "pending" || c.status === "not_implemented").length,
         locked: compCapabilities.filter((c) => c.locked_at !== null).length,
@@ -214,7 +215,7 @@ export function ComponentList({
                     </span>
                     {capability.locked_at ? (
                       <Lock className="h-4 w-4 text-amber-400" />
-                    ) : capability.status === "passing" ? (
+                    ) : capability.status === "tests_passing" ? (
                       <Button
                         variant="ghost"
                         size="sm"

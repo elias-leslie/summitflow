@@ -35,13 +35,13 @@ export function BuildProgress({ components, capabilities }: BuildProgressProps) 
   const stats: ProgressStats = {
     components: {
       total: components.length,
-      passing: components.filter((c) => c.status === "passing").length,
+      passing: components.filter((c) => c.status === "tests_passing").length,
       failing: components.filter((c) => c.status === "failing").length,
       pending: components.filter((c) => c.status === "pending" || c.status === "not_implemented").length,
     },
     capabilities: {
       total: capabilities.length,
-      passing: capabilities.filter((c) => c.status === "passing").length,
+      passing: capabilities.filter((c) => c.status === "tests_passing").length,
       failing: capabilities.filter((c) => c.status === "failing").length,
       pending: capabilities.filter((c) => c.status === "pending" || c.status === "not_implemented").length,
       locked: capabilities.filter((c) => c.locked_at !== null).length,

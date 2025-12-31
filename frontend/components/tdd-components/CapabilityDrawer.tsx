@@ -39,6 +39,7 @@ interface CapabilityDrawerProps {
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
     passing: "bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30",
+    tests_passing: "bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30",
     failing: "bg-rose-500/20 text-rose-400 border-rose-500/30",
     pending: "bg-amber-500/20 text-amber-400 border-amber-500/30",
     not_implemented: "bg-slate-500/20 text-slate-400 border-slate-500/30",
@@ -48,7 +49,7 @@ function getStatusColor(status: string): string {
 
 function getStatusIcon(status: string, size: "sm" | "md" = "sm") {
   const sizeClass = size === "sm" ? "h-4 w-4" : "h-5 w-5";
-  if (status === "passing") {
+  if (status === "tests_passing") {
     return <CheckCircle2 className={`${sizeClass} text-phosphor-400`} />;
   }
   if (status === "failing") {
@@ -142,7 +143,7 @@ export function CapabilityDrawer({
 
         <SheetBody className="space-y-6">
           {/* Actions */}
-          {details && !details.locked_at && details.status === "passing" && (
+          {details && !details.locked_at && details.status === "tests_passing" && (
             <Button onClick={handleLock} disabled={isLocking} className="w-full">
               {isLocking ? (
                 <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />

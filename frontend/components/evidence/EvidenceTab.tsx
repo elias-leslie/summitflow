@@ -252,7 +252,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
           <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Search feature/criterion..."
+            placeholder="Search capability/criterion..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -282,7 +282,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
           <p className="text-xs text-slate-500 mt-1">
             {searchQuery
               ? "Try adjusting your search"
-              : "Evidence is captured when verifying features"}
+              : "Evidence is captured when verifying capabilities"}
           </p>
         </div>
       ) : viewMode === "grid" ? (
@@ -334,7 +334,7 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
             <thead className="bg-slate-800/50 border-b border-slate-700">
               <tr>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
-                  Feature
+                  Capability
                 </th>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
                   Criterion

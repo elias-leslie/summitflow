@@ -437,7 +437,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Type</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-32">ID</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">Title</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Feature</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Capability</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Status</th>
               </tr>
             </thead>

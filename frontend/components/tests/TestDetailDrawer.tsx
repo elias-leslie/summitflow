@@ -293,7 +293,7 @@ export function TestDetailDrawer({
                       )}
                     </div>
                     <Badge
-                      variant={cap.status === "passing" ? "phosphor" : cap.status === "failing" ? "rose" : "slate"}
+                      variant={cap.status === "tests_passing" ? "phosphor" : cap.status === "failing" ? "rose" : "slate"}
                       className="text-xs"
                     >
                       {cap.status}
