@@ -96,8 +96,8 @@ function TaskRow({
   const priority = task.priority ?? 2;
   const taskType = task.task_type ?? "task";
   const priorityStyle = priorityConfig[priority] || priorityConfig[2];
-  const typeStyle = typeConfig[taskType];
-  const statusStyle = statusConfig[task.status];
+  const typeStyle = typeConfig[taskType] || typeConfig["task"];
+  const statusStyle = statusConfig[task.status] || statusConfig["pending"];
 
   return (
     <>
