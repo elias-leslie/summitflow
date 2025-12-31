@@ -14,20 +14,22 @@ from psycopg.rows import TupleRow
 
 from .connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (23 columns)
+# Column list for all task SELECT/RETURNING queries (29 columns)
 # Order must match _row_to_dict index mapping
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     current_criterion_id, spec_content, plan_content, progress_log,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
-    priority, labels, task_type, parent_task_id"""
+    priority, labels, task_type, parent_task_id,
+    claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
     t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
     t.error_message, t.branch_name, t.commits, t.pull_request_url,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
-    t.priority, t.labels, t.task_type, t.parent_task_id"""
+    t.priority, t.labels, t.task_type, t.parent_task_id,
+    t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result"""
 
 
 def _generate_task_id() -> str:
@@ -154,6 +156,13 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "parent_task_id",
         # TDD linkage
         "capability_id",
+        # Autonomous execution fields
+        "claimed_by",
+        "claimed_at",
+        "lock_expires_at",
+        "tier",
+        "pre_merge_sha",
+        "review_result",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -166,7 +175,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         if field in ("commits", "labels") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
-        elif field == "plan_content" and isinstance(value, dict):
+        elif field in ("plan_content", "review_result") and isinstance(value, dict):
             set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
             params.append(json.dumps(value))
         else:
@@ -440,7 +449,7 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-EXPECTED_TASK_COLUMNS = 23
+EXPECTED_TASK_COLUMNS = 29
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
@@ -450,7 +459,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
                   current_criterion_id, spec_content, plan_content, progress_log,
                   error_message, branch_name, commits, pull_request_url,
                   total_sessions, total_tokens_used, created_at, started_at, completed_at,
-                  priority, labels, task_type, parent_task_id
+                  priority, labels, task_type, parent_task_id,
+                  claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -481,6 +491,13 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "labels": row[20] or [],
         "task_type": row[21],
         "parent_task_id": row[22],
+        # Autonomous execution fields
+        "claimed_by": row[23],
+        "claimed_at": row[24],
+        "lock_expires_at": row[25],
+        "tier": row[26],
+        "pre_merge_sha": row[27],
+        "review_result": row[28],
     }
 
 
