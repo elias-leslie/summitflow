@@ -13,6 +13,26 @@ set -euo pipefail
 # Read stdin (JSON input with tool_name, tool_input, cwd, etc.)
 INPUT=$(cat)
 
+# Extract tool info
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // empty' 2>/dev/null)
+
+# Allow git commands through - these are needed to FIX the uncommitted state
+if [[ "$TOOL_NAME" == "Bash" ]]; then
+    COMMAND=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+    # Allow git add, commit, status, diff, log, push, stash, restore, reset
+    if [[ "$COMMAND" =~ ^git\ (add|commit|status|diff|log|push|stash|restore|reset|rev-parse) ]] || \
+       [[ "$COMMAND" =~ ^SKIP=.*git\ (add|commit) ]] || \
+       [[ "$COMMAND" =~ ^cd\ .*\&\&\ git\ (add|commit|status|diff) ]]; then
+        exit 0
+    fi
+fi
+
+# Allow Read and Glob tools - they don't modify anything
+if [[ "$TOOL_NAME" == "Read" ]] || [[ "$TOOL_NAME" == "Glob" ]] || [[ "$TOOL_NAME" == "Grep" ]]; then
+    exit 0
+fi
+
 # Extract cwd from input and detect project
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 if [[ -z "$CWD" ]]; then
