@@ -40,6 +40,27 @@ export interface TddCapabilityWithTests extends TddCapability {
     last_result: string | null;
     is_primary: boolean;
   }[];
+  criteria: CriterionWithTests[];
+}
+
+// Criterion linked to a capability with its tests
+export interface CriterionWithTests {
+  id: number;
+  project_id: string;
+  criterion_id: string;
+  criterion: string;
+  category: string;
+  measurement: string;
+  threshold: string | null;
+  created_at: string | null;
+  created_by_task_id: string | null;
+  tests: {
+    id: number;
+    test_id: string;
+    name: string;
+    last_result: string | null;
+    is_primary: boolean;
+  }[];
 }
 
 export interface ComponentSuggestion {
@@ -207,5 +228,72 @@ export async function acceptSpecFromRoundtable(
     projectId, sessionId, "accept-spec",
     { accepted_by: acceptedBy },
     "Failed to accept spec"
+  );
+}
+
+// =============================================================================
+// Capability Criteria API
+// =============================================================================
+
+export interface CreateCriterionRequest {
+  criterion: string;
+  category?: "performance" | "correctness" | "security" | "quality";
+  measurement?: "test" | "metric" | "tool" | "manual";
+  threshold?: string;
+}
+
+export interface CriterionResponse {
+  id: number;
+  criterion_id: string;
+  criterion: string;
+  category: string;
+  measurement: string;
+  threshold: string | null;
+  created_at: string | null;
+  tests: unknown[];
+}
+
+export async function createCapabilityCriterion(
+  projectId: string,
+  capabilityId: string,
+  request: CreateCriterionRequest
+): Promise<CriterionResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/capabilities/${capabilityId}/criteria`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      errorMessage: "Failed to create criterion",
+    }
+  );
+}
+
+export async function deleteCapabilityCriterion(
+  projectId: string,
+  capabilityId: string,
+  criterionId: string
+): Promise<{ status: string; criterion_id: string }> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/capabilities/${capabilityId}/criteria/${criterionId}`,
+    { method: "DELETE", errorMessage: "Failed to delete criterion" }
+  );
+}
+
+export async function linkTestToCriterion(
+  projectId: string,
+  capabilityId: string,
+  criterionId: string,
+  testId: number,
+  isPrimary: boolean = false
+): Promise<{ status: string; criterion_id: string; test_id: number }> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/capabilities/${capabilityId}/criteria/${criterionId}/link-test`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ test_id: testId, is_primary: isPrimary }),
+      errorMessage: "Failed to link test to criterion",
+    }
   );
 }
