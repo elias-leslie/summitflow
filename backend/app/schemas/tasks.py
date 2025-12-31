@@ -206,3 +206,26 @@ class ClaimTaskRequest(BaseModel):
 
     worker_id: str = Field(description="Identifier for the worker claiming the task")
     lock_minutes: int = Field(default=30, ge=1, le=480, description="Lock duration in minutes")
+
+
+class CriteriaValidateRequest(BaseModel):
+    """Request model for validating acceptance criteria."""
+
+    objective: str = Field(min_length=10, description="Task objective for context")
+    criteria: list[AcceptanceCriterion] = Field(description="Criteria to validate")
+
+
+class CriterionFailure(BaseModel):
+    """Single criterion validation failure."""
+
+    criterion_id: str
+    valid: bool
+    issues: list[str] = Field(default_factory=list)
+    suggestion: str | None = None
+
+
+class CriteriaValidateResponse(BaseModel):
+    """Response model for criteria validation."""
+
+    valid: bool
+    failures: list[CriterionFailure] = Field(default_factory=list)

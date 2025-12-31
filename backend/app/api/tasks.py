@@ -27,6 +27,9 @@ from ..schemas.tasks import (
     BlockerInfo,
     CapabilityContext,
     ClaimTaskRequest,
+    CriteriaValidateRequest,
+    CriteriaValidateResponse,
+    CriterionFailure,
     DependencyCreate,
     DependencyResponse,
     StartTaskRequest,
@@ -38,6 +41,7 @@ from ..schemas.tasks import (
     TaskUpdate,
     ValidationResultResponse,
 )
+from ..services.criteria_validator import validate_criteria
 from ..services.task_validation import validate_task_ready
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
@@ -732,3 +736,41 @@ async def release_task(project_id: str, task_id: str) -> TaskResponse:
         raise HTTPException(status_code=500, detail="Failed to release task")
 
     return _task_to_response(released)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/criteria/validate",
+    response_model=CriteriaValidateResponse,
+)
+async def validate_task_criteria(
+    project_id: str, request: CriteriaValidateRequest
+) -> CriteriaValidateResponse:
+    """Validate acceptance criteria quality using Opus.
+
+    Evaluates each criterion against quality checklist:
+    - Specific: Concrete, unambiguous behavior
+    - Measurable: Can be verified with yes/no answer
+    - Testable: Can be verified by automated test
+    - Threshold: Performance criteria have concrete values
+
+    Args:
+        project_id: Project ID (for future project-specific validation rules)
+        request: Objective and criteria to validate
+
+    Returns:
+        Validation result with overall validity and per-criterion failures.
+    """
+    result = validate_criteria(request.objective, request.criteria)
+
+    return CriteriaValidateResponse(
+        valid=result.valid,
+        failures=[
+            CriterionFailure(
+                criterion_id=f.criterion_id,
+                valid=f.valid,
+                issues=f.issues,
+                suggestion=f.suggestion,
+            )
+            for f in result.failures
+        ],
+    )
