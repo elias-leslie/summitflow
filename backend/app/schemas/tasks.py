@@ -23,6 +23,11 @@ class TaskCreate(BaseModel):
     )
     task_type: Literal["feature", "bug", "task"] = "task"
     parent_task_id: str | None = None
+    # AI agent reliability fields
+    objective: str | None = Field(default=None, description="Single measurable goal statement")
+    acceptance_criteria: list["AcceptanceCriterion"] | None = Field(
+        default=None, description="List of acceptance criteria (validated on create)"
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -41,6 +46,9 @@ class TaskUpdate(BaseModel):
     plan_content: dict[str, Any] | None = None
     # Allow moving task to different project
     project_id: str | None = None
+    # AI agent reliability fields
+    objective: str | None = None
+    acceptance_criteria: list["AcceptanceCriterion"] | None = None
 
 
 class TaskStatusUpdate(BaseModel):
