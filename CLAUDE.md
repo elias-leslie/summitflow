@@ -188,6 +188,75 @@ Memory features toggled per-project via agent config (Settings page):
 
 ---
 
+## Autonomous Execution
+
+SummitFlow can automatically execute low-risk tasks without human intervention.
+
+### How It Works
+
+1. **Explorer scans** identify refactoring candidates (high complexity files)
+2. **Task generation** creates tasks with `plan_content` and tier classification
+3. **Work pickup** (every 30 min) claims eligible tasks
+4. **Execution** runs via ImplementationExecutor with iteration loop
+5. **Review gate** (every 30 min) validates results with Opus
+
+### Tier Classification
+
+| Tier | Model | Auto-Merge | Typical Tasks |
+|------|-------|------------|---------------|
+| 1 | Haiku | Yes | Small fixes, simple refactors |
+| 2 | Sonnet | No | Medium complexity, multi-file |
+| 3 | Opus | No | Complex changes, architectural |
+| 4 | Human | Never | Security, breaking changes |
+
+### Configuration
+
+Settings via `PATCH /api/projects/{id}/autonomous/settings`:
+
+```json
+{
+  "enabled": true,
+  "frequency_minutes": 30,
+  "auto_merge_tiers": [1],
+  "task_types": ["auto-generated"]
+}
+```
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/projects/{id}/autonomous/settings` | GET | Get current settings |
+| `/projects/{id}/autonomous/settings` | PATCH | Update settings |
+| `/projects/{id}/autonomous/status` | GET | Status with metrics |
+| `/projects/{id}/tasks/{task}/execute/start` | POST | Start execution |
+| `/projects/{id}/tasks/{task}/execute/next` | POST | Execute next step |
+| `/projects/{id}/tasks/{task}/execute/status` | GET | Get build_state |
+
+### Celery Beat Tasks
+
+| Task | Schedule | Purpose |
+|------|----------|---------|
+| `autonomous_work_pickup` | 30 min | Claim and execute pending tasks |
+| `review_pending_tasks` | 30 min | Opus review of completed work |
+| `reset_expired_claims` | 10 min | Release stale task locks |
+
+### Graduation Strategy
+
+Tasks start with human review. As approval rate increases:
+- 10+ tasks at >80% approval → reduce review frequency
+- Tier 1 tasks can auto-merge after sustained success
+- Tier 2+ always require human approval
+
+### CLI Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/task_it <name>` | Create task with plan_content from planning session |
+| `/do_it <task-id>` | Execute task via ImplementationExecutor |
+
+---
+
 ## First-Time Setup
 
 ```bash
@@ -214,4 +283,4 @@ bash ~/summitflow/scripts/start.sh
 
 ---
 
-**Version**: 2.3.0 | **Updated**: 2025-12-29
+**Version**: 2.4.0 | **Updated**: 2025-12-31
