@@ -103,6 +103,11 @@ celery_app.conf.beat_schedule = {
         # Runs Sundays at 2am via crontab below would be ideal,
         # but simple interval works for now
     },
+    # Autonomous execution - reset expired task claims
+    "reset-expired-task-claims": {
+        "task": "summitflow.reset_expired_task_claims",
+        "schedule": 60 * 60,  # Hourly
+    },
 }
 
 
@@ -138,6 +143,7 @@ def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) 
 # Import tasks to register them with Celery
 from app.tasks import (  # noqa: F401, E402
     agent_runner,
+    autonomous,
     embedding_processor,
     evidence_tasks,
     explorer_tasks,
