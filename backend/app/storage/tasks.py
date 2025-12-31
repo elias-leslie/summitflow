@@ -138,6 +138,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         raise ValueError("No fields provided to update")
 
     allowed_fields = {
+        "project_id",  # Allow moving task between projects
         "title",
         "description",
         "status",

@@ -425,6 +425,7 @@ cmd_update() {
     local task_type=""
     local title=""
     local description=""
+    local move_to=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -452,6 +453,10 @@ cmd_update() {
                 description="$2"
                 shift 2
                 ;;
+            --move-to)
+                move_to="$2"
+                shift 2
+                ;;
             --json)
                 JSON_OUTPUT=1
                 shift
@@ -470,6 +475,7 @@ OPTIONS:
     -t, --type <type>          New type (feature, bug, task)
     --title <title>            New title
     -d, --description <text>   New description
+    --move-to <project-id>     Move task to different project
     --json                     Output as JSON
 EOF
                 return 0
@@ -510,6 +516,7 @@ EOF
     [[ -n "$task_type" ]] && json_data=$(echo "$json_data" | jq --arg t "$task_type" '. + {task_type: $t}')
     [[ -n "$title" ]] && json_data=$(echo "$json_data" | jq --arg t "$title" '. + {title: $t}')
     [[ -n "$description" ]] && json_data=$(echo "$json_data" | jq --arg d "$description" '. + {description: $d}')
+    [[ -n "$move_to" ]] && json_data=$(echo "$json_data" | jq --arg p "$move_to" '. + {project_id: $p}')
 
     if [[ "$json_data" == "{}" ]]; then
         echo -e "${YELLOW}No updates specified${NC}"
@@ -530,6 +537,7 @@ EOF
         echo "$response" | jq '.'
     else
         echo -e "${GREEN}Updated task: $task_id${NC}"
+        [[ -n "$move_to" ]] && echo -e "  Moved to project: $move_to"
     fi
 }
 

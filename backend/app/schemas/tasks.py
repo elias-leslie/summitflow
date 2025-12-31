@@ -37,6 +37,8 @@ class TaskUpdate(BaseModel):
     parent_task_id: str | None = None
     # Implementation plan (JSON structure for /task_it and /do_it)
     plan_content: dict[str, Any] | None = None
+    # Allow moving task to different project
+    project_id: str | None = None
 
 
 class TaskStatusUpdate(BaseModel):
