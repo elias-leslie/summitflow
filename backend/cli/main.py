@@ -2,7 +2,19 @@
 
 import typer
 
+from .commands import capabilities, deps, tasks, tests
+
 app = typer.Typer(name="st", help="SummitFlow Tasks CLI")
+
+# Register task commands at root level
+for cmd in tasks.app.registered_commands:
+    app.command(name=cmd.name)(cmd.callback)
+
+# Register subcommand groups
+app.add_typer(deps.app, name="dep", help="Dependency management")
+app.add_typer(capabilities.app, name="capability", help="Capability management")
+app.add_typer(capabilities.app, name="cap", hidden=True)  # Alias
+app.add_typer(tests.app, name="test", help="Test management")
 
 
 @app.callback(invoke_without_command=True)
