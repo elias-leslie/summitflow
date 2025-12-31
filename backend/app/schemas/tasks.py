@@ -157,3 +157,10 @@ class StartTaskRequest(BaseModel):
     agent_type: str  # claude or gemini
     model: str | None = None
     allow_delegation: bool = False
+
+
+class ClaimTaskRequest(BaseModel):
+    """Request model for claiming a task."""
+
+    worker_id: str = Field(description="Identifier for the worker claiming the task")
+    lock_minutes: int = Field(default=30, ge=1, le=480, description="Lock duration in minutes")

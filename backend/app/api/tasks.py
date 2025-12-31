@@ -26,6 +26,7 @@ from ..schemas.tasks import (
     AcceptanceCriterion,
     BlockerInfo,
     CapabilityContext,
+    ClaimTaskRequest,
     DependencyCreate,
     DependencyResponse,
     StartTaskRequest,
@@ -659,3 +660,75 @@ async def remove_task_dependency(
         "depends_on_task_id": depends_on_task_id,
         "dependency_type": dependency_type,
     }
+
+
+# Task claim/release endpoints
+@router.post("/projects/{project_id}/tasks/{task_id}/claim", response_model=TaskResponse)
+async def claim_task(project_id: str, task_id: str, request: ClaimTaskRequest) -> TaskResponse:
+    """Claim a task for exclusive execution.
+
+    Uses database locking to prevent race conditions when multiple workers
+    try to claim the same task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to claim
+        request: Claim details (worker_id, lock_minutes)
+
+    Returns:
+        The claimed task.
+
+    Raises:
+        HTTPException(404): Task not found
+        HTTPException(409): Task already claimed or not in claimable status
+    """
+    _verify_task_project(task_id, project_id)
+
+    claimed = task_store.claim_task(
+        task_id=task_id,
+        worker_id=request.worker_id,
+        lock_duration_minutes=request.lock_minutes,
+    )
+
+    if not claimed:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task {task_id} is not available for claiming. "
+            "It may already be claimed or not in a claimable status (pending/paused/failed).",
+        )
+
+    return _task_to_response(claimed)
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/release", response_model=TaskResponse)
+async def release_task(project_id: str, task_id: str) -> TaskResponse:
+    """Release a claimed task back to pending status.
+
+    Clears the claim and resets status to pending, allowing other workers
+    to claim and work on it.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to release
+
+    Returns:
+        The released task.
+
+    Raises:
+        HTTPException(404): Task not found
+        HTTPException(400): Task not currently claimed
+    """
+    task = _verify_task_project(task_id, project_id)
+
+    if not task.get("claimed_by"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task {task_id} is not currently claimed.",
+        )
+
+    released = task_store.release_task(task_id)
+
+    if not released:
+        raise HTTPException(status_code=500, detail="Failed to release task")
+
+    return _task_to_response(released)
