@@ -114,6 +114,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 30,  # Every 30 minutes
         "kwargs": {"project_id": "summitflow"},
     },
+    # Autonomous review - Opus review gate for pending_review tasks
+    "review-pending-tasks-summitflow": {
+        "task": "summitflow.review_pending_tasks",
+        "schedule": 60 * 30,  # Every 30 minutes
+        "kwargs": {"project_id": "summitflow"},
+    },
 }
 
 
