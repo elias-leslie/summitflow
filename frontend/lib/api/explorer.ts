@@ -110,13 +110,13 @@ export interface ScanResponse {
 }
 
 export interface ScanStatusResponse {
-  status: "idle" | "scanning" | "complete" | "error";
+  status: "idle" | "running" | "completed" | "failed";
   current_type: string | null;
   types_total: number;
   types_completed: number;
   progress_pct: number;
-  started_at: number | null;
-  completed_at: number | null;
+  started_at: string | null;
+  completed_at: string | null;
   error: string | null;
   results: Array<{
     entry_type: string;

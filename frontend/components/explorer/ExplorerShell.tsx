@@ -194,12 +194,12 @@ export function ExplorerShell({
           const status = await fetchScanStatus(projectId);
           setScanProgress(status);
 
-          if (status.status === "complete" || status.status === "error") {
+          if (status.status === "completed" || status.status === "failed") {
             clearInterval(pollInterval);
             setIsScanning(false);
             setScanProgress(null);
 
-            if (status.status === "error" && status.error) {
+            if (status.status === "failed" && status.error) {
               console.error("Scan completed with error:", status.error);
             }
           }
