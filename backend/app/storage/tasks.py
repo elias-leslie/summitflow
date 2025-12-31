@@ -308,10 +308,11 @@ def get_tasks_by_capability(capability_id: int) -> list[dict[str, Any]]:
 # Valid task status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"running", "paused"},
-    "running": {"paused", "failed", "completed"},
+    "running": {"paused", "failed", "completed", "pending_review"},
     "paused": {"running", "pending", "failed"},
     "failed": {"pending", "running"},  # Allow retry
     "completed": set(),  # Terminal - no transitions allowed
+    "pending_review": {"completed", "failed", "running"},  # Opus review gate
 }
 
 
@@ -348,7 +349,7 @@ def update_task_status(
     Raises:
         ValueError: If invalid status or invalid transition.
     """
-    valid_statuses = {"pending", "running", "paused", "failed", "completed"}
+    valid_statuses = {"pending", "running", "paused", "failed", "completed", "pending_review"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {valid_statuses}")
 
