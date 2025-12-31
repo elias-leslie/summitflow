@@ -11,9 +11,11 @@ This module provides Celery tasks for autonomous code execution:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from app.celery_app import celery_app
 from app.storage import tasks as task_store
+from app.storage.explorer_analysis import get_refactor_targets
 
 logger = logging.getLogger(__name__)
 
@@ -40,3 +42,117 @@ def reset_expired_task_claims() -> dict[str, int | str]:
     except Exception as e:
         logger.error(f"Error resetting expired claims: {e}")
         return {"error": str(e), "reset_count": 0}
+
+
+@celery_app.task(name="summitflow.generate_tasks_from_scan")  # type: ignore[misc]
+def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
+    """Generate refactoring tasks from Explorer scan results.
+
+    Fetches files identified as refactoring candidates by the Explorer
+    and creates SummitFlow tasks for each (if not already tracked).
+
+    Args:
+        project_id: Project to generate tasks for
+
+    Returns:
+        Dict with created_count, scanned_count, skipped_count
+    """
+    try:
+        # Get refactor targets from Explorer
+        result = get_refactor_targets(project_id, limit=20)
+        targets = result.get("targets", [])
+
+        created = 0
+        scanned = 0
+        skipped = 0
+
+        for target in targets:
+            scanned += 1
+            file_path = target.get("path", "")
+            priority = target.get("priority", "medium")
+            reason = target.get("reason", "High complexity")
+            complexity = target.get("complexity_score", 0)
+            lines = target.get("lines_of_code", 0)
+
+            # Skip if task already exists for this file
+            if task_store.task_exists_for_file(project_id, file_path):
+                skipped += 1
+                continue
+
+            # Classify tier based on complexity
+            if complexity > 15 or lines > 500:
+                tier = 3  # Opus
+            elif complexity > 10 or lines > 300:
+                tier = 2  # Sonnet
+            else:
+                tier = 1  # Haiku
+
+            # Create task title
+            title = f"Refactor: {reason} in {file_path.split('/')[-1]}"
+
+            # Generate simple plan_content
+            plan_content = {
+                "tasks": [
+                    {
+                        "id": "1.1",
+                        "category": "backend" if file_path.endswith(".py") else "frontend",
+                        "description": f"Refactor {file_path} - {reason}",
+                        "steps": [
+                            f"Analyze {file_path} for refactoring opportunities",
+                            f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
+                            "Run tests to verify no regressions",
+                            "Commit changes with descriptive message",
+                        ],
+                        "passes": False,
+                    }
+                ],
+                "current_task_id": "1.1",
+                "context": {
+                    "affected_files": [file_path],
+                    "capability_id": None,
+                    "source": "explorer_scan",
+                    "metrics": {
+                        "complexity_score": complexity,
+                        "lines_of_code": lines,
+                    },
+                },
+            }
+
+            # Create the task (without plan_content)
+            description = (
+                f"Auto-generated from Explorer scan.\n\n"
+                f"File: {file_path}\n"
+                f"Complexity: {complexity:.1f}\n"
+                f"Lines: {lines}\n"
+                f"Priority: {priority}"
+            )
+
+            task = task_store.create_task(
+                project_id=project_id,
+                title=title,
+                description=description,
+                priority=2 if priority == "high" else 3,
+                task_type="task",
+                labels=["auto-generated", f"tier:{tier}"],
+            )
+
+            if task:
+                # Update with plan_content (needs separate call)
+                task_store.update_task(task["id"], plan_content=plan_content)
+                created += 1
+                logger.info(f"Created task {task['id']}: {title}")
+
+        logger.info(
+            f"Task generation complete for {project_id}: "
+            f"created={created}, scanned={scanned}, skipped={skipped}"
+        )
+
+        return {
+            "created_count": created,
+            "scanned_count": scanned,
+            "skipped_count": skipped,
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating tasks from scan: {e}")
+        return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}

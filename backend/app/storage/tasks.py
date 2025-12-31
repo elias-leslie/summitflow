@@ -713,3 +713,36 @@ def reset_expired_claims() -> int:
         conn.commit()
 
     return count
+
+
+def task_exists_for_file(project_id: str, file_path: str) -> bool:
+    """Check if a task already exists that targets a specific file.
+
+    Used for deduplication when auto-generating tasks from Explorer scans.
+
+    Args:
+        project_id: Project to check
+        file_path: File path to look for in task descriptions/plan_content
+
+    Returns:
+        True if a pending/running task exists for this file
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM tasks
+                WHERE project_id = %s
+                AND status IN ('pending', 'running', 'paused')
+                AND (
+                    -- Check description contains file path
+                    description LIKE %s
+                    -- Or check plan_content affected_files contains path
+                    OR plan_content::text LIKE %s
+                )
+            )
+            """,
+            (project_id, f"%{file_path}%", f"%{file_path}%"),
+        )
+        result = cur.fetchone()
+        return bool(result[0]) if result else False
