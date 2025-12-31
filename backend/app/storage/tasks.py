@@ -47,6 +47,7 @@ def create_task(
     labels: list[str] | None = None,
     task_type: str = "task",
     parent_task_id: str | None = None,
+    tier: int | None = None,
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -60,6 +61,7 @@ def create_task(
         labels: List of labels (complexity:small, domains:backend, etc.)
         task_type: Type: 'task', 'bug', 'chore'
         parent_task_id: Parent task ID for subtasks
+        tier: Execution tier 1-4 for autonomous execution (defaults to 2)
 
     Returns:
         The created task dict with all columns.
@@ -73,8 +75,8 @@ def create_task(
         cur.execute(
             f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
-                               priority, labels, task_type, parent_task_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               priority, labels, task_type, parent_task_id, tier)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -87,6 +89,7 @@ def create_task(
                 labels,
                 task_type,
                 parent_task_id,
+                tier,
             ),
         )
         row = cur.fetchone()

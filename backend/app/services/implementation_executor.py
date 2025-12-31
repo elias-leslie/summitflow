@@ -20,6 +20,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
 from ..storage.agent_sessions import create_session, get_session, update_session
+from .agents import get_agent
 from .autonomous.prompt_builder import build_execution_prompt
 from .autonomous.tier_classifier import classify_tier, select_model_for_tier
 from .context_helpers import (
@@ -162,14 +163,16 @@ class ImplementationExecutor:
                 reason="all_tasks_complete",
             )
 
-        # Check for capability_id
+        # Check for capability_id (optional for auto-generated tasks)
         capability_id = task.get("capability_id") or (
             plan.get("context", {}).get("capability_id") if isinstance(plan, dict) else None
         )
 
-        if not capability_id:
-            # Add needs-tests label and block
-            labels = list(task.get("labels") or [])
+        labels = list(task.get("labels") or [])
+        is_auto_generated = "auto-generated" in labels
+
+        if not capability_id and not is_auto_generated:
+            # For non-auto-generated tasks, require capability_id for TDD verification
             if "needs-tests" not in labels:
                 labels.append("needs-tests")
                 task_store.update_task(task_id, labels=labels)
@@ -181,6 +184,10 @@ class ImplementationExecutor:
                 reason="no_capability_id",
                 error="Task has no capability_id - cannot verify completion",
             )
+
+        # For auto-generated tasks without capability_id, use general verification
+        if not capability_id:
+            capability_id = "general"  # Sentinel for general verification
 
         # Capture pre_merge_sha once at task start
         if not build_state.get("pre_merge_sha"):
@@ -390,19 +397,59 @@ class ImplementationExecutor:
         """Update build_state in session."""
         update_session(self.project_id, session_id, build_state=build_state)
 
-    def _execute_agent(self, model: dict[str, Any], prompt: str) -> str:
+    def _execute_agent(self, model: Any, prompt: str) -> str:
         """Execute agent with model and prompt.
 
-        This is a placeholder - actual implementation would use Claude/Gemini SDK.
+        Args:
+            model: ModelConfig dict with provider, model, max_tokens, description
+            prompt: The execution prompt built by prompt_builder
+
+        Returns:
+            Agent response text (should contain ```file:path``` blocks)
         """
-        # For now, return empty to indicate no changes
-        # Real implementation would call the AI model
+        provider = model.get("provider", "gemini")
+        model_id = model.get("model", "gemini-3-flash-preview")
+        max_tokens = model.get("max_tokens", 8192)
+
         logger.info(
-            "agent_execution_placeholder",
-            model=model.get("model"),
+            "agent_execution_start",
+            provider=provider,
+            model=model_id,
             prompt_len=len(prompt),
         )
-        return ""
+
+        try:
+            agent = get_agent(provider, model_id)  # type: ignore[arg-type]
+
+            # Use working_dir for Claude to enable file operations
+            working_dir = str(self.repo_path) if provider == "claude" else None
+
+            response = agent.generate(
+                prompt=prompt,
+                system="You are an expert software engineer implementing code changes. Output only valid code changes in the specified format.",
+                max_tokens=max_tokens,
+                temperature=0.7,
+                working_dir=working_dir,
+            )
+
+            logger.info(
+                "agent_execution_complete",
+                provider=provider,
+                model=model_id,
+                response_len=len(response.content),
+                tokens_used=response.usage.get("total_tokens", 0) if response.usage else 0,
+            )
+
+            return response.content
+
+        except Exception as e:
+            logger.error(
+                "agent_execution_failed",
+                provider=provider,
+                model=model_id,
+                error=str(e),
+            )
+            raise
 
     def _parse_and_apply_changes(self, output: str) -> bool:
         """Parse agent output and apply file changes.
@@ -523,19 +570,72 @@ class ImplementationExecutor:
 
     def _consult_alternate(
         self,
-        model: dict[str, Any],
+        model: Any,
         task: dict[str, Any],
         error: str,
     ) -> str:
         """Consult alternate model for advice on fixing errors.
 
+        When the primary model is thrashing (hitting same error repeatedly),
+        we ask a different model for fresh perspective.
+
+        Args:
+            model: Current model config (we'll use the opposite provider)
+            task: Task dict with title, description
+            error: The repeated error message
+
         Returns:
             Advice string from alternate model
         """
-        # Placeholder - actual implementation would call the AI model
+        # Always use Gemini for consultation (Claude is primary for coding)
+        # Gemini has large context window (1-2M) useful for analyzing errors
+        alt_provider = "gemini"
+        alt_model = "gemini-3-pro-preview"  # Pro for better reasoning
+
         logger.info(
             "consulting_alternate",
-            model=model.get("model"),
+            primary_provider=model.get("provider", "claude"),
+            alt_provider=alt_provider,
             error_len=len(error),
         )
-        return "Consider reviewing the error message and adjusting your approach."
+
+        try:
+            agent = get_agent(alt_provider, alt_model)  # type: ignore[arg-type]
+
+            prompt = f"""A code implementation task is failing repeatedly with the same error.
+
+Task: {task.get("title", "Unknown task")}
+Description: {task.get("description", "No description")}
+
+Repeated Error:
+{error[:2000]}
+
+Please analyze this error and provide specific, actionable advice to fix it.
+Focus on:
+1. Root cause of the error
+2. Concrete steps to fix it
+3. Any edge cases to consider
+
+Keep response concise (under 500 words)."""
+
+            response = agent.generate(
+                prompt=prompt,
+                system="You are a debugging expert. Provide clear, actionable advice.",
+                max_tokens=1024,
+                temperature=0.3,
+            )
+
+            logger.info(
+                "alternate_consultation_complete",
+                alt_provider=alt_provider,
+                response_len=len(response.content),
+            )
+
+            return response.content
+
+        except Exception as e:
+            logger.warning(
+                "alternate_consultation_failed",
+                error=str(e),
+            )
+            return f"Consultation failed: {e}. Consider reviewing the error manually."

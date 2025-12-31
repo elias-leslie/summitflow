@@ -134,6 +134,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 priority=2 if priority == "high" else 3,
                 task_type="task",
                 labels=["auto-generated", f"tier:{tier}"],
+                tier=tier,
             )
 
             if task:
@@ -273,6 +274,7 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
                 priority=2,  # Default medium priority for auto-generated bugs
                 task_type="bug",
                 labels=["auto-generated", "bug", "tier:2"],
+                tier=2,  # Bug tasks default to tier 2 (requires review)
             )
 
             if task:

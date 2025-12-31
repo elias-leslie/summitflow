@@ -24,46 +24,63 @@ class ModelConfig(TypedDict):
     description: str
 
 
+# Centralized model constants - use short names for consistency
+GEMINI_FLASH = "gemini-3-flash-preview"
+GEMINI_PRO = "gemini-3-pro-preview"
+CLAUDE_SONNET = "claude-sonnet-4-5"
+CLAUDE_OPUS = "claude-opus-4-5"
+CLAUDE_HAIKU = "claude-haiku-4-5"
+
 # Model configurations by tier and mode
+# Claude is PRIMARY for all coding - Gemini only for consultation/handoff
+# Gemini advantages: 1-2M context window, certain specialized tasks (TBD profiling)
 AUTONOMOUS_MODELS: dict[int, ModelConfig] = {
     1: {
-        "provider": "gemini",
-        "model": "gemini-2.0-flash-exp",
+        "provider": "claude",
+        "model": CLAUDE_HAIKU,
         "max_tokens": 8192,
-        "description": "Fast execution for small tasks",
+        "description": "Claude Haiku 4.5 for small tasks",
     },
     2: {
-        "provider": "gemini",
-        "model": "gemini-2.0-flash-thinking-exp-1219",
+        "provider": "claude",
+        "model": CLAUDE_SONNET,
         "max_tokens": 32768,
-        "description": "Thinking model for medium tasks",
+        "description": "Claude Sonnet 4.5 for medium tasks",
     },
     3: {
-        "provider": "gemini",
-        "model": "gemini-exp-1206",
+        "provider": "claude",
+        "model": CLAUDE_SONNET,
         "max_tokens": 65536,
-        "description": "Full context for large tasks",
+        "description": "Claude Sonnet 4.5 for large tasks",
     },
     4: {
         "provider": "claude",
-        "model": "claude-sonnet-4-5-20250514",
+        "model": CLAUDE_OPUS,
         "max_tokens": 64000,
-        "description": "Claude for architecture/multi-domain",
+        "description": "Claude Opus 4.5 for architecture/multi-domain",
     },
+}
+
+# Alternate model for consultation when primary is stuck
+CONSULTATION_MODEL: ModelConfig = {
+    "provider": "gemini",
+    "model": GEMINI_PRO,
+    "max_tokens": 65536,
+    "description": "Gemini 3 Pro for consultation/handoff (large context)",
 }
 
 MANUAL_MODEL: ModelConfig = {
     "provider": "claude",
-    "model": "claude-sonnet-4-5-20250514",
+    "model": CLAUDE_SONNET,
     "max_tokens": 64000,
-    "description": "Claude Sonnet for manual /do_it execution",
+    "description": "Claude Sonnet 4.5 for manual /do_it execution",
 }
 
 REVIEW_MODEL: ModelConfig = {
     "provider": "claude",
-    "model": "claude-opus-4-5-20251101",
+    "model": CLAUDE_OPUS,
     "max_tokens": 32000,
-    "description": "Claude Opus for review gate",
+    "description": "Claude Opus 4.5 for review gate",
 }
 
 
