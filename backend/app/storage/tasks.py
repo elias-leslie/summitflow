@@ -648,3 +648,68 @@ def claim_task(
     if not row:
         return None
     return _row_to_dict(row)
+
+
+def release_task(task_id: str) -> dict[str, Any] | None:
+    """Release a claimed task back to pending status.
+
+    Clears the claim fields and resets status to pending.
+
+    Args:
+        task_id: Task ID to release
+
+    Returns:
+        Updated task dict or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE tasks
+            SET claimed_by = NULL,
+                claimed_at = NULL,
+                lock_expires_at = NULL,
+                status = 'pending'
+            WHERE id = %s
+            RETURNING {TASK_COLUMNS}
+            """,
+            (task_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+    return _row_to_dict(row)
+
+
+def reset_expired_claims() -> int:
+    """Reset all tasks with expired claim locks.
+
+    Finds tasks where:
+    - status is 'running'
+    - lock_expires_at has passed
+    - claimed_by is set
+
+    Resets them to 'pending' with cleared claim fields.
+
+    Returns:
+        Count of tasks reset.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE tasks
+            SET claimed_by = NULL,
+                claimed_at = NULL,
+                lock_expires_at = NULL,
+                status = 'pending'
+            WHERE status = 'running'
+              AND lock_expires_at IS NOT NULL
+              AND lock_expires_at < NOW()
+              AND claimed_by IS NOT NULL
+            """
+        )
+        count = cur.rowcount
+        conn.commit()
+
+    return count
