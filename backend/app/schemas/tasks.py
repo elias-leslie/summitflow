@@ -237,3 +237,17 @@ class CriteriaValidateResponse(BaseModel):
 
     valid: bool
     failures: list[CriterionFailure] = Field(default_factory=list)
+
+
+class CriterionVerifyRequest(BaseModel):
+    """Request model for verifying a criterion."""
+
+    verified_by: Literal["opus", "test", "human"]
+    notes: str | None = None
+
+
+class CriterionLinkTestRequest(BaseModel):
+    """Request model for linking a test to a criterion."""
+
+    test_file: str = Field(description="Path to test file")
+    test_name: str = Field(description="Test function name")
