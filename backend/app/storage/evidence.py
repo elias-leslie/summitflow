@@ -21,9 +21,10 @@ from .connection import get_connection
 # Shared SELECT columns for evidence queries
 EVIDENCE_SELECT_COLUMNS = """id, evidence_id, capability_id, criterion_id, evidence_type,
        file_path, file_size_bytes, version, is_current,
-       captured_at, expires_at, quality_status, quality_issues,
+       captured_at, quality_status, quality_issues,
        confidence, ai_reviewed_at, ai_reviewed_by, ai_evidence,
-       user_reviewed_at, user_approved, user_notes"""
+       user_reviewed_at, user_approved, user_notes,
+       criterion_db_id, test_run_id, auto_captured"""
 
 
 def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -39,16 +40,18 @@ def _row_to_evidence(row: tuple[Any, ...]) -> dict[str, Any]:
         "version": row[7],
         "is_current": row[8],
         "captured_at": row[9].isoformat() if row[9] else None,
-        "expires_at": row[10].isoformat() if row[10] else None,
-        "quality_status": row[11],
-        "quality_issues": row[12] if row[12] else [],
-        "confidence": row[13],
-        "ai_reviewed_at": row[14].isoformat() if row[14] else None,
-        "ai_reviewed_by": row[15],
-        "ai_evidence": row[16],
-        "user_reviewed_at": row[17].isoformat() if row[17] else None,
-        "user_approved": row[18],
-        "user_notes": row[19],
+        "quality_status": row[10],
+        "quality_issues": row[11] if row[11] else [],
+        "confidence": row[12],
+        "ai_reviewed_at": row[13].isoformat() if row[13] else None,
+        "ai_reviewed_by": row[14],
+        "ai_evidence": row[15],
+        "user_reviewed_at": row[16].isoformat() if row[16] else None,
+        "user_approved": row[17],
+        "user_notes": row[18],
+        "criterion_db_id": row[19],
+        "test_run_id": row[20],
+        "auto_captured": row[21],
     }
 
 
@@ -83,17 +86,33 @@ def insert_evidence_record(
     file_path: str,
     file_size_bytes: int | None,
     version: int,
-    expires_at: datetime,
+    criterion_db_id: int | None = None,
+    test_run_id: int | None = None,
+    auto_captured: bool = False,
 ) -> tuple[int, str, datetime | None]:
-    """Insert a new evidence record and return (id, evidence_id, captured_at)."""
+    """Insert a new evidence record and return (id, evidence_id, captured_at).
+
+    Args:
+        cur: Database cursor
+        project_id: Project ID
+        evidence_id: Evidence ID
+        capability_id: Capability ID (text)
+        criterion_id: Criterion ID (text, e.g., 'ac-001')
+        file_path: Path to evidence file
+        file_size_bytes: Size of evidence file
+        version: Version number
+        criterion_db_id: FK to acceptance_criteria.id (optional)
+        test_run_id: FK to test_runs.id if captured during test run (optional)
+        auto_captured: True if evidence was auto-captured on test pass
+    """
     cur.execute(
         """
         INSERT INTO evidence (
             project_id, evidence_id, capability_id, criterion_id, evidence_type,
             file_path, file_size_bytes, version, is_current,
-            captured_at, expires_at, quality_status
+            captured_at, quality_status, criterion_db_id, test_run_id, auto_captured
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), %s, 'pending')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), 'pending', %s, %s, %s)
         RETURNING id, evidence_id, captured_at
         """,
         (
@@ -105,7 +124,9 @@ def insert_evidence_record(
             file_path,
             file_size_bytes,
             version,
-            expires_at,
+            criterion_db_id,
+            test_run_id,
+            auto_captured,
         ),
     )
     result = cur.fetchone()
@@ -207,6 +228,8 @@ def list_evidence(
     capability_id: str | None = None,
     quality_status: str | None = None,
     search: str | None = None,
+    criterion_db_id: int | None = None,
+    test_run_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """List all current evidence for a project with filtering."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -221,6 +244,14 @@ def list_evidence(
             where_clauses.append("quality_status = %s")
             params.append(quality_status)
 
+        if criterion_db_id:
+            where_clauses.append("criterion_db_id = %s")
+            params.append(criterion_db_id)
+
+        if test_run_id:
+            where_clauses.append("test_run_id = %s")
+            params.append(test_run_id)
+
         if search:
             where_clauses.append(
                 "(capability_id ILIKE %s OR criterion_id ILIKE %s OR evidence_id ILIKE %s)"
@@ -228,13 +259,12 @@ def list_evidence(
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern, search_pattern])
 
-        # Build WHERE clause safely
-        where_parts = [sql.SQL(c) for c in where_clauses]
-        where_sql = sql.SQL(" AND ").join(where_parts)
+        # Build WHERE clause - clauses are safe literals defined in this function
+        where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
 
         # Get total count
         cur.execute(
-            sql.SQL("SELECT COUNT(*) FROM evidence WHERE {where_sql}").format(where_sql=where_sql),
+            sql.SQL("SELECT COUNT(*) FROM evidence WHERE ") + where_sql,
             params,
         )
         count_row = cur.fetchone()
@@ -243,10 +273,9 @@ def list_evidence(
         # Get paginated results
         params.extend([limit, offset])
         cur.execute(
-            sql.SQL(
-                f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence "
-                "WHERE {where_sql} ORDER BY captured_at DESC LIMIT %s OFFSET %s"
-            ).format(where_sql=where_sql),
+            sql.SQL(f"SELECT {EVIDENCE_SELECT_COLUMNS} FROM evidence WHERE ")
+            + where_sql
+            + sql.SQL(" ORDER BY captured_at DESC LIMIT %s OFFSET %s"),
             params,
         )
         rows = cur.fetchall()
@@ -307,13 +336,13 @@ def get_with_user_notes(project_id: str, limit: int = 50) -> list[dict[str, Any]
     )
 
 
-def get_expired_evidence(project_id: str) -> list[dict[str, Any]]:
-    """Get evidence that has expired and needs refresh."""
+def get_auto_captured_evidence(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Get evidence that was auto-captured on test pass."""
     return _query_evidence_with_filter(
         project_id,
-        sql.SQL("expires_at < NOW()"),
-        sql.SQL("expires_at ASC"),
-        limit=None,  # No limit for expired evidence
+        sql.SQL("auto_captured = TRUE"),
+        sql.SQL("captured_at DESC"),
+        limit,
     )
 
 
@@ -500,7 +529,7 @@ def get_summary(project_id: str) -> dict[str, Any]:
             """
             SELECT
                 COUNT(*) FILTER (WHERE is_current = TRUE) as total_current,
-                COUNT(*) FILTER (WHERE is_current = TRUE AND expires_at < NOW()) as expired_count,
+                COUNT(*) FILTER (WHERE is_current = TRUE AND auto_captured = TRUE) as auto_captured_count,
                 COUNT(*) FILTER (WHERE is_current = TRUE AND user_notes IS NOT NULL) as with_notes,
                 COALESCE(SUM(file_size_bytes), 0) as total_size,
                 COUNT(*) FILTER (WHERE is_current = TRUE AND quality_status = 'pending') as status_pending,
@@ -518,7 +547,7 @@ def get_summary(project_id: str) -> dict[str, Any]:
             return {
                 "total_current": 0,
                 "by_status": {},
-                "expired_count": 0,
+                "auto_captured_count": 0,
                 "with_user_notes": 0,
                 "total_storage_bytes": 0,
             }
@@ -536,7 +565,7 @@ def get_summary(project_id: str) -> dict[str, Any]:
         return {
             "total_current": int(row[0]) if row[0] else 0,
             "by_status": by_status,
-            "expired_count": int(row[1]) if row[1] else 0,
+            "auto_captured_count": int(row[1]) if row[1] else 0,
             "with_user_notes": int(row[2]) if row[2] else 0,
             "total_storage_bytes": int(row[3]) if row[3] else 0,
         }

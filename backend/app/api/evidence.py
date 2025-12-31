@@ -58,12 +58,15 @@ def _format_evidence_record(e: dict[str, Any], *, project_id: str | None = None)
         "version": e["version"],
         "isCurrent": e["is_current"],
         "capturedAt": e["captured_at"],
-        "expiresAt": e["expires_at"],
         "qualityStatus": e["quality_status"],
         "confidence": e["confidence"],
         "userApproved": e["user_approved"],
         "userNotes": e["user_notes"],
         "fileSizeBytes": e["file_size_bytes"],
+        # New fields for criteria linkage
+        "criterionDbId": e.get("criterion_db_id"),
+        "testRunId": e.get("test_run_id"),
+        "autoCaptured": e.get("auto_captured", False),
     }
     if project_id:
         result["screenshotUrl"] = (
@@ -261,7 +264,17 @@ async def refresh_evidence(
     project_id: str,
     request: RefreshRequest,
 ) -> dict[str, Any]:
-    """Capture new evidence for a criterion."""
+    """Capture new evidence for a criterion.
+
+    DEPRECATED: Evidence now auto-captures on test pass. Use POST /capabilities/{id}/verify
+    to run tests and auto-capture evidence for linked criteria with verification_url.
+    """
+    logger.warning(
+        "deprecated_endpoint_called",
+        endpoint="/evidence/refresh",
+        project_id=project_id,
+        capability_id=request.capability_id,
+    )
     # Get next version number
     next_version = get_next_version(project_id, request.capability_id, request.criterion_id)
 
@@ -309,6 +322,7 @@ async def refresh_evidence(
         "success": True,
         "version": result.get("version", next_version),
         "message": f"Evidence captured (v{result.get('version', next_version)})",
+        "warning": "Deprecated: evidence auto-captures on test pass. Use POST /capabilities/{id}/verify",
     }
 
 

@@ -14,6 +14,8 @@ import {
   Clock,
   Camera,
   FileQuestion,
+  Bot,
+  TestTube,
 } from "lucide-react";
 import { EvidenceViewerModal } from "./EvidenceViewerModal";
 
@@ -29,19 +31,22 @@ interface Evidence {
   version: number;
   isCurrent: boolean;
   capturedAt: string;
-  expiresAt: string | null;
   qualityStatus: string;
   confidence: number | null;
   userApproved: boolean | null;
   userNotes: string | null;
   fileSizeBytes: number | null;
   screenshotUrl: string;
+  // New fields for criteria linkage
+  criterionDbId: number | null;
+  testRunId: number | null;
+  autoCaptured: boolean;
 }
 
 interface EvidenceSummary {
   total_current: number;
   by_status: Record<string, number>;
-  expired_count: number;
+  auto_captured_count: number;
   with_user_notes: number;
   total_storage_bytes: number;
 }
@@ -320,8 +325,18 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   <span>{evidence.criterionId}</span>
                   <span>v{evidence.version}</span>
                 </div>
-                <div className="text-2xs text-slate-500">
-                  {formatDate(evidence.capturedAt)}
+                <div className="flex items-center justify-between text-2xs text-slate-500">
+                  <span>{formatDate(evidence.capturedAt)}</span>
+                  {evidence.autoCaptured && (
+                    <span className="flex items-center gap-0.5 text-purple-400" title="Auto-captured on test pass">
+                      <Bot className="w-3 h-3" />
+                    </span>
+                  )}
+                  {evidence.testRunId && !evidence.autoCaptured && (
+                    <span className="flex items-center gap-0.5 text-cyan-400" title={`Test run #${evidence.testRunId}`}>
+                      <TestTube className="w-3 h-3" />
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -349,6 +364,9 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   Captured
                 </th>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
+                  Source
+                </th>
+                <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
                   User
                 </th>
               </tr>
@@ -372,6 +390,21 @@ export function EvidenceTab({ projectId }: EvidenceTabProps) {
                   <td className="px-3 py-2 text-xs text-slate-400">v{evidence.version}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">
                     {formatDate(evidence.capturedAt)}
+                  </td>
+                  <td className="px-3 py-2">
+                    {evidence.autoCaptured ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-purple-400" title="Auto-captured on test pass">
+                        <Bot className="w-3 h-3" />
+                        Auto
+                      </span>
+                    ) : evidence.testRunId ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-cyan-400" title={`Test run #${evidence.testRunId}`}>
+                        <TestTube className="w-3 h-3" />
+                        Test
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500">Manual</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {evidence.userApproved === true && (

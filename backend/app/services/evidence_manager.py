@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,6 @@ from ..storage.connection import get_connection
 logger = get_logger(__name__)
 
 # Configuration defaults (can be overridden per-project)
-DEFAULT_EXPIRY_HOURS = 24
 MAX_VERSIONS_TO_KEEP = 5
 CAPTURE_TIMEOUT_SECONDS = 60
 
@@ -68,6 +67,9 @@ async def capture_evidence(
     url: str,
     capability_id: str,
     criterion_id: str,
+    criterion_db_id: int | None = None,
+    test_run_id: int | None = None,
+    auto_captured: bool = False,
 ) -> dict[str, Any]:
     """Capture evidence for a UI criterion using the capture-evidence.js script.
 
@@ -76,6 +78,9 @@ async def capture_evidence(
         url: The full URL to capture
         capability_id: Capability ID (e.g., login, password-reset)
         criterion_id: Criterion ID (e.g., ac-001)
+        criterion_db_id: FK to acceptance_criteria.id (optional)
+        test_run_id: FK to test_runs.id if captured during test run (optional)
+        auto_captured: True if evidence was auto-captured on test pass
 
     Returns:
         Dict with success, version, file_path, evidence data
@@ -119,6 +124,27 @@ async def capture_evidence(
 
         if result_line:
             parsed: dict[str, Any] = json.loads(result_line)
+
+            # If capture was successful and we have FK links, save to database
+            if parsed.get("success") and (criterion_db_id or test_run_id or auto_captured):
+                version = parsed.get("version", 1)
+                file_path = parsed.get("file_path", "")
+
+                # Save with new FK columns
+                save_result = save_evidence(
+                    project_id=project_id,
+                    capability_id=capability_id,
+                    criterion_id=criterion_id,
+                    version=version,
+                    file_path=file_path,
+                    file_size_bytes=parsed.get("file_size_bytes"),
+                    criterion_db_id=criterion_db_id,
+                    test_run_id=test_run_id,
+                    auto_captured=auto_captured,
+                )
+                parsed["evidence_id"] = save_result.get("evidence_id")
+                parsed["db_id"] = save_result.get("id")
+
             return parsed
 
         return {
@@ -146,7 +172,9 @@ def save_evidence(
     file_path: str,
     file_size_bytes: int | None = None,
     evidence_data: dict[str, Any] | None = None,
-    expires_hours: int = DEFAULT_EXPIRY_HOURS,
+    criterion_db_id: int | None = None,
+    test_run_id: int | None = None,
+    auto_captured: bool = False,
 ) -> dict[str, Any]:
     """Save an evidence record to the database.
 
@@ -158,13 +186,14 @@ def save_evidence(
         file_path: Relative path to evidence directory
         file_size_bytes: Total size of files
         evidence_data: Parsed evidence.json data
-        expires_hours: Hours until evidence expires
+        criterion_db_id: FK to acceptance_criteria.id (optional)
+        test_run_id: FK to test_runs.id if captured during test run (optional)
+        auto_captured: True if evidence was auto-captured on test pass
 
     Returns:
         Created evidence record
     """
     evidence_id = generate_evidence_id(capability_id, criterion_id, version)
-    expires_at = datetime.now(UTC) + timedelta(hours=expires_hours)
 
     with get_connection() as conn, conn.cursor() as cur:
         evidence_storage.mark_previous_as_stale(cur, project_id, capability_id, criterion_id)
@@ -177,7 +206,9 @@ def save_evidence(
             file_path,
             file_size_bytes,
             version,
-            expires_at,
+            criterion_db_id,
+            test_run_id,
+            auto_captured,
         )
         conn.commit()
 
@@ -212,7 +243,7 @@ list_evidence = evidence_storage.list_evidence
 get_pending_review = evidence_storage.get_pending_review
 get_needs_user_review = evidence_storage.get_needs_user_review
 get_with_user_notes = evidence_storage.get_with_user_notes
-get_expired_evidence = evidence_storage.get_expired_evidence
+get_auto_captured_evidence = evidence_storage.get_auto_captured_evidence
 get_summary = evidence_storage.get_summary
 get_test_evidence = evidence_storage.get_test_evidence
 
@@ -412,7 +443,7 @@ def register_test_evidence(
     dest_path = dest_dir / evidence_file.name
     shutil.copy2(evidence_file, dest_path)
 
-    # Save evidence record
+    # Save evidence record with test_run_id link
     result = save_evidence(
         project_id=project_id,
         capability_id=test_capability_id,
@@ -420,7 +451,7 @@ def register_test_evidence(
         version=version,
         file_path=str(dest_dir.relative_to(evidence_base)),
         file_size_bytes=file_size,
-        expires_hours=DEFAULT_EXPIRY_HOURS * 7,  # Keep test evidence longer
+        test_run_id=test_run_id,
     )
 
     # Update test_runs with evidence_path
