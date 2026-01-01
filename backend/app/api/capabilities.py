@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from ..storage import capabilities as storage
 from ..storage import criteria as criteria_storage
+from ..storage import evidence as evidence_storage
 from ..storage import explorer as explorer_storage
 from ..storage import tests as tests_storage
 from ..storage.connection import get_connection
@@ -248,6 +249,7 @@ class VerifyResultV2(BaseModel):
     criteria_passed: int
     criteria_details: list[CriterionVerifyResult]
     evidence_captured: bool
+    evidence_count: int = 0  # Total evidence count across all criteria
 
 
 @router.post("/{project_id}/capabilities/{capability_id}/verify", response_model=VerifyResultV2)
@@ -300,13 +302,20 @@ async def verify_capability(project_id: str, capability_id: str) -> VerifyResult
     # Get latest capability status (computed status based on criteria/tests)
     capability = storage.get_capability(project_id, capability_id)
 
+    # Get evidence counts for all criteria
+    criterion_db_ids = [crit["id"] for crit in criteria if crit.get("id")]
+    evidence_counts = evidence_storage.get_evidence_count_for_criteria(project_id, criterion_db_ids)
+    total_evidence = sum(evidence_counts.values())
+    evidence_captured = total_evidence > 0
+
     return VerifyResultV2(
         capability_id=capability_id,
         capability_status=capability["status"] if capability else "pending",
         criteria_total=len(criteria_details),
         criteria_passed=criteria_passed,
         criteria_details=criteria_details,
-        evidence_captured=False,  # TODO: Implement auto-capture
+        evidence_captured=evidence_captured,
+        evidence_count=total_evidence,
     )
 
 
