@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence } from "motion/react";
 import {
   Bug,
   Package,
@@ -16,23 +17,30 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  List,
+  LayoutGrid,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   fetchTasks,
   fetchBlockedTasks,
   fetchTddCapabilities,
-  updateTaskStatus,
   type Task,
   type TaskType,
   type TaskStatus,
   type TddCapability,
 } from "@/lib/api";
+import { type Subtask } from "@/lib/api/tasks";
 import { cn } from "@/lib/utils";
 import { TaskFilters, DEFAULT_FILTERS, type TaskFilterValues } from "./TaskFilters";
-import { CreateTaskDialog } from "./CreateTaskDialog";
-import { TaskLogViewer } from "./TaskLogViewer";
+import { SimpleCreateDialog } from "./SimpleCreateDialog";
+import { TaskExpandedView } from "./TaskExpandedView";
+import { CriteriaProgress } from "./CriteriaProgress";
+import { SubtaskProgress } from "./SubtaskProgress";
+import { EnrichmentStatusBadge } from "./EnrichmentStatusBadge";
+import { EnrichmentProgress } from "./EnrichmentProgress";
+import { TaskReviewModal } from "./TaskReviewModal";
 
 interface TasksTabProps {
   projectId: string;
@@ -81,16 +89,18 @@ function TaskRow({
   capability,
   isExpanded,
   onToggle,
-  onStatusChange,
-  isUpdating,
+  onTaskUpdated,
+  onTaskDeleted,
+  subtasks,
   projectId,
 }: {
   task: Task;
   capability?: TddCapability;
   isExpanded: boolean;
   onToggle: () => void;
-  onStatusChange: (status: TaskStatus) => void;
-  isUpdating: boolean;
+  onTaskUpdated?: (task: Task) => void;
+  onTaskDeleted?: () => void;
+  subtasks: Subtask[];
   projectId: string;
 }) {
   const priority = task.priority ?? 2;
@@ -98,6 +108,17 @@ function TaskRow({
   const priorityStyle = priorityConfig[priority] || priorityConfig[2];
   const typeStyle = typeConfig[taskType] || typeConfig["task"];
   const statusStyle = statusConfig[task.status] || statusConfig["pending"];
+
+  // Phase badge config
+  const phaseConfig: Record<string, { label: string; className: string }> = {
+    plan: { label: "Plan", className: "bg-slate-600/50 text-slate-300" },
+    implement: { label: "Impl", className: "bg-blue-600/50 text-blue-300" },
+    test: { label: "Test", className: "bg-amber-600/50 text-amber-300" },
+    verify: { label: "Verify", className: "bg-purple-600/50 text-purple-300" },
+    complete: { label: "Done", className: "bg-green-600/50 text-green-300" },
+  };
+  const currentPhase = task.current_phase || "plan";
+  const phaseStyle = phaseConfig[currentPhase] || phaseConfig.plan;
 
   return (
     <>
@@ -137,9 +158,39 @@ function TaskRow({
           <span className="text-xs mono text-slate-500">{task.id}</span>
         </td>
 
-        {/* Title */}
+        {/* Title + Warning */}
         <td className="px-3 py-3">
-          <span className="text-sm text-slate-200 line-clamp-1">{task.title}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-200 line-clamp-1">{task.title}</span>
+            {!task.objective && task.enrichment_status !== "enriching" && (
+              <span title="No objective set">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+              </span>
+            )}
+          </div>
+        </td>
+
+        {/* Phase Badge */}
+        <td className="px-3 py-3">
+          <span className={`text-2xs px-1.5 py-0.5 rounded font-medium ${phaseStyle.className}`}>
+            {phaseStyle.label}
+          </span>
+        </td>
+
+        {/* Progress Indicators */}
+        <td className="px-3 py-3">
+          <div className="flex items-center gap-3">
+            {/* Criteria Progress */}
+            {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
+              <CriteriaProgress criteria={task.acceptance_criteria} maxVisible={4} />
+            )}
+            {/* Subtask Progress */}
+            {subtasks.length > 0 && (
+              <SubtaskProgress subtasks={subtasks} maxVisible={5} />
+            )}
+            {/* Enrichment Status Badge for non-accepted tasks */}
+            <EnrichmentStatusBadge status={task.enrichment_status} />
+          </div>
         </td>
 
         {/* Capability */}
@@ -160,121 +211,26 @@ function TaskRow({
         </td>
       </tr>
 
-      {/* Expanded Details */}
-      {isExpanded && (
-        <tr className="bg-slate-800/20">
-          <td colSpan={7} className="px-4 py-3">
-            <div className="space-y-3">
-              {/* Description */}
-              {task.description && (
-                <div>
-                  <h4 className="text-xs font-medium text-slate-400 mb-1">Description</h4>
-                  <p className="text-sm text-slate-300 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                    {task.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Labels */}
-              {task.labels && task.labels.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {task.labels.map((label) => (
-                    <Badge key={label} variant="outline" className="text-xs">
-                      {label}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2 border-t border-slate-700">
-                {task.status === "pending" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStatusChange("running");
-                    }}
-                    disabled={isUpdating}
-                  >
-                    {isUpdating && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
-                    Start
-                  </Button>
-                )}
-                {task.status === "running" && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStatusChange("paused");
-                      }}
-                      disabled={isUpdating}
-                    >
-                      Pause
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStatusChange("completed");
-                      }}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
-                      Complete
-                    </Button>
-                  </>
-                )}
-                {task.status === "paused" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStatusChange("running");
-                    }}
-                    disabled={isUpdating}
-                  >
-                    Resume
-                  </Button>
-                )}
-                {task.status === "failed" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStatusChange("pending");
-                    }}
-                    disabled={isUpdating}
-                  >
-                    Retry
-                  </Button>
-                )}
-              </div>
-
-              {/* Task Log Viewer for running/paused tasks */}
-              {(task.status === "running" || task.status === "paused") && (
-                <div className="pt-3 border-t border-slate-700" onClick={(e) => e.stopPropagation()}>
-                  <h4 className="text-xs font-medium text-slate-400 mb-2">Task Logs</h4>
-                  <TaskLogViewer
-                    projectId={projectId}
-                    taskId={task.id}
-                    className="max-h-[400px]"
-                  />
-                </div>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* Expanded Details - now using TaskExpandedView */}
+      <AnimatePresence>
+        {isExpanded && (
+          <tr>
+            <td colSpan={9}>
+              <TaskExpandedView
+                projectId={projectId}
+                task={task}
+                onTaskUpdated={onTaskUpdated}
+                onTaskDeleted={onTaskDeleted}
+              />
+            </td>
+          </tr>
+        )}
+      </AnimatePresence>
     </>
   );
 }
+
+type ViewMode = "list" | "kanban";
 
 export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const queryClient = useQueryClient();
@@ -284,6 +240,11 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  // Enrichment flow state
+  const [enrichingTask, setEnrichingTask] = useState<Task | null>(null);
+  const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
 
   // Fetch all tasks
   const {
@@ -309,12 +270,12 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   });
 
   // Unified refetch function
-  const refetch = () => {
+  const refetch = useCallback(() => {
     refetchTasks();
     if (filters.status === "blocked") {
       refetchBlocked();
     }
-  };
+  }, [refetchTasks, refetchBlocked, filters.status]);
 
   // Fetch capabilities for linking
   const { data: capabilities = [] } = useQuery({
@@ -323,18 +284,52 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     staleTime: 60000,
   });
 
-  // Status update mutation
-  const statusMutation = useMutation({
-    mutationFn: ({ taskId, status }: { taskId: string; status: TaskStatus }) =>
-      updateTaskStatus(projectId, taskId, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
-    },
-  });
+  // Handler for task created from SimpleCreateDialog
+  const handleTaskCreated = useCallback((task: Task, mode: "queue" | "verify") => {
+    if (mode === "verify" && task.enrichment_status === "review") {
+      // Sync mode completed - go directly to review
+      setReviewingTask(task);
+    } else if (mode === "queue" && task.enrichment_status === "enriching") {
+      // Async mode - show enrichment progress
+      setEnrichingTask(task);
+    }
+    // Refresh task list
+    refetch();
+  }, [refetch]);
 
-  const handleStatusChange = (taskId: string, status: TaskStatus) => {
-    statusMutation.mutate({ taskId, status });
-  };
+  // Handler for task updated
+  const handleTaskUpdated = useCallback((updatedTask: Task) => {
+    queryClient.setQueryData(["tasks", projectId, "all"], (old: { tasks: Task[] } | undefined) => {
+      if (!old) return old;
+      return {
+        ...old,
+        tasks: old.tasks.map((t) => t.id === updatedTask.id ? updatedTask : t),
+      };
+    });
+  }, [queryClient, projectId]);
+
+  // Handler for enrichment complete
+  const handleEnrichmentComplete = useCallback((task: Task) => {
+    setEnrichingTask(null);
+    if (task.enrichment_status === "review") {
+      setReviewingTask(task);
+    }
+    refetch();
+  }, [refetch]);
+
+  // Handler for task accepted from review modal
+  const handleTaskAccepted = useCallback((acceptedTask: Task) => {
+    setReviewingTask(null);
+    // Update task in cache
+    handleTaskUpdated(acceptedTask);
+    refetch();
+  }, [refetch, handleTaskUpdated]);
+
+  // Handler for task deleted
+  const handleTaskDeleted = useCallback(() => {
+    setExpandedId(null);
+    refetch();
+  }, [refetch]);
 
   // Create capability lookup map
   const capabilityMap = useMemo(() => {
@@ -388,7 +383,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     });
   }, [tasksData, blockedTasksData, filters]);
 
-  const isUpdating = statusMutation.isPending;
   const isLoading = filters.status === "blocked" ? blockedLoading : tasksLoading;
 
   return (
@@ -401,6 +395,34 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           onChange={setFilters}
         />
         <div className="flex items-center gap-2">
+          {/* View Toggle */}
+          <div className="flex items-center border border-slate-700 rounded-md overflow-hidden">
+            <button
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "p-1.5 transition-colors",
+                viewMode === "list"
+                  ? "bg-slate-700 text-white"
+                  : "bg-transparent text-slate-500 hover:text-slate-300"
+              )}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={cn(
+                "p-1.5 transition-colors",
+                viewMode === "kanban"
+                  ? "bg-slate-700 text-white"
+                  : "bg-transparent text-slate-500 hover:text-slate-300"
+              )}
+              title="Kanban view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+
           <Button
             size="sm"
             variant="outline"
@@ -428,15 +450,24 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
             <span className="text-sm">No tasks found</span>
             <span className="text-xs text-slate-600">Try adjusting your filters</span>
           </div>
+        ) : viewMode === "kanban" ? (
+          // Kanban view placeholder
+          <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+            <LayoutGrid className="h-8 w-8 mb-2" />
+            <span className="text-sm">Kanban view coming soon</span>
+            <span className="text-xs text-slate-600">Switch to list view for now</span>
+          </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
                 <th className="w-8 px-2 py-2"></th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Priority</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Type</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-32">ID</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Pri</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20">Type</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-28">ID</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">Title</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Phase</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-36">Progress</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Capability</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Status</th>
               </tr>
@@ -449,8 +480,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                   capability={task.capability_id ? capabilityMap.get(task.capability_id) : undefined}
                   isExpanded={expandedId === task.id}
                   onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
-                  onStatusChange={(status) => handleStatusChange(task.id, status)}
-                  isUpdating={isUpdating}
+                  onTaskUpdated={handleTaskUpdated}
+                  onTaskDeleted={handleTaskDeleted}
+                  subtasks={[]}
                   projectId={projectId}
                 />
               ))}
@@ -467,12 +499,54 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         </div>
       </div>
 
-      {/* Create Task Dialog */}
-      <CreateTaskDialog
+      {/* Simple Create Task Dialog */}
+      <SimpleCreateDialog
         open={showCreate}
         onOpenChange={setShowCreate}
         projectId={projectId}
+        onTaskCreated={handleTaskCreated}
       />
+
+      {/* Enrichment Progress Modal - shown inline when enriching */}
+      {enrichingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
+            <EnrichmentProgress
+              projectId={projectId}
+              task={enrichingTask}
+              onComplete={handleEnrichmentComplete}
+              onError={(err) => {
+                console.error("Enrichment error:", err);
+                setEnrichingTask(null);
+              }}
+            />
+            <div className="mt-4 pt-4 border-t border-slate-800 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEnrichingTask(null)}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                Run in Background
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Review Modal */}
+      {reviewingTask && (
+        <TaskReviewModal
+          open={!!reviewingTask}
+          onOpenChange={(open) => {
+            if (!open) setReviewingTask(null);
+          }}
+          projectId={projectId}
+          task={reviewingTask}
+          onAccept={handleTaskAccepted}
+          onDiscard={() => setReviewingTask(null)}
+        />
+      )}
     </div>
   );
 }
