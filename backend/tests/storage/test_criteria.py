@@ -144,6 +144,86 @@ class TestCriterionCRUD:
         result = criteria.get_criterion_by_id(conn, created["id"])
         assert result is None
 
+    def test_update_criterion(self, conn, cleanup_project):
+        """Update criterion fields."""
+        project_id = cleanup_project
+        created = criteria.create_criterion(
+            conn,
+            project_id,
+            "Original criterion text",
+            category="correctness",
+            measurement="test",
+        )
+
+        # Update multiple fields
+        updated = criteria.update_criterion(
+            conn,
+            project_id,
+            created["criterion_id"],
+            {
+                "criterion": "Updated criterion text",
+                "category": "security",
+                "measurement": "manual",
+                "threshold": "100%",
+            },
+        )
+
+        assert updated is not None
+        assert updated["criterion"] == "Updated criterion text"
+        assert updated["category"] == "security"
+        assert updated["measurement"] == "manual"
+        assert updated["threshold"] == "100%"
+        # ID should remain unchanged
+        assert updated["criterion_id"] == created["criterion_id"]
+
+    def test_update_criterion_partial(self, conn, cleanup_project):
+        """Update only specific fields."""
+        project_id = cleanup_project
+        created = criteria.create_criterion(
+            conn,
+            project_id,
+            "Partial update test",
+            category="correctness",
+        )
+
+        # Update only category
+        updated = criteria.update_criterion(
+            conn,
+            project_id,
+            created["criterion_id"],
+            {"category": "performance"},
+        )
+
+        assert updated is not None
+        assert updated["criterion"] == "Partial update test"  # Unchanged
+        assert updated["category"] == "performance"  # Updated
+
+    def test_update_criterion_invalid_fields_ignored(self, conn, cleanup_project):
+        """Invalid fields in updates dict are ignored."""
+        project_id = cleanup_project
+        created = criteria.create_criterion(conn, project_id, "Ignore invalid")
+
+        # Try to update with invalid field
+        updated = criteria.update_criterion(
+            conn,
+            project_id,
+            created["criterion_id"],
+            {"invalid_field": "should be ignored", "criterion": "Valid update"},
+        )
+
+        assert updated is not None
+        assert updated["criterion"] == "Valid update"
+
+    def test_update_nonexistent_criterion(self, conn, cleanup_project):
+        """Update returns None for nonexistent criterion."""
+        result = criteria.update_criterion(
+            conn,
+            cleanup_project,
+            "ac-999",
+            {"criterion": "New text"},
+        )
+        assert result is None
+
 
 class TestCapabilityCriteriaJunction:
     """Tests for capability-criteria linking."""

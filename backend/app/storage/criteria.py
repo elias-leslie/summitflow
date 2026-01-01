@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
+from psycopg import sql
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,66 @@ def delete_criterion(conn: psycopg.Connection, db_id: int) -> bool:
         deleted = cur.rowcount > 0
         conn.commit()
     return deleted
+
+
+def update_criterion(
+    conn: psycopg.Connection,
+    project_id: str,
+    criterion_id: str,
+    updates: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Update a criterion's fields.
+
+    Args:
+        conn: Database connection
+        project_id: Project ID
+        criterion_id: The string criterion_id (e.g., 'ac-001')
+        updates: Dict of fields to update (criterion, category, measurement, threshold)
+
+    Returns:
+        Updated criterion dict, or None if not found
+    """
+    allowed_fields = {"criterion", "category", "measurement", "threshold"}
+    filtered = {k: v for k, v in updates.items() if k in allowed_fields}
+
+    if not filtered:
+        # No valid fields to update, just return current state
+        return get_criterion(conn, project_id, criterion_id)
+
+    # Build dynamic UPDATE clause using psycopg.sql for type safety
+    set_clauses = sql.SQL(", ").join(
+        sql.SQL("{} = %s").format(sql.Identifier(field)) for field in filtered
+    )
+    values = list(filtered.values())
+    values.extend([project_id, criterion_id])
+
+    query = sql.SQL("""
+        UPDATE acceptance_criteria
+        SET {}
+        WHERE project_id = %s AND criterion_id = %s
+        RETURNING id, project_id, criterion_id, criterion, category, measurement, threshold,
+                  created_at, created_by_task_id
+    """).format(set_clauses)
+
+    with conn.cursor() as cur:
+        cur.execute(query, values)
+        row = cur.fetchone()
+        conn.commit()
+
+    if row is None:
+        return None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "criterion_id": row[2],
+        "criterion": row[3],
+        "category": row[4],
+        "measurement": row[5],
+        "threshold": row[6],
+        "created_at": row[7],
+        "created_by_task_id": row[8],
+    }
 
 
 def check_and_delete_orphan(conn: psycopg.Connection, criterion_db_id: int) -> bool:
