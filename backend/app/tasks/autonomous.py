@@ -315,7 +315,13 @@ def _is_standalone(task: dict[str, Any]) -> bool:
 
     Standalone tasks require manual execution via /do_it because they lack
     capability-driven acceptance criteria for autonomous verification.
+
+    Exception: auto-generated tasks from Explorer scans have subtasks+steps
+    which can be verified without capability linkage.
     """
+    labels = task.get("labels") or []
+    if "auto-generated" in labels:
+        return False  # Auto-generated tasks have subtask verification
     return task.get("capability_id") is None
 
 
