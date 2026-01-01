@@ -64,6 +64,7 @@ from ..storage import tasks as task_store
 from ..storage.connection import get_connection
 from ..storage.criteria import (
     create_criterion,
+    get_effective_criteria,
     link_criterion_to_task,
     unlink_criterion_from_task,
     update_task_criterion_verification,
@@ -475,6 +476,19 @@ async def update_task_status(
     # Append completion reason to progress_log if provided
     if update.reason and update.status in ("completed", "cancelled"):
         updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
+
+    # Populate verification_result on completion
+    if update.status == "completed":
+        with get_connection() as conn:
+            criteria = get_effective_criteria(conn, project_id, updated)
+            verified_count = sum(1 for c in criteria if c.get("verified"))
+            verification_result = {
+                "total": len(criteria),
+                "verified": verified_count,
+                "unverified": [c.get("criterion_id") for c in criteria if not c.get("verified")],
+                "all_verified": verified_count == len(criteria) if criteria else True,
+            }
+            updated = task_store.update_task(task_id, verification_result=verification_result)
 
     return _task_to_response(updated)
 
