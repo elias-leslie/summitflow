@@ -467,10 +467,15 @@ async def update_task_status(
             task_id, update.status, error_message=update.error_message
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update task status")
+
+    # Append completion reason to progress_log if provided
+    if update.reason and update.status in ("completed", "cancelled"):
+        updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
+
     return _task_to_response(updated)
 
 

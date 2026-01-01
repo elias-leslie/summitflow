@@ -58,6 +58,7 @@ class TaskStatusUpdate(BaseModel):
 
     status: str  # pending, running, paused, failed, completed, pending_review, cancelled
     error_message: str | None = None
+    reason: str | None = None  # Completion reason (stored in progress_log)
     force: bool = False  # Bypass criteria validation on close
 
 
