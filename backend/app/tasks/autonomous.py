@@ -31,7 +31,12 @@ DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 AUTONOMOUS_DRY_RUN = False  # When True, log what would execute but don't actually run
 VALIDATION_MODE = True  # When True, only execute tasks in ALLOWED_TASK_IDS
 ALLOWED_TASK_IDS = [
-    "task-b2e66405",  # Fix: TypeScript module resolution (tier 2, frontend)
+    # Phase 4 batch: 4 tier-2 bugs + 1 tier-3 refactor
+    "task-7d276ef1",  # Fix: Unit test directory 'tests/unit/tasks/' (tier 2)
+    "task-c43c517e",  # Fix: Python command missing from environment (tier 2)
+    "task-7d1e3340",  # Fix: Pytest failed due to missing test file (tier 2)
+    "task-5cc8d68b",  # Fix: ImportError prevents test collection (tier 2)
+    "task-747b0a45",  # Refactor: High line count in tasks.py (tier 3)
 ]
 
 
