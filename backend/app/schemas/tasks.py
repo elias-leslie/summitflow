@@ -140,6 +140,115 @@ class AcceptanceCriterion(BaseModel):
         return v
 
 
+# =============================================================================
+# Subtask Models (for task_subtasks table)
+# =============================================================================
+
+
+class SubtaskCreate(BaseModel):
+    """Request model for creating a subtask."""
+
+    subtask_id: str = Field(description="Hierarchical ID like 1.1, 2.3")
+    phase: str | None = Field(
+        default=None, description="Phase: research, database, backend, frontend, testing"
+    )
+    description: str = Field(min_length=5, description="Subtask description")
+    steps: list[str] = Field(default_factory=list, description="List of implementation steps")
+    display_order: int = Field(default=0, ge=0, description="Order for display")
+
+
+class SubtaskResponse(BaseModel):
+    """Response model for a subtask."""
+
+    id: str
+    task_id: str
+    subtask_id: str
+    phase: str | None
+    description: str
+    steps: list[str]
+    passes: bool
+    passed_at: str | None
+    display_order: int
+    created_at: str | None
+
+
+class SubtaskUpdate(BaseModel):
+    """Request model for updating a subtask."""
+
+    passes: bool = Field(description="Whether subtask passes/is complete")
+
+
+class SubtaskSummary(BaseModel):
+    """Summary of subtask completion for a task."""
+
+    total: int
+    completed: int
+    next_subtask_id: str | None
+    progress_percent: float
+
+
+# =============================================================================
+# AI Enrichment Models
+# =============================================================================
+
+
+class EnrichmentRequest(BaseModel):
+    """Request model for triggering AI task enrichment."""
+
+    raw_request: str = Field(min_length=10, description="Natural language task description")
+    priority: int | None = Field(default=None, ge=0, le=4, description="Optional priority override")
+    task_type: Literal["feature", "bug", "task"] | None = Field(
+        default=None, description="Optional type override"
+    )
+
+
+class EnrichmentResponse(BaseModel):
+    """Response model after starting enrichment."""
+
+    task_id: str
+    enrichment_status: str
+    message: str
+
+
+class DiscussionMessage(BaseModel):
+    """A single message in a task discussion."""
+
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: str
+
+
+class DiscussionRequest(BaseModel):
+    """Request model for discussing a task with AI."""
+
+    message: str = Field(min_length=1, description="User message")
+
+
+class DiscussionResponse(BaseModel):
+    """Response model for task discussion."""
+
+    response: str = Field(description="Agent response text")
+    updated_task: "TaskResponse | None" = Field(
+        default=None, description="Updated task if changes were made"
+    )
+    history: list[DiscussionMessage] = Field(
+        default_factory=list, description="Full conversation history"
+    )
+
+
+class CleanupPromptRequest(BaseModel):
+    """Request model for AI prompt cleanup."""
+
+    raw_request: str = Field(min_length=5, description="Raw user input to clean up")
+
+
+class CleanupPromptResponse(BaseModel):
+    """Response model for prompt cleanup."""
+
+    cleaned_prompt: str
+    changes_made: list[str] = Field(default_factory=list)
+
+
 class CapabilityContext(BaseModel):
     """Capability context for a task."""
 
@@ -192,6 +301,13 @@ class TaskResponse(BaseModel):
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     current_phase: str | None = None
     verification_result: dict[str, Any] | None = None
+    # AI enrichment fields
+    raw_request: str | None = None
+    enrichment_status: str | None = None
+    enriched_by: str | None = None
+    enriched_at: str | None = None
+    # Optional subtasks (when include=subtasks)
+    subtasks: list[SubtaskResponse] | None = None
     # Optional capability context (when include=capability)
     capability: CapabilityContext | None = None
     # Optional blockers context (when include=blockers)
