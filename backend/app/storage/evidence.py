@@ -601,6 +601,38 @@ def get_summary(project_id: str) -> dict[str, Any]:
         }
 
 
+def get_evidence_count_for_criteria(
+    project_id: str,
+    criterion_ids: list[int],
+) -> dict[int, int]:
+    """Get evidence count for each criterion.
+
+    Args:
+        project_id: Project ID
+        criterion_ids: List of criterion database IDs (acceptance_criteria.id)
+
+    Returns:
+        Dict mapping criterion_db_id to evidence count
+    """
+    if not criterion_ids:
+        return {}
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Use ANY for efficient IN query
+        cur.execute(
+            """
+            SELECT criterion_db_id, COUNT(*)
+            FROM evidence
+            WHERE project_id = %s AND criterion_db_id = ANY(%s) AND is_current = TRUE
+            GROUP BY criterion_db_id
+            """,
+            (project_id, criterion_ids),
+        )
+        rows = cur.fetchall()
+
+        return {row[0]: int(row[1]) for row in rows}
+
+
 def get_test_evidence(
     project_id: str,
     test_id: str,
