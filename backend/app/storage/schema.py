@@ -129,6 +129,7 @@ def init_schema() -> None:
 
         # ============================================================
         # Tasks Table - Issue tracking and agent execution state
+        # NOTE: Migrations are authoritative. This is fallback only.
         # ============================================================
         cur.execute(
             """
@@ -138,8 +139,6 @@ def init_schema() -> None:
                     title TEXT NOT NULL,
                     description TEXT,
                     status TEXT DEFAULT 'pending',
-                    current_criterion_id TEXT,
-                    spec_content TEXT,
                     plan_content JSONB,
                     progress_log TEXT,
                     error_message TEXT,
@@ -151,11 +150,29 @@ def init_schema() -> None:
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     started_at TIMESTAMPTZ,
                     completed_at TIMESTAMPTZ,
-                    -- Issue tracking fields (beads migration)
+                    -- Issue tracking fields
                     priority INTEGER DEFAULT 2,
                     labels TEXT[] DEFAULT '{}',
                     task_type VARCHAR(20) DEFAULT 'task',
-                    parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL
+                    parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+                    -- TDD linkage
+                    capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL,
+                    -- Autonomous execution fields
+                    claimed_by TEXT,
+                    claimed_at TIMESTAMPTZ,
+                    lock_expires_at TIMESTAMPTZ,
+                    tier INTEGER,
+                    pre_merge_sha TEXT,
+                    review_result JSONB,
+                    -- AI agent reliability fields
+                    objective TEXT,
+                    current_phase TEXT,
+                    verification_result JSONB,
+                    -- AI enrichment fields
+                    raw_request TEXT,
+                    enrichment_status TEXT,
+                    enriched_by TEXT,
+                    enriched_at TIMESTAMPTZ
                 )
                 """
         )
