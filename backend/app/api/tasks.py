@@ -30,6 +30,8 @@ from ..schemas.tasks import (
     BlockerInfo,
     CapabilityContext,
     ClaimTaskRequest,
+    CleanupPromptRequest,
+    CleanupPromptResponse,
     CreateTaskCriterionRequest,
     CriteriaValidateRequest,
     CriteriaValidateResponse,
@@ -38,7 +40,13 @@ from ..schemas.tasks import (
     CriterionVerifyRequest,
     DependencyCreate,
     DependencyResponse,
+    DiscussionRequest,
+    DiscussionResponse,
+    EnrichmentRequest,
+    EnrichmentResponse,
     StartTaskRequest,
+    SubtaskResponse,
+    SubtaskUpdate,
     TaskCreate,
     TaskListResponse,
     TaskLogEntry,
@@ -1202,3 +1210,309 @@ async def verify_task_criterion_junction(
         "criterion_id": criterion_id,
         "verified_by": request.verified_by,
     }
+
+
+# =============================================================================
+# Task Enrichment Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/projects/{project_id}/tasks/enrich",
+    response_model=EnrichmentResponse,
+    status_code=202,
+)
+async def enrich_task_endpoint(
+    project_id: str,
+    request: EnrichmentRequest,
+    sync: bool = Query(default=False, description="Run enrichment synchronously"),
+) -> EnrichmentResponse:
+    """Create a task and trigger AI enrichment.
+
+    Args:
+        project_id: Project ID
+        request: Enrichment request with raw_request text
+        sync: If true, run enrichment inline (slower but returns enriched task)
+
+    Returns:
+        EnrichmentResponse with task_id and status
+    """
+    # Create task in draft state
+    task = task_store.create_task(
+        project_id=project_id,
+        title=request.raw_request[:100] + ("..." if len(request.raw_request) > 100 else ""),
+        raw_request=request.raw_request,
+        enrichment_status="enriching" if not sync else "draft",
+        priority=request.priority or 2,
+        task_type=request.task_type or "task",
+    )
+
+    if sync:
+        # Run enrichment synchronously
+        try:
+            from ..services.enrichment_service import apply_enrichment_to_task, enrich_and_validate
+
+            enriched, _validation = enrich_and_validate(
+                project_id=project_id,
+                task_id=task["id"],
+                raw_request=request.raw_request,
+            )
+            apply_enrichment_to_task(task["id"], enriched)
+
+            return EnrichmentResponse(
+                task_id=task["id"],
+                enrichment_status="review",
+                message="Task enriched successfully. Ready for review.",
+            )
+        except Exception as e:
+            logger.error("Sync enrichment failed: %s", e)
+            task_store.update_task(task["id"], enrichment_status="failed")
+            raise HTTPException(status_code=500, detail=f"Enrichment failed: {e}") from None
+    else:
+        # Queue for async enrichment
+        try:
+            from ..tasks.enrichment import enrich_task_async
+
+            enrich_task_async.delay(project_id, task["id"], request.raw_request)
+        except Exception as e:
+            logger.warning("Failed to queue enrichment task: %s", e)
+            # Still return - we can retry later
+
+        return EnrichmentResponse(
+            task_id=task["id"],
+            enrichment_status="enriching",
+            message="Task created and enrichment queued.",
+        )
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/discuss",
+    response_model=DiscussionResponse,
+)
+async def discuss_task_endpoint(
+    project_id: str,
+    task_id: str,
+    request: DiscussionRequest,
+) -> DiscussionResponse:
+    """Have a discussion about a task with AI.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to discuss
+        request: Discussion request with message
+
+    Returns:
+        DiscussionResponse with AI reply and any updates
+    """
+    task = _verify_task_project(task_id, project_id)
+
+    from ..services.enrichment_service import apply_discussion_changes, discuss_task
+
+    # Get discussion history from task metadata (if any)
+    history: list[dict[str, str]] = []
+    plan_content = task.get("plan_content") or {}
+    if "discussion_history" in plan_content:
+        history = plan_content["discussion_history"]
+
+    # Run discussion
+    result = discuss_task(
+        project_id=project_id,
+        task_id=task_id,
+        message=request.message,
+        history=history,
+        current_task=task,
+    )
+
+    # Update history
+    history.append({"role": "user", "content": request.message})
+    history.append({"role": "assistant", "content": result.response})
+
+    # Apply changes if any
+    updated_task = task
+    if result.updated_task:
+        updated_task = apply_discussion_changes(task_id, result.updated_task)
+
+    # Store updated history
+    plan_content["discussion_history"] = history
+    task_store.update_task(task_id, plan_content=plan_content)
+
+    # Update enrichment status if first message
+    if task.get("enrichment_status") == "review":
+        task_store.update_task(task_id, enrichment_status="discussing")
+
+    return DiscussionResponse(
+        response=result.response,
+        updated_task=_task_to_response(updated_task) if result.updated_task else None,
+        history=[{"role": h["role"], "content": h["content"], "timestamp": ""} for h in history],
+    )
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/accept",
+    response_model=TaskResponse,
+)
+async def accept_task_endpoint(
+    project_id: str,
+    task_id: str,
+) -> TaskResponse:
+    """Accept an enriched task and mark it ready for execution.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to accept
+
+    Returns:
+        Updated TaskResponse
+    """
+    task = _verify_task_project(task_id, project_id)
+
+    # Verify task is in acceptable state
+    current_status = task.get("enrichment_status")
+    if current_status not in ("review", "discussing"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot accept task with enrichment_status '{current_status}'. Must be 'review' or 'discussing'.",
+        )
+
+    # Update task
+    updated = task_store.update_task(
+        task_id,
+        enrichment_status="accepted",
+        status="pending",  # Ready for execution
+    )
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    return _task_to_response(updated)
+
+
+@router.get(
+    "/projects/{project_id}/tasks/{task_id}/subtasks",
+    response_model=dict[str, Any],
+)
+async def get_task_subtasks(
+    project_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Get subtasks for a task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        Dict with subtasks list and summary
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.subtasks import get_subtask_summary, get_subtasks_for_task
+
+    subtasks = get_subtasks_for_task(task_id)
+    summary = get_subtask_summary(task_id)
+
+    return {
+        "subtasks": subtasks,
+        "summary": summary,
+    }
+
+
+@router.patch(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}",
+    response_model=SubtaskResponse,
+)
+async def update_task_subtask(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    request: SubtaskUpdate,
+) -> SubtaskResponse:
+    """Update a subtask's passes status.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: Update with passes boolean
+
+    Returns:
+        Updated SubtaskResponse
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.subtasks import update_subtask_passes
+
+    updated = update_subtask_passes(task_id, subtask_id, request.passes)
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subtask {subtask_id} not found for task {task_id}",
+        )
+
+    return SubtaskResponse(**updated)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/cleanup-prompt",
+    response_model=CleanupPromptResponse,
+)
+async def cleanup_prompt_endpoint(
+    project_id: str,
+    request: CleanupPromptRequest,
+) -> CleanupPromptResponse:
+    """Clean up and refine a raw prompt using AI.
+
+    Uses Gemini Flash for fast, cheap text cleanup.
+
+    Args:
+        project_id: Project ID
+        request: Request with raw_request text
+
+    Returns:
+        CleanupPromptResponse with cleaned text and changes list
+    """
+    try:
+        from ..services.agents.gemini import GeminiClient
+
+        client = GeminiClient(model="gemini-3-flash-preview")
+        if not client.is_available():
+            # Return unchanged if Gemini unavailable
+            return CleanupPromptResponse(
+                cleaned_prompt=request.raw_request,
+                changes_made=["Gemini unavailable - no changes made"],
+            )
+
+        prompt = f"""Clean up and refine this task request. Fix grammar, clarify intent, and expand abbreviations. Keep the meaning unchanged.
+
+Original:
+{request.raw_request}
+
+Return JSON:
+{{"cleaned_prompt": "...", "changes_made": ["change1", "change2"]}}"""
+
+        response = client.generate(prompt, max_tokens=1000, temperature=0.2)
+
+        import json
+
+        text = response.content.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        data = json.loads(text.strip())
+
+        return CleanupPromptResponse(
+            cleaned_prompt=data.get("cleaned_prompt", request.raw_request),
+            changes_made=data.get("changes_made", []),
+        )
+
+    except Exception as e:
+        logger.warning("Cleanup prompt failed: %s", e)
+        return CleanupPromptResponse(
+            cleaned_prompt=request.raw_request,
+            changes_made=[f"Cleanup failed: {e}"],
+        )
