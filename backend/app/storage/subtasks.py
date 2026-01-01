@@ -136,11 +136,15 @@ def get_subtask(task_id: str, subtask_id: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-def get_subtasks_for_task(task_id: str) -> list[dict[str, Any]]:
+def get_subtasks_for_task(
+    task_id: str,
+    include_steps: bool = False,
+) -> list[dict[str, Any]]:
     """Get all subtasks for a task, ordered by display_order.
 
     Args:
         task_id: Parent task ID
+        include_steps: If True, include steps from task_subtask_steps table
 
     Returns:
         List of subtask dicts, ordered by display_order.
@@ -157,7 +161,18 @@ def get_subtasks_for_task(task_id: str) -> list[dict[str, Any]]:
         )
         rows = cur.fetchall()
 
-    return [_row_to_dict(row) for row in rows]
+    subtasks = [_row_to_dict(row) for row in rows]
+
+    if include_steps:
+        from .steps import get_step_summary, get_steps_for_subtask
+
+        for subtask in subtasks:
+            subtask_table_id = subtask["id"]  # Already in table ID format
+            steps = get_steps_for_subtask(subtask_table_id)
+            subtask["steps_from_table"] = steps
+            subtask["step_summary"] = get_step_summary(subtask_table_id)
+
+    return subtasks
 
 
 def update_subtask_passes(

@@ -1271,12 +1271,14 @@ async def accept_task_endpoint(
 async def get_task_subtasks(
     project_id: str,
     task_id: str,
+    include_steps: bool = Query(False, description="Include steps from table for each subtask"),
 ) -> dict[str, Any]:
     """Get subtasks for a task.
 
     Args:
         project_id: Project ID
         task_id: Task ID
+        include_steps: If True, include steps from task_subtask_steps table
 
     Returns:
         Dict with subtasks list and summary
@@ -1285,7 +1287,7 @@ async def get_task_subtasks(
 
     from ..storage.subtasks import get_subtask_summary, get_subtasks_for_task
 
-    subtasks = get_subtasks_for_task(task_id)
+    subtasks = get_subtasks_for_task(task_id, include_steps=include_steps)
     summary = get_subtask_summary(task_id)
 
     return {
