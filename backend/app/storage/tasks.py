@@ -15,7 +15,7 @@ from psycopg.rows import TupleRow
 
 from .connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (32 columns)
+# Column list for all task SELECT/RETURNING queries (36 columns)
 # Order must match _row_to_dict index mapping
 # Note: acceptance_criteria removed (migrated to task_criteria junction table)
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
@@ -24,7 +24,8 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
     priority, labels, task_type, parent_task_id,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
-    objective, current_phase, verification_result"""
+    objective, current_phase, verification_result,
+    raw_request, enrichment_status, enriched_by, enriched_at"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -33,7 +34,8 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.labels, t.task_type, t.parent_task_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
-    t.objective, t.current_phase, t.verification_result"""
+    t.objective, t.current_phase, t.verification_result,
+    t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at"""
 
 
 def _generate_task_id() -> str:
@@ -54,6 +56,8 @@ def create_task(
     tier: int | None = None,
     objective: str | None = None,
     current_phase: str = "plan",
+    raw_request: str | None = None,
+    enrichment_status: str = "none",
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -70,6 +74,8 @@ def create_task(
         tier: Execution tier 1-4 for autonomous execution (defaults to 2)
         objective: Single measurable goal statement
         current_phase: Task phase: plan, implement, test, verify, complete
+        raw_request: Original user input before AI enrichment
+        enrichment_status: Enrichment state: none, draft, enriching, review, discussing, accepted, failed
 
     Note:
         Acceptance criteria are now managed via task_criteria junction table.
@@ -88,8 +94,8 @@ def create_task(
             f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, labels, task_type, parent_task_id, tier,
-                               objective, current_phase)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               objective, current_phase, raw_request, enrichment_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -105,6 +111,8 @@ def create_task(
                 tier,
                 objective,
                 current_phase,
+                raw_request,
+                enrichment_status,
             ),
         )
         row = cur.fetchone()
@@ -187,6 +195,11 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         # acceptance_criteria removed (migrated to task_criteria junction)
         "current_phase",
         "verification_result",
+        # AI enrichment fields
+        "raw_request",
+        "enrichment_status",
+        "enriched_by",
+        "enriched_at",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -325,6 +338,37 @@ def get_tasks_by_capability(capability_id: int) -> list[dict[str, Any]]:
             ORDER BY created_at DESC
             """,
             (capability_id,),
+        )
+        rows = cur.fetchall()
+
+    return [_row_to_dict(row) for row in rows]
+
+
+def get_tasks_by_enrichment_status(
+    project_id: str,
+    status: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Get all tasks with a specific enrichment status.
+
+    Args:
+        project_id: Project ID
+        status: Enrichment status (none, draft, enriching, review, discussing, accepted, failed)
+        limit: Max results (default 50)
+
+    Returns:
+        List of task dicts ordered by creation date (newest first).
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {TASK_COLUMNS}
+            FROM tasks
+            WHERE project_id = %s AND enrichment_status = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (project_id, status, limit),
         )
         rows = cur.fetchall()
 
@@ -485,20 +529,21 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-EXPECTED_TASK_COLUMNS = 32
+EXPECTED_TASK_COLUMNS = 36
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (32 columns):
+    Column order (36 columns):
         id, project_id, capability_id, title, description, status,
         current_criterion_id, spec_content, plan_content, progress_log,
         error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
         priority, labels, task_type, parent_task_id,
         claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
-        objective, current_phase, verification_result
+        objective, current_phase, verification_result,
+        raw_request, enrichment_status, enriched_by, enriched_at
 
     Note: acceptance_criteria removed (migrated to task_criteria junction table)
     """
@@ -542,6 +587,11 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "objective": row[29],
         "current_phase": row[30],
         "verification_result": row[31],
+        # AI enrichment fields
+        "raw_request": row[32],
+        "enrichment_status": row[33],
+        "enriched_by": row[34],
+        "enriched_at": row[35],
     }
 
 
