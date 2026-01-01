@@ -414,12 +414,22 @@ class ImplementationExecutor:
                                     step_number=step_number,
                                 )
                         # Mark subtask as passed
-                        update_subtask_passes(subtask_full_id, True)
-                        logger.info(
-                            "subtask_marked_complete",
-                            subtask_id=subtask_full_id,
-                            task_id=task_id,
-                        )
+                        # Parse subtask_full_id (e.g., "task-abc123-1.1") into components
+                        # task_id is everything before the last hyphen-digit pattern
+                        match = re.match(r"^(.+)-(\d+\.\d+)$", subtask_full_id)
+                        if match:
+                            parsed_task_id, parsed_subtask_id = match.groups()
+                            update_subtask_passes(parsed_task_id, parsed_subtask_id, True)
+                            logger.info(
+                                "subtask_marked_complete",
+                                subtask_id=parsed_subtask_id,
+                                task_id=parsed_task_id,
+                            )
+                        else:
+                            logger.error(
+                                "invalid_subtask_full_id_format",
+                                subtask_full_id=subtask_full_id,
+                            )
 
                 # Check acceptance criteria - update phase to "verify"
                 self._update_phase(task_id, "verify", build_state)
