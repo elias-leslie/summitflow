@@ -6,18 +6,24 @@ This module provides Celery tasks for autonomous code execution:
 - generate_bug_tasks: Create bug tasks from error observations
 - autonomous_work_pickup: Pick up and execute eligible tasks
 - review_pending_tasks: Opus review gate for pending_review tasks
+- cleanup_orphaned_worktrees: Clean up stale worktrees
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from app.celery_app import celery_app
+from app.services.worktree_manager import get_worktree_manager
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
 
 logger = logging.getLogger(__name__)
+
+# Default repo path for worktree cleanup
+DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 
 
 @celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[misc]
@@ -503,6 +509,15 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                     error_message=result.reason or result.error or "Unknown error",
                 )
                 task_store.release_task(claimed["id"])
+
+                # Cleanup worktree on failure
+                try:
+                    worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+                    worktree_manager.remove_worktree(project_id, claimed["id"])
+                    logger.info(f"Cleaned up worktree for failed task {claimed['id']}")
+                except Exception as cleanup_err:
+                    logger.warning(f"Worktree cleanup failed: {cleanup_err}")
+
                 logger.warning(f"Task {claimed['id']} failed: {result.reason}")
                 return {
                     "status": "execution_failed",
@@ -516,6 +531,15 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
         except Exception as exec_error:
             # Release task on execution error
             task_store.release_task(claimed["id"])
+
+            # Cleanup worktree on error
+            try:
+                worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+                worktree_manager.remove_worktree(project_id, claimed["id"])
+                logger.info(f"Cleaned up worktree for errored task {claimed['id']}")
+            except Exception as cleanup_err:
+                logger.warning(f"Worktree cleanup failed: {cleanup_err}")
+
             logger.error(f"Execution error for task {claimed['id']}: {exec_error}")
             return {
                 "status": "execution_error",
@@ -610,3 +634,69 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in review_pending_tasks: {e}")
         return {"status": "error", "error": str(e)}
+
+
+@celery_app.task(name="summitflow.cleanup_orphaned_worktrees")  # type: ignore[misc]
+def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
+    """Clean up orphaned worktrees that are older than max_age_hours.
+
+    This task runs periodically to remove worktrees that:
+    - Are older than max_age_hours (abandoned from crashed executions)
+    - Belong to tasks no longer in 'running' status
+
+    Args:
+        max_age_hours: Maximum age in hours before cleanup (default 24)
+
+    Returns:
+        Dict with removed_count and any errors
+    """
+    try:
+        worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+
+        # First, cleanup by age
+        removed_by_age = worktree_manager.cleanup_stale_worktrees(max_age_hours)
+        logger.info(f"Cleaned up {removed_by_age} stale worktrees by age")
+
+        # Second, cleanup worktrees for tasks no longer running
+        removed_by_status = 0
+        active_worktrees = worktree_manager.list_active_worktrees()
+
+        for worktree in active_worktrees:
+            task_id = worktree.task_id
+            task = task_store.get_task(task_id)
+
+            # Remove if task doesn't exist or is not in running/pending_review
+            should_remove = False
+            if not task:
+                should_remove = True
+                reason = "task not found"
+            elif task.get("status") not in ("running", "pending_review"):
+                should_remove = True
+                reason = f"task status is {task.get('status')}"
+
+            if should_remove:
+                try:
+                    worktree_manager.remove_worktree(worktree.project_id, task_id)
+                    removed_by_status += 1
+                    logger.info(
+                        f"Cleaned up worktree for {task_id}: {reason}"  # noqa: F821
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to remove worktree for {task_id}: {e}")
+
+        total_removed = removed_by_age + removed_by_status
+        logger.info(
+            f"Worktree cleanup complete: {total_removed} removed "
+            f"(by_age={removed_by_age}, by_status={removed_by_status})"
+        )
+
+        return {
+            "status": "success",
+            "removed_count": total_removed,
+            "removed_by_age": removed_by_age,
+            "removed_by_status": removed_by_status,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in cleanup_orphaned_worktrees: {e}")
+        return {"status": "error", "error": str(e), "removed_count": 0}
