@@ -173,8 +173,6 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         title=task["title"],
         description=task["description"],
         status=task["status"],
-        current_criterion_id=task["current_criterion_id"],
-        spec_content=task["spec_content"],
         plan_content=task["plan_content"],
         progress_log=task["progress_log"],
         error_message=task["error_message"],

@@ -15,11 +15,11 @@ from psycopg.rows import TupleRow
 
 from .connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (36 columns)
+# Column list for all task SELECT/RETURNING queries (34 columns)
 # Order must match _row_to_dict index mapping
-# Note: acceptance_criteria removed (migrated to task_criteria junction table)
+# Note: spec_content and current_criterion_id dropped in migration 038
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
-    current_criterion_id, spec_content, plan_content, progress_log,
+    plan_content, progress_log,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
     priority, labels, task_type, parent_task_id,
@@ -29,7 +29,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.current_criterion_id, t.spec_content, t.plan_content, t.progress_log,
+    t.plan_content, t.progress_log,
     t.error_message, t.branch_name, t.commits, t.pull_request_url,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.labels, t.task_type, t.parent_task_id,
@@ -164,8 +164,6 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "title",
         "description",
         "status",
-        "current_criterion_id",
-        "spec_content",
         "plan_content",
         "progress_log",
         "error_message",
@@ -192,7 +190,6 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "review_result",
         # AI agent reliability fields
         "objective",
-        # acceptance_criteria removed (migrated to task_criteria junction)
         "current_phase",
         "verification_result",
         # AI enrichment fields
@@ -545,15 +542,15 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
-EXPECTED_TASK_COLUMNS = 36
+EXPECTED_TASK_COLUMNS = 34
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (36 columns):
+    Column order (34 columns):
         id, project_id, capability_id, title, description, status,
-        current_criterion_id, spec_content, plan_content, progress_log,
+        plan_content, progress_log,
         error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
         priority, labels, task_type, parent_task_id,
@@ -561,7 +558,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         objective, current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at
 
-    Note: acceptance_criteria removed (migrated to task_criteria junction table)
+    Note: spec_content and current_criterion_id dropped in migration 038
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -574,40 +571,38 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "title": row[3],
         "description": row[4],
         "status": row[5],
-        "current_criterion_id": row[6],
-        "spec_content": row[7],
-        "plan_content": row[8],
-        "progress_log": row[9],
-        "error_message": row[10],
-        "branch_name": row[11],
-        "commits": row[12] or [],
-        "pull_request_url": row[13],
-        "total_sessions": row[14],
-        "total_tokens_used": row[15],
-        "created_at": row[16],
-        "started_at": row[17],
-        "completed_at": row[18],
+        "plan_content": row[6],
+        "progress_log": row[7],
+        "error_message": row[8],
+        "branch_name": row[9],
+        "commits": row[10] or [],
+        "pull_request_url": row[11],
+        "total_sessions": row[12],
+        "total_tokens_used": row[13],
+        "created_at": row[14],
+        "started_at": row[15],
+        "completed_at": row[16],
         # Issue tracking fields
-        "priority": row[19],
-        "labels": row[20] or [],
-        "task_type": row[21],
-        "parent_task_id": row[22],
+        "priority": row[17],
+        "labels": row[18] or [],
+        "task_type": row[19],
+        "parent_task_id": row[20],
         # Autonomous execution fields
-        "claimed_by": row[23],
-        "claimed_at": row[24],
-        "lock_expires_at": row[25],
-        "tier": row[26],
-        "pre_merge_sha": row[27],
-        "review_result": row[28],
+        "claimed_by": row[21],
+        "claimed_at": row[22],
+        "lock_expires_at": row[23],
+        "tier": row[24],
+        "pre_merge_sha": row[25],
+        "review_result": row[26],
         # AI agent reliability fields
-        "objective": row[29],
-        "current_phase": row[30],
-        "verification_result": row[31],
+        "objective": row[27],
+        "current_phase": row[28],
+        "verification_result": row[29],
         # AI enrichment fields
-        "raw_request": row[32],
-        "enrichment_status": row[33],
-        "enriched_by": row[34],
-        "enriched_at": row[35],
+        "raw_request": row[30],
+        "enrichment_status": row[31],
+        "enriched_by": row[32],
+        "enriched_at": row[33],
     }
 
 

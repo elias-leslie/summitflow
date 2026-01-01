@@ -281,8 +281,6 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     status: str
-    current_criterion_id: str | None
-    spec_content: str | None
     plan_content: dict[str, Any] | None
     progress_log: str | None
     error_message: str | None
@@ -299,7 +297,7 @@ class TaskResponse(BaseModel):
     labels: list[str]
     task_type: str
     parent_task_id: str | None
-    # AI agent reliability fields (added for TDD architecture coherence)
+    # AI agent reliability fields
     objective: str | None = None
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     current_phase: str | None = None
