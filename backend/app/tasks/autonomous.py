@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Default repo path for worktree cleanup
 DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 
+# Validation mode flags - set during incremental rollout
+AUTONOMOUS_DRY_RUN = True  # When True, log what would execute but don't actually run
+
 
 @celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[misc]
 def reset_expired_task_claims() -> dict[str, int | str]:
@@ -461,6 +464,18 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             return {
                 "status": "all_excluded",
                 "tasks_checked": len(eligible_tasks),
+                "exclusion_stats": exclusion_stats,
+            }
+
+        # Dry-run mode: log what would execute but don't actually run
+        if AUTONOMOUS_DRY_RUN:
+            logger.info(
+                f"DRY_RUN: Would execute {selected_task['id']}: {selected_task['title'][:60]}"
+            )
+            return {
+                "status": "dry_run",
+                "task_id": selected_task["id"],
+                "title": selected_task["title"],
                 "exclusion_stats": exclusion_stats,
             }
 
