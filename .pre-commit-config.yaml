@@ -30,12 +30,8 @@ repos:
           - celery>=5.4.0
           - types-redis
 
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.390
-    hooks:
-      - id: pyright
-        args: [--project, backend/pyrightconfig.json]
-        files: ^backend/app/
+  # NOTE: pyright removed - redundant with mypy (saves 3-10s per commit)
+  # If you need stricter type checking, run manually: pyright backend/app/
 
   # Frontend validation hooks
   - repo: local
