@@ -262,13 +262,31 @@ export type EnrichmentStatus =
   | "accepted"
   | "failed";
 
+export interface Step {
+  id: number;
+  subtask_id: string;
+  step_number: number;
+  description: string;
+  passes: boolean;
+  passed_at: string | null;
+  created_at: string | null;
+}
+
+export interface StepSummary {
+  total: number;
+  completed: number;
+  progress_percent: number;
+}
+
 export interface Subtask {
   id: string;
   task_id: string;
   subtask_id: string;
   phase: string;
   description: string;
-  steps: string[];
+  steps: string[];  // JSONB array (legacy)
+  steps_from_table?: Step[];  // Normalized table steps (when include_steps=true)
+  step_summary?: StepSummary;  // Step completion summary (when include_steps=true)
   passes: boolean;
   passed_at: string | null;
   display_order: number;
@@ -397,6 +415,78 @@ export async function updateSubtask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ passes }),
       errorMessage: "Failed to update subtask",
+    }
+  );
+}
+
+// ============================================================================
+// Step API Functions
+// ============================================================================
+
+/**
+ * Get steps for a subtask from the normalized table.
+ */
+export async function getSteps(
+  projectId: string,
+  taskId: string,
+  subtaskId: string
+): Promise<Step[]> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps`,
+    {
+      errorMessage: "Failed to fetch steps",
+    }
+  );
+}
+
+/**
+ * Update a step's passes status.
+ */
+export async function updateStep(
+  projectId: string,
+  taskId: string,
+  subtaskId: string,
+  stepNumber: number,
+  passes: boolean
+): Promise<Step> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/${stepNumber}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passes }),
+      errorMessage: "Failed to update step",
+    }
+  );
+}
+
+/**
+ * Get step completion summary for a subtask.
+ */
+export async function getStepSummary(
+  projectId: string,
+  taskId: string,
+  subtaskId: string
+): Promise<StepSummary> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/summary`,
+    {
+      errorMessage: "Failed to fetch step summary",
+    }
+  );
+}
+
+/**
+ * Get subtasks with steps included.
+ */
+export async function getSubtasksWithSteps(
+  projectId: string,
+  taskId: string
+): Promise<SubtasksResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks?include_steps=true`,
+    {
+      errorMessage: "Failed to fetch subtasks with steps",
     }
   );
 }
