@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -15,9 +15,6 @@ import {
   CheckSquare,
   Link2,
   ExternalLink,
-  Target,
-  Circle,
-  FileCode,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } from "@/components/ui/sheet";
@@ -25,6 +22,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckpointViewer, type Checkpoint } from "@/components/tasks/CheckpointViewer";
+import { PhaseProgress } from "@/components/tasks/PhaseProgress";
+import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
+import { SubtasksSection } from "@/components/tasks/SubtasksSection";
+import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
+import { getSubtasks, type Subtask } from "@/lib/api/tasks";
 import type { Task, TaskType, TaskStatus } from "@/lib/api";
 
 interface TaskDetailDrawerProps {
@@ -88,6 +90,26 @@ export function TaskDetailDrawer({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false);
+
+  // Fetch subtasks when drawer opens
+  useEffect(() => {
+    if (open && task) {
+      setIsLoadingSubtasks(true);
+      getSubtasks(projectId, task.id)
+        .then((response) => {
+          setSubtasks(response.subtasks);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch subtasks:", err);
+          setSubtasks([]);
+        })
+        .finally(() => {
+          setIsLoadingSubtasks(false);
+        });
+    }
+  }, [open, task, projectId]);
 
   if (!task) return null;
 
@@ -289,105 +311,49 @@ export function TaskDetailDrawer({
             </div>
           )}
 
-          {/* Objective & Acceptance Criteria */}
-          {(task.objective || (task.acceptance_criteria && task.acceptance_criteria.length > 0)) && (
+          {/* Phase Progress */}
+          <PhaseProgress currentPhase={task.current_phase} />
+
+          {/* Objective Section */}
+          <ObjectiveSection
+            objective={task.objective}
+            onEdit={async (newObjective) => {
+              // For now, just log - a proper API would be needed
+              console.log("Edit objective:", newObjective);
+            }}
+          />
+
+          {/* Criteria Progress */}
+          {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                  <Target className="h-4 w-4" />
-                  Objective & Criteria
-                </h3>
-                {/* Criteria source indicator */}
-                {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                    {capability ? `From capability: ${capability.capability_id}` : "Task-specific"}
-                  </span>
-                )}
+                <h3 className="text-sm font-medium text-slate-400">Acceptance Criteria</h3>
+                <CriteriaProgress criteria={task.acceptance_criteria} maxVisible={10} />
               </div>
-
-              {task.objective && (
-                <p className="text-sm text-slate-300 mb-3 px-3 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                  {task.objective}
-                </p>
-              )}
-
-              {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
-                <div className="space-y-2">
-                  {task.acceptance_criteria.map((criterion) => {
-                    const verified = criterion.verified;
-                    return (
-                      <div
-                        key={criterion.id}
-                        className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${
-                          verified
-                            ? "bg-phosphor-500/10 border-phosphor-500/30"
-                            : "bg-slate-800/30 border-slate-700/50"
-                        }`}
-                      >
-                        {verified ? (
-                          <CheckCircle2 className="h-4 w-4 mt-0.5 text-phosphor-400 shrink-0" />
-                        ) : (
-                          <Circle className="h-4 w-4 mt-0.5 text-slate-500 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-mono text-slate-500">{criterion.id}</span>
-                            {criterion.category && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-400">
-                                {criterion.category}
-                              </span>
-                            )}
-                            {criterion.threshold && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
-                                {criterion.threshold}
-                              </span>
-                            )}
-                          </div>
-                          <p className={`text-sm ${verified ? "text-phosphor-300" : "text-slate-300"}`}>
-                            {criterion.criterion}
-                          </p>
-                          {criterion.test_file && (
-                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                              <FileCode className="h-3 w-3" />
-                              {criterion.test_file}::{criterion.test_name}
-                            </p>
-                          )}
-                          {verified && criterion.verified_by && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Verified by: {criterion.verified_by}
-                              {criterion.verified_at && ` • ${new Date(criterion.verified_at).toLocaleDateString()}`}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {/* Progress summary */}
-                  {(() => {
-                    const total = task.acceptance_criteria?.length || 0;
-                    const verified = task.acceptance_criteria?.filter((c) => c.verified).length || 0;
-                    const pct = total > 0 ? (verified / total) * 100 : 0;
-                    return (
-                      <div className="pt-2 border-t border-slate-700/50">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-slate-500">Progress</span>
-                          <span className={`text-xs mono font-medium ${pct === 100 ? "text-phosphor-400" : "text-slate-400"}`}>
-                            {verified}/{total}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-300 ${pct === 100 ? "bg-phosphor-500" : "bg-blue-500"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
+              {/* Source indicator */}
+              <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                {capability ? `From: ${capability.capability_id}` : "Task-specific"}
+              </span>
             </div>
           )}
+
+          {/* Subtasks Section */}
+          {isLoadingSubtasks ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+            </div>
+          ) : subtasks.length > 0 ? (
+            <SubtasksSection
+              subtasks={subtasks}
+              onTogglePass={async (subtaskId, passes) => {
+                // Update local state optimistically
+                setSubtasks((prev) =>
+                  prev.map((s) => s.subtask_id === subtaskId ? { ...s, passes } : s)
+                );
+                // Would call API here
+              }}
+            />
+          ) : null}
 
           {/* Labels */}
           {task.labels && task.labels.length > 0 && (
