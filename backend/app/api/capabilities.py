@@ -173,7 +173,7 @@ def _resolve_component_id(project_id: str, component_id: int | str) -> int:
             status_code=400,
             detail=f"Component '{component_id}' not found. Use component slug or database ID.",
         )
-    return component["id"]
+    return int(component["id"])
 
 
 @router.post("/{project_id}/capabilities", response_model=CapabilityResponse)
@@ -632,10 +632,23 @@ async def batch_create_capabilities(
 
     for item in body.items:
         try:
+            # Resolve component_id to database ID if string
+            try:
+                resolved_component_id = _resolve_component_id(project_id, item.component_id)
+            except HTTPException as e:
+                errors.append(
+                    BatchCapabilityResult(
+                        capability_id=item.capability_id,
+                        success=False,
+                        error=e.detail,
+                    )
+                )
+                continue
+
             # Create the capability
             capability = storage.create_capability(
                 project_id=project_id,
-                component_id=item.component_id,
+                component_id=resolved_component_id,
                 capability_id=item.capability_id,
                 name=item.name,
                 description=item.description,
@@ -666,7 +679,7 @@ async def batch_create_capabilities(
             if "duplicate key" in error_msg.lower() or "unique constraint" in error_msg.lower():
                 error_msg = f"Capability {item.capability_id} already exists"
             elif "violates foreign key constraint" in error_msg.lower():
-                error_msg = f"Component with id {item.component_id} not found"
+                error_msg = f"Component with id {resolved_component_id} not found"
             errors.append(
                 BatchCapabilityResult(
                     capability_id=item.capability_id,
