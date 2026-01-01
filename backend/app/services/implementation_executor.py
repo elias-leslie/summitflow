@@ -23,7 +23,8 @@ from ..storage import tasks as task_store
 from ..storage.agent_sessions import create_session, get_session, update_session
 from ..storage.connection import get_connection
 from ..storage.criteria import get_effective_criteria
-from ..storage.subtasks import get_subtasks_for_task
+from ..storage.steps import update_step_passes
+from ..storage.subtasks import get_subtasks_for_task, update_subtask_passes
 from .agents import get_agent
 from .autonomous.prompt_builder import build_execution_prompt
 from .autonomous.tier_classifier import classify_tier, select_model_for_tier
@@ -414,10 +415,33 @@ class ImplementationExecutor:
             test_result = self._run_verification(files, capability_id)
 
             if test_result["success"]:
-                # Mark task complete
+                # Mark task complete in build_state
                 completed.add(current_task.get("id"))
                 build_state["completed_tasks"] = list(completed)
                 self._update_build_state(session_id, build_state)
+
+                # If using subtasks table, mark steps and subtask as complete
+                if build_state.get("using_subtasks_table"):
+                    subtask_full_id = current_task.get("subtask_full_id")
+                    if subtask_full_id:
+                        # Mark all steps as passed
+                        steps = current_task.get("steps_from_table") or []
+                        for step in steps:
+                            step_number = step.get("step_number")
+                            if step_number and not step.get("passes"):
+                                update_step_passes(subtask_full_id, step_number, True)
+                                logger.debug(
+                                    "step_marked_complete",
+                                    subtask_id=subtask_full_id,
+                                    step_number=step_number,
+                                )
+                        # Mark subtask as passed
+                        update_subtask_passes(subtask_full_id, True)
+                        logger.info(
+                            "subtask_marked_complete",
+                            subtask_id=subtask_full_id,
+                            task_id=task_id,
+                        )
 
                 # Check acceptance criteria - update phase to "verify"
                 self._update_phase(task_id, "verify", build_state)
