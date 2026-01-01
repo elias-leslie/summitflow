@@ -185,14 +185,6 @@ export function NotificationDetailModal({
                     {taskDetails.status || "unknown"}
                   </span>
                 </div>
-                {taskDetails.current_criterion_id && (
-                  <div>
-                    <span className="text-slate-500">Failed at:</span>
-                    <span className="ml-2 text-slate-300 mono">
-                      {taskDetails.current_criterion_id}
-                    </span>
-                  </div>
-                )}
                 {taskDetails.error_message && (
                   <div>
                     <span className="text-slate-500 block mb-1">Error:</span>

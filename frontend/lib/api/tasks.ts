@@ -48,8 +48,6 @@ export interface Task {
   title: string;
   description: string | null;
   status: TaskStatus;
-  current_criterion_id: string | null;
-  spec_content: string | null;
   plan_content: Record<string, unknown> | null;
   progress_log: string | null;
   error_message: string | null;
@@ -72,6 +70,7 @@ export interface Task {
   objective?: string | null;
   acceptance_criteria?: TaskAcceptanceCriterion[] | null;
   current_phase?: "plan" | "implement" | "test" | "verify" | "complete" | null;
+  verification_result?: Record<string, unknown> | null;
   // Enrichment fields
   raw_request?: string | null;
   enrichment_status?: EnrichmentStatus | null;
