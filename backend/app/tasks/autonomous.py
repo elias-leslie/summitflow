@@ -28,7 +28,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 
 # Validation mode flags - set during incremental rollout
-AUTONOMOUS_DRY_RUN = True  # When True, log what would execute but don't actually run
+AUTONOMOUS_DRY_RUN = False  # When True, log what would execute but don't actually run
+VALIDATION_MODE = True  # When True, only execute tasks in ALLOWED_TASK_IDS
+ALLOWED_TASK_IDS = [
+    "task-48916cd8",  # Fix: UUID JSON Serialization Error (tier 2, bug)
+]
 
 
 @celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[misc]
@@ -480,6 +484,16 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             )
             return {
                 "status": "dry_run",
+                "task_id": selected_task["id"],
+                "title": selected_task["title"],
+                "exclusion_stats": exclusion_stats,
+            }
+
+        # Validation mode: only execute tasks in allowlist
+        if VALIDATION_MODE and selected_task["id"] not in ALLOWED_TASK_IDS:
+            logger.info(f"VALIDATION: Skipping {selected_task['id']} (not in allowlist)")
+            return {
+                "status": "validation_skip",
                 "task_id": selected_task["id"],
                 "title": selected_task["title"],
                 "exclusion_stats": exclusion_stats,
