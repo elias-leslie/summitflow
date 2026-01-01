@@ -298,6 +298,40 @@ export async function linkTestToCriterion(
   );
 }
 
+export interface UpdateCriterionRequest {
+  criterion?: string;
+  category?: "performance" | "correctness" | "security" | "quality";
+  measurement?: "test" | "metric" | "tool" | "manual";
+  threshold?: string;
+}
+
+export async function updateCriterion(
+  projectId: string,
+  criterionId: string,
+  request: UpdateCriterionRequest
+): Promise<CriterionResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/criteria/${criterionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      errorMessage: "Failed to update criterion",
+    }
+  );
+}
+
+export async function unlinkTestFromCriterion(
+  projectId: string,
+  criterionId: string,
+  testId: number
+): Promise<{ status: string; criterion_id: string; test_id: number }> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/criteria/${criterionId}/test/${testId}`,
+    { method: "DELETE", errorMessage: "Failed to unlink test from criterion" }
+  );
+}
+
 // =============================================================================
 // Batch Creation API
 // =============================================================================
