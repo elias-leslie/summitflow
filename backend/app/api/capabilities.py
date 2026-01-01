@@ -16,9 +16,14 @@ router = APIRouter()
 
 
 class CapabilityCreate(BaseModel):
-    """Request model for creating a capability."""
+    """Request model for creating a capability.
 
-    component_id: int
+    component_id can be either:
+    - int: Database ID of the component
+    - str: Component slug (e.g., "backend-services") - will be resolved to ID
+    """
+
+    component_id: int | str
     capability_id: str
     name: str
     description: str | None = None
@@ -147,13 +152,43 @@ async def get_capability(project_id: str, capability_id: str) -> CapabilityWithT
     return CapabilityWithTestsResponse(**capability, tests=tests, criteria=criteria)
 
 
+def _resolve_component_id(project_id: str, component_id: int | str) -> int:
+    """Resolve component_id to database ID.
+
+    If component_id is already an int, return it directly.
+    If it's a string, look up the component by its slug.
+
+    Raises:
+        HTTPException: If component not found
+    """
+    if isinstance(component_id, int):
+        return component_id
+
+    # Look up by slug
+    from ..storage import components as comp_storage
+
+    component = comp_storage.get_component(project_id, component_id)
+    if not component:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Component '{component_id}' not found. Use component slug or database ID.",
+        )
+    return component["id"]
+
+
 @router.post("/{project_id}/capabilities", response_model=CapabilityResponse)
 async def create_capability(project_id: str, body: CapabilityCreate) -> CapabilityResponse:
-    """Create a new capability."""
+    """Create a new capability.
+
+    component_id can be either the database ID (int) or the component slug (str).
+    """
+    # Resolve component_id to database ID if string
+    resolved_component_id = _resolve_component_id(project_id, body.component_id)
+
     try:
         capability = storage.create_capability(
             project_id=project_id,
-            component_id=body.component_id,
+            component_id=resolved_component_id,
             capability_id=body.capability_id,
             name=body.name,
             description=body.description,
@@ -169,7 +204,7 @@ async def create_capability(project_id: str, body: CapabilityCreate) -> Capabili
         if "violates foreign key constraint" in str(e).lower():
             raise HTTPException(
                 status_code=400,
-                detail=f"Component with id {body.component_id} not found",
+                detail=f"Component with id {resolved_component_id} not found",
             ) from e
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -535,9 +570,14 @@ class BatchCriterionCreate(BaseModel):
 
 
 class BatchCapabilityCreate(BaseModel):
-    """Request model for a single capability in batch creation."""
+    """Request model for a single capability in batch creation.
 
-    component_id: int
+    component_id can be either:
+    - int: Database ID of the component
+    - str: Component slug (e.g., "backend-services") - will be resolved to ID
+    """
+
+    component_id: int | str
     capability_id: str
     name: str
     description: str | None = None
