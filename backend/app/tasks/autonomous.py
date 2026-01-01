@@ -666,21 +666,17 @@ def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
             task = task_store.get_task(task_id)
 
             # Remove if task doesn't exist or is not in running/pending_review
-            should_remove = False
+            reason = ""
             if not task:
-                should_remove = True
                 reason = "task not found"
             elif task.get("status") not in ("running", "pending_review"):
-                should_remove = True
                 reason = f"task status is {task.get('status')}"
 
-            if should_remove:
+            if reason:  # reason being set means we should remove
                 try:
                     worktree_manager.remove_worktree(worktree.project_id, task_id)
                     removed_by_status += 1
-                    logger.info(
-                        f"Cleaned up worktree for {task_id}: {reason}"  # noqa: F821
-                    )
+                    logger.info(f"Cleaned up worktree for {task_id}: {reason}")
                 except Exception as e:
                     logger.warning(f"Failed to remove worktree for {task_id}: {e}")
 

@@ -611,7 +611,7 @@ class ImplementationExecutor:
         )
 
         try:
-            agent = get_agent(provider, model_id)  # type: ignore[arg-type]
+            agent = get_agent(provider, model_id)
 
             # Use working_dir for Claude to enable file operations
             # When worktree is enabled, use worktree path for isolation

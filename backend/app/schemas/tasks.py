@@ -49,6 +49,8 @@ class TaskUpdate(BaseModel):
     # AI agent reliability fields
     objective: str | None = None
     acceptance_criteria: list["AcceptanceCriterion"] | None = None
+    # Capability linkage (FK to capabilities table)
+    capability_id: int | None = None
 
 
 class TaskStatusUpdate(BaseModel):
