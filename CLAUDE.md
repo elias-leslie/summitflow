@@ -250,6 +250,28 @@ Tasks start with human review. As approval rate increases:
 - Tier 1 tasks can auto-merge after sustained success
 - Tier 2+ always require human approval
 
+### Monitoring Commands
+
+```bash
+# Watch autonomous activity in real-time
+journalctl --user -u summitflow-celery -f | grep -E 'claimed|succeeded|failed|exhausted'
+
+# Check for orphaned worktrees
+ls /tmp/summitflow-worktrees/
+
+# Recent autonomous activity
+journalctl --user -u summitflow-celery --since "1 hour ago" | grep -E 'autonomous|work_pickup'
+
+# Task status
+st list --status running --json | jq '.tasks[] | {id, title, claimed_by}'
+```
+
+### Known Limitations
+
+- Auto-generated tasks may be too complex for 5 iterations
+- Task descriptions need specific acceptance criteria
+- Pre-existing lint/type errors can block commits (agents may need SKIP=mypy,ruff)
+
 ### CLI Commands
 
 | Command | Purpose |
