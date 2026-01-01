@@ -177,6 +177,8 @@ export function TaskExpandedView({
         </div>
       ) : (
         <SubtasksSection
+          projectId={projectId}
+          taskId={task.id}
           subtasks={subtasks}
           onTogglePass={handleSubtaskToggle}
         />

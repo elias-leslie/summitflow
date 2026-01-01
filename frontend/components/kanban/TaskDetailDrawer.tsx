@@ -344,6 +344,8 @@ export function TaskDetailDrawer({
             </div>
           ) : subtasks.length > 0 ? (
             <SubtasksSection
+              projectId={projectId}
+              taskId={task.id}
               subtasks={subtasks}
               onTogglePass={async (subtaskId, passes) => {
                 // Update local state optimistically
