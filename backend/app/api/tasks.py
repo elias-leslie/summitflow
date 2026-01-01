@@ -298,39 +298,14 @@ async def list_blocked_tasks(
 async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
     """Create a new task.
 
-    If acceptance_criteria is provided, validates them using Opus.
-    Returns 422 if any criteria fail validation.
+    Note: Acceptance criteria are now managed via task_criteria junction table.
+    Use POST /projects/{project_id}/criteria to create criteria, then link via
+    POST /projects/{project_id}/criteria/{criterion_id}/link-task.
 
     Args:
         project_id: Project ID
         task: Task data (title, description, priority, labels, task_type, etc.)
     """
-    # Validate acceptance criteria if provided
-    acceptance_criteria_dicts: list[dict[str, Any]] | None = None
-    if task.acceptance_criteria:
-        if not task.objective:
-            raise HTTPException(
-                status_code=422,
-                detail="objective is required when acceptance_criteria is provided",
-            )
-
-        result = validate_criteria(task.objective, task.acceptance_criteria)
-        if not result.valid:
-            failure_details = [
-                {"criterion_id": f.criterion_id, "issues": f.issues, "suggestion": f.suggestion}
-                for f in result.failures
-            ]
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": "Acceptance criteria failed validation",
-                    "failures": failure_details,
-                },
-            )
-
-        # Convert to dicts for storage
-        acceptance_criteria_dicts = [c.model_dump() for c in task.acceptance_criteria]
-
     created = task_store.create_task(
         project_id=project_id,
         title=task.title,
@@ -341,7 +316,6 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         task_type=task.task_type,
         parent_task_id=task.parent_task_id,
         objective=task.objective,
-        acceptance_criteria=acceptance_criteria_dicts,
     )
     return _task_to_response(created)
 

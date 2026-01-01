@@ -455,11 +455,27 @@ def update_task_status(
                     WHEN %s = 'running' THEN NULL
                     WHEN %s IN ('completed', 'failed') THEN %s
                     ELSE error_message
-                END
+                END,
+                current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
+                claimed_by = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE claimed_by END,
+                claimed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE claimed_at END,
+                lock_expires_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE lock_expires_at END
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,
-            (status, status, status, status, status, error_message, task_id),
+            (
+                status,
+                status,
+                status,
+                status,
+                status,
+                error_message,
+                status,
+                status,
+                status,
+                status,
+                task_id,
+            ),
         )
 
         row = cur.fetchone()
