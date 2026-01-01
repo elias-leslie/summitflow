@@ -476,8 +476,9 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
 
         logger.info(f"Claimed task {claimed['id']} for autonomous execution")
 
-        # Execute via ImplementationExecutor
-        executor = ImplementationExecutor(project_id)
+        # Execute via ImplementationExecutor with worktree isolation
+        # TODO: Make use_worktree configurable via agent_configs when stabilized
+        executor = ImplementationExecutor(project_id, use_worktree=True)
 
         try:
             session_id = executor.start_execution(claimed["id"], agent_type="gemini")

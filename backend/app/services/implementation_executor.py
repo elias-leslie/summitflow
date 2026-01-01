@@ -32,6 +32,7 @@ from .context_helpers import (
     get_patterns_for_files,
 )
 from .git_service import commit_changes, get_current_commit, revert_to
+from .worktree_manager import WorktreeManager, get_worktree_manager
 
 logger = get_logger(__name__)
 
@@ -59,15 +60,36 @@ class ExecutionResult:
 class ImplementationExecutor:
     """Executor for implementation tasks with iteration loop."""
 
-    def __init__(self, project_id: str, repo_path: Path | None = None):
+    def __init__(
+        self,
+        project_id: str,
+        repo_path: Path | None = None,
+        use_worktree: bool = False,
+    ):
         """Initialize executor.
 
         Args:
             project_id: Project ID
             repo_path: Path to git repository (default: ~/summitflow)
+            use_worktree: If True, execute tasks in isolated git worktrees
         """
         self.project_id = project_id
         self.repo_path = repo_path or DEFAULT_REPO_PATH
+        self.use_worktree = use_worktree
+        self._worktree_manager: WorktreeManager | None = None
+        self._current_worktree_path: Path | None = None
+
+    @property
+    def worktree_manager(self) -> WorktreeManager:
+        """Get or create WorktreeManager instance."""
+        if self._worktree_manager is None:
+            self._worktree_manager = get_worktree_manager(self.repo_path)
+        return self._worktree_manager
+
+    @property
+    def effective_repo_path(self) -> Path:
+        """Get the effective repo path (worktree if active, else main repo)."""
+        return self._current_worktree_path or self.repo_path
 
     def start_execution(
         self,
@@ -77,6 +99,7 @@ class ImplementationExecutor:
         """Start execution of a task.
 
         Creates a new agent session with initialized build_state.
+        If use_worktree=True, creates an isolated worktree for the task.
 
         Args:
             task_id: Task ID to execute
@@ -91,7 +114,7 @@ class ImplementationExecutor:
             raise ValueError(f"Task {task_id} not found")
 
         # Initialize build_state
-        build_state = {
+        build_state: dict[str, Any] = {
             "task_id": task_id,  # Store task_id for execute_next_task to find
             "status": "running",
             "completed_tasks": [],
@@ -100,7 +123,22 @@ class ImplementationExecutor:
             "iteration": 0,
             "pre_merge_sha": None,
             "started_at": datetime.now(UTC).isoformat(),
+            "worktree_enabled": self.use_worktree,
+            "worktree_path": None,
         }
+
+        # Create worktree if enabled
+        if self.use_worktree:
+            worktree_info = self.worktree_manager.create_worktree(self.project_id, task_id)
+            self._current_worktree_path = worktree_info.path
+            build_state["worktree_path"] = str(worktree_info.path)
+            build_state["worktree_branch"] = worktree_info.branch
+            logger.info(
+                "worktree_initialized",
+                task_id=task_id,
+                path=str(worktree_info.path),
+                branch=worktree_info.branch,
+            )
 
         # Update task current_phase
         task_store.update_task(task_id, current_phase="implement")
@@ -116,6 +154,7 @@ class ImplementationExecutor:
             "execution_started",
             task_id=task_id,
             session_id=session["session_id"],
+            worktree=build_state.get("worktree_path"),
         )
 
         return session["session_id"]
@@ -144,6 +183,16 @@ class ImplementationExecutor:
             raise ValueError(f"Session {session_id} not found")
 
         build_state = session.get("build_state") or {}
+
+        # Restore worktree path from build_state if resuming
+        if build_state.get("worktree_enabled") and build_state.get("worktree_path"):
+            self._current_worktree_path = Path(build_state["worktree_path"])
+            self.use_worktree = True
+            logger.info(
+                "worktree_restored",
+                path=str(self._current_worktree_path),
+                exists=self._current_worktree_path.exists(),
+            )
 
         # Get task from session context or build_state
         task_id = session.get("context", {}).get("task_id") or build_state.get("task_id")
@@ -211,7 +260,7 @@ class ImplementationExecutor:
         if is_standalone:
             capability_id = "general"  # Sentinel for general verification
 
-        # Capture pre_merge_sha once at task start
+        # Capture pre_merge_sha once at task start (from main repo, not worktree)
         if not build_state.get("pre_merge_sha"):
             build_state["pre_merge_sha"] = get_current_commit(self.repo_path)
 
@@ -313,12 +362,19 @@ class ImplementationExecutor:
                 consecutive_identical_errors += 1
                 continue
 
-            # Commit changes
+            # Commit changes (in worktree if enabled, otherwise main repo)
             try:
-                commit_changes(
-                    f"Task {current_task.get('id')} - iteration {iteration}",
-                    self.repo_path,
-                )
+                if self.use_worktree and self._current_worktree_path:
+                    self.worktree_manager.commit_in_worktree(
+                        self.project_id,
+                        task_id,
+                        f"Task {current_task.get('id')} - iteration {iteration}",
+                    )
+                else:
+                    commit_changes(
+                        f"Task {current_task.get('id')} - iteration {iteration}",
+                        self.repo_path,
+                    )
             except Exception as e:
                 iteration_context = {
                     "test_failures": f"Git commit failed: {e}",
@@ -558,7 +614,8 @@ class ImplementationExecutor:
             agent = get_agent(provider, model_id)  # type: ignore[arg-type]
 
             # Use working_dir for Claude to enable file operations
-            working_dir = str(self.repo_path) if provider == "claude" else None
+            # When worktree is enabled, use worktree path for isolation
+            working_dir = str(self.effective_repo_path) if provider == "claude" else None
 
             response = agent.generate(
                 prompt=prompt,
@@ -606,14 +663,15 @@ class ImplementationExecutor:
 
         for file_path, content in matches:
             file_path = file_path.strip()
-            full_path = self.repo_path / file_path
+            # Use effective_repo_path for worktree isolation
+            full_path = self.effective_repo_path / file_path
 
             # Create parent directories if needed
             full_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write file
             full_path.write_text(content.strip() + "\n")
-            logger.info("file_written", path=file_path)
+            logger.info("file_written", path=file_path, in_worktree=self.use_worktree)
 
         return True
 
@@ -634,11 +692,14 @@ class ImplementationExecutor:
             "static_output": "",
         }
 
+        # Use effective_repo_path for worktree isolation
+        backend_path = self.effective_repo_path / "backend"
+
         # Run pytest
         try:
             pytest_result = subprocess.run(
                 [".venv/bin/pytest", "-v", "--tb=short"],
-                cwd=self.repo_path / "backend",
+                cwd=backend_path,
                 capture_output=True,
                 text=True,
                 timeout=SUBPROCESS_TIMEOUT_SECONDS,
@@ -656,7 +717,7 @@ class ImplementationExecutor:
         try:
             pyright_result = subprocess.run(
                 [".venv/bin/pyright", "app/"],
-                cwd=self.repo_path / "backend",
+                cwd=backend_path,
                 capture_output=True,
                 text=True,
                 timeout=SUBPROCESS_TIMEOUT_SECONDS,
@@ -674,7 +735,7 @@ class ImplementationExecutor:
         try:
             ruff_result = subprocess.run(
                 [".venv/bin/ruff", "check", "app/"],
-                cwd=self.repo_path / "backend",
+                cwd=backend_path,
                 capture_output=True,
                 text=True,
                 timeout=SUBPROCESS_TIMEOUT_SECONDS,
