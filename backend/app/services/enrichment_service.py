@@ -338,6 +338,7 @@ def apply_enrichment_to_task(
     Returns:
         Updated task dict
     """
+    from ..storage.steps import bulk_create_steps
     from ..storage.subtasks import bulk_create_subtasks, delete_subtasks_for_task
     from ..storage.tasks import update_task
 
@@ -358,23 +359,32 @@ def apply_enrichment_to_task(
     if updated is None:
         raise ValueError(f"Task {task_id} not found")
 
-    # Replace subtasks
+    # Replace subtasks (this cascades to delete steps via FK)
     delete_subtasks_for_task(task_id)
     subtask_dicts = [
         {
             "subtask_id": s.subtask_id,
             "phase": s.phase,
             "description": s.description,
-            "steps": s.steps,
+            "steps": s.steps,  # Still store in JSONB for backward compat
         }
         for s in enriched.subtasks
     ]
-    bulk_create_subtasks(task_id, subtask_dicts)
+    created_subtasks = bulk_create_subtasks(task_id, subtask_dicts)
+
+    # Create steps in normalized table for each subtask
+    total_steps = 0
+    for subtask, enriched_subtask in zip(created_subtasks, enriched.subtasks, strict=False):
+        if enriched_subtask.steps:
+            subtask_full_id = subtask["id"]
+            bulk_create_steps(subtask_full_id, enriched_subtask.steps)
+            total_steps += len(enriched_subtask.steps)
 
     logger.info(
-        "Applied enrichment to task %s: %d subtasks created",
+        "Applied enrichment to task %s: %d subtasks, %d steps created",
         task_id,
         len(subtask_dicts),
+        total_steps,
     )
 
     return updated

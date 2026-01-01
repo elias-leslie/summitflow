@@ -19,6 +19,8 @@ from app.celery_app import celery_app
 from app.services.worktree_manager import get_worktree_manager
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
+from app.storage.steps import bulk_create_steps
+from app.storage.subtasks import bulk_create_subtasks
 
 logger = logging.getLogger(__name__)
 
@@ -96,35 +98,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
             # Create task title
             title = f"Refactor: {reason} in {file_path.split('/')[-1]}"
 
-            # Generate simple plan_content
-            plan_content = {
-                "tasks": [
-                    {
-                        "id": "1.1",
-                        "category": "backend" if file_path.endswith(".py") else "frontend",
-                        "description": f"Refactor {file_path} - {reason}",
-                        "steps": [
-                            f"Analyze {file_path} for refactoring opportunities",
-                            f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
-                            "Run tests to verify no regressions",
-                            "Commit changes with descriptive message",
-                        ],
-                        "passes": False,
-                    }
-                ],
-                "current_task_id": "1.1",
-                "context": {
-                    "affected_files": [file_path],
-                    "capability_id": None,
-                    "source": "explorer_scan",
-                    "metrics": {
-                        "complexity_score": complexity,
-                        "lines_of_code": lines,
-                    },
-                },
-            }
-
-            # Create the task (without plan_content)
+            # Create the task
             description = (
                 f"Auto-generated from Explorer scan.\n\n"
                 f"File: {file_path}\n"
@@ -144,10 +118,32 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
             )
 
             if task:
-                # Update with plan_content (needs separate call)
-                task_store.update_task(task["id"], plan_content=plan_content)
+                task_id = task["id"]
+                category = "backend" if file_path.endswith(".py") else "frontend"
+
+                # Create subtask via normalized table
+                subtask_data = [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": category,
+                        "description": f"Refactor {file_path} - {reason}",
+                    }
+                ]
+                created_subtasks = bulk_create_subtasks(task_id, subtask_data)
+
+                # Create steps for the subtask
+                if created_subtasks:
+                    subtask_full_id = created_subtasks[0]["id"]
+                    step_descriptions = [
+                        f"Analyze {file_path} for refactoring opportunities",
+                        f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
+                        "Run tests to verify no regressions",
+                        "Commit changes with descriptive message",
+                    ]
+                    bulk_create_steps(subtask_full_id, step_descriptions)
+
                 created += 1
-                logger.info(f"Created task {task['id']}: {title}")
+                logger.info(f"Created task {task_id} with subtasks+steps: {title}")
 
         logger.info(
             f"Task generation complete for {project_id}: "
@@ -201,7 +197,6 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
             narrative = error.get("narrative", "")
             files = error.get("files", [])
             confidence = error.get("confidence", 0.0)
-            observation_id = str(error.get("id", ""))  # Convert UUID to string
 
             if not error_title:
                 skipped += 1
@@ -222,44 +217,6 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
                 first_file = files[0] if isinstance(files[0], str) else files[0].get("path", "")
                 if any(ext in first_file for ext in [".tsx", ".ts", ".jsx", ".js"]):
                     category = "frontend"
-
-            # Generate plan_content with investigation and fix tasks
-            plan_content = {
-                "tasks": [
-                    {
-                        "id": "1.1",
-                        "category": category,
-                        "description": f"Investigate: {error_title[:60]}",
-                        "steps": [
-                            "Read the error observation narrative for context",
-                            f"Examine affected files: {', '.join(files[:3]) if files else 'N/A'}",
-                            "Identify root cause of the error",
-                            "Document findings in progress log",
-                        ],
-                        "passes": False,
-                    },
-                    {
-                        "id": "1.2",
-                        "category": category,
-                        "description": f"Fix: {error_title[:60]}",
-                        "steps": [
-                            "Implement fix based on investigation findings",
-                            "Run tests to verify fix works",
-                            "Ensure no regressions introduced",
-                            "Commit changes with descriptive message",
-                        ],
-                        "passes": False,
-                    },
-                ],
-                "current_task_id": "1.1",
-                "context": {
-                    "affected_files": files[:5] if files else [],
-                    "capability_id": None,
-                    "source": "error_observation",
-                    "observation_id": observation_id,
-                    "confidence": confidence,
-                },
-            }
 
             # Build description from narrative
             description = (
@@ -284,10 +241,45 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
             )
 
             if task:
-                # Update with plan_content
-                task_store.update_task(task["id"], plan_content=plan_content)
+                task_id = task["id"]
+
+                # Create subtasks via normalized table
+                subtask_data = [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": category,
+                        "description": f"Investigate: {error_title[:60]}",
+                    },
+                    {
+                        "subtask_id": "1.2",
+                        "phase": category,
+                        "description": f"Fix: {error_title[:60]}",
+                    },
+                ]
+                created_subtasks = bulk_create_subtasks(task_id, subtask_data)
+
+                # Create steps for each subtask
+                if len(created_subtasks) >= 2:
+                    # Investigation steps
+                    investigation_steps = [
+                        "Read the error observation narrative for context",
+                        f"Examine affected files: {', '.join(files[:3]) if files else 'N/A'}",
+                        "Identify root cause of the error",
+                        "Document findings in progress log",
+                    ]
+                    bulk_create_steps(created_subtasks[0]["id"], investigation_steps)
+
+                    # Fix steps
+                    fix_steps = [
+                        "Implement fix based on investigation findings",
+                        "Run tests to verify fix works",
+                        "Ensure no regressions introduced",
+                        "Commit changes with descriptive message",
+                    ]
+                    bulk_create_steps(created_subtasks[1]["id"], fix_steps)
+
                 created += 1
-                logger.info(f"Created bug task {task['id']}: {title[:60]}...")
+                logger.info(f"Created bug task {task_id} with subtasks+steps: {title[:60]}...")
 
         logger.info(
             f"Bug task generation complete for {project_id}: "
