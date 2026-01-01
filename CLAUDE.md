@@ -197,7 +197,7 @@ SummitFlow can automatically execute low-risk tasks without human intervention.
 ### How It Works
 
 1. **Explorer scans** identify refactoring candidates (high complexity files)
-2. **Task generation** creates tasks with `plan_content` and tier classification
+2. **Task generation** creates tasks with subtasks/steps and tier classification
 3. **Work pickup** (every 30 min) claims eligible tasks
 4. **Execution** runs via ImplementationExecutor with iteration loop
 5. **Review gate** (every 30 min) validates results with Opus
@@ -254,7 +254,7 @@ Tasks start with human review. As approval rate increases:
 
 | Command | Purpose |
 |---------|---------|
-| `/task_it <name>` | Create task with plan_content from planning session |
+| `/task_it <name>` | Create task with subtasks from planning session |
 | `/do_it <task-id>` | Execute task via ImplementationExecutor |
 
 ### Standalone Execution (Fallback)
