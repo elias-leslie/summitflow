@@ -114,7 +114,7 @@ def verify(
     if json_output:
         output_json(result)
     else:
-        status = result.get("status", "unknown")
+        status = result.get("capability_status", "unknown")
         if status == "tests_passing":
             output_success(f"Capability '{capability_id}' verified - all tests passing")
         else:
