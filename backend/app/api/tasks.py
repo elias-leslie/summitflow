@@ -36,8 +36,6 @@ from ..schemas.tasks import (
     CriteriaValidateRequest,
     CriteriaValidateResponse,
     CriterionFailure,
-    CriterionLinkTestRequest,
-    CriterionVerifyRequest,
     DependencyCreate,
     DependencyResponse,
     DiscussionRequest,
@@ -921,126 +919,6 @@ async def validate_task_criteria(
             for f in result.failures
         ],
     )
-
-
-@router.post(
-    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/verify",
-    response_model=TaskResponse,
-)
-async def verify_criterion(
-    project_id: str, task_id: str, criterion_id: str, request: CriterionVerifyRequest
-) -> TaskResponse:
-    """Mark a criterion as verified.
-
-    Updates the matching criterion in acceptance_criteria with:
-    - verified: true
-    - verified_at: current timestamp
-    - verified_by: value from request
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID
-        criterion_id: Criterion ID (e.g., ac-001)
-        request: Verification details (verified_by, optional notes)
-
-    Returns:
-        Updated task.
-
-    Raises:
-        HTTPException(404): Task or criterion not found
-        HTTPException(400): Task has no acceptance_criteria
-    """
-    from datetime import UTC, datetime
-
-    task = _verify_task_project(task_id, project_id)
-
-    if not task.get("acceptance_criteria"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task {task_id} has no acceptance_criteria",
-        )
-
-    # Find and update the criterion
-    criteria = task["acceptance_criteria"]
-    found = False
-    for criterion in criteria:
-        if criterion.get("id") == criterion_id:
-            criterion["verified"] = True
-            criterion["verified_at"] = datetime.now(UTC).isoformat()
-            criterion["verified_by"] = request.verified_by
-            found = True
-            break
-
-    if not found:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Criterion {criterion_id} not found in task {task_id}",
-        )
-
-    # Update the task
-    updated = task_store.update_task(task_id, acceptance_criteria=criteria)
-
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update task")
-
-    return _task_to_response(updated)
-
-
-@router.patch(
-    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/link-test",
-    response_model=TaskResponse,
-)
-async def link_test_to_criterion(
-    project_id: str, task_id: str, criterion_id: str, request: CriterionLinkTestRequest
-) -> TaskResponse:
-    """Link a test to a criterion.
-
-    Updates the matching criterion with test_file and test_name.
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID
-        criterion_id: Criterion ID (e.g., ac-001)
-        request: Test file and function name
-
-    Returns:
-        Updated task.
-
-    Raises:
-        HTTPException(404): Task or criterion not found
-        HTTPException(400): Task has no acceptance_criteria
-    """
-    task = _verify_task_project(task_id, project_id)
-
-    if not task.get("acceptance_criteria"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task {task_id} has no acceptance_criteria",
-        )
-
-    # Find and update the criterion
-    criteria = task["acceptance_criteria"]
-    found = False
-    for criterion in criteria:
-        if criterion.get("id") == criterion_id:
-            criterion["test_file"] = request.test_file
-            criterion["test_name"] = request.test_name
-            found = True
-            break
-
-    if not found:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Criterion {criterion_id} not found in task {task_id}",
-        )
-
-    # Update the task
-    updated = task_store.update_task(task_id, acceptance_criteria=criteria)
-
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update task")
-
-    return _task_to_response(updated)
 
 
 # =============================================================================
