@@ -157,6 +157,7 @@ from app.tasks import (  # noqa: F401, E402
     agent_runner,
     autonomous,
     embedding_processor,
+    enrichment,
     evidence_tasks,
     explorer_tasks,
     lifecycle_cleanup,
