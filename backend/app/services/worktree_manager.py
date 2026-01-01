@@ -341,13 +341,18 @@ class WorktreeManager:
         # Prune any stale worktree entries
         self._run_git(["worktree", "prune"])
 
-    def commit_in_worktree(self, project_id: str, task_id: str, message: str) -> bool:
+    def commit_in_worktree(
+        self, project_id: str, task_id: str, message: str, max_retries: int = 2
+    ) -> bool:
         """Commit all changes in a task's worktree.
+
+        Handles pre-commit hooks that modify files by re-staging and retrying.
 
         Args:
             project_id: The project ID
             task_id: The task ID
             message: Commit message
+            max_retries: Max retry attempts if hooks modify files
 
         Returns:
             True if commit succeeded or nothing to commit
@@ -357,21 +362,32 @@ class WorktreeManager:
             logger.warning("commit_no_worktree", task_id=task_id)
             return False
 
-        # Stage all changes
-        self._run_git(["add", "."], cwd=worktree_path)
+        for attempt in range(max_retries + 1):
+            # Stage all changes
+            self._run_git(["add", "."], cwd=worktree_path)
 
-        # Commit
-        result = self._run_git(["commit", "-m", message], cwd=worktree_path)
+            # Commit
+            result = self._run_git(["commit", "-m", message], cwd=worktree_path)
 
-        if result.returncode == 0:
-            logger.info("commit_success", task_id=task_id, message=message[:50])
-            return True
-        elif "nothing to commit" in result.stdout + result.stderr:
-            logger.info("commit_nothing_to_commit", task_id=task_id)
-            return True
-        else:
-            logger.error("commit_failed", task_id=task_id, error=result.stderr)
-            return False
+            if result.returncode == 0:
+                logger.info("commit_success", task_id=task_id, message=message[:50])
+                return True
+            elif "nothing to commit" in result.stdout + result.stderr:
+                logger.info("commit_nothing_to_commit", task_id=task_id)
+                return True
+            elif "files were modified by this hook" in result.stderr and attempt < max_retries:
+                # Pre-commit hooks modified files, retry with re-staged changes
+                logger.info(
+                    "commit_retry_after_hooks",
+                    task_id=task_id,
+                    attempt=attempt + 1,
+                )
+                continue
+            else:
+                logger.error("commit_failed", task_id=task_id, error=result.stderr)
+                return False
+
+        return False
 
     async def merge_worktree(
         self,
