@@ -23,6 +23,7 @@ class StartExecutionRequest(BaseModel):
     """Request model for starting execution."""
 
     agent_type: str = "claude"  # 'claude' or 'gemini'
+    use_worktree: bool = False  # Execute in isolated git worktree
 
 
 class StartExecutionResponse(BaseModel):
@@ -31,6 +32,7 @@ class StartExecutionResponse(BaseModel):
     session_id: str
     task_id: str
     status: str
+    worktree_path: str | None = None
 
 
 class ExecuteNextRequest(BaseModel):
@@ -98,17 +100,26 @@ async def start_execution(
     if task["project_id"] != project_id:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not in project {project_id}")
 
-    executor = ImplementationExecutor(project_id)
+    executor = ImplementationExecutor(project_id, use_worktree=request.use_worktree)
 
     try:
         session_id = executor.start_execution(task_id, request.agent_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    # Get worktree_path if worktree was created
+    worktree_path = None
+    if request.use_worktree:
+        session = get_session(project_id, session_id)
+        if session:
+            build_state = session.get("build_state") or {}
+            worktree_path = build_state.get("worktree_path")
+
     return StartExecutionResponse(
         session_id=session_id,
         task_id=task_id,
         status="running",
+        worktree_path=worktree_path,
     )
 
 
