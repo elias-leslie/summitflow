@@ -15,6 +15,8 @@ from typing import Any
 
 from ...storage.connection import get_connection
 from ...storage.criteria import get_effective_criteria, get_tests_for_criterion
+from ...storage.steps import get_steps_for_subtask
+from ...storage.subtasks import get_subtasks_for_task
 
 
 def build_execution_prompt(
@@ -112,24 +114,50 @@ def build_execution_prompt(
             lines.append(f"- {f}")
         lines.append("")
 
-    # Steps from plan_content if available
-    plan = task.get("plan_content") or {}
-    if isinstance(plan, dict):
-        tasks_list = plan.get("tasks", [])
-        current_id = plan.get("current_task_id")
+    # Steps from subtasks table (preferred) or plan_content (fallback)
+    task_id = task.get("id", "")
+    steps_found = False
 
-        # Find current task in plan
-        current_task = None
-        for t in tasks_list:
-            if t.get("id") == current_id:
-                current_task = t
-                break
+    # Try subtasks table first (normalized storage)
+    if task_id:
+        subtasks = get_subtasks_for_task(task_id, include_steps=False)
+        if subtasks:
+            # Find first incomplete subtask
+            for subtask in subtasks:
+                if not subtask.get("passes"):
+                    subtask_full_id = subtask.get("id", "")
+                    steps = get_steps_for_subtask(subtask_full_id)
+                    if steps:
+                        lines.append("**Steps to complete:**")
+                        for step in steps:
+                            # Show completion status for each step
+                            marker = "✓" if step.get("passes") else "○"
+                            lines.append(
+                                f"{marker} {step.get('step_number')}. {step.get('description', '')}"
+                            )
+                        lines.append("")
+                        steps_found = True
+                    break
 
-        if current_task:
-            lines.append("**Steps to complete:**")
-            for step in current_task.get("steps", []):
-                lines.append(f"1. {step}")
-            lines.append("")
+    # Fallback to plan_content if no subtasks found
+    if not steps_found:
+        plan = task.get("plan_content") or {}
+        if isinstance(plan, dict):
+            tasks_list = plan.get("tasks", [])
+            current_id = plan.get("current_task_id")
+
+            # Find current task in plan
+            current_task = None
+            for t in tasks_list:
+                if t.get("id") == current_id:
+                    current_task = t
+                    break
+
+            if current_task:
+                lines.append("**Steps to complete:**")
+                for step in current_task.get("steps", []):
+                    lines.append(f"1. {step}")
+                lines.append("")
 
     # Rules section
     rules = context.get("rule_contents", {})
