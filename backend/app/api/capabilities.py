@@ -51,17 +51,6 @@ class CapabilityResponse(BaseModel):
     updated_at: str | None = None
 
 
-class VerifyResult(BaseModel):
-    """DEPRECATED: Response model for capability verification result."""
-
-    capability_id: str
-    capability_status: str
-    tests_total: int
-    tests_passed: int
-    tests_failed: int
-    evidence_captured: bool
-
-
 class ExplorerLinkCreate(BaseModel):
     """Request model for creating an explorer link."""
 
