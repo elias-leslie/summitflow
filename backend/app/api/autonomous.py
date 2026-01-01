@@ -1,13 +1,18 @@
 """Autonomous execution settings and status API."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..services.worktree_manager import WorktreeError, get_worktree_manager
 from ..storage.agent_configs import get_agent_config, update_agent_config
 from ..storage.connection import get_connection
+
+# Default repository path for worktree operations
+DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 
 router = APIRouter()
 
@@ -312,3 +317,188 @@ async def get_status(project_id: str) -> AutonomousStatus:
             first_try_success_rate=round(first_try_rate, 1),
         ),
     )
+
+
+# --- Worktree Models ---
+
+
+class WorktreeInfo(BaseModel):
+    """Information about an active worktree."""
+
+    task_id: str
+    project_id: str
+    path: str
+    branch: str
+    base_branch: str
+    commit_count: int = 0
+    files_changed: int = 0
+    additions: int = 0
+    deletions: int = 0
+
+
+class WorktreeList(BaseModel):
+    """List of active worktrees."""
+
+    worktrees: list[WorktreeInfo]
+    count: int
+
+
+class CleanupResult(BaseModel):
+    """Result of worktree cleanup operation."""
+
+    removed_count: int
+    removed_by_age: int = 0
+    removed_by_status: int = 0
+
+
+class MergeResult(BaseModel):
+    """Result of worktree merge operation."""
+
+    success: bool
+    task_id: str
+    message: str
+
+
+# --- Worktree API Endpoints ---
+
+
+@router.get("/{project_id}/autonomous/worktrees", response_model=WorktreeList)
+async def list_worktrees(project_id: str) -> WorktreeList:
+    """List all active worktrees for a project."""
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+    active = manager.list_active_worktrees(project_id)
+
+    worktrees = [
+        WorktreeInfo(
+            task_id=w.task_id,
+            project_id=w.project_id,
+            path=str(w.path),
+            branch=w.branch,
+            base_branch=w.base_branch,
+            commit_count=w.commit_count,
+            files_changed=w.files_changed,
+            additions=w.additions,
+            deletions=w.deletions,
+        )
+        for w in active
+    ]
+
+    return WorktreeList(worktrees=worktrees, count=len(worktrees))
+
+
+@router.post("/{project_id}/autonomous/worktrees/cleanup", response_model=CleanupResult)
+async def cleanup_worktrees(project_id: str, max_age_hours: int = 24) -> CleanupResult:
+    """Manually trigger worktree cleanup for a project.
+
+    Args:
+        project_id: Project ID
+        max_age_hours: Maximum age in hours before cleanup (default 24)
+    """
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+
+    # Cleanup by age
+    removed_by_age = manager.cleanup_stale_worktrees(max_age_hours)
+
+    # Cleanup by task status (only for this project)
+    from ..storage import tasks as task_store
+
+    removed_by_status = 0
+    active_worktrees = manager.list_active_worktrees(project_id)
+
+    for worktree in active_worktrees:
+        task = task_store.get_task(worktree.task_id)
+        if not task or task.get("status") not in ("running", "pending_review"):
+            try:
+                manager.remove_worktree(project_id, worktree.task_id)
+                removed_by_status += 1
+            except Exception:
+                pass  # Best effort
+
+    return CleanupResult(
+        removed_count=removed_by_age + removed_by_status,
+        removed_by_age=removed_by_age,
+        removed_by_status=removed_by_status,
+    )
+
+
+@router.post("/{project_id}/autonomous/worktrees/{task_id}/merge", response_model=MergeResult)
+async def merge_worktree(project_id: str, task_id: str, delete_after: bool = True) -> MergeResult:
+    """Manually merge a task's worktree to the base branch.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID whose worktree to merge
+        delete_after: Whether to remove worktree after merge (default True)
+    """
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+
+    # Check worktree exists
+    if not manager.worktree_exists(project_id, task_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No worktree found for task {task_id}",
+        )
+
+    try:
+        success = await manager.merge_worktree(project_id, task_id, delete_after=delete_after)
+
+        if success:
+            return MergeResult(
+                success=True,
+                task_id=task_id,
+                message=f"Successfully merged worktree for task {task_id}",
+            )
+        else:
+            return MergeResult(
+                success=False,
+                task_id=task_id,
+                message="Merge failed - likely a conflict. Worktree preserved.",
+            )
+    except WorktreeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.delete("/{project_id}/autonomous/worktrees/{task_id}", response_model=MergeResult)
+async def remove_worktree(project_id: str, task_id: str, delete_branch: bool = True) -> MergeResult:
+    """Remove a task's worktree without merging.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID whose worktree to remove
+        delete_branch: Whether to also delete the branch (default True)
+    """
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+
+    try:
+        manager.remove_worktree(project_id, task_id, delete_branch=delete_branch)
+        return MergeResult(
+            success=True,
+            task_id=task_id,
+            message=f"Removed worktree for task {task_id}",
+        )
+    except WorktreeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None

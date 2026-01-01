@@ -60,10 +60,16 @@ class WorktreeManager:
     2. Each task's changes are isolated from main
     3. Branches persist until explicitly merged
     4. Clear 1:1:1 mapping: task → worktree → branch
+
+    Security:
+    - All IDs are sanitized to prevent path traversal attacks
+    - Only alphanumeric, hyphen, and underscore characters are allowed
     """
 
     WORKTREE_BASE_DIR = Path(os.getenv("WORKTREE_BASE_DIR", "/tmp/summitflow-worktrees"))
     BRANCH_PREFIX = "exec"
+    # Pattern for valid IDs: alphanumeric, hyphen, underscore only
+    VALID_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
     def __init__(self, project_dir: Path, base_branch: str | None = None):
         """Initialize WorktreeManager.
@@ -121,6 +127,36 @@ class WorktreeManager:
             raise WorktreeError(f"Failed to get current branch: {result.stderr}")
         return result.stdout.strip()
 
+    def _sanitize_id(self, id_value: str, id_type: str = "ID") -> str:
+        """Sanitize an ID to prevent path traversal and injection attacks.
+
+        Args:
+            id_value: The raw ID value to sanitize
+            id_type: Description for error messages (e.g., "task_id", "project_id")
+
+        Returns:
+            The sanitized ID
+
+        Raises:
+            WorktreeError: If the ID contains invalid characters
+        """
+        # Remove null bytes
+        id_value = id_value.replace("\x00", "")
+
+        # Check for path traversal attempts
+        if ".." in id_value or "/" in id_value or "\\" in id_value:
+            raise WorktreeError(
+                f"Invalid {id_type}: path traversal characters not allowed: {id_value!r}"
+            )
+
+        # Check for valid characters only
+        if not self.VALID_ID_PATTERN.match(id_value):
+            raise WorktreeError(
+                f"Invalid {id_type}: only alphanumeric, hyphen, and underscore allowed: {id_value!r}"
+            )
+
+        return id_value
+
     def _run_git(
         self, args: list[str], cwd: Path | None = None
     ) -> subprocess.CompletedProcess[str]:
@@ -135,16 +171,44 @@ class WorktreeManager:
         )
 
     def _get_worktree_dir(self, project_id: str) -> Path:
-        """Get the worktrees directory for a project."""
-        return self.WORKTREE_BASE_DIR / project_id
+        """Get the worktrees directory for a project.
+
+        Args:
+            project_id: The project ID (will be sanitized)
+        """
+        safe_project_id = self._sanitize_id(project_id, "project_id")
+        return self.WORKTREE_BASE_DIR / safe_project_id
 
     def get_worktree_path(self, project_id: str, task_id: str) -> Path:
-        """Get the worktree path for a task."""
-        return self._get_worktree_dir(project_id) / task_id
+        """Get the worktree path for a task.
+
+        Args:
+            project_id: The project ID (will be sanitized)
+            task_id: The task ID (will be sanitized)
+
+        Returns:
+            Path to the worktree directory
+
+        Raises:
+            WorktreeError: If IDs contain invalid characters
+        """
+        safe_task_id = self._sanitize_id(task_id, "task_id")
+        return self._get_worktree_dir(project_id) / safe_task_id
 
     def get_branch_name(self, task_id: str) -> str:
-        """Get the branch name for a task."""
-        return f"{self.BRANCH_PREFIX}/{task_id}"
+        """Get the branch name for a task.
+
+        Args:
+            task_id: The task ID (will be sanitized)
+
+        Returns:
+            The git branch name
+
+        Raises:
+            WorktreeError: If task_id contains invalid characters
+        """
+        safe_task_id = self._sanitize_id(task_id, "task_id")
+        return f"{self.BRANCH_PREFIX}/{safe_task_id}"
 
     def worktree_exists(self, project_id: str, task_id: str) -> bool:
         """Check if a worktree exists for a task."""
@@ -241,16 +305,28 @@ class WorktreeManager:
         # Ensure parent directory exists
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Remove existing if present (from crashed previous run)
+        # Step 1: Prune stale worktree entries first (handles manually deleted directories)
+        self._run_git(["worktree", "prune"])
+
+        # Step 2: Try git worktree remove if path exists
         if worktree_path.exists():
             logger.info(
                 "removing_existing_worktree",
                 path=str(worktree_path),
                 task_id=task_id,
             )
-            self._run_git(["worktree", "remove", "--force", str(worktree_path)])
+            result = self._run_git(["worktree", "remove", "--force", str(worktree_path)])
 
-        # Delete branch if it exists (from previous attempt)
+            # Step 3: If git worktree remove failed (not a proper worktree), force delete
+            if result.returncode != 0:
+                logger.warning(
+                    "worktree_remove_failed_forcing",
+                    task_id=task_id,
+                    error=result.stderr,
+                )
+                shutil.rmtree(worktree_path, ignore_errors=True)
+
+        # Step 4: Delete branch if it exists (from previous attempt or stale)
         self._run_git(["branch", "-D", branch_name])
 
         # Create worktree with new branch from base

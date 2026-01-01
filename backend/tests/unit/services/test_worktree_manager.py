@@ -1,10 +1,21 @@
-"""Tests for WorktreeManager - git worktree isolation for autonomous execution."""
+"""Tests for WorktreeManager - git worktree isolation for autonomous execution.
 
+Comprehensive test matrix covering:
+- Phase 1: Core functionality
+- Phase 2: Edge cases
+- Phase 3: Malicious input (security)
+- Phase 4: Concurrent operations
+- Phase 5: Recovery scenarios
+- Phase 7: Cleanup tasks
+"""
+
+import asyncio
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-from app.services.worktree_manager import WorktreeManager
+from app.services.worktree_manager import WorktreeError, WorktreeManager
 
 
 @pytest.fixture
@@ -351,3 +362,541 @@ class TestGetOrCreate:
 
         # Cleanup
         worktree_manager.remove_worktree("test-project", "task-existing")
+
+
+# =============================================================================
+# PHASE 2: EDGE CASES
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge case scenarios."""
+
+    def test_create_worktree_when_branch_already_exists(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test creating worktree when branch already exists (orphaned branch)."""
+        branch_name = "exec/task-orphan"
+
+        # Create orphaned branch directly
+        subprocess.run(
+            ["git", "branch", branch_name],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True,
+        )
+
+        # Should still succeed (deletes existing branch first)
+        info = worktree_manager.create_worktree("test-project", "task-orphan")
+        assert info.path.exists()
+        assert info.branch == branch_name
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-orphan")
+
+    def test_create_worktree_with_uncommitted_main_changes(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test creating worktree when main repo has uncommitted changes."""
+        # Create uncommitted changes in main repo
+        (temp_git_repo / "uncommitted.txt").write_text("dirty working tree")
+
+        # Should still succeed
+        info = worktree_manager.create_worktree("test-project", "task-dirty")
+        assert info.path.exists()
+
+        # Uncommitted file should NOT be in worktree
+        assert not (info.path / "uncommitted.txt").exists()
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-dirty")
+        (temp_git_repo / "uncommitted.txt").unlink()
+
+    def test_remove_nonexistent_worktree_no_error(self, worktree_manager: WorktreeManager) -> None:
+        """Test that removing non-existent worktree doesn't error."""
+        # Should not raise
+        worktree_manager.remove_worktree("test-project", "task-nonexistent")
+
+    def test_commit_when_nothing_to_commit(self, worktree_manager: WorktreeManager) -> None:
+        """Test commit with no changes returns True, not error."""
+        worktree_manager.create_worktree("test-project", "task-empty-commit")
+
+        # Try to commit with no changes
+        result = worktree_manager.commit_in_worktree(
+            "test-project", "task-empty-commit", "Empty commit"
+        )
+
+        assert result is True  # Should return True for nothing to commit
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-empty-commit")
+
+    def test_stale_worktree_directory_manually_deleted(
+        self, worktree_manager: WorktreeManager
+    ) -> None:
+        """Test handling when worktree directory is manually deleted but git still registered."""
+        # Create worktree
+        info = worktree_manager.create_worktree("test-project", "task-stale")
+
+        # Manually delete directory (simulating external deletion)
+        shutil.rmtree(info.path)
+
+        # Try to get info - should return None
+        result = worktree_manager.get_worktree_info("test-project", "task-stale")
+        assert result is None
+
+        # Creating new worktree should work (pruning handles stale entry)
+        new_info = worktree_manager.create_worktree("test-project", "task-stale")
+        assert new_info.path.exists()
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-stale")
+
+    @pytest.mark.asyncio
+    async def test_merge_with_no_worktree(self, worktree_manager: WorktreeManager) -> None:
+        """Test merge when worktree doesn't exist returns False."""
+        result = await worktree_manager.merge_worktree("test-project", "task-nonexistent")
+        assert result is False
+
+    def test_commit_on_nonexistent_worktree(self, worktree_manager: WorktreeManager) -> None:
+        """Test commit when worktree doesn't exist returns False."""
+        result = worktree_manager.commit_in_worktree("test-project", "task-nonexistent", "Message")
+        assert result is False
+
+    def test_get_worktree_info_after_commit(self, worktree_manager: WorktreeManager) -> None:
+        """Test that get_worktree_info returns accurate stats after commit."""
+        info = worktree_manager.create_worktree("test-project", "task-stats")
+
+        # Initial stats should be zero
+        assert info.commit_count == 0
+        assert info.files_changed == 0
+
+        # Make a commit
+        (info.path / "new_file.py").write_text("content")
+        worktree_manager.commit_in_worktree("test-project", "task-stats", "Add file")
+
+        # Get updated info
+        updated = worktree_manager.get_worktree_info("test-project", "task-stats")
+        assert updated is not None
+        assert updated.commit_count == 1
+        assert updated.files_changed == 1
+        assert updated.additions > 0
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-stats")
+
+
+# =============================================================================
+# PHASE 3: MALICIOUS INPUT (SECURITY)
+# =============================================================================
+
+
+class TestMaliciousInput:
+    """Tests for malicious input handling - CRITICAL SECURITY TESTS."""
+
+    def test_path_traversal_in_task_id(self, worktree_manager: WorktreeManager) -> None:
+        """Test that path traversal in task_id is rejected."""
+        malicious_task_ids = [
+            "../../../etc/passwd",
+            "..\\..\\windows\\system32",
+            "task/../secret",
+            "task/../../escape",
+        ]
+
+        for malicious_id in malicious_task_ids:
+            with pytest.raises(WorktreeError) as exc_info:
+                worktree_manager.get_worktree_path("test-project", malicious_id)
+            assert "path traversal" in str(exc_info.value).lower()
+
+    def test_shell_injection_in_task_id(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that shell injection characters are rejected."""
+        # Characters like $ ( ) / should be rejected by sanitization
+        malicious_task_id = "task-$(rm -rf /tmp/test-injection)"
+
+        # Create a marker file to verify injection didn't work
+        marker = Path("/tmp/test-injection")
+        marker.mkdir(exist_ok=True)
+
+        try:
+            # Should raise WorktreeError due to invalid characters
+            with pytest.raises(WorktreeError) as exc_info:
+                worktree_manager.create_worktree("test-project", malicious_task_id)
+            # May be rejected for path traversal (/) or invalid chars
+            error_msg = str(exc_info.value).lower()
+            assert "path traversal" in error_msg or "only alphanumeric" in error_msg
+
+            # Marker should still exist (injection didn't execute)
+            assert marker.exists(), "Shell injection executed!"
+        finally:
+            if marker.exists():
+                marker.rmdir()
+
+    def test_command_injection_in_task_id(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that command injection with semicolon is rejected."""
+        malicious_task_id = "task-id; echo pwned > /tmp/pwned.txt"
+
+        # This should NOT create the pwned file
+        pwned_file = Path("/tmp/pwned.txt")
+        if pwned_file.exists():
+            pwned_file.unlink()
+
+        try:
+            # Should raise WorktreeError due to invalid characters
+            with pytest.raises(WorktreeError) as exc_info:
+                worktree_manager.create_worktree("test-project", malicious_task_id)
+            # May be rejected for path traversal (/) or invalid chars
+            error_msg = str(exc_info.value).lower()
+            assert "path traversal" in error_msg or "only alphanumeric" in error_msg
+
+            # Pwned file should NOT exist
+            assert not pwned_file.exists(), "Command injection executed!"
+        finally:
+            if pwned_file.exists():
+                pwned_file.unlink()
+
+    def test_special_characters_in_task_id_rejected(
+        self, worktree_manager: WorktreeManager
+    ) -> None:
+        """Test that special characters in task_id are rejected."""
+        invalid_task_ids = [
+            "task with spaces",
+            'task"quotes',
+            "task'apostrophe",
+            "task\nnewline",
+            "task;semicolon",
+            "task|pipe",
+            "task&ampersand",
+        ]
+
+        for task_id in invalid_task_ids:
+            with pytest.raises(WorktreeError):
+                worktree_manager.create_worktree("test-project", task_id)
+
+    def test_valid_task_id_accepted(self, worktree_manager: WorktreeManager) -> None:
+        """Test that valid task IDs are accepted."""
+        valid_task_ids = [
+            "task-12345",
+            "task_with_underscore",
+            "TASK-UPPERCASE",
+            "task123",
+            "a",
+            "task-abc-def-123",
+        ]
+
+        for task_id in valid_task_ids:
+            info = worktree_manager.create_worktree("test-project", task_id)
+            assert info.path.exists()
+            worktree_manager.remove_worktree("test-project", task_id)
+
+    def test_null_byte_in_task_id(self, worktree_manager: WorktreeManager) -> None:
+        """Test handling of null byte in task_id."""
+        # Null byte is stripped, then remaining part is validated
+        malicious_task_id = "task-id\x00malicious"
+
+        # After stripping null byte, becomes "task-idmalicious" which is valid
+        info = worktree_manager.create_worktree("test-project", malicious_task_id)
+        # The path should use the sanitized name
+        assert "task-idmalicious" in str(info.path)
+        worktree_manager.remove_worktree("test-project", "task-idmalicious")
+
+    def test_cross_project_escape_in_project_id(self, worktree_manager: WorktreeManager) -> None:
+        """Test that project_id with path traversal is rejected."""
+        malicious_project_ids = [
+            "../other-project",
+            "project/../escape",
+            "project/subdir",
+        ]
+
+        for project_id in malicious_project_ids:
+            with pytest.raises(WorktreeError) as exc_info:
+                worktree_manager.get_worktree_path(project_id, "task-id")
+            assert (
+                "path traversal" in str(exc_info.value).lower()
+                or "only alphanumeric" in str(exc_info.value).lower()
+            )
+
+
+# =============================================================================
+# PHASE 4: CONCURRENT OPERATIONS (EXTENDED)
+# =============================================================================
+
+
+class TestConcurrentOperationsExtended:
+    """Extended tests for concurrent operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_multiple_worktrees_simultaneously(
+        self, worktree_manager: WorktreeManager
+    ) -> None:
+        """Test creating 5 worktrees simultaneously."""
+        task_ids = [f"task-concurrent-{i}" for i in range(5)]
+
+        # Create all worktrees in parallel using threads
+        # (create_worktree is sync, but we can run in executor)
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(worktree_manager.create_worktree, "test-project", task_id)
+                for task_id in task_ids
+            ]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        # All should succeed with unique paths
+        assert len(results) == 5
+        paths = [r.path for r in results]
+        assert len(set(paths)) == 5  # All unique
+
+        # Cleanup
+        for task_id in task_ids:
+            worktree_manager.remove_worktree("test-project", task_id)
+
+    @pytest.mark.asyncio
+    async def test_merge_serialization(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that merges to same project are serialized."""
+        # Create two worktrees with changes
+        info1 = worktree_manager.create_worktree("test-project", "task-merge-1")
+        info2 = worktree_manager.create_worktree("test-project", "task-merge-2")
+
+        # Make different changes
+        (info1.path / "file1.txt").write_text("content1")
+        (info2.path / "file2.txt").write_text("content2")
+
+        worktree_manager.commit_in_worktree("test-project", "task-merge-1", "Add file1")
+        worktree_manager.commit_in_worktree("test-project", "task-merge-2", "Add file2")
+
+        # Merge both (should be serialized, not conflict)
+        results = await asyncio.gather(
+            worktree_manager.merge_worktree("test-project", "task-merge-1"),
+            worktree_manager.merge_worktree("test-project", "task-merge-2"),
+        )
+
+        assert all(results), "Both merges should succeed"
+
+        # Both files should be on main
+        result = subprocess.run(
+            ["git", "ls-tree", "--name-only", "main"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert "file1.txt" in result.stdout
+        assert "file2.txt" in result.stdout
+
+
+# =============================================================================
+# PHASE 5: RECOVERY SCENARIOS
+# =============================================================================
+
+
+class TestRecoveryScenarios:
+    """Tests for recovery scenarios."""
+
+    def test_recovery_from_partial_worktree_creation(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test recovery when worktree creation partially failed."""
+        # Create directory but not git worktree
+        partial_path = worktree_manager.get_worktree_path("test-project", "task-partial")
+        partial_path.parent.mkdir(parents=True, exist_ok=True)
+        partial_path.mkdir(exist_ok=True)
+        (partial_path / "partial-file.txt").write_text("partial")
+
+        # Creating should replace it
+        info = worktree_manager.create_worktree("test-project", "task-partial")
+
+        assert info.path.exists()
+        # Partial file should be gone (fresh checkout)
+        assert not (info.path / "partial-file.txt").exists()
+
+        # Cleanup
+        worktree_manager.remove_worktree("test-project", "task-partial")
+
+    def test_worktree_survives_process_restart(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path, tmp_path: Path
+    ) -> None:
+        """Test that worktree persists after 'process restart' (new manager instance)."""
+        # Create worktree
+        info = worktree_manager.create_worktree("test-project", "task-persist")
+        (info.path / "persisted.txt").write_text("I should persist")
+
+        # Commit
+        worktree_manager.commit_in_worktree("test-project", "task-persist", "Add file")
+
+        # Create new manager instance (simulating restart)
+        new_manager = WorktreeManager(temp_git_repo, base_branch="main")
+        new_manager.WORKTREE_BASE_DIR = worktree_manager.WORKTREE_BASE_DIR
+
+        # Worktree should still exist
+        recovered = new_manager.get_worktree_info("test-project", "task-persist")
+        assert recovered is not None
+        assert (recovered.path / "persisted.txt").exists()
+        assert recovered.commit_count == 1
+
+        # Cleanup
+        new_manager.remove_worktree("test-project", "task-persist")
+
+
+# =============================================================================
+# PHASE 7: CLEANUP TASK TESTS
+# =============================================================================
+
+
+class TestCleanupTask:
+    """Tests for the cleanup functionality."""
+
+    def test_cleanup_removes_only_old_worktrees(self, worktree_manager: WorktreeManager) -> None:
+        """Test that cleanup only removes worktrees older than threshold."""
+        # Create two worktrees
+        info1 = worktree_manager.create_worktree("test-project", "task-old")
+        info2 = worktree_manager.create_worktree("test-project", "task-new")
+
+        # Make task-old appear old by modifying its mtime
+        import os
+        import time
+
+        old_time = time.time() - (25 * 3600)  # 25 hours ago
+        os.utime(info1.path, (old_time, old_time))
+
+        # Cleanup with 24 hour threshold
+        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
+
+        assert removed == 1
+        assert not info1.path.exists()  # Old one removed
+        assert info2.path.exists()  # New one kept
+
+        # Cleanup remaining
+        worktree_manager.remove_worktree("test-project", "task-new")
+
+    def test_cleanup_handles_empty_base_dir(self, worktree_manager: WorktreeManager) -> None:
+        """Test cleanup when no worktrees exist."""
+        # Ensure base dir doesn't exist
+        if worktree_manager.WORKTREE_BASE_DIR.exists():
+            shutil.rmtree(worktree_manager.WORKTREE_BASE_DIR)
+
+        # Should return 0, not error
+        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
+        assert removed == 0
+
+    def test_cleanup_handles_many_worktrees(self, worktree_manager: WorktreeManager) -> None:
+        """Test cleanup with many worktrees (performance check)."""
+        # Create 10 worktrees
+        task_ids = [f"task-bulk-{i}" for i in range(10)]
+        for task_id in task_ids:
+            worktree_manager.create_worktree("test-project", task_id)
+
+        # Set all to be old
+        import os
+        import time
+
+        old_time = time.time() - (25 * 3600)
+        for task_id in task_ids:
+            path = worktree_manager.get_worktree_path("test-project", task_id)
+            os.utime(path, (old_time, old_time))
+
+        # Cleanup should remove all
+        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
+        assert removed == 10
+
+    def test_remove_worktree_deletes_branch(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that remove_worktree also deletes the branch."""
+        # Create worktree
+        info = worktree_manager.create_worktree("test-project", "task-with-branch")
+
+        # Verify branch exists
+        result = subprocess.run(
+            ["git", "branch", "--list", info.branch],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert info.branch.replace("exec/", "") in result.stdout or info.branch in result.stdout
+
+        # Remove worktree
+        worktree_manager.remove_worktree("test-project", "task-with-branch", delete_branch=True)
+
+        # Verify branch is gone
+        result = subprocess.run(
+            ["git", "branch", "--list", info.branch],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert info.branch not in result.stdout
+
+
+# =============================================================================
+# PHASE 1 ADDITIONS: VERIFY BRANCH DELETION ON MERGE
+# =============================================================================
+
+
+class TestMergeCleanup:
+    """Additional tests for merge and cleanup behavior."""
+
+    @pytest.mark.asyncio
+    async def test_merge_deletes_worktree_and_branch(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that merge with delete_after=True removes both worktree and branch."""
+        # Create worktree with changes
+        info = worktree_manager.create_worktree("test-project", "task-merge-cleanup")
+        (info.path / "test.txt").write_text("content")
+        worktree_manager.commit_in_worktree("test-project", "task-merge-cleanup", "Add test")
+
+        # Merge with delete
+        success = await worktree_manager.merge_worktree(
+            "test-project", "task-merge-cleanup", delete_after=True
+        )
+
+        assert success
+
+        # Worktree directory gone
+        assert not info.path.exists()
+
+        # Branch gone
+        result = subprocess.run(
+            ["git", "branch", "--list", "exec/task-merge-cleanup"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert "exec/task-merge-cleanup" not in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_merge_no_commit_stages_changes(
+        self, worktree_manager: WorktreeManager, temp_git_repo: Path
+    ) -> None:
+        """Test that merge with no_commit=True stages but doesn't commit."""
+        # Create worktree with changes
+        info = worktree_manager.create_worktree("test-project", "task-stage-only")
+        (info.path / "staged.txt").write_text("staged content")
+        worktree_manager.commit_in_worktree("test-project", "task-stage-only", "Add staged")
+
+        # Merge with no_commit
+        success = await worktree_manager.merge_worktree(
+            "test-project", "task-stage-only", delete_after=False, no_commit=True
+        )
+
+        assert success
+
+        # Check git status - should show staged changes
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        # Should have staged changes (A for added)
+        assert "staged.txt" in result.stdout
+
+        # Cleanup - abort merge and remove worktree
+        subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=temp_git_repo, capture_output=True)
+        worktree_manager.remove_worktree("test-project", "task-stage-only")
