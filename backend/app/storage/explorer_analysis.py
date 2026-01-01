@@ -238,14 +238,16 @@ def get_refactor_targets(
 
 
 def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
-    """Count entries with outdated or missing schema version.
+    """Count file entries with outdated or missing schema version.
+
+    Excludes directories since they don't have the same metadata fields.
 
     Args:
         project_id: Project ID for scoping
         min_version: Minimum schema version to be considered current
 
     Returns:
-        Count of entries with stale metadata
+        Count of file entries with stale metadata
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -254,6 +256,7 @@ def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
             FROM explorer_entries
             WHERE project_id = %s
               AND entry_type = 'file'
+              AND COALESCE((metadata->>'is_directory')::boolean, false) = false
               AND (
                   (metadata->>'_schema_version') IS NULL
                   OR (metadata->>'_schema_version')::int < %s
