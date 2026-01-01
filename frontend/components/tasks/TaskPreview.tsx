@@ -10,50 +10,22 @@ import {
   FileCode,
   Tag,
   AlertTriangle,
-  Database,
-  Server,
-  Layout,
-  TestTube,
-  Search,
 } from "lucide-react";
 import type { Task, TaskAcceptanceCriterion, Subtask } from "@/lib/api/tasks";
+import {
+  PHASE_ICONS,
+  PHASE_COLORS,
+  CATEGORY_COLORS,
+  PRIORITY_CONFIG,
+  getPhaseConfig,
+  getPriorityConfig,
+} from "@/lib/utils/task-status";
 
 interface TaskPreviewProps {
   task: Task;
   subtasks?: Subtask[];
   highlightChanges?: boolean;
 }
-
-const PHASE_ICONS: Record<string, React.ElementType> = {
-  research: Search,
-  database: Database,
-  backend: Server,
-  frontend: Layout,
-  testing: TestTube,
-};
-
-const PHASE_COLORS: Record<string, string> = {
-  research: "text-blue-400 bg-blue-500/10",
-  database: "text-amber-400 bg-amber-500/10",
-  backend: "text-emerald-400 bg-emerald-500/10",
-  frontend: "text-violet-400 bg-violet-500/10",
-  testing: "text-rose-400 bg-rose-500/10",
-};
-
-const CATEGORY_COLORS: Record<string, string> = {
-  performance: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  correctness: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  security: "text-red-400 bg-red-500/10 border-red-500/20",
-  quality: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-};
-
-const PRIORITY_LABELS: Record<number, { label: string; color: string }> = {
-  0: { label: "P0 Critical", color: "text-red-400" },
-  1: { label: "P1 High", color: "text-orange-400" },
-  2: { label: "P2 Medium", color: "text-yellow-400" },
-  3: { label: "P3 Low", color: "text-slate-400" },
-  4: { label: "P4 Backlog", color: "text-slate-500" },
-};
 
 function groupSubtasksByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
   return subtasks.reduce(
@@ -88,7 +60,7 @@ export function TaskPreview({
     });
   };
 
-  const priorityInfo = PRIORITY_LABELS[task.priority] ?? PRIORITY_LABELS[2];
+  const priorityInfo = getPriorityConfig(task.priority);
 
   return (
     <div className="space-y-5">

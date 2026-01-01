@@ -5,59 +5,19 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronDown,
   ChevronRight,
-  FileCode,
-  Database,
-  Server,
-  Layout,
-  TestTube,
-  Search,
   CheckCircle2,
   Circle,
+  FileCode,
   Loader2,
 } from "lucide-react";
 import type { Subtask } from "@/lib/api/tasks";
+import { PHASE_CONFIG, getPhaseConfig } from "@/lib/utils/task-status";
 
 interface SubtasksSectionProps {
   subtasks: Subtask[];
   onTogglePass: (subtaskId: string, passes: boolean) => Promise<void>;
   isLoading?: boolean;
 }
-
-const PHASE_CONFIG: Record<
-  string,
-  { icon: React.ElementType; color: string; bgColor: string }
-> = {
-  research: {
-    icon: Search,
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10",
-  },
-  database: {
-    icon: Database,
-    color: "text-amber-400",
-    bgColor: "bg-amber-500/10",
-  },
-  backend: {
-    icon: Server,
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/10",
-  },
-  frontend: {
-    icon: Layout,
-    color: "text-violet-400",
-    bgColor: "bg-violet-500/10",
-  },
-  testing: {
-    icon: TestTube,
-    color: "text-rose-400",
-    bgColor: "bg-rose-500/10",
-  },
-  other: {
-    icon: FileCode,
-    color: "text-slate-400",
-    bgColor: "bg-slate-500/10",
-  },
-};
 
 function groupByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
   return subtasks.reduce(
