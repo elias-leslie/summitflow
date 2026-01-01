@@ -206,37 +206,19 @@ class ImplementationExecutor:
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
-        # Track whether we're using subtasks table or plan_content
-        using_subtasks_table = False
+        # Get next incomplete subtask from normalized task_subtasks table
+        # NOTE: plan_content fallback removed - all tasks should use subtasks table
         completed = set(build_state.get("completed_tasks", []))
 
-        # Try subtasks table first (normalized storage)
         current_task = self._get_next_task_from_subtasks(task_id, completed)
         if current_task:
-            using_subtasks_table = True
             logger.info(
                 "using_subtasks_table",
                 task_id=task_id,
                 subtask_id=current_task.get("id"),
             )
         else:
-            # Fallback to plan_content (legacy storage)
-            plan = task.get("plan_content") or {}
-            tasks_list = plan.get("tasks", []) if isinstance(plan, dict) else []
-
-            for t in tasks_list:
-                if t.get("id") not in completed and not t.get("passes", False):
-                    current_task = t
-                    break
-
-            if current_task:
-                logger.info(
-                    "using_plan_content",
-                    task_id=task_id,
-                    subtask_id=current_task.get("id"),
-                )
-
-        if not current_task:
+            # No subtasks found - task is complete or has no subtasks
             return ExecutionResult(
                 success=True,
                 iterations=0,
@@ -244,17 +226,13 @@ class ImplementationExecutor:
                 reason="all_tasks_complete",
             )
 
-        # Store source type in build_state for step tracking
-        build_state["using_subtasks_table"] = using_subtasks_table
-        if using_subtasks_table:
-            build_state["current_subtask_id"] = current_task.get("subtask_full_id")
-
-        plan = task.get("plan_content") or {}
+        # Store subtask info in build_state for step tracking
+        build_state["using_subtasks_table"] = True
+        build_state["current_subtask_id"] = current_task.get("subtask_full_id")
 
         # Check for capability_id (optional for auto-generated tasks)
-        capability_id = task.get("capability_id") or (
-            plan.get("context", {}).get("capability_id") if isinstance(plan, dict) else None
-        )
+        # NOTE: capability_id should be on the task directly, not in plan_content
+        capability_id = task.get("capability_id")
 
         labels = list(task.get("labels") or [])
         is_auto_generated = "auto-generated" in labels

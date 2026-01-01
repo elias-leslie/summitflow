@@ -18,6 +18,8 @@ from .connection import generate_prefixed_id, get_connection
 # Column list for all task SELECT/RETURNING queries (34 columns)
 # Order must match _row_to_dict index mapping
 # Note: spec_content and current_criterion_id dropped in migration 038
+# DEPRECATED: plan_content column kept for backward compatibility, but tasks should use
+# normalized task_subtasks and task_subtask_steps tables instead. See migration 039.
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     plan_content, progress_log,
     error_message, branch_name, commits, pull_request_url,
