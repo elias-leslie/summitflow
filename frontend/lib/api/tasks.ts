@@ -74,7 +74,7 @@ export interface Task {
   current_phase?: "plan" | "implement" | "test" | "verify" | "complete" | null;
   // Enrichment fields
   raw_request?: string | null;
-  enrichment_status?: "none" | "draft" | "enriching" | "review" | "discussing" | "accepted" | null;
+  enrichment_status?: EnrichmentStatus | null;
   enriched_by?: string | null;
   enriched_at?: string | null;
 }
@@ -260,7 +260,8 @@ export type EnrichmentStatus =
   | "enriching"
   | "review"
   | "discussing"
-  | "accepted";
+  | "accepted"
+  | "failed";
 
 export interface Subtask {
   id: string;
