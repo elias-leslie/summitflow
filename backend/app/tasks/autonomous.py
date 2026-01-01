@@ -31,7 +31,7 @@ DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
 AUTONOMOUS_DRY_RUN = False  # When True, log what would execute but don't actually run
 VALIDATION_MODE = True  # When True, only execute tasks in ALLOWED_TASK_IDS
 ALLOWED_TASK_IDS = [
-    "task-48916cd8",  # Fix: UUID JSON Serialization Error (tier 2, bug)
+    "task-b2e66405",  # Fix: TypeScript module resolution (tier 2, frontend)
 ]
 
 
