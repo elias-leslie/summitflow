@@ -115,6 +115,15 @@ class LinkTestRequest(BaseModel):
     is_primary: bool = Field(default=False, description="Whether this is the primary test")
 
 
+class UpdateCriterionRequest(BaseModel):
+    """Request model for updating a criterion."""
+
+    criterion: str | None = Field(default=None, min_length=10)
+    category: str | None = Field(default=None)
+    measurement: str | None = Field(default=None)
+    threshold: str | None = Field(default=None)
+
+
 @router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse])
 async def list_capabilities(
     project_id: str,
@@ -459,6 +468,56 @@ async def link_test_to_criterion(
             raise HTTPException(status_code=400, detail="Failed to link test")
 
     return {"status": "linked", "criterion_id": criterion_id, "test_id": body.test_id}
+
+
+@router.patch("/{project_id}/criteria/{criterion_id}", response_model=CriterionResponse)
+async def update_criterion(
+    project_id: str, criterion_id: str, body: UpdateCriterionRequest
+) -> CriterionResponse:
+    """Update a criterion's fields.
+
+    Supports updating: criterion text, category, measurement, threshold.
+    """
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    with get_connection() as conn:
+        # Find and update criterion
+        updated = criteria_storage.update_criterion(conn, project_id, criterion_id, updates)
+        if not updated:
+            raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+
+        # Get linked tests for response
+        tests = criteria_storage.get_tests_for_criterion(conn, updated["id"])
+
+        return CriterionResponse(
+            id=updated["id"],
+            criterion_id=updated["criterion_id"],
+            criterion=updated["criterion"],
+            category=updated["category"],
+            measurement=updated["measurement"],
+            threshold=updated["threshold"],
+            created_at=updated["created_at"].isoformat() if updated.get("created_at") else None,
+            tests=tests,
+        )
+
+
+@router.delete("/{project_id}/criteria/{criterion_id}/test/{test_id}")
+async def unlink_test_from_criterion(
+    project_id: str, criterion_id: str, test_id: int
+) -> dict[str, Any]:
+    """Unlink a test from a criterion."""
+    with get_connection() as conn:
+        criterion = criteria_storage.get_criterion(conn, project_id, criterion_id)
+        if not criterion:
+            raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+
+        unlinked = criteria_storage.unlink_test_from_criterion(conn, criterion["id"], test_id)
+        if not unlinked:
+            raise HTTPException(status_code=404, detail="Test not linked to criterion")
+
+    return {"status": "unlinked", "criterion_id": criterion_id, "test_id": test_id}
 
 
 # =============================================================================
