@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronDown,
@@ -132,9 +132,9 @@ function StepsList({ projectId, taskId, subtask }: StepsListProps) {
   }, [projectId, taskId, subtask]);
 
   // Fetch on mount
-  useState(() => {
+  useEffect(() => {
     fetchStepsIfNeeded();
-  });
+  }, [fetchStepsIfNeeded]);
 
   const handleToggleStep = useCallback(
     async (stepNumber: number, passes: boolean) => {
