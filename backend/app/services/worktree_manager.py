@@ -1,0 +1,584 @@
+"""Git Worktree Manager for Autonomous Task Execution.
+
+Provides isolated execution environments for autonomous agents by managing
+git worktrees. Each task gets its own worktree, ensuring the main repository
+remains untouched until explicit merge.
+
+See docs/worktree-design.md for architecture details.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+class WorktreeError(Exception):
+    """Error during worktree operations."""
+
+    pass
+
+
+@dataclass
+class WorktreeInfo:
+    """Information about a task's worktree."""
+
+    path: Path
+    branch: str
+    task_id: str
+    project_id: str
+    base_branch: str
+    is_active: bool = True
+    commit_count: int = 0
+    files_changed: int = 0
+    additions: int = 0
+    deletions: int = 0
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+class WorktreeManager:
+    """Manages git worktrees for autonomous task execution.
+
+    Each task gets its own worktree at:
+        /tmp/summitflow-worktrees/{project_id}/{task_id}/
+
+    With a corresponding branch:
+        exec/{task_id}
+
+    This allows:
+    1. Multiple tasks to execute simultaneously
+    2. Each task's changes are isolated from main
+    3. Branches persist until explicitly merged
+    4. Clear 1:1:1 mapping: task → worktree → branch
+    """
+
+    WORKTREE_BASE_DIR = Path(os.getenv("WORKTREE_BASE_DIR", "/tmp/summitflow-worktrees"))
+    BRANCH_PREFIX = "exec"
+
+    def __init__(self, project_dir: Path, base_branch: str | None = None):
+        """Initialize WorktreeManager.
+
+        Args:
+            project_dir: Path to the project's git repository
+            base_branch: Branch to base worktrees on (auto-detects if not provided)
+        """
+        self.project_dir = Path(project_dir)
+        self.base_branch = base_branch or self._detect_base_branch()
+        self._merge_locks: dict[str, asyncio.Lock] = {}
+
+    def _detect_base_branch(self) -> str:
+        """Detect the base branch for worktree creation.
+
+        Priority order:
+        1. DEFAULT_BRANCH environment variable
+        2. Auto-detect main/master (if they exist)
+        3. Fall back to current branch
+
+        Returns:
+            The detected base branch name
+        """
+        # 1. Check for DEFAULT_BRANCH env var
+        env_branch = os.getenv("DEFAULT_BRANCH")
+        if env_branch:
+            result = self._run_git(["rev-parse", "--verify", env_branch])
+            if result.returncode == 0:
+                return env_branch
+            logger.warning(
+                "default_branch_not_found",
+                branch=env_branch,
+                msg="DEFAULT_BRANCH not found, auto-detecting",
+            )
+
+        # 2. Auto-detect main/master
+        for branch in ["main", "master"]:
+            result = self._run_git(["rev-parse", "--verify", branch])
+            if result.returncode == 0:
+                return branch
+
+        # 3. Fall back to current branch
+        current = self._get_current_branch()
+        logger.warning(
+            "using_current_branch",
+            branch=current,
+            msg="Could not find main/master, using current branch",
+        )
+        return current
+
+    def _get_current_branch(self) -> str:
+        """Get the current git branch."""
+        result = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+        if result.returncode != 0:
+            raise WorktreeError(f"Failed to get current branch: {result.stderr}")
+        return result.stdout.strip()
+
+    def _run_git(
+        self, args: list[str], cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a git command and return the result."""
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd or self.project_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+    def _get_worktree_dir(self, project_id: str) -> Path:
+        """Get the worktrees directory for a project."""
+        return self.WORKTREE_BASE_DIR / project_id
+
+    def get_worktree_path(self, project_id: str, task_id: str) -> Path:
+        """Get the worktree path for a task."""
+        return self._get_worktree_dir(project_id) / task_id
+
+    def get_branch_name(self, task_id: str) -> str:
+        """Get the branch name for a task."""
+        return f"{self.BRANCH_PREFIX}/{task_id}"
+
+    def worktree_exists(self, project_id: str, task_id: str) -> bool:
+        """Check if a worktree exists for a task."""
+        return self.get_worktree_path(project_id, task_id).exists()
+
+    def get_worktree_info(self, project_id: str, task_id: str) -> WorktreeInfo | None:
+        """Get info about a task's worktree.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            WorktreeInfo if worktree exists, None otherwise
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            return None
+
+        # Verify the branch exists in the worktree
+        result = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=worktree_path)
+        if result.returncode != 0:
+            return None
+
+        actual_branch = result.stdout.strip()
+        stats = self._get_worktree_stats(worktree_path)
+
+        return WorktreeInfo(
+            path=worktree_path,
+            branch=actual_branch,
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=self.base_branch,
+            is_active=True,
+            commit_count=stats["commit_count"],
+            files_changed=stats["files_changed"],
+            additions=stats["additions"],
+            deletions=stats["deletions"],
+        )
+
+    def _get_worktree_stats(self, worktree_path: Path) -> dict[str, int]:
+        """Get diff statistics for a worktree."""
+        stats = {
+            "commit_count": 0,
+            "files_changed": 0,
+            "additions": 0,
+            "deletions": 0,
+        }
+
+        if not worktree_path.exists():
+            return stats
+
+        # Commit count
+        result = self._run_git(
+            ["rev-list", "--count", f"{self.base_branch}..HEAD"], cwd=worktree_path
+        )
+        if result.returncode == 0:
+            stats["commit_count"] = int(result.stdout.strip() or "0")
+
+        # Diff stats
+        result = self._run_git(
+            ["diff", "--shortstat", f"{self.base_branch}...HEAD"], cwd=worktree_path
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Parse: "3 files changed, 50 insertions(+), 10 deletions(-)"
+            match = re.search(r"(\d+) files? changed", result.stdout)
+            if match:
+                stats["files_changed"] = int(match.group(1))
+            match = re.search(r"(\d+) insertions?", result.stdout)
+            if match:
+                stats["additions"] = int(match.group(1))
+            match = re.search(r"(\d+) deletions?", result.stdout)
+            if match:
+                stats["deletions"] = int(match.group(1))
+
+        return stats
+
+    def create_worktree(self, project_id: str, task_id: str) -> WorktreeInfo:
+        """Create a worktree for a task.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID (e.g., "task-b01611e4")
+
+        Returns:
+            WorktreeInfo for the created worktree
+
+        Raises:
+            WorktreeError: If worktree creation fails
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        branch_name = self.get_branch_name(task_id)
+
+        # Ensure parent directory exists
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Remove existing if present (from crashed previous run)
+        if worktree_path.exists():
+            logger.info(
+                "removing_existing_worktree",
+                path=str(worktree_path),
+                task_id=task_id,
+            )
+            self._run_git(["worktree", "remove", "--force", str(worktree_path)])
+
+        # Delete branch if it exists (from previous attempt)
+        self._run_git(["branch", "-D", branch_name])
+
+        # Create worktree with new branch from base
+        result = self._run_git(
+            [
+                "worktree",
+                "add",
+                "-b",
+                branch_name,
+                str(worktree_path),
+                self.base_branch,
+            ]
+        )
+
+        if result.returncode != 0:
+            raise WorktreeError(f"Failed to create worktree for {task_id}: {result.stderr}")
+
+        logger.info(
+            "worktree_created",
+            task_id=task_id,
+            project_id=project_id,
+            branch=branch_name,
+            path=str(worktree_path),
+        )
+
+        return WorktreeInfo(
+            path=worktree_path,
+            branch=branch_name,
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=self.base_branch,
+            is_active=True,
+        )
+
+    def get_or_create_worktree(self, project_id: str, task_id: str) -> WorktreeInfo:
+        """Get existing worktree or create a new one for a task.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            WorktreeInfo for the worktree
+        """
+        existing = self.get_worktree_info(project_id, task_id)
+        if existing:
+            logger.info(
+                "using_existing_worktree",
+                task_id=task_id,
+                path=str(existing.path),
+            )
+            return existing
+
+        return self.create_worktree(project_id, task_id)
+
+    def remove_worktree(self, project_id: str, task_id: str, delete_branch: bool = True) -> None:
+        """Remove a task's worktree.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+            delete_branch: Whether to also delete the branch
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        branch_name = self.get_branch_name(task_id)
+
+        if worktree_path.exists():
+            result = self._run_git(["worktree", "remove", "--force", str(worktree_path)])
+            if result.returncode == 0:
+                logger.info(
+                    "worktree_removed",
+                    task_id=task_id,
+                    path=str(worktree_path),
+                )
+            else:
+                logger.warning(
+                    "worktree_remove_failed",
+                    task_id=task_id,
+                    error=result.stderr,
+                )
+                # Force remove directory if git command fails
+                shutil.rmtree(worktree_path, ignore_errors=True)
+
+        if delete_branch:
+            self._run_git(["branch", "-D", branch_name])
+            logger.info("branch_deleted", branch=branch_name)
+
+        # Prune any stale worktree entries
+        self._run_git(["worktree", "prune"])
+
+    def commit_in_worktree(self, project_id: str, task_id: str, message: str) -> bool:
+        """Commit all changes in a task's worktree.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+            message: Commit message
+
+        Returns:
+            True if commit succeeded or nothing to commit
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            logger.warning("commit_no_worktree", task_id=task_id)
+            return False
+
+        # Stage all changes
+        self._run_git(["add", "."], cwd=worktree_path)
+
+        # Commit
+        result = self._run_git(["commit", "-m", message], cwd=worktree_path)
+
+        if result.returncode == 0:
+            logger.info("commit_success", task_id=task_id, message=message[:50])
+            return True
+        elif "nothing to commit" in result.stdout + result.stderr:
+            logger.info("commit_nothing_to_commit", task_id=task_id)
+            return True
+        else:
+            logger.error("commit_failed", task_id=task_id, error=result.stderr)
+            return False
+
+    async def merge_worktree(
+        self,
+        project_id: str,
+        task_id: str,
+        delete_after: bool = True,
+        no_commit: bool = False,
+    ) -> bool:
+        """Merge a task's worktree branch back to base branch.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+            delete_after: Whether to remove worktree and branch after merge
+            no_commit: If True, stage changes but don't commit (for review)
+
+        Returns:
+            True if merge succeeded
+        """
+        info = self.get_worktree_info(project_id, task_id)
+        if not info:
+            logger.warning("merge_no_worktree", task_id=task_id)
+            return False
+
+        # Serialize merges per project
+        lock = self._merge_locks.setdefault(project_id, asyncio.Lock())
+        async with lock:
+            return self._do_merge(info, delete_after, no_commit)
+
+    def _do_merge(self, info: WorktreeInfo, delete_after: bool, no_commit: bool) -> bool:
+        """Execute the merge operation (called under lock)."""
+        logger.info(
+            "merge_starting",
+            task_id=info.task_id,
+            branch=info.branch,
+            base=self.base_branch,
+            no_commit=no_commit,
+        )
+
+        # Switch to base branch in main project
+        result = self._run_git(["checkout", self.base_branch])
+        if result.returncode != 0:
+            logger.error(
+                "merge_checkout_failed",
+                base=self.base_branch,
+                error=result.stderr,
+            )
+            return False
+
+        # Merge the task branch
+        merge_args = ["merge", "--no-ff", info.branch]
+        if no_commit:
+            merge_args.append("--no-commit")
+        else:
+            merge_args.extend(["-m", f"auto: Merge {info.branch}"])
+
+        result = self._run_git(merge_args)
+
+        if result.returncode != 0:
+            logger.error(
+                "merge_conflict",
+                task_id=info.task_id,
+                error=result.stderr,
+            )
+            self._run_git(["merge", "--abort"])
+            return False
+
+        if no_commit:
+            logger.info(
+                "merge_staged",
+                task_id=info.task_id,
+                msg="Changes staged, ready for review",
+            )
+        else:
+            logger.info("merge_success", task_id=info.task_id, branch=info.branch)
+
+        if delete_after:
+            self.remove_worktree(info.project_id, info.task_id, delete_branch=True)
+
+        return True
+
+    def list_active_worktrees(self, project_id: str | None = None) -> list[WorktreeInfo]:
+        """List all active worktrees.
+
+        Args:
+            project_id: If provided, only list worktrees for this project
+
+        Returns:
+            List of WorktreeInfo for active worktrees
+        """
+        worktrees: list[WorktreeInfo] = []
+
+        if not self.WORKTREE_BASE_DIR.exists():
+            return worktrees
+
+        # Iterate projects
+        project_dirs = (
+            [self.WORKTREE_BASE_DIR / project_id]
+            if project_id
+            else list(self.WORKTREE_BASE_DIR.iterdir())
+        )
+
+        for project_dir in project_dirs:
+            if not project_dir.is_dir():
+                continue
+
+            pid = project_dir.name
+
+            # Iterate task worktrees
+            for task_dir in project_dir.iterdir():
+                if not task_dir.is_dir():
+                    continue
+
+                tid = task_dir.name
+                info = self.get_worktree_info(pid, tid)
+                if info:
+                    worktrees.append(info)
+
+        return worktrees
+
+    def cleanup_stale_worktrees(self, max_age_hours: int = 24) -> int:
+        """Remove worktrees older than max_age_hours.
+
+        Args:
+            max_age_hours: Maximum age in hours before cleanup
+
+        Returns:
+            Number of worktrees removed
+        """
+        removed = 0
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+
+        if not self.WORKTREE_BASE_DIR.exists():
+            return 0
+
+        for project_dir in self.WORKTREE_BASE_DIR.iterdir():
+            if not project_dir.is_dir():
+                continue
+
+            for task_dir in project_dir.iterdir():
+                if not task_dir.is_dir():
+                    continue
+
+                # Check modification time
+                mtime = datetime.fromtimestamp(task_dir.stat().st_mtime, tz=UTC)
+                if mtime < cutoff:
+                    logger.info(
+                        "cleanup_stale_worktree",
+                        project=project_dir.name,
+                        task=task_dir.name,
+                        age_hours=(datetime.now(UTC) - mtime).total_seconds() / 3600,
+                    )
+                    self.remove_worktree(project_dir.name, task_dir.name, delete_branch=True)
+                    removed += 1
+
+        # Also prune any orphaned worktree entries
+        self._run_git(["worktree", "prune"])
+
+        return removed
+
+    def get_changed_files(self, project_id: str, task_id: str) -> list[tuple[str, str]]:
+        """Get list of changed files in a task's worktree.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            List of (status, filepath) tuples
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            return []
+
+        result = self._run_git(
+            ["diff", "--name-status", f"{self.base_branch}...HEAD"],
+            cwd=worktree_path,
+        )
+
+        files: list[tuple[str, str]] = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                files.append((parts[0], parts[1]))
+
+        return files
+
+
+# Singleton instance factory
+_manager_instances: dict[str, WorktreeManager] = {}
+
+
+def get_worktree_manager(project_dir: Path | str) -> WorktreeManager:
+    """Get or create a WorktreeManager for a project.
+
+    Args:
+        project_dir: Path to the project's git repository
+
+    Returns:
+        WorktreeManager instance
+    """
+    project_dir = Path(project_dir)
+    key = str(project_dir.resolve())
+
+    if key not in _manager_instances:
+        _manager_instances[key] = WorktreeManager(project_dir)
+
+    return _manager_instances[key]
