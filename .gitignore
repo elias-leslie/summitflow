@@ -44,3 +44,6 @@ htmlcov/
 # Runtime data (evidence, screenshots, project data)
 data/
 backups/
+
+# Celery beat schedule files
+celerybeat-schedule*
