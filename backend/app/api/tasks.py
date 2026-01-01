@@ -45,6 +45,7 @@ from ..schemas.tasks import (
     CriterionFailure,
     DependencyCreate,
     DependencyResponse,
+    DiscussionMessage,
     DiscussionRequest,
     DiscussionResponse,
     EnrichmentRequest,
@@ -481,7 +482,7 @@ async def update_task_status(
         updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
 
     # Populate verification_result on completion
-    if update.status == "completed":
+    if update.status == "completed" and updated:
         with get_connection() as conn:
             criteria = get_effective_criteria(conn, project_id, updated)
             verified_count = sum(1 for c in criteria if c.get("verified"))
@@ -493,6 +494,8 @@ async def update_task_status(
             }
             updated = task_store.update_task(task_id, verification_result=verification_result)
 
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     return _task_to_response(updated)
 
 
@@ -1142,7 +1145,7 @@ async def enrich_task_endpoint(
                 message="Task enriched successfully. Ready for review.",
             )
         except Exception as e:
-            logger.error("Sync enrichment failed: %s", e)
+            logger.error("Sync enrichment failed: %s", e)  # type: ignore[call-arg]
             task_store.update_task(task["id"], enrichment_status="failed")
             raise HTTPException(status_code=500, detail=f"Enrichment failed: {e}") from None
     else:
@@ -1152,7 +1155,7 @@ async def enrich_task_endpoint(
 
             enrich_task_async.delay(project_id, task["id"], request.raw_request)
         except Exception as e:
-            logger.warning("Failed to queue enrichment task: %s", e)
+            logger.warning("Failed to queue enrichment task: %s", e)  # type: ignore[call-arg]
             # Still return - we can retry later
 
         return EnrichmentResponse(
@@ -1220,7 +1223,9 @@ async def discuss_task_endpoint(
     return DiscussionResponse(
         response=result.response,
         updated_task=_task_to_response(updated_task) if result.updated_task else None,
-        history=[{"role": h["role"], "content": h["content"], "timestamp": ""} for h in history],
+        history=[
+            DiscussionMessage(role=h["role"], content=h["content"], timestamp="") for h in history
+        ],  # type: ignore[arg-type]
     )
 
 
@@ -1459,7 +1464,7 @@ Return JSON:
         )
 
     except Exception as e:
-        logger.warning("Cleanup prompt failed: %s", e)
+        logger.warning("Cleanup prompt failed: %s", e)  # type: ignore[call-arg]
         return CleanupPromptResponse(
             cleaned_prompt=request.raw_request,
             changes_made=[f"Cleanup failed: {e}"],

@@ -7,13 +7,14 @@ objectives, acceptance criteria, and implementation subtasks.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from celery import shared_task
+from celery import shared_task  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="enrich_task_async",
     bind=True,
     autoretry_for=(Exception,),
@@ -21,11 +22,11 @@ logger = logging.getLogger(__name__)
     retry_kwargs={"max_retries": 2},
 )
 def enrich_task_async(
-    self,
+    self: Any,
     project_id: str,
     task_id: str,
     raw_request: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Enrich a task with AI-generated structure.
 
     This task:

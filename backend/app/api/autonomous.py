@@ -98,12 +98,15 @@ def _get_autonomous_settings(project_id: str) -> AutonomousSettings:
 
     # Extract autonomous-specific settings or use defaults
     # Cast values since AgentConfig has partial TypedDict keys
+    from typing import cast
+
     enabled = bool(config.get("autonomous_enabled", False))
-    frequency_minutes = int(config.get("autonomous_frequency_minutes", 30) or 30)
+    freq_raw = config.get("autonomous_frequency_minutes", 30)
+    frequency_minutes = int(cast(int, freq_raw) if freq_raw else 30)
     auto_merge_tiers_raw = config.get("autonomous_auto_merge_tiers")
-    auto_merge_tiers = list(auto_merge_tiers_raw) if auto_merge_tiers_raw else [1]
+    auto_merge_tiers = list(cast(list[int], auto_merge_tiers_raw)) if auto_merge_tiers_raw else [1]
     task_types_raw = config.get("autonomous_task_types")
-    task_types = list(task_types_raw) if task_types_raw else ["auto-generated"]
+    task_types = list(cast(list[str], task_types_raw)) if task_types_raw else ["auto-generated"]
 
     return AutonomousSettings(
         enabled=enabled,

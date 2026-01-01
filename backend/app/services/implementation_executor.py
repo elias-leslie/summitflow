@@ -152,14 +152,15 @@ class ImplementationExecutor:
             build_state=build_state,
         )
 
+        session_id: str = session["session_id"]
         logger.info(
             "execution_started",
             task_id=task_id,
-            session_id=session["session_id"],
+            session_id=session_id,
             worktree=build_state.get("worktree_path"),
         )
 
-        return session["session_id"]
+        return session_id
 
     def execute_next_task(
         self,
@@ -390,7 +391,8 @@ class ImplementationExecutor:
 
             # Run external verification - update phase to "test"
             self._update_phase(task_id, "test", build_state)
-            test_result = self._run_verification(files, capability_id)
+            # capability_id is guaranteed to be set by this point (from task or "general")
+            test_result = self._run_verification(files, capability_id or "general")
 
             if test_result["success"]:
                 # Mark task complete in build_state

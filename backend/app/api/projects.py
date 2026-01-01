@@ -446,6 +446,9 @@ class AgentConfigUpdate(BaseModel):
     # Component management
     component_source: str | None = None
 
+    # Autonomous execution
+    autonomous_enabled: bool | None = None
+
 
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
 async def get_agent_config(project_id: str) -> AgentConfigResponse:

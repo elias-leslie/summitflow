@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..constants import CLAUDE_OPUS
 
@@ -110,9 +110,9 @@ def validate_criteria(
     try:
         # Use Opus for validation (highest quality judgment)
         agent = get_agent("claude", model=CLAUDE_OPUS)
-        response = agent.chat(prompt)
+        response = agent.generate(prompt)
 
-        if not response.text:
+        if not response.content:
             logger.warning("Empty response from Opus validation")
             return ValidationResult(
                 valid=False,
@@ -127,9 +127,9 @@ def validate_criteria(
             )
 
         # Parse JSON response
-        result_json = _extract_json(response.text)
+        result_json = _extract_json(response.content)
         if not result_json:
-            logger.warning(f"Could not parse Opus response: {response.text[:200]}")
+            logger.warning(f"Could not parse Opus response: {response.content[:200]}")
             return ValidationResult(
                 valid=False,
                 failures=[
@@ -139,7 +139,7 @@ def validate_criteria(
                         issues=["Could not parse validation response"],
                     )
                 ],
-                raw_response=response.text,
+                raw_response=response.content,
             )
 
         # Convert to ValidationResult
@@ -157,7 +157,9 @@ def validate_criteria(
 
         overall_valid = result_json.get("overall_valid", len(failures) == 0)
 
-        return ValidationResult(valid=overall_valid, failures=failures, raw_response=response.text)
+        return ValidationResult(
+            valid=overall_valid, failures=failures, raw_response=response.content
+        )
 
     except Exception as e:
         logger.exception("Error validating criteria with Opus")
@@ -173,7 +175,7 @@ def validate_criteria(
         )
 
 
-def _extract_json(text: str) -> dict | None:
+def _extract_json(text: str) -> dict[str, Any] | None:
     """Extract JSON object from text response.
 
     Handles cases where response includes markdown code blocks or extra text.
@@ -184,7 +186,8 @@ def _extract_json(text: str) -> dict | None:
     code_block_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
     if code_block_match:
         try:
-            return json.loads(code_block_match.group(1))
+            result: dict[str, Any] = json.loads(code_block_match.group(1))
+            return result
         except json.JSONDecodeError:
             pass
 
@@ -192,7 +195,8 @@ def _extract_json(text: str) -> dict | None:
     json_match = re.search(r"\{[\s\S]*\}", text)
     if json_match:
         try:
-            return json.loads(json_match.group(0))
+            result2: dict[str, Any] = json.loads(json_match.group(0))
+            return result2
         except json.JSONDecodeError:
             pass
 

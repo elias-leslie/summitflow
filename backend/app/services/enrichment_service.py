@@ -96,7 +96,8 @@ def _parse_enrichment_response(response_text: str) -> dict[str, Any]:
 
     text = text.strip()
 
-    return json.loads(text)
+    result: dict[str, Any] = json.loads(text)
+    return result
 
 
 def _build_enrichment_prompt(raw_request: str, context: dict[str, Any]) -> str:
