@@ -417,6 +417,9 @@ class ImplementationExecutor:
                 # Update phase to complete if all criteria verified
                 if criteria_check["all_verified"]:
                     self._update_phase(task_id, "complete", build_state)
+                    # Set task status to completed (syncs phase and clears claims)
+                    task_store.update_task_status(task_id, "completed")
+                    logger.info("task_completed", task_id=task_id)
                 else:
                     logger.warning(
                         "criteria_not_verified",
