@@ -88,6 +88,7 @@ def create_criterion(
         row = cur.fetchone()
         conn.commit()
 
+    assert row is not None, "INSERT with RETURNING should always return a row"
     return {
         "id": row[0],
         "project_id": row[1],
@@ -250,7 +251,9 @@ def check_and_delete_orphan(conn: psycopg.Connection, criterion_db_id: int) -> b
             """,
             (criterion_db_id, criterion_db_id),
         )
-        has_references = cur.fetchone()[0]
+        result = cur.fetchone()
+        assert result is not None, "EXISTS query should always return a row"
+        has_references = result[0]
 
         if not has_references:
             cur.execute("DELETE FROM acceptance_criteria WHERE id = %s", (criterion_db_id,))

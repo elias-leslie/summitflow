@@ -729,7 +729,9 @@ def claim_task(
         if task["claimed_by"] and task["lock_expires_at"]:
             # Check if lock is still valid
             cur.execute("SELECT NOW()")
-            now = cur.fetchone()[0]
+            now_row = cur.fetchone()
+            assert now_row is not None, "SELECT NOW() should always return a row"
+            now = now_row[0]
             if task["lock_expires_at"] > now:
                 # Another worker has a valid claim
                 return None

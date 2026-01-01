@@ -422,6 +422,9 @@ class AgentConfigResponse(BaseModel):
     # Component management
     component_source: str = "manual"
 
+    # Autonomous execution
+    autonomous_enabled: bool = False
+
 
 class AgentConfigUpdate(BaseModel):
     """Request model for updating agent configuration."""

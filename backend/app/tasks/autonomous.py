@@ -40,7 +40,7 @@ ALLOWED_TASK_IDS = [
 ]
 
 
-@celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[misc]
+@celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[untyped-decorator]
 def reset_expired_task_claims() -> dict[str, int | str]:
     """Reset tasks with expired claim locks.
 
@@ -64,7 +64,7 @@ def reset_expired_task_claims() -> dict[str, int | str]:
         return {"error": str(e), "reset_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_tasks_from_scan")  # type: ignore[misc]
+@celery_app.task(name="summitflow.generate_tasks_from_scan")  # type: ignore[untyped-decorator]
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results.
 
@@ -173,7 +173,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_bug_tasks")  # type: ignore[misc]
+@celery_app.task(name="summitflow.generate_bug_tasks")  # type: ignore[untyped-decorator]
 def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     """Generate bug tasks from error observations.
 
@@ -423,7 +423,7 @@ def _check_exclusion(task: dict[str, Any]) -> str | None:
     return None  # No exclusion - task is eligible
 
 
-@celery_app.task(name="summitflow.autonomous_work_pickup")  # type: ignore[misc]
+@celery_app.task(name="summitflow.autonomous_work_pickup")  # type: ignore[untyped-decorator]
 def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     """Pick up and execute eligible tasks autonomously.
 
@@ -600,7 +600,7 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
         return {"status": "error", "error": str(e)}
 
 
-@celery_app.task(name="summitflow.review_pending_tasks")  # type: ignore[misc]
+@celery_app.task(name="summitflow.review_pending_tasks")  # type: ignore[untyped-decorator]
 def review_pending_tasks(project_id: str) -> dict[str, Any]:
     """Review tasks in pending_review status via Opus.
 
@@ -683,7 +683,7 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
         return {"status": "error", "error": str(e)}
 
 
-@celery_app.task(name="summitflow.cleanup_orphaned_worktrees")  # type: ignore[misc]
+@celery_app.task(name="summitflow.cleanup_orphaned_worktrees")  # type: ignore[untyped-decorator]
 def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
     """Clean up orphaned worktrees that are older than max_age_hours.
 
