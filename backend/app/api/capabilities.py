@@ -679,7 +679,8 @@ async def batch_create_capabilities(
             if "duplicate key" in error_msg.lower() or "unique constraint" in error_msg.lower():
                 error_msg = f"Capability {item.capability_id} already exists"
             elif "violates foreign key constraint" in error_msg.lower():
-                error_msg = f"Component with id {resolved_component_id} not found"
+                # Use item.component_id since resolved_component_id may not be defined
+                error_msg = f"Component with id {item.component_id} not found"
             errors.append(
                 BatchCapabilityResult(
                     capability_id=item.capability_id,
