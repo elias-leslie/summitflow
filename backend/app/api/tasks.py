@@ -45,6 +45,7 @@ from ..schemas.tasks import (
     EnrichmentRequest,
     EnrichmentResponse,
     StartTaskRequest,
+    SubtaskCreate,
     SubtaskResponse,
     SubtaskUpdate,
     TaskCreate,
@@ -1451,6 +1452,75 @@ async def update_task_subtask(
         )
 
     return SubtaskResponse(**updated)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/subtasks",
+    response_model=SubtaskResponse,
+    status_code=201,
+)
+async def create_subtask_endpoint(
+    project_id: str,
+    task_id: str,
+    request: SubtaskCreate,
+) -> SubtaskResponse:
+    """Create a single subtask for a task.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        request: Subtask creation data
+
+    Returns:
+        Created SubtaskResponse
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.subtasks import create_subtask
+
+    subtask = create_subtask(
+        task_id=task_id,
+        subtask_id=request.subtask_id,
+        description=request.description,
+        display_order=request.display_order,
+        phase=request.phase,
+        steps=request.steps,
+    )
+
+    return SubtaskResponse(**subtask)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/batch",
+    response_model=dict[str, Any],
+    status_code=201,
+)
+async def create_subtasks_batch(
+    project_id: str,
+    task_id: str,
+    request: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Create multiple subtasks for a task in batch.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        request: {"items": [subtask_data_list]}
+
+    Returns:
+        {"created": list of created subtasks}
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.subtasks import bulk_create_subtasks
+
+    items = request.get("items", [])
+    if not items:
+        return {"created": []}
+
+    created = bulk_create_subtasks(task_id, items)
+
+    return {"created": created}
 
 
 @router.post(
