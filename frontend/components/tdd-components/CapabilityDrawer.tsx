@@ -10,6 +10,9 @@ import {
   FlaskConical,
   Link2,
   Timer,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
 } from "lucide-react";
 
 import {
@@ -117,6 +120,27 @@ export function CapabilityDrawer({
 
   const details = capabilityDetails || capability;
   const tests = capabilityDetails?.tests || [];
+  const criteria = capabilityDetails?.criteria || [];
+
+  // Track expanded criteria for nested test display
+  const [expandedCriteria, setExpandedCriteria] = useState<Set<number>>(new Set());
+
+  const toggleCriterion = (id: number) => {
+    setExpandedCriteria(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Helper to determine if a criterion passes (has at least one passing test)
+  const criterionPasses = (crit: typeof criteria[0]) => {
+    return crit.tests?.some(t => t.last_result === "passed") || false;
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -188,6 +212,91 @@ export function CapabilityDrawer({
                 {details?.locked_at ? formatDate(details.locked_at) : "Not locked"}
               </div>
             </div>
+          </div>
+
+          {/* Acceptance Criteria */}
+          <div>
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Acceptance Criteria ({criteria.length})
+            </h3>
+            {criteria.length > 0 ? (
+              <div className="space-y-2">
+                {criteria.map((crit) => {
+                  const passes = criterionPasses(crit);
+                  const isExpanded = expandedCriteria.has(crit.id);
+                  const hasTests = crit.tests && crit.tests.length > 0;
+
+                  return (
+                    <div key={crit.id} className="rounded-lg border border-slate-700 bg-slate-800/50">
+                      <button
+                        type="button"
+                        onClick={() => hasTests && toggleCriterion(crit.id)}
+                        className="w-full flex items-start gap-2 p-2 text-left"
+                        disabled={!hasTests}
+                      >
+                        {/* Expand/collapse icon */}
+                        {hasTests ? (
+                          isExpanded ? (
+                            <ChevronDown className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />
+                          )
+                        ) : (
+                          <div className="w-4 flex-shrink-0" />
+                        )}
+
+                        {/* Pass/fail icon */}
+                        {passes ? (
+                          <CheckCircle2 className="h-4 w-4 mt-0.5 text-phosphor-400 flex-shrink-0" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />
+                        )}
+
+                        {/* Criterion content */}
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-slate-300">{crit.criterion}</span>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Badge variant="slate" className="text-xs">{crit.category}</Badge>
+                            {crit.threshold && (
+                              <span className="text-xs text-slate-500">{crit.threshold}</span>
+                            )}
+                            {hasTests && (
+                              <span className="text-xs text-slate-500">
+                                ({crit.tests.length} test{crit.tests.length !== 1 ? "s" : ""})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Nested tests (collapsible) */}
+                      {isExpanded && hasTests && (
+                        <div className="border-t border-slate-700 bg-slate-800/30 p-2 space-y-1">
+                          {crit.tests.map((test) => (
+                            <div
+                              key={test.id}
+                              className="flex items-center gap-2 pl-6 py-1"
+                            >
+                              {getTestResultIcon(test.last_result)}
+                              <span className="flex-1 text-xs text-slate-400 truncate">{test.name}</span>
+                              {test.is_primary && (
+                                <Badge variant="phosphor" className="text-xs">Primary</Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-700 bg-slate-800/30 p-4 text-center text-sm text-slate-500">
+                <ClipboardCheck className="h-8 w-8 mx-auto mb-2 text-slate-600" />
+                No acceptance criteria defined
+              </div>
+            )}
           </div>
 
           {/* Linked Tests */}
