@@ -176,6 +176,7 @@ class LinkTestRequest(BaseModel):
     """Request for linking test to capability."""
 
     is_primary: bool = False
+    create_pseudo_criterion: bool = False  # Default False - prefer real criteria
 
 
 @router.post("/{project_id}/tests/{test_id}/link/{capability_id}")
@@ -195,7 +196,10 @@ async def link_test_to_capability(
         raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
 
     is_primary = body.is_primary if body else False
-    storage.link_test_to_capability(capability["id"], test["id"], is_primary)
+    create_pseudo = body.create_pseudo_criterion if body else False
+    storage.link_test_to_capability(
+        capability["id"], test["id"], is_primary, create_pseudo_criterion=create_pseudo
+    )
 
     return {
         "status": "linked",
