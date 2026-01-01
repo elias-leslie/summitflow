@@ -23,6 +23,7 @@ from ..storage import tasks as task_store
 from ..storage.agent_sessions import create_session, get_session, update_session
 from ..storage.connection import get_connection
 from ..storage.criteria import get_effective_criteria
+from ..storage.subtasks import get_subtasks_for_task
 from .agents import get_agent
 from .autonomous.prompt_builder import build_execution_prompt
 from .autonomous.tier_classifier import classify_tier, select_model_for_tier
@@ -204,16 +205,35 @@ class ImplementationExecutor:
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
-        plan = task.get("plan_content") or {}
-        tasks_list = plan.get("tasks", []) if isinstance(plan, dict) else []
-
-        # Find next incomplete task
+        # Track whether we're using subtasks table or plan_content
+        using_subtasks_table = False
         completed = set(build_state.get("completed_tasks", []))
-        current_task = None
-        for t in tasks_list:
-            if t.get("id") not in completed and not t.get("passes", False):
-                current_task = t
-                break
+
+        # Try subtasks table first (normalized storage)
+        current_task = self._get_next_task_from_subtasks(task_id, completed)
+        if current_task:
+            using_subtasks_table = True
+            logger.info(
+                "using_subtasks_table",
+                task_id=task_id,
+                subtask_id=current_task.get("id"),
+            )
+        else:
+            # Fallback to plan_content (legacy storage)
+            plan = task.get("plan_content") or {}
+            tasks_list = plan.get("tasks", []) if isinstance(plan, dict) else []
+
+            for t in tasks_list:
+                if t.get("id") not in completed and not t.get("passes", False):
+                    current_task = t
+                    break
+
+            if current_task:
+                logger.info(
+                    "using_plan_content",
+                    task_id=task_id,
+                    subtask_id=current_task.get("id"),
+                )
 
         if not current_task:
             return ExecutionResult(
@@ -222,6 +242,13 @@ class ImplementationExecutor:
                 model_used="none",
                 reason="all_tasks_complete",
             )
+
+        # Store source type in build_state for step tracking
+        build_state["using_subtasks_table"] = using_subtasks_table
+        if using_subtasks_table:
+            build_state["current_subtask_id"] = current_task.get("subtask_full_id")
+
+        plan = task.get("plan_content") or {}
 
         # Check for capability_id (optional for auto-generated tasks)
         capability_id = task.get("capability_id") or (
@@ -531,6 +558,48 @@ class ImplementationExecutor:
             "patterns": patterns,
             "observations": observations,
         }
+
+    def _get_next_task_from_subtasks(
+        self, task_id: str, completed_subtasks: set[str]
+    ) -> dict[str, Any] | None:
+        """Get the next incomplete subtask from the task_subtasks table.
+
+        Args:
+            task_id: Parent task ID
+            completed_subtasks: Set of completed subtask IDs (format: "{subtask_id}")
+
+        Returns:
+            Dict with subtask info including steps, or None if all complete.
+            Returns dict with keys: id, subtask_id, description, phase, steps
+        """
+        subtasks = get_subtasks_for_task(task_id, include_steps=True)
+        if not subtasks:
+            return None
+
+        for subtask in subtasks:
+            subtask_id = subtask.get("subtask_id", "")
+            # Check if subtask is complete (either passes=True or in completed set)
+            if subtask.get("passes"):
+                continue
+            if subtask_id in completed_subtasks:
+                continue
+
+            # Found incomplete subtask - get its steps
+            full_id = subtask.get("id", "")  # e.g., "task-abc123-1.1"
+            steps = subtask.get("steps_from_table") or []
+
+            # Convert to execution format compatible with plan_content tasks
+            return {
+                "id": subtask_id,
+                "subtask_full_id": full_id,
+                "description": subtask.get("description", ""),
+                "phase": subtask.get("phase", ""),
+                "steps": [s.get("description", "") for s in steps],
+                "steps_from_table": steps,  # Keep full step objects for tracking
+                "display_order": subtask.get("display_order", 0),
+            }
+
+        return None
 
     def _update_build_state(self, session_id: str, build_state: dict[str, Any]) -> None:
         """Update build_state in session."""
