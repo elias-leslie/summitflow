@@ -11,6 +11,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ..constants import CLAUDE_OPUS
+
 if TYPE_CHECKING:
     from ..schemas.tasks import AcceptanceCriterion
 
@@ -107,7 +109,7 @@ def validate_criteria(
 
     try:
         # Use Opus for validation (highest quality judgment)
-        agent = get_agent("claude", model="claude-opus-4-5")
+        agent = get_agent("claude", model=CLAUDE_OPUS)
         response = agent.chat(prompt)
 
         if not response.text:

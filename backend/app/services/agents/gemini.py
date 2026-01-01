@@ -14,6 +14,7 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any, ClassVar
 
+from ...constants import DEFAULT_GEMINI_MODEL
 from .base import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -34,10 +35,8 @@ class GeminiClient(LLMClient):
     2. Run `gcloud auth application-default login`
 
     Models:
-        - "gemini-3-flash-preview" (default): Latest Gemini 3 Flash - fast and capable
-        - "gemini-3-pro-preview": Gemini 3 Pro - most capable reasoning model
-        - "gemini-2.5-flash": Previous generation fast model
-        - "gemini-2.5-pro": Previous generation pro model
+        - GEMINI_FLASH (default): Gemini 3 Flash - fast and capable
+        - GEMINI_PRO: Gemini 3 Pro - most capable reasoning model
     """
 
     # Class-level session storage for persistence across calls
@@ -46,7 +45,7 @@ class GeminiClient(LLMClient):
 
     def __init__(
         self,
-        model: str = "gemini-3-flash-preview",
+        model: str = DEFAULT_GEMINI_MODEL,
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
         after_tool_callback: Callable[[str, dict[str, Any], str], Awaitable[None]] | None = None,
     ) -> None:

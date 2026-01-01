@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from ...constants import CLAUDE_OPUS
 from ...logging_config import get_logger
 from ...services.agents import get_agent
 from ...services.context_helpers import filter_rules_by_files
@@ -267,7 +268,7 @@ def opus_review(
     prompt = _build_review_prompt(diff, diff_stats, task, rules)
 
     try:
-        opus = get_agent("claude", model="claude-opus-4-5")
+        opus = get_agent("claude", model=CLAUDE_OPUS)
         response = opus.generate(
             prompt=prompt,
             system="You are a senior code reviewer. Be thorough but fair. Output only valid JSON.",

@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from app.constants import CLAUDE_HAIKU, DEFAULT_GEMINI_MODEL
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -214,7 +216,7 @@ class ObservationExtractor:
         )
     """
 
-    def __init__(self, model: str = "gemini-3-flash-preview"):
+    def __init__(self, model: str = DEFAULT_GEMINI_MODEL):
         """Initialize extractor.
 
         Args:
@@ -230,8 +232,8 @@ class ObservationExtractor:
 
             self._client = DualProviderClient(
                 primary="gemini",
-                gemini_model="gemini-3-flash-preview",
-                claude_model="claude-haiku-4-5",
+                gemini_model=DEFAULT_GEMINI_MODEL,
+                claude_model=CLAUDE_HAIKU,
             )
         return self._client
 

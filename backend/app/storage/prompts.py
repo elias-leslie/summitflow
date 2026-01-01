@@ -6,6 +6,7 @@ Each project can have custom prompts that override the defaults.
 
 from typing import Any
 
+from ..constants import DEFAULT_CLAUDE_MODEL
 from .connection import get_connection
 
 # Default prompts for spec pipeline, recovery, and QA
@@ -25,7 +26,7 @@ Given the feature description and existing codebase patterns, identify:
 
 Output a structured analysis that will help guide the implementation.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "spec",
         "thinking_budget": 5000,
         "tools_enabled": ["read_file", "glob", "grep"],
@@ -43,7 +44,7 @@ Given the initial requirements and codebase context, enhance the spec with:
 
 Output a detailed implementation specification.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "spec",
         "thinking_budget": 5000,
         "tools_enabled": [],
@@ -61,7 +62,7 @@ Analyze the spec for:
 
 Provide specific improvements and flag any blocking issues.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "spec",
         "thinking_budget": 20000,
         "tools_enabled": [],
@@ -79,7 +80,7 @@ Generate:
 
 Output a JSON implementation plan compatible with the task system.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "spec",
         "thinking_budget": 10000,
         "tools_enabled": [],
@@ -101,7 +102,7 @@ Given the error output, classify it as:
 
 Output the classification and affected file(s).""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "recovery",
         "thinking_budget": 0,
         "tools_enabled": [],
@@ -123,7 +124,7 @@ Generate the fix:
 
 Output the fix as a code diff or replacement.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "recovery",
         "thinking_budget": 10000,
         "tools_enabled": ["read_file", "write_file"],
@@ -145,7 +146,7 @@ Check for:
 
 Output a structured QA report with severity levels.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "qa",
         "thinking_budget": 5000,
         "tools_enabled": ["read_file"],
@@ -166,7 +167,7 @@ For each issue:
 
 Output the fixes as code diffs.""",
         "primary_agent": "claude",
-        "primary_model": "claude-sonnet-4-5",
+        "primary_model": DEFAULT_CLAUDE_MODEL,
         "category": "qa",
         "thinking_budget": 10000,
         "tools_enabled": ["read_file", "write_file"],
@@ -322,7 +323,7 @@ def upsert_prompt(
     prompt_type: str,
     prompt_text: str,
     primary_agent: str = "claude",
-    primary_model: str = "claude-sonnet-4-5",
+    primary_model: str = DEFAULT_CLAUDE_MODEL,
     category: str = "extraction",
     thinking_budget: int = 0,
     tools_enabled: list[str] | None = None,

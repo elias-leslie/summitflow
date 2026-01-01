@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
+from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ..agents import AgentType
 
 if TYPE_CHECKING:
@@ -115,8 +116,8 @@ class RoundtableSession:
     def get_effective_model(
         self,
         agent_type: AgentType,
-        default_claude: str = "claude-sonnet-4-5",
-        default_gemini: str = "gemini-3-flash-preview",
+        default_claude: str = DEFAULT_CLAUDE_MODEL,
+        default_gemini: str = DEFAULT_GEMINI_MODEL,
     ) -> str:
         """Get the effective model for this session.
 

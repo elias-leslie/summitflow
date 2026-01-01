@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ...constants import VALID_AGENT_TYPES
+from ...constants import DEFAULT_CLAUDE_MODEL, VALID_AGENT_TYPES
 from ...storage import prompts as prompts_storage
 from .models import (
     ExtractionPromptConfig,
@@ -33,7 +33,7 @@ async def list_extraction_prompts(project_id: str) -> list[ExtractionPromptConfi
             prompt_type=p["prompt_type"],
             prompt_text=p["prompt_text"],
             primary_agent=p.get("primary_agent", "claude"),
-            primary_model=p.get("primary_model", "claude-sonnet-4-5"),
+            primary_model=p.get("primary_model", DEFAULT_CLAUDE_MODEL),
             is_default=p.get("is_default", True),
             created_at=p["created_at"].isoformat() if p.get("created_at") else None,
             updated_at=p["updated_at"].isoformat() if p.get("updated_at") else None,
@@ -66,7 +66,7 @@ async def export_extraction_prompts(
                 prompt_type=p["prompt_type"],
                 prompt_text=p["prompt_text"],
                 primary_agent=p.get("primary_agent", "claude"),
-                primary_model=p.get("primary_model", "claude-sonnet-4-5"),
+                primary_model=p.get("primary_model", DEFAULT_CLAUDE_MODEL),
                 is_default=p.get("is_default", True),
                 created_at=p["created_at"].isoformat() if p.get("created_at") else None,
                 updated_at=p["updated_at"].isoformat() if p.get("updated_at") else None,
@@ -100,7 +100,7 @@ async def get_extraction_prompt(project_id: str, prompt_type: str) -> Extraction
         prompt_type=prompt["prompt_type"],
         prompt_text=prompt["prompt_text"],
         primary_agent=prompt.get("primary_agent", "claude"),
-        primary_model=prompt.get("primary_model", "claude-sonnet-4-5"),
+        primary_model=prompt.get("primary_model", DEFAULT_CLAUDE_MODEL),
         is_default=prompt.get("is_default", True),
         created_at=prompt["created_at"].isoformat() if prompt.get("created_at") else None,
         updated_at=prompt["updated_at"].isoformat() if prompt.get("updated_at") else None,

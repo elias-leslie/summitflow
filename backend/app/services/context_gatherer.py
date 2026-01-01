@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ..constants import DEFAULT_GEMINI_MODEL
 from ..storage.capabilities import list_capabilities
 from ..storage.explorer_entries import get_entries
 from ..storage.memory import list_observations
@@ -288,7 +289,7 @@ def gather_gemini_context(project_id: str, query: str) -> str:
     try:
         from ..services.agents.gemini import GeminiClient
 
-        client = GeminiClient(model="gemini-3-flash-preview")
+        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
         if not client.is_available():
             logger.warning("Gemini not available for context gathering")
             return ""

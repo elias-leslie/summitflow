@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ..agents import DualProviderClient
 
+from app.constants import CLAUDE_HAIKU, DEFAULT_GEMINI_MODEL
 from app.storage.memory import get_observations_by_session
 
 from .diary_service import DiaryService
@@ -180,7 +181,7 @@ class ReflectionService:
         project_id: str,
         project_path: str | None = None,
         auto_apply_threshold: float = 0.9,
-        model: str = "gemini-3-flash-preview",
+        model: str = DEFAULT_GEMINI_MODEL,
     ):
         """Initialize the reflection service.
 
@@ -207,8 +208,8 @@ class ReflectionService:
 
             self._client = DualProviderClient(
                 primary="gemini",
-                gemini_model="gemini-3-flash-preview",
-                claude_model="claude-haiku-4-5",
+                gemini_model=DEFAULT_GEMINI_MODEL,
+                claude_model=CLAUDE_HAIKU,
             )
         return self._client
 

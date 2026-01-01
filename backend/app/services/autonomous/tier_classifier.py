@@ -14,6 +14,13 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from ...constants import (
+    CLAUDE_HAIKU,
+    CLAUDE_OPUS,
+    CLAUDE_SONNET,
+    GEMINI_PRO,
+)
+
 
 class ModelConfig(TypedDict):
     """Configuration for an AI model."""
@@ -23,13 +30,6 @@ class ModelConfig(TypedDict):
     max_tokens: int
     description: str
 
-
-# Centralized model constants - use short names for consistency
-GEMINI_FLASH = "gemini-3-flash-preview"
-GEMINI_PRO = "gemini-3-pro-preview"
-CLAUDE_SONNET = "claude-sonnet-4-5"
-CLAUDE_OPUS = "claude-opus-4-5"
-CLAUDE_HAIKU = "claude-haiku-4-5"
 
 # Model configurations by tier and mode
 # Claude is PRIMARY for all coding - Gemini only for consultation/handoff

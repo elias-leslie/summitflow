@@ -58,6 +58,7 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | `explorer-architecture.md` | Explorer feature layer boundaries |
 | `ui-backend-lockstep.md` | Backend changes need UI visibility |
 | `service-management.md` | Systemd ops |
+| `model-standards.md` | **MANDATORY: Use centralized model constants** |
 | `interaction-style.md` | Communication style |
 | `learned-patterns.md` | Auto-learned patterns from sessions |
 

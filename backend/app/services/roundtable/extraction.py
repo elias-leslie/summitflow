@@ -11,6 +11,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ..agents import AgentType, get_agent
 
 if TYPE_CHECKING:
@@ -137,7 +138,7 @@ def get_effective_prompt(project_id: str, prompt_type: str) -> dict[str, Any]:
         return {
             "prompt_text": SPEC_EXTRACTION_PROMPT,
             "primary_agent": "gemini",
-            "primary_model": "gemini-3-flash-preview",
+            "primary_model": DEFAULT_GEMINI_MODEL,
             "is_default": True,
         }
 
@@ -147,8 +148,8 @@ def get_effective_prompt(project_id: str, prompt_type: str) -> dict[str, Any]:
 def extract_spec_from_conversation(
     session: RoundtableSession,
     agent_type: AgentType = "gemini",
-    claude_model: str = "claude-sonnet-4-5",
-    gemini_model: str = "gemini-3-flash-preview",
+    claude_model: str = DEFAULT_CLAUDE_MODEL,
+    gemini_model: str = DEFAULT_GEMINI_MODEL,
 ) -> dict[str, Any]:
     """Extract TDD spec (components, capabilities, tests) from a Roundtable conversation.
 

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..constants import CLAUDE_OPUS_FULL, DEFAULT_GEMINI_MODEL
 from .context_gatherer import format_context_for_prompt, gather_all_context
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ def enrich_task(
     # Import Claude client
     from .agents.claude import ClaudeClient
 
-    client = ClaudeClient(model="claude-opus-4-5-20251101")
+    client = ClaudeClient(model=CLAUDE_OPUS_FULL)
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 
@@ -255,7 +256,7 @@ Return ONLY valid JSON matching the output format in the prompt above."""
     try:
         from .agents.gemini import GeminiClient
 
-        client = GeminiClient(model="gemini-3-flash-preview")
+        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
         if not client.is_available():
             logger.warning("Gemini not available for validation, skipping")
             return ValidationResult(
@@ -451,7 +452,7 @@ Return ONLY valid JSON matching the response format in the prompt above."""
     # Call Opus
     from .agents.claude import ClaudeClient
 
-    client = ClaudeClient(model="claude-opus-4-5-20251101")
+    client = ClaudeClient(model=CLAUDE_OPUS_FULL)
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 

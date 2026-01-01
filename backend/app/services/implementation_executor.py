@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..constants import DEFAULT_GEMINI_MODEL, GEMINI_PRO
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
 from ..storage.agent_sessions import create_session, get_session, update_session
@@ -543,7 +544,7 @@ class ImplementationExecutor:
             Agent response text (should contain ```file:path``` blocks)
         """
         provider = model.get("provider", "gemini")
-        model_id = model.get("model", "gemini-3-flash-preview")
+        model_id = model.get("model", DEFAULT_GEMINI_MODEL)
         max_tokens = model.get("max_tokens", 8192)
 
         logger.info(
@@ -725,7 +726,7 @@ class ImplementationExecutor:
         # Always use Gemini for consultation (Claude is primary for coding)
         # Gemini has large context window (1-2M) useful for analyzing errors
         alt_provider = "gemini"
-        alt_model = "gemini-3-pro-preview"  # Pro for better reasoning
+        alt_model = GEMINI_PRO  # Pro for better reasoning
 
         logger.info(
             "consulting_alternate",

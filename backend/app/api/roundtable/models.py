@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from ...constants import DEFAULT_CLAUDE_MODEL
 from ...services.roundtable import TargetAgent
 
 # ============================================================================
@@ -194,7 +195,7 @@ class ExtractionPromptConfig(BaseModel):
     prompt_type: str
     prompt_text: str
     primary_agent: str = "claude"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_model: str = DEFAULT_CLAUDE_MODEL
     is_default: bool = False
     created_at: str | None = None
     updated_at: str | None = None
@@ -205,7 +206,7 @@ class UpdateExtractionPromptRequest(BaseModel):
 
     prompt_text: str
     primary_agent: str = "claude"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_model: str = DEFAULT_CLAUDE_MODEL
 
 
 class ExtractionPromptsExport(BaseModel):

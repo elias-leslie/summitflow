@@ -21,6 +21,7 @@ from claude_agent_sdk.types import (
     TextBlock,
 )
 
+from ...constants import CLAUDE_HAIKU, CLAUDE_OPUS, CLAUDE_SONNET, DEFAULT_CLAUDE_MODEL
 from .base import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -52,9 +53,9 @@ class ClaudeClient(LLMClient):
 
     # Map full model IDs to SDK short names
     MODEL_MAP: ClassVar[dict[str, str]] = {
-        "claude-opus-4-5": "opus",
-        "claude-sonnet-4-5": "sonnet",
-        "claude-haiku-4-5": "haiku",
+        CLAUDE_OPUS: "opus",
+        CLAUDE_SONNET: "sonnet",
+        CLAUDE_HAIKU: "haiku",
         # Short names pass through
         "opus": "opus",
         "sonnet": "sonnet",
@@ -63,7 +64,7 @@ class ClaudeClient(LLMClient):
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-5",
+        model: str = DEFAULT_CLAUDE_MODEL,
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
         after_tool_callback: Callable[[str, dict[str, Any], str], Awaitable[None]] | None = None,
     ) -> None:

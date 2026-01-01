@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..constants import VALID_AGENT_TYPES
+from ..constants import DEFAULT_CLAUDE_MODEL, VALID_AGENT_TYPES
 from ..storage import prompts as prompts_storage
 
 router = APIRouter(tags=["prompts"])
@@ -30,7 +30,7 @@ class PromptConfig(BaseModel):
     prompt_type: str
     prompt_text: str
     primary_agent: str = "claude"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_model: str = DEFAULT_CLAUDE_MODEL
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -44,7 +44,7 @@ class UpdatePromptRequest(BaseModel):
 
     prompt_text: str
     primary_agent: str = "claude"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_model: str = DEFAULT_CLAUDE_MODEL
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -64,7 +64,7 @@ class ImportPromptItem(BaseModel):
     prompt_type: str
     prompt_text: str
     primary_agent: str = "claude"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_model: str = DEFAULT_CLAUDE_MODEL
     category: str = "extraction"
     thinking_budget: int = 0
     tools_enabled: list[str] = []
@@ -96,7 +96,7 @@ def _prompt_to_config(prompt: dict[str, Any]) -> PromptConfig:
         prompt_type=prompt["prompt_type"],
         prompt_text=prompt["prompt_text"],
         primary_agent=prompt.get("primary_agent", "claude"),
-        primary_model=prompt.get("primary_model", "claude-sonnet-4-5"),
+        primary_model=prompt.get("primary_model", DEFAULT_CLAUDE_MODEL),
         category=prompt.get("category", "extraction"),
         thinking_budget=prompt.get("thinking_budget", 0),
         tools_enabled=prompt.get("tools_enabled") or [],

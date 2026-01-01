@@ -13,6 +13,7 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any, Literal
 
+from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ...utils.async_helpers import run_async_in_sync_context
 from ..agents import AgentType, LLMResponse, get_agent
 from ..agents.claude import ClaudeClient
@@ -81,8 +82,8 @@ class RoundtableService:
 
     def __init__(
         self,
-        claude_model: str = "claude-sonnet-4-5",
-        gemini_model: str = "gemini-3-flash-preview",
+        claude_model: str = DEFAULT_CLAUDE_MODEL,
+        gemini_model: str = DEFAULT_GEMINI_MODEL,
         permission_callback: PermissionCallback | None = None,
     ) -> None:
         """Initialize roundtable service with model configurations.

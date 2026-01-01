@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
+from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from .base import LLMClient, LLMResponse
 from .claude import ClaudeClient
 from .gemini import GeminiClient
@@ -36,9 +37,9 @@ def get_agent(
         RuntimeError: If CLI for agent is not available
     """
     if agent_type == "claude":
-        return ClaudeClient(model=model or "claude-sonnet-4-5")
+        return ClaudeClient(model=model or DEFAULT_CLAUDE_MODEL)
     elif agent_type == "gemini":
-        return GeminiClient(model=model or "gemini-3-flash-preview")
+        return GeminiClient(model=model or DEFAULT_GEMINI_MODEL)
     else:
         raise ValueError(f"Unknown agent type: {agent_type}. Use 'claude' or 'gemini'.")
 
@@ -53,8 +54,8 @@ class DualProviderClient(LLMClient):
     def __init__(
         self,
         primary: AgentType = "gemini",
-        claude_model: str = "claude-sonnet-4-5",
-        gemini_model: str = "gemini-3-flash-preview",
+        claude_model: str = DEFAULT_CLAUDE_MODEL,
+        gemini_model: str = DEFAULT_GEMINI_MODEL,
     ) -> None:
         """Initialize dual provider client.
 

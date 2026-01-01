@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..constants import VALID_AGENT_TYPES
+from ..constants import DEFAULT_GEMINI_MODEL, VALID_AGENT_TYPES
 from ..logging_config import get_logger
 from ..schemas.tasks import (
     AcceptanceCriterion,
@@ -1545,7 +1545,7 @@ async def cleanup_prompt_endpoint(
     try:
         from ..services.agents.gemini import GeminiClient
 
-        client = GeminiClient(model="gemini-3-flash-preview")
+        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
         if not client.is_available():
             # Return unchanged if Gemini unavailable
             return CleanupPromptResponse(

@@ -7,6 +7,7 @@ from typing import TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
+from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from .connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,8 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
     "gemini_enabled": True,
     "default_agent": "gemini",
-    "claude_model": "claude-sonnet-4-5",
-    "gemini_model": "gemini-3-flash-preview",
+    "claude_model": DEFAULT_CLAUDE_MODEL,
+    "gemini_model": DEFAULT_GEMINI_MODEL,
     # Memory defaults - all enabled for backward compatibility
     "memory_enabled": True,
     "observations_enabled": True,
