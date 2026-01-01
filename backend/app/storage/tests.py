@@ -326,6 +326,7 @@ def link_test_to_capability(
     capability_db_id: int,
     test_db_id: int,
     is_primary: bool = False,
+    create_pseudo_criterion: bool = True,
 ) -> dict[str, Any]:
     """Link a test to a capability via criterion_tests junction.
 
@@ -336,6 +337,8 @@ def link_test_to_capability(
         capability_db_id: Database ID of the capability
         test_db_id: Database ID of the test
         is_primary: Whether this is the primary test for the capability
+        create_pseudo_criterion: If False, skip creating pseudo-criterion
+            (use when capability already has real criteria)
 
     Returns:
         Dict with capability_id, test_id, is_primary, created_at
@@ -387,6 +390,31 @@ def link_test_to_capability(
                     "is_primary": is_primary,
                     "created_at": None,
                 }
+
+        # Check if capability already has real criteria (non-pseudo)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1 FROM acceptance_criteria ac
+                JOIN capability_criteria cc ON ac.id = cc.criterion_id
+                WHERE cc.capability_id = %s AND ac.criterion NOT LIKE 'Test passes: %%'
+                LIMIT 1
+                """,
+                (capability_db_id,),
+            )
+            has_real_criteria = cur.fetchone() is not None
+
+        # Skip pseudo-criterion creation if:
+        # 1. Caller explicitly requested no pseudo-criterion, or
+        # 2. Capability already has real criteria defined
+        if not create_pseudo_criterion or has_real_criteria:
+            return {
+                "capability_id": capability_db_id,
+                "test_id": test_db_id,
+                "is_primary": is_primary,
+                "created_at": None,
+                "skipped_pseudo": True,
+            }
 
         # Create a new criterion for this test (still inside the connection context)
         criterion = create_criterion(
