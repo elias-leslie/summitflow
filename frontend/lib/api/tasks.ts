@@ -72,6 +72,11 @@ export interface Task {
   objective?: string | null;
   acceptance_criteria?: TaskAcceptanceCriterion[] | null;
   current_phase?: "plan" | "implement" | "test" | "verify" | "complete" | null;
+  // Enrichment fields
+  raw_request?: string | null;
+  enrichment_status?: "none" | "draft" | "enriching" | "review" | "discussing" | "accepted" | null;
+  enriched_by?: string | null;
+  enriched_at?: string | null;
 }
 
 export interface TaskListResponse {
@@ -243,4 +248,155 @@ export async function batchCreateTasks(
     body: JSON.stringify({ items }),
     errorMessage: "Failed to batch create tasks",
   });
+}
+
+// ============================================================================
+// Enrichment Types
+// ============================================================================
+
+export type EnrichmentStatus =
+  | "none"
+  | "draft"
+  | "enriching"
+  | "review"
+  | "discussing"
+  | "accepted";
+
+export interface Subtask {
+  id: string;
+  task_id: string;
+  subtask_id: string;
+  phase: string;
+  description: string;
+  steps: string[];
+  passes: boolean;
+  passed_at: string | null;
+  display_order: number;
+  created_at: string | null;
+}
+
+export interface SubtasksResponse {
+  subtasks: Subtask[];
+  total: number;
+  completed: number;
+  next_subtask_id: string | null;
+}
+
+export interface EnrichmentRequest {
+  raw_request: string;
+  priority?: number;
+  task_type?: TaskType;
+}
+
+export interface CleanupPromptResponse {
+  cleaned_prompt: string;
+  changes_made: string[];
+}
+
+export interface DiscussionMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+export interface DiscussionResponse {
+  response: string;
+  updated_task: Task | null;
+  history: DiscussionMessage[];
+}
+
+// ============================================================================
+// Enrichment API Functions
+// ============================================================================
+
+/**
+ * Enrich a task with AI-generated objective, criteria, and subtasks.
+ * @param sync If true, runs enrichment synchronously and returns enriched task.
+ *             If false (default), queues enrichment and returns task with status 'enriching'.
+ */
+export async function enrichTask(
+  projectId: string,
+  request: EnrichmentRequest,
+  sync = false
+): Promise<Task> {
+  const url = `/api/projects/${projectId}/tasks/enrich${sync ? "?sync=true" : ""}`;
+  return fetchWithErrorHandling(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    errorMessage: "Failed to enrich task",
+  });
+}
+
+/**
+ * Clean up and refine a raw task prompt using AI.
+ */
+export async function cleanupPrompt(
+  projectId: string,
+  rawRequest: string
+): Promise<CleanupPromptResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/cleanup-prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw_request: rawRequest }),
+    errorMessage: "Failed to cleanup prompt",
+  });
+}
+
+/**
+ * Send a message to discuss and refine a task with the AI.
+ */
+export async function discussTask(
+  projectId: string,
+  taskId: string,
+  message: string
+): Promise<DiscussionResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/discuss`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+    errorMessage: "Failed to discuss task",
+  });
+}
+
+/**
+ * Accept an enriched task, moving it to 'pending' status for execution.
+ */
+export async function acceptTask(projectId: string, taskId: string): Promise<Task> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/accept`, {
+    method: "POST",
+    errorMessage: "Failed to accept task",
+  });
+}
+
+/**
+ * Get subtasks for a task.
+ */
+export async function getSubtasks(
+  projectId: string,
+  taskId: string
+): Promise<SubtasksResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/subtasks`, {
+    errorMessage: "Failed to fetch subtasks",
+  });
+}
+
+/**
+ * Update a subtask's passes status.
+ */
+export async function updateSubtask(
+  projectId: string,
+  taskId: string,
+  subtaskId: string,
+  passes: boolean
+): Promise<Subtask> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passes }),
+      errorMessage: "Failed to update subtask",
+    }
+  );
 }
