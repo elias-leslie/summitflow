@@ -444,18 +444,33 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             logger.debug(f"Autonomous execution disabled for {project_id}")
             return {"status": "disabled", "reason": "autonomous_enabled=false"}
 
-        # Get ready tasks with tier <= 3
-        ready_tasks = task_store.list_ready_tasks(project_id, limit=50)
+        # In validation mode, fetch allowed tasks directly (bypass limit)
+        if VALIDATION_MODE and ALLOWED_TASK_IDS:
+            eligible_tasks = []
+            for task_id in ALLOWED_TASK_IDS:
+                task = task_store.get_task(task_id)
+                if task and task.get("status") in ("pending", "paused", "failed"):
+                    tier = task.get("tier") or 2
+                    if tier <= 3:
+                        eligible_tasks.append(task)
+            if not eligible_tasks:
+                return {
+                    "status": "no_allowed_tasks_ready",
+                    "allowed_ids": ALLOWED_TASK_IDS,
+                }
+        else:
+            # Normal mode: Get ready tasks with tier <= 3
+            ready_tasks = task_store.list_ready_tasks(project_id, limit=50)
 
-        # Filter by tier and status
-        eligible_tasks = [
-            t
-            for t in ready_tasks
-            if (t.get("tier") or 2) <= 3 and t.get("status") in ("pending", "paused", "failed")
-        ]
+            # Filter by tier and status
+            eligible_tasks = [
+                t
+                for t in ready_tasks
+                if (t.get("tier") or 2) <= 3 and t.get("status") in ("pending", "paused", "failed")
+            ]
 
-        if not eligible_tasks:
-            return {"status": "no_work", "tasks_checked": len(ready_tasks)}
+            if not eligible_tasks:
+                return {"status": "no_work", "tasks_checked": len(ready_tasks)}
 
         # Apply exclusion criteria
         exclusion_stats: dict[str, int] = {}
