@@ -258,6 +258,8 @@ def update(
     status: Annotated[str | None, typer.Option("-s", "--status")] = None,
     priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
+    add_label: Annotated[list[str] | None, typer.Option("--add-label")] = None,
+    remove_label: Annotated[list[str] | None, typer.Option("--remove-label")] = None,
     task_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
     title: Annotated[str | None, typer.Option("--title")] = None,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
@@ -270,6 +272,8 @@ def update(
     Examples:
         st update task-abc123 --status running
         st update task-abc123 -p 1 -l "complexity:large"
+        st update task-abc123 --add-label auto-generated
+        st update task-abc123 --remove-label tier:1 --add-label tier:2
         st update task-abc123 --move-to other-project
     """
     client = STClient()
@@ -290,8 +294,31 @@ def update(
     updates: dict = {}
     if priority is not None:
         updates["priority"] = priority
-    if labels:
+
+    # Handle label modifications
+    if add_label or remove_label:
+        # Fetch current task to get existing labels
+        try:
+            current_task = client.get_task(task_id)
+            current_labels = set(current_task.get("labels", []) or [])
+        except APIError as e:
+            _handle_api_error(e)
+            return
+
+        # Remove labels first, then add
+        if remove_label:
+            for label in remove_label:
+                current_labels.discard(label)
+
+        if add_label:
+            for label in add_label:
+                current_labels.add(label)
+
+        updates["labels"] = list(current_labels)
+    elif labels:
+        # Full replacement
         updates["labels"] = labels.split(",")
+
     if task_type:
         updates["task_type"] = task_type
     if title:
