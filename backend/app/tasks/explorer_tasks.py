@@ -13,6 +13,8 @@ from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services import explorer
+from ..services.task_issue_mapper import QAIssue, close_task_for_issue
+from ..storage import qa_issues as qa_storage
 from ..storage.connection import get_connection
 
 logger = get_logger(__name__)
@@ -101,16 +103,18 @@ def scan_all_projects(
                     results_count=len(result),
                 )
 
-                # Trigger task generation after successful scan
+                # Trigger post-scan tasks
                 # Use send_task to avoid circular import with autonomous.py
                 from celery import current_app
 
                 logger.info(
-                    "triggering_task_generation",
+                    "triggering_post_scan_tasks",
                     project_id=proj_id,
                 )
                 current_app.send_task("summitflow.generate_tasks_from_scan", args=[proj_id])
                 current_app.send_task("summitflow.generate_bug_tasks", args=[proj_id])
+                # Check for resolved issues and auto-close linked tasks
+                current_app.send_task("summitflow.check_resolved_issues", args=[proj_id])
             except Exception as e:
                 errors += 1
                 details.append(
@@ -175,3 +179,154 @@ def _scan_project(project_id: str, entry_type: str | None = None) -> list[dict[s
         )
 
     return results
+
+
+def _check_and_close_resolved_issues(project_id: str, scan_id: int | None = None) -> int:
+    """Check for resolved issues and auto-close linked tasks.
+
+    After a scan, check which open issues are no longer detected.
+    For issues linked to SummitFlow tasks, auto-close the tasks.
+
+    This implements the self-healing loop:
+    1. Scan detects issue -> create task
+    2. User/agent fixes issue
+    3. Next scan doesn't detect issue -> mark resolved, close task
+
+    Args:
+        project_id: Project that was scanned
+        scan_id: Optional scan ID for tracking
+
+    Returns:
+        Number of tasks auto-closed
+    """
+    closed_count = 0
+
+    # Get all open issues linked to tasks
+    linked_issues = qa_storage.get_issues_linked_to_tasks(project_id)
+    if not linked_issues:
+        return 0
+
+    logger.info(
+        "checking_resolved_issues",
+        project_id=project_id,
+        linked_count=len(linked_issues),
+    )
+
+    # Check each linked issue to see if it's still valid
+    for issue in linked_issues:
+        if not _issue_still_exists(project_id, issue):
+            # Issue is resolved - mark it and close the task
+            qa_storage.mark_issue_resolved(
+                issue["id"],
+                scan_id=scan_id,
+                reason="Issue no longer detected in scan",
+            )
+
+            # Close the linked task
+            qa_issue = QAIssue(
+                id=issue["id"],
+                project_id=issue["project_id"],
+                issue_type=issue["issue_type"],
+                severity=issue["severity"],
+                title=issue["title"],
+                description=issue.get("description"),
+                file_path=issue.get("file_path"),
+                st_task_id=issue["st_task_id"],
+            )
+            if close_task_for_issue(qa_issue):
+                closed_count += 1
+                logger.info(
+                    "auto_closed_task",
+                    issue_id=issue["id"],
+                    task_id=issue["st_task_id"],
+                )
+
+    if closed_count > 0:
+        logger.info(
+            "self_healing_complete",
+            project_id=project_id,
+            tasks_closed=closed_count,
+        )
+
+    return closed_count
+
+
+def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
+    """Check if a QA issue still exists in the codebase.
+
+    For file-based issues (complexity, stale_file), check if the
+    file still has the issue in the explorer entries.
+
+    Args:
+        project_id: Project ID
+        issue: Issue dict from qa_issues table
+
+    Returns:
+        True if issue still exists, False if resolved
+    """
+    file_path = issue.get("file_path")
+    issue_type = issue.get("issue_type")
+
+    if not file_path:
+        # Non-file issues - assume still exists unless explicitly resolved
+        return True
+
+    # Get the explorer entry for this file
+    entry = explorer.get_entry(project_id, "file", file_path)
+    if not entry:
+        # File was deleted - issue is resolved
+        return False
+
+    # Check issue type-specific criteria
+    if issue_type == "complexity":
+        # Check if complexity is still above threshold
+        metadata = entry.get("metadata", {})
+        complexity = metadata.get("complexity_score", 0)
+        # If complexity dropped below warning threshold (e.g., 50), issue is resolved
+        return bool(complexity >= 50)
+
+    elif issue_type == "stale_file":
+        # Check if file is still stale (no commits in 180+ days)
+        metadata = entry.get("metadata", {})
+        stale_status = metadata.get("stale_status")
+        return bool(stale_status in ("stale", "orphan"))
+
+    elif issue_type == "bloat":
+        # Check if file is still bloated
+        metadata = entry.get("metadata", {})
+        bloat_level = metadata.get("bloat_level")
+        return bool(bloat_level in ("warning", "critical"))
+
+    # Default: assume issue still exists
+    return True
+
+
+@shared_task(name="summitflow.check_resolved_issues")  # type: ignore[untyped-decorator]
+def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[str, Any]:
+    """Celery task to check for resolved issues after a scan.
+
+    Args:
+        project_id: Project that was scanned
+        scan_id: Optional scan ID for tracking
+
+    Returns:
+        Summary dict with closed task count
+    """
+    try:
+        closed_count = _check_and_close_resolved_issues(project_id, scan_id)
+        return {
+            "status": "success",
+            "project_id": project_id,
+            "tasks_closed": closed_count,
+        }
+    except Exception as e:
+        logger.error(
+            "check_resolved_issues_failed",
+            project_id=project_id,
+            error=str(e),
+        )
+        return {
+            "status": "error",
+            "project_id": project_id,
+            "error": str(e),
+        }
