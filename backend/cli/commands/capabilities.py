@@ -93,6 +93,63 @@ def show(
 
 
 @app.command()
+def create(
+    capability_id: str,
+    component: Annotated[str, typer.Option("--component", "-c")],
+    name: Annotated[str | None, typer.Option("--name", "-n")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d")] = None,
+    priority: Annotated[int, typer.Option("--priority", "-p")] = 2,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create a new capability.
+
+    Args:
+        capability_id: Capability ID slug (e.g., "user-login")
+        component: Component ID (integer or slug)
+        name: Display name (defaults to capability_id if not provided)
+        description: Optional description
+        priority: Priority level (0-4, default 2)
+
+    Examples:
+        st capability create user-login --component cli
+        st capability create user-login -c cli --name "User Login" -p 1
+    """
+    client = STClient()
+
+    # Use capability_id as name if not provided
+    display_name = name or capability_id.replace("-", " ").title()
+
+    # Resolve component ID if it's a slug
+    try:
+        comp = client.get_component(component)
+        component_id = comp["id"]
+    except APIError:
+        # Maybe it's already an integer ID
+        try:
+            component_id = int(component)
+        except ValueError:
+            output_error(f"Component '{component}' not found")
+            raise typer.Exit(1) from None
+
+    try:
+        cap = client.create_capability(
+            component_id=component_id,
+            capability_id=capability_id,
+            name=display_name,
+            description=description,
+            priority=priority,
+        )
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        output_json(cap)
+    else:
+        output_success(f"Created capability '{capability_id}' (ID: {cap.get('id')})")
+
+
+@app.command()
 def verify(
     capability_id: str,
     json_output: Annotated[bool, typer.Option("--json")] = False,
