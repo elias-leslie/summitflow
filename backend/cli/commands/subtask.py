@@ -187,6 +187,41 @@ def show_subtask(
     _output_subtask(target, json_output)
 
 
+@app.command("create")
+def create_subtask(
+    task_id: str,
+    subtask_id: str,
+    description: Annotated[str, typer.Option("-d", "--description")],
+    phase: Annotated[str, typer.Option("--phase")] = "implementation",
+    steps: Annotated[list[str] | None, typer.Option("--step")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create a subtask for a task.
+
+    Examples:
+        st subtask create task-abc123 1.1 -d "Add component" --phase backend
+        st subtask create task-abc123 1.1 -d "Add component" --step "Step 1" --step "Step 2"
+    """
+    client = STClient()
+
+    try:
+        result = client.create_subtask(
+            task_id=task_id,
+            subtask_id=subtask_id,
+            description=description,
+            phase=phase,
+            steps=steps,
+        )
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        output_json(result)
+    else:
+        output_success(f"Created subtask {subtask_id} for task {task_id}")
+
+
 @app.command("pass")
 def pass_subtask(
     task_id: str,
