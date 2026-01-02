@@ -53,16 +53,10 @@ def show(
     client = STClient()
 
     try:
-        # List all and filter (no direct get endpoint)
-        caps = client.list_capabilities()
-        cap = next((c for c in caps if c["capability_id"] == capability_id), None)
+        cap = client.get_capability(capability_id)
     except APIError as e:
         handle_api_error(e)
         return
-
-    if not cap:
-        output_error(f"Capability '{capability_id}' not found")
-        raise typer.Exit(1)
 
     if json_output:
         output_json(cap)
