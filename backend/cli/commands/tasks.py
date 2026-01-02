@@ -367,3 +367,76 @@ def delete(
         return
 
     output_success(f"Deleted task {task_id}")
+
+
+@app.command()
+def bug(
+    title: str,
+    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
+    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
+    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
+    from_task: Annotated[str | None, typer.Option("--from")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create a bug task (shorthand for create -t bug).
+
+    If --from is specified, creates a discovered-from dependency and
+    inherits domain labels from the parent task.
+
+    Examples:
+        st bug "Fix null pointer exception" -p 1
+        st bug "Missing validation" --from task-abc123
+        st bug "Type error in auth" -l "complexity:small,domains:backend"
+    """
+    client = STClient()
+
+    # If --from specified, fetch parent to inherit domains
+    inherited_labels: list[str] = []
+    if from_task:
+        try:
+            parent = client.get_task(from_task)
+            parent_labels = parent.get("labels", [])
+            # Inherit domain labels
+            for label in parent_labels:
+                if label.startswith("domains:"):
+                    inherited_labels.append(label)
+        except APIError:
+            pass  # If parent not found, continue without inheriting
+
+    # Build labels list
+    all_labels: list[str] = []
+    if labels:
+        all_labels.extend(labels.split(","))
+    # Add inherited labels that aren't already present
+    for label in inherited_labels:
+        if label not in all_labels:
+            all_labels.append(label)
+
+    data: dict = {
+        "title": title,
+        "task_type": "bug",
+        "priority": priority,
+    }
+    if description:
+        data["description"] = description
+    if all_labels:
+        data["labels"] = all_labels
+
+    try:
+        task = client.create_task(data)
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    # Create discovered-from dependency if --from specified
+    if from_task:
+        try:
+            client.add_dependency(task["id"], from_task, dep_type="discovered-from")
+            if not json_output:
+                output_success(f"Linked {task['id']} → {from_task} (discovered-from)")
+        except APIError as e:
+            output_error(f"Created task but failed to add dependency: {e.detail}")
+
+    output_task(task, json_output)
+    if not json_output:
+        output_success(f"Created bug {task['id']}")
