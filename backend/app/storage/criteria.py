@@ -314,27 +314,42 @@ def unlink_criterion_from_capability(
 
 
 def get_criteria_for_capability(
-    conn: psycopg.Connection, project_id: str, capability_id: str
+    conn: psycopg.Connection, project_id: str, capability_id: int | str
 ) -> list[dict[str, Any]]:
     """Get all criteria linked to a capability.
 
     Args:
         project_id: Project ID
-        capability_id: The string capability_id (e.g., 'login', 'password-reset')
+        capability_id: Either the integer capability ID or string capability_id
     """
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                   ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id
-            FROM acceptance_criteria ac
-            JOIN capability_criteria cc ON ac.id = cc.criterion_id
-            JOIN capabilities c ON cc.capability_id = c.id
-            WHERE c.project_id = %s AND c.capability_id = %s
-            ORDER BY ac.criterion_id
-            """,
-            (project_id, capability_id),
-        )
+        # Support both integer id and string capability_id
+        if isinstance(capability_id, int):
+            cur.execute(
+                """
+                SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
+                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id
+                FROM acceptance_criteria ac
+                JOIN capability_criteria cc ON ac.id = cc.criterion_id
+                JOIN capabilities c ON cc.capability_id = c.id
+                WHERE c.project_id = %s AND c.id = %s
+                ORDER BY ac.criterion_id
+                """,
+                (project_id, capability_id),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
+                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id
+                FROM acceptance_criteria ac
+                JOIN capability_criteria cc ON ac.id = cc.criterion_id
+                JOIN capabilities c ON cc.capability_id = c.id
+                WHERE c.project_id = %s AND c.capability_id = %s
+                ORDER BY ac.criterion_id
+                """,
+                (project_id, capability_id),
+            )
         rows = cur.fetchall()
 
     return [
