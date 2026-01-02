@@ -208,3 +208,153 @@ class TestGetStalePatterns:
         stale_30 = service.get_stale_patterns(days_threshold=30)
         assert len(stale_30) == 1
         assert stale_30[0]["id"] == "pat-60"
+
+
+class TestJsonlFormat:
+    """Tests for JSON-lines pattern formatting and parsing."""
+
+    def test_format_pattern_jsonl_index_mode(self):
+        """Index mode produces compact output with short ID."""
+        from app.services.memory.pattern_service import PatternService
+
+        pattern = {
+            "id": "b70160e6-dab8-4a01-bba6-d4f33330be3e",
+            "title": "Test Pattern Title",
+            "content": "Full content here.",
+            "pattern_type": "rule",
+            "confidence": 0.85,
+        }
+
+        result = PatternService.format_pattern_jsonl(pattern, include_content=False)
+
+        assert '"id":"3330be3e"' in result  # Short ID
+        assert '"t":"Test Pattern Title"' in result
+        assert '"c":' not in result  # No content in index mode
+
+    def test_format_pattern_jsonl_full_mode(self):
+        """Full mode includes content and metadata."""
+        from app.services.memory.pattern_service import PatternService
+
+        pattern = {
+            "id": "b70160e6-dab8-4a01-bba6-d4f33330be3e",
+            "title": "Test Pattern Title",
+            "content": "Full content here.",
+            "pattern_type": "rule",
+            "confidence": 0.85,
+        }
+
+        result = PatternService.format_pattern_jsonl(pattern, include_content=True)
+
+        assert '"id":"b70160e6-dab8-4a01-bba6-d4f33330be3e"' in result  # Full ID
+        assert '"t":"Test Pattern Title"' in result
+        assert '"c":"Full content here."' in result
+        assert '"d":"rule"' in result
+        assert '"conf":0.85' in result
+
+    def test_parse_pattern_jsonl_index_format(self):
+        """Parses index format JSON."""
+        from app.services.memory.pattern_service import PatternService
+
+        line = '{"id":"3330be3e","t":"Test Pattern"}'
+        result = PatternService.parse_pattern_jsonl(line)
+
+        assert result is not None
+        assert result["id"] == "3330be3e"
+        assert result["title"] == "Test Pattern"
+        assert result["content"] == ""  # Not in index
+        assert result["pattern_type"] == "rule"  # Default
+
+    def test_parse_pattern_jsonl_full_format(self):
+        """Parses full format JSON."""
+        from app.services.memory.pattern_service import PatternService
+
+        line = '{"id":"full-id","t":"Title","c":"Content","d":"preference","conf":0.9}'
+        result = PatternService.parse_pattern_jsonl(line)
+
+        assert result is not None
+        assert result["id"] == "full-id"
+        assert result["title"] == "Title"
+        assert result["content"] == "Content"
+        assert result["pattern_type"] == "preference"
+        assert result["confidence"] == 0.9
+
+    def test_parse_pattern_jsonl_invalid_json(self):
+        """Returns None for invalid JSON."""
+        from app.services.memory.pattern_service import PatternService
+
+        result = PatternService.parse_pattern_jsonl("not valid json")
+        assert result is None
+
+
+class TestParsePatternFile:
+    """Tests for parse_patterns_file with format detection."""
+
+    def test_parse_jsonl_format(self):
+        """Detects and parses JSON-lines format."""
+        from app.services.memory.pattern_service import PatternService
+
+        content = """{"id":"pat1","t":"Pattern One","c":"Content one.","d":"rule","conf":0.8}
+{"id":"pat2","t":"Pattern Two","c":"Content two.","d":"preference","conf":0.9}"""
+
+        patterns = PatternService.parse_patterns_file(content)
+
+        assert len(patterns) == 2
+        assert patterns[0]["title"] == "Pattern One"
+        assert patterns[1]["title"] == "Pattern Two"
+
+    def test_parse_markdown_format(self):
+        """Detects and parses legacy markdown format."""
+        from app.services.memory.pattern_service import PatternService
+
+        content = """# Learned Patterns
+
+## First Pattern
+
+Do the first thing correctly.
+
+*Rationale: Because it matters.*
+
+<!-- Pattern ID: abc-123 | Applied: 2026-01-01 -->
+
+## Second Pattern
+
+Do the second thing.
+
+<!-- Pattern ID: def-456 | Applied: 2026-01-02 -->"""
+
+        patterns = PatternService.parse_patterns_file(content)
+
+        assert len(patterns) == 2
+        assert patterns[0]["title"] == "First Pattern"
+        assert patterns[0]["id"] == "abc-123"
+        assert "first thing" in patterns[0]["content"]
+        assert patterns[0]["rationale"] == "Because it matters."
+        assert patterns[1]["title"] == "Second Pattern"
+        assert patterns[1]["id"] == "def-456"
+
+    def test_parse_empty_content(self):
+        """Returns empty list for empty content."""
+        from app.services.memory.pattern_service import PatternService
+
+        assert PatternService.parse_patterns_file("") == []
+        assert PatternService.parse_patterns_file("   \n  ") == []
+
+    def test_roundtrip_jsonl(self):
+        """Format then parse produces equivalent pattern."""
+        from app.services.memory.pattern_service import PatternService
+
+        original = {
+            "id": "test-id-12345678",
+            "title": "Roundtrip Test",
+            "content": "Test content.",
+            "pattern_type": "rule",
+            "confidence": 0.75,
+        }
+
+        jsonl = PatternService.format_pattern_jsonl(original, include_content=True)
+        parsed = PatternService.parse_pattern_jsonl(jsonl)
+
+        assert parsed["id"] == original["id"]
+        assert parsed["title"] == original["title"]
+        assert parsed["content"] == original["content"]
+        assert parsed["confidence"] == original["confidence"]

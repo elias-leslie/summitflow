@@ -540,6 +540,141 @@ class PatternService:
 
         return json.dumps(compact, separators=(",", ":"))
 
+    @staticmethod
+    def parse_pattern_jsonl(line: str) -> dict[str, Any] | None:
+        """Parse a JSON-lines pattern entry back to dict format.
+
+        Handles both:
+        - Index format: {"id":"short","t":"title"}
+        - Full format: {"id":"full","t":"title","c":"content","d":"type","conf":0.85}
+
+        Args:
+            line: Single JSON line to parse
+
+        Returns:
+            Pattern dict with normalized keys, or None if parse fails
+        """
+        import json
+
+        try:
+            compact = json.loads(line.strip())
+        except json.JSONDecodeError:
+            return None
+
+        # Map abbreviated keys back to full names
+        return {
+            "id": compact.get("id", ""),
+            "title": compact.get("t", ""),
+            "content": compact.get("c", ""),
+            "pattern_type": compact.get("d", "rule"),
+            "confidence": compact.get("conf", 0.5),
+        }
+
+    @staticmethod
+    def parse_patterns_file(content: str) -> list[dict[str, Any]]:
+        """Parse a patterns file, detecting format automatically.
+
+        Supports:
+        - JSON-lines format (each line is a JSON object)
+        - Legacy markdown format (## Title / content / <!-- Pattern ID -->)
+
+        Args:
+            content: Full file content
+
+        Returns:
+            List of pattern dicts
+        """
+        content = content.strip()
+        if not content:
+            return []
+
+        # Detect format by checking first non-empty line
+        first_line = content.split("\n")[0].strip()
+
+        if first_line.startswith("{"):
+            # JSON-lines format
+            return PatternService._parse_jsonl_format(content)
+        elif first_line.startswith("#"):
+            # Markdown format
+            return PatternService._parse_markdown_format(content)
+        else:
+            # Unknown format
+            logger.warning(f"Unknown pattern file format: {first_line[:50]}")
+            return []
+
+    @staticmethod
+    def _parse_jsonl_format(content: str) -> list[dict[str, Any]]:
+        """Parse JSON-lines format patterns."""
+        patterns = []
+        for line in content.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            parsed = PatternService.parse_pattern_jsonl(line)
+            if parsed:
+                patterns.append(parsed)
+        return patterns
+
+    @staticmethod
+    def _parse_markdown_format(content: str) -> list[dict[str, Any]]:
+        """Parse legacy markdown format patterns.
+
+        Format:
+        ## Title
+
+        Content text here.
+
+        *Rationale: ...*
+
+        <!-- Pattern ID: uuid | Applied: timestamp -->
+        """
+        import re
+
+        patterns = []
+
+        # Split by ## headings
+        sections = re.split(r"\n(?=## )", content)
+
+        for section in sections:
+            section = section.strip()
+            if not section.startswith("## "):
+                continue
+
+            lines = section.split("\n")
+            title = lines[0][3:].strip()  # Remove "## "
+
+            # Find pattern ID from comment
+            pattern_id = ""
+            id_match = re.search(r"<!-- Pattern ID: ([^\s|]+)", section)
+            if id_match:
+                pattern_id = id_match.group(1)
+
+            # Extract content (between title and rationale/comment)
+            content_lines = []
+            rationale = ""
+            for line in lines[1:]:
+                line = line.strip()
+                if line.startswith("*Rationale:"):
+                    rationale = line[11:].rstrip("*").strip()
+                    continue
+                if line.startswith("<!--"):
+                    continue
+                if line:
+                    content_lines.append(line)
+
+            patterns.append(
+                {
+                    "id": pattern_id,
+                    "title": title,
+                    "content": "\n".join(content_lines),
+                    "rationale": rationale,
+                    "pattern_type": "rule",
+                    "confidence": 0.7,  # Default for legacy patterns
+                }
+            )
+
+        return patterns
+
     # =========================================================================
     # Staleness Detection
     # =========================================================================
