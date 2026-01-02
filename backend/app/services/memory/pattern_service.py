@@ -499,6 +499,47 @@ class PatternService:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def format_pattern_jsonl(pattern: dict[str, Any], include_content: bool = False) -> str:
+        """Format a pattern as compact JSON-lines for progressive disclosure.
+
+        Index format (for SessionStart, ~10 tokens per pattern):
+        {"id":"abc","t":"title"}
+
+        Full format (for expand, ~50 tokens per pattern):
+        {"id":"abc","t":"title","c":"content","d":"domain","conf":0.85}
+
+        Args:
+            pattern: Pattern dict with id, title, content, pattern_type, confidence
+            include_content: If True, include full content (for expand). Default False for index.
+
+        Returns:
+            Single JSON line (no trailing newline)
+        """
+        import json
+
+        # Use short UUID (last 8 chars) for index view, full for expand
+        full_id = str(pattern.get("id", ""))
+        short_id = full_id[-8:] if len(full_id) > 8 else full_id
+
+        if include_content:
+            # Full format for expansion
+            compact = {
+                "id": full_id,
+                "t": pattern.get("title", ""),
+                "c": pattern.get("content", ""),
+                "d": pattern.get("pattern_type", "rule"),
+                "conf": round(pattern.get("confidence", 0.5), 2),
+            }
+        else:
+            # Index format - minimal for session start
+            compact = {
+                "id": short_id,
+                "t": pattern.get("title", ""),
+            }
+
+        return json.dumps(compact, separators=(",", ":"))
+
     # =========================================================================
     # Staleness Detection
     # =========================================================================
