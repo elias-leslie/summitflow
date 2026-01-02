@@ -36,6 +36,10 @@ class AgentConfig(TypedDict, total=False):
     # Autonomous execution controls
     autonomous_enabled: bool  # Enable autonomous task pickup and execution
 
+    # Extraction throttle controls
+    extraction_enabled: bool  # Master kill switch for AI extraction
+    extraction_rpm_limit: int  # Requests per minute limit (0=disabled, 60=unlimited)
+
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
