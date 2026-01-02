@@ -6,6 +6,7 @@ from .commands import (
     autonomous,
     capabilities,
     components,
+    criterion,
     deps,
     sessions,
     step,
@@ -32,6 +33,7 @@ app.add_typer(autonomous.app, name="autonomous", help="Autonomous execution")
 app.add_typer(sessions.app, name="sessions", help="Agent sessions")
 app.add_typer(worktree.app, name="worktree", help="Git worktrees")
 app.add_typer(components.app, name="component", help="Component management")
+app.add_typer(criterion.app, name="criterion", help="Criterion management")
 
 
 @app.callback(invoke_without_command=True)
