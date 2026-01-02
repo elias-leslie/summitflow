@@ -460,3 +460,35 @@ class STClient:
         data = {"agent_type": agent_type, "use_worktree": use_worktree}
         response = self._client.post(self._url(f"/tasks/{task_id}/execute/start"), json=data)
         return self._handle_response(response)
+
+    # Autonomous
+
+    def get_autonomous_settings(self) -> dict[str, Any]:
+        """Get autonomous execution settings.
+
+        Returns:
+            Settings dict with enabled, frequency_minutes, etc.
+        """
+        response = self._client.get(self._url("/autonomous/settings"))
+        return self._handle_response(response)
+
+    def update_autonomous_settings(self, **updates: Any) -> dict[str, Any]:
+        """Update autonomous execution settings.
+
+        Args:
+            **updates: Fields to update (enabled, frequency_minutes, etc.)
+
+        Returns:
+            Updated settings dict.
+        """
+        response = self._client.patch(self._url("/autonomous/settings"), json=updates)
+        return self._handle_response(response)
+
+    def get_autonomous_status(self) -> dict[str, Any]:
+        """Get autonomous execution status and metrics.
+
+        Returns:
+            Status dict with execution counts, recent activity, etc.
+        """
+        response = self._client.get(self._url("/autonomous/status"))
+        return self._handle_response(response)
