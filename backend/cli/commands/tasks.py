@@ -108,23 +108,90 @@ def list_tasks(
 @app.command()
 def ready(
     limit: Annotated[int, typer.Option("--limit")] = 50,
+    blocked: Annotated[bool, typer.Option("--blocked")] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List tasks ready to work on (not blocked).
 
+    Use --blocked to show blocked tasks instead.
+
     Examples:
         st ready
+        st ready --blocked
         st ready --limit 10 --json
     """
     client = STClient()
 
     try:
-        result = client.list_ready(limit=limit)
+        if blocked:
+            # Get pending tasks and filter to blocked ones
+            result = client.list_tasks(status="pending", limit=limit * 2)
+            tasks = result.get("tasks", [])
+
+            # Filter to tasks that have blocking dependencies
+            blocked_tasks = []
+            blockers_map: dict[str, list[str]] = {}  # blocker_id -> [blocked_task_ids]
+
+            for task in tasks:
+                task_id = task["id"]
+                deps = client.list_dependencies(task_id)
+
+                # Find incomplete blocking dependencies
+                blocking = [
+                    d
+                    for d in deps
+                    if d.get("dependency_type") == "blocks"
+                    and d.get("depends_on_status") not in ("completed", "cancelled")
+                ]
+
+                if blocking:
+                    task["blockers"] = blocking
+                    blocked_tasks.append(task)
+
+                    # Track which tasks each blocker blocks
+                    for b in blocking:
+                        blocker_id = b.get("depends_on_task_id", "")
+                        if blocker_id not in blockers_map:
+                            blockers_map[blocker_id] = []
+                        blockers_map[blocker_id].append(task_id)
+
+            blocked_tasks = blocked_tasks[:limit]
+
+            if json_output:
+                from ..output import output_json
+
+                output_json({"tasks": blocked_tasks, "blockers_impact": blockers_map})
+                return
+
+            if not blocked_tasks:
+                from ..output import console
+
+                console.print("[dim]No blocked tasks found.[/dim]")
+                return
+
+            from ..output import console
+
+            console.print(f"\n[bold]Blocked Tasks[/bold] ({len(blocked_tasks)} tasks)\n")
+
+            # Group by blocker for impact view
+            console.print("[bold]Blockers Impact:[/bold]")
+            for blocker_id, blocked_ids in sorted(blockers_map.items(), key=lambda x: -len(x[1])):
+                console.print(f"  [red]{blocker_id}[/] blocks {len(blocked_ids)} task(s)")
+
+            console.print("\n[bold]Blocked Tasks:[/bold]")
+            for task in blocked_tasks:
+                task_id = task["id"]
+                title = task.get("title", "")[:40]
+                blockers = task.get("blockers", [])
+                blocker_ids = [b.get("depends_on_task_id", "") for b in blockers]
+                console.print(f"  [cyan]{task_id}[/]: {title}")
+                console.print(f"    [dim]Blocked by: {', '.join(blocker_ids)}[/]")
+        else:
+            result = client.list_ready(limit=limit)
+            output_task_list(result["tasks"], json_output, title="Ready Tasks")
     except APIError as e:
         _handle_api_error(e)
         return
-
-    output_task_list(result["tasks"], json_output, title="Ready Tasks")
 
 
 @app.command()
