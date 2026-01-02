@@ -68,6 +68,42 @@ def create_steps(
         output_success(f"Created {len(created)} steps for subtask {subtask_id}")
 
 
+@app.command("add")
+def add_steps(
+    task_id: str,
+    subtask_id: str,
+    descriptions: Annotated[list[str], typer.Argument()],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Append steps to a subtask with existing steps.
+
+    Unlike 'create' which starts at step 1, 'add' finds the highest
+    existing step number and continues from there.
+
+    Examples:
+        st step add task-abc123 1.1 "New step 6" "New step 7"
+    """
+    client = STClient()
+
+    try:
+        result = client.append_steps(task_id, subtask_id, descriptions)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if json_output:
+        output_json(result)
+    else:
+        created = result.get("created", [])
+        if created:
+            start_num = created[0].get("step_number", "?")
+            output_success(
+                f"Added {len(created)} steps to subtask {subtask_id} (starting at step {start_num})"
+            )
+        else:
+            output_success("No steps added")
+
+
 @app.command("list")
 def list_steps(
     task_id: str,

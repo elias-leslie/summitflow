@@ -627,6 +627,31 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def append_steps(
+        self,
+        task_id: str,
+        subtask_id: str,
+        descriptions: list[str],
+    ) -> dict[str, Any]:
+        """Append steps to a subtask, continuing from highest existing step number.
+
+        Unlike bulk_create_steps which starts at 1, this finds the max step_number
+        and continues from there. Safe to call on subtasks with existing steps.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            descriptions: List of step descriptions to append
+
+        Returns:
+            Dict with created list.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/append"),
+            json={"descriptions": descriptions},
+        )
+        return self._handle_response(response)
+
     def update_step(
         self,
         task_id: str,

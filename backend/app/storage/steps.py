@@ -184,6 +184,60 @@ def bulk_create_steps(
     return created
 
 
+def append_steps(
+    subtask_id: str,
+    descriptions: list[str],
+) -> list[dict[str, Any]]:
+    """Append steps to a subtask, continuing from the highest existing step number.
+
+    Unlike bulk_create_steps which starts at 1, this finds the max step_number
+    and continues from there.
+
+    Args:
+        subtask_id: Parent subtask ID
+        descriptions: List of step description strings to append
+
+    Returns:
+        List of created step dicts.
+
+    Raises:
+        Exception: If subtask_id doesn't exist or on DB error.
+    """
+    if not descriptions:
+        return []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Find the current max step number
+        cur.execute(
+            "SELECT COALESCE(MAX(step_number), 0) FROM task_subtask_steps WHERE subtask_id = %s",
+            (subtask_id,),
+        )
+        max_step = cur.fetchone()[0]
+
+        created = []
+        for idx, description in enumerate(descriptions, start=max_step + 1):
+            cur.execute(
+                f"""
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description)
+                VALUES (%s, %s, %s)
+                RETURNING {STEP_COLUMNS}
+                """,
+                (subtask_id, idx, description),
+            )
+            row = cur.fetchone()
+            created.append(_row_to_dict(row))
+
+        conn.commit()
+
+    logger.info(
+        "Appended %d steps to subtask %s (starting at step %d)",
+        len(created),
+        subtask_id,
+        max_step + 1,
+    )
+    return created
+
+
 def delete_steps_for_subtask(subtask_id: str) -> int:
     """Delete all steps for a subtask.
 

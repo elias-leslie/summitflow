@@ -1560,6 +1560,54 @@ async def create_steps_batch(
     )
 
 
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/append",
+    response_model=BatchStepResponse,
+    status_code=201,
+)
+async def append_steps_to_subtask(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    request: BatchStepCreate,
+) -> BatchStepResponse:
+    """Append steps to a subtask, continuing from the highest existing step number.
+
+    Unlike /steps/batch which starts at 1, this finds the max step_number
+    and continues from there. Safe to call on subtasks with existing steps.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: List of step descriptions to append
+
+    Returns:
+        BatchStepResponse with created steps.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.steps import append_steps
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+
+    try:
+        created = append_steps(table_id, request.descriptions)
+    except Exception as e:
+        error_msg = str(e)
+        if "violates foreign key constraint" in error_msg.lower():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Subtask {subtask_id} not found for task {task_id}",
+            ) from None
+        raise HTTPException(status_code=500, detail=error_msg) from None
+
+    return BatchStepResponse(
+        created=[StepResponse(**s) for s in created],
+        count=len(created),
+    )
+
+
 @router.patch(
     "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}",
     response_model=StepResponse,
