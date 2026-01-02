@@ -87,146 +87,18 @@ class TestExpandDocSection:
 
 
 class TestBuildRulesIndex:
-    """Tests for build_rules_index method."""
+    """Tests for build_rules_index method.
 
-    def test_scans_global_and_project_directories(self):
-        """Scans both ~/.claude/rules/ and project/.claude/rules/."""
+    NOTE: build_rules_index was deprecated 2026-01-02 when rules were
+    consolidated into CLAUDE.md. These tests verify the deprecation behavior.
+    """
+
+    def test_returns_empty_list(self):
+        """Returns empty list after rules consolidation."""
         from app.services.memory.context_builder import ContextBuilder
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create project rules directory
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
+        builder = ContextBuilder(project_id="test")
+        rules_index = builder.build_rules_index()
 
-            # Create test rule file
-            rule_file = project_rules / "test-rule.md"
-            rule_file.write_text("# Test Rule\n\nSome content here.")
-
-            # Mock _get_project_path to return our temp dir
-            builder = ContextBuilder(project_id="test")
-            with patch.object(builder, "_get_project_path", return_value=Path(tmpdir)):
-                rules_index = builder.build_rules_index()
-
-            # Should have at least the project rule
-            project_rules_found = [r for r in rules_index if r["scope"] == "project"]
-            assert len(project_rules_found) >= 1
-
-            # Check structure
-            test_rule = next((r for r in project_rules_found if "test-rule.md" in r["id"]), None)
-            assert test_rule is not None
-            assert test_rule["title"] == "Test Rule"
-            assert test_rule["t"] == "rule"
-            assert test_rule["tok"] > 0
-
-    def test_extracts_title_from_first_heading(self):
-        """Extracts title from first # heading in markdown."""
-        from app.services.memory.context_builder import ContextBuilder
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
-
-            rule_file = project_rules / "my-rule.md"
-            rule_file.write_text("# My Custom Rule Title\n\nContent goes here.")
-
-            builder = ContextBuilder(project_id="test")
-            with patch.object(builder, "_get_project_path", return_value=Path(tmpdir)):
-                rules_index = builder.build_rules_index()
-
-            project_rules_list = [r for r in rules_index if r["scope"] == "project"]
-            assert any(r["title"] == "My Custom Rule Title" for r in project_rules_list)
-
-    def test_truncates_long_titles(self):
-        """Truncates titles longer than 40 chars."""
-        from app.services.memory.context_builder import ContextBuilder
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
-
-            long_title = "A" * 50
-            rule_file = project_rules / "long-title.md"
-            rule_file.write_text(f"# {long_title}\n\nContent.")
-
-            builder = ContextBuilder(project_id="test")
-            with patch.object(builder, "_get_project_path", return_value=Path(tmpdir)):
-                rules_index = builder.build_rules_index()
-
-            project_rule = next((r for r in rules_index if r["scope"] == "project"), None)
-            assert project_rule is not None
-            assert len(project_rule["title"]) <= 43  # 40 + "..."
-            assert project_rule["title"].endswith("...")
-
-    def test_skips_backup_files(self):
-        """Skips .bak files."""
-        from app.services.memory.context_builder import ContextBuilder
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
-
-            # Create both regular and backup file
-            rule_file = project_rules / "rule.md"
-            rule_file.write_text("# Rule\n\nContent.")
-
-            backup_file = project_rules / "rule.md.bak"
-            backup_file.write_text("# Backup\n\nOld content.")
-
-            builder = ContextBuilder(project_id="test")
-            with patch.object(builder, "_get_project_path", return_value=Path(tmpdir)):
-                rules_index = builder.build_rules_index()
-
-            project_rules_list = [r for r in rules_index if r["scope"] == "project"]
-            # Should have only the regular file, not the backup
-            assert len(project_rules_list) == 1
-            assert "rule.md" in project_rules_list[0]["id"]
-            assert ".bak" not in project_rules_list[0]["id"]
-
-    def test_calculates_token_estimate(self):
-        """Calculates token estimate for each rule."""
-        from app.services.memory.context_builder import ContextBuilder
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
-
-            content = "# Rule\n\n" + "x" * 400  # 400 chars + header
-            rule_file = project_rules / "rule.md"
-            rule_file.write_text(content)
-
-            builder = ContextBuilder(project_id="test")
-            with patch.object(builder, "_get_project_path", return_value=Path(tmpdir)):
-                rules_index = builder.build_rules_index()
-
-            project_rule = next((r for r in rules_index if r["scope"] == "project"), None)
-            assert project_rule is not None
-            # ~410 chars / 4 = ~102 tokens
-            assert 90 < project_rule["tok"] < 120
-
-    def test_rules_index_scales_reasonably(self):
-        """Rules index scales linearly with rule count (~22 tokens per rule)."""
-        import json
-
-        from app.services.memory.context_builder import ContextBuilder, estimate_tokens
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_rules = Path(tmpdir) / ".claude" / "rules"
-            project_rules.mkdir(parents=True)
-
-            # Create 10 rule files (typical project)
-            for i in range(10):
-                rule_file = project_rules / f"rule-{i}.md"
-                rule_file.write_text(f"# Rule {i}\n\nSome content for rule {i}.")
-
-            builder = ContextBuilder(project_id="test")
-            # Mock global rules to empty to focus on project rules
-            with (
-                patch.object(builder, "_get_project_path", return_value=Path(tmpdir)),
-                patch("pathlib.Path.home", return_value=Path(tmpdir) / "nonexistent"),
-            ):
-                rules_index = builder.build_rules_index()
-
-            index_tokens = estimate_tokens(json.dumps(rules_index))
-            # ~22 tokens per rule entry (id, t, title, scope, tok)
-            # 10 rules = ~220 tokens + overhead
-            assert index_tokens < 300, f"Rules index is {index_tokens} tokens, should be < 300"
+        assert rules_index == []
+        assert isinstance(rules_index, list)

@@ -608,78 +608,12 @@ class ContextBuilder:
         return rank_observation(obs, fts_score, query_types)
 
     def build_rules_index(self) -> list[dict[str, Any]]:
-        """Build index of rule files from ~/.claude/rules/ and project/.claude/rules/.
+        """Build index of rule files.
 
-        Scans both global and project-specific rule directories, extracting
-        the title from the first # heading in each markdown file.
+        DEPRECATED: Rules consolidated into CLAUDE.md (2026-01-02).
+        Returns empty list. Kept for API backward compatibility.
 
         Returns:
-            List of rule index items with id, title, scope, and token estimate
+            Empty list (rules now in CLAUDE.md)
         """
-        import re
-
-        rules_index: list[dict[str, Any]] = []
-
-        # Global rules: ~/.claude/rules/
-        global_rules_path = Path.home() / ".claude" / "rules"
-        if global_rules_path.exists():
-            for rule_file in global_rules_path.glob("*.md"):
-                # Skip backup files
-                if rule_file.name.endswith(".bak"):
-                    continue
-
-                try:
-                    content = rule_file.read_text()
-                except Exception:
-                    continue
-
-                # Extract title from first # heading
-                title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-                title = title_match.group(1) if title_match else rule_file.stem
-
-                # Truncate title to 40 chars
-                title = title[:40] + "..." if len(title) > 40 else title
-
-                rules_index.append(
-                    {
-                        "id": f"rule:global:{rule_file.name}",
-                        "t": "rule",
-                        "title": title,
-                        "scope": "global",
-                        "tok": estimate_tokens(content),
-                    }
-                )
-
-        # Project rules: project/.claude/rules/
-        project_path = self._get_project_path()
-        if project_path:
-            project_rules_path = project_path / ".claude" / "rules"
-            if project_rules_path.exists():
-                for rule_file in project_rules_path.glob("*.md"):
-                    # Skip backup files
-                    if rule_file.name.endswith(".bak"):
-                        continue
-
-                    try:
-                        content = rule_file.read_text()
-                    except Exception:
-                        continue
-
-                    # Extract title from first # heading
-                    title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-                    title = title_match.group(1) if title_match else rule_file.stem
-
-                    # Truncate title to 40 chars
-                    title = title[:40] + "..." if len(title) > 40 else title
-
-                    rules_index.append(
-                        {
-                            "id": f"rule:{rule_file.name}",
-                            "t": "rule",
-                            "title": title,
-                            "scope": "project",
-                            "tok": estimate_tokens(content),
-                        }
-                    )
-
-        return rules_index
+        return []

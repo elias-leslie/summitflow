@@ -1,7 +1,9 @@
-"""Context helpers service - Rule and pattern filtering for task execution.
+"""Context helpers service - Pattern and observation filtering for task execution.
 
-Provides functions to select relevant rules, patterns, and observations
+Provides functions to select relevant patterns and observations
 based on the files a task affects.
+
+Note: Rule files were consolidated into CLAUDE.md (2026-01-02).
 """
 
 from __future__ import annotations
@@ -10,67 +12,20 @@ from typing import Any
 
 from ..storage import memory as memory_storage
 
-# Map file path patterns to relevant rule files
-# Key: path pattern (prefix match), Value: list of rule filenames
-RULE_FILE_MAPPING: dict[str, list[str]] = {
-    "backend/": [
-        "architecture-coherence.md",
-        "code-cleanliness.md",
-    ],
-    "backend/app/api/": [
-        "architecture-coherence.md",
-        "code-cleanliness.md",
-    ],
-    "backend/app/storage/": [
-        "architecture-coherence.md",
-        "code-cleanliness.md",
-    ],
-    "backend/app/services/explorer/": [
-        "explorer-architecture.md",
-        "architecture-coherence.md",
-        "code-cleanliness.md",
-    ],
-    "frontend/": [
-        "ui-backend-lockstep.md",
-        "code-cleanliness.md",
-    ],
-    "frontend/components/explorer/": [
-        "explorer-architecture.md",
-        "ui-backend-lockstep.md",
-        "code-cleanliness.md",
-    ],
-}
-
 
 def filter_rules_by_files(files: list[str]) -> list[str]:
     """Filter rule files based on affected file paths.
 
-    Returns the unique set of rule files relevant to the given file paths.
+    DEPRECATED: Rules consolidated into CLAUDE.md. Returns empty list.
+    Kept for API backward compatibility.
 
     Args:
         files: List of file paths affected by a task
 
     Returns:
-        List of unique rule filenames (e.g., ['architecture-coherence.md', 'code-cleanliness.md'])
+        Empty list (rules now in CLAUDE.md)
     """
-    rules: set[str] = set()
-
-    for file_path in files:
-        # Match against rule mappings (longest prefix first for specificity)
-        matched_patterns = [
-            pattern for pattern in RULE_FILE_MAPPING if file_path.startswith(pattern)
-        ]
-
-        if matched_patterns:
-            # Use the most specific match (longest prefix)
-            best_match = max(matched_patterns, key=len)
-            rules.update(RULE_FILE_MAPPING[best_match])
-        else:
-            # Default rules for any file
-            rules.add("architecture-coherence.md")
-            rules.add("code-cleanliness.md")
-
-    return sorted(rules)
+    return []
 
 
 def get_patterns_for_files(

@@ -1,8 +1,6 @@
 # CLAUDE.md
 
-SummitFlow - AI-assisted development. Read [AGENTS.md](AGENTS.md) for workflow.
-
-**Full docs via**: `POST /context/expand` with `doc:CLAUDE.md` or `doc:AGENTS.md`
+SummitFlow - AI-assisted development. See [AGENTS.md](AGENTS.md) for workflow.
 
 ---
 
@@ -13,13 +11,10 @@ SummitFlow - AI-assisted development. Read [AGENTS.md](AGENTS.md) for workflow.
 | Find work | `st ready` |
 | Claim work | `st update <id> --status running` |
 | Complete | `st close <id> --reason "Done"` |
-| Verify capability | `st capability verify <id>` |
-| Start services | `bash ~/summitflow/scripts/start.sh` |
-| Restart services | `bash ~/summitflow/scripts/restart.sh` |
+| Start services | `bash ~/summitflow/scripts/restart.sh` |
 | Run tests | `cd backend && .venv/bin/pytest` |
 | Type check | `cd backend && .venv/bin/mypy app/` |
-
-**Session End:** Commit → `st close` → `git pull --rebase && git push`
+| Logs | `journalctl --user -u summitflow-backend -f` |
 
 ---
 
@@ -34,19 +29,37 @@ SummitFlow - AI-assisted development. Read [AGENTS.md](AGENTS.md) for workflow.
 
 ---
 
-## Rules
+## Model Constants
 
-Mandatory rules in `.claude/rules/`: `issue-tracking.md`, `architecture-coherence.md`, `code-cleanliness.md`, `model-standards.md`
+Use `backend/app/constants.py` - never hardcode model strings.
 
-**Discovered bugs**: Create task with `st create "Fix: <desc>" -t bug -p 2 -l "complexity:small,domains:backend"`
+| Constant | Model |
+|----------|-------|
+| CLAUDE_SONNET | claude-sonnet-4-5 (default) |
+| CLAUDE_OPUS | claude-opus-4-5 |
+| GEMINI_FLASH | gemini-3-flash-preview |
+
+Forbidden: `gemini-2.*`, `claude-3-*`, hardcoded strings.
 
 ---
 
-## Services
+## Cloudflare Access
 
-`systemctl --user status|restart summitflow-backend`
-`journalctl --user -u summitflow-backend -f`
+Production URLs require auth headers. Credentials: `~/.cloudflare-access`
+
+```bash
+source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://dev.summitflow.dev/api/health
+```
 
 ---
 
-**Version**: 2.5.0
+## Core Rules
+
+1. **Direct, technical, no fluff** - Sparring partner, not cheerleader
+2. **Backend changes need UI visibility** - Complete the vertical slice
+3. **Track discovered bugs immediately** - `st create "Fix: X" -t bug`
+4. **SummitFlow vs App**: Dev tooling → SummitFlow. User-facing → App.
+
+---
+
+**Version**: 2.6.0
