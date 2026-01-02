@@ -165,22 +165,38 @@ export function ObservationIndexView({ observations, onRowClick }: ObservationIn
         </div>
       </div>
 
-      {/* Token Summary */}
-      <div className="flex items-center justify-end gap-4 px-1 text-[11px] text-slate-500">
-        <span>
-          Index: <span className="font-mono text-slate-400">~{tokenStats.indexTokens}</span> tokens
-        </span>
-        <span className="text-slate-600">|</span>
-        <span>
-          Full: <span className="font-mono text-slate-400">~{tokenStats.fullTokens}</span> tokens
-        </span>
-        <span className="text-slate-600">|</span>
-        <span className={clsx(
-          'font-medium',
-          tokenStats.savings > 50 ? 'text-emerald-400' : 'text-amber-400'
-        )}>
-          Savings: {tokenStats.savings}%
-        </span>
+      {/* Token Savings Visualization */}
+      <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg px-4 py-3">
+        <div className="flex items-center justify-between gap-6">
+          {/* Stats */}
+          <div className="flex items-center gap-4 text-[11px] text-slate-500">
+            <span>
+              Index: <span className="font-mono text-slate-300">~{tokenStats.indexTokens}</span> tokens
+            </span>
+            <span className="text-slate-600">vs</span>
+            <span>
+              Full: <span className="font-mono text-slate-300">~{tokenStats.fullTokens}</span> tokens
+            </span>
+          </div>
+
+          {/* Progress bar + savings */}
+          <div className="flex items-center gap-3 flex-1 max-w-xs">
+            <div className="flex-1 h-2 bg-slate-700/50 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${100 - tokenStats.savings}%` }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+                className="h-full bg-gradient-to-r from-outrun-500 to-outrun-400 rounded-full"
+              />
+            </div>
+            <span className={clsx(
+              'text-sm font-semibold tabular-nums min-w-[50px] text-right',
+              tokenStats.savings > 50 ? 'text-emerald-400' : tokenStats.savings > 25 ? 'text-amber-400' : 'text-slate-400'
+            )}>
+              -{tokenStats.savings}%
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
