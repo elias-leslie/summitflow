@@ -416,6 +416,58 @@ class STClient:
         response = self._client.post(self._url(f"/capabilities/{capability_id}/verify"))
         return self._handle_response(response)
 
+    # Criterion Linkage
+
+    def link_test_to_criterion(
+        self,
+        capability_id: str,
+        criterion_id: str,
+        test_id: int,
+        is_primary: bool = False,
+    ) -> dict[str, Any]:
+        """Link a test to a criterion.
+
+        Args:
+            capability_id: Capability ID (slug)
+            criterion_id: Criterion ID (e.g., "ac-001")
+            test_id: Test ID (integer)
+            is_primary: Whether this is the primary test
+
+        Returns:
+            Status dict.
+        """
+        data = {"test_id": test_id, "is_primary": is_primary}
+        response = self._client.post(
+            self._url(f"/capabilities/{capability_id}/criteria/{criterion_id}/link-test"),
+            json=data,
+        )
+        return self._handle_response(response)
+
+    def verify_criterion(
+        self,
+        task_id: str,
+        criterion_id: str,
+        verified: bool = True,
+        verified_by: str = "test",
+    ) -> dict[str, Any]:
+        """Verify a criterion for a task.
+
+        Args:
+            task_id: Task ID
+            criterion_id: Criterion ID (e.g., "ac-001")
+            verified: Whether criterion is verified
+            verified_by: Who/what verified (e.g., "test", "manual")
+
+        Returns:
+            Status dict with verification info.
+        """
+        data = {"verified": verified, "verified_by": verified_by}
+        response = self._client.patch(
+            self._url(f"/tasks/{task_id}/criteria/{criterion_id}/verify"),
+            json=data,
+        )
+        return self._handle_response(response)
+
     # Tests
 
     def list_tests(self, test_type: str | None = None) -> list[dict[str, Any]]:
