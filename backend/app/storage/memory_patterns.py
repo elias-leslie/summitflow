@@ -300,21 +300,37 @@ def mark_pattern_applied(pattern_id: str) -> bool:
     return updated
 
 
-def increment_pattern_usage(pattern_id: str) -> bool:
-    """Increment pattern usage count.
+def increment_pattern_usage(pattern_id: str, session_id: str | None = None) -> bool:
+    """Increment pattern usage count and optionally record session.
+
+    Args:
+        pattern_id: Pattern UUID to update.
+        session_id: Optional session ID to record as last_used_session_id.
 
     Returns:
         True if updated, False if not found.
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE learned_patterns
-            SET usage_count = usage_count + 1, last_used_at = NOW()
-            WHERE id = %s
-            """,
-            (pattern_id,),
-        )
+        if session_id:
+            cur.execute(
+                """
+                UPDATE learned_patterns
+                SET usage_count = usage_count + 1,
+                    last_used_at = NOW(),
+                    last_used_session_id = %s
+                WHERE id = %s
+                """,
+                (session_id, pattern_id),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE learned_patterns
+                SET usage_count = usage_count + 1, last_used_at = NOW()
+                WHERE id = %s
+                """,
+                (pattern_id,),
+            )
         updated: bool = cur.rowcount > 0
         conn.commit()
 

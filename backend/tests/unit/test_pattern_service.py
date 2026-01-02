@@ -3,9 +3,60 @@
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+class TestIncrementPatternUsage:
+    """Tests for increment_pattern_usage with session tracking."""
+
+    def test_increments_without_session(self):
+        """Increments usage count without session_id."""
+        from unittest.mock import patch
+
+        with patch("app.storage.memory_patterns.get_connection") as mock_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.rowcount = 1
+            mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_cursor.__exit__ = MagicMock(return_value=False)
+            mock_conn.return_value.__enter__ = MagicMock(return_value=mock_conn.return_value)
+            mock_conn.return_value.__exit__ = MagicMock(return_value=False)
+            mock_conn.return_value.cursor.return_value = mock_cursor
+
+            from app.storage.memory_patterns import increment_pattern_usage
+
+            result = increment_pattern_usage("pattern-123")
+
+            assert result is True
+            # Check that SQL doesn't include last_used_session_id
+            executed_sql = mock_cursor.execute.call_args[0][0]
+            assert "last_used_session_id" not in executed_sql
+
+    def test_increments_with_session(self):
+        """Increments usage count and records session_id."""
+        from unittest.mock import patch
+
+        with patch("app.storage.memory_patterns.get_connection") as mock_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.rowcount = 1
+            mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_cursor.__exit__ = MagicMock(return_value=False)
+            mock_conn.return_value.__enter__ = MagicMock(return_value=mock_conn.return_value)
+            mock_conn.return_value.__exit__ = MagicMock(return_value=False)
+            mock_conn.return_value.cursor.return_value = mock_cursor
+
+            from app.storage.memory_patterns import increment_pattern_usage
+
+            result = increment_pattern_usage("pattern-123", session_id="session-abc")
+
+            assert result is True
+            # Check that SQL includes last_used_session_id
+            executed_sql = mock_cursor.execute.call_args[0][0]
+            assert "last_used_session_id" in executed_sql
+            # Check params include session_id
+            params = mock_cursor.execute.call_args[0][1]
+            assert params[0] == "session-abc"
 
 
 class TestApplyPattern:
