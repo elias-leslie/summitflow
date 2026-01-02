@@ -425,6 +425,10 @@ class AgentConfigResponse(BaseModel):
     # Autonomous execution
     autonomous_enabled: bool = False
 
+    # Extraction throttle
+    extraction_enabled: bool = True
+    extraction_rpm_limit: int = 10
+
 
 class AgentConfigUpdate(BaseModel):
     """Request model for updating agent configuration."""
@@ -448,6 +452,10 @@ class AgentConfigUpdate(BaseModel):
 
     # Autonomous execution
     autonomous_enabled: bool | None = None
+
+    # Extraction throttle
+    extraction_enabled: bool | None = None
+    extraction_rpm_limit: int | None = None
 
 
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
@@ -522,6 +530,22 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
                 detail=f"component_source must be one of: {valid_sources}",
             )
         config_update["component_source"] = update.component_source
+
+    # Autonomous execution
+    if update.autonomous_enabled is not None:
+        config_update["autonomous_enabled"] = update.autonomous_enabled
+
+    # Extraction throttle
+    if update.extraction_enabled is not None:
+        config_update["extraction_enabled"] = update.extraction_enabled
+    if update.extraction_rpm_limit is not None:
+        valid_rpm = (0, 5, 10, 15, 30, 60)
+        if update.extraction_rpm_limit not in valid_rpm:
+            raise HTTPException(
+                status_code=400,
+                detail=f"extraction_rpm_limit must be one of: {valid_rpm}",
+            )
+        config_update["extraction_rpm_limit"] = update.extraction_rpm_limit
 
     if not config_update:
         raise HTTPException(status_code=400, detail="No fields to update")
