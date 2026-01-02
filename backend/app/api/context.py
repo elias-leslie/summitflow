@@ -14,7 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..services.context_helpers import (
     filter_rules_by_files,
@@ -286,6 +286,7 @@ class SessionStartContextResponse(BaseModel):
     context_block: str
     token_estimate: int
     items_included: int
+    patterns_index: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @router.post("/{project_id}/context/session-start", response_model=SessionStartContextResponse)
@@ -365,11 +366,25 @@ async def get_session_start_context(
         if request.uncommitted_count is not None:
             git_state["uncommitted_count"] = request.uncommitted_count
 
+    # Build pattern index (compact list of applied patterns)
+    from ..services.memory.pattern_service import PatternService
+
+    pattern_service = PatternService(project_id)
+    applied_patterns = pattern_service.list_patterns(status="applied", limit=50)
+    patterns_index = [
+        {
+            "id": f"pat:{p['id'][-8:]}",  # Short ID (last 8 chars)
+            "title": p["title"][:50],  # Truncate long titles
+            "type": p.get("pattern_type", "rule"),
+        }
+        for p in applied_patterns
+    ]
+
     # Format using new function
     context_block = format_session_context(git_state, diary, observations)
 
     # Count items included
-    items_count = len(diary) + len(observations)
+    items_count = len(diary) + len(observations) + len(patterns_index)
 
     token_estimate = len(context_block) // 4  # Rough estimate
 
@@ -377,6 +392,7 @@ async def get_session_start_context(
         context_block=context_block,
         token_estimate=token_estimate,
         items_included=items_count,
+        patterns_index=patterns_index,
     )
 
 
