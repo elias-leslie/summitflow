@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import MagicMock, patch
 
 from app.storage.memory import (
     _compute_observation_hash,
@@ -163,3 +164,87 @@ class TestObservationDeduplication:
         )
         assert result2 is not None
         assert result1["id"] != result2["id"]
+
+
+class TestPatternLifecycleCleanup:
+    """Tests for pattern lifecycle cleanup functions."""
+
+    @patch("app.storage.memory_patterns.get_connection")
+    def test_cleanup_low_relevance_patterns_deletes_old_low_conf(self, mock_get_conn):
+        """Deletes patterns with low confidence older than threshold."""
+        from datetime import datetime
+
+        from app.storage.memory_patterns import cleanup_low_relevance_patterns
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("pat-1", "project-a", "Old Pattern", 0.2, datetime(2025, 1, 1)),
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = mock_conn
+
+        result = cleanup_low_relevance_patterns(min_relevance=0.3, min_age_days=30)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "pat-1"
+        assert result[0]["title"] == "Old Pattern"
+        mock_conn.commit.assert_called_once()
+
+    @patch("app.storage.memory_patterns.get_connection")
+    def test_cleanup_low_relevance_patterns_no_matches(self, mock_get_conn):
+        """Returns empty list when no patterns match criteria."""
+        from app.storage.memory_patterns import cleanup_low_relevance_patterns
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = mock_conn
+
+        result = cleanup_low_relevance_patterns()
+
+        assert result == []
+        mock_conn.commit.assert_not_called()
+
+    @patch("app.storage.memory_patterns.get_connection")
+    def test_enforce_pattern_cap_deletes_excess(self, mock_get_conn):
+        """Deletes lowest-ranked patterns when over cap."""
+        from datetime import datetime
+
+        from app.storage.memory_patterns import enforce_pattern_cap
+
+        mock_cursor = MagicMock()
+        # First call: count returns 52
+        # Second call: returns 2 patterns to delete
+        mock_cursor.fetchone.return_value = (52,)
+        mock_cursor.fetchall.return_value = [
+            ("pat-low-1", "Low Pattern 1", 0.1, 0, None),
+            ("pat-low-2", "Low Pattern 2", 0.2, 1, datetime(2025, 11, 1)),
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = mock_conn
+
+        result = enforce_pattern_cap("test-project", max_patterns=50)
+
+        assert len(result) == 2
+        assert result[0]["id"] == "pat-low-1"
+        assert result[1]["id"] == "pat-low-2"
+        mock_conn.commit.assert_called_once()
+
+    @patch("app.storage.memory_patterns.get_connection")
+    def test_enforce_pattern_cap_under_limit(self, mock_get_conn):
+        """Does nothing when pattern count is under cap."""
+        from app.storage.memory_patterns import enforce_pattern_cap
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (30,)  # Under limit
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_conn.return_value.__enter__.return_value = mock_conn
+
+        result = enforce_pattern_cap("test-project", max_patterns=50)
+
+        assert result == []
+        mock_conn.commit.assert_not_called()

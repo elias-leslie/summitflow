@@ -273,7 +273,7 @@ def update_pattern_status(
             """,
             (status, reviewed_by, pattern_id),
         )
-        updated = cur.rowcount > 0
+        updated: bool = cur.rowcount > 0
         conn.commit()
 
     return updated
@@ -294,7 +294,7 @@ def mark_pattern_applied(pattern_id: str) -> bool:
             """,
             (pattern_id,),
         )
-        updated = cur.rowcount > 0
+        updated: bool = cur.rowcount > 0
         conn.commit()
 
     return updated
@@ -315,7 +315,7 @@ def increment_pattern_usage(pattern_id: str) -> bool:
             """,
             (pattern_id,),
         )
-        updated = cur.rowcount > 0
+        updated: bool = cur.rowcount > 0
         conn.commit()
 
     return updated
@@ -362,7 +362,7 @@ def update_pattern_feedback(
                 """,
                 (confidence, json.dumps(feedback_history), pattern_id),
             )
-        updated = cur.rowcount > 0
+        updated: bool = cur.rowcount > 0
         conn.commit()
 
     return updated
@@ -415,3 +415,146 @@ def _pattern_row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, An
         result["feedback_history"] = []
 
     return result
+
+
+def cleanup_low_relevance_patterns(
+    min_relevance: float = 0.3,
+    min_age_days: int = 30,
+) -> list[dict[str, Any]]:
+    """Delete patterns with low relevance that are old enough.
+
+    Removes patterns that:
+    - Have confidence < min_relevance (default 0.3)
+    - Are older than min_age_days (default 30 days)
+    - Have status 'applied' (don't delete pending/rejected)
+
+    Args:
+        min_relevance: Minimum confidence to keep (0.0-1.0)
+        min_age_days: Minimum age in days before deletion
+
+    Returns:
+        List of deleted patterns (id, title) for audit trail.
+    """
+    deleted: list[dict[str, Any]] = []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Find patterns to delete
+        cur.execute(
+            """
+            SELECT id, project_id, title, confidence, created_at
+            FROM learned_patterns
+            WHERE status = 'applied'
+              AND confidence < %s
+              AND created_at < NOW() - INTERVAL '%s days'
+            ORDER BY confidence ASC
+            """,
+            (min_relevance, min_age_days),
+        )
+        rows = cur.fetchall()
+
+        if not rows:
+            return deleted
+
+        # Collect for audit trail before deletion
+        for row in rows:
+            deleted.append(
+                {
+                    "id": str(row[0]),
+                    "project_id": row[1],
+                    "title": row[2],
+                    "confidence": float(row[3]) if row[3] else 0.0,
+                    "created_at": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        # Delete the patterns
+        ids_to_delete = [str(row[0]) for row in rows]
+        cur.execute(
+            "DELETE FROM learned_patterns WHERE id = ANY(%s::uuid[])",
+            (ids_to_delete,),
+        )
+        conn.commit()
+
+        logger.info(
+            f"Cleaned up {len(deleted)} low-relevance patterns "
+            f"(confidence < {min_relevance}, age > {min_age_days} days)"
+        )
+
+    return deleted
+
+
+def enforce_pattern_cap(
+    project_id: str,
+    max_patterns: int = 50,
+) -> list[dict[str, Any]]:
+    """Enforce maximum pattern count per project.
+
+    Keeps the most relevant patterns by:
+    - Sorting by confidence DESC, usage_count DESC, last_used_at DESC
+    - Deleting the lowest-ranking patterns over the cap
+
+    Args:
+        project_id: Project ID to enforce cap for
+        max_patterns: Maximum allowed patterns (default 50)
+
+    Returns:
+        List of deleted patterns (id, title) for audit trail.
+    """
+    deleted: list[dict[str, Any]] = []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Count current patterns
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM learned_patterns
+            WHERE project_id = %s AND status = 'applied'
+            """,
+            (project_id,),
+        )
+        count = cur.fetchone()
+        current_count = count[0] if count else 0
+
+        if current_count <= max_patterns:
+            return deleted
+
+        # Get patterns to delete (lowest ranking)
+        over_limit = current_count - max_patterns
+        cur.execute(
+            """
+            SELECT id, title, confidence, usage_count, last_used_at
+            FROM learned_patterns
+            WHERE project_id = %s AND status = 'applied'
+            ORDER BY COALESCE(confidence, 0) ASC,
+                     COALESCE(usage_count, 0) ASC,
+                     COALESCE(last_used_at, created_at) ASC
+            LIMIT %s
+            """,
+            (project_id, over_limit),
+        )
+        rows = cur.fetchall()
+
+        for row in rows:
+            deleted.append(
+                {
+                    "id": str(row[0]),
+                    "title": row[1],
+                    "confidence": float(row[2]) if row[2] else 0.0,
+                    "usage_count": row[3] or 0,
+                    "last_used_at": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        # Delete the patterns
+        ids_to_delete = [str(row[0]) for row in rows]
+        cur.execute(
+            "DELETE FROM learned_patterns WHERE id = ANY(%s::uuid[])",
+            (ids_to_delete,),
+        )
+        conn.commit()
+
+        logger.info(
+            f"Enforced pattern cap for {project_id}: deleted {len(deleted)} patterns "
+            f"(was {current_count}, now {max_patterns})"
+        )
+
+    return deleted
