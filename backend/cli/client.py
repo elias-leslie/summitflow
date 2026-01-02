@@ -361,6 +361,49 @@ class STClient:
         response = self._client.get(self._url("/capabilities"))
         return self._handle_response(response)
 
+    def get_capability(self, capability_id: str) -> dict[str, Any]:
+        """Get a capability by ID.
+
+        Args:
+            capability_id: Capability ID (slug or integer ID)
+
+        Returns:
+            Capability dict.
+        """
+        response = self._client.get(self._url(f"/capabilities/{capability_id}"))
+        return self._handle_response(response)
+
+    def create_capability(
+        self,
+        component_id: int | str,
+        capability_id: str,
+        name: str,
+        description: str | None = None,
+        priority: int = 2,
+    ) -> dict[str, Any]:
+        """Create a new capability.
+
+        Args:
+            component_id: Parent component ID (integer)
+            capability_id: Capability ID slug (e.g., "user-login")
+            name: Display name
+            description: Optional description
+            priority: Priority level (0-4, default 2)
+
+        Returns:
+            Created capability dict.
+        """
+        data: dict[str, Any] = {
+            "component_id": component_id,
+            "capability_id": capability_id,
+            "name": name,
+            "priority": priority,
+        }
+        if description:
+            data["description"] = description
+        response = self._client.post(self._url("/capabilities"), json=data)
+        return self._handle_response(response)
+
     def verify_capability(self, capability_id: str) -> dict[str, Any]:
         """Verify a capability's tests.
 
@@ -422,6 +465,56 @@ class STClient:
         response = self._client.get(self._url(f"/tasks/{task_id}/subtasks"), params=params)
         return self._handle_response(response)
 
+    def create_subtask(
+        self,
+        task_id: str,
+        subtask_id: str,
+        description: str,
+        phase: str = "implementation",
+        steps: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Create a subtask for a task.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            description: Subtask description
+            phase: Phase name (e.g., "backend", "frontend")
+            steps: Optional list of step descriptions
+
+        Returns:
+            Created subtask dict.
+        """
+        data: dict[str, Any] = {
+            "subtask_id": subtask_id,
+            "description": description,
+            "phase": phase,
+        }
+        if steps:
+            data["steps"] = steps
+        response = self._client.post(self._url(f"/tasks/{task_id}/subtasks"), json=data)
+        return self._handle_response(response)
+
+    def bulk_create_subtasks(
+        self,
+        task_id: str,
+        subtasks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Create multiple subtasks for a task in batch.
+
+        Args:
+            task_id: Task ID
+            subtasks: List of subtask dicts with subtask_id, description, phase, steps
+
+        Returns:
+            Dict with created list and errors list.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/batch"),
+            json={"subtasks": subtasks},
+        )
+        return self._handle_response(response)
+
     def update_subtask(
         self,
         task_id: str,
@@ -457,6 +550,28 @@ class STClient:
             List of step dicts.
         """
         response = self._client.get(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"))
+        return self._handle_response(response)
+
+    def bulk_create_steps(
+        self,
+        task_id: str,
+        subtask_id: str,
+        descriptions: list[str],
+    ) -> dict[str, Any]:
+        """Create multiple steps for a subtask in batch.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            descriptions: List of step descriptions
+
+        Returns:
+            Dict with created list.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/batch"),
+            json={"descriptions": descriptions},
+        )
         return self._handle_response(response)
 
     def update_step(
