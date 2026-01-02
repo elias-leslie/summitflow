@@ -291,6 +291,7 @@ class SessionStartRequest(BaseModel):
     current_time: str | None = None  # Client's current time, e.g. "2024-12-24 09:45 PST"
     recent_files: str | None = None  # Comma-separated list of recently modified files
     uncommitted_count: int | None = None  # Number of uncommitted changes
+    session_id: str | None = None  # Optional session ID for access tracking
 
 
 class SessionStartContextResponse(BaseModel):
@@ -382,6 +383,7 @@ async def get_session_start_context(
 
     # Build pattern index (compact list of applied patterns)
     from ..services.memory.pattern_service import PatternService
+    from ..storage.memory import increment_pattern_usage
 
     pattern_service = PatternService(project_id)
     applied_patterns = pattern_service.list_patterns(status="applied", limit=50)
@@ -393,6 +395,27 @@ async def get_session_start_context(
         }
         for p in applied_patterns
     ]
+
+    # Track pattern usage and log access for session-start injection
+    session_id = request.session_id if request else None
+    if applied_patterns and session_id:
+        from ..storage.context_access import log_context_access
+
+        for pattern in applied_patterns:
+            pattern_id = str(pattern["id"])
+            # Increment usage count
+            increment_pattern_usage(pattern_id, session_id=session_id)
+            # Log access as injection source
+            try:
+                log_context_access(
+                    project_id=project_id,
+                    session_id=session_id,
+                    entity_type="pattern",
+                    entity_id=pattern_id,
+                    access_source="injection",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log pattern injection access: {e}")
 
     # Format using new function
     context_block = format_session_context(git_state, diary, observations)
