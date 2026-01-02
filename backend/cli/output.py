@@ -73,10 +73,21 @@ def output_task(task: dict[str, Any], json_mode: bool = False) -> None:
     console.print(panel)
 
 
+def _extract_tier(labels: list[str] | None) -> str:
+    """Extract tier from labels list."""
+    if not labels:
+        return "-"
+    for label in labels:
+        if label.startswith("tier:"):
+            return label.split(":")[1]
+    return "-"
+
+
 def output_task_list(
     tasks: list[dict[str, Any]],
     json_mode: bool = False,
     title: str = "Tasks",
+    show_tier: bool = False,
 ) -> None:
     """Output a list of tasks as a Rich Table.
 
@@ -84,6 +95,7 @@ def output_task_list(
         tasks: List of task dicts
         json_mode: If True, output as JSON
         title: Table title
+        show_tier: If True, show tier column
     """
     if json_mode:
         output_json({"tasks": tasks, "total": len(tasks)})
@@ -96,6 +108,8 @@ def output_task_list(
     table = Table(title=title, show_header=True, header_style="bold")
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Pri", justify="center", no_wrap=True)
+    if show_tier:
+        table.add_column("Tier", justify="center", no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
     table.add_column("Status", justify="center")
@@ -112,19 +126,33 @@ def output_task_list(
         if len(task.get("title", "")) > 50:
             title_text += "..."
 
-        # Format labels
-        labels = ", ".join(task.get("labels", [])[:2])
-        if len(task.get("labels", [])) > 2:
+        # Format labels (exclude tier if showing separately)
+        task_labels = task.get("labels", [])
+        if show_tier:
+            task_labels = [lbl for lbl in task_labels if not lbl.startswith("tier:")]
+        labels = ", ".join(task_labels[:2])
+        if len(task_labels) > 2:
             labels += "..."
 
-        table.add_row(
+        row = [
             task["id"],
             priority_label,
-            f"[dim]{task.get('task_type', 'task')}[/dim]",
-            title_text,
-            f"[{color}]{status}[/]",
-            labels,
+        ]
+        if show_tier:
+            tier = _extract_tier(task.get("labels"))
+            tier_display = f"[cyan]{tier}[/]" if tier != "-" else "[dim]-[/]"
+            row.append(tier_display)
+
+        row.extend(
+            [
+                f"[dim]{task.get('task_type', 'task')}[/dim]",
+                title_text,
+                f"[{color}]{status}[/]",
+                labels,
+            ]
         )
+
+        table.add_row(*row)
 
     console.print(table)
 

@@ -76,6 +76,7 @@ def list_tasks(
     status: Annotated[str | None, typer.Option("-s", "--status")] = None,
     task_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
     priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
+    tier: Annotated[int | None, typer.Option("--tier", min=1, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 50,
     json_output: Annotated[bool, typer.Option("--json")] = False,
@@ -85,11 +86,19 @@ def list_tasks(
     Examples:
         st list --status pending
         st list -t bug -p 1
+        st list --tier 1
         st list --labels "complexity:small" --json
     """
     client = STClient()
 
+    # Build labels list, adding tier filter if specified
     labels_list = labels.split(",") if labels else None
+    if tier:
+        tier_label = f"tier:{tier}"
+        if labels_list:
+            labels_list.append(tier_label)
+        else:
+            labels_list = [tier_label]
 
     try:
         result = client.list_tasks(
@@ -103,7 +112,7 @@ def list_tasks(
         _handle_api_error(e)
         return
 
-    output_task_list(result["tasks"], json_output)
+    output_task_list(result["tasks"], json_output, show_tier=True)
 
 
 @app.command()
