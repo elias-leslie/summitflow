@@ -305,6 +305,51 @@ class STClient:
         response = self._client.delete(self._url(url), params=params)
         return self._handle_response(response)
 
+    # Components
+
+    def list_components(self) -> list[dict[str, Any]]:
+        """List all components for the project.
+
+        Returns:
+            List of component dicts.
+        """
+        response = self._client.get(self._url("/components"))
+        return self._handle_response(response)
+
+    def get_component(self, component_id: str) -> dict[str, Any]:
+        """Get a component by ID.
+
+        Args:
+            component_id: Component ID (slug or integer ID)
+
+        Returns:
+            Component dict.
+        """
+        response = self._client.get(self._url(f"/components/{component_id}"))
+        return self._handle_response(response)
+
+    def create_component(
+        self,
+        component_id: str,
+        name: str,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new component.
+
+        Args:
+            component_id: Component ID slug (e.g., "cli-tools")
+            name: Display name
+            description: Optional description
+
+        Returns:
+            Created component dict.
+        """
+        data: dict[str, Any] = {"component_id": component_id, "name": name}
+        if description:
+            data["description"] = description
+        response = self._client.post(self._url("/components"), json=data)
+        return self._handle_response(response)
+
     # Capabilities
 
     def list_capabilities(self) -> list[dict[str, Any]]:
