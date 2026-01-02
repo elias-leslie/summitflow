@@ -189,6 +189,9 @@ def link_issue_to_task(
 def close_task_for_issue(issue: QAIssue) -> bool:
     """Close the SummitFlow task linked to a QA issue.
 
+    Uses 'cancel' for pending tasks (not yet started) and 'close' for
+    tasks that are running or paused.
+
     Args:
         issue: The QA issue with st_task_id set
 
@@ -199,21 +202,38 @@ def close_task_for_issue(issue: QAIssue) -> bool:
         logger.debug(f"Issue {issue.id} has no linked task to close")
         return False
 
+    # First check task status to determine the right command
+    status_success, status_output = _run_st_command(["show", issue.st_task_id, "--json"])
+
+    command = "close"  # Default
+    if status_success:
+        try:
+            import json
+
+            task_data = json.loads(status_output)
+            task_status = task_data.get("status", "")
+            # Use cancel for pending tasks (issue resolved before work started)
+            if task_status == "pending":
+                command = "cancel"
+        except json.JSONDecodeError:
+            pass  # Fall back to close
+
     reason = f"Auto-closed: QA issue #{issue.id} resolved"
     args = [
-        "close",
+        command,
         issue.st_task_id,
         "--reason",
         reason,
-        "--force",  # Skip validation prompts
     ]
+    if command == "close":
+        args.append("--force")  # Skip validation prompts for close
 
     success, output = _run_st_command(args)
     if success:
-        logger.info(f"Auto-closed task {issue.st_task_id} for resolved issue {issue.id}")
+        logger.info(f"Auto-{command}d task {issue.st_task_id} for resolved issue {issue.id}")
         return True
     else:
-        logger.warning(f"Failed to close task {issue.st_task_id}: {output}")
+        logger.warning(f"Failed to {command} task {issue.st_task_id}: {output}")
         return False
 
 
