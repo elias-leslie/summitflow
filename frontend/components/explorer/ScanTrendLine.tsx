@@ -2,7 +2,7 @@
  * ScanTrendLine - Minimal sparkline for scan history
  *
  * Architecture: SVG for trend line, HTML/CSS for event markers
- * This avoids SVG aspect ratio issues and gives native hover states.
+ * Time-based positioning with dynamic window sizing
  */
 
 "use client";
@@ -16,7 +16,16 @@ interface ScanTrendLineProps {
   className?: string;
 }
 
-// Trigger colors
+interface ProcessedScan {
+  id: number;
+  started_at: string;
+  triggered_by: string;
+  metrics: Record<string, unknown>;
+  complexity: number | null;
+  delta: string;
+  xPosition: number;
+}
+
 const TRIGGER_COLORS: Record<string, string> = {
   refactor_it: "#a855f7",
   og_refactor_it: "#a855f7",
@@ -46,8 +55,7 @@ function getTriggerLabel(trigger: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -55,84 +63,113 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// Calculate dynamic time window based on scan timestamps
+function calculateTimeWindow(scans: { started_at: string }[]): { start: number; end: number } {
+  const now = Date.now();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const MIN_WINDOW = DAY_MS;
+  const MAX_WINDOW = 30 * DAY_MS;
+
+  if (scans.length === 0) return { start: now - MAX_WINDOW, end: now };
+
+  const timestamps = scans.map((s) => new Date(s.started_at).getTime());
+  const oldest = Math.min(...timestamps);
+  const newest = Math.max(...timestamps);
+  const padding = Math.max((newest - oldest) * 0.15, 2 * 60 * 60 * 1000);
+
+  let windowStart = oldest - padding;
+  let windowEnd = Math.min(newest + padding, now);
+
+  if (windowEnd - windowStart < MIN_WINDOW) {
+    const center = (windowStart + windowEnd) / 2;
+    windowStart = center - MIN_WINDOW / 2;
+    windowEnd = Math.min(center + MIN_WINDOW / 2, now);
+    if (windowEnd - windowStart < MIN_WINDOW) windowStart = windowEnd - MIN_WINDOW;
+  }
+
+  if (windowEnd - windowStart > MAX_WINDOW) windowStart = windowEnd - MAX_WINDOW;
+
+  return { start: windowStart, end: windowEnd };
+}
+
+function getTimePosition(timestamp: number, start: number, end: number): number {
+  const size = end - start;
+  if (size <= 0) return 50;
+  return Math.max(0, Math.min(100, ((timestamp - start) / size) * 100));
+}
+
 export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const { scans, isLoading, isError } = useScanHistory({ projectId, days: 30 });
 
-  const { scans, sparklineData, isLoading, isError } = useScanHistory({
-    projectId,
-    days: 30,
-  });
-
-  // Process scan data
-  const chartData = useMemo(() => {
+  const timeWindow = useMemo(() => {
     if (!scans || scans.length === 0) return null;
+    return calculateTimeWindow(scans);
+  }, [scans]);
 
-    const sortedScans = [...scans].sort(
+  // Process scans - use metrics.complexity directly from each scan
+  const chartData = useMemo((): ProcessedScan[] | null => {
+    if (!scans || scans.length === 0 || !timeWindow) return null;
+
+    const sorted = [...scans].sort(
       (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
     );
 
-    return sortedScans.map((scan, idx) => {
-      const currentComplexity = sparklineData?.complexity?.[idx] ?? null;
-      const prevComplexity = idx > 0 ? sparklineData?.complexity?.[idx - 1] : null;
+    return sorted.map((scan, idx, arr): ProcessedScan => {
+      const curr = typeof scan.metrics?.complexity === "number" ? scan.metrics.complexity : null;
+      const prev = idx > 0 && typeof arr[idx - 1].metrics?.complexity === "number"
+        ? (arr[idx - 1].metrics.complexity as number)
+        : null;
 
       let delta = "—";
-      if (currentComplexity !== null && prevComplexity !== null && prevComplexity !== undefined) {
-        const diff = currentComplexity - prevComplexity;
-        if (diff > 0) delta = `+${diff.toFixed(0)}`;
-        else if (diff < 0) delta = diff.toFixed(0);
-        else delta = "±0";
+      if (curr !== null && prev !== null) {
+        const diff = curr - prev;
+        delta = diff > 0 ? `+${diff.toFixed(0)}` : diff < 0 ? diff.toFixed(0) : "±0";
       }
 
-      return { ...scan, complexity: currentComplexity, delta };
+      return {
+        id: scan.id,
+        started_at: scan.started_at,
+        triggered_by: scan.triggered_by,
+        metrics: scan.metrics,
+        complexity: curr,
+        delta,
+        xPosition: getTimePosition(new Date(scan.started_at).getTime(), timeWindow.start, timeWindow.end),
+      };
     });
-  }, [scans, sparklineData]);
+  }, [scans, timeWindow]);
 
-  const hasComplexityData = useMemo(() => {
-    return chartData?.some((d) => d.complexity !== null) ?? false;
-  }, [chartData]);
+  const hasComplexityData = chartData?.some((d) => d.complexity !== null) ?? false;
 
-  // Generate SVG path for trend line
+  // Build SVG paths for trend line
   const { linePath, areaPath } = useMemo(() => {
-    if (!chartData || chartData.length === 0) {
-      return { linePath: "", areaPath: "" };
+    if (!chartData) return { linePath: "", areaPath: "" };
+
+    const points = chartData
+      .filter((d) => d.complexity !== null)
+      .map((d) => ({ x: d.xPosition, y: d.complexity as number }));
+
+    if (points.length < 2) return { linePath: "", areaPath: "" };
+
+    const minY = Math.min(...points.map((p) => p.y)) * 0.95;
+    const maxY = Math.max(...points.map((p) => p.y)) * 1.05;
+    const range = maxY - minY || 1;
+
+    const scaled = points.map((p) => ({ x: p.x, y: 100 - ((p.y - minY) / range) * 100 }));
+
+    let line = `M ${scaled[0].x} ${scaled[0].y}`;
+    let area = `M ${scaled[0].x} 100 L ${scaled[0].x} ${scaled[0].y}`;
+
+    for (let i = 1; i < scaled.length; i++) {
+      const cpx = (scaled[i - 1].x + scaled[i].x) / 2;
+      line += ` C ${cpx} ${scaled[i - 1].y}, ${cpx} ${scaled[i].y}, ${scaled[i].x} ${scaled[i].y}`;
+      area += ` C ${cpx} ${scaled[i - 1].y}, ${cpx} ${scaled[i].y}, ${scaled[i].x} ${scaled[i].y}`;
     }
 
-    const complexityValues = chartData
-      .map((d, i) => ({ value: d.complexity, index: i }))
-      .filter((d): d is { value: number; index: number } => d.value !== null);
-
-    if (complexityValues.length < 2) {
-      return { linePath: "", areaPath: "" };
-    }
-
-    const minC = Math.min(...complexityValues.map((d) => d.value)) * 0.95;
-    const maxC = Math.max(...complexityValues.map((d) => d.value)) * 1.05;
-    const range = maxC - minC || 1;
-
-    // Map to 0-100 coordinate space
-    const points = complexityValues.map((d) => ({
-      x: (d.index / Math.max(chartData.length - 1, 1)) * 100,
-      y: 100 - ((d.value - minC) / range) * 100,
-    }));
-
-    // Build bezier path
-    let line = `M ${points[0].x} ${points[0].y}`;
-    let area = `M ${points[0].x} 100 L ${points[0].x} ${points[0].y}`;
-
-    for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
-      const curr = points[i];
-      const cpx = (prev.x + curr.x) / 2;
-      line += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
-      area += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
-    }
-
-    area += ` L ${points[points.length - 1].x} 100 Z`;
-
+    area += ` L ${scaled[scaled.length - 1].x} 100 Z`;
     return { linePath: line, areaPath: area };
   }, [chartData]);
 
-  // Loading state
   if (isLoading) {
     return (
       <div className={cn("h-12 flex items-center justify-center", className)}>
@@ -141,10 +178,7 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
     );
   }
 
-  if (isError) return null;
-
-  // Empty state
-  if (!chartData || chartData.length === 0) {
+  if (isError || !chartData || chartData.length === 0) {
     return (
       <div className={cn("h-12 flex items-center justify-center", className)}>
         <span className="text-[10px] font-mono text-slate-600">No scan activity</span>
@@ -152,12 +186,12 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
     );
   }
 
-  const hoveredScan = hoveredIndex !== null ? chartData[hoveredIndex] : null;
+  const hovered = hoveredIndex !== null ? chartData[hoveredIndex] : null;
 
   return (
     <div className={cn("h-12 relative", className)}>
-      {/* SVG Layer - Trend line only (can stretch) */}
-      {hasComplexityData && (linePath || areaPath) && (
+      {/* Trend line SVG */}
+      {hasComplexityData && linePath && (
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
@@ -171,44 +205,37 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
             </linearGradient>
           </defs>
           {areaPath && <path d={areaPath} fill="url(#scanAreaGrad)" />}
-          {linePath && (
-            <path
-              d={linePath}
-              fill="none"
-              stroke="#a855f7"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
+          <path
+            d={linePath}
+            fill="none"
+            stroke="#a855f7"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
         </svg>
       )}
 
-      {/* Baseline for no-data state */}
+      {/* Baseline when no complexity data */}
       {!hasComplexityData && (
-        <div
-          className="absolute left-0 right-0 h-px bg-slate-700/50"
-          style={{ top: "50%" }}
-        />
+        <div className="absolute left-0 right-0 h-px bg-slate-700/50" style={{ top: "50%" }} />
       )}
 
-      {/* HTML Layer - Event markers (perfect circles, proper hover) */}
+      {/* Event markers */}
       <div className="absolute inset-x-0 top-0 h-4 flex items-center">
         {chartData.map((scan, i) => {
-          const leftPercent = (i / Math.max(chartData.length - 1, 1)) * 100;
           const color = getTriggerColor(scan.triggered_by);
           const isHovered = hoveredIndex === i;
 
           return (
             <div
               key={scan.id}
-              className="absolute -translate-x-1/2 group/dot"
-              style={{ left: `${leftPercent}%` }}
+              className="absolute -translate-x-1/2"
+              style={{ left: `${scan.xPosition}%` }}
               onMouseEnter={() => setHoveredIndex(i)}
               onMouseLeave={() => setHoveredIndex(null)}
             >
-              {/* Glow layer */}
               <div
                 className={cn(
                   "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200",
@@ -216,16 +243,12 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
                 )}
                 style={{ backgroundColor: color, filter: "blur(3px)" }}
               />
-              {/* Dot */}
               <div
                 className={cn(
                   "relative rounded-full cursor-pointer transition-all duration-150",
                   isHovered ? "w-2 h-2" : "w-1.5 h-1.5"
                 )}
-                style={{
-                  backgroundColor: color,
-                  boxShadow: isHovered ? `0 0 8px ${color}` : `0 0 4px ${color}50`,
-                }}
+                style={{ backgroundColor: color, boxShadow: isHovered ? `0 0 8px ${color}` : `0 0 4px ${color}50` }}
               />
             </div>
           );
@@ -233,52 +256,39 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
       </div>
 
       {/* Tooltip */}
-      {hoveredScan && hoveredIndex !== null && (
+      {hovered && (
         <div
           className="absolute z-50 pointer-events-none"
           style={{
-            left: `${(hoveredIndex / Math.max(chartData.length - 1, 1)) * 100}%`,
+            left: `${hovered.xPosition}%`,
             top: 0,
-            transform: `translateX(${
-              hoveredIndex / chartData.length > 0.7
-                ? "-100%"
-                : hoveredIndex / chartData.length < 0.3
-                ? "0%"
-                : "-50%"
-            }) translateY(-100%)`,
+            transform: `translateX(${hovered.xPosition > 75 ? "-100%" : hovered.xPosition < 25 ? "0%" : "-50%"}) translateY(-100%)`,
             paddingBottom: "8px",
           }}
         >
           <div
             className="bg-slate-900/95 backdrop-blur-sm border rounded px-2 py-1.5 shadow-xl whitespace-nowrap"
-            style={{ borderColor: `${getTriggerColor(hoveredScan.triggered_by)}40` }}
+            style={{ borderColor: `${getTriggerColor(hovered.triggered_by)}40` }}
           >
             <div className="flex items-center gap-1.5 mb-0.5">
               <div
                 className="w-1.5 h-1.5 rounded-full"
-                style={{
-                  backgroundColor: getTriggerColor(hoveredScan.triggered_by),
-                  boxShadow: `0 0 4px ${getTriggerColor(hoveredScan.triggered_by)}`,
-                }}
+                style={{ backgroundColor: getTriggerColor(hovered.triggered_by), boxShadow: `0 0 4px ${getTriggerColor(hovered.triggered_by)}` }}
               />
-              <span className="text-[10px] font-mono text-slate-200">
-                {getTriggerLabel(hoveredScan.triggered_by)}
-              </span>
+              <span className="text-[10px] font-mono text-slate-200">{getTriggerLabel(hovered.triggered_by)}</span>
             </div>
-            <div className="text-[9px] font-mono text-slate-500">
-              {formatDate(hoveredScan.started_at)}
-            </div>
-            {hoveredScan.complexity !== null && (
+            <div className="text-[9px] font-mono text-slate-500">{formatDate(hovered.started_at)}</div>
+            {hovered.complexity !== null && (
               <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-slate-700/50 text-[9px] font-mono">
-                <span className="text-slate-400">{hoveredScan.complexity.toFixed(0)}</span>
+                <span className="text-slate-400">{hovered.complexity.toFixed(0)}</span>
                 <span
                   className={cn(
-                    hoveredScan.delta.startsWith("+") && "text-rose-400",
-                    hoveredScan.delta.startsWith("-") && "text-emerald-400",
-                    (hoveredScan.delta === "±0" || hoveredScan.delta === "—") && "text-slate-500"
+                    hovered.delta.startsWith("+") && "text-rose-400",
+                    hovered.delta.startsWith("-") && "text-emerald-400",
+                    (hovered.delta === "±0" || hovered.delta === "—") && "text-slate-500"
                   )}
                 >
-                  {hoveredScan.delta}
+                  {hovered.delta}
                 </span>
               </div>
             )}
