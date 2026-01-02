@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import redis
@@ -345,6 +346,19 @@ class ContextBuilder:
                 "token_count": self._pattern_full_tokens(pattern),
             }
 
+        elif entity_type == "rule":
+            # Rule expansion - handle global vs project rules
+            rule_content = self._read_rule_file(uuid)
+            if rule_content is None:
+                raise KeyError(f"Rule not found: {uuid}")
+
+            return {
+                "entity_id": entity_id,
+                "type": "rule",
+                "content": {"filename": uuid, "content": rule_content},
+                "token_count": estimate_tokens(rule_content),
+            }
+
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
 
@@ -387,6 +401,53 @@ class ContextBuilder:
         tokens += estimate_tokens(pattern.get("content"))
         tokens += estimate_tokens(pattern.get("rationale"))
         return tokens
+
+    def _read_rule_file(self, rule_id: str) -> str | None:
+        """Read a rule file by ID.
+
+        Rule IDs can be:
+        - "global:<filename>" - ~/.claude/rules/<filename>
+        - "<filename>" - project/.claude/rules/<filename>
+
+        Args:
+            rule_id: Rule identifier (filename or global:filename)
+
+        Returns:
+            File content or None if not found
+        """
+        if rule_id.startswith("global:"):
+            # Global rule
+            filename = rule_id[7:]  # Remove "global:" prefix
+            rules_path = Path.home() / ".claude" / "rules" / filename
+        else:
+            # Project rule - need to find project path
+            project_path = self._get_project_path()
+            if not project_path:
+                return None
+            rules_path = project_path / ".claude" / "rules" / rule_id
+
+        if not rules_path.exists():
+            return None
+
+        try:
+            return rules_path.read_text()
+        except Exception:
+            return None
+
+    def _get_project_path(self) -> Path | None:
+        """Get the project root path for the current project_id."""
+        if self.project_id == "summitflow":
+            return Path.home() / "summitflow"
+        elif self.project_id == "portfolio-ai":
+            return Path.home() / "portfolio-ai"
+        else:
+            # Try to find from projects table
+            from app.storage.projects import get_project
+
+            project = get_project(self.project_id)
+            if project and project.get("root_path"):
+                return Path(project["root_path"])
+            return None
 
     @staticmethod
     def rank_observation(

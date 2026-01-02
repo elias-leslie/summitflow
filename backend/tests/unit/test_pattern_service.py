@@ -423,3 +423,63 @@ class TestExpandPatternEntity:
         builder = ContextBuilder(project_id="test")
         with pytest.raises(KeyError, match="Pattern not found"):
             builder.expand_entity("pat:nonexist")
+
+
+class TestExpandRuleEntity:
+    """Tests for expand_entity with rule: prefix."""
+
+    def test_expand_rule_by_filename(self, tmp_path):
+        """Expand rule using filename within project."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        # Create a test rules directory
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        test_rule = rules_dir / "test-rule.md"
+        test_rule.write_text("# Test Rule\n\nDo the thing correctly.")
+
+        builder = ContextBuilder(project_id="test")
+        # Mock _get_project_path to return tmp_path
+        builder._get_project_path = lambda: tmp_path
+
+        result = builder.expand_entity("rule:test-rule.md")
+
+        assert result["type"] == "rule"
+        assert result["entity_id"] == "rule:test-rule.md"
+        assert result["content"]["filename"] == "test-rule.md"
+        assert "# Test Rule" in result["content"]["content"]
+        assert result["token_count"] > 0
+
+    def test_expand_global_vs_project_rule(self, tmp_path, monkeypatch):
+        """Expand global rule vs project rule."""
+        from pathlib import Path
+
+        from app.services.memory.context_builder import ContextBuilder
+
+        # Create global rules directory
+        global_rules = tmp_path / ".claude" / "rules"
+        global_rules.mkdir(parents=True)
+        global_rule = global_rules / "global-rule.md"
+        global_rule.write_text("# Global Rule\n\nApplies to all projects.")
+
+        # Mock Path.home() to return tmp_path
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        builder = ContextBuilder(project_id="test")
+
+        result = builder.expand_entity("rule:global:global-rule.md")
+
+        assert result["type"] == "rule"
+        assert result["content"]["filename"] == "global:global-rule.md"
+        assert "# Global Rule" in result["content"]["content"]
+
+    def test_expand_rule_not_found(self):
+        """Raises KeyError when rule not found."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        builder = ContextBuilder(project_id="test")
+        # Mock _get_project_path to return None (no project found)
+        builder._get_project_path = lambda: None
+
+        with pytest.raises(KeyError, match="Rule not found"):
+            builder.expand_entity("rule:nonexistent.md")
