@@ -18,6 +18,7 @@ import { MetricCard, type MemoryStats } from './MetricsSection';
 import { Pagination, ITEMS_PER_PAGE } from './Pagination';
 import { GlobalExtractionPanel } from './GlobalExtractionPanel';
 import { ObservationIndexView, ViewModeToggle, useViewMode } from './ObservationIndexView';
+import { ObservationDetailModal } from './ObservationDetailModal';
 
 // Main Memory Page Component
 export default function MemoryPage() {
@@ -691,6 +692,12 @@ export default function MemoryPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Observation Detail Modal */}
+      <ObservationDetailModal
+        observation={selectedObservation}
+        onClose={() => setSelectedObservation(null)}
+      />
     </div>
   );
 }
