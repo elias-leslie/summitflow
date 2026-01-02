@@ -136,7 +136,18 @@ class ClaudeClient(LLMClient):
         Returns:
             LLMResponse with Claude's response
         """
-        # Run async code synchronously - use asyncio.run() for thread safety
+        # Handle both sync and async contexts
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop - we're in a sync context (e.g., Celery worker)
+            return asyncio.run(self._generate_async(prompt, system, working_dir))
+
+        # We're in an async context (e.g., FastAPI) - need to run in executor
+        # Use nest_asyncio to allow nested event loops
+        import nest_asyncio
+
+        nest_asyncio.apply()
         return asyncio.run(self._generate_async(prompt, system, working_dir))
 
     async def _generate_async(

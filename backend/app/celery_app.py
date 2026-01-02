@@ -43,8 +43,8 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     result_extended=True,  # Store extended task metadata (name, args, kwargs, worker)
-    task_time_limit=300,  # 5 minutes max per task
-    task_soft_time_limit=270,  # 4.5 minute soft limit
+    task_time_limit=900,  # 15 minutes max per task (Tier 3 needs ~10 min)
+    task_soft_time_limit=840,  # 14 minute soft limit (2x safety margin on profiled 400s)
     result_expires=60 * 60 * 24 * 7,  # Results expire after 7 days
     worker_prefetch_multiplier=1,  # One task at a time
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks

@@ -4,6 +4,8 @@ Endpoints:
 - GET /memory/stats - System-wide memory statistics
 - GET /memory/extraction - Global extraction settings
 - PATCH /memory/extraction - Update global extraction settings
+- GET /memory/index - Compact observation index for progressive disclosure
+- GET /memory/observations - Batch fetch full observations by IDs
 """
 
 from __future__ import annotations
@@ -213,4 +215,103 @@ async def get_memory_stats(
         filtering=FilteringMetrics(**filter_metrics),
         lifecycle=lifecycle,
         fast_path=fast_path,
+    )
+
+
+# --- Progressive Disclosure: Observation Index ---
+
+
+class ObservationIndexItem(BaseModel):
+    """Compact observation summary for index view."""
+
+    id: str = Field(description="Observation UUID")
+    title: str = Field(description="Observation title")
+    observation_type: str = Field(description="Type: error, operational, pattern, etc.")
+    tokens_to_read: int = Field(description="Estimated tokens to read full observation")
+    created_at: datetime = Field(description="When observation was created")
+
+
+class ObservationIndexResponse(BaseModel):
+    """Compact observation index for progressive disclosure."""
+
+    items: list[ObservationIndexItem] = Field(description="Observation summaries")
+    total: int = Field(description="Total observations matching filter")
+    index_tokens: int = Field(description="Tokens consumed by this index")
+    full_tokens: int = Field(description="Tokens if full observations were included")
+
+
+def _estimate_tokens(text: str | None) -> int:
+    """Estimate token count from text (rough: ~4 chars per token)."""
+    if not text:
+        return 0
+    return len(text) // 4
+
+
+@router.get("/memory/index", response_model=ObservationIndexResponse)
+async def get_observation_index(
+    project_id: str = Query(..., description="Project ID to filter observations"),
+    limit: int = Query(50, ge=1, le=200, description="Max observations to return"),
+) -> ObservationIndexResponse:
+    """Get compact observation index for progressive disclosure.
+
+    Returns minimal info (id, title, type, token cost) so agent can decide
+    which observations to fetch in full. Much cheaper than injecting full content.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, title, observation_type, narrative, subtitle,
+                   CASE
+                       WHEN jsonb_typeof(facts) = 'array' THEN jsonb_array_length(facts)
+                       WHEN jsonb_typeof(facts) = 'object' THEN (
+                           SELECT COUNT(*) FROM jsonb_object_keys(facts)
+                       )::int
+                       ELSE 0
+                   END as facts_count,
+                   created_at
+            FROM observations
+            WHERE project_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (project_id, limit),
+        )
+        rows = cur.fetchall()
+
+    items: list[ObservationIndexItem] = []
+    total_full_tokens = 0
+
+    for row in rows:
+        obs_id, title, obs_type, narrative, subtitle, facts_count, created_at = row
+
+        # Estimate tokens for full observation
+        full_tokens = (
+            _estimate_tokens(title)
+            + _estimate_tokens(subtitle)
+            + _estimate_tokens(narrative)
+            + (facts_count * 20)  # ~20 tokens per fact
+        )
+        total_full_tokens += full_tokens
+
+        items.append(
+            ObservationIndexItem(
+                id=str(obs_id),
+                title=title or "(untitled)",
+                observation_type=obs_type or "unknown",
+                tokens_to_read=full_tokens,
+                created_at=created_at,
+            )
+        )
+
+    # Estimate index tokens (id + title + type + ~10 overhead per item)
+    index_tokens = sum(
+        len(item.id) // 4 + len(item.title) // 4 + len(item.observation_type) // 4 + 10
+        for item in items
+    )
+
+    return ObservationIndexResponse(
+        items=items,
+        total=len(items),
+        index_tokens=index_tokens,
+        full_tokens=total_full_tokens,
     )
