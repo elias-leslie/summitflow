@@ -35,6 +35,44 @@ AUTONOMOUS_DRY_RUN = False  # When True, log what would execute but don't actual
 VALIDATION_MODE = False  # When True, only execute tasks in ALLOWED_TASK_IDS
 ALLOWED_TASK_IDS: list[str] = []  # Empty = no filter (when VALIDATION_MODE=True)
 
+# Patterns in error titles that should NOT generate bug tasks
+# These are environmental/transient issues, not actual code bugs
+ERROR_BLOCKLIST_PATTERNS = [
+    # Database connection issues (environmental, not bugs)
+    "postgresql",
+    "role.*does not exist",
+    "database.*role",
+    "authentication failure",
+    "connection failed",
+    "psql",
+    # Pre-existing type errors (not new bugs, need consolidated approach)
+    "mypy",
+    "type error",
+    "type mismatch",
+    "type check",
+    # TypeScript transient issues
+    "typescript.*not found",
+    "ts2307",
+    "ts6053",
+    "tsc",
+    "module resolution",
+    # Missing tools/dependencies (environmental)
+    "missing from path",
+    "cli missing",
+    "command not found",
+    "dependency",
+    "package.json",
+    # Transient test/build failures
+    "file not found",
+    "test file",
+    "migration inspection",
+    "jq filter",
+    "jq syntax",
+    # Capability/worktree verification (test infrastructure)
+    "capability verification",
+    "worktree.*verification",
+]
+
 
 @celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[untyped-decorator]
 def reset_expired_task_claims() -> dict[str, int | str]:
