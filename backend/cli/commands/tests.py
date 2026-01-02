@@ -41,6 +41,39 @@ def list_tests(
     output_tests(tests, json_output)
 
 
+@app.command("link")
+def link_test(
+    capability_id: str,
+    criterion_id: str,
+    test_id: Annotated[int, typer.Argument()],
+    primary: Annotated[bool, typer.Option("--primary")] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Link a test to a criterion.
+
+    Examples:
+        st test link user-login ac-001 42
+        st test link user-login ac-001 42 --primary
+    """
+    client = STClient()
+
+    try:
+        result = client.link_test_to_criterion(
+            capability_id=capability_id,
+            criterion_id=criterion_id,
+            test_id=test_id,
+            is_primary=primary,
+        )
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        output_json(result)
+    else:
+        output_success(f"Linked test {test_id} to criterion {criterion_id}")
+
+
 @app.command("import")
 def import_tests(
     framework: Annotated[str, typer.Option("-f", "--from")] = "pytest",
