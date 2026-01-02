@@ -20,7 +20,6 @@ import {
 } from "@/lib/api";
 import { PromptEditor } from "@/components/settings/PromptEditor";
 import { AgentConfigPanel } from "@/components/settings/AgentConfigPanel";
-import { ExtractionThrottlePanel } from "@/components/settings/ExtractionThrottlePanel";
 
 type SettingsTab = "prompts" | "defaults";
 
@@ -39,7 +38,6 @@ export default function ProjectSettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("prompts");
   const [exporting, setExporting] = useState(false);
   const [savingComponentSource, setSavingComponentSource] = useState(false);
-  const [savingExtraction, setSavingExtraction] = useState(false);
 
   // Fetch project details
   const { data: project, isLoading: projectLoading } = useQuery({
@@ -74,26 +72,6 @@ export default function ProjectSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["agent-config", projectId] });
     } finally {
       setSavingComponentSource(false);
-    }
-  };
-
-  const handleExtractionEnabledChange = async (enabled: boolean) => {
-    setSavingExtraction(true);
-    try {
-      await updateAgentConfig(projectId, { extraction_enabled: enabled });
-      queryClient.invalidateQueries({ queryKey: ["agent-config", projectId] });
-    } finally {
-      setSavingExtraction(false);
-    }
-  };
-
-  const handleExtractionRpmChange = async (rpm: number) => {
-    setSavingExtraction(true);
-    try {
-      await updateAgentConfig(projectId, { extraction_rpm_limit: rpm });
-      queryClient.invalidateQueries({ queryKey: ["agent-config", projectId] });
-    } finally {
-      setSavingExtraction(false);
     }
   };
 
@@ -280,23 +258,6 @@ export default function ProjectSettingsPage() {
 
         {activeTab === "defaults" && (
           <div className="max-w-xl space-y-6">
-            {/* Extraction Throttle - Primary cost control */}
-            {configLoading ? (
-              <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
-                </div>
-              </div>
-            ) : (
-              <ExtractionThrottlePanel
-                enabled={agentConfig?.extraction_enabled ?? true}
-                rpmLimit={agentConfig?.extraction_rpm_limit ?? 10}
-                onEnabledChange={handleExtractionEnabledChange}
-                onRpmChange={handleExtractionRpmChange}
-                saving={savingExtraction}
-              />
-            )}
-
             {/* Component Source Setting */}
             <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
               <h3 className="text-sm font-medium text-slate-200 mb-2 flex items-center gap-2">

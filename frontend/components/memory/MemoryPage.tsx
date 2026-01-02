@@ -16,6 +16,7 @@ import { useMemorySearch } from '@/lib/hooks/useMemorySearch';
 import { HealthTab } from './HealthTab';
 import { MetricCard, type MemoryStats } from './MetricsSection';
 import { Pagination, ITEMS_PER_PAGE } from './Pagination';
+import { GlobalExtractionPanel } from './GlobalExtractionPanel';
 
 // Main Memory Page Component
 export default function MemoryPage() {
@@ -243,6 +244,11 @@ export default function MemoryPage() {
             </AnimatePresence>
           </div>
         </header>
+
+        {/* Global Extraction Settings */}
+        <div className="mb-8">
+          <GlobalExtractionPanel />
+        </div>
 
         {/* Search Section */}
         <div className="mb-8 space-y-4">

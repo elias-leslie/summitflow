@@ -93,3 +93,40 @@ export async function exportExtractionPrompts(
     { errorMessage: "Failed to export extraction prompts" }
   );
 }
+
+// =============================================================================
+// Global Extraction Settings Types
+// =============================================================================
+
+export interface GlobalExtractionSettings {
+  enabled: boolean;
+  rpm_limit: number;
+  current_rpm: number;
+  requests_today: number;
+}
+
+export interface GlobalExtractionSettingsUpdate {
+  enabled?: boolean;
+  rpm_limit?: number;
+}
+
+// =============================================================================
+// Global Extraction Settings API
+// =============================================================================
+
+export async function getGlobalExtractionSettings(): Promise<GlobalExtractionSettings> {
+  return fetchWithErrorHandling("/api/memory/extraction", {
+    errorMessage: "Failed to fetch global extraction settings",
+  });
+}
+
+export async function updateGlobalExtractionSettings(
+  update: GlobalExtractionSettingsUpdate
+): Promise<GlobalExtractionSettings> {
+  return fetchWithErrorHandling("/api/memory/extraction", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+    errorMessage: "Failed to update global extraction settings",
+  });
+}

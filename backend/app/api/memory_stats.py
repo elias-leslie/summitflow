@@ -2,6 +2,8 @@
 
 Endpoints:
 - GET /memory/stats - System-wide memory statistics
+- GET /memory/extraction - Global extraction settings
+- PATCH /memory/extraction - Update global extraction settings
 """
 
 from __future__ import annotations
@@ -10,14 +12,72 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Query
 from psycopg import sql
+from pydantic import BaseModel, Field
 
 from ..api.hooks import get_filtering_metrics
 from ..services.memory.fast_path import get_fast_path_metrics
 from ..storage import memory as memory_storage
 from ..storage.connection import get_connection
+from ..utils.rate_limiter import (
+    get_extraction_metrics,
+    get_global_extraction_settings,
+    set_global_extraction_settings,
+)
 from .memory_models import FastPathMetrics, FilteringMetrics, LifecycleStats, MemoryStats
 
 router = APIRouter()
+
+
+# --- Global Extraction Settings ---
+
+
+class ExtractionSettingsResponse(BaseModel):
+    """Global extraction settings response."""
+
+    enabled: bool = Field(description="Whether AI extraction is enabled globally")
+    rpm_limit: int = Field(description="Requests per minute limit (60=unlimited)")
+    current_rpm: int = Field(description="Current requests in the last minute")
+    requests_today: int = Field(description="Total requests today")
+
+
+class ExtractionSettingsUpdate(BaseModel):
+    """Update global extraction settings."""
+
+    enabled: bool | None = Field(None, description="Enable/disable extraction globally")
+    rpm_limit: int | None = Field(None, ge=0, le=60, description="RPM limit (0=off, 5/10/15/30/60)")
+
+
+@router.get("/memory/extraction", response_model=ExtractionSettingsResponse)
+async def get_extraction_settings() -> ExtractionSettingsResponse:
+    """Get global AI extraction settings."""
+    settings = get_global_extraction_settings()
+    metrics = get_extraction_metrics()
+
+    return ExtractionSettingsResponse(
+        enabled=settings["enabled"],
+        rpm_limit=settings["rpm_limit"],
+        current_rpm=metrics["current_minute_count"],
+        requests_today=metrics["requests_today"],
+    )
+
+
+@router.patch("/memory/extraction", response_model=ExtractionSettingsResponse)
+async def update_extraction_settings(
+    update: ExtractionSettingsUpdate,
+) -> ExtractionSettingsResponse:
+    """Update global AI extraction settings."""
+    settings = set_global_extraction_settings(
+        enabled=update.enabled,
+        rpm_limit=update.rpm_limit,
+    )
+    metrics = get_extraction_metrics()
+
+    return ExtractionSettingsResponse(
+        enabled=settings["enabled"],
+        rpm_limit=settings["rpm_limit"],
+        current_rpm=metrics["current_minute_count"],
+        requests_today=metrics["requests_today"],
+    )
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
