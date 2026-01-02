@@ -72,6 +72,15 @@ def normalize_timestamp(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
+class _GlobalScope:
+    """Sentinel for querying global patterns (project_id IS NULL)."""
+
+    pass
+
+
+GLOBAL_SCOPE: _GlobalScope = _GlobalScope()
+
+
 def build_where_clause(
     filters: dict[str, Any],
     special_conditions: list[str] | None = None,
@@ -79,7 +88,8 @@ def build_where_clause(
     """Build a WHERE clause from filters dict.
 
     Args:
-        filters: Dict of {column_name: value} - None values are skipped
+        filters: Dict of {column_name: value} - None values are skipped.
+                 Use GLOBAL_SCOPE to match NULL values (e.g., global patterns).
         special_conditions: Additional raw SQL conditions (e.g., "reflected_at IS NULL")
 
     Returns:
@@ -89,7 +99,10 @@ def build_where_clause(
     params: list[Any] = []
 
     for column, value in filters.items():
-        if value is not None:
+        if isinstance(value, _GlobalScope):
+            # Special case: match NULL values
+            conditions.append(f"{column} IS NULL")
+        elif value is not None:
             conditions.append(f"{column} = %s")
             params.append(value)
 

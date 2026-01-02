@@ -162,7 +162,7 @@ async def promote_pattern_to_global(
 
     Requirements:
     - Pattern must have confidence >= 0.9
-    - Creates a copy with project_id='_global_'
+    - Creates a copy with project_id=NULL (global scope)
     - Global patterns are written to ~/.claude/rules/learned-patterns.md
 
     Args:

@@ -62,11 +62,11 @@ class PatternService:
     5. merged: Superseded by another pattern
     """
 
-    def __init__(self, project_id: str, project_path: str | None = None):
+    def __init__(self, project_id: str | None, project_path: str | None = None):
         """Initialize the pattern service.
 
         Args:
-            project_id: The project to manage patterns for.
+            project_id: The project to manage patterns for (None for global).
             project_path: Path to the project root (for writing rules).
         """
         self.project_id = project_id
@@ -659,7 +659,7 @@ class PatternService:
     def promote_to_global(self, pattern_id: str) -> dict[str, Any]:
         """Promote a pattern to global scope for use across all projects.
 
-        Creates a copy of the pattern with project_id='_global_'. Global patterns
+        Creates a copy of the pattern with project_id=NULL. Global patterns
         are written to ~/.claude/rules/learned-patterns.md and apply to all projects.
 
         Args:
@@ -683,7 +683,7 @@ class PatternService:
 
         # Create global copy using memory_storage directly (bypasses project_id check)
         global_pattern = memory_storage.create_pattern(
-            project_id="_global_",
+            project_id=None,
             pattern_type=pattern.get("pattern_type", "rule"),
             title=pattern["title"],
             content=pattern["content"],

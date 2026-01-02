@@ -39,7 +39,7 @@ PATTERN_COLUMNS = """
 
 
 def create_pattern(
-    project_id: str,
+    project_id: str | None,
     pattern_type: str,
     title: str,
     content: str,
@@ -55,12 +55,18 @@ def create_pattern(
     """Create a learned pattern.
 
     Args:
+        project_id: Project ID, or None for global patterns.
         skip_memory_check: If True, bypass the memory enabled check.
 
     Returns:
         The created pattern, or None if memory is disabled.
     """
-    if not skip_memory_check and not is_memory_feature_enabled(project_id, "patterns"):
+    # Global patterns (project_id=None) skip the memory check
+    if (
+        project_id is not None
+        and not skip_memory_check
+        and not is_memory_feature_enabled(project_id, "patterns")
+    ):
         logger.debug(f"Memory patterns disabled for {project_id}, skipping pattern")
         return None
 
@@ -112,7 +118,7 @@ def get_pattern(pattern_id: str) -> dict[str, Any] | None:
 
 
 def list_patterns(
-    project_id: str | None = None,
+    project_id: str | None | Any = None,  # Accept GLOBAL_SCOPE sentinel
     status: str | None = None,
     action: str | None = None,
     pattern_type: str | None = None,
@@ -122,7 +128,7 @@ def list_patterns(
     """List patterns with optional filters.
 
     Args:
-        project_id: Filter by project (None = all projects)
+        project_id: Filter by project. None = all projects, GLOBAL_SCOPE = global only.
         status: Filter by status
         action: Filter by action type
         pattern_type: Filter by pattern type
