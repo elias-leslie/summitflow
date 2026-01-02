@@ -17,6 +17,7 @@ import { HealthTab } from './HealthTab';
 import { MetricCard, type MemoryStats } from './MetricsSection';
 import { Pagination, ITEMS_PER_PAGE } from './Pagination';
 import { GlobalExtractionPanel } from './GlobalExtractionPanel';
+import { ObservationIndexView, ViewModeToggle, useViewMode } from './ObservationIndexView';
 
 // Main Memory Page Component
 export default function MemoryPage() {
@@ -50,6 +51,10 @@ export default function MemoryPage() {
     useSemantic: false,
   });
   const { results, total: searchTotal, usedSemantic, isLoading: searchLoading, error: searchError, search, clear: clearSearch } = useMemorySearch();
+
+  // Observation view mode (index vs full)
+  const [viewMode, setViewMode] = useViewMode();
+  const [selectedObservation, setSelectedObservation] = useState<Observation | null>(null);
 
   // Fetch data
   useEffect(() => {
@@ -449,6 +454,12 @@ export default function MemoryPage() {
               <Shield className="w-4 h-4" />
               Health
             </TabsTrigger>
+            {/* View Mode Toggle - only show on observations tab */}
+            {activeTab === 'observations' && !isSearching && (
+              <div className="ml-auto">
+                <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+              </div>
+            )}
           </TabsList>
 
           {/* Observations Tab */}
@@ -498,11 +509,18 @@ export default function MemoryPage() {
               </div>
             ) : (
               <div>
-                <div className="space-y-2">
-                  {observations.map((obs) => (
-                    <ObservationRow key={obs.id} observation={obs} />
-                  ))}
-                </div>
+                {viewMode === 'index' ? (
+                  <ObservationIndexView
+                    observations={observations}
+                    onRowClick={(obs) => setSelectedObservation(obs)}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {observations.map((obs) => (
+                      <ObservationRow key={obs.id} observation={obs} />
+                    ))}
+                  </div>
+                )}
                 <Pagination
                   currentPage={observationsPage}
                   totalItems={observationsTotal}
