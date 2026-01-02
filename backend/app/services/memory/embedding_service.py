@@ -68,7 +68,7 @@ class EmbeddingService:
         try:
             import google.auth
 
-            google.auth.default()  # type: ignore[no-untyped-call]
+            google.auth.default()
             return True
         except Exception:
             return False
@@ -98,6 +98,22 @@ class EmbeddingService:
         """
         embeddings = self.embed_batch([text])
         return embeddings[0]
+
+    def embed_pattern(self, title: str, content: str) -> list[float]:
+        """Embed a pattern by combining title and content.
+
+        Creates a single embedding from the concatenated title + content,
+        suitable for semantic similarity search and deduplication.
+
+        Args:
+            title: Pattern title
+            content: Pattern content/description
+
+        Returns:
+            768-dimensional embedding vector
+        """
+        combined = f"{title}\n\n{content}"
+        return self.embed_text(combined)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts in batches.

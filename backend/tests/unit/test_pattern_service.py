@@ -1,7 +1,7 @@
 """Unit tests for PatternService."""
 
 import tempfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -570,3 +570,117 @@ Git commit rules.
         assert result["content"]["filename"] == "CLAUDE.md"
         assert "Full documentation" in result["content"]["content"]
         assert result["token_count"] > 0
+
+
+class TestCalculatePatternRelevance:
+    """Tests for calculate_pattern_relevance method."""
+
+    def test_new_pattern_has_high_relevance(self):
+        """New pattern with high confidence has high relevance."""
+        from datetime import datetime
+
+        from app.services.memory.pattern_service import PatternService
+
+        pattern = {
+            "confidence": 0.9,
+            "created_at": datetime.now(UTC).isoformat(),
+            "last_used_at": datetime.now(UTC).isoformat(),
+        }
+
+        relevance = PatternService.calculate_pattern_relevance(pattern)
+
+        # New pattern with 0.9 confidence should have ~0.9 relevance
+        assert 0.85 <= relevance <= 0.95
+
+    def test_relevance_decays_over_time(self):
+        """Relevance decreases as pattern ages."""
+        from datetime import datetime, timedelta
+
+        from app.services.memory.pattern_service import PatternService
+
+        now = datetime.now(UTC)
+
+        # Pattern created 90 days ago
+        old_pattern = {
+            "confidence": 0.9,
+            "created_at": (now - timedelta(days=90)).isoformat(),
+            "last_used_at": (now - timedelta(days=90)).isoformat(),
+        }
+
+        # Pattern created today
+        new_pattern = {
+            "confidence": 0.9,
+            "created_at": now.isoformat(),
+            "last_used_at": now.isoformat(),
+        }
+
+        old_relevance = PatternService.calculate_pattern_relevance(old_pattern)
+        new_relevance = PatternService.calculate_pattern_relevance(new_pattern)
+
+        # Old pattern should have lower relevance
+        assert old_relevance < new_relevance
+        # 90 days old with 90-day decay constant: ~0.37 of original
+        assert old_relevance < 0.5
+
+    def test_relevance_considers_usage(self):
+        """Recently used patterns have higher relevance."""
+        from datetime import datetime, timedelta
+
+        from app.services.memory.pattern_service import PatternService
+
+        now = datetime.now(UTC)
+        created = now - timedelta(days=60)
+
+        # Pattern never used (last_used = created)
+        unused_pattern = {
+            "confidence": 0.8,
+            "created_at": created.isoformat(),
+            "last_used_at": None,  # Falls back to created_at
+        }
+
+        # Pattern used recently
+        used_pattern = {
+            "confidence": 0.8,
+            "created_at": created.isoformat(),
+            "last_used_at": now.isoformat(),
+        }
+
+        unused_relevance = PatternService.calculate_pattern_relevance(unused_pattern)
+        used_relevance = PatternService.calculate_pattern_relevance(used_pattern)
+
+        # Recently used should have higher relevance
+        assert used_relevance > unused_relevance
+
+    def test_old_unused_pattern_has_low_relevance(self):
+        """Old pattern that hasn't been used should have very low relevance."""
+        from datetime import datetime, timedelta
+
+        from app.services.memory.pattern_service import PatternService
+
+        now = datetime.now(UTC)
+
+        # Pattern from 180 days ago, never used
+        stale_pattern = {
+            "confidence": 0.5,
+            "created_at": (now - timedelta(days=180)).isoformat(),
+            "last_used_at": None,
+        }
+
+        relevance = PatternService.calculate_pattern_relevance(stale_pattern)
+
+        # Should have very low relevance
+        assert relevance < 0.1
+
+    def test_handles_missing_timestamps(self):
+        """Handles patterns with missing timestamp fields gracefully."""
+        from app.services.memory.pattern_service import PatternService
+
+        pattern = {
+            "confidence": 0.7,
+            # No created_at or last_used_at
+        }
+
+        relevance = PatternService.calculate_pattern_relevance(pattern)
+
+        # Should default to current time, so relevance ~= confidence
+        assert 0.65 <= relevance <= 0.75

@@ -429,6 +429,77 @@ def find_similar_patterns(
     ]
 
 
+def find_similar_patterns_by_embedding(
+    embedding: list[float],
+    project_id: str | None = None,
+    min_similarity: float = 0.70,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Find patterns similar to a given embedding vector.
+
+    Used for deduplication before creating a new pattern.
+
+    Args:
+        embedding: 768-dimensional embedding vector to compare
+        project_id: Optional project filter (None = search all projects)
+        min_similarity: Minimum cosine similarity threshold (default 0.70)
+        limit: Maximum number of similar patterns to return
+
+    Returns:
+        List of {pattern_id, title, similarity_score} dicts.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if project_id:
+            cur.execute(
+                """
+                SELECT id, title, 1 - (embedding <=> %s::vector) AS similarity
+                FROM learned_patterns
+                WHERE embedding IS NOT NULL
+                  AND project_id = %s
+                  AND 1 - (embedding <=> %s::vector) >= %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (
+                    embedding,
+                    project_id,
+                    embedding,
+                    min_similarity,
+                    embedding,
+                    limit,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, title, 1 - (embedding <=> %s::vector) AS similarity
+                FROM learned_patterns
+                WHERE embedding IS NOT NULL
+                  AND 1 - (embedding <=> %s::vector) >= %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (
+                    embedding,
+                    embedding,
+                    min_similarity,
+                    embedding,
+                    limit,
+                ),
+            )
+
+        rows = cur.fetchall()
+
+    return [
+        {
+            "pattern_id": str(row[0]),
+            "title": row[1],
+            "similarity_score": round(float(row[2]), 4),
+        }
+        for row in rows
+    ]
+
+
 def get_patterns_without_embeddings(
     project_id: str | None = None,
     limit: int = 100,

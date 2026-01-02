@@ -12,8 +12,9 @@ applied to future work. This service manages the full lifecycle:
 from __future__ import annotations
 
 import logging
+import math
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +182,63 @@ class PatternService:
         if pattern_multiplier > 1.0:
             return (pattern_multiplier - 1.0) * 0.5
         return 0.0
+
+    @staticmethod
+    def calculate_pattern_relevance(pattern: dict[str, Any]) -> float:
+        """Calculate relevance score for a pattern based on age and usage.
+
+        Formula: confidence * exp(-age/90) * exp(-days_unused/60)
+
+        This produces a score that:
+        - Decays as the pattern ages (half-life ~60 days)
+        - Decays faster if the pattern isn't used
+        - Ranges from 0.0 to ~1.0
+
+        Used for pattern cap enforcement (lowest relevance patterns removed first).
+
+        Args:
+            pattern: Pattern dict with confidence, created_at, last_used_at
+
+        Returns:
+            Relevance score between 0.0 and 1.0.
+        """
+        # Get confidence (default 0.5)
+        confidence = float(pattern.get("confidence", 0.5) or 0.5)
+
+        # Parse timestamps
+        now = datetime.now(UTC)
+
+        created_at = _parse_iso_datetime(pattern.get("created_at"))
+        if not created_at:
+            created_at = now  # Fallback for missing created_at
+
+        # Ensure timezone-aware
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+
+        last_used_at = _parse_iso_datetime(pattern.get("last_used_at"))
+        if not last_used_at:
+            last_used_at = created_at  # Use created_at if never used
+
+        if last_used_at.tzinfo is None:
+            last_used_at = last_used_at.replace(tzinfo=UTC)
+
+        # Calculate days since creation and last use
+        age_days = max(0, (now - created_at).days)
+        unused_days = max(0, (now - last_used_at).days)
+
+        # Apply exponential decay
+        # Age decay: half-life of ~60 days (decay constant = 90)
+        age_decay = math.exp(-age_days / 90)
+
+        # Usage decay: half-life of ~40 days (decay constant = 60)
+        usage_decay = math.exp(-unused_days / 60)
+
+        # Combine factors
+        relevance = confidence * age_decay * usage_decay
+
+        # Clamp to [0.0, 1.0]
+        return max(0.0, min(1.0, relevance))
 
     # =========================================================================
     # CRUD Operations

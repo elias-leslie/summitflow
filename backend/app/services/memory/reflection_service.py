@@ -477,7 +477,12 @@ class ReflectionService:
         self,
         suggestion: PatternSuggestion,
     ) -> dict[str, Any]:
-        """Create a pattern in the database from a suggestion."""
+        """Create a pattern in the database from a suggestion.
+
+        Includes semantic deduplication:
+        - Similarity >= 0.85: Skip creation (exact duplicate)
+        - Similarity 0.70-0.85: Merge with existing pattern
+        """
         # Handle merge action
         if suggestion.action == "merge" and suggestion.merge_pattern_ids:
             return self.pattern_service.merge_patterns(
@@ -486,6 +491,11 @@ class ReflectionService:
                 merged_content=suggestion.content,
                 rationale=suggestion.rationale,
             )
+
+        # Check for semantic duplicates before creating
+        dedup_result = self._check_deduplication(suggestion)
+        if dedup_result:
+            return dedup_result
 
         # For add/update/remove, create with action field
         return self.pattern_service.create_pattern(
@@ -499,6 +509,71 @@ class ReflectionService:
             validate=True,  # Enforce conciseness validation
             reflected_by=self.model,
         )
+
+    def _check_deduplication(
+        self,
+        suggestion: PatternSuggestion,
+    ) -> dict[str, Any] | None:
+        """Check for semantic duplicates before creating a pattern.
+
+        Returns:
+            Existing pattern dict if duplicate found, None to proceed with creation.
+        """
+        try:
+            from app.services.memory.embedding_service import EmbeddingService
+            from app.storage.memory_embeddings import find_similar_patterns_by_embedding
+
+            embedding_service = EmbeddingService()
+            if not embedding_service.is_available():
+                logger.debug("dedup_skipped: embedding_service_unavailable")
+                return None
+
+            # Generate embedding for the suggested pattern
+            embedding = embedding_service.embed_pattern(suggestion.title, suggestion.content)
+
+            # Find similar patterns
+            similar = find_similar_patterns_by_embedding(
+                embedding=embedding,
+                project_id=self.project_id,
+                min_similarity=0.70,
+                limit=5,
+            )
+
+            if not similar:
+                return None
+
+            top_match = similar[0]
+            similarity = top_match["similarity_score"]
+
+            # Similarity >= 0.85: Skip creation (near-duplicate)
+            if similarity >= 0.85:
+                logger.info(
+                    f"dedup_skip: pattern='{suggestion.title}' "
+                    f"similar_to='{top_match['title']}' "
+                    f"similarity={similarity}"
+                )
+                # Return the existing pattern instead of creating new
+                return self.pattern_service.get_pattern(top_match["pattern_id"])
+
+            # Similarity 0.70-0.85: Merge with existing
+            if 0.70 <= similarity < 0.85:
+                logger.info(
+                    f"dedup_merge: pattern='{suggestion.title}' "
+                    f"merging_with='{top_match['title']}' "
+                    f"similarity={similarity}"
+                )
+                # Merge the new content into the existing pattern
+                return self.pattern_service.merge_patterns(
+                    pattern_ids=[top_match["pattern_id"]],
+                    merged_title=suggestion.title,  # Use new title
+                    merged_content=f"{suggestion.content}",  # Use new content
+                    rationale=f"Merged with similar pattern (similarity: {similarity}). {suggestion.rationale}",
+                )
+
+        except Exception as e:
+            logger.warning(f"dedup_check_failed: {e}")
+
+        return None
 
     def should_trigger_reflection(
         self,

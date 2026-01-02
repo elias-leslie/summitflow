@@ -489,72 +489,82 @@ def enforce_pattern_cap(
 ) -> list[dict[str, Any]]:
     """Enforce maximum pattern count per project.
 
-    Keeps the most relevant patterns by:
-    - Sorting by confidence DESC, usage_count DESC, last_used_at DESC
-    - Deleting the lowest-ranking patterns over the cap
+    Keeps the most relevant patterns by using calculate_pattern_relevance()
+    to rank patterns, then marking lowest-relevance patterns as 'removed'.
 
     Args:
         project_id: Project ID to enforce cap for
         max_patterns: Maximum allowed patterns (default 50)
 
     Returns:
-        List of deleted patterns (id, title) for audit trail.
+        List of removed patterns (id, title, relevance) for audit trail.
     """
-    deleted: list[dict[str, Any]] = []
+    from app.services.memory.pattern_service import PatternService
+
+    removed: list[dict[str, Any]] = []
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Count current patterns
+        # Get all applied patterns for this project
         cur.execute(
             """
-            SELECT COUNT(*) FROM learned_patterns
+            SELECT id, title, confidence, usage_count, last_used_at, created_at
+            FROM learned_patterns
             WHERE project_id = %s AND status = 'applied'
             """,
             (project_id,),
         )
-        count = cur.fetchone()
-        current_count = count[0] if count else 0
-
-        if current_count <= max_patterns:
-            return deleted
-
-        # Get patterns to delete (lowest ranking)
-        over_limit = current_count - max_patterns
-        cur.execute(
-            """
-            SELECT id, title, confidence, usage_count, last_used_at
-            FROM learned_patterns
-            WHERE project_id = %s AND status = 'applied'
-            ORDER BY COALESCE(confidence, 0) ASC,
-                     COALESCE(usage_count, 0) ASC,
-                     COALESCE(last_used_at, created_at) ASC
-            LIMIT %s
-            """,
-            (project_id, over_limit),
-        )
         rows = cur.fetchall()
 
+        if len(rows) <= max_patterns:
+            return removed
+
+        # Calculate relevance for each pattern and sort
+        patterns_with_relevance = []
         for row in rows:
-            deleted.append(
+            pattern = {
+                "id": str(row[0]),
+                "title": row[1],
+                "confidence": float(row[2]) if row[2] else 0.5,
+                "usage_count": row[3] or 0,
+                "last_used_at": row[4].isoformat() if row[4] else None,
+                "created_at": row[5].isoformat() if row[5] else None,
+            }
+            relevance = PatternService.calculate_pattern_relevance(pattern)
+            pattern["relevance"] = relevance
+            patterns_with_relevance.append(pattern)
+
+        # Sort by relevance (lowest first)
+        patterns_with_relevance.sort(key=lambda p: p["relevance"])
+
+        # Get patterns to remove (lowest relevance)
+        over_limit = len(patterns_with_relevance) - max_patterns
+        to_remove = patterns_with_relevance[:over_limit]
+
+        for pattern in to_remove:
+            removed.append(
                 {
-                    "id": str(row[0]),
-                    "title": row[1],
-                    "confidence": float(row[2]) if row[2] else 0.0,
-                    "usage_count": row[3] or 0,
-                    "last_used_at": row[4].isoformat() if row[4] else None,
+                    "id": pattern["id"],
+                    "title": pattern["title"],
+                    "relevance": round(pattern["relevance"], 4),
+                    "confidence": pattern["confidence"],
                 }
             )
 
-        # Delete the patterns
-        ids_to_delete = [str(row[0]) for row in rows]
+        # Mark patterns as 'removed' instead of deleting
+        ids_to_remove = [p["id"] for p in to_remove]
         cur.execute(
-            "DELETE FROM learned_patterns WHERE id = ANY(%s::uuid[])",
-            (ids_to_delete,),
+            """
+            UPDATE learned_patterns
+            SET status = 'removed'
+            WHERE id = ANY(%s::uuid[])
+            """,
+            (ids_to_remove,),
         )
         conn.commit()
 
         logger.info(
-            f"Enforced pattern cap for {project_id}: deleted {len(deleted)} patterns "
-            f"(was {current_count}, now {max_patterns})"
+            f"Enforced pattern cap for {project_id}: removed {len(removed)} patterns "
+            f"(was {len(rows)}, now {max_patterns})"
         )
 
-    return deleted
+    return removed

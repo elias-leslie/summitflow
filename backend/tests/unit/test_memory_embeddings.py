@@ -3,6 +3,47 @@
 from unittest.mock import MagicMock, patch
 
 
+class TestEmbedPattern:
+    """Tests for EmbeddingService.embed_pattern method."""
+
+    @patch("app.services.memory.embedding_service.EmbeddingService.embed_text")
+    @patch("app.services.memory.embedding_service.EmbeddingService._check_credentials")
+    def test_embed_pattern_combines_title_and_content(self, mock_creds, mock_embed):
+        """embed_pattern combines title and content for embedding."""
+        from app.services.memory.embedding_service import EmbeddingService
+
+        mock_creds.return_value = True
+        mock_embed.return_value = [0.1] * 768
+
+        service = EmbeddingService()
+        result = service.embed_pattern("Test Title", "Test content here")
+
+        # Verify embed_text was called with combined text
+        mock_embed.assert_called_once()
+        call_arg = mock_embed.call_args[0][0]
+        assert "Test Title" in call_arg
+        assert "Test content here" in call_arg
+
+        # Result should be 768-dim vector
+        assert len(result) == 768
+
+    @patch("app.services.memory.embedding_service.EmbeddingService.embed_text")
+    @patch("app.services.memory.embedding_service.EmbeddingService._check_credentials")
+    def test_embed_pattern_returns_768_dims(self, mock_creds, mock_embed):
+        """embed_pattern returns 768-dimensional vector."""
+        from app.services.memory.embedding_service import EmbeddingService
+
+        mock_creds.return_value = True
+        mock_embed.return_value = [0.5] * 768
+
+        service = EmbeddingService()
+        result = service.embed_pattern("Title", "Content")
+
+        assert isinstance(result, list)
+        assert len(result) == 768
+        assert all(isinstance(v, float) for v in result)
+
+
 class TestFindSimilarPatterns:
     """Tests for find_similar_patterns function."""
 

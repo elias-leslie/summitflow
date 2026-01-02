@@ -369,24 +369,40 @@ class ContextBuilder:
             }
 
         elif entity_type == "doc":
-            # Documentation expansion - read full doc file
+            # Documentation expansion - read full doc file or specific section
+            # Supports: doc:CLAUDE.md (full file) or doc:CLAUDE.md#section-slug (specific section)
             project_path = self._get_project_path()
             if not project_path:
                 raise KeyError(f"Document not found: {uuid}")
 
-            doc_path = project_path / uuid
+            # Parse filename and optional section
+            if "#" in uuid:
+                filename, section_slug = uuid.split("#", 1)
+            else:
+                filename = uuid
+                section_slug = None
+
+            doc_path = project_path / filename
             if not doc_path.exists():
-                raise KeyError(f"Document not found: {uuid}")
+                raise KeyError(f"Document not found: {filename}")
 
             try:
-                content = doc_path.read_text()
+                full_content = doc_path.read_text()
             except Exception:
-                raise KeyError(f"Failed to read document: {uuid}") from None
+                raise KeyError(f"Failed to read document: {filename}") from None
+
+            # If section requested, extract just that section
+            if section_slug:
+                content = self._extract_section(full_content, section_slug)
+                if content is None:
+                    raise KeyError(f"Section not found: {section_slug} in {filename}")
+            else:
+                content = full_content
 
             return {
                 "entity_id": entity_id,
                 "type": "doc",
-                "content": {"filename": uuid, "content": content},
+                "content": {"filename": filename, "section": section_slug, "content": content},
                 "token_count": estimate_tokens(content),
             }
 
@@ -433,6 +449,55 @@ class ContextBuilder:
         tokens += estimate_tokens(pattern.get("rationale"))
         return tokens
 
+    def _extract_section(self, content: str, section_slug: str) -> str | None:
+        """Extract a specific section from markdown content by slug.
+
+        Converts section headings to slugs (lowercase, spaces to dashes) and
+        extracts content from that heading until the next heading of equal
+        or higher level.
+
+        Args:
+            content: Full markdown content
+            section_slug: The slug to find (e.g., "quick-reference")
+
+        Returns:
+            Section content including heading, or None if not found
+        """
+        import re
+
+        lines = content.split("\n")
+        section_lines: list[str] = []
+        in_section = False
+        section_level = 0
+
+        for line in lines:
+            # Check if this is a heading
+            heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
+            if heading_match:
+                level = len(heading_match.group(1))
+                heading_text = heading_match.group(2)
+
+                # Convert heading to slug
+                slug = re.sub(r"[^a-z0-9\s-]", "", heading_text.lower())
+                slug = re.sub(r"\s+", "-", slug).strip("-")
+
+                if in_section:
+                    # Check if we hit a same-level or higher heading (end of section)
+                    if level <= section_level:
+                        break
+                elif slug == section_slug:
+                    # Found the section we're looking for
+                    in_section = True
+                    section_level = level
+
+            if in_section:
+                section_lines.append(line)
+
+        if not section_lines:
+            return None
+
+        return "\n".join(section_lines)
+
     def _read_rule_file(self, rule_id: str) -> str | None:
         """Read a rule file by ID.
 
@@ -473,11 +538,11 @@ class ContextBuilder:
             return Path.home() / "portfolio-ai"
         else:
             # Try to find from projects table
-            from app.storage.projects import get_project
+            from app.storage.projects import get_project_root_path
 
-            project = get_project(self.project_id)
-            if project and project.get("root_path"):
-                return Path(project["root_path"])
+            root_path = get_project_root_path(self.project_id)
+            if root_path:
+                return Path(root_path)
             return None
 
     def build_docs_index(self) -> list[dict[str, Any]]:
@@ -541,3 +606,80 @@ class ContextBuilder:
         Kept as static method for backward compatibility.
         """
         return rank_observation(obs, fts_score, query_types)
+
+    def build_rules_index(self) -> list[dict[str, Any]]:
+        """Build index of rule files from ~/.claude/rules/ and project/.claude/rules/.
+
+        Scans both global and project-specific rule directories, extracting
+        the title from the first # heading in each markdown file.
+
+        Returns:
+            List of rule index items with id, title, scope, and token estimate
+        """
+        import re
+
+        rules_index: list[dict[str, Any]] = []
+
+        # Global rules: ~/.claude/rules/
+        global_rules_path = Path.home() / ".claude" / "rules"
+        if global_rules_path.exists():
+            for rule_file in global_rules_path.glob("*.md"):
+                # Skip backup files
+                if rule_file.name.endswith(".bak"):
+                    continue
+
+                try:
+                    content = rule_file.read_text()
+                except Exception:
+                    continue
+
+                # Extract title from first # heading
+                title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+                title = title_match.group(1) if title_match else rule_file.stem
+
+                # Truncate title to 40 chars
+                title = title[:40] + "..." if len(title) > 40 else title
+
+                rules_index.append(
+                    {
+                        "id": f"rule:global:{rule_file.name}",
+                        "t": "rule",
+                        "title": title,
+                        "scope": "global",
+                        "tok": estimate_tokens(content),
+                    }
+                )
+
+        # Project rules: project/.claude/rules/
+        project_path = self._get_project_path()
+        if project_path:
+            project_rules_path = project_path / ".claude" / "rules"
+            if project_rules_path.exists():
+                for rule_file in project_rules_path.glob("*.md"):
+                    # Skip backup files
+                    if rule_file.name.endswith(".bak"):
+                        continue
+
+                    try:
+                        content = rule_file.read_text()
+                    except Exception:
+                        continue
+
+                    # Extract title from first # heading
+                    title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+                    title = title_match.group(1) if title_match else rule_file.stem
+
+                    # Truncate title to 40 chars
+                    title = title[:40] + "..." if len(title) > 40 else title
+
+                    rules_index.append(
+                        {
+                            "id": f"rule:{rule_file.name}",
+                            "t": "rule",
+                            "title": title,
+                            "scope": "project",
+                            "tok": estimate_tokens(content),
+                        }
+                    )
+
+        return rules_index
