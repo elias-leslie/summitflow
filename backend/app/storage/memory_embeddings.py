@@ -231,7 +231,7 @@ def bulk_update_observation_embeddings(
             [(emb_narrative, emb_title, obs_id) for obs_id, emb_narrative, emb_title in updates],
         )
         conn.commit()
-        updated = cur.rowcount
+        updated: int = cur.rowcount
         logger.info(f"Bulk updated {updated} observation embeddings")
         return updated
 
@@ -341,3 +341,159 @@ def search_observations_semantic(
 
     results.sort(key=lambda x: x["combined_score"], reverse=True)
     return results
+
+
+def find_similar_patterns(
+    pattern_id: str,
+    project_id: str | None = None,
+    min_similarity: float = 0.85,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Find patterns similar to a given pattern using vector similarity.
+
+    Uses pgvector's cosine distance for pattern deduplication.
+    Only searches patterns that have embeddings.
+
+    Args:
+        pattern_id: Pattern ID to find similar patterns for
+        project_id: Optional project filter (None = search all projects)
+        min_similarity: Minimum cosine similarity threshold (default 0.85)
+        limit: Maximum number of similar patterns to return
+
+    Returns:
+        List of {pattern_id, similarity_score} dicts, excluding the source pattern.
+        Empty list if source pattern has no embedding.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # First, get the embedding for the source pattern
+        cur.execute(
+            "SELECT embedding FROM learned_patterns WHERE id = %s",
+            (pattern_id,),
+        )
+        row = cur.fetchone()
+
+        if not row or row[0] is None:
+            logger.debug(f"Pattern {pattern_id} has no embedding, cannot find similar")
+            return []
+
+        source_embedding = row[0]
+
+        # Find similar patterns
+        if project_id:
+            cur.execute(
+                """
+                SELECT id, 1 - (embedding <=> %s::vector) AS similarity
+                FROM learned_patterns
+                WHERE id != %s
+                  AND embedding IS NOT NULL
+                  AND project_id = %s
+                  AND 1 - (embedding <=> %s::vector) >= %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (
+                    source_embedding,
+                    pattern_id,
+                    project_id,
+                    source_embedding,
+                    min_similarity,
+                    source_embedding,
+                    limit,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, 1 - (embedding <=> %s::vector) AS similarity
+                FROM learned_patterns
+                WHERE id != %s
+                  AND embedding IS NOT NULL
+                  AND 1 - (embedding <=> %s::vector) >= %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (
+                    source_embedding,
+                    pattern_id,
+                    source_embedding,
+                    min_similarity,
+                    source_embedding,
+                    limit,
+                ),
+            )
+
+        rows = cur.fetchall()
+
+    return [
+        {"pattern_id": str(row[0]), "similarity_score": round(float(row[1]), 4)} for row in rows
+    ]
+
+
+def get_patterns_without_embeddings(
+    project_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Get patterns that don't have embeddings yet.
+
+    Args:
+        project_id: Optional project ID to filter by
+        limit: Maximum number of results
+
+    Returns:
+        List of patterns needing embeddings (id, title, content)
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if project_id:
+            cur.execute(
+                """
+                SELECT id, project_id, title, content
+                FROM learned_patterns
+                WHERE embedding IS NULL
+                  AND project_id = %s
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (project_id, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, project_id, title, content
+                FROM learned_patterns
+                WHERE embedding IS NULL
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        return [
+            {
+                "id": str(row[0]),
+                "project_id": row[1],
+                "title": row[2],
+                "content": row[3],
+            }
+            for row in cur.fetchall()
+        ]
+
+
+def update_pattern_embedding(pattern_id: str, embedding: list[float]) -> bool:
+    """Update the embedding for a pattern.
+
+    Args:
+        pattern_id: Pattern ID to update
+        embedding: 768-dimensional embedding vector
+
+    Returns:
+        True if updated, False if pattern not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE learned_patterns SET embedding = %s WHERE id = %s",
+            (embedding, pattern_id),
+        )
+        updated: bool = cur.rowcount > 0
+        conn.commit()
+        if updated:
+            logger.debug(f"Updated embedding for pattern {pattern_id}")
+        return updated
