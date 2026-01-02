@@ -6,13 +6,12 @@ Handles auto-applying approved patterns and promoting patterns to global scope.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from ...storage import memory as memory_storage
 from ...storage.connection import get_connection
 from ...storage.memory_utils import GLOBAL_SCOPE
-from .types import MIN_CONFIDENCE_FOR_AUTO_APPLY, get_project_root
+from .types import MIN_CONFIDENCE_FOR_AUTO_APPLY
 
 logger = logging.getLogger(__name__)
 
@@ -46,41 +45,22 @@ def get_global_approved_patterns() -> list[dict[str, Any]]:
 
 
 def apply_approved_patterns(project_id: str | None, patterns: list[dict[str, Any]]) -> int:
-    """Apply approved patterns by writing to learned-patterns.md.
+    """Mark approved patterns as 'applied' in the database.
 
-    Uses PatternService.apply_pattern() for each approved pattern.
-    Updates database status to 'applied' and records timestamp.
-
-    For global patterns (project_id=None), writes to ~/.claude/rules/learned-patterns.md
-    For project patterns, writes to project/.claude/rules/learned-patterns.md
+    With progressive disclosure, patterns are served from the database via
+    /context/expand API - no file writes needed. This function just updates
+    the status in the database.
 
     Args:
-        project_id: Project ID (or None for global patterns)
-        patterns: List of approved patterns to apply
+        project_id: Project ID (or None for global patterns) - used for logging
+        patterns: List of approved patterns to mark as applied
 
     Returns:
-        Number of patterns successfully applied
+        Number of patterns successfully marked as applied
     """
     if not patterns:
         return 0
 
-    from .pattern_service import PatternService
-
-    # Determine project path from project_id
-    project_path: Path | None
-    if project_id is None:
-        # Global patterns go to ~/.claude/rules/
-        project_path = Path.home()
-    elif project_id == "summitflow":
-        project_path = Path.home() / "summitflow"
-    else:
-        # Try to get from projects table
-        project_path = get_project_root(project_id)
-        if not project_path:
-            logger.warning(f"No project path found for {project_id}")
-            return 0
-
-    service = PatternService(project_id=project_id, project_path=str(project_path))
     applied_count = 0
 
     for pattern in patterns:
@@ -89,22 +69,22 @@ def apply_approved_patterns(project_id: str | None, patterns: list[dict[str, Any
             continue
 
         try:
-            result = service.apply_pattern(pattern_id)
-            if result:
-                applied_count += 1
-                logger.info(f"Applied pattern {pattern_id}: {pattern.get('title')}")
+            # Just mark as applied in the database - no file writes
+            memory_storage.mark_pattern_applied(pattern_id)
+            applied_count += 1
+            logger.info(f"Marked pattern as applied: {pattern_id}: {pattern.get('title')}")
         except Exception as e:
-            logger.error(f"Failed to apply pattern {pattern_id}: {e}")
+            logger.error(f"Failed to mark pattern {pattern_id} as applied: {e}")
             continue
 
     return applied_count
 
 
 def apply_global_patterns() -> int:
-    """Apply approved global patterns to ~/.claude/rules/learned-patterns.md.
+    """Mark approved global patterns as 'applied' in the database.
 
     Returns:
-        Number of global patterns applied
+        Number of global patterns marked as applied
     """
     global_patterns = get_global_approved_patterns()
     if not global_patterns:
@@ -112,7 +92,7 @@ def apply_global_patterns() -> int:
 
     applied = apply_approved_patterns(None, global_patterns)
     if applied > 0:
-        logger.info(f"Applied {applied} global patterns to ~/.claude/rules/learned-patterns.md")
+        logger.info(f"Marked {applied} global patterns as applied (database only)")
     return applied
 
 
