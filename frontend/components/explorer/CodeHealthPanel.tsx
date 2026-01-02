@@ -25,6 +25,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScanTrendLine } from "./ScanTrendLine";
 
 // Types
 interface RefactorTarget {
@@ -232,6 +233,9 @@ export function CodeHealthPanel({
             totalComplexity={totalComplexity}
             isLoading={isLoading}
           />
+
+          {/* Scan History Trend */}
+          <ScanTrendLine projectId={projectId} />
 
           {/* Filter Bar */}
           <FilterBar

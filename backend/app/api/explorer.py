@@ -23,6 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from ..services import explorer
 from ..storage import explorer as explorer_storage
 from ..storage import scan_history
+from ..storage.connection import get_connection
 
 router = APIRouter()
 
@@ -226,6 +227,26 @@ async def trigger_scan(
     }
 
 
+def _get_total_complexity(project_id: str) -> float:
+    """Calculate total complexity score from file entries.
+
+    Called after scan completion to snapshot the current complexity state.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT COALESCE(SUM((metadata->>'complexity_score')::float), 0)
+                FROM explorer_entries
+                WHERE project_id = %s
+                  AND entry_type = 'file'
+                  AND metadata->>'complexity_score' IS NOT NULL
+                """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+        return round(row[0], 2) if row and row[0] else 0.0
+
+
 async def _run_scan_and_record(
     project_id: str,
     entry_type: str | None,
@@ -244,10 +265,14 @@ async def _run_scan_and_record(
         entries_found = sum(r.get("entries_found", 0) for r in results)
         entries_saved = sum(r.get("entries_saved", 0) for r in results)
 
+        # Calculate total complexity from file entries (snapshot at scan time)
+        total_complexity = _get_total_complexity(project_id)
+
         # Build metrics from results
         metrics = {
             "types_scanned": len(results),
             "by_type": {r["entry_type"]: r for r in results},
+            "complexity": total_complexity,  # Snapshot for sparkline trend
         }
 
         scan_history.record_scan_complete(

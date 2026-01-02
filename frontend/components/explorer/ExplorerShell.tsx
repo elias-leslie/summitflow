@@ -13,6 +13,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Folder, Database, Globe, FileText, Zap } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
@@ -24,6 +25,7 @@ import {
   fetchScanStatus,
   type ScanStatusResponse,
 } from "@/lib/api/explorer";
+import { scanHistoryKeys } from "@/lib/hooks/useScanHistory";
 import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
 
 interface ExplorerShellProps {
@@ -77,6 +79,8 @@ export function ExplorerShell({
   children,
   onTypeChange: onTypeChangeProp,
 }: ExplorerShellProps) {
+  const queryClient = useQueryClient();
+
   // Explorer state
   const [activeType, setActiveType] = useState<ExplorerType>(initialType);
   const [activeFilter, setActiveFilter] = useState<HealthStatus | "all">("all");
@@ -198,6 +202,9 @@ export function ExplorerShell({
             clearInterval(pollInterval);
             setIsScanning(false);
             setScanProgress(null);
+
+            // Invalidate scan history cache so ScanTrendLine updates
+            queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all });
 
             if (status.status === "failed" && status.error) {
               console.error("Scan completed with error:", status.error);
