@@ -31,6 +31,15 @@ class LifecycleStats(BaseModel):
     pattern_status_breakdown: dict[str, int]  # Count by status (pending, approved, etc.)
 
 
+class FastPathMetrics(BaseModel):
+    """Fast-path extraction metrics (bypass LLM for common patterns)."""
+
+    hits: int  # Items extracted via fast-path (no LLM)
+    misses: int  # Items that needed LLM
+    total: int
+    hit_rate: float  # Percentage bypassing LLM
+
+
 class MemoryStats(BaseModel):
     """Memory system statistics."""
 
@@ -43,6 +52,7 @@ class MemoryStats(BaseModel):
     health_details: dict[str, Any] | None = None
     filtering: FilteringMetrics | None = None
     lifecycle: LifecycleStats | None = None
+    fast_path: FastPathMetrics | None = None
 
 
 class PaginatedResponse(BaseModel):

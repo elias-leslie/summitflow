@@ -12,9 +12,10 @@ from fastapi import APIRouter, Query
 from psycopg import sql
 
 from ..api.hooks import get_filtering_metrics
+from ..services.memory.fast_path import get_fast_path_metrics
 from ..storage import memory as memory_storage
 from ..storage.connection import get_connection
-from .memory_models import FilteringMetrics, LifecycleStats, MemoryStats
+from .memory_models import FastPathMetrics, FilteringMetrics, LifecycleStats, MemoryStats
 
 router = APIRouter()
 
@@ -132,6 +133,15 @@ async def get_memory_stats(
         pattern_status_breakdown=lifecycle_data["pattern_status_breakdown"],
     )
 
+    # Get fast-path extraction metrics
+    fp_metrics = get_fast_path_metrics()
+    fast_path = FastPathMetrics(
+        hits=int(fp_metrics["fast_path_hits"]),
+        misses=int(fp_metrics["fast_path_misses"]),
+        total=int(fp_metrics["fast_path_total"]),
+        hit_rate=float(fp_metrics["fast_path_hit_rate"]),
+    )
+
     return MemoryStats(
         queue_depth=queue_depth,
         queue_pending=pending,
@@ -142,4 +152,5 @@ async def get_memory_stats(
         health_details=health_details if health_details else None,
         filtering=FilteringMetrics(**filter_metrics),
         lifecycle=lifecycle,
+        fast_path=fast_path,
     )

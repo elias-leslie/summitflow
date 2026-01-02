@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from app.constants import CLAUDE_HAIKU, DEFAULT_GEMINI_MODEL
 
+from .fast_path import fast_path_extract, get_fast_path_metrics
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -404,6 +406,8 @@ class ObservationExtractor:
     ) -> list[ExtractedObservation]:
         """Extract observations from multiple tool executions in a single LLM call.
 
+        Uses fast-path extraction for common patterns, falling back to LLM.
+
         Args:
             items: List of queue items with tool_name, tool_input, tool_output
             max_input_chars: Max chars for each item's input (truncated)
@@ -420,25 +424,77 @@ class ObservationExtractor:
         if not items:
             return []
 
-        # Format items for the prompt and capture raw excerpts
-        formatted_items = []
-        raw_excerpts: list[str | None] = []
+        # Try fast-path extraction first for each item
+        observations: list[ExtractedObservation | None] = [None] * len(items)
+        items_needing_llm: list[tuple[int, dict[str, Any]]] = []
+        fast_path_count = 0
+
         for idx, item in enumerate(items):
+            tool_output = item.get("tool_output") or ""
+            raw_excerpt = tool_output[:max_raw_excerpt_chars] if tool_output else None
+
+            # Try fast-path
+            fp_result = fast_path_extract(
+                tool_name=item.get("tool_name", "unknown"),
+                tool_input=item.get("tool_input"),
+                tool_output=tool_output,
+            )
+
+            if fp_result.matched:
+                fast_path_count += 1
+                observations[idx] = ExtractedObservation(
+                    observation_type=fp_result.observation_type,
+                    title=fp_result.title,
+                    concepts=fp_result.concepts or [],
+                    priority=fp_result.priority,
+                    confidence=fp_result.confidence,
+                    entities=fp_result.entities,
+                    narrative=fp_result.narrative,
+                    facts=fp_result.facts,
+                    files_read=fp_result.files_read,
+                    files_modified=fp_result.files_modified,
+                    discovery_tokens=0,  # No LLM tokens used
+                    extracted_by="fast_path",
+                    raw_excerpt=raw_excerpt,
+                )
+            else:
+                items_needing_llm.append((idx, item))
+
+        # Log fast-path results
+        if fast_path_count > 0:
+            metrics = get_fast_path_metrics()
+            logger.info(
+                f"fast_path_extraction: {fast_path_count}/{len(items)} items extracted "
+                f"(hit_rate={metrics['fast_path_hit_rate']}%)"
+            )
+
+        # If all items handled by fast-path, return early
+        if not items_needing_llm:
+            duration_seconds = time.time() - start_time
+            logger.info(
+                f"batch_extraction_completed: batch_size={len(items)}, "
+                f"fast_path={fast_path_count}, llm=0, "
+                f"duration_seconds={round(duration_seconds, 2)}"
+            )
+            return [obs for obs in observations if obs is not None]
+
+        # Format remaining items for LLM
+        formatted_items = []
+        raw_excerpts: dict[int, str | None] = {}
+        for idx, item in items_needing_llm:
             tool_input_str = json.dumps(item.get("tool_input") or {})
             if len(tool_input_str) > max_input_chars:
                 tool_input_str = tool_input_str[:max_input_chars] + "..."
 
             tool_output = item.get("tool_output") or ""
-            # Store raw excerpt (max 2000 chars) for embedding use
-            raw_excerpt = tool_output[:max_raw_excerpt_chars] if tool_output else None
-            raw_excerpts.append(raw_excerpt)
+            raw_excerpts[idx] = tool_output[:max_raw_excerpt_chars] if tool_output else None
 
             if len(tool_output) > max_output_chars:
                 tool_output = tool_output[:max_output_chars] + "..."
 
             formatted_items.append(
                 {
-                    "index": idx,
+                    "index": idx,  # Use original index for matching
                     "tool_name": item.get("tool_name", "unknown"),
                     "tool_input": tool_input_str,
                     "tool_output": tool_output,
@@ -467,24 +523,22 @@ class ObservationExtractor:
                 if isinstance(r, dict) and "index" in r:
                     result_map[r["index"]] = r
 
-            # Build observations for each item
-            observations: list[ExtractedObservation] = []
-            per_item_tokens = discovery_tokens // len(items) if items else 0
+            # Process LLM results and merge into observations list
+            llm_count = len(items_needing_llm)
+            per_item_tokens = discovery_tokens // llm_count if llm_count > 0 else 0
 
-            for idx, item in enumerate(items):
+            for idx, item in items_needing_llm:
                 result = result_map.get(idx, {})
 
                 if result.get("skip"):
-                    observations.append(
-                        ExtractedObservation(
-                            observation_type="",
-                            title="",
-                            concepts=[],
-                            skipped=True,
-                            skip_reason=result.get("reason", "Trivial execution"),
-                            discovery_tokens=per_item_tokens,
-                            extracted_by=response.model,
-                        )
+                    observations[idx] = ExtractedObservation(
+                        observation_type="",
+                        title="",
+                        concepts=[],
+                        skipped=True,
+                        skip_reason=result.get("reason", "Trivial execution"),
+                        discovery_tokens=per_item_tokens,
+                        extracted_by=response.model,
                     )
                     continue
 
@@ -523,41 +577,40 @@ class ObservationExtractor:
                     and e.get("value")
                 ]
 
-                observations.append(
-                    ExtractedObservation(
-                        observation_type=obs_type,
-                        title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
-                        concepts=concepts,
-                        priority=priority,
-                        confidence=confidence,
-                        entities=entities or None,
-                        subtitle=result.get("subtitle"),
-                        narrative=result.get("narrative"),
-                        facts=result.get("facts"),
-                        files_read=result.get("files_read"),
-                        files_modified=result.get("files_modified"),
-                        discovery_tokens=per_item_tokens,
-                        extracted_by=response.model,
-                        raw_excerpt=raw_excerpts[idx],
-                    )
+                observations[idx] = ExtractedObservation(
+                    observation_type=obs_type,
+                    title=result.get("title", f"{item.get('tool_name', 'unknown')} execution"),
+                    concepts=concepts,
+                    priority=priority,
+                    confidence=confidence,
+                    entities=entities or None,
+                    subtitle=result.get("subtitle"),
+                    narrative=result.get("narrative"),
+                    facts=result.get("facts"),
+                    files_read=result.get("files_read"),
+                    files_modified=result.get("files_modified"),
+                    discovery_tokens=per_item_tokens,
+                    extracted_by=response.model,
+                    raw_excerpt=raw_excerpts.get(idx),
                 )
 
             duration_seconds = time.time() - start_time
-            items_per_second = len(items) / duration_seconds if duration_seconds > 0 else 0
             logger.info(
                 f"batch_extraction_completed: batch_size={len(items)}, "
+                f"fast_path={fast_path_count}, llm={llm_count}, "
                 f"duration_seconds={round(duration_seconds, 2)}, "
-                f"items_per_second={round(items_per_second, 2)}, "
                 f"total_tokens={discovery_tokens}"
             )
 
-            return observations
+            # Return non-None observations in order
+            return [obs for obs in observations if obs is not None]
 
         except Exception as e:
             logger.error(f"Batch extraction failed: {e}")
-            # Return error observations for each item
-            return [
-                ExtractedObservation(
+            # For items needing LLM, create error observations
+            # Keep fast-path observations that succeeded
+            for idx, item in items_needing_llm:
+                observations[idx] = ExtractedObservation(
                     observation_type="error",
                     title=f"Extraction failed for {item.get('tool_name', 'unknown')}",
                     concepts=["debugging"],
@@ -565,5 +618,4 @@ class ObservationExtractor:
                     discovery_tokens=0,
                     extracted_by=self.model,
                 )
-                for item in items
-            ]
+            return [obs for obs in observations if obs is not None]
