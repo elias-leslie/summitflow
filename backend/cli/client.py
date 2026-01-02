@@ -356,3 +356,85 @@ class STClient:
         """
         response = self._client.post(self._url("/tests/import"), json={"framework": framework})
         return self._handle_response(response)
+
+    # Subtasks
+
+    def get_subtasks(
+        self,
+        task_id: str,
+        include_steps: bool = False,
+    ) -> dict[str, Any]:
+        """Get subtasks for a task.
+
+        Args:
+            task_id: Task ID
+            include_steps: Include steps from table
+
+        Returns:
+            Dict with subtasks list and summary.
+        """
+        params = {"include_steps": str(include_steps).lower()}
+        response = self._client.get(self._url(f"/tasks/{task_id}/subtasks"), params=params)
+        return self._handle_response(response)
+
+    def update_subtask(
+        self,
+        task_id: str,
+        subtask_id: str,
+        passes: bool,
+    ) -> dict[str, Any]:
+        """Update a subtask's passes status.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            passes: Whether subtask passes
+
+        Returns:
+            Updated subtask dict.
+        """
+        data = {"passes": passes}
+        response = self._client.patch(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data
+        )
+        return self._handle_response(response)
+
+    # Steps
+
+    def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:
+        """Get steps for a subtask.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+
+        Returns:
+            List of step dicts.
+        """
+        response = self._client.get(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"))
+        return self._handle_response(response)
+
+    def update_step(
+        self,
+        task_id: str,
+        subtask_id: str,
+        step_number: int,
+        passes: bool,
+    ) -> dict[str, Any]:
+        """Update a step's passes status.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            step_number: Step number (1-indexed)
+            passes: Whether step passes
+
+        Returns:
+            Updated step dict.
+        """
+        data = {"passes": passes}
+        response = self._client.patch(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
+            json=data,
+        )
+        return self._handle_response(response)

@@ -2,7 +2,7 @@
 
 import typer
 
-from .commands import capabilities, deps, tasks, tests
+from .commands import capabilities, deps, subtask, tasks, tests
 
 app = typer.Typer(name="st", help="SummitFlow Tasks CLI")
 
@@ -15,6 +15,7 @@ app.add_typer(deps.app, name="dep", help="Dependency management")
 app.add_typer(capabilities.app, name="capability", help="Capability management")
 app.add_typer(capabilities.app, name="cap", hidden=True)  # Alias
 app.add_typer(tests.app, name="test", help="Test management")
+app.add_typer(subtask.app, name="subtask", help="Subtask management")
 
 
 @app.callback(invoke_without_command=True)
