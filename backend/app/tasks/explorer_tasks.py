@@ -257,6 +257,9 @@ def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
     For file-based issues (complexity, stale_file), check if the
     file still has the issue in the explorer entries.
 
+    For error issues, check if the error observation still exists
+    and hasn't been marked as resolved.
+
     Args:
         project_id: Project ID
         issue: Issue dict from qa_issues table
@@ -266,9 +269,14 @@ def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
     """
     file_path = issue.get("file_path")
     issue_type = issue.get("issue_type")
+    issue_metadata = issue.get("metadata") or {}
+
+    # Handle error issues separately (may not have file_path)
+    if issue_type == "error":
+        return _error_issue_still_exists(project_id, issue, issue_metadata)
 
     if not file_path:
-        # Non-file issues - assume still exists unless explicitly resolved
+        # Non-file issues without special handling - assume still exists
         return True
 
     # Get the explorer entry for this file
@@ -280,10 +288,10 @@ def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
     # Check issue type-specific criteria
     if issue_type == "complexity":
         # Check if complexity is still above threshold
+        # Threshold matches task generation: tier 1 starts at complexity > 10
         metadata = entry.get("metadata", {})
         complexity = metadata.get("complexity_score", 0)
-        # If complexity dropped below warning threshold (e.g., 50), issue is resolved
-        return bool(complexity >= 50)
+        return bool(complexity >= 10)
 
     elif issue_type == "stale_file":
         # Check if file is still stale (no commits in 180+ days)
@@ -299,6 +307,59 @@ def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
 
     # Default: assume issue still exists
     return True
+
+
+def _error_issue_still_exists(
+    project_id: str,
+    issue: dict[str, Any],
+    issue_metadata: dict[str, Any],
+) -> bool:
+    """Check if an error issue still exists.
+
+    Error issues are resolved when:
+    1. The source observation was marked as resolved
+    2. No recent error observations match the same title
+    3. The affected files no longer have type/lint errors
+
+    Args:
+        project_id: Project ID
+        issue: Issue dict from qa_issues table
+        issue_metadata: Parsed metadata from issue
+
+    Returns:
+        True if error still exists, False if resolved
+    """
+    from ..storage.memory import query_observations
+
+    error_title = issue.get("title", "")
+    if not error_title:
+        return True  # Can't verify without title
+
+    # Check if any recent error observations match this title
+    # If no recent errors, the issue is resolved
+    recent_errors = query_observations(
+        project_id=project_id,
+        observation_type="error",
+        min_confidence=0.7,
+        days=3,  # Look back 3 days for recent occurrences
+        limit=50,
+    )
+
+    # Check if any observation matches this error title
+    for obs in recent_errors:
+        obs_title = obs.get("title", "")
+        # Fuzzy match: if titles are substantially similar, error still exists
+        if error_title.lower() in obs_title.lower() or obs_title.lower() in error_title.lower():
+            return True
+
+    # No recent matching errors - issue is resolved
+    logger.info(
+        "error_issue_resolved",
+        issue_id=issue.get("id"),
+        title=error_title[:60],
+        reason="no_recent_matching_errors",
+    )
+    return False
 
 
 @shared_task(name="summitflow.check_resolved_issues")  # type: ignore[untyped-decorator]

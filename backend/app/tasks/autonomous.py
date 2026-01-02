@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from app.celery_app import celery_app
+from app.services.task_issue_mapper import link_issue_to_task
 from app.services.worktree_manager import get_worktree_manager
+from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.steps import bulk_create_steps
@@ -113,6 +115,21 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 f"Priority: {priority}"
             )
 
+            # Create QA issue first (for self-healing linkage)
+            issue_id = qa_storage.upsert_issue(
+                project_id=project_id,
+                issue_type="complexity",
+                file_path=file_path,
+                title=f"High complexity in {file_path.split('/')[-1]}",
+                severity="high" if complexity > 15 else "medium",
+                description=f"Complexity: {complexity:.1f}, Lines: {lines}",
+                metadata={
+                    "complexity_score": complexity,
+                    "lines_of_code": lines,
+                    "reason": reason,
+                },
+            )
+
             task = task_store.create_task(
                 project_id=project_id,
                 title=title,
@@ -125,6 +142,10 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
 
             if task:
                 task_id = task["id"]
+
+                # Link task to QA issue for self-healing
+                link_issue_to_task(issue_id, task_id)
+
                 category = "backend" if file_path.endswith(".py") else "frontend"
 
                 # Create subtask via normalized table
@@ -149,7 +170,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                     bulk_create_steps(subtask_full_id, step_descriptions)
 
                 created += 1
-                logger.info(f"Created task {task_id} with subtasks+steps: {title}")
+                logger.info(f"Created task {task_id} linked to issue {issue_id}: {title}")
 
         logger.info(
             f"Task generation complete for {project_id}: "
@@ -217,11 +238,12 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
             # Create task title (prefix with "Fix:")
             title = f"Fix: {error_title[:80]}"
 
-            # Determine category based on affected files
+            # Determine category and first file based on affected files
             category = "backend"
+            first_file: str | None = None
             if files:
                 first_file = files[0] if isinstance(files[0], str) else files[0].get("path", "")
-                if any(ext in first_file for ext in [".tsx", ".ts", ".jsx", ".js"]):
+                if first_file and any(ext in first_file for ext in [".tsx", ".ts", ".jsx", ".js"]):
                     category = "frontend"
 
             # Build description from narrative
@@ -234,6 +256,21 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
                 description += f"**Details:**\n{narrative[:500]}\n\n"
             if files:
                 description += "**Affected Files:**\n" + "\n".join(f"- {f}" for f in files[:5])
+
+            # Create QA issue first (for self-healing linkage)
+            issue_id = qa_storage.upsert_issue(
+                project_id=project_id,
+                issue_type="error",
+                file_path=first_file,
+                title=error_title[:200],
+                severity="high" if confidence >= 0.9 else "medium",
+                description=narrative[:500] if narrative else None,
+                metadata={
+                    "confidence": confidence,
+                    "affected_files": files[:10] if files else [],
+                    "observation_id": error.get("id"),
+                },
+            )
 
             # Create the bug task
             task = task_store.create_task(
@@ -248,6 +285,9 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
 
             if task:
                 task_id = task["id"]
+
+                # Link task to QA issue for self-healing
+                link_issue_to_task(issue_id, task_id)
 
                 # Create subtasks via normalized table
                 subtask_data = [
@@ -285,7 +325,9 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
                     bulk_create_steps(created_subtasks[1]["id"], fix_steps)
 
                 created += 1
-                logger.info(f"Created bug task {task_id} with subtasks+steps: {title[:60]}...")
+                logger.info(
+                    f"Created bug task {task_id} linked to issue {issue_id}: {title[:60]}..."
+                )
 
         logger.info(
             f"Bug task generation complete for {project_id}: "

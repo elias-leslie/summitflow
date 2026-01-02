@@ -194,10 +194,11 @@ def upsert_issue(
     now = datetime.utcnow()
 
     # Try to find existing open issue
+    # Use IS NOT DISTINCT FROM for proper NULL handling
     find_query = """
         SELECT id FROM qa_issues
         WHERE project_id = %s AND issue_type = %s
-          AND (file_path = %s OR (file_path IS NULL AND %s IS NULL))
+          AND file_path IS NOT DISTINCT FROM %s
           AND status = 'open'
         FOR UPDATE
     """
@@ -230,7 +231,7 @@ def upsert_issue(
     def _do_upsert(c: Connection) -> int:
         with c.cursor() as cur:
             # Check for existing issue
-            cur.execute(find_query, (project_id, issue_type, file_path, file_path))
+            cur.execute(find_query, (project_id, issue_type, file_path))
             row = cur.fetchone()
 
             if row:
