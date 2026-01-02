@@ -39,6 +39,8 @@ See `.claude/rules/issue-tracking.md` for full protocol.
 | Run tests | `cd ~/summitflow/backend && .venv/bin/pytest` |
 | Type check | `cd backend && .venv/bin/mypy app/` |
 | Validate all | `~/.claude/dev-tools/scripts/validate.sh` |
+| Spec workflow | `/spec_it` (discovery, interview, spec output) |
+| TDD workflow | `/tdd_it` (components, capabilities, tests) |
 | Refactor workflow | `/refactor_it` (inventory, plan, execute) |
 
 **Task Types:** `feature` (feature implementation), `bug`, `task`
