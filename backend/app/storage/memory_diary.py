@@ -119,6 +119,16 @@ def create_diary_entry(
         row = cur.fetchone()
         conn.commit()
 
+    # Backfill task_outcome in context_access_log for this session
+    if row and outcome:
+        try:
+            # Import here to avoid circular imports
+            from .context_access import update_access_task_outcome as _update_access
+
+            _update_access(session_id, outcome)
+        except Exception as e:
+            logger.warning(f"Failed to backfill context access outcomes: {e}")
+
     return _diary_row_to_dict(row)
 
 
