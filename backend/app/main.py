@@ -1,7 +1,11 @@
 """SummitFlow FastAPI application."""
 
+import time
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
+import psycopg
+import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,7 +35,12 @@ from .api import (
     tdd,
     tdd_tests,
 )
+from .config import DATABASE_URL, REDIS_URL
+from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
+
+# Track application start time for uptime calculation
+_app_start_time = time.time()
 
 
 @asynccontextmanager
@@ -93,6 +102,84 @@ app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy", "service": "summitflow"}
+
+
+@app.get("/api/health/detailed")
+async def detailed_health_check() -> DetailedHealthResponse:
+    """Detailed health check endpoint with database, cache, and uptime information."""
+    # Check database health
+    db_health = _check_database_health()
+
+    # Check Redis cache health
+    cache_health = _check_cache_health()
+
+    # Determine overall status
+    overall_status = "healthy"
+    if db_health.status == "unhealthy" or cache_health.status == "unhealthy":
+        overall_status = "unhealthy"
+    elif db_health.status == "degraded" or cache_health.status == "degraded":
+        overall_status = "degraded"
+
+    # Calculate uptime
+    uptime_seconds = time.time() - _app_start_time
+
+    return DetailedHealthResponse(
+        status=overall_status,
+        service="summitflow",
+        timestamp=datetime.now(UTC),
+        uptime_seconds=uptime_seconds,
+        database=db_health,
+        cache=cache_health,
+        version="0.1.0",
+    )
+
+
+def _check_database_health() -> ComponentHealth:
+    """Check PostgreSQL database connectivity and response time."""
+    start_time = time.time()
+    try:
+        conn = psycopg.connect(DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            response_time_ms = (time.time() - start_time) * 1000
+            return ComponentHealth(
+                status="healthy",
+                message="Database connection successful",
+                response_time_ms=round(response_time_ms, 2),
+            )
+        finally:
+            conn.close()
+    except Exception as e:
+        response_time_ms = (time.time() - start_time) * 1000
+        return ComponentHealth(
+            status="unhealthy",
+            message=f"Database connection failed: {e!s}",
+            response_time_ms=round(response_time_ms, 2),
+        )
+
+
+def _check_cache_health() -> ComponentHealth:
+    """Check Redis cache connectivity and response time."""
+    start_time = time.time()
+    try:
+        # Connect to Redis DB 1 (same as used by Celery and rate limiter)
+        r = redis.from_url(f"{REDIS_URL}/1")
+        r.ping()
+        response_time_ms = (time.time() - start_time) * 1000
+        return ComponentHealth(
+            status="healthy",
+            message="Cache connection successful",
+            response_time_ms=round(response_time_ms, 2),
+        )
+    except Exception as e:
+        response_time_ms = (time.time() - start_time) * 1000
+        return ComponentHealth(
+            status="unhealthy",
+            message=f"Cache connection failed: {e!s}",
+            response_time_ms=round(response_time_ms, 2),
+        )
 
 
 @app.get("/")
