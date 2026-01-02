@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from .client import APIError
 
 console = Console()
 
@@ -277,3 +281,13 @@ def output_success(message: str) -> None:
 def output_warning(message: str) -> None:
     """Output warning message in yellow."""
     console.print(f"[yellow]{message}[/]")
+
+
+def handle_api_error(e: APIError) -> None:
+    """Handle API error and exit.
+
+    Args:
+        e: APIError exception from client
+    """
+    output_error(e.detail)
+    raise typer.Exit(1)
