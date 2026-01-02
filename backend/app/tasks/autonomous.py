@@ -3,7 +3,7 @@
 This module provides Celery tasks for autonomous code execution:
 - reset_expired_task_claims: Clean up stale task locks
 - generate_tasks_from_scan: Create tasks from Explorer refactor targets
-- generate_bug_tasks: Create bug tasks from error observations
+- generate_bug_tasks: DISABLED - was too noisy (environmental/transient errors)
 - autonomous_work_pickup: Pick up and execute eligible tasks
 - review_pending_tasks: Opus review gate for pending_review tasks
 - cleanup_orphaned_worktrees: Clean up stale worktrees
@@ -12,6 +12,7 @@ This module provides Celery tasks for autonomous code execution:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,15 @@ ERROR_BLOCKLIST_PATTERNS = [
     "capability verification",
     "worktree.*verification",
 ]
+
+
+def _is_blocklisted_error(title: str) -> bool:
+    """Check if error title matches blocklist patterns.
+
+    These are environmental/transient issues that should NOT create tasks.
+    """
+    title_lower = title.lower()
+    return any(re.search(pattern, title_lower) for pattern in ERROR_BLOCKLIST_PATTERNS)
 
 
 @celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[untyped-decorator]
@@ -230,8 +240,12 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
 def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     """Generate bug tasks from error observations.
 
-    Fetches high-confidence error observations from the memory system
-    and creates bug tasks for each (if not already tracked).
+    DEPRECATED: This task is disabled because auto-generating tasks from error
+    observations was too noisy. Most captured errors are environmental (wrong
+    connection string), transient (build cache), or pre-existing (not new bugs).
+
+    Real bugs should be discovered during actual work and created manually
+    with proper context.
 
     Args:
         project_id: Project to generate tasks for
@@ -239,6 +253,9 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     Returns:
         Dict with created_count, errors_scanned, skipped_count
     """
+    # Return early - this task is disabled
+    logger.info(f"generate_bug_tasks disabled for {project_id}")
+    return {"status": "disabled", "reason": "Task deprecated - too noisy"}
     # Import here to avoid circular imports
     from app.storage.memory import query_observations
 
@@ -265,6 +282,12 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
 
             if not error_title:
                 skipped += 1
+                continue
+
+            # Skip blocklisted errors (environmental/transient, not real bugs)
+            if _is_blocklisted_error(error_title):
+                skipped += 1
+                logger.debug(f"Blocklisted error pattern: {error_title[:50]}...")
                 continue
 
             # Skip if bug task already exists for this error
