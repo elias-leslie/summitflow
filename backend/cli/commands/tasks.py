@@ -132,7 +132,7 @@ def show(
     task_id: str,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Show task details.
+    """Show task details with subtask progress.
 
     Examples:
         st show task-abc123
@@ -142,11 +142,47 @@ def show(
 
     try:
         task = client.get_task(task_id)
+        subtask_data = client.get_subtasks(task_id, include_steps=True)
     except APIError as e:
         _handle_api_error(e)
         return
 
+    # Merge subtask info into task for output
+    subtasks = subtask_data.get("subtasks", [])
+    summary = subtask_data.get("summary", {})
+
+    if json_output:
+        task["subtasks"] = subtasks
+        task["subtask_summary"] = summary
+        output_task(task, json_output)
+        return
+
+    # Output task details
     output_task(task, json_output)
+
+    # Output subtask progress if subtasks exist
+    if subtasks:
+        from ..output import console
+
+        total = summary.get("total", len(subtasks))
+        completed = summary.get("completed", 0)
+        pct = summary.get("progress_percent", 0.0)
+        next_id = summary.get("next_subtask_id", "")
+
+        console.print(f"\n[bold]Subtasks:[/bold] {completed}/{total} ({pct:.0f}%)")
+        if next_id:
+            console.print(f"[dim]Next: {next_id}[/dim]")
+
+        for s in subtasks:
+            passes = s.get("passes", False)
+            icon = "[green]✓[/]" if passes else "[dim]○[/]"
+            sid = s.get("subtask_id", "")
+            desc = s.get("description", "")[:60]
+            step_sum = s.get("step_summary", {})
+            step_info = ""
+            if step_sum and step_sum.get("total", 0) > 0:
+                step_info = f" [{step_sum['completed']}/{step_sum['total']}]"
+            console.print(f"  {icon} {sid}: {desc}{step_info}")
 
 
 @app.command()
