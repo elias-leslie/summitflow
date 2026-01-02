@@ -134,9 +134,17 @@ export function ScanSparkline({
     );
   };
 
+  const trendDescription = trend
+    ? `Complexity ${trend.improving ? "decreased" : "increased"} by ${trend.deltaPct}% over the last 7 days`
+    : "No trend data available";
+
   return (
-    <div className="flex items-center gap-2">
-      <div style={{ width, height }}>
+    <div
+      className="flex items-center gap-2"
+      role="img"
+      aria-label={`7-day complexity sparkline. ${trendDescription}`}
+    >
+      <div style={{ width, height }} aria-hidden="true">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={sparklineData}>
             <Tooltip content={<CustomTooltip />} />
@@ -156,6 +164,7 @@ export function ScanSparkline({
           className={`text-xs font-medium ${
             trend.improving ? "text-green-400" : "text-red-400"
           }`}
+          aria-hidden="true"
         >
           {trend.improving ? "↓" : "↑"}
           {trend.deltaPct}%

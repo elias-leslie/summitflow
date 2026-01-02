@@ -235,29 +235,70 @@ export function ScanHistoryChart({ projectId }: ScanHistoryChartProps) {
     );
   }
 
+  // Handle keyboard navigation for timeframe selector
+  const handleTimeframeKeyDown = (e: React.KeyboardEvent, currentIndex: number) => {
+    let newIndex = currentIndex;
+
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      newIndex = currentIndex > 0 ? currentIndex - 1 : TIMEFRAME_OPTIONS.length - 1;
+    } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      newIndex = currentIndex < TIMEFRAME_OPTIONS.length - 1 ? currentIndex + 1 : 0;
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      newIndex = 0;
+    } else if (e.key === "End") {
+      e.preventDefault();
+      newIndex = TIMEFRAME_OPTIONS.length - 1;
+    } else {
+      return;
+    }
+
+    setTimeframe(TIMEFRAME_OPTIONS[newIndex].value);
+    // Focus the new button
+    const buttons = e.currentTarget.parentElement?.querySelectorAll("button");
+    buttons?.[newIndex]?.focus();
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="region" aria-label="Scan history chart">
       {/* Timeframe selector */}
       <div className="flex justify-end">
-        <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-          {TIMEFRAME_OPTIONS.map((opt) => (
+        <div
+          className="flex gap-1 bg-slate-800 rounded-lg p-1"
+          role="tablist"
+          aria-label="Select timeframe"
+        >
+          {TIMEFRAME_OPTIONS.map((opt, index) => (
             <button
               key={opt.value}
               onClick={() => setTimeframe(opt.value)}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              onKeyDown={(e) => handleTimeframeKeyDown(e, index)}
+              role="tab"
+              aria-selected={timeframe === opt.value}
+              aria-controls="scan-history-chart"
+              tabIndex={timeframe === opt.value ? 0 : -1}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 focus:ring-offset-slate-800 ${
                 timeframe === opt.value
                   ? "bg-purple-600 text-white"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
               }`}
             >
-              {opt.label}
+              <span className="sr-only">Last </span>{opt.label}
+              <span className="sr-only"> days</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="h-64 transition-opacity duration-300 ease-in-out">
+      {/* Chart - responsive height: h-48 on mobile, h-64 on larger screens */}
+      <div
+        id="scan-history-chart"
+        role="img"
+        aria-label={`Codebase complexity trend chart for the last ${timeframe} days showing ${summaryStats?.totalScans ?? 0} scans`}
+        className="h-48 sm:h-64 transition-opacity duration-300 ease-in-out"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
