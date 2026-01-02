@@ -187,7 +187,7 @@ export function ScanHistoryChart({ projectId }: ScanHistoryChartProps) {
       </div>
 
       {/* Chart */}
-      <div className="h-64">
+      <div className="h-64 transition-opacity duration-300 ease-in-out">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -219,11 +219,17 @@ export function ScanHistoryChart({ projectId }: ScanHistoryChartProps) {
               strokeWidth={2}
               fill="url(#complexityGradient)"
               connectNulls
+              animationBegin={0}
+              animationDuration={500}
+              animationEasing="ease-in-out"
             />
             <Scatter
               dataKey="complexity"
               fill="#a855f7"
               shape="circle"
+              animationBegin={200}
+              animationDuration={400}
+              animationEasing="ease-out"
             >
               {chartData.map((entry, index) => (
                 entry.scan && (
