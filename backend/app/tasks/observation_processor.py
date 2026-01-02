@@ -13,8 +13,10 @@ from celery import shared_task  # type: ignore[import-untyped]
 
 from ..logging_config import get_logger
 from ..services.memory import ContextBuilder, ObservationExtractor
+from ..storage import agent_configs
 from ..storage import memory as memory_storage
 from ..utils.async_helpers import run_async_in_sync_context
+from ..utils.rate_limiter import check_extraction_rate, increment_daily_counter
 
 logger = get_logger(__name__)
 
@@ -53,6 +55,7 @@ def process_observation_queue(self: Any, limit: int = BATCH_SIZE) -> dict[str, A
     processed = 0
     failed = 0
     skipped = 0
+    throttled = 0
 
     try:
         # Get pending items
@@ -60,17 +63,75 @@ def process_observation_queue(self: Any, limit: int = BATCH_SIZE) -> dict[str, A
 
         if not pending_items:
             logger.debug("observation_queue_empty")
-            return {"processed": 0, "failed": 0, "skipped": 0}
+            return {"processed": 0, "failed": 0, "skipped": 0, "throttled": 0}
 
         logger.info("observation_queue_items_found", count=len(pending_items))
 
-        # Mark all items as processing before LLM call
+        # Group items by project_id for rate limiting
+        items_by_project: dict[str, list[dict[str, Any]]] = {}
         for item in pending_items:
+            project_id = item["project_id"]
+            if project_id not in items_by_project:
+                items_by_project[project_id] = []
+            items_by_project[project_id].append(item)
+
+        # Check rate limits per project and filter items
+        allowed_items: list[dict[str, Any]] = []
+        for project_id, project_items in items_by_project.items():
+            # Get extraction config
+            rpm_limit = agent_configs.get_extraction_rpm_limit(project_id)
+
+            # Check if extraction is enabled
+            if not agent_configs.is_extraction_enabled(project_id):
+                # Mark all as skipped due to extraction disabled
+                for item in project_items:
+                    memory_storage.update_queue_item_status(
+                        item["id"],
+                        "processed",
+                        error_message="Skipped: extraction disabled",
+                    )
+                    throttled += 1
+                logger.info(
+                    "extraction_disabled_for_project",
+                    project_id=project_id,
+                    items_skipped=len(project_items),
+                )
+                continue
+
+            # Check rate limit (counts as 1 request per batch per project)
+            rate_result = check_extraction_rate(project_id, rpm_limit)
+            if not rate_result.allowed:
+                # Leave items as pending for retry on next run
+                logger.info(
+                    "extraction_rate_limited",
+                    project_id=project_id,
+                    items_deferred=len(project_items),
+                    current=rate_result.current_count,
+                    limit=rate_result.limit,
+                    reset_in=rate_result.reset_in_seconds,
+                )
+                throttled += len(project_items)
+                continue
+
+            # Rate limit OK - add to allowed items
+            allowed_items.extend(project_items)
+            increment_daily_counter(project_id)
+
+        if not allowed_items:
+            logger.info(
+                "observation_queue_all_throttled",
+                throttled=throttled,
+            )
+            return {"processed": 0, "failed": 0, "skipped": 0, "throttled": throttled}
+
+        # Mark allowed items as processing before LLM call
+        for item in allowed_items:
             memory_storage.update_queue_item_status(item["id"], "processing")
 
         # Create extractor and run batch extraction (single LLM call)
         extractor = ObservationExtractor()
-        observations = run_async_in_sync_context(extractor.extract_batch(pending_items))
+        observations = run_async_in_sync_context(extractor.extract_batch(allowed_items))
+        pending_items = allowed_items  # Replace for the processing loop below
 
         # Process results - each observation corresponds to the item at same index
         for _idx, (item, observation) in enumerate(zip(pending_items, observations, strict=False)):
@@ -170,7 +231,12 @@ def process_observation_queue(self: Any, limit: int = BATCH_SIZE) -> dict[str, A
                         error=str(e),
                     )
 
-        result = {"processed": processed, "failed": failed, "skipped": skipped}
+        result = {
+            "processed": processed,
+            "failed": failed,
+            "skipped": skipped,
+            "throttled": throttled,
+        }
         logger.info("observation_queue_processing_completed", **result)
 
         # Schedule diary aggregation for each unique session (with 5 min delay)

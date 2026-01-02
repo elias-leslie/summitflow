@@ -58,6 +58,9 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "component_source": "manual",
     # Autonomous execution - disabled by default (opt-in)
     "autonomous_enabled": False,
+    # Extraction throttle - enabled, default 10 RPM (lean and mean)
+    "extraction_enabled": True,
+    "extraction_rpm_limit": 10,
 }
 
 
@@ -308,3 +311,73 @@ def is_autonomous_enabled(project_id: str) -> bool:
     """
     config = get_agent_config(project_id)
     return bool(config.get("autonomous_enabled", False))
+
+
+# Valid RPM limit values (slider stops)
+EXTRACTION_RPM_VALUES = (0, 5, 10, 15, 30, 60)
+EXTRACTION_RPM_LABELS = {
+    0: "Off",
+    5: "Minimal",
+    10: "Low",
+    15: "Medium",
+    30: "High",
+    60: "Unlimited",
+}
+
+
+class ExtractionConfig(TypedDict):
+    """Extraction throttle configuration."""
+
+    enabled: bool
+    rpm_limit: int
+    rpm_label: str
+
+
+def get_extraction_config(project_id: str) -> ExtractionConfig:
+    """Get extraction throttle configuration for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        ExtractionConfig with enabled, rpm_limit, and rpm_label
+    """
+    config = get_agent_config(project_id)
+    rpm_limit = config.get("extraction_rpm_limit", 10)
+    return {
+        "enabled": config.get("extraction_enabled", True),
+        "rpm_limit": rpm_limit,
+        "rpm_label": EXTRACTION_RPM_LABELS.get(rpm_limit, f"{rpm_limit} RPM"),
+    }
+
+
+def is_extraction_enabled(project_id: str) -> bool:
+    """Check if extraction is enabled for a project.
+
+    Returns False if extraction_enabled=False OR extraction_rpm_limit=0.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        True if extraction is enabled and rpm_limit > 0
+    """
+    config = get_agent_config(project_id)
+    if not config.get("extraction_enabled", True):
+        return False
+    return config.get("extraction_rpm_limit", 10) > 0
+
+
+def get_extraction_rpm_limit(project_id: str) -> int:
+    """Get the extraction RPM limit for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        RPM limit (0=disabled, 60=unlimited)
+    """
+    config = get_agent_config(project_id)
+    if not config.get("extraction_enabled", True):
+        return 0
+    return config.get("extraction_rpm_limit", 10)

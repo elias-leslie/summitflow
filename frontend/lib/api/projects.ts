@@ -62,6 +62,9 @@ export interface ProjectAgentConfig {
   checkpoints_enabled: boolean;
   context_injection_enabled: boolean;
   component_source: string;
+  // Extraction throttle
+  extraction_enabled: boolean;
+  extraction_rpm_limit: number;
 }
 
 export interface ProjectAgentConfigUpdate {
@@ -77,6 +80,9 @@ export interface ProjectAgentConfigUpdate {
   checkpoints_enabled?: boolean;
   context_injection_enabled?: boolean;
   component_source?: string;
+  // Extraction throttle
+  extraction_enabled?: boolean;
+  extraction_rpm_limit?: number;
 }
 
 export async function fetchProjects(): Promise<Project[]> {
