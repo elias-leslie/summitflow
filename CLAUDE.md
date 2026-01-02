@@ -322,4 +322,4 @@ bash ~/summitflow/scripts/start.sh
 
 ---
 
-**Version**: 2.4.0 | **Updated**: 2025-12-31
+**Version**: 2.5.0 | **Updated**: 2026-01-01
