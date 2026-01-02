@@ -45,6 +45,35 @@ def pass_step(
         output_success(f"Marked step {step_number} of subtask {subtask_id} as passed")
 
 
+@app.command("create")
+def create_steps(
+    task_id: str,
+    subtask_id: str,
+    descriptions: Annotated[list[str], typer.Argument()],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Create steps for a subtask in batch.
+
+    Pass multiple step descriptions as arguments.
+
+    Examples:
+        st step create task-abc123 1.1 "Step 1" "Step 2" "Step 3"
+    """
+    client = STClient()
+
+    try:
+        result = client.bulk_create_steps(task_id, subtask_id, descriptions)
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        output_json(result)
+    else:
+        created = result.get("created", [])
+        output_success(f"Created {len(created)} steps for subtask {subtask_id}")
+
+
 @app.command("list")
 def list_steps(
     task_id: str,
