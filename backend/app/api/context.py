@@ -109,6 +109,10 @@ def format_session_context(
             lines.append(f"- Uncommitted: {git['uncommitted_count']} files")
         lines.append("")
 
+    # Tools hint (zero-cost progressive disclosure)
+    lines.append("**Tools:** `member-dis search|expand|index` | `st ready|update|close`")
+    lines.append("")
+
     # Recent sessions (diary entries)
     if diary:
         lines.append("**Recent Sessions:**")
@@ -287,6 +291,7 @@ class SessionStartContextResponse(BaseModel):
     token_estimate: int
     items_included: int
     patterns_index: list[dict[str, Any]] = Field(default_factory=list)
+    tools_hint: str = "`member-dis search|expand|index` | `st ready|update|close`"
 
 
 @router.post("/{project_id}/context/session-start", response_model=SessionStartContextResponse)
