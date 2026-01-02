@@ -245,3 +245,195 @@ def update_access_task_outcome(
         logger.debug(f"Updated {updated} access log entries with outcome={task_outcome}")
 
     return updated
+
+
+# =============================================================================
+# Pattern Effectiveness Queries
+# =============================================================================
+
+
+def get_pattern_effectiveness(
+    project_id: str,
+    days: int = 30,
+) -> list[dict[str, Any]]:
+    """Calculate effectiveness metrics for each pattern.
+
+    Returns success rate, usage count, and access distribution for patterns
+    that have been accessed and have outcome data.
+
+    Args:
+        project_id: Project to analyze.
+        days: Time window to analyze (default 30 days).
+
+    Returns:
+        List of pattern effectiveness data sorted by success rate descending.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                entity_id AS pattern_id,
+                COUNT(*) AS total_access,
+                COUNT(*) FILTER (WHERE task_outcome = 'success') AS success_count,
+                COUNT(*) FILTER (WHERE task_outcome = 'partial') AS partial_count,
+                COUNT(*) FILTER (WHERE task_outcome = 'failure') AS failure_count,
+                COUNT(*) FILTER (WHERE access_source = 'injection') AS injection_count,
+                COUNT(*) FILTER (WHERE access_source = 'api') AS api_count,
+                COUNT(*) FILTER (WHERE access_source = 'cli') AS cli_count,
+                COUNT(DISTINCT session_id) AS unique_sessions
+            FROM context_access_log
+            WHERE project_id = %s
+              AND entity_type = 'pattern'
+              AND expanded_at >= NOW() - INTERVAL '%s days'
+            GROUP BY entity_id
+            HAVING COUNT(*) FILTER (WHERE task_outcome IS NOT NULL) > 0
+            ORDER BY
+                COUNT(*) FILTER (WHERE task_outcome = 'success')::float /
+                NULLIF(COUNT(*) FILTER (WHERE task_outcome IS NOT NULL), 0) DESC,
+                COUNT(*) DESC
+            """,
+            (project_id, days),
+        )
+        rows = cur.fetchall()
+
+    results = []
+    for row in rows:
+        total_with_outcome = row[2] + row[3] + row[4]  # success + partial + failure
+        success_rate = row[2] / total_with_outcome if total_with_outcome > 0 else 0.0
+
+        results.append(
+            {
+                "pattern_id": row[0],
+                "total_access": row[1],
+                "success_count": row[2],
+                "partial_count": row[3],
+                "failure_count": row[4],
+                "success_rate": round(success_rate, 3),
+                "injection_count": row[5],
+                "api_count": row[6],
+                "cli_count": row[7],
+                "unique_sessions": row[8],
+            }
+        )
+
+    return results
+
+
+def get_pattern_sessions(
+    project_id: str,
+    pattern_id: str,
+    outcome: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Get sessions where a pattern was accessed.
+
+    Args:
+        project_id: Project to query.
+        pattern_id: Pattern ID to look up.
+        outcome: Optional filter by outcome ('success', 'partial', 'failure').
+        limit: Maximum sessions to return.
+
+    Returns:
+        List of session summaries with access details.
+    """
+    conditions = [
+        "project_id = %s",
+        "entity_type = 'pattern'",
+        "entity_id = %s",
+    ]
+    params: list[Any] = [project_id, pattern_id]
+
+    if outcome:
+        conditions.append("task_outcome = %s")
+        params.append(outcome)
+
+    params.append(limit)
+    where_clause = " AND ".join(conditions)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT session_id, task_id, task_outcome, access_source, expanded_at
+            FROM context_access_log
+            WHERE {where_clause}
+            ORDER BY expanded_at DESC
+            LIMIT %s
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "session_id": row[0],
+            "task_id": row[1],
+            "task_outcome": row[2],
+            "access_source": row[3],
+            "expanded_at": normalize_timestamp(row[4]),
+        }
+        for row in rows
+    ]
+
+
+def get_access_summary(
+    project_id: str,
+    days: int = 7,
+) -> dict[str, Any]:
+    """Get summary statistics for context access.
+
+    Args:
+        project_id: Project to analyze.
+        days: Time window to analyze.
+
+    Returns:
+        Summary with counts by entity type, access source, and outcome.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE entity_type = 'pattern') AS patterns,
+                COUNT(*) FILTER (WHERE entity_type = 'observation') AS observations,
+                COUNT(*) FILTER (WHERE entity_type = 'diary') AS diary,
+                COUNT(*) FILTER (WHERE access_source = 'injection') AS injection,
+                COUNT(*) FILTER (WHERE access_source = 'api') AS api,
+                COUNT(*) FILTER (WHERE access_source = 'cli') AS cli,
+                COUNT(*) FILTER (WHERE task_outcome = 'success') AS success,
+                COUNT(*) FILTER (WHERE task_outcome = 'partial') AS partial,
+                COUNT(*) FILTER (WHERE task_outcome = 'failure') AS failure,
+                COUNT(*) FILTER (WHERE task_outcome IS NULL) AS pending,
+                COUNT(DISTINCT session_id) AS unique_sessions
+            FROM context_access_log
+            WHERE project_id = %s
+              AND expanded_at >= NOW() - INTERVAL '%s days'
+            """,
+            (project_id, days),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return {"error": "No data found"}
+
+    return {
+        "project_id": project_id,
+        "days": days,
+        "total_access": row[0],
+        "by_entity_type": {
+            "pattern": row[1],
+            "observation": row[2],
+            "diary": row[3],
+        },
+        "by_access_source": {
+            "injection": row[4],
+            "api": row[5],
+            "cli": row[6],
+        },
+        "by_outcome": {
+            "success": row[7],
+            "partial": row[8],
+            "failure": row[9],
+            "pending": row[10],
+        },
+        "unique_sessions": row[11],
+    }

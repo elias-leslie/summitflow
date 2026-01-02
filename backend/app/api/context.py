@@ -433,6 +433,88 @@ async def get_session_start_context(
     )
 
 
+# =============================================================================
+# Pattern Effectiveness Endpoints
+# =============================================================================
+
+
+class PatternEffectivenessItem(BaseModel):
+    """Effectiveness metrics for a single pattern."""
+
+    pattern_id: str
+    total_access: int
+    success_count: int
+    partial_count: int
+    failure_count: int
+    success_rate: float
+    injection_count: int
+    api_count: int
+    cli_count: int
+    unique_sessions: int
+
+
+class PatternEffectivenessResponse(BaseModel):
+    """Response for pattern effectiveness endpoint."""
+
+    project_id: str
+    days: int
+    patterns: list[PatternEffectivenessItem]
+    summary: dict[str, Any]
+
+
+@router.get("/{project_id}/memory/patterns/effectiveness")
+async def get_patterns_effectiveness(
+    project_id: str,
+    days: int = Query(30, ge=1, le=365, description="Days to analyze"),
+) -> PatternEffectivenessResponse:
+    """Get pattern effectiveness metrics.
+
+    Returns success rate and usage statistics for each pattern that has been
+    accessed with outcome data. Patterns are sorted by success rate descending.
+
+    Use this to identify which patterns correlate with successful vs failed sessions.
+    """
+    from ..storage.context_access import get_access_summary, get_pattern_effectiveness
+
+    patterns = get_pattern_effectiveness(project_id, days=days)
+    summary = get_access_summary(project_id, days=days)
+
+    return PatternEffectivenessResponse(
+        project_id=project_id,
+        days=days,
+        patterns=[PatternEffectivenessItem(**p) for p in patterns],
+        summary=summary,
+    )
+
+
+class AccessSummaryResponse(BaseModel):
+    """Response for access summary endpoint."""
+
+    project_id: str
+    days: int
+    total_access: int
+    by_entity_type: dict[str, int]
+    by_access_source: dict[str, int]
+    by_outcome: dict[str, int]
+    unique_sessions: int
+
+
+@router.get("/{project_id}/memory/access/summary")
+async def get_access_statistics(
+    project_id: str,
+    days: int = Query(7, ge=1, le=365, description="Days to analyze"),
+) -> AccessSummaryResponse:
+    """Get summary statistics for context access.
+
+    Returns counts by entity type, access source, and outcome.
+    """
+    from ..storage.context_access import get_access_summary
+
+    summary = get_access_summary(project_id, days=days)
+
+    return AccessSummaryResponse(**summary)
+
+
 class TimelineResponse(BaseModel):
     """Response model for timeline/context-around endpoint."""
 
