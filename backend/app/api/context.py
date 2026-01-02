@@ -189,6 +189,8 @@ class ExpandRequest(BaseModel):
     """Request model for entity expansion."""
 
     entity_id: str  # Format: "type:uuid" (e.g., "obs:abc-123")
+    session_id: str | None = None  # Optional session ID for access logging
+    task_id: str | None = None  # Optional task ID for correlation
 
 
 class ExpandResponse(BaseModel):
@@ -260,8 +262,15 @@ async def expand_entity(
 
     Returns the full content and token count for the entity.
     For patterns, this also increments the usage_count.
+
+    Optional: Pass session_id and task_id for access logging and correlation.
     """
-    builder = ContextBuilder(project_id=project_id)
+    builder = ContextBuilder(
+        project_id=project_id,
+        session_id=request.session_id,
+        access_source="api",
+        task_id=request.task_id,
+    )
 
     try:
         result = builder.expand_entity(request.entity_id)

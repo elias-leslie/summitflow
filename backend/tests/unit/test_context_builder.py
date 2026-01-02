@@ -86,6 +86,106 @@ class TestExpandDocSection:
                 builder.expand_entity("doc:TEST.md#nonexistent-section")
 
 
+class TestAccessLogging:
+    """Tests for context access logging during expansion."""
+
+    def test_logs_access_on_observation_expand(self):
+        """Logs access when observation is expanded with session_id."""
+
+        from app.services.memory.context_builder import ContextBuilder
+
+        # Mock observation
+        mock_obs = {
+            "id": "test-obs-123",
+            "project_id": "test",
+            "session_id": "session-abc",
+            "agent_type": "test",
+            "observation_type": "operational",
+            "title": "Test observation",
+            "narrative": "Test narrative",
+            "concepts": [],
+            "priority": "medium",
+            "confidence": 0.8,
+            "entities": [],
+            "subtitle": None,
+            "facts": None,
+            "files_read": [],
+            "files_modified": [],
+            "tool_name": None,
+            "tool_input": None,
+            "discovery_tokens": 0,
+            "extracted_by": None,
+            "raw_excerpt": None,
+            "created_at": "2026-01-02T10:00:00Z",
+        }
+
+        with (
+            patch("app.storage.memory.get_observation", return_value=mock_obs),
+            patch("app.storage.context_access.log_context_access") as mock_log,
+        ):
+            builder = ContextBuilder(
+                project_id="test",
+                session_id="session-abc",
+                access_source="api",
+                task_id="task-123",
+            )
+            result = builder.expand_entity("obs:test-obs-123")
+
+            # Verify access was logged
+            mock_log.assert_called_once_with(
+                project_id="test",
+                session_id="session-abc",
+                entity_type="observation",
+                entity_id="test-obs-123",
+                access_source="api",
+                task_id="task-123",
+            )
+            assert result["type"] == "observation"
+
+    def test_skips_logging_when_no_session(self):
+        """Does not log when session_id is None."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        mock_obs = {
+            "id": "test-obs-123",
+            "project_id": "test",
+            "session_id": "session-abc",
+            "agent_type": "test",
+            "observation_type": "operational",
+            "title": "Test observation",
+            "narrative": "Test narrative",
+            "concepts": [],
+            "priority": "medium",
+            "confidence": 0.8,
+            "entities": [],
+            "subtitle": None,
+            "facts": None,
+            "files_read": [],
+            "files_modified": [],
+            "tool_name": None,
+            "tool_input": None,
+            "discovery_tokens": 0,
+            "extracted_by": None,
+            "raw_excerpt": None,
+            "created_at": "2026-01-02T10:00:00Z",
+        }
+
+        with (
+            patch("app.storage.memory.get_observation", return_value=mock_obs),
+            patch("app.storage.context_access.log_context_access") as mock_log,
+        ):
+            builder = ContextBuilder(
+                project_id="test",
+                session_id=None,  # No session
+                access_source="api",
+            )
+            result = builder.expand_entity("obs:test-obs-123")
+
+            # Verify access was NOT logged
+            mock_log.assert_not_called()
+            assert result["type"] == "observation"
+
+
 class TestBuildRulesIndex:
     """Tests for build_rules_index method.
 

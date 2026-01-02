@@ -59,17 +59,28 @@ class ContextBuilder:
     - This achieves ~87% token reduction vs loading everything
     """
 
-    def __init__(self, project_id: str, session_id: str | None = None, use_cache: bool = True):
+    def __init__(
+        self,
+        project_id: str,
+        session_id: str | None = None,
+        use_cache: bool = True,
+        access_source: str = "api",
+        task_id: str | None = None,
+    ):
         """Initialize the context builder.
 
         Args:
             project_id: The project to build context for.
             session_id: Optional session filter for recent context.
             use_cache: Whether to use Redis caching (default True).
+            access_source: How the access is happening ('injection', 'cli', 'api').
+            task_id: Optional SummitFlow task ID for correlation.
         """
         self.project_id = project_id
         self.session_id = session_id
         self.use_cache = use_cache
+        self.access_source = access_source
+        self.task_id = task_id
 
     def _cache_key(self, suffix: str = "") -> str:
         """Generate cache key for this project/session."""
@@ -286,6 +297,41 @@ class ContextBuilder:
 
         return result
 
+    def _log_access(self, entity_type: str, entity_id: str) -> None:
+        """Log entity access for effectiveness tracking.
+
+        Args:
+            entity_type: Type of entity ('observation', 'pattern', 'diary', etc.)
+            entity_id: ID of the entity being accessed.
+        """
+        if not self.session_id:
+            logger.debug(f"Skipping access log: no session_id for {entity_type}:{entity_id}")
+            return
+
+        try:
+            from app.storage.context_access import log_context_access
+
+            # Map internal types to log types
+            type_mapping = {
+                "observation": "observation",
+                "obs": "observation",
+                "pattern": "pattern",
+                "pat": "pattern",
+                "diary": "diary",
+            }
+            log_type = type_mapping.get(entity_type, entity_type)
+
+            log_context_access(
+                project_id=self.project_id,
+                session_id=self.session_id,
+                entity_type=log_type,
+                entity_id=entity_id,
+                access_source=self.access_source,
+                task_id=self.task_id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log context access: {e}")
+
     def expand_entity(self, entity_id: str) -> dict[str, Any]:
         """Expand an entity from the index to get full content.
 
@@ -308,6 +354,8 @@ class ContextBuilder:
             obs = memory_storage.get_observation(uuid)
             if not obs:
                 raise KeyError(f"Observation not found: {uuid}")
+            # Log access after successful expansion
+            self._log_access("observation", uuid)
             return {
                 "entity_id": entity_id,
                 "type": "observation",
@@ -341,6 +389,9 @@ class ContextBuilder:
 
             # Track pattern usage
             memory_storage.increment_pattern_usage(str(pattern["id"]))
+
+            # Log access after successful expansion
+            self._log_access("pattern", str(pattern["id"]))
 
             # Return full pattern content using JSON-lines format
             from app.services.memory.pattern_service import PatternService
