@@ -358,3 +358,68 @@ Do the second thing.
         assert parsed["title"] == original["title"]
         assert parsed["content"] == original["content"]
         assert parsed["confidence"] == original["confidence"]
+
+
+class TestExpandPatternEntity:
+    """Tests for expand_entity with pattern short and full IDs."""
+
+    @patch("app.services.memory.context_builder.get_pattern_by_short_id")
+    @patch("app.storage.memory.increment_pattern_usage")
+    def test_expand_pattern_by_short_id(self, mock_increment, mock_get_pattern):
+        """Expand pattern using short ID (8 chars)."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        mock_get_pattern.return_value = {
+            "id": "b70160e6-dab8-4a01-bba6-d4f33330be3e",
+            "title": "Test Pattern",
+            "content": "Do this thing.",
+            "pattern_type": "rule",
+            "confidence": 0.85,
+        }
+        mock_increment.return_value = None
+
+        builder = ContextBuilder(project_id="test")
+        result = builder.expand_entity("pat:3330be3e")  # Short ID
+
+        assert result["type"] == "pattern"
+        assert result["entity_id"] == "pat:b70160e6-dab8-4a01-bba6-d4f33330be3e"
+        assert result["content"]["title"] == "Test Pattern"
+        assert "jsonl" in result
+        assert '"c":"Do this thing."' in result["jsonl"]
+        mock_get_pattern.assert_called_once_with("3330be3e")
+
+    @patch("app.services.memory.context_builder.get_pattern_by_short_id")
+    @patch("app.storage.memory.increment_pattern_usage")
+    def test_expand_pattern_by_full_id(self, mock_increment, mock_get_pattern):
+        """Expand pattern using full UUID."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        full_id = "b70160e6-dab8-4a01-bba6-d4f33330be3e"
+        mock_get_pattern.return_value = {
+            "id": full_id,
+            "title": "Full ID Pattern",
+            "content": "Full content.",
+            "pattern_type": "preference",
+            "confidence": 0.9,
+        }
+        mock_increment.return_value = None
+
+        builder = ContextBuilder(project_id="test")
+        result = builder.expand_entity(f"pat:{full_id}")
+
+        assert result["type"] == "pattern"
+        assert result["entity_id"] == f"pat:{full_id}"
+        assert result["content"]["title"] == "Full ID Pattern"
+        assert "jsonl" in result
+        mock_get_pattern.assert_called_once_with(full_id)
+
+    @patch("app.services.memory.context_builder.get_pattern_by_short_id")
+    def test_expand_pattern_not_found(self, mock_get_pattern):
+        """Raises KeyError when pattern not found."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        mock_get_pattern.return_value = None
+
+        builder = ContextBuilder(project_id="test")
+        with pytest.raises(KeyError, match="Pattern not found"):
+            builder.expand_entity("pat:nonexist")

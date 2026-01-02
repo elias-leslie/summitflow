@@ -194,6 +194,7 @@ class ExpandResponse(BaseModel):
     type: str
     content: dict[str, Any]
     token_count: int
+    jsonl: str | None = None  # Compact JSON-lines format for patterns
 
 
 class ContextIndexResponse(BaseModel):

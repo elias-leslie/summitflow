@@ -117,6 +117,40 @@ def get_pattern(pattern_id: str) -> dict[str, Any] | None:
     return _pattern_row_to_dict(row)
 
 
+def get_pattern_by_short_id(short_id: str) -> dict[str, Any] | None:
+    """Get a pattern by short ID (last 8 chars of UUID).
+
+    Used for progressive disclosure where the index shows short IDs
+    but expansion needs to find the full pattern.
+
+    Args:
+        short_id: Last 8 characters of the pattern UUID
+
+    Returns:
+        Pattern dict if found and unique, None otherwise
+    """
+    if len(short_id) > 8:
+        # If it's a full UUID, delegate to get_pattern
+        return get_pattern(short_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Use LIKE to match patterns ending with the short ID
+        cur.execute(
+            f"SELECT {PATTERN_COLUMNS} FROM learned_patterns WHERE id::text LIKE %s",
+            (f"%{short_id}",),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return None
+    if len(rows) > 1:
+        # Multiple matches - short ID is ambiguous
+        logger.warning(f"Ambiguous short ID {short_id}: found {len(rows)} patterns")
+        return None
+
+    return _pattern_row_to_dict(rows[0])
+
+
 def list_patterns(
     project_id: str | None | Any = None,  # Accept GLOBAL_SCOPE sentinel
     status: str | None = None,

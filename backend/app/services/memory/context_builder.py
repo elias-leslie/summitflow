@@ -17,6 +17,7 @@ from typing import Any
 import redis
 
 from app.storage import memory as memory_storage
+from app.storage.memory_patterns import get_pattern_by_short_id
 from app.storage.memory_utils import rank_observation
 
 logger = logging.getLogger(__name__)
@@ -323,17 +324,24 @@ class ContextBuilder:
             }
 
         elif entity_type == "pat":
-            pattern = memory_storage.get_pattern(uuid)
+            # Support both short IDs (8 chars) and full UUIDs
+            pattern = get_pattern_by_short_id(uuid)
             if not pattern:
                 raise KeyError(f"Pattern not found: {uuid}")
 
             # Track pattern usage
-            memory_storage.increment_pattern_usage(uuid)
+            memory_storage.increment_pattern_usage(str(pattern["id"]))
+
+            # Return full pattern content using JSON-lines format
+            from app.services.memory.pattern_service import PatternService
+
+            jsonl_content = PatternService.format_pattern_jsonl(pattern, include_content=True)
 
             return {
-                "entity_id": entity_id,
+                "entity_id": f"pat:{pattern['id']}",
                 "type": "pattern",
-                "content": pattern,
+                "content": pattern,  # Full dict for backward compat
+                "jsonl": jsonl_content,  # Compact JSON-lines format
                 "token_count": self._pattern_full_tokens(pattern),
             }
 
