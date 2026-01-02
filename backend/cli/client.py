@@ -438,3 +438,25 @@ class STClient:
             json=data,
         )
         return self._handle_response(response)
+
+    # Execution
+
+    def start_execution(
+        self,
+        task_id: str,
+        agent_type: str = "claude",
+        use_worktree: bool = False,
+    ) -> dict[str, Any]:
+        """Start execution of a task.
+
+        Args:
+            task_id: Task ID
+            agent_type: Agent to use (claude/gemini)
+            use_worktree: Execute in isolated git worktree
+
+        Returns:
+            Session info with session_id, status, worktree_path.
+        """
+        data = {"agent_type": agent_type, "use_worktree": use_worktree}
+        response = self._client.post(self._url(f"/tasks/{task_id}/execute/start"), json=data)
+        return self._handle_response(response)

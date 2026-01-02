@@ -440,3 +440,45 @@ def bug(
     output_task(task, json_output)
     if not json_output:
         output_success(f"Created bug {task['id']}")
+
+
+@app.command()
+def exec(
+    task_id: str,
+    agent: Annotated[str, typer.Option("--agent")] = "claude",
+    worktree: Annotated[bool, typer.Option("--worktree")] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Start execution of a task via API.
+
+    Triggers the autonomous execution system to work on the task.
+
+    Examples:
+        st exec task-abc123
+        st exec task-abc123 --agent gemini
+        st exec task-abc123 --worktree
+    """
+    client = STClient()
+
+    try:
+        result = client.start_execution(task_id, agent_type=agent, use_worktree=worktree)
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        from ..output import output_json
+
+        output_json(result)
+    else:
+        session_id = result.get("session_id", "")
+        status = result.get("status", "")
+        worktree_path = result.get("worktree_path")
+
+        output_success(f"Started execution for {task_id}")
+        from ..output import console
+
+        console.print(f"  Session ID: [cyan]{session_id}[/]")
+        console.print(f"  Status: {status}")
+        if worktree_path:
+            console.print(f"  Worktree: {worktree_path}")
