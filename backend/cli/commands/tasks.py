@@ -275,6 +275,7 @@ def update(
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     move_to: Annotated[str | None, typer.Option("--move-to")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
+    capability: Annotated[int | None, typer.Option("--capability")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Update a task.
@@ -285,6 +286,7 @@ def update(
         st update task-abc123 --add-label auto-generated
         st update task-abc123 --remove-label tier:1 --add-label tier:2
         st update task-abc123 --move-to other-project
+        st update task-abc123 --capability 615
     """
     client = STClient()
 
@@ -345,6 +347,8 @@ def update(
         except json.JSONDecodeError as e:
             output_error(f"Invalid plan JSON: {e}")
             raise typer.Exit(1) from None
+    if capability is not None:
+        updates["capability_id"] = capability
 
     if not updates:
         output_error("No updates specified")
