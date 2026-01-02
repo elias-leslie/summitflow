@@ -275,8 +275,30 @@ def close(
     try:
         task = client.close_task(task_id, reason=reason, force=force)
     except APIError as e:
-        _handle_api_error(e)
-        return
+        # Provide helpful hints for common errors
+        detail = e.detail.lower()
+        hints: list[str] = []
+
+        if "criteria" in detail or "unverified" in detail:
+            hints.append("Hint: Use --force to bypass criteria validation")
+            hints.append("Hint: Or verify pending criteria first")
+
+        if "capability" in detail:
+            hints.append("Hint: Run 'st capability verify <id>' to check test status")
+
+        if "status" in detail or "transition" in detail:
+            hints.append("Hint: Check task status with 'st show <id>'")
+            hints.append("Hint: Use 'st cancel <id>' for non-terminal states")
+
+        if "not found" in detail:
+            hints.append("Hint: Verify task ID with 'st list'")
+
+        output_error(e.detail)
+        from ..output import console
+
+        for hint in hints:
+            console.print(f"[yellow]{hint}[/]")
+        raise typer.Exit(1) from None
 
     output_task(task, json_output)
     if not json_output:
