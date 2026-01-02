@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, output_error, output_json, output_success
+from ..output import console, handle_api_error, output_json, output_success
 
 app = typer.Typer(help="Component management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("list")
@@ -33,7 +27,7 @@ def list_components(
     try:
         components = client.list_components()
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -74,7 +68,7 @@ def show(
     try:
         comp = client.get_component(component_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -126,7 +120,7 @@ def create(
             description=description,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

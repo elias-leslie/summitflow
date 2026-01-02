@@ -8,15 +8,15 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import output_error, output_success, output_task, output_task_list
+from ..output import (
+    handle_api_error,
+    output_error,
+    output_success,
+    output_task,
+    output_task_list,
+)
 
 app = typer.Typer(help="Task management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command()
@@ -53,7 +53,7 @@ def create(
     try:
         task = client.create_task(data)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if plan:
@@ -109,7 +109,7 @@ def list_tasks(
             limit=limit,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_task_list(result["tasks"], json_output, show_tier=True)
@@ -200,7 +200,7 @@ def ready(
             result = client.list_ready(limit=limit)
             output_task_list(result["tasks"], json_output, title="Ready Tasks")
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
 
@@ -221,7 +221,7 @@ def show(
         task = client.get_task(task_id)
         subtask_data = client.get_subtasks(task_id, include_steps=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     # Merge subtask info into task for output
@@ -299,7 +299,7 @@ def update(
                 output_success(f"Updated task {task_id} status to: {status}")
             return
         except APIError as e:
-            _handle_api_error(e)
+            handle_api_error(e)
             return
 
     # Build update data
@@ -314,7 +314,7 @@ def update(
             current_task = client.get_task(task_id)
             current_labels = set(current_task.get("labels", []) or [])
         except APIError as e:
-            _handle_api_error(e)
+            handle_api_error(e)
             return
 
         # Remove labels first, then add
@@ -357,7 +357,7 @@ def update(
     try:
         task = client.update_task(task_id, **updates)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_task(task, json_output)
@@ -433,7 +433,7 @@ def cancel(
     try:
         task = client.cancel_task(task_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_task(task, json_output)
@@ -466,7 +466,7 @@ def claim(
             if not json_output:
                 output_success(f"Claimed task {task_id} for {lock} minutes")
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_task(task, json_output)
@@ -493,7 +493,7 @@ def delete(
     try:
         client.delete_task(task_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_success(f"Deleted task {task_id}")
@@ -555,7 +555,7 @@ def bug(
     try:
         task = client.create_task(data)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     # Create discovered-from dependency if --from specified
@@ -593,7 +593,7 @@ def exec(
     try:
         result = client.start_execution(task_id, agent_type=agent, use_worktree=worktree)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -639,7 +639,7 @@ def log(
     try:
         result = client.append_log(task_id, entry)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

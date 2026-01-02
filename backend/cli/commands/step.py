@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, output_error, output_json, output_success
+from ..output import console, handle_api_error, output_json, output_success
 
 app = typer.Typer(help="Step management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("pass")
@@ -36,7 +30,7 @@ def pass_step(
     try:
         result = client.update_step(task_id, subtask_id, step_number, passes=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -64,7 +58,7 @@ def create_steps(
     try:
         result = client.bulk_create_steps(task_id, subtask_id, descriptions)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -91,7 +85,7 @@ def list_steps(
     try:
         steps = client.get_steps(task_id, subtask_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

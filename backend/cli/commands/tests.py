@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import output_error, output_json, output_success, output_tests
+from ..output import handle_api_error, output_json, output_success, output_tests
 
 app = typer.Typer(help="Test management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("list")
@@ -35,7 +29,7 @@ def list_tests(
     try:
         tests = client.list_tests(test_type=test_type)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_tests(tests, json_output)
@@ -65,7 +59,7 @@ def link_test(
             is_primary=primary,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -91,7 +85,7 @@ def import_tests(
     try:
         result = client.import_tests(framework)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

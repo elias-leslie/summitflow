@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import output_error, output_json, output_success
+from ..output import handle_api_error, output_json, output_success
 
 app = typer.Typer(help="Criterion management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("verify")
@@ -41,7 +35,7 @@ def verify_criterion(
             verified_by=verified_by,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

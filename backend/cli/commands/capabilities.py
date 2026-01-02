@@ -7,15 +7,15 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import output_capabilities, output_error, output_json, output_success
+from ..output import (
+    handle_api_error,
+    output_capabilities,
+    output_error,
+    output_json,
+    output_success,
+)
 
 app = typer.Typer(help="Capability management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("list")
@@ -33,7 +33,7 @@ def list_caps(
     try:
         caps = client.list_capabilities()
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_capabilities(caps, json_output)
@@ -57,7 +57,7 @@ def show(
         caps = client.list_capabilities()
         cap = next((c for c in caps if c["capability_id"] == capability_id), None)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if not cap:
@@ -140,7 +140,7 @@ def create(
             priority=priority,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -165,7 +165,7 @@ def verify(
     try:
         result = client.verify_capability(capability_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

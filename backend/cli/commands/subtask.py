@@ -7,15 +7,15 @@ from typing import Annotated, Any
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, output_error, output_json, output_success
+from ..output import (
+    console,
+    handle_api_error,
+    output_error,
+    output_json,
+    output_success,
+)
 
 app = typer.Typer(help="Subtask management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 def _output_subtask(subtask: dict[str, Any], json_mode: bool = False) -> None:
@@ -144,7 +144,7 @@ def list_subtasks(
     try:
         result = client.get_subtasks(task_id, include_steps=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     subtasks = result.get("subtasks", [])
@@ -170,7 +170,7 @@ def show_subtask(
     try:
         result = client.get_subtasks(task_id, include_steps=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     subtasks = result.get("subtasks", [])
@@ -213,7 +213,7 @@ def create_subtask(
             steps=steps,
         )
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -238,7 +238,7 @@ def pass_subtask(
     try:
         result = client.update_subtask(task_id, subtask_id, passes=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

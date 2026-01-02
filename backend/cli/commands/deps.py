@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import output_deps, output_error, output_success
+from ..output import handle_api_error, output_deps, output_error, output_success
 
 app = typer.Typer(help="Dependency management commands")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command()
@@ -36,7 +30,7 @@ def add(
     try:
         dep = client.add_dependency(task_id, depends_on, dep_type)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -63,7 +57,7 @@ def list_deps(
     try:
         deps = client.list_dependencies(task_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     output_deps(deps, json_output)
@@ -86,7 +80,7 @@ def rm(
     try:
         result = client.remove_dependency(task_id, depends_on, dep_type)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if result.get("status") == "removed":

@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, output_error, output_json
+from ..output import console, handle_api_error, output_json
 
 app = typer.Typer(help="Agent session management")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command("list")
@@ -36,7 +30,7 @@ def list_sessions(
     try:
         sessions = client.list_sessions()
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     # Filter by status if specified
@@ -105,7 +99,7 @@ def show_session(
     try:
         session = client.get_session(session_id)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

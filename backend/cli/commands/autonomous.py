@@ -7,15 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, output_error, output_json, output_success
+from ..output import console, handle_api_error, output_json, output_success
 
 app = typer.Typer(help="Autonomous execution management")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 @app.command()
@@ -32,7 +26,7 @@ def enable(
     try:
         result = client.update_autonomous_settings(enabled=True)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -55,7 +49,7 @@ def disable(
     try:
         result = client.update_autonomous_settings(enabled=False)
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:
@@ -80,7 +74,7 @@ def status(
         settings = client.get_autonomous_settings()
         metrics = client.get_autonomous_status()
     except APIError as e:
-        _handle_api_error(e)
+        handle_api_error(e)
         return
 
     if json_output:

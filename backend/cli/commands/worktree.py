@@ -9,18 +9,11 @@ from typing import Annotated
 
 import typer
 
-from ..client import APIError
 from ..output import console, output_error, output_json, output_success
 
 app = typer.Typer(help="Git worktree management")
 
 WORKTREE_BASE = Path("/tmp/summitflow-worktrees")
-
-
-def _handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    output_error(e.detail)
-    raise typer.Exit(1)
 
 
 def _get_worktrees_from_git() -> list[dict]:
