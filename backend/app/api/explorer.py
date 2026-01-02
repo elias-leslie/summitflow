@@ -15,12 +15,14 @@ Endpoints:
 - GET /api/projects/{id}/explorer/children - Get children for tree nav
 """
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from ..services import explorer
 from ..storage import explorer as explorer_storage
+from ..storage import scan_history
 
 router = APIRouter()
 
@@ -162,10 +164,23 @@ async def trigger_scan(
         None,
         description="Entry type to scan (file, table, task, endpoint). Scans all if not specified.",
     ),
+    triggered_by: str = Query(
+        "manual",
+        description="Source that initiated the scan (manual, refactor_it, daily_qa_scan, audit_it)",
+    ),
+    triggered_by_session: str | None = Query(
+        None,
+        description="Claude session ID if applicable",
+    ),
+    trigger_context_json: str | None = Query(
+        None,
+        description="JSON-encoded additional context about the trigger (phase, goal, etc.)",
+        alias="trigger_context",
+    ),
 ) -> dict[str, Any]:
     """Trigger a scan for explorer entries.
 
-    Runs in background. Returns immediately with scan status.
+    Runs in background. Returns immediately with scan status and scan_id.
     Poll GET /scan/status for completion.
     """
     _validate_project_exists(project_id)
@@ -173,18 +188,82 @@ async def trigger_scan(
     if type:
         _validate_entry_type(type)
 
+    # Parse trigger context if provided
+    trigger_context: dict[str, Any] | None = None
+    if trigger_context_json:
+        try:
+            trigger_context = json.loads(trigger_context_json)
+        except json.JSONDecodeError:
+            trigger_context = None
+
+    # Record scan in history
+    scan_type = type or "full"
+    scan_id = scan_history.record_scan_start(
+        project_id=project_id,
+        scan_type=scan_type,
+        triggered_by=triggered_by,
+        triggered_by_session=triggered_by_session,
+        trigger_context=trigger_context,
+    )
+
     # Initialize scan state tracking
     explorer.start_scan(project_id, type)
 
-    # Run scan with progress tracking in background
-    background_tasks.add_task(explorer.run_scan_with_tracking, project_id, type)
+    # Run scan with progress tracking in background (pass scan_id for completion recording)
+    background_tasks.add_task(
+        _run_scan_and_record,
+        project_id,
+        type,
+        scan_id,
+    )
 
     return {
         "status": "scanning",
         "message": f"Scan started for {project_id}"
         + (f" (type: {type})" if type else " (all types)"),
         "type": type,
+        "scan_id": scan_id,
     }
+
+
+async def _run_scan_and_record(
+    project_id: str,
+    entry_type: str | None,
+    scan_id: int,
+) -> None:
+    """Run scan and record completion in scan_history."""
+    try:
+        # Run the actual scan with tracking
+        explorer.run_scan_with_tracking(project_id, entry_type)
+
+        # Get scan results from scan_states
+        scan_status = explorer.get_scan_status(project_id)
+        results = scan_status.get("results", [])
+
+        # Calculate totals
+        entries_found = sum(r.get("entries_found", 0) for r in results)
+        entries_saved = sum(r.get("entries_saved", 0) for r in results)
+
+        # Build metrics from results
+        metrics = {
+            "types_scanned": len(results),
+            "by_type": {r["entry_type"]: r for r in results},
+        }
+
+        scan_history.record_scan_complete(
+            scan_id=scan_id,
+            status="completed" if scan_status.get("status") == "completed" else "failed",
+            error_message=scan_status.get("error"),
+            metrics=metrics,
+            entries_found=entries_found,
+            entries_saved=entries_saved,
+        )
+    except Exception as e:
+        scan_history.record_scan_complete(
+            scan_id=scan_id,
+            status="failed",
+            error_message=str(e),
+        )
 
 
 @router.get("/{project_id}/explorer/entry/{entry_id}/capabilities")
