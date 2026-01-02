@@ -492,3 +492,26 @@ class STClient:
         """
         response = self._client.get(self._url("/autonomous/status"))
         return self._handle_response(response)
+
+    # Sessions
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        """List agent sessions for the project.
+
+        Returns:
+            List of session dicts.
+        """
+        response = self._client.get(self._url("/sessions"))
+        return self._handle_response(response)
+
+    def get_session(self, session_id: str) -> dict[str, Any]:
+        """Get a specific session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Session dict.
+        """
+        response = self._client.get(self._url(f"/sessions/{session_id}"))
+        return self._handle_response(response)
