@@ -9,10 +9,11 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Activity } from "lucide-react";
+import { ArrowLeft, Activity, Clock } from "lucide-react";
 import Link from "next/link";
 import { fetchProjects, type Project } from "@/lib/api";
 import { ScanHistoryChart } from "@/components/explorer/ScanHistoryChart";
+import { ScanHistoryTable } from "@/components/explorer/ScanHistoryTable";
 
 export default function StatusPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -95,24 +96,46 @@ export default function StatusPage() {
           </select>
         </div>
 
-        {/* Codebase Health Card */}
+        {/* Two-column layout for cards */}
         {projectId && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-purple-500/10 rounded-lg">
-                <Activity className="h-5 w-5 text-purple-400" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Codebase Health Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-purple-500/10 rounded-lg">
+                  <Activity className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-medium text-white">
+                    Complexity Trend
+                  </h2>
+                  <p className="text-sm text-slate-400">
+                    Track codebase health over time
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-medium text-white">
-                  Complexity Trend
-                </h2>
-                <p className="text-sm text-slate-400">
-                  Track codebase health over time
-                </p>
-              </div>
+
+              <ScanHistoryChart projectId={projectId} />
             </div>
 
-            <ScanHistoryChart projectId={projectId} />
+            {/* Recent Scans Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <Clock className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-medium text-white">
+                    Recent Scans
+                  </h2>
+                  <p className="text-sm text-slate-400">
+                    Last 10 scan operations
+                  </p>
+                </div>
+              </div>
+
+              <ScanHistoryTable projectId={projectId} limit={10} />
+            </div>
           </div>
         )}
       </div>
