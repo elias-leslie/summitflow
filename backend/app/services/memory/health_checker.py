@@ -24,6 +24,10 @@ from ...storage.memory_health import (
     get_observation_distribution,
     get_pattern_status_breakdown,
 )
+from ...storage.memory_patterns import (
+    cleanup_low_relevance_patterns,
+    enforce_pattern_cap,
+)
 
 # Import from submodules
 from .deep_review import deep_review as _deep_review
@@ -277,6 +281,34 @@ class MemoryHealthChecker:
                 approved=approved_count,
             )
 
+    def _run_pattern_lifecycle(self, pid: str, report: HealthReport) -> None:
+        """Run pattern lifecycle cleanup operations.
+
+        - Cleanup low-relevance patterns (confidence < 0.3, age > 30 days)
+        - Enforce pattern cap (50 per project)
+        """
+        # Cleanup low-relevance patterns
+        cleaned = cleanup_low_relevance_patterns(min_relevance=0.3, min_age_days=30)
+        if cleaned:
+            report.add_correction(
+                "cleaned_low_relevance_patterns",
+                f"Deleted {len(cleaned)} low-relevance patterns",
+                count=len(cleaned),
+                patterns=[p["title"] for p in cleaned[:5]],
+            )
+            logger.info(f"Cleaned up {len(cleaned)} low-relevance patterns")
+
+        # Enforce pattern cap per project
+        capped = enforce_pattern_cap(pid, max_patterns=50)
+        if capped:
+            report.add_correction(
+                "enforced_pattern_cap",
+                f"Removed {len(capped)} patterns to enforce cap of 50",
+                count=len(capped),
+                patterns=[p["title"] for p in capped[:5]],
+            )
+            logger.info(f"Enforced pattern cap for {pid}: removed {len(capped)} patterns")
+
     def _check_rules_and_docs(self, pid: str, report: HealthReport) -> None:
         """Check rule staleness and doc conflicts."""
         # Rule staleness and auto-archive
@@ -371,6 +403,7 @@ class MemoryHealthChecker:
         self._check_filter_rate(metrics, report)
         self._check_operational_observations(metrics, report)
         self._check_rules_and_docs(pid, report)
+        self._run_pattern_lifecycle(pid, report)
 
         # Determine overall status
         high_warnings = sum(1 for w in report.warnings if w.severity == "high")

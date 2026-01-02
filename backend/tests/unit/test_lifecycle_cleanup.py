@@ -248,3 +248,45 @@ class TestPatternLifecycleCleanup:
 
         assert result == []
         mock_conn.commit.assert_not_called()
+
+
+class TestHealthTaskLifecycleIntegration:
+    """Tests for lifecycle integration in health checker."""
+
+    @patch("app.services.memory.health_checker.enforce_pattern_cap")
+    @patch("app.services.memory.health_checker.cleanup_low_relevance_patterns")
+    def test_run_pattern_lifecycle_calls_cleanup(self, mock_cleanup, mock_cap):
+        """Verifies lifecycle functions are called during health check."""
+        from app.services.memory.health_checker import MemoryHealthChecker
+        from app.services.memory.types import HealthReport
+
+        mock_cleanup.return_value = []
+        mock_cap.return_value = []
+
+        checker = MemoryHealthChecker(project_id="test")
+        report = HealthReport()
+        checker._run_pattern_lifecycle("test", report)
+
+        mock_cleanup.assert_called_once_with(min_relevance=0.3, min_age_days=30)
+        mock_cap.assert_called_once_with("test", max_patterns=50)
+
+    @patch("app.services.memory.health_checker.enforce_pattern_cap")
+    @patch("app.services.memory.health_checker.cleanup_low_relevance_patterns")
+    def test_lifecycle_adds_corrections_when_patterns_deleted(self, mock_cleanup, mock_cap):
+        """Corrections added to report when patterns are cleaned/capped."""
+        from app.services.memory.health_checker import MemoryHealthChecker
+        from app.services.memory.types import HealthReport
+
+        mock_cleanup.return_value = [{"id": "pat-1", "title": "Old Pattern", "confidence": 0.1}]
+        mock_cap.return_value = [{"id": "pat-2", "title": "Excess Pattern", "confidence": 0.3}]
+
+        checker = MemoryHealthChecker(project_id="test")
+        report = HealthReport()
+        checker._run_pattern_lifecycle("test", report)
+
+        # Should have 2 corrections
+        assert len(report.corrections) == 2
+        assert any(
+            c.correction_type == "cleaned_low_relevance_patterns" for c in report.corrections
+        )
+        assert any(c.correction_type == "enforced_pattern_cap" for c in report.corrections)
