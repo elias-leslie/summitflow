@@ -1,0 +1,318 @@
+{
+  "scenarios": {
+    "find-storage-layer": {
+      "scenario_id": "find-storage-layer",
+      "runs_per_mode": 3,
+      "baseline": {
+        "tool_calls": [
+          8,
+          5,
+          7
+        ],
+        "avg": 6.67,
+        "results": [
+          {
+            "success": true,
+            "duration": 17.45,
+            "tool_calls": 8,
+            "tool_types": [
+              "Grep",
+              "Glob",
+              "Glob",
+              "Glob",
+              "Read",
+              "Read",
+              "Bash",
+              "Read"
+            ],
+            "output": "I'll help you find where data persistence is handled in this project. Let me search for those functions and explore the codebase structure.Great! I found several key storage files. Let me examine the main ones to show you where data persistence is handled:Perfect! Let me also check the directory structure to give you a complete picture:Excellent! Now I have a complete picture. Let me summarize where data persistence is handled:\n\n## Data Persistence in This Project\n\n### **Primary Location: `/back"
+          },
+          {
+            "success": true,
+            "duration": 17.63,
+            "tool_calls": 5,
+            "tool_types": [
+              "Grep",
+              "Glob",
+              "Read",
+              "Read",
+              "Glob"
+            ],
+            "output": "I'll help you find where data persistence is handled in this project. Let me search for those functions and explore the codebase structure.Let me focus on the project's actual source code, filtering out the virtual environment:Perfect! I've found the data persistence layer. Here's a comprehensive overview:\n\n## Data Persistence Architecture\n\n### **Main Storage Location**\n**`/backend/app/storage/`** - This is where all data persistence is handled.\n\n### **Task Persistence Functions**\n\nThe functions"
+          },
+          {
+            "success": true,
+            "duration": 19.26,
+            "tool_calls": 7,
+            "tool_types": [
+              "Grep",
+              "Glob",
+              "Bash",
+              "Read",
+              "Read",
+              "Read",
+              "Bash"
+            ],
+            "output": "I'll help you find where data persistence is handled in this project. Let me search for those functions and explore the codebase structure.Based on the grep results, I can see the main storage files. Let me examine the key data persistence files:Perfect! Now let me explore the storage directory structure to give you a complete picture:Excellent! Now let me create a summary document for you:\n\n## Data Persistence Architecture in This Project\n\nBased on my analysis, here's where data persistence is "
+          }
+        ]
+      },
+      "memory": {
+        "tool_calls": [
+          0,
+          0,
+          0
+        ],
+        "avg": 0,
+        "results": [
+          {
+            "success": true,
+            "duration": 4.55,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on your project knowledge, data persistence for tasks is handled in **`backend/app/storage/tasks.py`**. This is where you'd find functions like `update_task` and `create_task`.\n\nTo give you a complete picture of the data persistence layer, here's where different entity types are managed:\n\n- **Tasks**: `backend/app/storage/tasks.py` - handles `create_task`, `update_task`, and other task CRUD operations\n- **Capabilities**: `backend/app/storage/capabilities.py` - manages capability CRUD opera"
+          },
+          {
+            "success": true,
+            "duration": 3.81,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on your project knowledge, data persistence is handled in the **backend/app/storage/** layer. Here's where you'll find those functions:\n\n- **`backend/app/storage/tasks.py`** - Contains task CRUD operations including `update_task` and `create_task`\n- **`backend/app/storage/capabilities.py`** - Contains capability CRUD operations\n- **`backend/app/storage/memory.py`** - Handles observations and patterns persistence\n- **`backend/app/storage/projects.py`** - Handles project configuration persis"
+          },
+          {
+            "success": true,
+            "duration": 4.36,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on the project knowledge you've provided, data persistence is handled in the **backend/app/storage/** directory.\n\nFor functions like `update_task` or `create_task`, you would find them in:\n\n**`backend/app/storage/tasks.py`** - This file contains task CRUD (Create, Read, Update, Delete) operations\n\nThe storage layer appears to be organized by domain:\n- **tasks.py** - Task-related persistence (includes update_task, create_task, etc.)\n- **capabilities.py** - Capability CRUD operations\n- **mem"
+          }
+        ]
+      },
+      "reduction_pct": 100.0,
+      "completed_at": "2026-01-02T23:40:38.648502+00:00"
+    },
+    "find-api-endpoints": {
+      "scenario_id": "find-api-endpoints",
+      "runs_per_mode": 3,
+      "baseline": {
+        "tool_calls": [
+          9,
+          24,
+          34
+        ],
+        "avg": 22.33,
+        "results": [
+          {
+            "success": true,
+            "duration": 20.19,
+            "tool_calls": 9,
+            "tool_types": [
+              "Glob",
+              "Glob",
+              "Glob",
+              "Glob",
+              "Glob",
+              "Read",
+              "Bash",
+              "Read",
+              "Read"
+            ],
+            "output": "I'll help you find where REST API endpoints are defined in your codebase. Let me search for common patterns used to define API endpoints.Let me search more specifically in the source directories, excluding node_modules:Great! I can see the project structure. Let me look at the main API files and the app initialization to understand how REST endpoints are defined:Perfect! Let me look at the main app file:Perfect! Now let me show you one example of how endpoints are defined:Excellent! Now I have a"
+          },
+          {
+            "success": true,
+            "duration": 49.38,
+            "tool_calls": 24,
+            "tool_types": [
+              "Task",
+              "Bash",
+              "Bash",
+              "Bash",
+              "Bash",
+              "Bash",
+              "Bash",
+              "Read",
+              "Bash",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Grep",
+              "Read",
+              "Read",
+              "Bash",
+              "Read",
+              "Bash",
+              "Read"
+            ],
+            "output": "I'll help you find where REST API endpoints are defined. Let me explore your codebase to locate the API endpoint definitions.Perfect! I found the API endpoint structure. Here's a summary:\n\n## REST API Endpoints Overview\n\nYour API uses **FastAPI** with a modular router architecture. Here's where everything is:\n\n### Main Entry Point\n- **File:** `/home/kasadis/summitflow/backend/app/main.py`\n- This file sets up the FastAPI app and includes all routers with prefixes\n\n### API Routers Location\n- **Dir"
+          },
+          {
+            "success": true,
+            "duration": 70.63,
+            "tool_calls": 34,
+            "tool_types": [
+              "Task",
+              "Bash",
+              "Glob",
+              "Glob",
+              "Glob",
+              "Glob",
+              "Grep",
+              "Read",
+              "Read",
+              "Read",
+              "Bash",
+              "Bash",
+              "Glob",
+              "Glob",
+              "Grep",
+              "Bash",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Read",
+              "Bash",
+              "Bash",
+              "Glob",
+              "Bash",
+              "Bash",
+              "Glob",
+              "Glob",
+              "Read",
+              "Read",
+              "Bash",
+              "Bash",
+              "Read",
+              "Bash"
+            ],
+            "output": "I'll help you find where REST API endpoints are defined. Let me explore your codebase to locate them.Perfect! I found where your REST API endpoints are defined. Here's a summary:\n\n## **REST API Endpoints Location**\n\nYour project uses **FastAPI** with a modular router-based architecture:\n\n### \ud83d\udccd **Main Components:**\n\n1. **Application Entry Point**: `/home/kasadis/summitflow/backend/app/main.py`\n   - All routers are registered here (lines 74-98) using `app.include_router()`\n\n2. **API Modules**: Loc"
+          }
+        ]
+      },
+      "memory": {
+        "tool_calls": [
+          0,
+          0,
+          0
+        ],
+        "avg": 0,
+        "results": [
+          {
+            "success": true,
+            "duration": 5.34,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on your project knowledge, **REST API endpoints are defined in `backend/app/api/`** with each file containing an `APIRouter`. \n\nHere's the structure:\n\n**Key Files:**\n- `backend/app/api/tasks.py`\n- `backend/app/api/context.py`\n- `backend/app/api/memory.py`\n- `backend/app/api/agent_sessions.py`\n\n**How to add a new endpoint:**\n\n1. **Create or edit an endpoint file** in `backend/app/api/` (or use an existing one if it fits the category)\n\n2. **Define the endpoint** using decorators:\n   ```pytho"
+          },
+          {
+            "success": true,
+            "duration": 5.63,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on the project knowledge you've provided, REST API endpoints are defined in **`backend/app/api/`** directory.\n\nHere's how they're structured:\n\n1. **Endpoint Files**: Each feature has its own file with an `APIRouter`:\n   - `tasks.py` - Task-related endpoints\n   - `context.py` - Context-related endpoints\n   - `memory.py` - Memory-related endpoints\n   - `agent_sessions.py` - Agent session-related endpoints\n\n2. **Defining Endpoints**: Use Flask-style decorators on router objects:\n   ```python\n"
+          },
+          {
+            "success": true,
+            "duration": 5.15,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on your project knowledge, REST API endpoints are defined in **`backend/app/api/`** directory.\n\nHere's the structure:\n\n**Location**: `backend/app/api/`\n- Each file contains an **APIRouter** instance\n- Files include: `tasks.py`, `context.py`, `memory.py`, `agent_sessions.py` (and potentially others)\n\n**How to define endpoints**:\n- Use decorators: `@router.get()`, `@router.post()`, `@router.put()`, `@router.delete()`\n- Example from a typical file:\n```python\nfrom fastapi import APIRouter\n\nrou"
+          }
+        ]
+      },
+      "reduction_pct": 100.0,
+      "completed_at": "2026-01-02T23:43:25.909588+00:00"
+    },
+    "find-celery-tasks": {
+      "scenario_id": "find-celery-tasks",
+      "runs_per_mode": 3,
+      "baseline": {
+        "tool_calls": [
+          4,
+          4,
+          4
+        ],
+        "avg": 4,
+        "results": [
+          {
+            "success": true,
+            "duration": 12.11,
+            "tool_calls": 4,
+            "tool_types": [
+              "Glob",
+              "Grep",
+              "Read",
+              "Glob"
+            ],
+            "output": "I'll help you find where background Celery tasks are defined. Let me search the codebase for Celery task definitions.Great! The Celery tasks are defined in multiple files. Let me read the main Celery app file and a couple of the task files to give you a complete picture:Perfect! Here's where the background Celery tasks are defined:\n\n## Main Celery Configuration\n**Location:** `/backend/app/celery_app.py`\n\nThis file:\n- Configures the Celery app with Redis broker (DB 1) and PostgreSQL backend\n- Def"
+          },
+          {
+            "success": true,
+            "duration": 8.11,
+            "tool_calls": 4,
+            "tool_types": [
+              "Glob",
+              "Grep",
+              "Bash",
+              "Read"
+            ],
+            "output": "I'll help you find where background Celery tasks are defined. Let me search the codebase for Celery task definitions.Great! The Celery tasks are defined in the `backend/app/tasks/` directory. Let me explore that directory to give you a better overview:Perfect! **Background Celery tasks are defined in `/backend/app/tasks/`** with the following files:\n\n1. **observation_processor.py** - Processes observations\n2. **explorer_tasks.py** - Explorer-related background tasks\n3. **enrichment.py** - Data e"
+          },
+          {
+            "success": true,
+            "duration": 11.55,
+            "tool_calls": 4,
+            "tool_types": [
+              "Glob",
+              "Grep",
+              "Read",
+              "Glob"
+            ],
+            "output": "I'll help you find where background Celery tasks are defined. Let me search your codebase for Celery task definitions.Great! I found the Celery tasks. Let me get more details about the task files and the Celery configuration:Perfect! Here's where background Celery tasks are defined:\n\n## Celery Task Location\n\n**Main configuration:** `/backend/app/celery_app.py`\n- Configures the Celery application with Redis broker and PostgreSQL backend\n- Defines all scheduled tasks in the `beat_schedule` diction"
+          }
+        ]
+      },
+      "memory": {
+        "tool_calls": [
+          0,
+          0,
+          0
+        ],
+        "avg": 0,
+        "results": [
+          {
+            "success": true,
+            "duration": 3.7,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on the project knowledge you've provided, **background Celery tasks are defined in `backend/app/tasks/`**.\n\nThe main task files are:\n\n1. **`agent_runner.py`** - Contains `run_agent_task`\n2. **`memory_health_task.py`** - Contains `run_memory_health_check`\n3. **`observation_extractor.py`** - Contains `extract_observations`\n\nAll these tasks use the **`@shared_task`** decorator to define them as Celery tasks.\n\nIs there a specific task you'd like to work with, or do you need help creating a new"
+          },
+          {
+            "success": true,
+            "duration": 4.17,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on the project knowledge you've provided, background Celery tasks are defined in **`backend/app/tasks/`** directory.\n\nThe main task files are:\n\n1. **`agent_runner.py`** - Contains `run_agent_task`\n2. **`memory_health_task.py`** - Contains `run_memory_health_check`\n3. **`observation_extractor.py`** - Contains `extract_observations`\n\nAll of these tasks use the **`@shared_task`** decorator, which is the standard Celery decorator for defining distributed tasks.\n\nTo use these tasks elsewhere in"
+          },
+          {
+            "success": true,
+            "duration": 3.62,
+            "tool_calls": 0,
+            "tool_types": [],
+            "output": "Based on the project knowledge you've provided, background Celery tasks are defined in **`backend/app/tasks/`** directory.\n\nThe key task files are:\n\n1. **`agent_runner.py`** - Contains `run_agent_task` \n2. **`memory_health_task.py`** - Contains `run_memory_health_check`\n3. **`observation_extractor.py`** - Contains `extract_observations`\n\nAll these tasks use the **`@shared_task`** decorator, which is the standard Celery decorator for defining distributed tasks.\n\nThis directory structure allows yo"
+          }
+        ]
+      },
+      "reduction_pct": 100.0,
+      "completed_at": "2026-01-02T23:44:18.333493+00:00"
+    }
+  },
+  "created_at": "2026-01-02T23:39:31.575832+00:00",
+  "updated_at": "2026-01-02T23:44:18.333727+00:00"
+}
