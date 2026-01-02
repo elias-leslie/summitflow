@@ -387,3 +387,140 @@ export async function fetchRefactorTargets(
   }
   return res.json();
 }
+
+// ============================================================================
+// Scan History Types
+// ============================================================================
+
+export interface ScanHistoryEntry {
+  id: number;
+  project_id: string;
+  scan_type: string; // 'file', 'page', 'endpoint', 'database', 'task', 'full'
+
+  // Trigger metadata
+  triggered_by: string; // 'manual', 'refactor_it', 'daily_qa_scan', 'audit_it', 'celery_beat'
+  triggered_by_session: string | null;
+  triggered_by_user: string | null;
+  trigger_context: Record<string, unknown>;
+
+  // Timing
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+
+  // Status
+  status: "running" | "completed" | "failed" | "cancelled";
+  error_message: string | null;
+
+  // Metrics
+  metrics: Record<string, unknown>;
+  entries_found: number;
+  entries_saved: number;
+
+  // Comparison
+  previous_scan_id: number | null;
+  metrics_delta: Record<string, unknown>;
+
+  created_at: string;
+}
+
+export interface SparklineDataPoint {
+  date: string; // YYYY-MM-DD
+  complexity: number | null;
+  scan_count: number;
+  high_priority_count: number;
+}
+
+export interface SparklineData {
+  dates: string[];
+  complexity: (number | null)[];
+  targets: number[];
+  high_priority: number[];
+}
+
+export interface TriggerBreakdown {
+  trigger: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ScanHistorySummary {
+  total_scans: number;
+  avg_duration_ms: number | null;
+  complexity_trend: "improving" | "stable" | "degrading" | "unknown";
+  most_active_trigger: string | null;
+  triggers_breakdown: TriggerBreakdown[];
+}
+
+export interface ScanHistoryResponse {
+  scans: ScanHistoryEntry[];
+  sparkline_data: SparklineData;
+  summary: ScanHistorySummary;
+}
+
+export interface ScanComparison {
+  before_scan: ScanHistoryEntry;
+  after_scan: ScanHistoryEntry;
+  before_metrics: Record<string, unknown>;
+  after_metrics: Record<string, unknown>;
+  delta: Record<string, unknown>;
+  delta_pct: Record<string, number>;
+}
+
+// ============================================================================
+// Scan History API Functions
+// ============================================================================
+
+/**
+ * Fetch scan history for a project.
+ *
+ * @param projectId - Project to fetch history for
+ * @param days - Number of days to look back (default: 30, max: 365)
+ * @param scanType - Optional filter by scan type
+ */
+export async function fetchScanHistory(
+  projectId: string,
+  days: number = 30,
+  scanType?: string
+): Promise<ScanHistoryResponse> {
+  const params = new URLSearchParams();
+  params.append("days", String(days));
+  if (scanType) {
+    params.append("scan_type", scanType);
+  }
+
+  const res = await fetch(
+    `/api/projects/${projectId}/explorer/scan-history?${params}`
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan history" }));
+    throw new Error(error.detail || "Failed to fetch scan history");
+  }
+  return res.json();
+}
+
+/**
+ * Fetch comparison between two scans.
+ *
+ * @param projectId - Project ID
+ * @param before - Scan ID of the baseline scan
+ * @param after - Scan ID of the comparison scan
+ */
+export async function fetchScanComparison(
+  projectId: string,
+  before: number,
+  after: number
+): Promise<ScanComparison> {
+  const params = new URLSearchParams();
+  params.append("before", String(before));
+  params.append("after", String(after));
+
+  const res = await fetch(
+    `/api/projects/${projectId}/explorer/scan-comparison?${params}`
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan comparison" }));
+    throw new Error(error.detail || "Failed to fetch scan comparison");
+  }
+  return res.json();
+}
