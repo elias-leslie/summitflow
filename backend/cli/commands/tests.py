@@ -15,6 +15,7 @@ app = typer.Typer(help="Test management commands")
 @app.command("list")
 def list_tests(
     test_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 50,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List tests for the project.
@@ -22,12 +23,13 @@ def list_tests(
     Examples:
         st test list
         st test list -t pytest
+        st test list --limit 10
         st test list --json
     """
     client = STClient()
 
     try:
-        tests = client.list_tests(test_type=test_type)
+        tests = client.list_tests(test_type=test_type, limit=limit)
     except APIError as e:
         handle_api_error(e)
         return

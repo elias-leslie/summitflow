@@ -119,12 +119,14 @@ def get_test_by_id(test_db_id: int) -> dict[str, Any] | None:
 def list_tests(
     project_id: str,
     test_type: str | None = None,
+    limit: int = 50,
 ) -> list[dict[str, Any]]:
     """List tests for a project, optionally filtered by type.
 
     Args:
         project_id: Project ID
         test_type: Optional test type to filter by
+        limit: Maximum number of tests to return
 
     Returns:
         List of test dicts, ordered by type then name.
@@ -140,8 +142,9 @@ def list_tests(
                 FROM tests
                 WHERE project_id = %s AND test_type = %s
                 ORDER BY name ASC
+                LIMIT %s
                 """,
-                (project_id, test_type),
+                (project_id, test_type, limit),
             )
         else:
             cur.execute(
@@ -153,8 +156,9 @@ def list_tests(
                 FROM tests
                 WHERE project_id = %s
                 ORDER BY test_type ASC, name ASC
+                LIMIT %s
                 """,
-                (project_id,),
+                (project_id, limit),
             )
         rows = cur.fetchall()
 

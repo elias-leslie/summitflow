@@ -78,9 +78,10 @@ class TestWithHistoryResponse(TestResponse):
 async def list_tests(
     project_id: str,
     type: str | None = Query(None, description="Filter by test type"),
+    limit: int = Query(50, ge=1, le=500, description="Max results to return"),
 ) -> list[TestResponse]:
     """List all tests for a project, optionally filtered by type."""
-    tests_list = storage.list_tests(project_id, test_type=type)
+    tests_list = storage.list_tests(project_id, test_type=type, limit=limit)
     return [TestResponse(**t) for t in tests_list]
 
 

@@ -470,16 +470,17 @@ class STClient:
 
     # Tests
 
-    def list_tests(self, test_type: str | None = None) -> list[dict[str, Any]]:
+    def list_tests(self, test_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         """List tests for the project.
 
         Args:
             test_type: Filter by test type
+            limit: Max results to return
 
         Returns:
             List of test dicts.
         """
-        params = {}
+        params: dict[str, Any] = {"limit": limit}
         if test_type:
             params["type"] = test_type
         response = self._client.get(self._url("/tests"), params=params)
