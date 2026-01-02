@@ -266,6 +266,49 @@ async def _run_scan_and_record(
         )
 
 
+@router.get("/{project_id}/explorer/scan-history")
+async def get_scan_history(
+    project_id: str,
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
+    scan_type: str | None = Query(None, description="Filter by scan type"),
+) -> dict[str, Any]:
+    """Get scan history with sparkline data and summary.
+
+    Returns list of scans, aggregated chart data, and summary statistics.
+    Cached for 60 seconds.
+    """
+    _validate_project_exists(project_id)
+
+    scans = scan_history.get_scan_history(project_id, days=days, scan_type=scan_type)
+    sparkline = scan_history.get_sparkline_data(project_id, days=days)
+    summary = scan_history.get_summary(project_id, days=days)
+
+    return {
+        "scans": scans,
+        "sparkline_data": sparkline,
+        "summary": summary,
+    }
+
+
+@router.get("/{project_id}/explorer/scan-comparison")
+async def get_scan_comparison(
+    project_id: str,
+    before: int = Query(..., description="Scan ID for 'before' snapshot"),
+    after: int = Query(..., description="Scan ID for 'after' snapshot"),
+) -> dict[str, Any]:
+    """Compare two scans with metrics delta.
+
+    Returns both scans with computed differences.
+    """
+    _validate_project_exists(project_id)
+
+    comparison = scan_history.get_scan_comparison(before, after)
+    if not comparison:
+        raise HTTPException(status_code=404, detail="One or both scans not found")
+
+    return comparison
+
+
 @router.get("/{project_id}/explorer/entry/{entry_id}/capabilities")
 async def get_entry_capabilities(
     project_id: str,
