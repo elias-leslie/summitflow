@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Annotated
 
 import typer
@@ -598,3 +599,39 @@ def exec(
         console.print(f"  Status: {status}")
         if worktree_path:
             console.print(f"  Worktree: {worktree_path}")
+
+
+@app.command()
+def log(
+    task_id: str,
+    message: str,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Append a log entry to a task's progress log.
+
+    A timestamp is automatically prepended to the message.
+
+    Examples:
+        st log task-abc123 "Started working on feature"
+        st log task-abc123 "Fixed issue with validation"
+    """
+    from datetime import datetime
+
+    client = STClient()
+
+    # Add timestamp prefix
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = f"[{timestamp}] {message}"
+
+    try:
+        result = client.append_log(task_id, entry)
+    except APIError as e:
+        _handle_api_error(e)
+        return
+
+    if json_output:
+        from ..output import output_json
+
+        output_json(result)
+    else:
+        output_success(f"Logged to {task_id}: {message}")

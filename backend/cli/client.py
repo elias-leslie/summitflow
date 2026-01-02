@@ -515,3 +515,17 @@ class STClient:
         """
         response = self._client.get(self._url(f"/sessions/{session_id}"))
         return self._handle_response(response)
+
+    def append_log(self, task_id: str, entry: str) -> dict[str, Any]:
+        """Append an entry to the task's progress log.
+
+        Args:
+            task_id: Task ID
+            entry: Log entry text
+
+        Returns:
+            Status dict confirming append.
+        """
+        data = {"entry": entry}
+        response = self._client.post(self._url(f"/tasks/{task_id}/log"), json=data)
+        return self._handle_response(response)
