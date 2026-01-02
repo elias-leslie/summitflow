@@ -483,3 +483,90 @@ class TestExpandRuleEntity:
 
         with pytest.raises(KeyError, match="Rule not found"):
             builder.expand_entity("rule:nonexistent.md")
+
+
+class TestBuildDocsIndex:
+    """Tests for build_docs_index() function."""
+
+    def test_build_docs_index_format(self, tmp_path):
+        """Docs index extracts sections from markdown files."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        # Create CLAUDE.md with sections
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text(
+            """# CLAUDE.md
+
+## Quick Reference
+Some content.
+
+## URLs
+URL list here.
+
+## Service Management
+Systemd commands.
+"""
+        )
+
+        # Create AGENTS.md
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(
+            """# AGENTS.md
+
+## Task Workflow
+How to work on tasks.
+
+## Commit Standards
+Git commit rules.
+"""
+        )
+
+        builder = ContextBuilder(project_id="test")
+        builder._get_project_path = lambda: tmp_path
+
+        docs = builder.build_docs_index()
+
+        assert len(docs) == 2
+
+        # Check CLAUDE.md
+        claude = next(d for d in docs if d["name"] == "CLAUDE.md")
+        assert claude["id"] == "doc:CLAUDE.md"
+        assert claude["t"] == "doc"
+        assert "Quick Reference" in claude["sections"]
+        assert "URLs" in claude["sections"]
+        assert "Service Management" in claude["sections"]
+        assert claude["tok"] > 0
+
+        # Check AGENTS.md
+        agents = next(d for d in docs if d["name"] == "AGENTS.md")
+        assert agents["id"] == "doc:AGENTS.md"
+        assert "Task Workflow" in agents["sections"]
+        assert "Commit Standards" in agents["sections"]
+
+    def test_build_docs_index_missing_files(self, tmp_path):
+        """Returns empty list when no doc files exist."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        builder = ContextBuilder(project_id="test")
+        builder._get_project_path = lambda: tmp_path
+
+        docs = builder.build_docs_index()
+
+        assert docs == []
+
+    def test_expand_doc_by_filename(self, tmp_path):
+        """Expand doc using filename."""
+        from app.services.memory.context_builder import ContextBuilder
+
+        doc_content = "# Project Docs\n\nFull documentation here."
+        (tmp_path / "CLAUDE.md").write_text(doc_content)
+
+        builder = ContextBuilder(project_id="test")
+        builder._get_project_path = lambda: tmp_path
+
+        result = builder.expand_entity("doc:CLAUDE.md")
+
+        assert result["type"] == "doc"
+        assert result["content"]["filename"] == "CLAUDE.md"
+        assert "Full documentation" in result["content"]["content"]
+        assert result["token_count"] > 0

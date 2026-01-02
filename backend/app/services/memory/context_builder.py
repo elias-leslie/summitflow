@@ -134,6 +134,7 @@ class ContextBuilder:
         include_observations: bool = True,
         include_checkpoints: bool = True,
         include_patterns: bool = True,
+        include_docs: bool = True,
     ) -> dict[str, Any]:
         """Build a compact context index (~500 tokens target).
 
@@ -145,6 +146,7 @@ class ContextBuilder:
             include_observations: Include recent observations.
             include_checkpoints: Include recent checkpoints.
             include_patterns: Include applied patterns.
+            include_docs: Include documentation index (CLAUDE.md, AGENTS.md).
 
         Returns:
             Context index with items, token estimates, and metadata.
@@ -248,6 +250,13 @@ class ContextBuilder:
                         "tok": full_tokens,
                     }
                 )
+
+        # Project documentation index
+        if include_docs:
+            docs_index = self.build_docs_index()
+            for doc in docs_index:
+                total_full_tokens += doc.get("tok", 0)
+                index_items.append(doc)
 
         # Calculate index token count
         index_tokens = estimate_tokens(json.dumps(index_items))
@@ -359,6 +368,28 @@ class ContextBuilder:
                 "token_count": estimate_tokens(rule_content),
             }
 
+        elif entity_type == "doc":
+            # Documentation expansion - read full doc file
+            project_path = self._get_project_path()
+            if not project_path:
+                raise KeyError(f"Document not found: {uuid}")
+
+            doc_path = project_path / uuid
+            if not doc_path.exists():
+                raise KeyError(f"Document not found: {uuid}")
+
+            try:
+                content = doc_path.read_text()
+            except Exception:
+                raise KeyError(f"Failed to read document: {uuid}") from None
+
+            return {
+                "entity_id": entity_id,
+                "type": "doc",
+                "content": {"filename": uuid, "content": content},
+                "token_count": estimate_tokens(content),
+            }
+
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
 
@@ -448,6 +479,55 @@ class ContextBuilder:
             if project and project.get("root_path"):
                 return Path(project["root_path"])
             return None
+
+    def build_docs_index(self) -> list[dict[str, Any]]:
+        """Build index of project documentation files (CLAUDE.md, AGENTS.md).
+
+        Extracts section headings from markdown files to provide a compact
+        index for progressive disclosure.
+
+        Returns:
+            List of doc index items with id, filename, and sections
+        """
+        import re
+
+        project_path = self._get_project_path()
+        if not project_path:
+            return []
+
+        doc_files = ["CLAUDE.md", "AGENTS.md"]
+        docs_index: list[dict[str, Any]] = []
+
+        for filename in doc_files:
+            doc_path = project_path / filename
+            if not doc_path.exists():
+                continue
+
+            try:
+                content = doc_path.read_text()
+            except Exception:
+                continue
+
+            # Extract section headings (## Level 2)
+            sections = re.findall(r"^## (.+)$", content, re.MULTILINE)
+
+            # Truncate to first 10 sections max
+            sections = sections[:10]
+
+            # Estimate full content tokens
+            full_tokens = estimate_tokens(content)
+
+            docs_index.append(
+                {
+                    "id": f"doc:{filename}",
+                    "t": "doc",
+                    "name": filename,
+                    "sections": sections,
+                    "tok": full_tokens,
+                }
+            )
+
+        return docs_index
 
     @staticmethod
     def rank_observation(
