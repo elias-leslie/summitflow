@@ -283,9 +283,18 @@ def increment_daily_counter() -> None:
 
 CLEANUP_SETTINGS_KEY = "cleanup_settings:global"
 
-# Cleanup presets: level -> (min_age_days, min_relevance)
-CLEANUP_PRESETS = {
-    0: {"label": "Manual Only", "min_age_days": 999, "min_relevance": 0.0},  # Never auto-cleanup
+
+class CleanupPreset(TypedDict):
+    """Cleanup preset definition."""
+
+    label: str
+    min_age_days: int
+    min_relevance: float
+
+
+# Cleanup presets: level -> preset config
+CLEANUP_PRESETS: dict[int, CleanupPreset] = {
+    0: {"label": "Manual Only", "min_age_days": 999, "min_relevance": 0.0},
     1: {"label": "Conservative", "min_age_days": 30, "min_relevance": 0.3},
     2: {"label": "Moderate", "min_age_days": 14, "min_relevance": 0.4},
     3: {"label": "Aggressive", "min_age_days": 7, "min_relevance": 0.5},
@@ -345,7 +354,7 @@ def set_cleanup_settings(level: int) -> CleanupSettings:
     level = max(0, min(3, level))
     preset = CLEANUP_PRESETS[level]
 
-    settings = {
+    settings: CleanupSettings = {
         "level": level,
         "min_age_days": preset["min_age_days"],
         "min_relevance": preset["min_relevance"],
