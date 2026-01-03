@@ -102,6 +102,8 @@ git status  # MUST show "up to date with origin/main"
 | Mark step complete without proof | Verify file exists with `ls`, run command to confirm |
 | Drop columns without updating code | `grep -r <column> app/` must return empty |
 | Add schema SQL without running | Run `init_schema()` and verify table exists |
+| Backend-only removal tasks | Include frontend steps if UI uses the feature |
+| Commit UI changes without testing | Screenshot page FIRST, check 0 console errors |
 
 ---
 
@@ -114,8 +116,9 @@ git status  # MUST show "up to date with origin/main"
 | "Create file X" | `ls -la <path>` shows file exists and non-empty |
 | "Write tests for Y" | `pytest <test-file> --collect-only` shows tests |
 | "Create table Z" | Query `information_schema.tables` shows table |
-| "Remove column W" | `grep -r "W" app/` returns nothing |
+| "Remove column W" | `grep -r "W" app/` returns nothing in backend AND frontend |
 | "Add function F" | `grep -n "def F" app/` shows location |
+| "UI changes" | Screenshot affected page, verify 0 console errors |
 
 **Before marking subtask complete:**
 - All steps actually verified (not just marked)
