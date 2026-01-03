@@ -190,6 +190,16 @@ COMPAT_CRUFT_EXCLUDE_PATTERNS: dict[str, list[str]] = {
     "alias_exports": ["__init__.py"],
 }
 
+# Code health thresholds for flag computation
+CODE_HEALTH_THRESHOLDS = {
+    "max_function_lines": 50,  # Functions longer than this get flagged
+    "max_class_methods": 10,  # Classes with more methods get flagged
+    "max_nesting_depth": 3,  # Nesting deeper than this gets flagged
+    "max_functions_per_file": 20,  # Files with more functions get flagged
+    "max_classes_per_file": 5,  # Files with more classes get flagged
+    "max_imports": 30,  # Files with more imports get flagged
+}
+
 
 class FileScanner(BaseScanner):
     """Scans codebase files for explorer entries."""
@@ -288,6 +298,11 @@ class FileScanner(BaseScanner):
             # Detect compat cruft
             compat_cruft = self._detect_compat_cruft(rel_path, content)
 
+            # Compute health flags from thresholds
+            health_flags = self._compute_health_flags(
+                file_path, ext, function_count, class_count, import_count
+            )
+
             return ExplorerEntryCreate(
                 path=rel_path,
                 name=file_path.name,
@@ -306,6 +321,7 @@ class FileScanner(BaseScanner):
                     "refactor_priority": refactor_priority,
                     "magic_strings": magic_strings if magic_strings else None,
                     "compat_cruft": compat_cruft if compat_cruft else None,
+                    "health_flags": health_flags if health_flags else None,
                 },
             )
         except Exception:
@@ -396,6 +412,58 @@ class FileScanner(BaseScanner):
                 results[category] = len(matches)
 
         return results
+
+    def _compute_health_flags(
+        self,
+        file_path: Path,
+        ext: str,
+        function_count: int,
+        class_count: int,
+        import_count: int,
+    ) -> dict[str, bool]:
+        """Compute health flags based on thresholds and AST analysis.
+
+        For Python files, uses AST analysis for detailed metrics.
+        Returns dict of flag_name -> True if threshold exceeded.
+        """
+        flags: dict[str, bool] = {}
+
+        # Basic file-level flags from already-computed counts
+        if function_count > CODE_HEALTH_THRESHOLDS["max_functions_per_file"]:
+            flags["too_many_functions"] = True
+        if class_count > CODE_HEALTH_THRESHOLDS["max_classes_per_file"]:
+            flags["too_many_classes"] = True
+        if import_count > CODE_HEALTH_THRESHOLDS["max_imports"]:
+            flags["too_many_imports"] = True
+
+        # Python-specific AST analysis for detailed metrics
+        if ext == ".py" and file_path.exists():
+            try:
+                from ..analyzers.ast_analyzer import parse_python_file
+
+                result = parse_python_file(file_path)
+
+                # Check for long functions
+                for func in result["functions"]:
+                    if func["lines"] > CODE_HEALTH_THRESHOLDS["max_function_lines"]:
+                        flags["has_long_functions"] = True
+                        break
+
+                # Check for large classes (many methods)
+                for cls in result["classes"]:
+                    if len(cls["methods"]) > CODE_HEALTH_THRESHOLDS["max_class_methods"]:
+                        flags["has_large_classes"] = True
+                        break
+
+                # Check for deep nesting
+                if result["max_nesting"] > CODE_HEALTH_THRESHOLDS["max_nesting_depth"]:
+                    flags["deep_nesting"] = True
+
+            except (SyntaxError, FileNotFoundError, Exception):
+                # Skip AST analysis for unparseable files
+                pass
+
+        return flags
 
     def _aggregate_to_parents(
         self, rel_path: str, entry: ExplorerEntryCreate, dir_stats: dict[str, dict[str, Any]]

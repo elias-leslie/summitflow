@@ -44,8 +44,10 @@ class ParseResult(TypedDict):
 
 def _count_lines(node: ast.AST) -> int:
     """Count lines spanned by an AST node."""
-    if hasattr(node, "end_lineno") and hasattr(node, "lineno"):
-        return node.end_lineno - node.lineno + 1
+    end_lineno = getattr(node, "end_lineno", None)
+    lineno = getattr(node, "lineno", None)
+    if end_lineno is not None and lineno is not None:
+        return int(end_lineno - lineno + 1)
     return 0
 
 
