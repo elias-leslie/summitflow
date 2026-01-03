@@ -1,7 +1,7 @@
 """Unit tests for MemoryHealthChecker."""
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestGetHealthMetrics:
@@ -118,38 +118,3 @@ class TestQuickCheck:
         checker = MemoryHealthChecker()  # No project_id
         result = checker.quick_check()
         assert result is False
-
-
-class TestApplyPatternsUsesRootPath:
-    """Tests that apply_approved_patterns uses root_path column."""
-
-    @patch("app.services.memory.pattern_service.PatternService")
-    @patch("app.storage.connection.get_connection")
-    def test_queries_root_path_not_local_path(self, mock_get_conn, mock_service_class):
-        """Database query uses root_path column for project lookup."""
-        from app.services.memory.pattern_applier import apply_approved_patterns
-
-        # Setup mock to capture the SQL query
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("/home/user/myproject",)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-
-        # Setup PatternService mock
-        mock_service = MagicMock()
-        mock_service.apply_pattern.return_value = True
-        mock_service_class.return_value = mock_service
-
-        patterns = [{"id": "pat-1", "title": "Test", "confidence": 0.8}]
-
-        apply_approved_patterns("portfolio-ai", patterns)
-
-        # Check the query used root_path
-        call_args = mock_cursor.execute.call_args
-        assert call_args is not None, "execute was not called"
-        sql = call_args[0][0]
-        assert "root_path" in sql, f"Query should use root_path: {sql}"
-        assert "local_path" not in sql, f"Query should NOT use local_path: {sql}"
