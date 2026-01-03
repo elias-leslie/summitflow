@@ -119,15 +119,6 @@ export default function ComponentsPage() {
     setDrawerOpen(true);
   };
 
-  const handleLockCapability = async (capabilityId: string) => {
-    try {
-      await lockTddCapability(projectId, capabilityId);
-      refetchCapabilities();
-    } catch (err) {
-      console.error("Failed to lock capability:", err);
-    }
-  };
-
   const handleRefresh = () => {
     refetchComponents();
     refetchCapabilities();
@@ -168,7 +159,6 @@ export default function ComponentsPage() {
             <SelectItem value="passing">Passing</SelectItem>
             <SelectItem value="failing">Failing</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="locked">Locked</SelectItem>
           </SelectContent>
         </Select>
 
@@ -204,7 +194,6 @@ export default function ComponentsPage() {
         capabilities={filteredData.capabilities}
         isLoading={false}
         onSelectCapability={handleSelectCapability}
-        onLockCapability={handleLockCapability}
       />
 
       {/* Capability Drawer */}
