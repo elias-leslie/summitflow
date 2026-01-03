@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_deps, output_error, output_success
+from ..output import handle_api_error, output_deps, output_json
 
 app = typer.Typer(help="Dependency management commands")
 
@@ -17,7 +17,6 @@ def add(
     task_id: str,
     depends_on: str,
     dep_type: Annotated[str, typer.Option("-t", "--type")] = "blocks",
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Add a dependency to a task.
 
@@ -33,24 +32,17 @@ def add(
         handle_api_error(e)
         return
 
-    if json_output:
-        from ..output import output_json
-
-        output_json(dep)
-    else:
-        output_success(f"Added dependency: {task_id} {dep_type} {depends_on}")
+    output_json(dep)
 
 
 @app.command("list")
 def list_deps(
     task_id: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List dependencies for a task.
 
     Examples:
         st dep list task-abc123
-        st dep list task-abc123 --json
     """
     client = STClient()
 
@@ -60,7 +52,7 @@ def list_deps(
         handle_api_error(e)
         return
 
-    output_deps(deps, json_output)
+    output_deps(deps)
 
 
 @app.command()
@@ -83,8 +75,4 @@ def rm(
         handle_api_error(e)
         return
 
-    if result.get("status") == "removed":
-        output_success(f"Removed dependency: {task_id} -> {depends_on}")
-    else:
-        output_error("Dependency not found")
-        raise typer.Exit(1)
+    output_json(result)

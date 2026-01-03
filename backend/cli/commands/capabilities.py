@@ -12,21 +12,17 @@ from ..output import (
     output_capabilities,
     output_error,
     output_json,
-    output_success,
 )
 
 app = typer.Typer(help="Capability management commands")
 
 
 @app.command("list")
-def list_caps(
-    json_output: Annotated[bool, typer.Option("--json")] = False,
-) -> None:
+def list_caps() -> None:
     """List all capabilities.
 
     Examples:
         st capability list
-        st capability list --json
     """
     client = STClient()
 
@@ -36,19 +32,17 @@ def list_caps(
         handle_api_error(e)
         return
 
-    output_capabilities(caps, json_output)
+    output_capabilities(caps)
 
 
 @app.command()
 def show(
     capability_id: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Show capability details.
 
     Examples:
         st capability show login
-        st capability show login --json
     """
     client = STClient()
 
@@ -58,32 +52,7 @@ def show(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(cap)
-    else:
-        from rich.console import Console
-        from rich.panel import Panel
-
-        console = Console()
-        status = cap.get("status", "pending")
-        color = {"pending": "yellow", "tests_passing": "green"}.get(status, "white")
-
-        content = [
-            f"[bold]{cap.get('name', capability_id)}[/bold]",
-            "",
-            f"ID: {capability_id}",
-            f"Status: [{color}]{status}[/]",
-            f"Priority: P{cap.get('priority', 2)}",
-        ]
-
-        if cap.get("description"):
-            content.append(f"\n{cap['description']}")
-
-        if cap.get("verification_url"):
-            content.append(f"\nVerification URL: {cap['verification_url']}")
-
-        panel = Panel("\n".join(content), title=f"[cyan]{capability_id}[/]", border_style=color)
-        console.print(panel)
+    output_json(cap)
 
 
 @app.command()
@@ -93,7 +62,6 @@ def create(
     name: Annotated[str | None, typer.Option("--name", "-n")] = None,
     description: Annotated[str | None, typer.Option("--description", "-d")] = None,
     priority: Annotated[int, typer.Option("--priority", "-p")] = 2,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create a new capability.
 
@@ -137,22 +105,17 @@ def create(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(cap)
-    else:
-        output_success(f"Created capability '{capability_id}' (ID: {cap.get('id')})")
+    output_json(cap)
 
 
 @app.command()
 def verify(
     capability_id: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Verify a capability's tests.
 
     Examples:
         st capability verify login
-        st capability verify login --json
     """
     client = STClient()
 
@@ -162,11 +125,4 @@ def verify(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(result)
-    else:
-        status = result.get("capability_status", "unknown")
-        if status == "tests_passing":
-            output_success(f"Capability '{capability_id}' verified - all tests passing")
-        else:
-            output_error(f"Capability '{capability_id}' verification failed: {status}")
+    output_json(result)

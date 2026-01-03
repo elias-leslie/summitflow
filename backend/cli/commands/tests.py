@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_json, output_success, output_tests
+from ..output import handle_api_error, output_json, output_tests
 
 app = typer.Typer(help="Test management commands")
 
@@ -16,7 +16,6 @@ app = typer.Typer(help="Test management commands")
 def list_tests(
     test_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 50,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List tests for the project.
 
@@ -24,7 +23,6 @@ def list_tests(
         st test list
         st test list -t pytest
         st test list --limit 10
-        st test list --json
     """
     client = STClient()
 
@@ -34,7 +32,7 @@ def list_tests(
         handle_api_error(e)
         return
 
-    output_tests(tests, json_output)
+    output_tests(tests)
 
 
 @app.command("link")
@@ -43,7 +41,6 @@ def link_test(
     criterion_id: str,
     test_id: Annotated[int, typer.Argument()],
     primary: Annotated[bool, typer.Option("--primary")] = False,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Link a test to a criterion.
 
@@ -64,16 +61,12 @@ def link_test(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(result)
-    else:
-        output_success(f"Linked test {test_id} to criterion {criterion_id}")
+    output_json(result)
 
 
 @app.command("import")
 def import_tests(
     framework: Annotated[str, typer.Option("-f", "--from")] = "pytest",
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Import tests from a framework.
 
@@ -90,8 +83,4 @@ def import_tests(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(result)
-    else:
-        imported = result.get("imported_count", 0)
-        output_success(f"Imported {imported} tests from {framework}")
+    output_json(result)
