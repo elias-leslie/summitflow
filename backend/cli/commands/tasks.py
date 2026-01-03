@@ -11,6 +11,7 @@ from ..client import APIError, STClient
 from ..output import (
     handle_api_error,
     output_error,
+    output_json,
     output_success,
     output_task,
     output_task_list,
@@ -28,7 +29,6 @@ def create(
     task_type: Annotated[str, typer.Option("-t", "--type")] = "task",
     parent: Annotated[str | None, typer.Option("--parent")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create a new task.
 
@@ -66,9 +66,7 @@ def create(
         except (json.JSONDecodeError, APIError) as e:
             output_error(f"Failed to set plan: {e}")
 
-    output_task(task, json_output)
-    if not json_output:
-        output_success(f"Created task {task['id']}")
+    output_task(task)
 
 
 @app.command("list")
@@ -79,7 +77,6 @@ def list_tasks(
     tier: Annotated[int | None, typer.Option("--tier", min=1, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 50,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List tasks with optional filters.
 
@@ -87,7 +84,7 @@ def list_tasks(
         st list --status pending
         st list -t bug -p 1
         st list --tier 1
-        st list --labels "complexity:small" --json
+        st list --labels "complexity:small"
     """
     client = STClient()
 
@@ -112,14 +109,13 @@ def list_tasks(
         handle_api_error(e)
         return
 
-    output_task_list(result["tasks"], json_output, show_tier=True)
+    output_task_list(result["tasks"])
 
 
 @app.command()
 def ready(
     limit: Annotated[int, typer.Option("--limit")] = 50,
     blocked: Annotated[bool, typer.Option("--blocked")] = False,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List tasks ready to work on (not blocked).
 
@@ -128,7 +124,7 @@ def ready(
     Examples:
         st ready
         st ready --blocked
-        st ready --limit 10 --json
+        st ready --limit 10
     """
     client = STClient()
 
@@ -166,39 +162,10 @@ def ready(
                         blockers_map[blocker_id].append(task_id)
 
             blocked_tasks = blocked_tasks[:limit]
-
-            if json_output:
-                from ..output import output_json
-
-                output_json({"tasks": blocked_tasks, "blockers_impact": blockers_map})
-                return
-
-            if not blocked_tasks:
-                from ..output import console
-
-                console.print("[dim]No blocked tasks found.[/dim]")
-                return
-
-            from ..output import console
-
-            console.print(f"\n[bold]Blocked Tasks[/bold] ({len(blocked_tasks)} tasks)\n")
-
-            # Group by blocker for impact view
-            console.print("[bold]Blockers Impact:[/bold]")
-            for blocker_id, blocked_ids in sorted(blockers_map.items(), key=lambda x: -len(x[1])):
-                console.print(f"  [red]{blocker_id}[/] blocks {len(blocked_ids)} task(s)")
-
-            console.print("\n[bold]Blocked Tasks:[/bold]")
-            for task in blocked_tasks:
-                task_id = task["id"]
-                title = task.get("title", "")[:40]
-                blockers = task.get("blockers", [])
-                blocker_ids = [b.get("depends_on_task_id", "") for b in blockers]
-                console.print(f"  [cyan]{task_id}[/]: {title}")
-                console.print(f"    [dim]Blocked by: {', '.join(blocker_ids)}[/]")
+            output_json({"tasks": blocked_tasks, "blockers_impact": blockers_map})
         else:
             result = client.list_ready(limit=limit)
-            output_task_list(result["tasks"], json_output, title="Ready Tasks")
+            output_task_list(result["tasks"])
     except APIError as e:
         handle_api_error(e)
         return
@@ -207,7 +174,6 @@ def ready(
 @app.command()
 def show(
     task_id: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
     full: Annotated[
         bool, typer.Option("--full", "-f", help="Show everything: subtasks, steps, progress log")
     ] = False,
@@ -216,7 +182,6 @@ def show(
 
     Examples:
         st show task-abc123
-        st show task-abc123 --json
         st show task-abc123 --full    # Shows all details including progress log
     """
     client = STClient()
@@ -232,59 +197,14 @@ def show(
     subtasks = subtask_data.get("subtasks", [])
     summary = subtask_data.get("summary", {})
 
-    if json_output:
-        task["subtasks"] = subtasks
-        task["subtask_summary"] = summary
-        output_task(task, json_output)
-        return
+    task["subtasks"] = subtasks
+    task["subtask_summary"] = summary
 
-    # Output task details
-    output_task(task, json_output)
-
-    # Output subtask progress if subtasks exist
-    if subtasks:
-        from ..output import console
-
-        total = summary.get("total", len(subtasks))
-        completed = summary.get("completed", 0)
-        pct = summary.get("progress_percent", 0.0)
-        next_id = summary.get("next_subtask_id", "")
-
-        console.print(f"\n[bold]Subtasks:[/bold] {completed}/{total} ({pct:.0f}%)")
-        if next_id:
-            console.print(f"[dim]Next: {next_id}[/dim]")
-
-        for s in subtasks:
-            passes = s.get("passes", False)
-            icon = "[green]✓[/]" if passes else "[dim]○[/]"
-            sid = s.get("subtask_id", "")
-            desc = s.get("description", "")[:60]
-            step_sum = s.get("step_summary", {})
-            step_info = ""
-            if step_sum and step_sum.get("total", 0) > 0:
-                step_info = f" [{step_sum['completed']}/{step_sum['total']}]"
-            console.print(f"  {icon} {sid}: {desc}{step_info}")
-
-            # In full mode, show all steps for each subtask
-            if full and s.get("steps"):
-                for step in s["steps"]:
-                    if isinstance(step, dict):
-                        step_passes = step.get("passes", False)
-                        step_icon = "[green]✓[/]" if step_passes else "[dim]○[/]"
-                        step_num = step.get("step_number", "")
-                        step_desc = step.get("description", "")[:70]
-                        console.print(f"      {step_icon} {step_num}: {step_desc}")
-
-    # In full mode, show progress log
+    # Include full details if requested
     if full:
-        from ..output import console
+        task["full_mode"] = True
 
-        progress_log = task.get("progress_log", "")
-        if progress_log:
-            console.print("\n[bold cyan]Progress Log:[/bold cyan]")
-            console.print("[dim]" + "-" * 60 + "[/dim]")
-            console.print(progress_log)
-            console.print("[dim]" + "-" * 60 + "[/dim]")
+    output_task(task)
 
 
 @app.command()
@@ -301,7 +221,6 @@ def update(
     move_to: Annotated[str | None, typer.Option("--move-to")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
     capability: Annotated[int | None, typer.Option("--capability")] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Update a task.
 
@@ -319,9 +238,7 @@ def update(
     if status:
         try:
             task = client.update_status(task_id, status)
-            output_task(task, json_output)
-            if not json_output:
-                output_success(f"Updated task {task_id} status to: {status}")
+            output_task(task)
             return
         except APIError as e:
             handle_api_error(e)
@@ -385,9 +302,7 @@ def update(
         handle_api_error(e)
         return
 
-    output_task(task, json_output)
-    if not json_output:
-        output_success(f"Updated task {task_id}")
+    output_task(task)
 
 
 @app.command()
@@ -395,7 +310,6 @@ def close(
     task_id: str,
     reason: Annotated[str | None, typer.Option("-r", "--reason")] = None,
     force: Annotated[bool, typer.Option("-f", "--force")] = False,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Close a task (mark as completed).
 
@@ -413,36 +327,29 @@ def close(
         hints: list[str] = []
 
         if "criteria" in detail or "unverified" in detail:
-            hints.append("Hint: Use --force to bypass criteria validation")
-            hints.append("Hint: Or verify pending criteria first")
+            hints.append("Use --force to bypass criteria validation")
+            hints.append("Or verify pending criteria first")
 
         if "capability" in detail:
-            hints.append("Hint: Run 'st capability verify <id>' to check test status")
+            hints.append("Run 'st capability verify <id>' to check test status")
 
         if "status" in detail or "transition" in detail:
-            hints.append("Hint: Check task status with 'st show <id>'")
-            hints.append("Hint: Use 'st cancel <id>' for non-terminal states")
+            hints.append("Check task status with 'st show <id>'")
+            hints.append("Use 'st cancel <id>' for non-terminal states")
 
         if "not found" in detail:
-            hints.append("Hint: Verify task ID with 'st list'")
+            hints.append("Verify task ID with 'st list'")
 
-        output_error(e.detail)
-        from ..output import console
-
-        for hint in hints:
-            console.print(f"[yellow]{hint}[/]")
+        output_json({"error": e.detail, "hints": hints})
         raise typer.Exit(1) from None
 
-    output_task(task, json_output)
-    if not json_output:
-        output_success(f"Closed task {task_id}")
+    output_task(task)
 
 
 @app.command()
 def cancel(
     task_id: str,
     reason: Annotated[str, typer.Option("-r", "--reason")],
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Cancel a task (mark as cancelled from any state).
 
@@ -461,9 +368,9 @@ def cancel(
         handle_api_error(e)
         return
 
-    output_task(task, json_output)
-    if not json_output:
-        output_success(f"Cancelled task {task_id}: {reason}")
+    # Include the reason in the output
+    task["cancel_reason"] = reason
+    output_task(task)
 
 
 @app.command()
@@ -471,7 +378,6 @@ def claim(
     task_id: str,
     lock: Annotated[int, typer.Option("--lock")] = 30,
     release: Annotated[bool, typer.Option("--release")] = False,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Claim or release a task.
 
@@ -484,17 +390,16 @@ def claim(
     try:
         if release:
             task = client.release_task(task_id)
-            if not json_output:
-                output_success(f"Released task {task_id}")
+            task["action"] = "released"
         else:
             task = client.claim_task(task_id, lock_minutes=lock)
-            if not json_output:
-                output_success(f"Claimed task {task_id} for {lock} minutes")
+            task["action"] = "claimed"
+            task["lock_minutes"] = lock
     except APIError as e:
         handle_api_error(e)
         return
 
-    output_task(task, json_output)
+    output_task(task)
 
 
 @app.command()
@@ -531,7 +436,6 @@ def bug(
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     from_task: Annotated[str | None, typer.Option("--from")] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create a bug task (shorthand for create -t bug).
 
@@ -587,14 +491,11 @@ def bug(
     if from_task:
         try:
             client.add_dependency(task["id"], from_task, dep_type="discovered-from")
-            if not json_output:
-                output_success(f"Linked {task['id']} → {from_task} (discovered-from)")
+            task["linked_from"] = from_task
         except APIError as e:
-            output_error(f"Created task but failed to add dependency: {e.detail}")
+            task["dependency_error"] = e.detail
 
-    output_task(task, json_output)
-    if not json_output:
-        output_success(f"Created bug {task['id']}")
+    output_task(task)
 
 
 @app.command()
@@ -602,7 +503,6 @@ def exec(
     task_id: str,
     agent: Annotated[str, typer.Option("--agent")] = "claude",
     worktree: Annotated[bool, typer.Option("--worktree")] = False,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Start execution of a task via API.
 
@@ -621,29 +521,13 @@ def exec(
         handle_api_error(e)
         return
 
-    if json_output:
-        from ..output import output_json
-
-        output_json(result)
-    else:
-        session_id = result.get("session_id", "")
-        status = result.get("status", "")
-        worktree_path = result.get("worktree_path")
-
-        output_success(f"Started execution for {task_id}")
-        from ..output import console
-
-        console.print(f"  Session ID: [cyan]{session_id}[/]")
-        console.print(f"  Status: {status}")
-        if worktree_path:
-            console.print(f"  Worktree: {worktree_path}")
+    output_json(result)
 
 
 @app.command()
 def log(
     task_id: str,
     message: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Append a log entry to a task's progress log.
 
@@ -667,9 +551,4 @@ def log(
         handle_api_error(e)
         return
 
-    if json_output:
-        from ..output import output_json
-
-        output_json(result)
-    else:
-        output_success(f"Logged to {task_id}: {message}")
+    output_json(result)
