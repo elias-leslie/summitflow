@@ -126,15 +126,95 @@ When you encounter ANY pre-existing bug during work:
 
 ---
 
+## Command Reference
+
+### st (SummitFlow Tasks)
+
+```bash
+# List/Find
+st ready                              # Tasks ready to work on (not blocked)
+st list                               # All tasks
+st list --status pending              # Filter by status
+st list -t bug -p 1                   # Filter by type and priority
+st list --labels "complexity:small"   # Filter by label
+st show <id>                          # View task details
+
+# Create
+st create "Title" -t task -p 2 -l "complexity:small,domains:backend" -d "Description"
+st bug "Fix: X" -p 2 -l "complexity:small,domains:backend"  # Shorthand for -t bug
+
+# Update
+st update <id> --status running       # Claim task
+st update <id> -p 1                   # Change priority
+st update <id> --add-label "auto"     # Add label
+st update <id> --remove-label "old"   # Remove label
+st update <id> -d "More info"         # Append to description
+st update <id> --capability 615       # Link to capability
+
+# Complete
+st close <id> -r "Done"               # Close with reason
+st close <id> --force                 # Force close (skip checks)
+st cancel <id>                        # Cancel task
+
+# Dependencies
+st dep add <child> <parent> --type discovered-from
+st dep add <child> <parent> --type blocks
+st dep list <id>
+st dep rm <child> <parent>
+
+# Subtasks & Steps (TDD structure)
+st subtask list <task-id>             # List subtasks with progress
+st subtask create <task-id> "Title"   # Create subtask
+st subtask pass <subtask-id>          # Mark subtask passed
+st step list <subtask-id>             # List steps
+st step pass <step-id>                # Mark step passed
+st step create <subtask-id> '["step1", "step2"]'  # Create steps (JSON array)
+
+# Capabilities & Components
+st capability list                    # List all capabilities
+st capability show <id>               # Show capability details
+st capability verify <id>             # Verify capability tests
+st component list                     # List all components
+st component show <id>                # Show component details
+
+# Testing
+st test list                          # List tests
+st test import pytest                 # Import from pytest
+st test link <test-id> <criterion-id> # Link test to criterion
+st criterion verify <id>              # Verify a criterion
+
+# Worktrees
+st worktree list                      # List active worktrees
+st worktree prune                     # Clean up orphaned worktrees
+```
+
+**Valid values:**
+- **Status:** `pending`, `running`, `completed`, `cancelled`, `blocked`
+- **Type:** `task`, `bug`, `chore`, `feature`
+- **Priority:** `0` (critical) to `4` (backlog)
+- **Dep types:** `blocks`, `discovered-from`
+
+### member-dis (Memory)
+
+```bash
+member-dis search "query"             # Search observations
+member-dis search "query" -t pattern  # Filter by type
+member-dis search "query" -l 20       # Limit results
+member-dis expand <id>                # Get full content
+member-dis index                      # Show context overview
+member-dis timeline <id>              # Show context around observation
+```
+
+**Types:** `observation`, `pattern`, `user_prompt`
+
+---
+
 ## Memory System
 
 The memory system is currently being aligned with claude-mem patterns. See `docs/memory-system-alignment.md` for the full reference.
 
-**Quick access:**
-- `member-dis search "query"` - Search observations
-- `member-dis expand <id>` - Get full observation
-- Context is auto-injected at session start
+Context is auto-injected at session start via hooks.
 
 ---
 
-**Version**: 2.7.0
+**Version**: 2.8.0

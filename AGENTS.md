@@ -152,12 +152,19 @@ When you encounter ANY pre-existing bug during work:
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
+| Action | Command |
+|--------|---------|
 | Find work | `st ready` |
+| List pending | `st list --status pending` |
+| View task | `st show <id>` |
 | Claim work | `st update <id> --status running` |
-| Complete work | `st close <id> --reason "Done"` |
+| Complete | `st close <id> -r "Done"` |
+| Create bug | `st bug "Fix: X" -p 2 -l "complexity:small,domains:backend"` |
+| Link dependency | `st dep add <child> <parent> --type discovered-from` |
+| Search memory | `member-dis search "query"` |
 | Restart services | `bash ~/summitflow/scripts/restart.sh` |
 | Run tests | `cd backend && .venv/bin/pytest tests/ -v` |
 | Check types | `cd backend && .venv/bin/mypy app/` |
 | View logs | `journalctl --user -u summitflow-backend -f` |
+
+**See CLAUDE.md for full command reference with all flags and options.**
