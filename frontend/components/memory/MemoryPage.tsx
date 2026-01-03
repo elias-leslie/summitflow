@@ -17,6 +17,7 @@ import { HealthTab } from './HealthTab';
 import { MetricCard, type MemoryStats } from './MetricsSection';
 import { Pagination, ITEMS_PER_PAGE } from './Pagination';
 import { GlobalExtractionPanel } from './GlobalExtractionPanel';
+import { CleanupAggressivenessPanel } from './CleanupAggressivenessPanel';
 import { ObservationIndexView, ViewModeToggle, useViewMode } from './ObservationIndexView';
 import { ObservationDetailModal } from './ObservationDetailModal';
 
@@ -251,9 +252,10 @@ export default function MemoryPage() {
           </div>
         </header>
 
-        {/* Global Extraction Settings */}
-        <div className="mb-8">
+        {/* Global Settings */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
           <GlobalExtractionPanel />
+          <CleanupAggressivenessPanel />
         </div>
 
         {/* Search Section */}

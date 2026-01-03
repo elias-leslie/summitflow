@@ -21,8 +21,11 @@ from ..services.memory.fast_path import get_fast_path_metrics
 from ..storage import memory as memory_storage
 from ..storage.connection import get_connection
 from ..utils.rate_limiter import (
+    CLEANUP_PRESETS,
+    get_cleanup_settings,
     get_extraction_metrics,
     get_global_extraction_settings,
+    set_cleanup_settings,
     set_global_extraction_settings,
 )
 from .memory_models import FastPathMetrics, FilteringMetrics, LifecycleStats, MemoryStats
@@ -79,6 +82,89 @@ async def update_extraction_settings(
         rpm_limit=settings["rpm_limit"],
         current_rpm=metrics["current_minute_count"],
         requests_today=metrics["requests_today"],
+    )
+
+
+# --- Global Cleanup Settings ---
+
+
+class CleanupPreset(BaseModel):
+    """Cleanup preset definition."""
+
+    level: int = Field(description="Preset level (0-3)")
+    label: str = Field(description="Human-readable label")
+    min_age_days: int = Field(description="Patterns younger than this are never cleaned")
+    min_relevance: float = Field(description="Patterns with relevance below this get cleaned")
+
+
+class CleanupSettingsResponse(BaseModel):
+    """Global cleanup settings response."""
+
+    level: int = Field(description="Current aggressiveness level (0-3)")
+    label: str = Field(description="Current level label")
+    min_age_days: int = Field(description="Current min age threshold in days")
+    min_relevance: float = Field(description="Current min relevance threshold")
+    presets: list[CleanupPreset] = Field(description="All available presets")
+
+
+class CleanupSettingsUpdate(BaseModel):
+    """Update global cleanup settings."""
+
+    level: int = Field(ge=0, le=3, description="Aggressiveness level (0=manual, 3=aggressive)")
+
+
+@router.get("/memory/cleanup", response_model=CleanupSettingsResponse)
+async def get_cleanup_settings_endpoint() -> CleanupSettingsResponse:
+    """Get global pattern cleanup settings."""
+    settings = get_cleanup_settings()
+    level = settings["level"]
+    preset = CLEANUP_PRESETS[level]
+
+    # Build presets list
+    presets = [
+        CleanupPreset(
+            level=lvl,
+            label=p["label"],
+            min_age_days=p["min_age_days"],
+            min_relevance=p["min_relevance"],
+        )
+        for lvl, p in CLEANUP_PRESETS.items()
+    ]
+
+    return CleanupSettingsResponse(
+        level=level,
+        label=preset["label"],
+        min_age_days=settings["min_age_days"],
+        min_relevance=settings["min_relevance"],
+        presets=presets,
+    )
+
+
+@router.patch("/memory/cleanup", response_model=CleanupSettingsResponse)
+async def update_cleanup_settings_endpoint(
+    update: CleanupSettingsUpdate,
+) -> CleanupSettingsResponse:
+    """Update global pattern cleanup settings."""
+    settings = set_cleanup_settings(level=update.level)
+    level = settings["level"]
+    preset = CLEANUP_PRESETS[level]
+
+    presets = [
+        CleanupPreset(
+            level=lvl,
+            label=p["label"],
+            min_age_days=p["min_age_days"],
+            min_relevance=p["min_relevance"],
+        )
+        for lvl, p in CLEANUP_PRESETS.items()
+    ]
+
+    return CleanupSettingsResponse(
+        level=level,
+        label=preset["label"],
+        min_age_days=settings["min_age_days"],
+        min_relevance=settings["min_relevance"],
+        presets=presets,
     )
 
 

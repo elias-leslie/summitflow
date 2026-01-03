@@ -277,3 +277,91 @@ def increment_daily_counter() -> None:
 
     except redis.RedisError as e:
         logger.warning("daily_counter_increment_failed", error=str(e))
+
+
+# --- Cleanup Aggressiveness Settings ---
+
+CLEANUP_SETTINGS_KEY = "cleanup_settings:global"
+
+# Cleanup presets: level -> (min_age_days, min_relevance)
+CLEANUP_PRESETS = {
+    0: {"label": "Manual Only", "min_age_days": 999, "min_relevance": 0.0},  # Never auto-cleanup
+    1: {"label": "Conservative", "min_age_days": 30, "min_relevance": 0.3},
+    2: {"label": "Moderate", "min_age_days": 14, "min_relevance": 0.4},
+    3: {"label": "Aggressive", "min_age_days": 7, "min_relevance": 0.5},
+}
+
+DEFAULT_CLEANUP_LEVEL = 3  # Aggressive by default per user request
+
+
+class CleanupSettings(TypedDict):
+    """Global cleanup aggressiveness settings."""
+
+    level: int  # 0-3: manual, conservative, moderate, aggressive
+    min_age_days: int  # Patterns younger than this are never cleaned
+    min_relevance: float  # Patterns with relevance below this get cleaned
+
+
+def get_cleanup_settings() -> CleanupSettings:
+    """Get global cleanup settings from Redis.
+
+    Returns:
+        CleanupSettings with level and derived thresholds
+    """
+    try:
+        r = redis.from_url(REDIS_URL)
+        data = r.get(CLEANUP_SETTINGS_KEY)
+        if data:
+            settings = json.loads(data)
+            level = settings.get("level", DEFAULT_CLEANUP_LEVEL)
+            preset = CLEANUP_PRESETS.get(level, CLEANUP_PRESETS[DEFAULT_CLEANUP_LEVEL])
+            return {
+                "level": level,
+                "min_age_days": preset["min_age_days"],
+                "min_relevance": preset["min_relevance"],
+            }
+    except (redis.RedisError, json.JSONDecodeError) as e:
+        logger.warning("get_cleanup_settings_failed", error=str(e))
+
+    # Default to aggressive
+    preset = CLEANUP_PRESETS[DEFAULT_CLEANUP_LEVEL]
+    return {
+        "level": DEFAULT_CLEANUP_LEVEL,
+        "min_age_days": preset["min_age_days"],
+        "min_relevance": preset["min_relevance"],
+    }
+
+
+def set_cleanup_settings(level: int) -> CleanupSettings:
+    """Update global cleanup settings in Redis.
+
+    Args:
+        level: Cleanup aggressiveness level (0-3)
+
+    Returns:
+        Updated CleanupSettings
+    """
+    # Clamp level to valid range
+    level = max(0, min(3, level))
+    preset = CLEANUP_PRESETS[level]
+
+    settings = {
+        "level": level,
+        "min_age_days": preset["min_age_days"],
+        "min_relevance": preset["min_relevance"],
+    }
+
+    try:
+        r = redis.from_url(REDIS_URL)
+        r.set(CLEANUP_SETTINGS_KEY, json.dumps(settings))
+        logger.info(
+            "cleanup_settings_updated",
+            cleanup_level=level,
+            label=preset["label"],
+            min_age_days=preset["min_age_days"],
+            min_relevance=preset["min_relevance"],
+        )
+    except redis.RedisError as e:
+        logger.error("set_cleanup_settings_failed", error=str(e))
+
+    return settings

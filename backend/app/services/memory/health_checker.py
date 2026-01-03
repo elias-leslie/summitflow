@@ -28,6 +28,7 @@ from ...storage.memory_patterns import (
     cleanup_low_relevance_patterns,
     enforce_pattern_cap,
 )
+from ...utils.rate_limiter import get_cleanup_settings
 
 # Import from submodules
 from .deep_review import deep_review as _deep_review
@@ -284,11 +285,23 @@ class MemoryHealthChecker:
     def _run_pattern_lifecycle(self, pid: str, report: HealthReport) -> None:
         """Run pattern lifecycle cleanup operations.
 
-        - Cleanup low-relevance patterns (confidence < 0.3, age > 30 days)
+        - Cleanup low-relevance patterns (based on global cleanup settings)
         - Enforce pattern cap (50 per project)
         """
+        # Get cleanup settings from Redis (controlled by /memory page slider)
+        cleanup_settings = get_cleanup_settings()
+        min_relevance = cleanup_settings["min_relevance"]
+        min_age_days = cleanup_settings["min_age_days"]
+
+        # Skip cleanup if in manual mode (level 0)
+        if cleanup_settings["level"] == 0:
+            logger.debug("Pattern cleanup skipped: manual mode enabled")
+            return
+
         # Cleanup low-relevance patterns
-        cleaned = cleanup_low_relevance_patterns(min_relevance=0.3, min_age_days=30)
+        cleaned = cleanup_low_relevance_patterns(
+            min_relevance=min_relevance, min_age_days=min_age_days
+        )
         if cleaned:
             report.add_correction(
                 "cleaned_low_relevance_patterns",

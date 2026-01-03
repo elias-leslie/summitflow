@@ -8,5 +8,6 @@ export * from "./wrappers";
 
 // Domain modules
 export * from "./evidence";
+export * from "./extraction";
 export * from "./tasks";
 export * from "./notifications";
