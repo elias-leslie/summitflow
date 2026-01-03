@@ -10,14 +10,9 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 import typer
-from rich.console import Console
 
 if TYPE_CHECKING:
     from .client import APIError
-
-# Console kept temporarily for backward compatibility during migration
-# TODO: Remove after all commands are updated to use JSON output
-console = Console()
 
 
 def output_json(data: Any) -> None:

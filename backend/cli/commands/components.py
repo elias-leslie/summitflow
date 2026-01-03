@@ -7,20 +7,17 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import console, handle_api_error, output_json, output_success
+from ..output import handle_api_error, output_json
 
 app = typer.Typer(help="Component management commands")
 
 
 @app.command("list")
-def list_components(
-    json_output: Annotated[bool, typer.Option("--json")] = False,
-) -> None:
+def list_components() -> None:
     """List all components.
 
     Examples:
         st component list
-        st component list --json
     """
     client = STClient()
 
@@ -30,38 +27,17 @@ def list_components(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(components)
-    else:
-        from rich.table import Table
-
-        table = Table(title="Components", show_header=True)
-        table.add_column("ID", style="cyan")
-        table.add_column("Name", style="bold")
-        table.add_column("Description")
-        table.add_column("Capabilities", justify="right")
-
-        for comp in components:
-            table.add_row(
-                comp.get("component_id", "-"),
-                comp.get("name", "-"),
-                (comp.get("description") or "-")[:50],
-                str(comp.get("capability_count", 0)),
-            )
-
-        console.print(table)
+    output_json(components)
 
 
 @app.command()
 def show(
     component_id: str,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Show component details.
 
     Examples:
         st component show cli
-        st component show cli --json
     """
     client = STClient()
 
@@ -71,23 +47,7 @@ def show(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(comp)
-    else:
-        from rich.panel import Panel
-
-        content = [
-            f"[bold]{comp.get('name', component_id)}[/bold]",
-            "",
-            f"ID: {comp.get('component_id', '-')}",
-            f"DB ID: {comp.get('id', '-')}",
-        ]
-
-        if comp.get("description"):
-            content.append(f"\n{comp['description']}")
-
-        panel = Panel("\n".join(content), title=f"[cyan]{component_id}[/]")
-        console.print(panel)
+    output_json(comp)
 
 
 @app.command()
@@ -95,7 +55,6 @@ def create(
     component_id: str,
     name: Annotated[str | None, typer.Option("--name", "-n")] = None,
     description: Annotated[str | None, typer.Option("--description", "-d")] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create a new component.
 
@@ -123,7 +82,4 @@ def create(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(comp)
-    else:
-        output_success(f"Created component '{component_id}' (ID: {comp.get('id')})")
+    output_json(comp)

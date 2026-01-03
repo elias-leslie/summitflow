@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_json, output_success
+from ..output import handle_api_error, output_json
 
 app = typer.Typer(help="Criterion management commands")
 
@@ -17,7 +17,6 @@ def verify_criterion(
     task_id: str,
     criterion_id: str,
     verified_by: Annotated[str, typer.Option("--by")] = "test",
-    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Verify a criterion for a task.
 
@@ -38,7 +37,4 @@ def verify_criterion(
         handle_api_error(e)
         return
 
-    if json_output:
-        output_json(result)
-    else:
-        output_success(f"Verified criterion {criterion_id} for task {task_id}")
+    output_json(result)
