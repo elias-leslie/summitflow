@@ -15,12 +15,25 @@ from ..storage.connection import get_connection
 router = APIRouter()
 
 
+class CapabilityCriterionCreate(BaseModel):
+    """Criterion to create and link to capability during single creation."""
+
+    criterion: str = Field(min_length=10, description="Specific measurable condition")
+    category: str = Field(
+        default="correctness", description="performance, correctness, security, quality"
+    )
+    measurement: str = Field(default="test", description="test, metric, tool, manual")
+    threshold: str | None = Field(default=None, description="Specific value e.g., '<200ms'")
+
+
 class CapabilityCreate(BaseModel):
     """Request model for creating a capability.
 
     component_id can be either:
     - int: Database ID of the component
     - str: Component slug (e.g., "backend-services") - will be resolved to ID
+
+    Optionally accepts nested criteria that will be created and linked.
     """
 
     component_id: int | str
@@ -28,6 +41,9 @@ class CapabilityCreate(BaseModel):
     name: str
     description: str | None = None
     priority: int = 2
+    criteria: list[CapabilityCriterionCreate] | None = Field(
+        default=None, description="Nested criteria to create with capability"
+    )
 
 
 class CapabilityUpdate(BaseModel):
@@ -54,6 +70,7 @@ class CapabilityResponse(BaseModel):
     verification_url: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    criteria_created: int | None = None  # Number of criteria created (for nested creation)
 
 
 class ExplorerLinkCreate(BaseModel):
@@ -178,9 +195,12 @@ def _resolve_component_id(project_id: str, component_id: int | str) -> int:
 
 @router.post("/{project_id}/capabilities", response_model=CapabilityResponse)
 async def create_capability(project_id: str, body: CapabilityCreate) -> CapabilityResponse:
-    """Create a new capability.
+    """Create a new capability with optional nested criteria.
 
     component_id can be either the database ID (int) or the component slug (str).
+
+    If criteria are provided, they will be created and linked to the capability.
+    Partial failure handling: capability is created even if criteria creation fails.
     """
     # Resolve component_id to database ID if string
     resolved_component_id = _resolve_component_id(project_id, body.component_id)
@@ -194,7 +214,30 @@ async def create_capability(project_id: str, body: CapabilityCreate) -> Capabili
             description=body.description,
             priority=body.priority,
         )
-        return CapabilityResponse(**capability)
+
+        # Create and link criteria if provided
+        criteria_count = 0
+        if body.criteria:
+            with get_connection() as conn:
+                for crit in body.criteria:
+                    try:
+                        criterion = criteria_storage.create_criterion(
+                            conn=conn,
+                            project_id=project_id,
+                            criterion=crit.criterion,
+                            category=crit.category,
+                            measurement=crit.measurement,
+                            threshold=crit.threshold,
+                        )
+                        criteria_storage.link_criterion_to_capability(
+                            conn, capability["id"], criterion["id"]
+                        )
+                        criteria_count += 1
+                    except Exception:
+                        # Continue creating other criteria on failure (partial success)
+                        pass
+
+        return CapabilityResponse(**capability, criteria_created=criteria_count)
     except Exception as e:
         if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
             raise HTTPException(
