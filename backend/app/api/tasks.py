@@ -1427,9 +1427,18 @@ async def update_task_subtask(
     """
     _verify_task_project(task_id, project_id)
 
-    from ..storage.subtasks import update_subtask_passes
+    from ..storage.subtasks import SubtaskGateError, update_subtask_passes
 
-    updated = update_subtask_passes(task_id, subtask_id, request.passes)
+    try:
+        updated = update_subtask_passes(task_id, subtask_id, request.passes, force=request.force)
+    except SubtaskGateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(e),
+                "incomplete_steps": e.incomplete_steps,
+            },
+        ) from e
 
     if updated is None:
         raise HTTPException(

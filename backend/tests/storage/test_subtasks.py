@@ -5,6 +5,7 @@ from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.subtasks import SubtaskGateError
 
 
 @pytest.fixture
@@ -459,8 +460,8 @@ class TestGetSubtaskSummary:
         """Test summary with all complete."""
         subtask_store.create_subtask(test_task["id"], "1.1", "First", 0)
         subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1)
-        subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-        subtask_store.update_subtask_passes(test_task["id"], "1.2", True)
+        subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
+        subtask_store.update_subtask_passes(test_task["id"], "1.2", True, force=True)
 
         summary = subtask_store.get_subtask_summary(test_task["id"])
 
@@ -468,3 +469,73 @@ class TestGetSubtaskSummary:
         assert summary["completed"] == 2
         assert summary["next_subtask_id"] is None
         assert summary["progress_percent"] == 100.0
+
+
+class TestSubtaskGates:
+    """Tests for subtask step completion gate."""
+
+    def test_subtask_gate_blocks_incomplete_steps(self, test_task):
+        """Cannot mark subtask as passed if steps are incomplete."""
+        subtask_store.create_subtask(
+            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
+        )
+
+        with pytest.raises(SubtaskGateError) as exc_info:
+            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+
+        assert exc_info.value.incomplete_steps == [1, 2]
+        assert "steps [1, 2] are not complete" in str(exc_info.value)
+
+    def test_subtask_gate_allows_all_steps_complete(self, test_task):
+        """Can mark subtask as passed when all steps are complete."""
+        subtask = subtask_store.create_subtask(
+            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
+        )
+
+        # Complete all steps
+        step_store.update_step_passes(subtask["id"], 1, True)
+        step_store.update_step_passes(subtask["id"], 2, True)
+
+        # Now subtask should pass
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        assert result["passes"] is True
+
+    def test_subtask_gate_force_bypasses_check(self, test_task):
+        """Force flag bypasses step gate check."""
+        subtask_store.create_subtask(
+            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
+        )
+
+        # With force=True, should work even with incomplete steps
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
+        assert result["passes"] is True
+
+    def test_subtask_gate_no_steps_allowed(self, test_task):
+        """Subtask with no steps can be marked as passed."""
+        subtask_store.create_subtask(test_task["id"], "1.1", "No steps", 0)
+
+        # Should work - no steps to check
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        assert result["passes"] is True
+
+    def test_subtask_gate_partial_completion_blocked(self, test_task):
+        """Subtask with some steps complete is still blocked."""
+        subtask = subtask_store.create_subtask(
+            test_task["id"], "1.1", "Test", 0, steps=["Step 1", "Step 2", "Step 3"]
+        )
+
+        # Complete only step 1
+        step_store.update_step_passes(subtask["id"], 1, True)
+
+        with pytest.raises(SubtaskGateError) as exc_info:
+            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+
+        assert exc_info.value.incomplete_steps == [2, 3]
+
+    def test_clearing_subtask_has_no_gate(self, test_task):
+        """Setting passes=False has no gate check."""
+        subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step 1"])
+
+        # Can clear subtask even with incomplete steps
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", False)
+        assert result["passes"] is False

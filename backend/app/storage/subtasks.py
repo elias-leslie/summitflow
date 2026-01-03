@@ -188,28 +188,64 @@ def get_subtasks_for_task(
     return subtasks
 
 
+class SubtaskGateError(Exception):
+    """Raised when subtask completion gate is violated."""
+
+    def __init__(self, message: str, incomplete_steps: list[int] | None = None):
+        super().__init__(message)
+        self.incomplete_steps = incomplete_steps or []
+
+
 def update_subtask_passes(
     task_id: str,
     subtask_id: str,
     passes: bool,
+    force: bool = False,
 ) -> dict[str, Any] | None:
-    """Update subtask passes status.
+    """Update subtask passes status with gate enforcement.
 
     When passes is set to True, also sets passed_at timestamp.
     When passes is set to False, clears passed_at.
+
+    Gate enforcement: When setting passes=True, all steps for this subtask
+    must have passes=True. This ensures all steps are verified complete.
 
     Args:
         task_id: Parent task ID
         subtask_id: Subtask ID (e.g., "1.1")
         passes: Whether the subtask passes
+        force: If True, bypass the step completion gate check (use with caution)
 
     Returns:
         Updated subtask dict or None if not found.
+
+    Raises:
+        SubtaskGateError: If passes=True and not all steps are complete (unless force=True)
     """
     table_id = _generate_subtask_id(task_id, subtask_id)
     passed_at = datetime.now(UTC) if passes else None
 
     with get_connection() as conn, conn.cursor() as cur:
+        # Gate check: if marking as passed, verify all steps are passed
+        if passes and not force:
+            cur.execute(
+                """
+                SELECT step_number FROM task_subtask_steps
+                WHERE subtask_id = %s AND passes = FALSE
+                ORDER BY step_number
+                """,
+                (table_id,),
+            )
+            incomplete = [row[0] for row in cur.fetchall()]
+            if incomplete:
+                msg = (
+                    f"Cannot mark subtask {subtask_id} as passed: "
+                    f"steps {incomplete} are not complete. "
+                    f"Use force=True to bypass."
+                )
+                logger.warning(msg)
+                raise SubtaskGateError(msg, incomplete_steps=incomplete)
+
         cur.execute(
             f"""
             UPDATE task_subtasks
