@@ -30,6 +30,7 @@ from .api import (
     patterns,
     projects,
     prompts,
+    refactor_sessions,
     roundtable,
     tasks,
     tdd,
@@ -96,6 +97,7 @@ app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
+app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 
 
 @app.get("/health")
