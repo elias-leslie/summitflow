@@ -29,20 +29,6 @@ SummitFlow - AI-assisted development platform. See [AGENTS.md](AGENTS.md) for wo
 
 ---
 
-## Model Constants
-
-Use `backend/app/constants.py` - never hardcode model strings.
-
-| Constant | Model |
-|----------|-------|
-| CLAUDE_SONNET | claude-sonnet-4-5 (default) |
-| CLAUDE_OPUS | claude-opus-4-5 |
-| GEMINI_FLASH | gemini-3-flash-preview |
-
-Forbidden: `gemini-2.*`, `claude-3-*`, hardcoded strings.
-
----
-
 ## Cloudflare Access
 
 Production URLs require auth headers. Credentials: `~/.cloudflare-access`
@@ -63,158 +49,43 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 
 ---
 
-## Architecture Coherence
-
-Before writing ANY new code, function, class, table, or column - verify it doesn't already exist.
-
-### Pre-Implementation Checklist
-
-1. **Search for existing implementations**
-   ```bash
-   grep -r "def similar_name" backend/
-   grep -r "class SimilarName" backend/
-   ```
-
-2. **Check established patterns**
-   - `backend/app/utils/` - existing utilities
-   - `backend/app/services/` - existing service patterns
-   - `frontend/lib/` and `frontend/utils/` - frontend helpers
-
-3. **For DB changes: review existing schema**
-   ```bash
-   psql -d summitflow -c "\dt"
-   psql -d summitflow -c "\d table_name"
-   ```
-
-### SummitFlow vs App Code
-
-| Belongs in SummitFlow (dev tooling) | Stays in App (operational) |
-|-------------------------------------|----------------------------|
-| Features/capabilities tracking | The actual app functionality |
-| Evidence capture & verification | User-facing dashboards |
-| Task architecture explorer | Background jobs themselves |
-| Code quality tools | Business logic |
-
-**Test:** Would a user of the finished app need this? → App code
-**Test:** Is this for understanding/developing the codebase? → SummitFlow
-
----
-
-## Issue Tracking - MANDATORY
-
-When you encounter ANY pre-existing bug during work:
-
-1. **REVIEW ALL OPEN TASKS:**
-   ```bash
-   st list --status pending --json | jq -r '.tasks[] | "\(.id) \(.title)"'
-   ```
-
-2. **CREATE if none exists:**
-   ```bash
-   st create "Fix: <description>" -t bug -p 2 \
-     -l "complexity:small,domains:backend" \
-     -d "Error: <exact error>
-
-   Location: <file:line>
-
-   Found during: <parent-task-id>"
-
-   st dep add <new-id> <parent-task-id> --type discovered-from
-   ```
-
-**Every discovered issue = immediate task creation. No exceptions.**
-
----
-
-## Command Reference
+## Essential Commands
 
 ### st (SummitFlow Tasks)
 
 ```bash
-# List/Find
-st ready                              # Tasks ready to work on (not blocked)
-st list                               # All tasks
-st list --status pending              # Filter by status
-st list -t bug -p 1                   # Filter by type and priority
-st list --labels "complexity:small"   # Filter by label
-st show <id>                          # View task details
+# Core workflow
+st ready                              # Tasks ready to work on
+st update <id> --status running       # Claim task
+st close <id> --reason "Done"         # Complete task
 
 # Create
-st create "Title" -t task -p 2 -l "complexity:small,domains:backend" -d "Description"
-st bug "Fix: X" -p 2 -l "complexity:small,domains:backend"  # Shorthand for -t bug
+st create "Title" -t task -p 2 -d "Description"
+st bug "Fix: X" -p 2                  # Shorthand for -t bug
 
-# Update
-st update <id> --status running       # Claim task
-st update <id> -p 1                   # Change priority
-st update <id> --add-label "auto"     # Add label
-st update <id> --remove-label "old"   # Remove label
-st update <id> -d "More info"         # Append to description
-st update <id> --capability 615       # Link to capability
-
-# Complete
-st close <id> -r "Done"               # Close with reason
-st close <id> --force                 # Force close (skip checks)
-st cancel <id>                        # Cancel task
-
-# Dependencies
-st dep add <child> <parent> --type discovered-from
-st dep add <child> <parent> --type blocks
-st dep list <id>
-st dep rm <child> <parent>
-
-# Subtasks & Steps (TDD structure)
-st subtask list <task-id>             # List subtasks with progress
-st subtask create <task-id> "Title"   # Create subtask
-st subtask pass <subtask-id>          # Mark subtask passed
-st step list <subtask-id>             # List steps
-st step pass <step-id>                # Mark step passed
-st step create <subtask-id> '["step1", "step2"]'  # Create steps (JSON array)
-
-# Capabilities & Components
-st capability list                    # List all capabilities
-st capability show <id>               # Show capability details
-st capability verify <id>             # Verify capability tests
-st component list                     # List all components
-st component show <id>                # Show component details
-
-# Testing
-st test list                          # List tests
-st test import pytest                 # Import from pytest
-st test link <test-id> <criterion-id> # Link test to criterion
-st criterion verify <id>              # Verify a criterion
-
-# Worktrees
-st worktree list                      # List active worktrees
-st worktree prune                     # Clean up orphaned worktrees
+# Subtasks & Steps
+st subtask list <task-id>             # List subtasks
+st step pass <task-id> <subtask-id> <step-number>  # Mark step passed
+st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 ```
-
-**Valid values:**
-- **Status:** `pending`, `running`, `completed`, `cancelled`, `blocked`
-- **Type:** `task`, `bug`, `chore`, `feature`
-- **Priority:** `0` (critical) to `4` (backlog)
-- **Dep types:** `blocks`, `discovered-from`
 
 ### member-dis (Memory)
 
 ```bash
 member-dis search "query"             # Search observations
-member-dis search "query" -t pattern  # Filter by type
-member-dis search "query" -l 20       # Limit results
 member-dis expand <id>                # Get full content
 member-dis index                      # Show context overview
-member-dis timeline <id>              # Show context around observation
 ```
 
-**Types:** `observation`, `pattern`, `user_prompt`
+---
+
+## Additional Resources
+
+- **Model Constants:** See `~/.claude/rules/model-standards.md` (never hardcode model strings)
+- **Pre-Implementation Checks:** See `~/.claude/skills/pre-implementation-check/SKILL.md`
+- **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
+- **Memory System:** Context is auto-injected at session start via hooks
 
 ---
 
-## Memory System
-
-The memory system is currently being aligned with claude-mem patterns. See `docs/memory-system-alignment.md` for the full reference.
-
-Context is auto-injected at session start via hooks.
-
----
-
-**Version**: 2.8.0
+**Version**: 3.0.0

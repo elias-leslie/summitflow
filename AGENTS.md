@@ -4,31 +4,7 @@ Core workflow for SummitFlow agents.
 
 ---
 
-## Task Workflow
-
-### Finding Work
-```bash
-st ready                              # Find unblocked work
-st list --status pending              # All pending tasks
-st list --status pending --json | jq -r '.tasks[] | "\(.id) \(.title)"'
-```
-
-### Working on Tasks
-```bash
-st update <id> --status running       # Claim work
-st close <id> --reason "Completed"    # Mark done
-```
-
-### Creating Tasks
-```bash
-st create "Title" -t task|bug|chore -p 0-4 \
-  -l "complexity:small,domains:backend" \
-  -d "Description"
-
-st dep add <child> <parent> --type discovered-from
-```
-
-### Labels (REQUIRED)
+## Labels (REQUIRED)
 
 **Complexity:**
 | Label | Criteria |
@@ -96,31 +72,6 @@ git status  # MUST show "up to date with origin/main"
 
 ---
 
-## Discovered Issues - MANDATORY
-
-When you encounter ANY pre-existing bug during work:
-
-1. **REVIEW ALL OPEN TASKS** (scan full list):
-   ```bash
-   st list --status pending --json | jq -r '.tasks[] | "\(.id) \(.title)"'
-   ```
-
-2. **CREATE if none exists:**
-   ```bash
-   st create "Fix: <description>" -t bug -p 2 \
-     -l "complexity:small,domains:backend" \
-     -d "Error: <exact error>
-
-   Location: <file:line>
-   Found during: <parent-task-id>"
-
-   st dep add <new-id> <parent-task-id> --type discovered-from
-   ```
-
-**Every discovered issue = immediate task creation. No exceptions.**
-
----
-
 ## Code Quality
 
 ### Testing Separation
@@ -131,7 +82,7 @@ When you encounter ANY pre-existing bug during work:
 | Lint/format | Code style | ruff, pre-commit |
 
 ### Architecture Coherence
-- **Before ANY new code**: Check for existing implementations
+- **Before ANY new code**: Use pre-implementation-check skill
 - Consolidate over create - extend existing utilities, don't duplicate
 - Delete dead code (git has history)
 
@@ -143,28 +94,12 @@ When you encounter ANY pre-existing bug during work:
 |-------|------------|
 | Start work with dirty tree | Commit previous changes FIRST |
 | Skip pre-commit | Fix the issues |
-| Note bugs without tasks | Create task IMMEDIATELY |
+| Note bugs without tasks | Create task with `st bug` IMMEDIATELY |
 | Hardcode model strings | Use constants.py |
 | `git stash` with uncommitted | Commit first |
-| "I'll refactor later" | Create a task |
+| "I'll refactor later" | Create a task with `/task_it` |
+| Create without checking | Run pre-implementation-check first |
 
 ---
 
-## Quick Reference
-
-| Action | Command |
-|--------|---------|
-| Find work | `st ready` |
-| List pending | `st list --status pending` |
-| View task | `st show <id>` |
-| Claim work | `st update <id> --status running` |
-| Complete | `st close <id> -r "Done"` |
-| Create bug | `st bug "Fix: X" -p 2 -l "complexity:small,domains:backend"` |
-| Link dependency | `st dep add <child> <parent> --type discovered-from` |
-| Search memory | `member-dis search "query"` |
-| Restart services | `bash ~/summitflow/scripts/restart.sh` |
-| Run tests | `cd backend && .venv/bin/pytest tests/ -v` |
-| Check types | `cd backend && .venv/bin/mypy app/` |
-| View logs | `journalctl --user -u summitflow-backend -f` |
-
-**See CLAUDE.md for full command reference with all flags and options.**
+**See CLAUDE.md for essential commands. Use `/do_it` for task execution, `/task_it` for planning.**
