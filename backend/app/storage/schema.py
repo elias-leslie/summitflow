@@ -239,7 +239,6 @@ def init_schema() -> None:
                     description TEXT,
                     priority INTEGER DEFAULT 2,
                     status VARCHAR(20) DEFAULT 'pending',
-                    locked_at TIMESTAMPTZ,  -- DEPRECATED: To be dropped in Phase 4. Not used after lock_capability() removal.
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
                     UNIQUE(project_id, capability_id)
