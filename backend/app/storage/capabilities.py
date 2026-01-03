@@ -249,58 +249,6 @@ def update_capability(
     return _row_to_dict(row) if row else None
 
 
-def lock_capability(project_id: str, capability_id: str) -> dict[str, Any] | None:
-    """Lock a capability (mark as verified/frozen).
-
-    Sets locked_at timestamp and status to 'locked'.
-
-    Returns:
-        Updated capability dict or None if not found.
-    """
-    now = datetime.now(UTC)
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE capabilities
-            SET locked_at = %s, status = 'locked', updated_at = %s
-            WHERE project_id = %s AND capability_id = %s
-            RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, verification_url, created_at, updated_at
-            """,
-            (now, now, project_id, capability_id),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    return _row_to_dict(row) if row else None
-
-
-def unlock_capability(project_id: str, capability_id: str) -> dict[str, Any] | None:
-    """Unlock a capability (remove lock).
-
-    Clears locked_at timestamp and sets status to 'pending'.
-
-    Returns:
-        Updated capability dict or None if not found.
-    """
-    now = datetime.now(UTC)
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE capabilities
-            SET locked_at = NULL, status = 'pending', updated_at = %s
-            WHERE project_id = %s AND capability_id = %s
-            RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, verification_url, created_at, updated_at
-            """,
-            (now, project_id, capability_id),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    return _row_to_dict(row) if row else None
-
-
 def delete_capability(project_id: str, capability_id: str) -> bool:
     """Delete a capability.
 

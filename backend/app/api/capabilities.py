@@ -268,26 +268,6 @@ async def update_capability(
     return CapabilityResponse(**capability)
 
 
-@router.post("/{project_id}/capabilities/{capability_id}/lock", response_model=CapabilityResponse)
-async def lock_capability(project_id: str, capability_id: str) -> CapabilityResponse:
-    """Lock a capability (mark as verified/frozen)."""
-    capability = storage.lock_capability(project_id, capability_id)
-    if not capability:
-        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
-
-    return CapabilityResponse(**capability)
-
-
-@router.post("/{project_id}/capabilities/{capability_id}/unlock", response_model=CapabilityResponse)
-async def unlock_capability(project_id: str, capability_id: str) -> CapabilityResponse:
-    """Unlock a capability."""
-    capability = storage.unlock_capability(project_id, capability_id)
-    if not capability:
-        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
-
-    return CapabilityResponse(**capability)
-
-
 @router.delete("/{project_id}/capabilities/{capability_id}")
 async def delete_capability(project_id: str, capability_id: str) -> dict[str, str]:
     """Delete a capability."""
