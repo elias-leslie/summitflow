@@ -24,6 +24,7 @@ Metadata schema (per architecture doc):
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import subprocess
@@ -114,6 +115,39 @@ REFACTOR_HIGH_COMPLEXITY = 15
 REFACTOR_HIGH_LINES = 500
 REFACTOR_MEDIUM_COMPLEXITY = 10
 REFACTOR_MEDIUM_LINES = 300
+
+# Magic string patterns for detection - patterns that should be constants or config
+MAGIC_STRING_PATTERNS: dict[str, re.Pattern[str]] = {
+    # Project-specific names that should be configurable
+    "project_names": re.compile(
+        r"\b(summitflow|portfolio-ai|SummitFlow)\b",
+        re.IGNORECASE,
+    ),
+    # Hardcoded paths (absolute or well-known)
+    "hardcoded_paths": re.compile(
+        r'["\'](?:/home/\w+|/Users/\w+|/var/|/tmp/|/opt/|C:\\|D:\\)[^"\']*["\']',
+    ),
+    # Hardcoded URLs that might need to be configurable
+    "hardcoded_urls": re.compile(
+        r'["\']https?://(?:localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(?:1[6-9]|2[0-9]|3[01])\.)[^"\']*["\']',
+    ),
+    # Legacy/deprecated model names
+    "legacy_models": re.compile(
+        r"\b(claude-3-|gemini-2\.[05]|gpt-3\.5|gpt-4-(?!turbo))\w*\b",
+    ),
+}
+
+# Globs to exclude from magic string detection
+MAGIC_STRING_EXCLUDE_PATTERNS: dict[str, list[str]] = {
+    # Don't flag project names in documentation/tests
+    "project_names": ["*.md", "*test*", "*spec*", "CLAUDE.md", "README*"],
+    # Don't flag hardcoded paths in config files
+    "hardcoded_paths": ["*.json", "*.yaml", "*.yml", "*.toml", "*.md"],
+    # Don't flag local URLs in test files
+    "hardcoded_urls": ["*test*", "*spec*", "*.md"],
+    # Flag legacy models everywhere
+    "legacy_models": [],
+}
 
 
 class FileScanner(BaseScanner):
@@ -207,6 +241,9 @@ class FileScanner(BaseScanner):
             complexity_score = self._calculate_complexity_score(lines, function_count, class_count)
             refactor_priority = self._calculate_refactor_priority(complexity_score, lines)
 
+            # Detect magic strings
+            magic_strings = self._detect_magic_strings(rel_path, content)
+
             return ExplorerEntryCreate(
                 path=rel_path,
                 name=file_path.name,
@@ -223,6 +260,7 @@ class FileScanner(BaseScanner):
                     "import_count": import_count,
                     "complexity_score": complexity_score,
                     "refactor_priority": refactor_priority,
+                    "magic_strings": magic_strings if magic_strings else None,
                 },
             )
         except Exception:
@@ -261,6 +299,32 @@ class FileScanner(BaseScanner):
         if complexity_score > REFACTOR_MEDIUM_COMPLEXITY or lines > REFACTOR_MEDIUM_LINES:
             return "medium"
         return "none"
+
+    def _detect_magic_strings(self, rel_path: str, content: str) -> dict[str, int]:
+        """Detect magic strings in file content.
+
+        Returns dict mapping category -> count of matches.
+        Respects exclude patterns defined in MAGIC_STRING_EXCLUDE_PATTERNS.
+        """
+        results: dict[str, int] = {}
+        file_name = Path(rel_path).name
+
+        for category, pattern in MAGIC_STRING_PATTERNS.items():
+            # Check if file should be excluded for this category
+            exclude_globs = MAGIC_STRING_EXCLUDE_PATTERNS.get(category, [])
+            should_exclude = any(
+                fnmatch.fnmatch(rel_path, glob) or fnmatch.fnmatch(file_name, glob)
+                for glob in exclude_globs
+            )
+            if should_exclude:
+                continue
+
+            # Count matches
+            matches = pattern.findall(content)
+            if matches:
+                results[category] = len(matches)
+
+        return results
 
     def _aggregate_to_parents(
         self, rel_path: str, entry: ExplorerEntryCreate, dir_stats: dict[str, dict[str, Any]]
