@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Any
 
 import typer
 
@@ -20,9 +22,133 @@ from ..output import (
 app = typer.Typer(help="Task management commands")
 
 
+def _validate_task_item(item: dict[str, Any], index: int) -> list[str]:
+    """Validate a single task item and return list of errors."""
+    errors: list[str] = []
+    prefix = f"tasks[{index}]"
+
+    # Required fields
+    if "title" not in item or not item["title"]:
+        errors.append(f"{prefix}: Missing required field 'title'")
+    if "task_type" not in item or not item["task_type"]:
+        errors.append(f"{prefix}: Missing required field 'task_type'")
+
+    # Validate task_type
+    valid_types = ("feature", "bug", "task", "chore")
+    if item.get("task_type") and item["task_type"] not in valid_types:
+        errors.append(f"{prefix}: task_type must be one of: {', '.join(valid_types)}")
+
+    # Validate priority
+    if "priority" in item:
+        p = item["priority"]
+        if not isinstance(p, int) or p < 0 or p > 4:
+            errors.append(f"{prefix}: priority must be integer 0-4")
+
+    # Validate subtasks if present
+    if item.get("subtasks"):
+        for si, subtask in enumerate(item["subtasks"]):
+            sub_prefix = f"{prefix}.subtasks[{si}]"
+            if "subtask_id" not in subtask:
+                errors.append(f"{sub_prefix}: Missing required field 'subtask_id'")
+            if "description" not in subtask:
+                errors.append(f"{sub_prefix}: Missing required field 'description'")
+
+    return errors
+
+
+def _create_from_file(file_path: Path, dry_run: bool) -> None:
+    """Create tasks from a JSON file."""
+    # Read and parse JSON
+    try:
+        content = file_path.read_text()
+        data = json.loads(content)
+    except FileNotFoundError:
+        output_error(f"File not found: {file_path}")
+        raise typer.Exit(1) from None
+    except json.JSONDecodeError as e:
+        output_error(f"Invalid JSON at line {e.lineno}: {e.msg}")
+        raise typer.Exit(1) from None
+
+    # Extract tasks array
+    if "tasks" not in data:
+        output_error("JSON must contain a 'tasks' array")
+        raise typer.Exit(1) from None
+
+    items = data["tasks"]
+    if not isinstance(items, list):
+        output_error("'tasks' must be an array")
+        raise typer.Exit(1) from None
+
+    if not items:
+        output_error("'tasks' array is empty")
+        raise typer.Exit(1) from None
+
+    # Validate all items
+    all_errors: list[str] = []
+    for i, item in enumerate(items):
+        all_errors.extend(_validate_task_item(item, i))
+
+    if all_errors:
+        output_error("Validation errors:")
+        for err in all_errors:
+            typer.echo(f"  {err}", err=True)
+        raise typer.Exit(1)
+
+    # Dry run - show summary
+    if dry_run:
+        typer.echo(f"Would create {len(items)} task(s):")
+        for i, item in enumerate(items):
+            title = item.get("title", "?")
+            ttype = item.get("task_type", "task")
+            subtask_count = len(item.get("subtasks", []))
+            typer.echo(f"  [{i + 1}] {title} ({ttype})", nl=False)
+            if subtask_count:
+                typer.echo(f" - {subtask_count} subtask(s)")
+            else:
+                typer.echo()
+        return
+
+    # Create tasks via batch API
+    client = STClient()
+    try:
+        result = client.batch_create_tasks(items)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    created = result.get("created", [])
+    errors = result.get("errors", [])
+
+    # Output results
+    typer.echo(f"Creating {len(items)} task(s) from {file_path}...")
+    for task in created:
+        task_id = task.get("id", "?")
+        title = task.get("title", "?")
+        typer.echo(f"  ✓ {task_id}: {title}")
+
+    for err in errors:
+        title = err.get("title", "?")
+        error_msg = err.get("error", "Unknown error")
+        typer.echo(f"  ✗ {title}: {error_msg}", err=True)
+
+    typer.echo()
+    typer.echo(f"Created: {len(created)}/{len(items)} tasks")
+    if errors:
+        typer.echo(f"Errors: {len(errors)}")
+        raise typer.Exit(1)
+
+
 @app.command()
 def create(
-    title: str,
+    title: Annotated[str | None, typer.Argument()] = None,
+    from_file: Annotated[
+        Path | None,
+        typer.Option("--from-file", help="JSON file with tasks to create"),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview without creating"),
+    ] = False,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
@@ -30,15 +156,31 @@ def create(
     parent: Annotated[str | None, typer.Option("--parent")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
 ) -> None:
-    """Create a new task.
+    """Create a new task or batch create from file.
 
     Examples:
         st create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
         st create "Add feature" -t feature -p 1 --parent task-abc123
+        st create --from-file tasks.json
+        st create --from-file tasks.json --dry-run
     """
+    # Handle --from-file mode
+    if from_file:
+        _create_from_file(from_file, dry_run)
+        return
+
+    # Regular single-task creation requires title
+    if not title:
+        output_error("Either provide a title or use --from-file")
+        raise typer.Exit(1)
+
+    if dry_run:
+        output_error("--dry-run only works with --from-file")
+        raise typer.Exit(1)
+
     client = STClient()
 
-    data: dict = {
+    data: dict[str, Any] = {
         "title": title,
         "task_type": task_type,
         "priority": priority,
@@ -59,8 +201,6 @@ def create(
     if plan:
         # Update with plan_content
         try:
-            import json
-
             plan_content = json.loads(plan)
             task = client.update_task(task["id"], plan_content=plan_content)
         except (json.JSONDecodeError, APIError) as e:

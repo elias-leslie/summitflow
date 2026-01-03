@@ -69,6 +69,18 @@ class STClient:
         response = self._client.post(self._url("/tasks"), json=data)
         return self._handle_response(response)
 
+    def batch_create_tasks(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Create multiple tasks in batch.
+
+        Args:
+            items: List of task dicts (title, description, priority, labels, task_type, etc.)
+
+        Returns:
+            Dict with 'created' list and 'errors' list.
+        """
+        response = self._client.post(self._url("/tasks/batch"), json={"items": items})
+        return self._handle_response(response)
+
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Get a task by ID.
 
