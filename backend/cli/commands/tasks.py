@@ -268,11 +268,12 @@ def show(
             # In full mode, show all steps for each subtask
             if full and s.get("steps"):
                 for step in s["steps"]:
-                    step_passes = step.get("passes", False)
-                    step_icon = "[green]✓[/]" if step_passes else "[dim]○[/]"
-                    step_num = step.get("step_number", "")
-                    step_desc = step.get("description", "")[:70]
-                    console.print(f"      {step_icon} {step_num}: {step_desc}")
+                    if isinstance(step, dict):
+                        step_passes = step.get("passes", False)
+                        step_icon = "[green]✓[/]" if step_passes else "[dim]○[/]"
+                        step_num = step.get("step_number", "")
+                        step_desc = step.get("description", "")[:70]
+                        console.print(f"      {step_icon} {step_num}: {step_desc}")
 
     # In full mode, show progress log
     if full:
