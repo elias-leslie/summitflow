@@ -113,6 +113,13 @@ def format_session_context(
     lines.append("**Tools:** `member-dis search|expand|index` | `st ready|update|close`")
     lines.append("")
 
+    # Memory usage instructions - agents need explicit guidance to use memory
+    lines.append(
+        "**Memory:** Before searching files or exploring the codebase, "
+        'run `/member-dis search "<your question>"` to check if this has been solved before.'
+    )
+    lines.append("")
+
     # Recent sessions (diary entries)
     if diary:
         lines.append("**Recent Sessions:**")
