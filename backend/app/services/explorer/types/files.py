@@ -149,6 +149,47 @@ MAGIC_STRING_EXCLUDE_PATTERNS: dict[str, list[str]] = {
     "legacy_models": [],
 }
 
+# Compatibility cruft patterns - indicators of technical debt
+COMPAT_CRUFT_PATTERNS: dict[str, re.Pattern[str]] = {
+    # Backwards compatibility comments/annotations
+    "compat_comments": re.compile(
+        r"#\s*(backward|backwards|compat|for\s+compat|legacy|alias|re-export)",
+        re.IGNORECASE,
+    ),
+    # Deprecated markers
+    "deprecated_markers": re.compile(
+        r"#\s*(DEPRECATED|@deprecated|deprecated:)",
+        re.IGNORECASE,
+    ),
+    # Legacy/old variable naming patterns
+    "legacy_vars": re.compile(
+        r"\b(\w+_old|\w+_legacy|\w+_deprecated|old_\w+|legacy_\w+|deprecated_\w+)\b",
+    ),
+    # Stale TODO/FIXME comments (potential technical debt)
+    "stale_todos": re.compile(
+        r"#\s*(TODO|FIXME|XXX|HACK)\b",
+    ),
+    # Alias exports/re-exports for compatibility
+    "alias_exports": re.compile(
+        r"^\s*\w+\s*=\s*\w+\s*#.*(?:alias|compat|legacy)",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+}
+
+# Globs to exclude from compat cruft detection
+COMPAT_CRUFT_EXCLUDE_PATTERNS: dict[str, list[str]] = {
+    # Don't flag compat comments in tests (often intentional)
+    "compat_comments": ["*test*", "*spec*"],
+    # Deprecated markers should be flagged everywhere
+    "deprecated_markers": [],
+    # Don't flag legacy vars in migrations or tests
+    "legacy_vars": ["*migration*", "*test*", "*spec*"],
+    # Don't flag TODOs in tests (often intentional placeholders)
+    "stale_todos": [],
+    # Don't flag alias exports in __init__.py (often intentional)
+    "alias_exports": ["__init__.py"],
+}
+
 
 class FileScanner(BaseScanner):
     """Scans codebase files for explorer entries."""
@@ -244,6 +285,9 @@ class FileScanner(BaseScanner):
             # Detect magic strings
             magic_strings = self._detect_magic_strings(rel_path, content)
 
+            # Detect compat cruft
+            compat_cruft = self._detect_compat_cruft(rel_path, content)
+
             return ExplorerEntryCreate(
                 path=rel_path,
                 name=file_path.name,
@@ -261,6 +305,7 @@ class FileScanner(BaseScanner):
                     "complexity_score": complexity_score,
                     "refactor_priority": refactor_priority,
                     "magic_strings": magic_strings if magic_strings else None,
+                    "compat_cruft": compat_cruft if compat_cruft else None,
                 },
             )
         except Exception:
@@ -312,6 +357,32 @@ class FileScanner(BaseScanner):
         for category, pattern in MAGIC_STRING_PATTERNS.items():
             # Check if file should be excluded for this category
             exclude_globs = MAGIC_STRING_EXCLUDE_PATTERNS.get(category, [])
+            should_exclude = any(
+                fnmatch.fnmatch(rel_path, glob) or fnmatch.fnmatch(file_name, glob)
+                for glob in exclude_globs
+            )
+            if should_exclude:
+                continue
+
+            # Count matches
+            matches = pattern.findall(content)
+            if matches:
+                results[category] = len(matches)
+
+        return results
+
+    def _detect_compat_cruft(self, rel_path: str, content: str) -> dict[str, int]:
+        """Detect compatibility cruft patterns in file content.
+
+        Returns dict mapping category -> count of matches.
+        Respects exclude patterns defined in COMPAT_CRUFT_EXCLUDE_PATTERNS.
+        """
+        results: dict[str, int] = {}
+        file_name = Path(rel_path).name
+
+        for category, pattern in COMPAT_CRUFT_PATTERNS.items():
+            # Check if file should be excluded for this category
+            exclude_globs = COMPAT_CRUFT_EXCLUDE_PATTERNS.get(category, [])
             should_exclude = any(
                 fnmatch.fnmatch(rel_path, glob) or fnmatch.fnmatch(file_name, glob)
                 for glob in exclude_globs
