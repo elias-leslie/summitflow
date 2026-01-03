@@ -220,7 +220,8 @@ def update_capability(
     Returns:
         Updated capability dict or None if not found.
     """
-    allowed_fields = {"name", "description", "priority", "status", "verification_url"}
+    # verification_url removed - deprecated, to be dropped in Phase 4
+    allowed_fields = {"name", "description", "priority", "status"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
     if not updates:
