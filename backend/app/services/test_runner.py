@@ -23,11 +23,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..storage import criteria as criteria_storage
 from ..storage import projects as projects_storage
 from ..storage import test_runs as test_runs_storage
 from ..storage import tests as tests_storage
-from ..storage.connection import get_connection
 
 # Import from submodules
 from .test_runner_lib.base import (
@@ -66,63 +64,17 @@ async def _auto_capture_evidence_for_criteria(
     """Auto-capture evidence for criteria linked to this test.
 
     When a test passes, find all criteria linked to it via criterion_tests.
-    For each criterion that has a capability with a verification_url,
-    trigger evidence capture.
+
+    NOTE: This feature was disabled when the verification_url column was
+    dropped from capabilities table. Auto-evidence capture now requires
+    explicit API calls rather than URL-based triggering.
     """
-    from . import evidence_manager
-
-    with get_connection() as conn:
-        # Get criteria linked to this test via criterion_tests
-        criteria = criteria_storage.get_criteria_for_test(conn, test_db_id)
-
-        for criterion in criteria:
-            criterion_db_id = criterion["id"]
-
-            # Get capability via capability_criteria join
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT c.capability_id, c.verification_url, c.project_id
-                FROM capabilities c
-                JOIN capability_criteria cc ON c.id = cc.capability_id
-                WHERE cc.criterion_id = %s AND c.verification_url IS NOT NULL
-                """,
-                (criterion_db_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-
-            if not row:
-                continue
-
-            capability_id, verification_url, cap_project_id = row
-
-            # Only capture if capability has verification_url
-            if not verification_url:
-                continue
-
-            try:
-                # Trigger evidence capture (async function)
-                await evidence_manager.capture_evidence(
-                    project_id=cap_project_id,
-                    url=verification_url,
-                    capability_id=capability_id,
-                    criterion_id=criterion.get("criterion_id", f"crit-{criterion_db_id}"),
-                    criterion_db_id=criterion_db_id,
-                    test_run_id=test_run_id,
-                    auto_captured=True,
-                )
-                logger.info(
-                    "Auto-captured evidence for criterion %s from test run %d",
-                    criterion.get("criterion_id"),
-                    test_run_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Failed to auto-capture evidence for criterion %s: %s",
-                    criterion.get("criterion_id"),
-                    str(e),
-                )
+    # Feature disabled - verification_url column was dropped from capabilities table
+    # Evidence capture is now triggered manually via API endpoints
+    logger.debug(
+        "Auto-capture evidence skipped for test_db_id=%d (verification_url feature removed)",
+        test_db_id,
+    )
 
 
 def _combine_outputs(stdout: str, stderr: str) -> str:

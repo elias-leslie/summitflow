@@ -550,7 +550,7 @@ def get_capabilities_for_test(
         cur.execute(
             """
             SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
-                   c.priority, c.status, c.locked_at, c.created_at, c.updated_at, ct.is_primary
+                   c.priority, c.status, c.created_at, c.updated_at, ct.is_primary
             FROM capabilities c
             INNER JOIN capability_criteria cc ON c.id = cc.capability_id
             INNER JOIN acceptance_criteria ac ON cc.criterion_id = ac.id
@@ -574,10 +574,9 @@ def get_capabilities_for_test(
             "description": row[5],
             "priority": row[6],
             "status": row[7],
-            "locked_at": row[8].isoformat() if row[8] else None,
-            "created_at": row[9].isoformat() if row[9] else None,
-            "updated_at": row[10].isoformat() if row[10] else None,
-            "is_primary": row[11],
+            "created_at": row[8].isoformat() if row[8] else None,
+            "updated_at": row[9].isoformat() if row[9] else None,
+            "is_primary": row[10],
         }
         result.append(cap_dict)
     return result

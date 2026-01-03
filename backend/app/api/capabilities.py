@@ -66,8 +66,6 @@ class CapabilityResponse(BaseModel):
     description: str | None = None
     priority: int
     status: str
-    locked_at: str | None = None
-    verification_url: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     criteria_created: int | None = None  # Number of criteria created (for nested creation)

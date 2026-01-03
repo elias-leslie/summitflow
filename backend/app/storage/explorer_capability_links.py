@@ -124,7 +124,7 @@ def get_entry_capabilities(explorer_entry_id: int) -> list[dict[str, Any]]:
                 ecl.link_type,
                 ecl.created_at as link_created_at,
                 c.id, c.project_id, c.component_id, c.capability_id, c.name,
-                c.description, c.status, c.verification_url, c.priority,
+                c.description, c.status, c.priority,
                 c.created_at, c.updated_at
             FROM explorer_capability_links ecl
             JOIN capabilities c ON ecl.capability_id = c.id
@@ -148,10 +148,9 @@ def get_entry_capabilities(explorer_entry_id: int) -> list[dict[str, Any]]:
                     "name": row[7],
                     "description": row[8],
                     "status": row[9],
-                    "verification_url": row[10],
-                    "priority": row[11],
-                    "created_at": _to_iso_string(row[12]),
-                    "updated_at": _to_iso_string(row[13]),
+                    "priority": row[10],
+                    "created_at": _to_iso_string(row[11]),
+                    "updated_at": _to_iso_string(row[12]),
                 },
             }
             for row in rows
