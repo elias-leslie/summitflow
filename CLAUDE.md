@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-SummitFlow - AI-assisted development platform. See [AGENTS.md](AGENTS.md) for workflow.
+SummitFlow - AI-assisted development platform.
 
 ---
 
@@ -41,11 +41,10 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 
 ## Core Rules
 
-1. **Direct, technical, no fluff** - Sparring partner, not cheerleader
-2. **Backend changes need UI visibility** - Complete the vertical slice
-3. **Track discovered bugs immediately** - `st create "Fix: X" -t bug`
-4. **SummitFlow vs App** - Dev tooling goes in SummitFlow. User-facing functionality stays in the app.
-5. **Consolidate over create** - Check for existing implementations before writing new code
+1. **Backend changes need UI visibility** - Complete the vertical slice
+2. **Track discovered bugs immediately** - `st create "Fix: X" -t bug`
+3. **SummitFlow vs App** - Dev tooling goes in SummitFlow. User-facing functionality stays in the app.
+4. **Consolidate over create** - Check for existing implementations before writing new code
 
 ---
 
