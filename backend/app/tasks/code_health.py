@@ -142,12 +142,18 @@ def daily_code_health_scan(
         "true_positive": 0,
         "needs_refactor": 0,
     }
+    memory_reused = 0
 
     if findings:
-        classifier = CodeHealthClassifier()
+        # Pass project_id to enable memory learning/reuse
+        classifier = CodeHealthClassifier(project_id=project_id)
 
         for finding, result in classifier.classify_batch(findings):
             classified[result.verdict.value] += 1
+
+            # Track memory reuse (indicated by [From memory] prefix in reason)
+            if result.reason.startswith("[From memory]"):
+                memory_reused += 1
 
             # Handle based on verdict
             if result.verdict == ClassificationVerdict.FALSE_POSITIVE:
@@ -186,6 +192,7 @@ def daily_code_health_scan(
         "skipped_files": skipped_files,
         "total_findings": len(findings),
         "classifications": classified,
+        "memory_reused": memory_reused,
     }
 
     logger.info("daily_code_health_scan: completed %s", summary)
