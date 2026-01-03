@@ -31,6 +31,9 @@ from ..schemas.steps import (
 )
 from ..schemas.tasks import (
     AcceptanceCriterion,
+    BatchCriterionResult,
+    BatchTaskCriteriaRequest,
+    BatchTaskCriteriaResponse,
     BatchTaskRequest,
     BatchTaskResponse,
     BatchTaskResult,
@@ -1059,6 +1062,80 @@ async def delete_task_criterion(
         "task_id": task_id,
         "criterion_id": criterion_id,
     }
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/criteria/batch",
+    response_model=BatchTaskCriteriaResponse,
+    status_code=201,
+)
+async def batch_create_task_criteria(
+    project_id: str,
+    task_id: str,
+    request: BatchTaskCriteriaRequest,
+) -> BatchTaskCriteriaResponse:
+    """Create multiple criteria and link them to a task in batch.
+
+    Handles partial failures: returns both created criteria and errors.
+    Each criterion is created independently, so failures don't rollback successes.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        request: List of criteria to create
+
+    Returns:
+        BatchTaskCriteriaResponse with created criteria and any errors.
+    """
+    _verify_task_project(task_id, project_id)
+
+    created: list[dict[str, Any]] = []
+    errors: list[BatchCriterionResult] = []
+
+    with get_connection() as conn:
+        for item in request.items:
+            try:
+                # Create the criterion
+                criterion = create_criterion(
+                    conn=conn,
+                    project_id=project_id,
+                    criterion=item.criterion,
+                    category=item.category,
+                    measurement=item.measurement,
+                    threshold=item.threshold,
+                    created_by_task_id=task_id,
+                )
+
+                # Link to task
+                link_criterion_to_task(conn, task_id, criterion["id"])
+
+                created.append(
+                    {
+                        "id": criterion["id"],
+                        "criterion_id": criterion["criterion_id"],
+                        "criterion": criterion["criterion"],
+                        "category": criterion["category"],
+                        "measurement": criterion["measurement"],
+                        "threshold": criterion["threshold"],
+                        "task_id": task_id,
+                    }
+                )
+
+                logger.info(
+                    "batch_task_criterion_created",
+                    task_id=task_id,
+                    criterion_id=criterion["criterion_id"],
+                )
+            except Exception as e:
+                errors.append(
+                    BatchCriterionResult(
+                        criterion=item.criterion[:50],
+                        success=False,
+                        error=str(e),
+                    )
+                )
+
+    return BatchTaskCriteriaResponse(created=created, errors=errors)
 
 
 @router.patch(
