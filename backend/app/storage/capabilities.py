@@ -40,7 +40,7 @@ def create_capability(
             INSERT INTO capabilities (project_id, component_id, capability_id, name, description, priority)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, verification_url, created_at, updated_at
+                      priority, status, created_at, updated_at
             """,
             (project_id, component_id, capability_id, name, description, priority),
         )
@@ -54,7 +54,6 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
     """Get a capability by project_id and capability_id.
 
     Status is computed on read via capability_criteria -> criterion_tests -> tests:
-    - 'locked' if locked_at is set
     - 'tests_passing' if all criteria have at least one passing test
     - 'pending' otherwise (no criteria, or any criterion without passing tests)
 
@@ -67,7 +66,6 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
             SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
                    c.priority,
                    CASE
-                       WHEN c.locked_at IS NOT NULL THEN 'locked'
                        WHEN NOT EXISTS (
                            SELECT 1 FROM capability_criteria WHERE capability_id = c.id
                        ) THEN 'pending'
@@ -85,7 +83,7 @@ def get_capability(project_id: str, capability_id: str) -> dict[str, Any] | None
                        ) THEN 'pending'
                        ELSE 'tests_passing'
                    END as status,
-                   c.locked_at, c.verification_url, c.created_at, c.updated_at
+                   c.created_at, c.updated_at
             FROM capabilities c
             WHERE c.project_id = %s AND c.capability_id = %s
             """,
@@ -110,7 +108,6 @@ def get_capability_by_id(capability_db_id: int) -> dict[str, Any] | None:
             SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
                    c.priority,
                    CASE
-                       WHEN c.locked_at IS NOT NULL THEN 'locked'
                        WHEN NOT EXISTS (
                            SELECT 1 FROM capability_criteria WHERE capability_id = c.id
                        ) THEN 'pending'
@@ -127,7 +124,7 @@ def get_capability_by_id(capability_db_id: int) -> dict[str, Any] | None:
                        ) THEN 'pending'
                        ELSE 'tests_passing'
                    END as status,
-                   c.locked_at, c.verification_url, c.created_at, c.updated_at
+                   c.created_at, c.updated_at
             FROM capabilities c
             WHERE c.id = %s
             """,
@@ -156,7 +153,6 @@ def list_capabilities(
     # Common SQL for computed status via capability_criteria -> criterion_tests -> tests
     status_sql = """
         CASE
-            WHEN c.locked_at IS NOT NULL THEN 'locked'
             WHEN NOT EXISTS (
                 SELECT 1 FROM capability_criteria WHERE capability_id = c.id
             ) THEN 'pending'
@@ -181,7 +177,7 @@ def list_capabilities(
                 f"""
                 SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
                        c.priority, {status_sql},
-                       c.locked_at, c.verification_url, c.created_at, c.updated_at
+                       c.created_at, c.updated_at
                 FROM capabilities c
                 WHERE c.project_id = %s AND c.component_id = %s
                 ORDER BY c.priority ASC, c.name ASC
@@ -193,7 +189,7 @@ def list_capabilities(
                 f"""
                 SELECT c.id, c.project_id, c.component_id, c.capability_id, c.name, c.description,
                        c.priority, {status_sql},
-                       c.locked_at, c.verification_url, c.created_at, c.updated_at
+                       c.created_at, c.updated_at
                 FROM capabilities c
                 WHERE c.project_id = %s
                 ORDER BY c.priority ASC, c.name ASC
@@ -220,7 +216,6 @@ def update_capability(
     Returns:
         Updated capability dict or None if not found.
     """
-    # verification_url removed - deprecated, to be dropped in Phase 4
     allowed_fields = {"name", "description", "priority", "status"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
@@ -240,7 +235,7 @@ def update_capability(
             SET {set_clause}
             WHERE project_id = %s AND capability_id = %s
             RETURNING id, project_id, component_id, capability_id, name, description,
-                      priority, status, locked_at, verification_url, created_at, updated_at
+                      priority, status, created_at, updated_at
             """).format(set_clause=sql.SQL(", ").join(set_clauses)),
             values,
         )
@@ -285,8 +280,6 @@ def _row_to_dict(row: tuple[Any, ...] | None) -> dict[str, Any]:
         "description": row[5],
         "priority": row[6],
         "status": row[7],
-        "locked_at": row[8].isoformat() if row[8] else None,
-        "verification_url": row[9],
-        "created_at": row[10].isoformat() if row[10] else None,
-        "updated_at": row[11].isoformat() if row[11] else None,
+        "created_at": row[8].isoformat() if row[8] else None,
+        "updated_at": row[9].isoformat() if row[9] else None,
     }

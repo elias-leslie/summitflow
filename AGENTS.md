@@ -99,6 +99,30 @@ git status  # MUST show "up to date with origin/main"
 | `git stash` with uncommitted | Commit first |
 | "I'll refactor later" | Create a task with `/task_it` |
 | Create without checking | Run pre-implementation-check first |
+| Mark step complete without proof | Verify file exists with `ls`, run command to confirm |
+| Drop columns without updating code | `grep -r <column> app/` must return empty |
+| Add schema SQL without running | Run `init_schema()` and verify table exists |
+
+---
+
+## Verification Gates (Post-Implementation)
+
+**Before marking ANY step complete:**
+
+| Step Type | Verification |
+|-----------|--------------|
+| "Create file X" | `ls -la <path>` shows file exists and non-empty |
+| "Write tests for Y" | `pytest <test-file> --collect-only` shows tests |
+| "Create table Z" | Query `information_schema.tables` shows table |
+| "Remove column W" | `grep -r "W" app/` returns nothing |
+| "Add function F" | `grep -n "def F" app/` shows location |
+
+**Before marking subtask complete:**
+- All steps actually verified (not just marked)
+- Tests pass: `pytest tests/ -x`
+- Types pass: `mypy app/`
+
+**Use `/task_verify <task-id>` to audit completed work.**
 
 ---
 

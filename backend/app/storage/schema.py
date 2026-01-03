@@ -573,8 +573,7 @@ def init_schema() -> None:
                     confidence FLOAT DEFAULT 1.0,
                     source VARCHAR(50) DEFAULT 'manual',
                     created_by VARCHAR(100),
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, list_type, category, pattern, COALESCE(file_glob, ''))
+                    created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """
         )
@@ -588,6 +587,13 @@ def init_schema() -> None:
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_code_health_category ON code_health_lists(category)"
+        )
+        # Unique constraint using COALESCE for nullable file_glob
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_code_health_unique
+            ON code_health_lists(project_id, list_type, category, pattern, COALESCE(file_glob, ''))
+            """
         )
 
         # Add new columns to existing tables if they don't exist
