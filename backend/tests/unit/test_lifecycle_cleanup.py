@@ -207,30 +207,45 @@ class TestPatternLifecycleCleanup:
         assert result == []
         mock_conn.commit.assert_not_called()
 
+    @patch("app.services.memory.pattern_service.PatternService")
     @patch("app.storage.memory_patterns.get_connection")
-    def test_enforce_pattern_cap_deletes_excess(self, mock_get_conn):
+    def test_enforce_pattern_cap_deletes_excess(self, mock_get_conn, mock_pattern_service):
         """Deletes lowest-ranked patterns when over cap."""
         from datetime import datetime
 
         from app.storage.memory_patterns import enforce_pattern_cap
 
+        # Create 52 patterns (2 over the 50 limit)
+        patterns = []
+        for i in range(52):
+            patterns.append(
+                (
+                    f"pat-{i:03d}",  # id
+                    f"Pattern {i}",  # title
+                    0.5,  # confidence
+                    i,  # usage_count
+                    datetime(2025, 11, 1) if i > 0 else None,  # last_used_at
+                    datetime(2025, 1, 1),  # created_at
+                )
+            )
+
         mock_cursor = MagicMock()
-        # First call: count returns 52
-        # Second call: returns 2 patterns to delete
-        mock_cursor.fetchone.return_value = (52,)
-        mock_cursor.fetchall.return_value = [
-            ("pat-low-1", "Low Pattern 1", 0.1, 0, None),
-            ("pat-low-2", "Low Pattern 2", 0.2, 1, datetime(2025, 11, 1)),
-        ]
+        mock_cursor.fetchall.return_value = patterns
         mock_conn = MagicMock()
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         mock_get_conn.return_value.__enter__.return_value = mock_conn
 
+        # Mock relevance calculation - lower index = lower relevance
+        mock_pattern_service.calculate_pattern_relevance.side_effect = lambda p: int(
+            p["id"].split("-")[1]
+        )
+
         result = enforce_pattern_cap("test-project", max_patterns=50)
 
+        # Should remove 2 patterns with lowest relevance (pat-000 and pat-001)
         assert len(result) == 2
-        assert result[0]["id"] == "pat-low-1"
-        assert result[1]["id"] == "pat-low-2"
+        assert result[0]["id"] == "pat-000"
+        assert result[1]["id"] == "pat-001"
         mock_conn.commit.assert_called_once()
 
     @patch("app.storage.memory_patterns.get_connection")
@@ -253,13 +268,20 @@ class TestPatternLifecycleCleanup:
 class TestHealthTaskLifecycleIntegration:
     """Tests for lifecycle integration in health checker."""
 
+    @patch("app.services.memory.health_checker.get_cleanup_settings")
     @patch("app.services.memory.health_checker.enforce_pattern_cap")
     @patch("app.services.memory.health_checker.cleanup_low_relevance_patterns")
-    def test_run_pattern_lifecycle_calls_cleanup(self, mock_cleanup, mock_cap):
+    def test_run_pattern_lifecycle_calls_cleanup(self, mock_cleanup, mock_cap, mock_settings):
         """Verifies lifecycle functions are called during health check."""
         from app.services.memory.health_checker import MemoryHealthChecker
         from app.services.memory.types import HealthReport
 
+        # Mock cleanup settings to return known values
+        mock_settings.return_value = {
+            "level": 1,
+            "min_relevance": 0.3,
+            "min_age_days": 30,
+        }
         mock_cleanup.return_value = []
         mock_cap.return_value = []
 
