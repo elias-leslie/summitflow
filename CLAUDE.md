@@ -49,6 +49,20 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 
 ---
 
+## Development Workflow
+
+```
+/spec_it → /task_it → /do_it
+```
+
+| Command | Purpose |
+|---------|---------|
+| `/spec_it` | Discovery, interview, output spec.json |
+| `/task_it` | Generate tasks with subtasks from spec |
+| `/do_it` | Execute subtasks, commit, close task |
+
+---
+
 ## Essential Commands
 
 ### st (SummitFlow Tasks)
