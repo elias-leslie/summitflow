@@ -449,38 +449,45 @@ def update(
 def close(
     task_id: str,
     reason: Annotated[str | None, typer.Option("-r", "--reason")] = None,
-    force: Annotated[bool, typer.Option("-f", "--force")] = False,
 ) -> None:
     """Close a task (mark as completed).
 
+    All subtasks must be complete and all acceptance criteria must be verified.
+    There is no bypass - if gates fail, complete the work first.
+
     Examples:
-        st close task-abc123 -r "Fixed the bug"
-        st close task-abc123 --force
+        st close task-abc123 -r "All subtasks completed"
     """
     client = STClient()
 
     try:
-        task = client.close_task(task_id, reason=reason, force=force)
+        task = client.close_task(task_id, reason=reason)
     except APIError as e:
-        # Provide helpful hints for common errors
-        detail = e.detail.lower()
-        hints: list[str] = []
+        # Parse error detail - might be dict with what_to_do instructions
+        detail = e.detail
+        if isinstance(detail, dict):
+            # Structured error with guidance
+            output_json(
+                {
+                    "error": detail.get("message", "Task close failed"),
+                    "what_to_do": detail.get("what_to_do", []),
+                    "incomplete_subtasks": detail.get("incomplete_subtasks", []),
+                    "unverified_criteria": detail.get("unverified_criteria", []),
+                }
+            )
+        else:
+            # Simple string error
+            detail_lower = detail.lower() if isinstance(detail, str) else ""
+            hints: list[str] = []
 
-        if "criteria" in detail or "unverified" in detail:
-            hints.append("Use --force to bypass criteria validation")
-            hints.append("Or verify pending criteria first")
+            if "status" in detail_lower or "transition" in detail_lower:
+                hints.append("Check task status with 'st show <id>'")
+                hints.append("Use 'st cancel <id>' for non-terminal states")
 
-        if "capability" in detail:
-            hints.append("Run 'st capability verify <id>' to check test status")
+            if "not found" in detail_lower:
+                hints.append("Verify task ID with 'st list'")
 
-        if "status" in detail or "transition" in detail:
-            hints.append("Check task status with 'st show <id>'")
-            hints.append("Use 'st cancel <id>' for non-terminal states")
-
-        if "not found" in detail:
-            hints.append("Verify task ID with 'st list'")
-
-        output_json({"error": e.detail, "hints": hints})
+            output_json({"error": detail, "hints": hints})
         raise typer.Exit(1) from None
 
     output_task(task)

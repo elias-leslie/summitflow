@@ -59,7 +59,7 @@ class TaskStatusUpdate(BaseModel):
     status: str  # pending, running, paused, failed, completed, pending_review, cancelled
     error_message: str | None = None
     reason: str | None = None  # Completion reason (stored in progress_log)
-    force: bool = False  # Bypass criteria validation on close
+    # NOTE: force flag removed - gates cannot be bypassed, complete the work instead
 
 
 class TaskLogEntry(BaseModel):

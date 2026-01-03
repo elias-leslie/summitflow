@@ -159,7 +159,6 @@ class STClient:
         status: str,
         error_message: str | None = None,
         reason: str | None = None,
-        force: bool = False,
     ) -> dict[str, Any]:
         """Update task status.
 
@@ -168,12 +167,11 @@ class STClient:
             status: New status
             error_message: Optional error message
             reason: Optional completion reason (stored in progress_log)
-            force: Bypass validation
 
         Returns:
             Updated task dict.
         """
-        data: dict[str, Any] = {"status": status, "force": force}
+        data: dict[str, Any] = {"status": status}
         if error_message:
             data["error_message"] = error_message
         if reason:
@@ -186,19 +184,20 @@ class STClient:
         self,
         task_id: str,
         reason: str | None = None,
-        force: bool = False,
     ) -> dict[str, Any]:
         """Close a task (mark as completed).
+
+        All subtasks must be complete and acceptance criteria verified.
+        There is no bypass - complete the work first.
 
         Args:
             task_id: Task ID
             reason: Completion reason (stored in progress_log)
-            force: Bypass validation
 
         Returns:
             Updated task dict.
         """
-        return self.update_status(task_id, "completed", reason=reason, force=force)
+        return self.update_status(task_id, "completed", reason=reason)
 
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         """Cancel a task (mark as cancelled from any non-terminal state).

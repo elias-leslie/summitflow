@@ -469,32 +469,58 @@ async def update_task_status(
     Args:
         project_id: Project ID
         task_id: Task ID
-        update: New status, optional error message, and force flag
+        update: New status and optional error message
 
     Note:
-        When completing a task with acceptance_criteria, all criteria must have
-        verified=true unless force=true.
+        When completing a task, all subtasks must be complete and all
+        acceptance criteria must be verified. There is no bypass.
     """
     task = _verify_task_project(task_id, project_id)
 
-    # Validate acceptance criteria when completing (unless force=true)
-    if update.status == "completed" and not update.force:
-        acceptance_criteria = task.get("acceptance_criteria") or []
-        if isinstance(acceptance_criteria, list) and acceptance_criteria:
-            unverified = [
-                crit.get("id", "unknown")
-                for crit in acceptance_criteria
-                if not crit.get("verified", False)
-            ]
-            if unverified:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "message": "Cannot complete task with unverified acceptance criteria",
-                        "unverified_criteria": unverified,
-                        "hint": "Use force=true to bypass this check",
-                    },
-                )
+    # Gate checks when completing - NO BYPASS ALLOWED
+    # These gates ensure work is actually done before marking complete
+    if update.status == "completed":
+        # Gate 1: All subtasks must be complete
+        from ..storage.subtasks import get_subtasks_for_task
+
+        subtasks = get_subtasks_for_task(task_id)
+        incomplete_subtasks = [s["subtask_id"] for s in subtasks if not s.get("passes")]
+        if incomplete_subtasks:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Cannot complete task with incomplete subtasks",
+                    "incomplete_subtasks": incomplete_subtasks,
+                    "what_to_do": [
+                        f"Complete subtask {s} using: st subtask pass {task_id} {s}"
+                        for s in incomplete_subtasks[:5]  # Show first 5
+                    ],
+                    "remaining": len(incomplete_subtasks),
+                },
+            )
+
+        # Gate 2: All acceptance criteria must be verified (from all sources)
+        with get_connection() as conn:
+            criteria = get_effective_criteria(conn, project_id, task)
+            if criteria:
+                unverified = [
+                    c.get("criterion_id", "unknown")
+                    for c in criteria
+                    if not c.get("verified", False)
+                ]
+                if unverified:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "message": "Cannot complete task with unverified acceptance criteria",
+                            "unverified_criteria": unverified,
+                            "what_to_do": [
+                                "Verify each criterion by running its linked test",
+                                "Use: st criterion verify <criterion-id> --by test",
+                                "Or if verified externally: st criterion verify <criterion-id> --manual 'evidence'",
+                            ],
+                        },
+                    )
 
     try:
         updated = task_store.update_task_status(
