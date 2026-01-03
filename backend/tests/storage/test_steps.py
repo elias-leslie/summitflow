@@ -5,6 +5,7 @@ from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.steps import StepGateError
 
 
 @pytest.fixture
@@ -277,3 +278,64 @@ class TestGetStepSummary:
         assert summary["total"] == 0
         assert summary["completed"] == 0
         assert summary["progress_percent"] == 0
+
+
+class TestStepGates:
+    """Tests for step sequential completion gate."""
+
+    def test_step_gate_blocks_out_of_order_completion(self, test_subtask):
+        """Cannot mark step 2 as passed if step 1 is not passed."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+
+        with pytest.raises(StepGateError) as exc_info:
+            step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
+
+        assert exc_info.value.missing_steps == [1]
+        assert "previous steps [1] are not complete" in str(exc_info.value)
+
+    def test_step_gate_allows_sequential_completion(self, test_subtask):
+        """Can mark step 2 as passed after step 1 is passed."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+
+        # Mark step 1 as passed
+        result1 = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
+        assert result1["passes"] is True
+
+        # Now step 2 should work
+        result2 = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
+        assert result2["passes"] is True
+
+    def test_step_gate_force_bypasses_check(self, test_subtask):
+        """Force flag bypasses gate check."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+
+        # With force=True, should work even without step 1
+        result = step_store.update_step_passes(
+            test_subtask["id"], step_number=2, passes=True, force=True
+        )
+        assert result["passes"] is True
+
+    def test_step_gate_first_step_no_check(self, test_subtask):
+        """First step has no gate check (no previous steps)."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+
+        # Step 1 should always work
+        result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
+        assert result["passes"] is True
+
+    def test_step_gate_reports_all_missing_steps(self, test_subtask):
+        """Gate reports all missing steps, not just first."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+
+        with pytest.raises(StepGateError) as exc_info:
+            step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
+
+        assert exc_info.value.missing_steps == [1, 2]
+
+    def test_clearing_step_has_no_gate(self, test_subtask):
+        """Setting passes=False has no gate check (can clear any step)."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+
+        # Can clear step 2 even if step 1 is not passed
+        result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=False)
+        assert result["passes"] is False

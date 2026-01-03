@@ -1736,10 +1736,19 @@ async def update_step(
     """
     _verify_task_project(task_id, project_id)
 
-    from ..storage.steps import update_step_passes
+    from ..storage.steps import StepGateError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
-    updated = update_step_passes(table_id, step_number, request.passes)
+    try:
+        updated = update_step_passes(table_id, step_number, request.passes, force=request.force)
+    except StepGateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(e),
+                "missing_steps": e.missing_steps,
+            },
+        ) from e
 
     if updated is None:
         raise HTTPException(

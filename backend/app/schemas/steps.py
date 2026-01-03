@@ -17,6 +17,7 @@ class StepUpdate(BaseModel):
     """Request model for updating step pass status."""
 
     passes: bool = Field(description="Whether step passes/is complete")
+    force: bool = Field(default=False, description="Bypass sequential gate check")
 
 
 class StepResponse(BaseModel):
