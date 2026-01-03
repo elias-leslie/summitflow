@@ -15,6 +15,7 @@ SummitFlow - AI-assisted development platform.
 | Run tests | `cd backend && .venv/bin/pytest` |
 | Type check | `cd backend && .venv/bin/mypy app/` |
 | Logs | `journalctl --user -u summitflow-backend -f` |
+| DB CLI | `source ~/.env.local && psql "$DATABASE_URL"` |
 
 ---
 
