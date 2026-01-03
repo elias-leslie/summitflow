@@ -2,9 +2,9 @@
 
 import {
   CheckCircle2,
-  Lock,
   Package,
   Layers,
+  Clock,
 } from "lucide-react";
 
 import type { TddComponent, TddCapability } from "@/lib/api";
@@ -26,7 +26,6 @@ interface ProgressStats {
     passing: number;
     failing: number;
     pending: number;
-    locked: number;
   };
 }
 
@@ -44,7 +43,6 @@ export function BuildProgress({ components, capabilities }: BuildProgressProps) 
       passing: capabilities.filter((c) => c.status === "tests_passing").length,
       failing: capabilities.filter((c) => c.status === "failing").length,
       pending: capabilities.filter((c) => c.status === "pending" || c.status === "not_implemented").length,
-      locked: capabilities.filter((c) => c.locked_at !== null).length,
     },
   };
 
@@ -53,8 +51,8 @@ export function BuildProgress({ components, capabilities }: BuildProgressProps) 
     ? Math.round((stats.capabilities.passing / stats.capabilities.total) * 100)
     : 0;
 
-  const lockedPercent = stats.capabilities.total > 0
-    ? Math.round((stats.capabilities.locked / stats.capabilities.total) * 100)
+  const failingPercent = stats.capabilities.total > 0
+    ? Math.round((stats.capabilities.failing / stats.capabilities.total) * 100)
     : 0;
 
   return (
@@ -68,25 +66,19 @@ export function BuildProgress({ components, capabilities }: BuildProgressProps) 
         <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
           {/* Stacked progress segments */}
           <div className="h-full flex">
-            {/* Locked (completed and verified) */}
-            <div
-              className="h-full bg-amber-500 transition-all duration-500"
-              style={{ width: `${lockedPercent}%` }}
-            />
-            {/* Passing but not locked */}
+            {/* Passing */}
             <div
               className="h-full bg-phosphor-500 transition-all duration-500"
-              style={{ width: `${progressPercent - lockedPercent}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
             {/* Failing */}
             <div
               className="h-full bg-rose-500 transition-all duration-500"
-              style={{ width: `${stats.capabilities.total > 0 ? (stats.capabilities.failing / stats.capabilities.total) * 100 : 0}%` }}
+              style={{ width: `${failingPercent}%` }}
             />
           </div>
         </div>
         <div className="flex justify-between text-xs text-slate-500 mt-2">
-          <span>{stats.capabilities.locked} locked</span>
           <span>{stats.capabilities.passing} passing</span>
           <span>{stats.capabilities.failing} failing</span>
           <span>{stats.capabilities.pending} pending</span>
@@ -134,16 +126,16 @@ export function BuildProgress({ components, capabilities }: BuildProgressProps) 
           </div>
         </div>
 
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-          <div className="flex items-center gap-2 text-amber-400 mb-2">
-            <Lock className="h-4 w-4" />
-            <span className="text-xs uppercase tracking-wider">Locked</span>
+        <div className="rounded-lg border border-slate-500/30 bg-slate-500/5 p-3">
+          <div className="flex items-center gap-2 text-slate-400 mb-2">
+            <Clock className="h-4 w-4" />
+            <span className="text-xs uppercase tracking-wider">Pending</span>
           </div>
-          <div className="text-2xl font-bold text-amber-400 mono">{stats.capabilities.locked}</div>
+          <div className="text-2xl font-bold text-slate-400 mono">{stats.capabilities.pending}</div>
           <div className="text-xs text-slate-500 mt-1">
-            {stats.capabilities.passing > 0
-              ? `${Math.round((stats.capabilities.locked / stats.capabilities.passing) * 100)}% of passing`
-              : "0% of passing"}
+            {stats.capabilities.total > 0
+              ? `${Math.round((stats.capabilities.pending / stats.capabilities.total) * 100)}% of total`
+              : "0% of total"}
           </div>
         </div>
       </div>

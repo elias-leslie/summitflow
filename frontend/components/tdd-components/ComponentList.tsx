@@ -7,13 +7,10 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronRight,
-  Lock,
-  Unlock,
   AlertTriangle,
   Clock,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TddComponent, TddCapability } from "@/lib/api";
@@ -23,7 +20,6 @@ interface ComponentListProps {
   capabilities: TddCapability[];
   isLoading: boolean;
   onSelectCapability: (capability: TddCapability) => void;
-  onLockCapability: (capabilityId: string) => void;
 }
 
 interface ComponentGroup {
@@ -33,7 +29,6 @@ interface ComponentGroup {
     passing: number;
     failing: number;
     pending: number;
-    locked: number;
   };
 }
 
@@ -95,7 +90,6 @@ export function ComponentList({
   capabilities,
   isLoading,
   onSelectCapability,
-  onLockCapability,
 }: ComponentListProps) {
   const [expandedComponents, setExpandedComponents] = useState<Set<number>>(new Set());
 
@@ -107,7 +101,6 @@ export function ComponentList({
         passing: compCapabilities.filter((c) => c.status === "tests_passing").length,
         failing: compCapabilities.filter((c) => c.status === "failing").length,
         pending: compCapabilities.filter((c) => c.status === "pending" || c.status === "not_implemented").length,
-        locked: compCapabilities.filter((c) => c.locked_at !== null).length,
       };
       return {
         component,
@@ -185,12 +178,6 @@ export function ComponentList({
                     {group.stats.pending}
                   </Badge>
                 )}
-                {group.stats.locked > 0 && (
-                  <Badge variant="amber" className="gap-1 text-xs">
-                    <Lock className="h-3 w-3" />
-                    {group.stats.locked}
-                  </Badge>
-                )}
               </div>
             </div>
 
@@ -213,22 +200,6 @@ export function ComponentList({
                     <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(capability.status)}`}>
                       {capability.status.replace("_", " ")}
                     </span>
-                    {capability.locked_at ? (
-                      <Lock className="h-4 w-4 text-amber-400" />
-                    ) : capability.status === "tests_passing" ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onLockCapability(capability.capability_id);
-                        }}
-                      >
-                        <Unlock className="h-3.5 w-3.5 mr-1" />
-                        Lock
-                      </Button>
-                    ) : null}
                   </div>
                 ))}
               </div>

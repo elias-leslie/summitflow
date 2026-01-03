@@ -21,7 +21,6 @@ import { ComponentSuggestions } from "@/components/tdd-components/ComponentSugge
 import {
   fetchTddComponents,
   fetchTddCapabilities,
-  lockTddCapability,
   type TddCapability,
 } from "@/lib/api";
 
@@ -87,7 +86,6 @@ export default function ComponentsPage() {
         if (statusFilter === "passing") return c.status === "tests_passing";
         if (statusFilter === "failing") return c.status === "failing";
         if (statusFilter === "pending") return c.status === "pending" || c.status === "not_implemented";
-        if (statusFilter === "locked") return c.locked_at !== null;
         return true;
       });
       // Only show components that have matching capabilities

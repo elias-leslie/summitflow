@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
   XCircle,
   HelpCircle,
-  Lock,
   FlaskConical,
   Link2,
   Timer,
@@ -23,11 +22,9 @@ import {
   SheetClose,
   SheetBody,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   fetchTddCapability,
-  lockTddCapability,
   type TddCapability,
   type TddCapabilityWithTests,
 } from "@/lib/api";
@@ -96,27 +93,12 @@ export function CapabilityDrawer({
   open,
   onOpenChange,
 }: CapabilityDrawerProps) {
-  const queryClient = useQueryClient();
-  const [isLocking, setIsLocking] = useState(false);
-
   // Fetch full capability details with tests
   const { data: capabilityDetails } = useQuery<TddCapabilityWithTests>({
     queryKey: ["tdd-capability", projectId, capability?.capability_id],
     queryFn: () => fetchTddCapability(projectId, capability!.capability_id),
     enabled: open && !!capability,
   });
-
-  const handleLock = async () => {
-    if (!capability) return;
-    setIsLocking(true);
-    try {
-      await lockTddCapability(projectId, capability.capability_id);
-      queryClient.invalidateQueries({ queryKey: ["tdd-capability", projectId, capability.capability_id] });
-      queryClient.invalidateQueries({ queryKey: ["tdd-capabilities", projectId] });
-    } finally {
-      setIsLocking(false);
-    }
-  };
 
   const details = capabilityDetails || capability;
   const tests = capabilityDetails?.tests || [];
@@ -152,12 +134,6 @@ export function CapabilityDrawer({
               <span className={`text-xs px-2 py-0.5 rounded border ${getStatusColor(details?.status || "pending")}`}>
                 {details?.status.replace("_", " ")}
               </span>
-              {details?.locked_at && (
-                <Badge variant="amber" className="gap-1 text-xs">
-                  <Lock className="h-3 w-3" />
-                  Locked
-                </Badge>
-              )}
             </div>
             <SheetTitle className="truncate">{details?.name}</SheetTitle>
             <p className="text-xs text-slate-500 mono mt-1">{details?.capability_id}</p>
@@ -166,18 +142,6 @@ export function CapabilityDrawer({
         </SheetHeader>
 
         <SheetBody className="space-y-6">
-          {/* Actions */}
-          {details && !details.locked_at && details.status === "tests_passing" && (
-            <Button onClick={handleLock} disabled={isLocking} className="w-full">
-              {isLocking ? (
-                <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-              ) : (
-                <Lock className="h-4 w-4 mr-2" />
-              )}
-              Lock Capability
-            </Button>
-          )}
-
           {/* Description */}
           {details?.description && (
             <div>
@@ -207,10 +171,8 @@ export function CapabilityDrawer({
               <div className="text-sm text-slate-300">{formatDate(details?.created_at || null)}</div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
-              <div className="text-xs text-slate-500 mb-1">Locked</div>
-              <div className="text-sm text-slate-300">
-                {details?.locked_at ? formatDate(details.locked_at) : "Not locked"}
-              </div>
+              <div className="text-xs text-slate-500 mb-1">Updated</div>
+              <div className="text-sm text-slate-300">{formatDate(details?.updated_at || null)}</div>
             </div>
           </div>
 

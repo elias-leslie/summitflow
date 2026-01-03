@@ -26,7 +26,6 @@ export interface TddCapability {
   description: string | null;
   priority: number;
   status: string;
-  locked_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -183,15 +182,6 @@ export async function fetchTddCapability(
   });
 }
 
-export async function lockTddCapability(
-  projectId: string,
-  capabilityId: string
-): Promise<TddCapability> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/capabilities/${capabilityId}/lock`,
-    { method: "POST", errorMessage: "Failed to lock capability" }
-  );
-}
 
 // =============================================================================
 // TDD Spec Generation API
