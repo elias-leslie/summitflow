@@ -133,7 +133,7 @@ class MemoryHealthChecker:
         return calculate_rule_adherence(project_id)
 
     def _apply_approved_patterns(self, project_id: str, patterns: list[dict[str, Any]]) -> int:
-        """Apply approved patterns by writing to learned-patterns.md."""
+        """Mark approved patterns as 'applied' in the database."""
         return apply_approved_patterns(project_id, patterns)
 
     def _auto_promote_patterns(self) -> int:
@@ -196,7 +196,7 @@ class MemoryHealthChecker:
             if applied_count > 0:
                 report.add_correction(
                     "auto_applied_patterns",
-                    f"Applied {applied_count} approved patterns to learned-patterns.md",
+                    f"Marked {applied_count} approved patterns as applied",
                     count=applied_count,
                     pattern_ids=[p.get("id") for p in approved_patterns[:applied_count]],
                 )

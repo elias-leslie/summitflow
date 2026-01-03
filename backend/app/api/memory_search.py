@@ -92,10 +92,11 @@ async def search_memory(
                 )
             )
 
-    # Search patterns (FTS only for now)
+    # Search patterns (FTS only for now) - only search applied patterns
     if type is None or type == "pattern":
         patterns = memory_storage.list_patterns(
             project_id=project_id,
+            status="applied",
             limit=limit,
         )
         for pattern in patterns:
@@ -103,6 +104,13 @@ async def search_memory(
             title = pattern.get("title", "") or ""
             content = pattern.get("content", "") or ""
             if q.lower() in title.lower() or q.lower() in content.lower():
+                # Score patterns higher - they're curated knowledge
+                # Base: 0.8, usage boost: +0.05 per use (max +0.15), confidence factor
+                base_score = 0.8
+                usage_boost = min(0.15, pattern.get("usage_count", 0) * 0.05)
+                confidence = pattern.get("confidence", 1.0)
+                score = min(0.95, (base_score + usage_boost) * confidence)
+
                 results.append(
                     SearchResult(
                         entity_type="pattern",
@@ -111,7 +119,7 @@ async def search_memory(
                         summary=pattern.get("content", "")[:200]
                         if pattern.get("content")
                         else None,
-                        score=0.5,  # Default score for patterns
+                        score=round(score, 2),
                         created_at=pattern.get("created_at"),
                         data=pattern,
                     )
