@@ -126,6 +126,18 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 6,  # Every 6 hours
         "kwargs": {"max_age_hours": 24},
     },
+    # Code health - daily scan at 2am UTC
+    "daily-code-health-scan": {
+        "task": "summitflow.daily_code_health_scan",
+        "schedule": 60 * 60 * 24,  # Every 24 hours
+        "kwargs": {"project_id": "summitflow"},
+    },
+    # Code health - weekly deep scan on Sundays at 3am UTC
+    "weekly-deep-scan": {
+        "task": "summitflow.weekly_deep_scan",
+        "schedule": 60 * 60 * 24 * 7,  # Weekly
+        "kwargs": {"project_id": "summitflow"},
+    },
 }
 
 
