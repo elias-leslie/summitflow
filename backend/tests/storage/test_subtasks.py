@@ -83,7 +83,7 @@ class TestCreateSubtask:
         assert subtask["phase"] == "backend"
 
     def test_create_subtask_with_steps(self, test_task):
-        """Test creating subtask with inline steps."""
+        """Test creating subtask with steps creates them in normalized table."""
         steps = ["Step 1", "Step 2", "Step 3"]
         subtask = subtask_store.create_subtask(
             task_id=test_task["id"],
@@ -93,7 +93,15 @@ class TestCreateSubtask:
             steps=steps,
         )
 
-        assert subtask["steps"] == steps
+        # JSONB column is deprecated - should be empty
+        assert subtask["steps"] == []
+
+        # Steps should be in normalized table
+        steps_from_table = step_store.get_steps_for_subtask(subtask["id"])
+        assert len(steps_from_table) == 3
+        assert steps_from_table[0]["description"] == "Step 1"
+        assert steps_from_table[1]["description"] == "Step 2"
+        assert steps_from_table[2]["description"] == "Step 3"
 
     def test_create_subtask_multiple(self, test_task):
         """Test creating multiple subtasks."""
@@ -288,6 +296,95 @@ class TestBulkCreateSubtasks:
 
         assert created[0]["display_order"] == 10
         assert created[1]["display_order"] == 5
+
+    def test_bulk_create_auto_creates_steps_in_normalized_table(self, test_task):
+        """Test that bulk_create_subtasks creates step rows in task_subtask_steps table."""
+        subtasks_data = [
+            {
+                "subtask_id": "1.1",
+                "description": "First subtask",
+                "steps": ["Step A", "Step B", "Step C"],
+            },
+            {
+                "subtask_id": "1.2",
+                "description": "Second subtask",
+                "steps": ["Step X", "Step Y"],
+            },
+        ]
+
+        created = subtask_store.bulk_create_subtasks(test_task["id"], subtasks_data)
+
+        assert len(created) == 2
+
+        # Verify steps created in normalized table (not JSONB)
+        # JSONB column should be empty since we don't use it
+        assert created[0]["steps"] == []
+        assert created[1]["steps"] == []
+
+        # Verify steps in task_subtask_steps table
+        steps_1_1 = step_store.get_steps_for_subtask(created[0]["id"])
+        assert len(steps_1_1) == 3
+        assert steps_1_1[0]["description"] == "Step A"
+        assert steps_1_1[1]["description"] == "Step B"
+        assert steps_1_1[2]["description"] == "Step C"
+        assert steps_1_1[0]["step_number"] == 1
+        assert steps_1_1[1]["step_number"] == 2
+        assert steps_1_1[2]["step_number"] == 3
+
+        steps_1_2 = step_store.get_steps_for_subtask(created[1]["id"])
+        assert len(steps_1_2) == 2
+        assert steps_1_2[0]["description"] == "Step X"
+        assert steps_1_2[1]["description"] == "Step Y"
+
+    def test_bulk_create_without_steps(self, test_task):
+        """Test bulk creating subtasks without steps still works."""
+        subtasks_data = [
+            {"subtask_id": "1.1", "description": "No steps subtask"},
+        ]
+
+        created = subtask_store.bulk_create_subtasks(test_task["id"], subtasks_data)
+
+        assert len(created) == 1
+        assert created[0]["steps"] == []
+
+        # No steps in normalized table either
+        steps = step_store.get_steps_for_subtask(created[0]["id"])
+        assert steps == []
+
+    def test_bulk_create_mixed_with_and_without_steps(self, test_task):
+        """Test bulk creating subtasks where some have steps and some don't."""
+        subtasks_data = [
+            {
+                "subtask_id": "1.1",
+                "description": "With steps",
+                "steps": ["Step 1", "Step 2"],
+            },
+            {
+                "subtask_id": "1.2",
+                "description": "Without steps",
+            },
+            {
+                "subtask_id": "1.3",
+                "description": "With more steps",
+                "steps": ["Step A"],
+            },
+        ]
+
+        created = subtask_store.bulk_create_subtasks(test_task["id"], subtasks_data)
+
+        assert len(created) == 3
+
+        # First subtask has 2 steps
+        steps_1_1 = step_store.get_steps_for_subtask(created[0]["id"])
+        assert len(steps_1_1) == 2
+
+        # Second subtask has no steps
+        steps_1_2 = step_store.get_steps_for_subtask(created[1]["id"])
+        assert len(steps_1_2) == 0
+
+        # Third subtask has 1 step
+        steps_1_3 = step_store.get_steps_for_subtask(created[2]["id"])
+        assert len(steps_1_3) == 1
 
 
 class TestDeleteSubtasksForTask:

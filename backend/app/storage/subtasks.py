@@ -6,7 +6,6 @@ normalized subtask data for structured task execution tracking.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -14,15 +13,17 @@ from typing import Any
 from psycopg.rows import TupleRow
 
 from .connection import get_connection
+from .steps import bulk_create_steps
 
 logger = logging.getLogger(__name__)
 
-# Column list for all subtask SELECT/RETURNING queries (10 columns)
-SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description, steps,
+# Column list for all subtask SELECT/RETURNING queries (9 columns)
+# Note: steps column was dropped in migration 045 - steps are in task_subtask_steps table
+SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description,
     passes, passed_at, display_order, created_at"""
 
 # Expected column count for row validation
-EXPECTED_SUBTASK_COLUMNS = 10
+EXPECTED_SUBTASK_COLUMNS = 9
 
 
 def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
@@ -36,9 +37,11 @@ def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a subtask dict.
 
-    Column order (10 columns):
-        id, task_id, subtask_id, phase, description, steps,
+    Column order (9 columns):
+        id, task_id, subtask_id, phase, description,
         passes, passed_at, display_order, created_at
+
+    Note: steps field is always [] - steps are in task_subtask_steps table
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -50,11 +53,11 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "subtask_id": row[2],
         "phase": row[3],
         "description": row[4],
-        "steps": row[5] if row[5] else [],
-        "passes": row[6],
-        "passed_at": row[7].isoformat() if row[7] else None,
-        "display_order": row[8],
-        "created_at": row[9].isoformat() if row[9] else None,
+        "steps": [],  # Steps are in task_subtask_steps table
+        "passes": row[5],
+        "passed_at": row[6].isoformat() if row[6] else None,
+        "display_order": row[7],
+        "created_at": row[8].isoformat() if row[8] else None,
     }
 
 
@@ -68,13 +71,16 @@ def create_subtask(
 ) -> dict[str, Any]:
     """Create a new subtask.
 
+    Also creates step rows in task_subtask_steps table when steps are provided.
+    The JSONB steps column is not used (deprecated).
+
     Args:
         task_id: Parent task ID (must exist in tasks table)
         subtask_id: Hierarchical ID like "1.1", "2.3"
         description: Subtask description
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
-        steps: Optional list of step strings
+        steps: Optional list of step strings - creates rows in task_subtask_steps
 
     Returns:
         The created subtask dict.
@@ -91,8 +97,8 @@ def create_subtask(
         cur.execute(
             f"""
             INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                       steps, display_order)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s)
+                                       display_order)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING {SUBTASK_COLUMNS}
             """,
             (
@@ -101,12 +107,19 @@ def create_subtask(
                 subtask_id,
                 phase,
                 description,
-                json.dumps(steps),
                 display_order,
             ),
         )
         row = cur.fetchone()
         conn.commit()
+
+    # Create steps in normalized table
+    if steps:
+        try:
+            bulk_create_steps(table_id, steps)
+        except Exception as e:
+            logger.error("Failed to create steps for subtask %s: %s", table_id, e)
+            # Continue - subtask created, steps failed (partial success)
 
     logger.debug("Created subtask %s for task %s", subtask_id, task_id)
     return _row_to_dict(row)
@@ -244,13 +257,16 @@ def bulk_create_subtasks(
 ) -> list[dict[str, Any]]:
     """Create multiple subtasks for a task in a single transaction.
 
+    Also creates step rows in task_subtask_steps table when steps are provided.
+    The JSONB steps column is not used (deprecated).
+
     Args:
         task_id: Parent task ID
         subtasks: List of subtask dicts with keys:
             - subtask_id: str (required) - e.g., "1.1"
             - description: str (required)
             - phase: str (optional)
-            - steps: list[str] (optional)
+            - steps: list[str] (optional) - creates rows in task_subtask_steps
             - display_order: int (optional, auto-assigned if missing)
 
     Returns:
@@ -263,6 +279,8 @@ def bulk_create_subtasks(
         return []
 
     created = []
+    steps_to_create: list[tuple[str, list[str]]] = []
+
     with get_connection() as conn, conn.cursor() as cur:
         for idx, subtask in enumerate(subtasks):
             subtask_id = subtask["subtask_id"]
@@ -273,8 +291,8 @@ def bulk_create_subtasks(
             cur.execute(
                 f"""
                 INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                           steps, display_order)
-                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s)
+                                           display_order)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING {SUBTASK_COLUMNS}
                 """,
                 (
@@ -283,14 +301,25 @@ def bulk_create_subtasks(
                     subtask_id,
                     subtask.get("phase"),
                     subtask["description"],
-                    json.dumps(steps),
                     display_order,
                 ),
             )
             row = cur.fetchone()
             created.append(_row_to_dict(row))
 
+            # Queue steps for creation after subtask commit
+            if steps:
+                steps_to_create.append((table_id, steps))
+
         conn.commit()
+
+    # Create steps in normalized table (outside subtask transaction for safety)
+    for subtask_table_id, step_descriptions in steps_to_create:
+        try:
+            bulk_create_steps(subtask_table_id, step_descriptions)
+        except Exception as e:
+            logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
+            # Continue - subtask created, steps failed (partial success)
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created

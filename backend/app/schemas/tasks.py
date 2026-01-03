@@ -393,6 +393,9 @@ class BatchTaskCreate(BaseModel):
     task_type: Literal["feature", "bug", "task"] = "task"
     parent_task_id: str | None = None
     objective: str | None = None
+    subtasks: list[SubtaskCreate] | None = Field(
+        default=None, description="Nested subtasks to create with the task"
+    )
 
 
 class BatchTaskRequest(BaseModel):

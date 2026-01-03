@@ -332,6 +332,9 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     Handles partial failures: returns both created tasks and errors.
     Each task is created independently, so failures don't rollback successes.
 
+    Supports nested subtasks: if item.subtasks is provided, bulk_create_subtasks
+    is called automatically. Subtask steps are created in the normalized table.
+
     Note: This endpoint does NOT validate acceptance_criteria for batch creates.
     For tasks with acceptance criteria, use the single create endpoint.
 
@@ -342,6 +345,8 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     Returns:
         BatchTaskResponse with created tasks and any errors.
     """
+    from ..storage.subtasks import bulk_create_subtasks
+
     created: list[TaskResponse] = []
     errors: list[BatchTaskResult] = []
 
@@ -358,6 +363,27 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                 parent_task_id=item.parent_task_id,
                 objective=item.objective,
             )
+
+            # Create nested subtasks if provided
+            if item.subtasks:
+                try:
+                    subtask_dicts = [
+                        {
+                            "subtask_id": s.subtask_id,
+                            "phase": s.phase,
+                            "description": s.description,
+                            "steps": s.steps,
+                            "display_order": s.display_order,
+                        }
+                        for s in item.subtasks
+                    ]
+                    bulk_create_subtasks(task["id"], subtask_dicts)
+                except Exception as e:
+                    logger.warning(  # type: ignore[call-arg]
+                        "Failed to create subtasks for task %s: %s", task["id"], e
+                    )
+                    # Continue - task succeeded, subtasks failed (partial success)
+
             created.append(_task_to_response(task))
         except Exception as e:
             error_msg = str(e)
