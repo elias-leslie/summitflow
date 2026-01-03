@@ -21,6 +21,7 @@ interface MemoryStats {
   health: 'healthy' | 'degraded' | 'unhealthy';
   health_details: Record<string, string> | null;
   lifecycle: LifecycleStats | null;
+  last_access_time: string | null;
 }
 
 interface MetricCardProps {

@@ -53,6 +53,7 @@ class MemoryStats(BaseModel):
     filtering: FilteringMetrics | None = None
     lifecycle: LifecycleStats | None = None
     fast_path: FastPathMetrics | None = None
+    last_access_time: str | None = None  # ISO timestamp of most recent context access
 
 
 class PaginatedResponse(BaseModel):

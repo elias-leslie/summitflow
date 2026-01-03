@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-01-02T23:23:57.946703+00:00",
-  "scenarios_compared": 2,
-  "baseline_total_tools": 59,
-  "memory_total_tools": 53,
-  "baseline_total_time": 243.21,
-  "memory_total_time": 268.55,
-  "tool_change_percent": -10.16949152542373,
-  "time_change_percent": 10.418979482751531
+  "generated_at": "2026-01-03T00:15:15.294901+00:00",
+  "scenarios_compared": 3,
+  "baseline_total_tools": 88,
+  "memory_total_tools": 84,
+  "baseline_total_time": 316.54,
+  "memory_total_time": 396.5,
+  "tool_change_percent": -4.545454545454546,
+  "time_change_percent": 25.260630568016673
 }

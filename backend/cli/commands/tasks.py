@@ -208,12 +208,16 @@ def ready(
 def show(
     task_id: str,
     json_output: Annotated[bool, typer.Option("--json")] = False,
+    full: Annotated[
+        bool, typer.Option("--full", "-f", help="Show everything: subtasks, steps, progress log")
+    ] = False,
 ) -> None:
     """Show task details with subtask progress.
 
     Examples:
         st show task-abc123
         st show task-abc123 --json
+        st show task-abc123 --full    # Shows all details including progress log
     """
     client = STClient()
 
@@ -260,6 +264,26 @@ def show(
             if step_sum and step_sum.get("total", 0) > 0:
                 step_info = f" [{step_sum['completed']}/{step_sum['total']}]"
             console.print(f"  {icon} {sid}: {desc}{step_info}")
+
+            # In full mode, show all steps for each subtask
+            if full and s.get("steps"):
+                for step in s["steps"]:
+                    step_passes = step.get("passes", False)
+                    step_icon = "[green]✓[/]" if step_passes else "[dim]○[/]"
+                    step_num = step.get("step_number", "")
+                    step_desc = step.get("description", "")[:70]
+                    console.print(f"      {step_icon} {step_num}: {step_desc}")
+
+    # In full mode, show progress log
+    if full:
+        from ..output import console
+
+        progress_log = task.get("progress_log", "")
+        if progress_log:
+            console.print("\n[bold cyan]Progress Log:[/bold cyan]")
+            console.print("[dim]" + "-" * 60 + "[/dim]")
+            console.print(progress_log)
+            console.print("[dim]" + "-" * 60 + "[/dim]")
 
 
 @app.command()

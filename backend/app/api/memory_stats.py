@@ -162,6 +162,22 @@ async def get_memory_stats(
         token_row = cur.fetchone()
         token_spend_24h = token_row[0] if token_row else 0
 
+        # Get last access time from context_access_log
+        access_params: list[str] = []
+        if project_id:
+            access_params.append(project_id)
+        cur.execute(
+            sql.SQL("""
+            SELECT MAX(expanded_at)
+            FROM context_access_log
+            WHERE 1=1
+            {project_filter}
+            """).format(project_filter=project_filter),
+            tuple(access_params),
+        )
+        access_row = cur.fetchone()
+        last_access_time = access_row[0].isoformat() if access_row and access_row[0] else None
+
     # Determine health status
     health = "healthy"
     health_details = {}
@@ -215,6 +231,7 @@ async def get_memory_stats(
         filtering=FilteringMetrics(**filter_metrics),
         lifecycle=lifecycle,
         fast_path=fast_path,
+        last_access_time=last_access_time,
     )
 
 
