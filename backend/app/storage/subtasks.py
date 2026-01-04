@@ -113,16 +113,19 @@ def create_subtask(
         row = cur.fetchone()
         conn.commit()
 
+    result = _row_to_dict(row)
+
     # Create steps in normalized table
     if steps:
         try:
-            bulk_create_steps(table_id, steps)
+            created_steps = bulk_create_steps(table_id, steps)
+            result["steps_from_table"] = created_steps
         except Exception as e:
             logger.error("Failed to create steps for subtask %s: %s", table_id, e)
             # Continue - subtask created, steps failed (partial success)
 
     logger.debug("Created subtask %s for task %s", subtask_id, task_id)
-    return _row_to_dict(row)
+    return result
 
 
 def get_subtask(task_id: str, subtask_id: str) -> dict[str, Any] | None:
@@ -350,12 +353,21 @@ def bulk_create_subtasks(
         conn.commit()
 
     # Create steps in normalized table (outside subtask transaction for safety)
+    # Track which subtasks got steps so we can update the response
+    subtasks_with_steps: dict[str, list[dict[str, Any]]] = {}
     for subtask_table_id, step_descriptions in steps_to_create:
         try:
-            bulk_create_steps(subtask_table_id, step_descriptions)
+            created_steps = bulk_create_steps(subtask_table_id, step_descriptions)
+            subtasks_with_steps[subtask_table_id] = created_steps
         except Exception as e:
             logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
             # Continue - subtask created, steps failed (partial success)
+
+    # Update returned subtasks with their created steps
+    for subtask in created:
+        subtask_table_id = subtask["id"]
+        if subtask_table_id in subtasks_with_steps:
+            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created
