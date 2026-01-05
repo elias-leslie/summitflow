@@ -599,8 +599,8 @@ def get_effective_criteria(
     """Get effective criteria for a task from capability or task junction tables.
 
     Sources criteria from:
-    1. Capability (if task.capability_id is set) via capability_criteria junction
-    2. Task-specific criteria via task_criteria junction
+    1. Task-specific criteria via task_criteria junction (includes verification state)
+    2. Capability criteria (lazy-copied to task_criteria for verification tracking)
     3. JSONB fallback (for backward compatibility during migration)
 
     Args:
@@ -615,22 +615,26 @@ def get_effective_criteria(
     task_id = task.get("id")
     capability_id = task.get("capability_id")
 
-    # Source 1: Capability-linked criteria
-    if capability_id:
-        criteria = get_criteria_for_capability(conn, project_id, capability_id)
-        if criteria:
-            logger.debug(
-                f"criteria_from_capability: task_id={task_id}, capability_id={capability_id}, "
-                f"count={len(criteria)}"
-            )
-            return criteria
-
-    # Source 2: Task-specific criteria
+    # Source 1: Task-specific criteria (checked first for verification state)
     if task_id:
         criteria = get_criteria_for_task(conn, project_id, task_id)
         if criteria:
             logger.debug(f"criteria_from_task: task_id={task_id}, count={len(criteria)}")
             return criteria
+
+    # Source 2: Capability-linked criteria (lazy-copy to task_criteria)
+    if capability_id and task_id:
+        cap_criteria = get_criteria_for_capability(conn, project_id, capability_id)
+        if cap_criteria:
+            # Copy to task_criteria for per-task verification tracking
+            for c in cap_criteria:
+                link_criterion_to_task(conn, task_id, c["id"])
+            logger.debug(
+                f"criteria_copied_from_capability: task_id={task_id}, "
+                f"capability_id={capability_id}, count={len(cap_criteria)}"
+            )
+            # Return with verification state (now from task_criteria)
+            return get_criteria_for_task(conn, project_id, task_id)
 
     # Source 3: JSONB fallback (bridge until Phase 7 migration)
     jsonb_criteria = task.get("acceptance_criteria") or []
