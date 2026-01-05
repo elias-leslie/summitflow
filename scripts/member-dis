@@ -215,15 +215,18 @@ def expand(
         ..., help="Entity ID to expand (e.g., obs:abc12345, pat:def67890)"
     ),
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
-    use_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
-    """Expand an entity to get full content."""
+    """Expand an entity to get full content.
+
+    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    """
     project_id = get_project(project)
 
     result = api_post(f"/projects/{project_id}/context/expand", {"entity_id": entity_id})
 
-    if use_json:
-        console.print(json.dumps(result, indent=2, default=str))
+    if not human:
+        print(json.dumps(result, default=str))
         return
 
     # Human-readable output
@@ -266,15 +269,18 @@ def expand(
 def index(
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
     limit: int = typer.Option(20, "--limit", "-l", help="Max items per category"),
-    use_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
-    """Show context index - compact overview of available memory."""
+    """Show context index - compact overview of available memory.
+
+    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    """
     project_id = get_project(project)
 
     result = api_get(f"/projects/{project_id}/context/index", {"limit": limit})
 
-    if use_json:
-        console.print(json.dumps(result, indent=2, default=str))
+    if not human:
+        print(json.dumps(result, default=str))
         return
 
     # Human-readable output
@@ -320,9 +326,12 @@ def timeline(
     before: int = typer.Option(5, "--before", "-b", help="Items before anchor"),
     after: int = typer.Option(5, "--after", "-A", help="Items after anchor"),
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
-    use_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
-    """Show timeline of observations around an anchor point."""
+    """Show timeline of observations around an anchor point.
+
+    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    """
     project_id = get_project(project)
 
     params = {
@@ -333,8 +342,8 @@ def timeline(
 
     result = api_get(f"/projects/{project_id}/context/timeline", params)
 
-    if use_json:
-        console.print(json.dumps(result, indent=2, default=str))
+    if not human:
+        print(json.dumps(result, default=str))
         return
 
     # Human-readable output
