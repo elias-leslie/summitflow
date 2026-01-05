@@ -158,9 +158,12 @@ def search(
         None, "--type", "-t", help="Filter by type: observation, pattern, user_prompt"
     ),
     limit: int = typer.Option(10, "--limit", "-l", help="Max results"),
-    use_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
-    """Search project memory for observations, patterns, and prompts."""
+    """Search project memory for observations, patterns, and prompts.
+
+    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    """
     project_id = get_project(project)
 
     params = {
@@ -173,8 +176,8 @@ def search(
 
     result = api_get("/memory/search", params)
 
-    if use_json:
-        console.print(json.dumps(result, indent=2, default=str))
+    if not human:
+        print(json.dumps(result, default=str))
         return
 
     # Human-readable output

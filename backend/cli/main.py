@@ -19,6 +19,7 @@ from .commands import (
     worktree,
 )
 from .config import set_project_override
+from .output import set_human_output
 
 app = typer.Typer(name="st", help="SummitFlow Tasks CLI")
 
@@ -53,14 +54,25 @@ def main(
             envvar="ST_PROJECT_ID",
         ),
     ] = None,
+    human: Annotated[
+        bool,
+        typer.Option(
+            "--human",
+            help="Pretty-print JSON output for human readability",
+        ),
+    ] = False,
 ) -> None:
     """SummitFlow Tasks CLI - task management for development workflows.
 
     Project is auto-detected from current directory. Override with -P/--project.
+    Output is compact JSON by default. Use --human for pretty-printed output.
     """
     # Set project override if provided
     if project:
         set_project_override(project)
+
+    # Set human output mode
+    set_human_output(human)
 
     if ctx.invoked_subcommand is None:
         print(ctx.get_help())

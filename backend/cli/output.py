@@ -1,6 +1,7 @@
 """JSON output formatters for CLI.
 
 All output functions emit JSON for AI agent consumption.
+Default: compact JSON (single-line). Use --human for pretty-printed.
 """
 
 from __future__ import annotations
@@ -14,10 +15,24 @@ import typer
 if TYPE_CHECKING:
     from .client import APIError
 
+# Module-level flag for human-readable output
+_human_output: bool = False
+
+
+def set_human_output(enabled: bool) -> None:
+    """Enable or disable human-readable (pretty-printed) output."""
+    global _human_output
+    _human_output = enabled
+
 
 def output_json(data: Any) -> None:
-    """Output data as JSON to stdout."""
-    print(json.dumps(data, default=str, indent=2))
+    """Output data as JSON to stdout.
+
+    Default: compact single-line JSON for AI consumption.
+    With --human flag: pretty-printed with indent=2.
+    """
+    indent = 2 if _human_output else None
+    print(json.dumps(data, default=str, indent=indent))
 
 
 def output_task(task: dict[str, Any]) -> None:
