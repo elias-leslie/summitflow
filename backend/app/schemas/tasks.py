@@ -315,6 +315,8 @@ class TaskResponse(BaseModel):
     # Optional blockers context (when include=blockers)
     blockers: list[BlockerInfo] | None = None
     blocked_by_incomplete: bool | None = None
+    # Subtask summary (when include=subtasks or from list_ready_tasks)
+    subtask_summary: SubtaskSummary | None = None
 
 
 class TaskListResponse(BaseModel):

@@ -56,6 +56,7 @@ from ..schemas.tasks import (
     StartTaskRequest,
     SubtaskCreate,
     SubtaskResponse,
+    SubtaskSummary,
     SubtaskUpdate,
     TaskCreate,
     TaskListResponse,
@@ -175,6 +176,17 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
                 if crit.get("id") or crit.get("criterion") or crit.get("description")
             ]
 
+    # Handle subtask summary (from list_ready_tasks with JOIN)
+    subtask_summary_obj = None
+    if task.get("subtask_summary") is not None:
+        ss = task["subtask_summary"]
+        subtask_summary_obj = SubtaskSummary(
+            total=ss.get("total", 0),
+            completed=ss.get("completed", 0),
+            next_subtask_id=ss.get("next_subtask_id"),
+            progress_percent=ss.get("progress_percent", 0.0),
+        )
+
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
@@ -208,6 +220,8 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         # Optional blockers context
         blockers=blockers_list,
         blocked_by_incomplete=blocked_by_incomplete,
+        # Subtask summary (from list_ready_tasks with JOIN)
+        subtask_summary=subtask_summary_obj,
     )
 
 

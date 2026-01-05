@@ -620,13 +620,22 @@ def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         limit: Max results (default 50)
 
     Returns:
-        List of ready task dicts, ordered by priority then creation date.
+        List of ready task dicts with subtask_summary, ordered by priority then creation date.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT {TASK_COLUMNS_ALIASED}
+            SELECT {TASK_COLUMNS_ALIASED},
+                   COALESCE(sub.total, 0) as subtask_total,
+                   COALESCE(sub.completed, 0) as subtask_completed
             FROM tasks t
+            LEFT JOIN (
+                SELECT task_id,
+                       COUNT(*) as total,
+                       SUM(CASE WHEN passes THEN 1 ELSE 0 END) as completed
+                FROM task_subtasks
+                GROUP BY task_id
+            ) sub ON t.id = sub.task_id
             WHERE t.project_id = %s
               AND t.status = 'pending'
               AND NOT EXISTS (
@@ -643,7 +652,39 @@ def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         )
         rows = cur.fetchall()
 
-    return [_row_to_dict(row) for row in rows]
+    return [_row_to_dict_with_subtask_summary(row) for row in rows]
+
+
+def _row_to_dict_with_subtask_summary(row: TupleRow | tuple[Any, ...]) -> dict[str, Any]:
+    """Convert a database row with subtask counts to a task dict.
+
+    Expects 36 columns: 34 task columns + subtask_total + subtask_completed.
+    """
+    if row is None:
+        raise ValueError("Row cannot be None")
+    if len(row) != EXPECTED_TASK_COLUMNS + 2:
+        raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS + 2} columns, got {len(row)}")
+
+    # First 34 columns are the standard task columns
+    task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
+
+    # Last 2 columns are subtask counts
+    subtask_total = row[EXPECTED_TASK_COLUMNS]
+    subtask_completed = row[EXPECTED_TASK_COLUMNS + 1]
+
+    # Calculate progress percent
+    progress_percent = 0.0
+    if subtask_total > 0:
+        progress_percent = round((subtask_completed / subtask_total) * 100, 1)
+
+    task["subtask_summary"] = {
+        "total": subtask_total,
+        "completed": subtask_completed,
+        "next_subtask_id": None,  # Would require additional query to determine
+        "progress_percent": progress_percent,
+    }
+
+    return task
 
 
 def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
