@@ -380,7 +380,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "running": {"paused", "failed", "completed", "pending_review", "cancelled"},
     "paused": {"running", "pending", "failed", "cancelled"},
     "failed": {"pending", "running", "cancelled"},  # Allow retry or cancel
-    "completed": set(),  # Terminal - no transitions allowed
+    "completed": {"failed", "pending"},  # Reopen if incorrectly closed
     "pending_review": {"completed", "failed", "running", "cancelled"},  # Opus review gate
     "cancelled": set(),  # Terminal - task was invalid/obsolete
 }
