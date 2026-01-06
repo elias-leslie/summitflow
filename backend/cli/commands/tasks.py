@@ -313,38 +313,88 @@ def ready(
 
 @app.command()
 def show(
-    task_id: str,
+    task_ids: Annotated[list[str], typer.Argument(help="One or more task IDs")],
     full: Annotated[
         bool, typer.Option("--full", "-f", help="Show everything: subtasks, steps, progress log")
     ] = False,
 ) -> None:
     """Show task details with subtask progress.
 
+    Supports multiple task IDs for batch inspection in a single call.
+
     Examples:
         st show task-abc123
         st show task-abc123 --full    # Shows all details including progress log
+        st show task-abc123 task-def456 task-ghi789  # Multiple tasks
     """
     client = STClient()
 
-    try:
-        task = client.get_task(task_id)
-        subtask_data = client.get_subtasks(task_id, include_steps=True)
-    except APIError as e:
-        handle_api_error(e)
-        return
+    for task_id in task_ids:
+        try:
+            task = client.get_task(task_id)
+            subtask_data = client.get_subtasks(task_id, include_steps=True)
+        except APIError as e:
+            handle_api_error(e)
+            continue
 
-    # Merge subtask info into task for output
-    subtasks = subtask_data.get("subtasks", [])
-    summary = subtask_data.get("summary", {})
+        # Merge subtask info into task for output
+        subtasks = subtask_data.get("subtasks", [])
+        summary = subtask_data.get("summary", {})
 
-    task["subtasks"] = subtasks
-    task["subtask_summary"] = summary
+        task["subtasks"] = subtasks
+        task["subtask_summary"] = summary
 
-    # Include full details if requested
-    if full:
-        task["full_mode"] = True
+        # Include full details if requested
+        if full:
+            task["full_mode"] = True
 
-    output_task(task)
+        output_task(task)
+
+        # Add separator between tasks if multiple
+        if len(task_ids) > 1 and task_id != task_ids[-1]:
+            typer.echo("---")
+
+
+@app.command()
+def inspect(
+    task_ids: Annotated[list[str], typer.Argument(help="One or more task IDs")],
+) -> None:
+    """Quick one-liner inspection of tasks.
+
+    Returns a compact summary for each task: id|status|subtasks:done/total|steps:done/total
+
+    Examples:
+        st inspect task-abc123
+        st inspect task-abc123 task-def456
+    """
+    client = STClient()
+
+    for task_id in task_ids:
+        try:
+            task = client.get_task(task_id)
+            subtask_data = client.get_subtasks(task_id, include_steps=True)
+        except APIError as e:
+            # Print error as inline message and continue
+            typer.echo(f"{task_id}|ERROR|{e!s}")
+            continue
+
+        status = task.get("status", "unknown")
+        summary = subtask_data.get("summary", {})
+        subtask_done = summary.get("completed", 0)
+        subtask_total = summary.get("total", 0)
+
+        # Count steps across all subtasks
+        subtasks = subtask_data.get("subtasks", [])
+        steps_done = 0
+        steps_total = 0
+        for s in subtasks:
+            step_summary = s.get("step_summary", {})
+            steps_done += step_summary.get("completed", 0)
+            steps_total += step_summary.get("total", 0)
+
+        typer.echo(
+            f"{task_id}|{status}|subtasks:{subtask_done}/{subtask_total}|steps:{steps_done}/{steps_total}"
+        )
 
 
 @app.command()

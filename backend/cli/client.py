@@ -44,6 +44,10 @@ class STClient:
         """Build project-scoped URL."""
         return f"{self.base_url}/projects/{self.project_id}{path}"
 
+    def _global_url(self, path: str) -> str:
+        """Build non-project-scoped URL for global operations."""
+        return f"{self.base_url}{path}"
+
     def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Handle response and raise APIError on failure."""
         if response.status_code >= 400:
@@ -82,7 +86,10 @@ class STClient:
         return self._handle_response(response)
 
     def get_task(self, task_id: str) -> dict[str, Any]:
-        """Get a task by ID.
+        """Get a task by ID (global lookup, no project context required).
+
+        Task IDs are globally unique, so this uses the non-project-scoped
+        endpoint for lookups that don't need project validation.
 
         Args:
             task_id: Task ID
@@ -90,7 +97,7 @@ class STClient:
         Returns:
             Task dict.
         """
-        response = self._client.get(self._url(f"/tasks/{task_id}"))
+        response = self._client.get(self._global_url(f"/tasks/{task_id}"))
         return self._handle_response(response)
 
     def list_tasks(

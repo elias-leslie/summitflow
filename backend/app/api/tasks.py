@@ -458,6 +458,23 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     return BatchTaskResponse(created=created, errors=errors)
 
 
+@router.get("/tasks/{task_id}", response_model=TaskResponse)
+async def get_task_global(task_id: str) -> TaskResponse:
+    """Get a task by ID without requiring project context.
+
+    Task IDs are globally unique, so project_id is not needed for lookup.
+    This endpoint is useful for CLI tools that know the task ID but not
+    the project context.
+
+    Args:
+        task_id: Task ID (e.g., "task-abc12345")
+    """
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return _task_to_response(task)
+
+
 @router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(project_id: str, task_id: str) -> TaskResponse:
     """Get a single task by ID.
