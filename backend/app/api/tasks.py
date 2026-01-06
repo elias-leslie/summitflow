@@ -187,6 +187,37 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
             progress_percent=ss.get("progress_percent", 0.0),
         )
 
+    # Handle subtasks (from batch create with nested subtasks)
+    subtasks_list = None
+    if task.get("subtasks") is not None:
+
+        def _format_datetime(val: Any) -> str | None:
+            """Convert datetime to ISO string, handling already-string values."""
+            if val is None:
+                return None
+            if isinstance(val, str):
+                return val
+            return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
+        subtasks_list = [
+            SubtaskResponse(
+                id=s["id"],
+                task_id=s["task_id"],
+                subtask_id=s["subtask_id"],
+                phase=s.get("phase"),
+                description=s["description"],
+                # Extract step descriptions from steps_from_table if present
+                steps=[step["description"] for step in s.get("steps_from_table", [])]
+                if s.get("steps_from_table")
+                else s.get("steps", []),
+                passes=s.get("passes", False),
+                passed_at=_format_datetime(s.get("passed_at")),
+                display_order=s.get("display_order", 0),
+                created_at=_format_datetime(s.get("created_at")),
+            )
+            for s in task["subtasks"]
+        ]
+
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
@@ -222,6 +253,8 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         blocked_by_incomplete=blocked_by_incomplete,
         # Subtask summary (from list_ready_tasks with JOIN)
         subtask_summary=subtask_summary_obj,
+        # Subtasks with steps (from batch create)
+        subtasks=subtasks_list,
     )
 
 
@@ -382,6 +415,7 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
             )
 
             # Create nested subtasks if provided
+            created_subtasks = None
             if item.subtasks:
                 try:
                     subtask_dicts = [
@@ -394,12 +428,16 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                         }
                         for s in item.subtasks
                     ]
-                    bulk_create_subtasks(task["id"], subtask_dicts)
+                    created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)
                 except Exception as e:
                     logger.warning(  # type: ignore[call-arg]
                         "Failed to create subtasks for task %s: %s", task["id"], e
                     )
                     # Continue - task succeeded, subtasks failed (partial success)
+
+            # Include subtasks in response if created
+            if created_subtasks:
+                task["subtasks"] = created_subtasks
 
             created.append(_task_to_response(task))
         except Exception as e:
