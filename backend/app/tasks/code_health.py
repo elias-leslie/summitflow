@@ -189,7 +189,7 @@ def daily_code_health_scan(
     return summary
 
 
-@shared_task(  # type: ignore[misc]
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.weekly_deep_scan",
     bind=True,
     autoretry_for=(Exception,),
