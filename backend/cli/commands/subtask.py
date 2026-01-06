@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 
@@ -11,18 +11,11 @@ from ..output import (
     handle_api_error,
     output_error,
     output_json,
+    output_subtasks,
     output_success,
 )
 
 app = typer.Typer(help="Subtask management commands")
-
-
-def _output_subtask_list(
-    subtasks: list[dict[str, Any]],
-    summary: dict[str, Any],
-) -> None:
-    """Output subtask list as JSON."""
-    output_json({"subtasks": subtasks, "summary": summary})
 
 
 @app.command("list")
@@ -45,7 +38,7 @@ def list_subtasks(
     subtasks = result.get("subtasks", [])
     summary = result.get("summary", {})
 
-    _output_subtask_list(subtasks, summary)
+    output_subtasks(subtasks, summary)
 
 
 @app.command("show")

@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_json, output_success
+from ..output import handle_api_error, output_steps, output_success
 
 app = typer.Typer(help="Step management commands")
 
@@ -109,4 +109,4 @@ def list_steps(
         handle_api_error(e)
         return
 
-    output_json(steps)
+    output_steps(steps, subtask_id)

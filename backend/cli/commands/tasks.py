@@ -305,7 +305,7 @@ def ready(
             output_json({"tasks": blocked_tasks, "blockers_impact": blockers_map})
         else:
             result = client.list_ready(limit=limit)
-            output_task_list(result["tasks"])
+            output_task_list(result["tasks"], header="READY")
     except APIError as e:
         handle_api_error(e)
         return

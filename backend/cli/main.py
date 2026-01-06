@@ -19,7 +19,7 @@ from .commands import (
     worktree,
 )
 from .config import set_project_override
-from .output import set_human_output
+from .output import set_compact_output, set_human_output, set_progress_only
 
 app = typer.Typer(name="st", help="SummitFlow Tasks CLI")
 
@@ -94,18 +94,36 @@ def main(
             help="Pretty-print JSON output for human readability",
         ),
     ] = False,
+    compact: Annotated[
+        bool,
+        typer.Option(
+            "--compact",
+            "-c",
+            help="TOON-style compact output (one line per item)",
+        ),
+    ] = False,
+    progress_only: Annotated[
+        bool,
+        typer.Option(
+            "--progress-only",
+            help="Show only progress summary (single line)",
+        ),
+    ] = False,
 ) -> None:
     """SummitFlow Tasks CLI - task management for development workflows.
 
     Project is auto-detected from current directory. Override with -P/--project.
     Output is compact JSON by default. Use --human for pretty-printed output.
+    Use --compact for TOON-style one-liner per item.
     """
     # Set project override if provided
     if project:
         set_project_override(project)
 
-    # Set human output mode
-    set_human_output(human)
+    # Set output modes (mutually exclusive: compact > progress_only > human)
+    set_human_output(human and not compact and not progress_only)
+    set_compact_output(compact or progress_only)
+    set_progress_only(progress_only)
 
     if ctx.invoked_subcommand is None:
         print(ctx.get_help())
