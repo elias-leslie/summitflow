@@ -123,3 +123,24 @@ def pass_subtask(
         return
 
     output_success(f"Marked subtask {subtask_id} as passed")
+
+
+@app.command("delete")
+def delete_subtask(
+    task_id: str,
+    subtask_id: str,
+) -> None:
+    """Delete a subtask and all its steps.
+
+    Examples:
+        st subtask delete task-abc123 99.1
+    """
+    client = STClient()
+
+    try:
+        client.delete_subtask(task_id, subtask_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_success(f"Deleted subtask {subtask_id} from task {task_id}")

@@ -110,3 +110,25 @@ def list_steps(
         return
 
     output_steps(steps, subtask_id)
+
+
+@app.command("delete")
+def delete_step(
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+) -> None:
+    """Delete a step from a subtask.
+
+    Examples:
+        st step delete task-abc123 1.1 3
+    """
+    client = STClient()
+
+    try:
+        client.delete_step(task_id, subtask_id, step_number)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_success(f"Deleted step {step_number} from subtask {subtask_id}")

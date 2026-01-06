@@ -1527,6 +1527,41 @@ async def update_task_subtask(
     return SubtaskResponse(**updated)
 
 
+@router.delete("/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}")
+async def delete_task_subtask(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+) -> dict[str, Any]:
+    """Delete a subtask and all its steps.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "99.1")
+
+    Returns:
+        Deletion confirmation with details.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.subtasks import delete_subtask
+
+    deleted = delete_subtask(task_id, subtask_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subtask {subtask_id} not found for task {task_id}",
+        )
+
+    return {
+        "status": "deleted",
+        "project_id": project_id,
+        "task_id": task_id,
+        "subtask_id": subtask_id,
+    }
+
+
 @router.post(
     "/projects/{project_id}/tasks/{task_id}/subtasks",
     response_model=SubtaskResponse,
@@ -1848,6 +1883,45 @@ async def update_step(
         )
 
     return StepResponse(**updated)
+
+
+@router.delete("/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}")
+async def delete_step_endpoint(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+) -> dict[str, Any]:
+    """Delete a single step from a subtask.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        step_number: Step number to delete (1-indexed)
+
+    Returns:
+        Deletion confirmation with details.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ..storage.steps import delete_step
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+    deleted = delete_step(table_id, step_number)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step {step_number} not found for subtask {subtask_id}",
+        )
+
+    return {
+        "status": "deleted",
+        "project_id": project_id,
+        "task_id": task_id,
+        "subtask_id": subtask_id,
+        "step_number": step_number,
+    }
 
 
 @router.get(

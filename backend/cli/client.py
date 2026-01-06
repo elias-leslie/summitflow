@@ -601,6 +601,19 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def delete_subtask(self, task_id: str, subtask_id: str) -> dict[str, Any]:
+        """Delete a subtask and all its steps.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "99.1")
+
+        Returns:
+            Deletion confirmation dict.
+        """
+        response = self._client.delete(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"))
+        return self._handle_response(response)
+
     # Steps
 
     def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:
@@ -685,6 +698,27 @@ class STClient:
         response = self._client.patch(
             self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
             json=data,
+        )
+        return self._handle_response(response)
+
+    def delete_step(
+        self,
+        task_id: str,
+        subtask_id: str,
+        step_number: int,
+    ) -> dict[str, Any]:
+        """Delete a step from a subtask.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            step_number: Step number to delete (1-indexed)
+
+        Returns:
+            Deletion confirmation dict.
+        """
+        response = self._client.delete(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}")
         )
         return self._handle_response(response)
 

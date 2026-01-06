@@ -295,6 +295,32 @@ def delete_steps_for_subtask(subtask_id: str) -> int:
     return count
 
 
+def delete_step(subtask_id: str, step_number: int) -> bool:
+    """Delete a single step from a subtask.
+
+    Args:
+        subtask_id: Parent subtask ID (e.g., "task-abc123-1.1")
+        step_number: Step number to delete
+
+    Returns:
+        True if step was deleted, False if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM task_subtask_steps WHERE subtask_id = %s AND step_number = %s",
+            (subtask_id, step_number),
+        )
+        deleted: bool = cur.rowcount > 0
+        conn.commit()
+
+    if deleted:
+        logger.info("Deleted step %d from subtask %s", step_number, subtask_id)
+    else:
+        logger.warning("Step %d not found in subtask %s", step_number, subtask_id)
+
+    return deleted
+
+
 def get_step_summary(subtask_id: str) -> dict[str, Any]:
     """Get summary of step completion for a subtask.
 

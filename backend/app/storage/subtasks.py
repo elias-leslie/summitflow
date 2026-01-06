@@ -290,6 +290,46 @@ def delete_subtasks_for_task(task_id: str) -> int:
     return count
 
 
+def delete_subtask(task_id: str, subtask_id: str) -> bool:
+    """Delete a single subtask and its steps.
+
+    Cascading delete: Steps are deleted first (FK constraint), then the subtask.
+
+    Args:
+        task_id: Parent task ID
+        subtask_id: Subtask ID to delete (e.g., "99.1")
+
+    Returns:
+        True if subtask was deleted, False if not found.
+    """
+    from .steps import delete_steps_for_subtask
+
+    table_id = _generate_subtask_id(task_id, subtask_id)
+
+    # First delete associated steps (FK cascade not configured)
+    steps_deleted = delete_steps_for_subtask(table_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM task_subtasks WHERE id = %s",
+            (table_id,),
+        )
+        deleted: bool = cur.rowcount > 0
+        conn.commit()
+
+    if deleted:
+        logger.info(
+            "Deleted subtask %s from task %s (%d steps removed)",
+            subtask_id,
+            task_id,
+            steps_deleted,
+        )
+    else:
+        logger.warning("Subtask %s not found in task %s", subtask_id, task_id)
+
+    return deleted
+
+
 def bulk_create_subtasks(
     task_id: str,
     subtasks: list[dict[str, Any]],
