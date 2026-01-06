@@ -128,12 +128,10 @@ def daily_code_health_scan(
             scanned_files += 1
 
         except Exception as e:
-            logger.warning("Failed to scan %s: %s", py_file, e)
+            logger.warning(f"Failed to scan {py_file}: {e}")
 
     logger.info(
-        "daily_code_health_scan: scanned %d files, found %d findings",
-        scanned_files,
-        len(findings),
+        f"daily_code_health_scan: scanned {scanned_files} files, found {len(findings)} findings"
     )
 
     # Classify findings if any

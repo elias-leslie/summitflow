@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from celery import shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.memory import DiaryService

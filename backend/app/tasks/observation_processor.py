@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 import redis
-from celery import shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.memory import ContextBuilder, ObservationExtractor

@@ -1422,8 +1422,13 @@ async def discuss_task_endpoint(
         response=result.response,
         updated_task=_task_to_response(updated_task) if result.updated_task else None,
         history=[
-            DiscussionMessage(role=h["role"], content=h["content"], timestamp="") for h in history
-        ],  # type: ignore[arg-type]
+            DiscussionMessage(
+                role=h["role"],  # type: ignore[arg-type]
+                content=h["content"],
+                timestamp="",
+            )
+            for h in history
+        ],
     )
 
 

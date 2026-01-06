@@ -68,7 +68,7 @@ class EmbeddingService:
         try:
             import google.auth
 
-            google.auth.default()
+            google.auth.default()  # type: ignore[no-untyped-call]
             return True
         except Exception:
             return False

@@ -248,7 +248,8 @@ def append_steps(
             "SELECT COALESCE(MAX(step_number), 0) FROM task_subtask_steps WHERE subtask_id = %s",
             (subtask_id,),
         )
-        max_step = cur.fetchone()[0]
+        row = cur.fetchone()
+        max_step: int = row[0] if row else 0
 
         created = []
         for idx, description in enumerate(descriptions, start=max_step + 1):

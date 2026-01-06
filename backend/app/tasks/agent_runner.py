@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.agents import AgentType, get_agent
