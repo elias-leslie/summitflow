@@ -8,7 +8,7 @@ SummitFlow - AI-assisted development platform.
 
 | Action | Command |
 |--------|---------|
-| Find work | `st ready` |
+| Find work | `st --compact ready` |
 | Claim work | `st update <id> --status running` |
 | Complete | `st close <id> --reason "Done"` |
 | Start services | `bash ~/summitflow/scripts/restart.sh` |
@@ -68,8 +68,8 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 ### st (SummitFlow Tasks)
 
 ```bash
-# Core workflow
-st ready                              # Tasks ready to work on
+# Core workflow (use --compact for reads, 96% token reduction)
+st --compact ready                    # Tasks ready to work on
 st update <id> --status running       # Claim task
 st close <id> --reason "Done"         # Complete task
 
@@ -78,7 +78,7 @@ st create "Title" -t task -p 2 -d "Description"
 st bug "Fix: X" -p 2                  # Shorthand for -t bug
 
 # Subtasks & Steps
-st subtask list <task-id>             # List subtasks
+st --compact subtask list <task-id>   # List subtasks
 st step pass <task-id> <subtask-id> <step-number>  # Mark step passed
 st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 ```
@@ -102,4 +102,4 @@ member-dis index                      # Show context overview
 
 ---
 
-**Version**: 3.0.0
+**Version**: 3.1.0
