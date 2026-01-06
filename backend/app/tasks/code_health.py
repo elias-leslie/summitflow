@@ -26,7 +26,7 @@ from ..storage import code_health_lists
 logger = get_logger(__name__)
 
 
-@shared_task(
+@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.daily_code_health_scan",
     bind=True,
     autoretry_for=(Exception,),
@@ -166,20 +166,12 @@ def daily_code_health_scan(
                     source="agent",
                     created_by="code-health-agent",
                 )
-                logger.info(
-                    "Added to allow list: %s in %s",
-                    finding.category,
-                    finding.file_path,
-                )
+                logger.info(f"Added to allow list: {finding.category} in {finding.file_path}")
 
             elif result.verdict == ClassificationVerdict.TRUE_POSITIVE:
                 # Create a task for this finding
                 _create_health_task(project_id, finding, result)
-                logger.info(
-                    "Created task for: %s in %s",
-                    finding.category,
-                    finding.file_path,
-                )
+                logger.info(f"Created task for: {finding.category} in {finding.file_path}")
 
             # NEEDS_REFACTOR goes to backlog (no immediate action)
 
@@ -193,11 +185,11 @@ def daily_code_health_scan(
         "memory_reused": memory_reused,
     }
 
-    logger.info("daily_code_health_scan: completed %s", summary)
+    logger.info(f"daily_code_health_scan: completed {summary}")
     return summary
 
 
-@shared_task(
+@shared_task(  # type: ignore[misc]
     name="summitflow.weekly_deep_scan",
     bind=True,
     autoretry_for=(Exception,),
@@ -223,7 +215,7 @@ def weekly_deep_scan(
     Returns:
         Summary dict with analysis results.
     """
-    logger.info("weekly_deep_scan: starting for project=%s", project_id)
+    logger.info(f"weekly_deep_scan: starting for project={project_id}")
 
     # Get project config
     project = get_project_config(project_id)
@@ -302,9 +294,9 @@ def weekly_deep_scan(
                 )
 
         except (SyntaxError, FileNotFoundError) as e:
-            logger.debug("Skipping %s: %s", py_file, e)
+            logger.debug(f"Skipping {py_file}: {e}")
         except Exception as e:
-            logger.warning("Failed to analyze %s: %s", py_file, e)
+            logger.warning(f"Failed to analyze {py_file}: {e}")
 
     summary = {
         "task": "weekly_deep_scan",
@@ -314,7 +306,7 @@ def weekly_deep_scan(
         "top_issues": files_with_issues[:10],  # Top 10 files with issues
     }
 
-    logger.info("weekly_deep_scan: completed %s", summary)
+    logger.info(f"weekly_deep_scan: completed {summary}")
     return summary
 
 

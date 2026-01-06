@@ -138,7 +138,7 @@ class ClaudeClient(LLMClient):
         """
         # Handle both sync and async contexts
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
             # No running loop - we're in a sync context (e.g., Celery worker)
             return asyncio.run(self._generate_async(prompt, system, working_dir))
