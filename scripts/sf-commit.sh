@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # sf-commit - Streamlined commit with TOON output for Claude
+# Version: 1.0.0
 # Usage: sf-commit [--push] [--task ID] [--type TYPE] [--full] [--skip-tests] [--msg "..."]
 #
 # Lets pre-commit handle lint/type checks. Only runs pytest separately.
