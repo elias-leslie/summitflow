@@ -42,6 +42,39 @@ app.add_typer(criterion.app, name="criterion", help="Criterion management")
 app.add_typer(projects.app, name="projects", help="Project management")
 
 
+@app.command(name="commands")
+def list_all_commands() -> None:
+    """List all commands and subcommands."""
+    # Root commands
+    print("ROOT COMMANDS:")
+    for cmd in tasks.app.registered_commands:
+        name = cmd.name or cmd.callback.__name__
+        doc = (cmd.callback.__doc__ or "").split("\n")[0]
+        print(f"  st {name:20} {doc}")
+
+    # Subcommand groups with their commands
+    subgroups = [
+        ("dep", deps.app, "Dependency management"),
+        ("subtask", subtask.app, "Subtask management"),
+        ("step", step.app, "Step management"),
+        ("capability", capabilities.app, "Capability management"),
+        ("component", components.app, "Component management"),
+        ("criterion", criterion.app, "Criterion management"),
+        ("test", tests.app, "Test management"),
+        ("worktree", worktree.app, "Git worktrees"),
+        ("sessions", sessions.app, "Agent sessions"),
+        ("autonomous", autonomous.app, "Autonomous execution"),
+        ("projects", projects.app, "Project management"),
+    ]
+
+    for group_name, subapp, description in subgroups:
+        print(f"\n{group_name.upper()} ({description}):")
+        for cmd in subapp.registered_commands:
+            name = cmd.name or cmd.callback.__name__
+            doc = (cmd.callback.__doc__ or "").split("\n")[0]
+            print(f"  st {group_name} {name:14} {doc}")
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
