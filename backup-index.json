@@ -4,6 +4,91 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20260106-060827.tar.gz",
+      "timestamp": "2026-01-06T06:16:56-05:00",
+      "size_bytes": 453077335,
+      "db_size_bytes": 227466930,
+      "status": "pending",
+      "verification": {
+        "verified": true,
+        "verified_at": "2026-01-06T06:09:10-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 316
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 58
+          },
+          "scripts": {
+            "count": 23
+          },
+          ".summitflow": {
+            "count": 30
+          },
+          "frontend": {
+            "count": 205
+          },
+          ".claude": {
+            "count": 23
+          },
+          "tasks": {
+            "count": 209
+          },
+          "data": {
+            "count": 2837
+          },
+          "mockups": {
+            "count": 7
+          },
+          "services": {
+            "count": 1
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "CLAUDE.md.bak": {
+            "count": 1
+          },
+          "AGENTS.md.bak": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          ".pre-commit-config.yaml": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          }
+        },
+        "total_files": 3759,
+        "checksum": "sha256:be99aa70fe71232b8b621b43aa4d754507d930132aa4776b612634e400c33f9f"
+      }
+    },
+    {
       "name": "summitflow-20260105-060836.tar.gz",
       "timestamp": "2026-01-05T06:09:23-05:00",
       "size_bytes": 446495094,
@@ -7471,5 +7556,5 @@
       }
     }
   ],
-  "last_updated": "2026-01-05T06:09:23-05:00"
+  "last_updated": "2026-01-06T06:16:56-05:00"
 }
