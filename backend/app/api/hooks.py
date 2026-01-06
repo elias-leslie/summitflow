@@ -22,6 +22,11 @@ from ..storage.agent_configs import get_memory_config
 from ..storage.connection import get_connection
 
 router = APIRouter()
+
+# Global memory system kill switch
+# Set MEMORY_SYSTEM_ENABLED=false to disable all memory capture
+# Framework preserved for migration to standalone system
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 logger = logging.getLogger(__name__)
 
 # Redis for filtering metrics
@@ -270,6 +275,15 @@ async def hook_tool_use(request: ToolUseRequest) -> HookResponse:
     This endpoint is called by PostToolUse hooks installed in
     ~/.claude/hooks/ or similar CLI hook directories.
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        return HookResponse(
+            status="skipped",
+            queued=False,
+            queue_item_id="skipped-system-disabled",
+            skip_reason="memory_system_disabled",
+        )
+
     # Track all tools received
     _increment_metric("tools_received")
 
@@ -432,6 +446,13 @@ async def hook_user_prompt_submit(
 
     Returns 202 Accepted for fire-and-forget behavior.
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        return UserPromptSubmitResponse(
+            status="skipped",
+            skip_reason="memory_system_disabled",
+        )
+
     from ..storage.agent_configs import is_memory_feature_enabled
     from ..storage.memory_prompts import create_user_prompt
 

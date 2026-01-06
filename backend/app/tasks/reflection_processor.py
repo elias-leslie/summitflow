@@ -11,6 +11,7 @@ Event-driven triggers:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import redis
@@ -21,6 +22,9 @@ from ..services.memory import ReflectionService
 from ..storage import memory as memory_storage
 
 logger = get_logger(__name__)
+
+# Global memory system kill switch - checked before processing
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Default trigger threshold
 DEFAULT_DIARY_THRESHOLD = 3
@@ -63,6 +67,11 @@ def process_reflection(
     Returns:
         Summary dict with suggestions/patterns created
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("reflection_processing_skipped: memory system disabled")
+        return {"status": "skipped", "reason": "memory_system_disabled"}
+
     logger.info(
         "reflection_processing_started",
         project_id=project_id,
@@ -137,6 +146,10 @@ def check_reflection_trigger(
     Returns:
         Summary dict indicating if reflection was triggered
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        return {"triggered": False, "reason": "memory_system_disabled"}
+
     try:
         # Check unreflected count
         count = memory_storage.get_unreflected_diary_count(project_id)
@@ -262,6 +275,11 @@ def process_pending_reflections(
     Returns:
         Summary dict with projects processed
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("process_pending_reflections_skipped: memory system disabled")
+        return {"status": "skipped", "reason": "memory_system_disabled"}
+
     logger.info("process_pending_reflections_started")
 
     try:

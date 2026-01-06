@@ -83,13 +83,13 @@ st step pass <task-id> <subtask-id> <step-number>  # Mark step passed
 st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 ```
 
-### member-dis (Memory)
+### member-dis (Memory) - DISABLED
 
-```bash
-member-dis search "query"             # Search observations
-member-dis expand <id>                # Get full content
-member-dis index                      # Show context overview
-```
+**Status:** Memory system disabled pending migration to standalone system.
+
+- **Migration plan:** `tasks/memory-system/memory-system-requirements.md`
+- **To re-enable:** Set `MEMORY_SYSTEM_ENABLED=true` in `backend/.env`, restart services
+- **Disabled:** 2026-01-06 - hooks, observation extraction, diary aggregation, embeddings, reflections
 
 ---
 
@@ -98,7 +98,7 @@ member-dis index                      # Show context overview
 - **Model Constants:** See `~/.claude/rules/model-standards.md` (never hardcode model strings)
 - **Pre-Implementation Checks:** See `~/.claude/skills/pre-implementation-check/SKILL.md`
 - **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
-- **Memory System:** Context is auto-injected at session start via hooks
+- **Memory System:** DISABLED - see `backend/.env` (`MEMORY_SYSTEM_ENABLED=false`)
 
 ---
 

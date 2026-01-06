@@ -8,6 +8,7 @@ Runs periodically to check memory system health and auto-correct issues:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -16,6 +17,9 @@ from ..logging_config import get_logger
 from ..services.memory.health_checker import MemoryHealthChecker
 
 logger = get_logger(__name__)
+
+# Global memory system kill switch - checked before processing
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
 @shared_task(  # type: ignore[untyped-decorator]
@@ -42,6 +46,11 @@ def run_memory_health_check(
     Returns:
         Health report summary with corrections and warnings.
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("memory_health_check_skipped: memory system disabled")
+        return {"status": "skipped", "reason": "memory_system_disabled"}
+
     logger.info(f"run_memory_health_check: starting for project={project_id}")
 
     try:
@@ -101,6 +110,11 @@ def run_weekly_deep_review(self: Any) -> dict[str, Any]:
     Returns:
         Summary of all project reviews with issues found.
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("run_weekly_deep_review_skipped: memory system disabled")
+        return {"status": "skipped", "reason": "memory_system_disabled"}
+
     from ..storage.connection import get_connection
 
     logger.info("run_weekly_deep_review: starting weekly review")

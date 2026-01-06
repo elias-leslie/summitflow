@@ -6,6 +6,7 @@ Tasks:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -19,6 +20,9 @@ from ..storage.memory_embeddings import (
 )
 
 logger = get_logger(__name__)
+
+# Global memory system kill switch - checked before processing
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Max items to process in one task execution
 BATCH_SIZE = 100
@@ -44,6 +48,16 @@ def process_pending_embeddings(self: Any, limit: int = BATCH_SIZE) -> dict[str, 
     Returns:
         Summary dict with processed counts
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("embedding_processing_skipped: memory system disabled")
+        return {
+            "status": "skipped",
+            "reason": "memory_system_disabled",
+            "observations_processed": 0,
+            "prompts_processed": 0,
+        }
+
     logger.info("embedding_processing_started", limit=limit)
 
     # Initialize embedding service

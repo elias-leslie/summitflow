@@ -6,6 +6,7 @@ Tasks:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import redis
@@ -22,6 +23,9 @@ from ..utils.rate_limiter import (
 )
 
 logger = get_logger(__name__)
+
+# Global memory system kill switch - checked before processing
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Max items to process in one task execution
 BATCH_SIZE = 50
@@ -53,6 +57,11 @@ def process_observation_queue(self: Any, limit: int = BATCH_SIZE) -> dict[str, A
     Returns:
         Summary dict with processed/failed counts
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("observation_queue_skipped: memory system disabled")
+        return {"processed": 0, "failed": 0, "skipped": 0, "throttled": 0, "disabled": True}
+
     logger.info("observation_queue_processing_started", limit=limit)
 
     processed = 0

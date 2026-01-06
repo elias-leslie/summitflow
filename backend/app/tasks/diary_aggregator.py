@@ -6,6 +6,7 @@ for the reflection system to analyze.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -15,6 +16,9 @@ from ..services.memory import DiaryService
 from ..storage import memory as memory_storage
 
 logger = get_logger(__name__)
+
+# Global memory system kill switch - checked before processing
+MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Scheduled sessions waiting for aggregation (session_id -> scheduled_at)
 _pending_sessions: dict[str, float] = {}
@@ -41,6 +45,11 @@ def aggregate_session_diary(self: Any, project_id: str, session_id: str) -> dict
     Returns:
         Summary dict with entry_id or skip reason
     """
+    # Global kill switch - memory system disabled pending migration
+    if not MEMORY_SYSTEM_ENABLED:
+        logger.debug("diary_aggregation_skipped: memory system disabled")
+        return {"status": "skipped", "reason": "memory_system_disabled"}
+
     logger.info(f"diary_aggregation_started: project={project_id}, session={session_id[:16]}...")
 
     # Check if diary entry already exists for this session (debounce)
