@@ -1560,6 +1560,10 @@ async def create_subtask_endpoint(
         steps=request.steps,
     )
 
+    # Convert steps_from_table (list of dicts) to steps (list of strings)
+    if subtask.get("steps_from_table"):
+        subtask["steps"] = [s["description"] for s in subtask["steps_from_table"]]
+
     return SubtaskResponse(**subtask)
 
 
