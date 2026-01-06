@@ -317,6 +317,9 @@ def show(
     full: Annotated[
         bool, typer.Option("--full", "-f", help="Show everything: subtasks, steps, progress log")
     ] = False,
+    summary: Annotated[
+        bool, typer.Option("--summary", "-s", help="One-liner: id|title|status|done/total|priority")
+    ] = False,
 ) -> None:
     """Show task details with subtask progress.
 
@@ -324,8 +327,9 @@ def show(
 
     Examples:
         st show task-abc123
-        st show task-abc123 --full    # Shows all details including progress log
-        st show task-abc123 task-def456 task-ghi789  # Multiple tasks
+        st show task-abc123 --summary  # One-liner with title and priority
+        st show task-abc123 --full     # Shows all details including progress log
+        st show task-abc123 task-def456  # Multiple tasks
     """
     client = STClient()
 
@@ -337,12 +341,23 @@ def show(
             handle_api_error(e)
             continue
 
+        # Summary mode: one-liner output
+        if summary:
+            ss = subtask_data.get("summary", {})
+            done = ss.get("completed", 0)
+            total = ss.get("total", 0)
+            title = task.get("title", "")[:40]  # Truncate long titles
+            status = task.get("status", "unknown")
+            priority = task.get("priority", 2)
+            typer.echo(f"{task_id}|{title}|{status}|{done}/{total}|P{priority}")
+            continue
+
         # Merge subtask info into task for output
         subtasks = subtask_data.get("subtasks", [])
-        summary = subtask_data.get("summary", {})
+        summary_data = subtask_data.get("summary", {})
 
         task["subtasks"] = subtasks
-        task["subtask_summary"] = summary
+        task["subtask_summary"] = summary_data
 
         # Include full details if requested
         if full:

@@ -405,7 +405,7 @@ class ImplementationExecutor:
                     subtask_full_id = current_task.get("subtask_full_id")
                     if subtask_full_id:
                         # Mark all steps as passed
-                        steps = current_task.get("steps_from_table") or []
+                        steps = current_task.get("steps") or []
                         for step in steps:
                             step_number = step.get("step_number")
                             if step_number and not step.get("passes"):
@@ -600,7 +600,7 @@ class ImplementationExecutor:
 
             # Found incomplete subtask - get its steps
             full_id = subtask.get("id", "")  # e.g., "task-abc123-1.1"
-            steps = subtask.get("steps_from_table") or []
+            steps = subtask.get("steps") or []
 
             # Convert to execution format compatible with plan_content tasks
             return {
@@ -608,8 +608,8 @@ class ImplementationExecutor:
                 "subtask_full_id": full_id,
                 "description": subtask.get("description", ""),
                 "phase": subtask.get("phase", ""),
-                "steps": [s.get("description", "") for s in steps],
-                "steps_from_table": steps,  # Keep full step objects for tracking
+                "step_descriptions": [s.get("description", "") for s in steps],
+                "steps": steps,  # Keep full step objects for tracking
                 "display_order": subtask.get("display_order", 0),
             }
 

@@ -94,15 +94,16 @@ class TestCreateSubtask:
             steps=steps,
         )
 
-        # JSONB column is deprecated - should be empty
-        assert subtask["steps"] == []
+        # Steps should be populated from normalized table
+        assert "steps" in subtask
+        assert len(subtask["steps"]) == 3
+        assert subtask["steps"][0]["description"] == "Step 1"
+        assert subtask["steps"][1]["description"] == "Step 2"
+        assert subtask["steps"][2]["description"] == "Step 3"
 
-        # Steps should be in normalized table
-        steps_from_table = step_store.get_steps_for_subtask(subtask["id"])
-        assert len(steps_from_table) == 3
-        assert steps_from_table[0]["description"] == "Step 1"
-        assert steps_from_table[1]["description"] == "Step 2"
-        assert steps_from_table[2]["description"] == "Step 3"
+        # Steps should also be retrievable via step storage
+        steps_from_storage = step_store.get_steps_for_subtask(subtask["id"])
+        assert len(steps_from_storage) == 3
 
     def test_create_subtask_multiple(self, test_task):
         """Test creating multiple subtasks."""
@@ -183,8 +184,8 @@ class TestGetSubtasksForTask:
         subtasks = subtask_store.get_subtasks_for_task(test_task["id"], include_steps=True)
 
         assert len(subtasks) == 1
-        assert "steps_from_table" in subtasks[0]
-        assert len(subtasks[0]["steps_from_table"]) == 2
+        assert "steps" in subtasks[0]
+        assert len(subtasks[0]["steps"]) == 2
         assert "step_summary" in subtasks[0]
         assert subtasks[0]["step_summary"]["total"] == 2
 
@@ -196,7 +197,7 @@ class TestGetSubtasksForTask:
         subtasks = subtask_store.get_subtasks_for_task(test_task["id"], include_steps=False)
 
         assert len(subtasks) == 1
-        assert "steps_from_table" not in subtasks[0]
+        assert "steps" not in subtasks[0]
 
 
 class TestUpdateSubtaskPasses:
@@ -317,25 +318,20 @@ class TestBulkCreateSubtasks:
 
         assert len(created) == 2
 
-        # Verify steps created in normalized table (not JSONB)
-        # JSONB column should be empty since we don't use it
-        assert created[0]["steps"] == []
-        assert created[1]["steps"] == []
+        # Verify steps populated directly in returned subtasks
+        assert "steps" in created[0]
+        assert len(created[0]["steps"]) == 3
+        assert created[0]["steps"][0]["description"] == "Step A"
+        assert created[0]["steps"][1]["description"] == "Step B"
+        assert created[0]["steps"][2]["description"] == "Step C"
+        assert created[0]["steps"][0]["step_number"] == 1
+        assert created[0]["steps"][1]["step_number"] == 2
+        assert created[0]["steps"][2]["step_number"] == 3
 
-        # Verify steps in task_subtask_steps table
-        steps_1_1 = step_store.get_steps_for_subtask(created[0]["id"])
-        assert len(steps_1_1) == 3
-        assert steps_1_1[0]["description"] == "Step A"
-        assert steps_1_1[1]["description"] == "Step B"
-        assert steps_1_1[2]["description"] == "Step C"
-        assert steps_1_1[0]["step_number"] == 1
-        assert steps_1_1[1]["step_number"] == 2
-        assert steps_1_1[2]["step_number"] == 3
-
-        steps_1_2 = step_store.get_steps_for_subtask(created[1]["id"])
-        assert len(steps_1_2) == 2
-        assert steps_1_2[0]["description"] == "Step X"
-        assert steps_1_2[1]["description"] == "Step Y"
+        assert "steps" in created[1]
+        assert len(created[1]["steps"]) == 2
+        assert created[1]["steps"][0]["description"] == "Step X"
+        assert created[1]["steps"][1]["description"] == "Step Y"
 
     def test_bulk_create_without_steps(self, test_task):
         """Test bulk creating subtasks without steps still works."""
@@ -346,7 +342,8 @@ class TestBulkCreateSubtasks:
         created = subtask_store.bulk_create_subtasks(test_task["id"], subtasks_data)
 
         assert len(created) == 1
-        assert created[0]["steps"] == []
+        # No steps key when none provided
+        assert "steps" not in created[0]
 
         # No steps in normalized table either
         steps = step_store.get_steps_for_subtask(created[0]["id"])

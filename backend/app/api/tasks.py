@@ -206,9 +206,9 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
                 subtask_id=s["subtask_id"],
                 phase=s.get("phase"),
                 description=s["description"],
-                # Extract step descriptions from steps_from_table if present
-                steps=[step["description"] for step in s.get("steps_from_table", [])]
-                if s.get("steps_from_table")
+                # Steps from storage: list of dicts with "description" key
+                steps=[step["description"] for step in s.get("steps", [])]
+                if s.get("steps") and isinstance(s["steps"][0], dict)
                 else s.get("steps", []),
                 passes=s.get("passes", False),
                 passed_at=_format_datetime(s.get("passed_at")),
@@ -1541,6 +1541,10 @@ async def update_task_subtask(
             detail=f"Subtask {subtask_id} not found for task {task_id}",
         )
 
+    # Add steps field if not present (update_subtask_passes doesn't fetch steps)
+    if "steps" not in updated:
+        updated["steps"] = []
+
     return SubtaskResponse(**updated)
 
 
@@ -1612,9 +1616,11 @@ async def create_subtask_endpoint(
         steps=request.steps,
     )
 
-    # Convert steps_from_table (list of dicts) to steps (list of strings)
-    if subtask.get("steps_from_table"):
-        subtask["steps"] = [s["description"] for s in subtask["steps_from_table"]]
+    # Convert steps (list of dicts) to steps (list of strings) for response
+    if subtask.get("steps") and isinstance(subtask["steps"][0], dict):
+        subtask["steps"] = [s["description"] for s in subtask["steps"]]
+    elif "steps" not in subtask:
+        subtask["steps"] = []
 
     return SubtaskResponse(**subtask)
 

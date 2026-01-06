@@ -53,7 +53,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "subtask_id": row[2],
         "phase": row[3],
         "description": row[4],
-        "steps": [],  # Steps are in task_subtask_steps table
+        # Note: "steps" field is populated separately when include_steps=True
         "passes": row[5],
         "passed_at": row[6].isoformat() if row[6] else None,
         "display_order": row[7],
@@ -119,7 +119,7 @@ def create_subtask(
     if steps:
         try:
             created_steps = bulk_create_steps(table_id, steps)
-            result["steps_from_table"] = created_steps
+            result["steps"] = created_steps
         except Exception as e:
             logger.error("Failed to create steps for subtask %s: %s", table_id, e)
             # Continue - subtask created, steps failed (partial success)
@@ -184,8 +184,7 @@ def get_subtasks_for_task(
 
         for subtask in subtasks:
             subtask_table_id = subtask["id"]  # Already in table ID format
-            steps = get_steps_for_subtask(subtask_table_id)
-            subtask["steps_from_table"] = steps
+            subtask["steps"] = get_steps_for_subtask(subtask_table_id)
             subtask["step_summary"] = get_step_summary(subtask_table_id)
 
     return subtasks
@@ -407,7 +406,7 @@ def bulk_create_subtasks(
     for subtask in created:
         subtask_table_id = subtask["id"]
         if subtask_table_id in subtasks_with_steps:
-            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
+            subtask["steps"] = subtasks_with_steps[subtask_table_id]
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created

@@ -21,112 +21,128 @@ from .commands import (
 from .config import set_project_override
 from .output import set_compact_output, set_human_output, set_progress_only
 
-app = typer.Typer(name="st", help="SummitFlow Tasks CLI")
+# Complete CLI reference - everything needed to use st in one place
+# Format: TOON-style, optimized for Claude consumption
+CLI_REFERENCE = """ST CLI - SummitFlow Tasks
+
+FLAGS: --compact(-c) --human --project(-P)<id> --progress-only
+
+WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
+
+TASKS:
+  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc]
+  list [--status S] [--type T] [--priority P]
+  ready                                    # unblocked tasks
+  show <id>... [--full] [--summary]        # --summary=one-liner
+  inspect <id>...                          # id|status|done/total
+  update <id> [--status pending|running|paused|completed|failed|cancelled] [-d desc] [-p 0-4]
+  close <id> --reason <text>
+  cancel <id> --reason <text>
+  delete <id>
+  bug <title> [-p 0-4] [-d desc]           # shorthand: create -t bug
+  claim <id> [--lock 30] [--release]       # lock task for N minutes
+  exec <id> [--agent claude|gemini]
+  log <id> <message>
+
+SUBTASK:
+  subtask list <task-id>
+  subtask show <task-id> <subtask-id>
+  subtask create <task-id> <sub-id> <desc> [--phase P] [--steps "a,b,c"]
+  subtask pass <task-id> <subtask-id>
+  subtask delete <task-id> <subtask-id>
+
+STEP:
+  step list <task-id> <subtask-id>
+  step pass <task-id> <subtask-id> <step#>
+  step create <task-id> <subtask-id> --steps "a,b,c"
+  step add <task-id> <subtask-id> --steps "a,b,c"
+  step delete <task-id> <subtask-id> <step#>
+
+DEP:
+  dep list <task-id>
+  dep add <task-id> <depends-on-id>
+  dep rm <task-id> <depends-on-id>
+
+PROJECTS: projects list | projects current
+
+CAPABILITY: capability list | show <id> | create <name> --component <id> | verify <id>
+
+COMPONENT: component list | show <id> | create <name> [-d desc]
+
+CRITERION: criterion verify <id> --by test|manual [--evidence "..."]
+
+TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
+
+WORKTREE: worktree list | worktree prune
+
+SESSIONS: sessions list [--status S] | sessions show <id>
+
+AUTONOMOUS: autonomous enable | disable | status
+
+EXAMPLES:
+  st --compact ready                       # find work
+  st update task-abc --status running      # claim
+  st --compact subtask list task-abc       # view subtasks
+  st step pass task-abc 1.1 1              # mark step 1 done
+  st subtask pass task-abc 1.1             # mark subtask done
+  st close task-abc --reason "Done"        # complete task
+"""
+
+app = typer.Typer(
+    name="st",
+    help=CLI_REFERENCE,
+    no_args_is_help=True,
+)
 
 # Register task commands at root level
 for cmd in tasks.app.registered_commands:
     app.command(name=cmd.name)(cmd.callback)
 
-# Register subcommand groups
-app.add_typer(deps.app, name="dep", help="Dependency management")
-app.add_typer(capabilities.app, name="capability", help="Capability management")
+# Register subcommand groups (hidden from main help - reference above is complete)
+app.add_typer(deps.app, name="dep")
+app.add_typer(capabilities.app, name="capability")
 app.add_typer(capabilities.app, name="cap", hidden=True)  # Alias
-app.add_typer(tests.app, name="test", help="Test management")
-app.add_typer(subtask.app, name="subtask", help="Subtask management")
-app.add_typer(step.app, name="step", help="Step management")
-app.add_typer(autonomous.app, name="autonomous", help="Autonomous execution")
-app.add_typer(sessions.app, name="sessions", help="Agent sessions")
-app.add_typer(worktree.app, name="worktree", help="Git worktrees")
-app.add_typer(components.app, name="component", help="Component management")
-app.add_typer(criterion.app, name="criterion", help="Criterion management")
-app.add_typer(projects.app, name="projects", help="Project management")
+app.add_typer(tests.app, name="test")
+app.add_typer(subtask.app, name="subtask")
+app.add_typer(step.app, name="step")
+app.add_typer(autonomous.app, name="autonomous")
+app.add_typer(sessions.app, name="sessions")
+app.add_typer(worktree.app, name="worktree")
+app.add_typer(components.app, name="component")
+app.add_typer(criterion.app, name="criterion")
+app.add_typer(projects.app, name="projects")
 
 
-@app.command(name="commands")
-def list_all_commands() -> None:
-    """List all commands and subcommands."""
-    # Root commands
-    print("ROOT COMMANDS:")
-    for cmd in tasks.app.registered_commands:
-        name = cmd.name or cmd.callback.__name__
-        doc = (cmd.callback.__doc__ or "").split("\n")[0]
-        print(f"  st {name:20} {doc}")
-
-    # Subcommand groups with their commands
-    subgroups = [
-        ("dep", deps.app, "Dependency management"),
-        ("subtask", subtask.app, "Subtask management"),
-        ("step", step.app, "Step management"),
-        ("capability", capabilities.app, "Capability management"),
-        ("component", components.app, "Component management"),
-        ("criterion", criterion.app, "Criterion management"),
-        ("test", tests.app, "Test management"),
-        ("worktree", worktree.app, "Git worktrees"),
-        ("sessions", sessions.app, "Agent sessions"),
-        ("autonomous", autonomous.app, "Autonomous execution"),
-        ("projects", projects.app, "Project management"),
-    ]
-
-    for group_name, subapp, description in subgroups:
-        print(f"\n{group_name.upper()} ({description}):")
-        for cmd in subapp.registered_commands:
-            name = cmd.name or cmd.callback.__name__
-            doc = (cmd.callback.__doc__ or "").split("\n")[0]
-            print(f"  st {group_name} {name:14} {doc}")
-
-
-@app.callback(invoke_without_command=True)
+@app.callback()
 def main(
-    ctx: typer.Context,
     project: Annotated[
         str | None,
         typer.Option(
             "-P",
             "--project",
-            help="Project ID to use (overrides auto-detection)",
+            help="Project ID (overrides auto-detection)",
             envvar="ST_PROJECT_ID",
         ),
     ] = None,
     human: Annotated[
         bool,
-        typer.Option(
-            "--human",
-            help="Pretty-print JSON output for human readability",
-        ),
+        typer.Option("--human", help="Pretty-print JSON"),
     ] = False,
     compact: Annotated[
         bool,
-        typer.Option(
-            "--compact",
-            "-c",
-            help="TOON-style compact output (one line per item)",
-        ),
+        typer.Option("--compact", "-c", help="TOON-style compact output"),
     ] = False,
     progress_only: Annotated[
         bool,
-        typer.Option(
-            "--progress-only",
-            help="Show only progress summary (single line)",
-        ),
+        typer.Option("--progress-only", help="Progress summary only"),
     ] = False,
 ) -> None:
-    """SummitFlow Tasks CLI - task management for development workflows.
-
-    Project is auto-detected from current directory. Override with -P/--project.
-    Output is compact JSON by default. Use --human for pretty-printed output.
-    Use --compact for TOON-style one-liner per item.
-    """
-    # Set project override if provided
+    """SummitFlow Tasks CLI."""
     if project:
         set_project_override(project)
-
-    # Set output modes (mutually exclusive: compact > progress_only > human)
     set_human_output(human and not compact and not progress_only)
     set_compact_output(compact or progress_only)
     set_progress_only(progress_only)
-
-    if ctx.invoked_subcommand is None:
-        print(ctx.get_help())
 
 
 if __name__ == "__main__":
