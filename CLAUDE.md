@@ -12,6 +12,7 @@ SummitFlow - AI-assisted development platform.
 | Claim work | `st update <id> --status running` |
 | Complete | `st close <id> --reason "Done"` |
 | Start services | `bash ~/summitflow/scripts/restart.sh` |
+| Rebuild frontend | `rm -rf frontend/.next/cache && cd frontend && npm run build && systemctl --user restart summitflow-frontend` |
 | Run tests | `cd backend && .venv/bin/pytest` |
 | Type check | `cd backend && .venv/bin/mypy app/` |
 | Logs | `journalctl --user -u summitflow-backend -f` |
@@ -102,4 +103,4 @@ st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 
 ---
 
-**Version**: 3.1.0
+**Version**: 3.2.0
