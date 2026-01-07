@@ -35,7 +35,7 @@ TASKS:
   ready                                    # unblocked tasks
   show <id>... [--full] [--summary]        # --summary=one-liner
   inspect <id>...                          # id|status|done/total
-  update <id> [--status pending|running|paused|completed|failed|cancelled] [-d desc] [-p 0-4]
+  update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--branch name] [--pr-url url] [--parent id]
   close <id> --reason <text>
   cancel <id> --reason <text>
   delete <id>
@@ -65,11 +65,15 @@ DEP:
 
 PROJECTS: projects list | projects current
 
-CAPABILITY: capability list | show <id> | create <name> --component <id> | verify <id>
+CAPABILITY: capability list | show <id> | create <name> --component <id> | update <id> [--name N] [-d desc] [-p 0-4] [-s status] | verify <id>
 
 COMPONENT: component list | show <id> | create <name> [-d desc]
 
-CRITERION: criterion verify <id> --by test|manual [--evidence "..."]
+CRITERION:
+  criterion list --capability <cap-id>                             # list criteria for capability
+  criterion create <text> --capability <cap-id> [--category C] [--measurement M] [--threshold T]
+  criterion update <id> [--criterion text] [--category C] [--measurement M] [--threshold T]
+  criterion verify <task-id> <criterion-id> --by test|manual       # verify criterion for task
 
 TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
 
