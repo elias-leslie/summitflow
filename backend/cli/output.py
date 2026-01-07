@@ -231,18 +231,39 @@ def output_steps(steps: list[dict[str, Any]], subtask_id: str = "") -> None:
 
 
 def output_error(message: str) -> None:
-    """Output error message to stderr as JSON."""
-    print(json.dumps({"error": message}), file=sys.stderr)
+    """Output error message to stderr.
+
+    In compact mode: ERROR <message>
+    Otherwise: JSON {"error": "..."}
+    """
+    if _compact_output:
+        print(f"ERROR {message}", file=sys.stderr)
+    else:
+        print(json.dumps({"error": message}), file=sys.stderr)
 
 
 def output_success(message: str) -> None:
-    """Output success message as JSON."""
-    output_json({"success": True, "message": message})
+    """Output success message.
+
+    In compact mode: PASS <message>
+    Otherwise: JSON {"success": true, "message": "..."}
+    """
+    if _compact_output:
+        print(f"PASS {message}")
+    else:
+        output_json({"success": True, "message": message})
 
 
 def output_warning(message: str) -> None:
-    """Output warning message to stderr as JSON."""
-    print(json.dumps({"warning": message}), file=sys.stderr)
+    """Output warning message to stderr.
+
+    In compact mode: WARN <message>
+    Otherwise: JSON {"warning": "..."}
+    """
+    if _compact_output:
+        print(f"WARN {message}", file=sys.stderr)
+    else:
+        print(json.dumps({"warning": message}), file=sys.stderr)
 
 
 def handle_api_error(e: APIError) -> None:
