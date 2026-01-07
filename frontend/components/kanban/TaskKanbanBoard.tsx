@@ -54,6 +54,7 @@ const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   paused: "in_progress",
   failed: "in_progress",
   completed: "done",
+  cancelled: "done",
 };
 
 // Map Kanban column to task status (for drag-drop)

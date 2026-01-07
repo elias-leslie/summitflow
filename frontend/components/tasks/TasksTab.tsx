@@ -82,6 +82,7 @@ const statusConfig: Record<TaskStatus, { icon: React.ReactNode; className: strin
   paused: { icon: <Pause className="h-3.5 w-3.5" />, className: "text-amber-400" },
   completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: "text-green-400" },
   failed: { icon: <XCircle className="h-3.5 w-3.5" />, className: "text-rose-400" },
+  cancelled: { icon: <XCircle className="h-3.5 w-3.5" />, className: "text-slate-500" },
 };
 
 function TaskRow({
@@ -356,7 +357,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
       // Status filter (skip for "blocked" since we already fetched blocked tasks)
       if (filters.status !== "all" && filters.status !== "blocked") {
         if (filters.status === "active") {
-          if (task.status === "completed" || task.status === "failed") {
+          if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
             return false;
           }
         } else if (task.status !== filters.status) {

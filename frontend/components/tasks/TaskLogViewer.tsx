@@ -53,6 +53,7 @@ const statusConfig: Record<TaskStatus, { icon: typeof CheckCircle; variant: "pho
   paused: { icon: PauseCircle, variant: "amber" },
   completed: { icon: CheckCircle, variant: "phosphor" },
   failed: { icon: XCircle, variant: "rose" },
+  cancelled: { icon: XCircle, variant: "slate" },
 };
 
 export function TaskLogViewer({

@@ -42,6 +42,11 @@ const taskStatusConfig: Record<TaskStatus, { icon: React.ReactNode; className: s
     className: "text-red-400",
     title: "Task failed",
   },
+  cancelled: {
+    icon: <X className="h-3.5 w-3.5" />,
+    className: "text-slate-500",
+    title: "Task cancelled",
+  },
 };
 
 // ============================================================================

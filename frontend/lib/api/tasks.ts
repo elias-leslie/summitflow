@@ -8,7 +8,7 @@ import { fetchWithErrorHandling, buildQueryString, getApiBase } from "./utils";
 // Task Types
 // ============================================================================
 
-export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 export type TaskType = "feature" | "bug" | "task";
 export type AgentType = "claude" | "gemini";
 
