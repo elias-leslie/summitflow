@@ -95,7 +95,7 @@ def run_agent_task(
         if capability_db_id:
             capability = capabilities.get_capability_by_id(capability_db_id)
             if capability:
-                cap_tests = tests.get_tests_for_capability(project_id, capability["id"])
+                cap_tests = tests.get_tests_for_capability(project_id, capability["capability_id"])
                 tasks.append_progress_log(
                     task_id,
                     f"Loaded capability: {capability['name']} with {len(cap_tests)} tests",
@@ -315,7 +315,7 @@ def run_agent_tdd(
         return {"status": "error", "error": f"Capability not found: {capability_id}"}
 
     # 2. Load linked tests
-    cap_tests = tests.get_tests_for_capability(project_id, capability["id"])
+    cap_tests = tests.get_tests_for_capability(project_id, capability["capability_id"])
 
     try:
         # 3. Initialize agent

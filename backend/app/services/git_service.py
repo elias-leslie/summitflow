@@ -404,9 +404,9 @@ def _build_pr_body(task: dict[str, Any], capability: dict[str, Any] | None) -> s
     # Add tests checklist (TDD architecture)
     if capability:
         project_id = capability.get("project_id")
-        cap_db_id = capability.get("id")
-        if project_id and cap_db_id:
-            cap_tests = test_store.get_tests_for_capability(project_id, cap_db_id)
+        cap_id = capability.get("capability_id")
+        if project_id and cap_id:
+            cap_tests = test_store.get_tests_for_capability(project_id, cap_id)
             if cap_tests:
                 lines.append("\n## Tests\n")
                 for t in cap_tests:

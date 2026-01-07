@@ -190,7 +190,7 @@ async def build_capability(
         _active_builds[session_id].current_capability = capability_id
 
     # Get tests for this capability
-    tests = tests_storage.get_tests_for_capability(project_id, capability["id"])
+    tests = tests_storage.get_tests_for_capability(project_id, capability["capability_id"])
     if not tests:
         logger.warning(f"No tests found for capability {capability_id}")
         # Mark as passed (no tests = assume passing)
