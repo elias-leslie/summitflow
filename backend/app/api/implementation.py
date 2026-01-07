@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..services.implementation_executor import ImplementationExecutor
+from ..services.implementation import ImplementationExecutor
 from ..storage import tasks as task_store
 from ..storage.agent_sessions import get_session
 

@@ -537,7 +537,7 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     Returns:
         Dict with execution results and exclusion stats
     """
-    from app.services.implementation_executor import ImplementationExecutor
+    from app.services.implementation import ImplementationExecutor
     from app.storage.agent_configs import is_autonomous_enabled
 
     try:
