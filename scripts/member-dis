@@ -158,11 +158,14 @@ def search(
         None, "--type", "-t", help="Filter by type: observation, pattern, user_prompt"
     ),
     limit: int = typer.Option(10, "--limit", "-l", help="Max results"),
+    compact: bool = typer.Option(False, "--compact", "-c", help="TOON format output"),
     human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
     """Search project memory for observations, patterns, and prompts.
 
-    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    Default output is JSON for programmatic parsing.
+    Use --compact for TOON format (Claude consumption).
+    Use --human for Rich formatting.
     """
     project_id = get_project(project)
 
@@ -175,6 +178,19 @@ def search(
         params["type"] = type
 
     result = api_get("/memory/search", params)
+
+    if compact:
+        # TOON format: RESULTS[count] header + one-liner per result
+        results = result.get("results", [])
+        print(f"RESULTS[{len(results)}]")
+        for item in results:
+            entity_type = item.get("entity_type", "unk")[:3]
+            entity_id = item.get("id", "")[-8:]
+            title = (item.get("title") or item.get("summary", ""))[:50] or "No title"
+            score = item.get("score", 0)
+            print(f"[{entity_type}:{entity_id}] {title} ({score:.2f})")
+            print(f"   → member-dis expand {entity_type}:{item.get('id', '')}")
+        return
 
     if not human:
         print(json.dumps(result, default=str))
@@ -215,15 +231,30 @@ def expand(
         ..., help="Entity ID to expand (e.g., obs:abc12345, pat:def67890)"
     ),
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
+    compact: bool = typer.Option(False, "--compact", "-c", help="TOON format output"),
     human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
     """Expand an entity to get full content.
 
-    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    Default output is JSON for programmatic parsing.
+    Use --compact for TOON format.
+    Use --human for Rich formatting.
     """
     project_id = get_project(project)
 
     result = api_post(f"/projects/{project_id}/context/expand", {"entity_id": entity_id})
+
+    if compact:
+        # TOON format: single entity one-liner
+        content = result.get("content", {})
+        entity_type = result.get("type", "unknown")
+        tokens = result.get("token_count", 0)
+        title = content.get("title", "No title")
+        print(f"ENTITY:{entity_type}:{tokens}tokens")
+        print(f"title:{title}")
+        if narrative := content.get("narrative"):
+            print(f"narrative:{narrative[:200]}{'...' if len(narrative) > 200 else ''}")
+        return
 
     if not human:
         print(json.dumps(result, default=str))
@@ -269,15 +300,41 @@ def expand(
 def index(
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
     limit: int = typer.Option(20, "--limit", "-l", help="Max items per category"),
+    compact: bool = typer.Option(False, "--compact", "-c", help="TOON format output"),
     human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
     """Show context index - compact overview of available memory.
 
-    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    Default output is JSON for programmatic parsing.
+    Use --compact for TOON format.
+    Use --human for Rich formatting.
     """
     project_id = get_project(project)
 
     result = api_get(f"/projects/{project_id}/context/index", {"limit": limit})
+
+    if compact:
+        # TOON format: category headers with counts
+        items = result.get("items", [])
+        item_count = result.get("item_count", len(items))
+        index_tokens = result.get("index_tokens", 0)
+        print(f"INDEX[{item_count}]:{index_tokens}tokens")
+
+        # Group by type
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            t = item.get("t", "unknown")
+            by_type.setdefault(t, []).append(item)
+
+        for entity_type, type_items in by_type.items():
+            print(f"{entity_type.upper()}[{len(type_items)}]")
+            for item in type_items[:5]:  # Show max 5 per type in compact
+                item_id = item.get("id", "")[-8:]
+                title = (item.get("title") or item.get("summary", ""))[:40] or "No title"
+                print(f"  {item_id} {title}")
+            if len(type_items) > 5:
+                print(f"  ...{len(type_items) - 5} more")
+        return
 
     if not human:
         print(json.dumps(result, default=str))
@@ -326,11 +383,14 @@ def timeline(
     before: int = typer.Option(5, "--before", "-b", help="Items before anchor"),
     after: int = typer.Option(5, "--after", "-A", help="Items after anchor"),
     project: str | None = typer.Option(None, "--project", "-p", help="Project ID"),
+    compact: bool = typer.Option(False, "--compact", "-c", help="TOON format output"),
     human: bool = typer.Option(False, "--human", help="Human-readable Rich output"),
 ) -> None:
     """Show timeline of observations around an anchor point.
 
-    Default output is compact JSON for AI consumption. Use --human for Rich formatting.
+    Default output is JSON for programmatic parsing.
+    Use --compact for TOON format.
+    Use --human for Rich formatting.
     """
     project_id = get_project(project)
 
@@ -341,6 +401,28 @@ def timeline(
     }
 
     result = api_get(f"/projects/{project_id}/context/timeline", params)
+
+    if compact:
+        # TOON format: chronological one-liners
+        before_obs = result.get("before", [])
+        anchor_obs = result.get("anchor", {})
+        after_obs = result.get("after", [])
+        total_tokens = result.get("total_tokens", 0)
+
+        print(f"TIMELINE:{total_tokens}tokens")
+        for obs in reversed(before_obs):
+            obs_id = obs.get("id", "")[-8:]
+            title = (obs.get("title") or "")[:40]
+            print(f"↑ obs:{obs_id} {title}")
+        if anchor_obs:
+            obs_id = anchor_obs.get("id", "")[-8:]
+            title = (anchor_obs.get("title") or "")[:40]
+            print(f"→ obs:{obs_id} {title}")
+        for obs in after_obs:
+            obs_id = obs.get("id", "")[-8:]
+            title = (obs.get("title") or "")[:40]
+            print(f"↓ obs:{obs_id} {title}")
+        return
 
     if not human:
         print(json.dumps(result, default=str))
