@@ -109,6 +109,53 @@ def create(
 
 
 @app.command()
+def update(
+    capability_id: str,
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Display name")] = None,
+    description: Annotated[
+        str | None, typer.Option("--description", "-d", help="Description")
+    ] = None,
+    priority: Annotated[
+        int | None, typer.Option("--priority", "-p", min=0, max=4, help="Priority (0-4)")
+    ] = None,
+    status: Annotated[
+        str | None, typer.Option("--status", "-s", help="Status (pending, active, deprecated)")
+    ] = None,
+) -> None:
+    """Update a capability.
+
+    Examples:
+        st capability update user-login --name "User Authentication"
+        st capability update user-login --priority 1
+        st capability update user-login --status deprecated
+    """
+    client = STClient()
+
+    # Build update dict
+    updates: dict = {}
+    if name is not None:
+        updates["name"] = name
+    if description is not None:
+        updates["description"] = description
+    if priority is not None:
+        updates["priority"] = priority
+    if status is not None:
+        updates["status"] = status
+
+    if not updates:
+        output_error("No updates specified")
+        raise typer.Exit(1)
+
+    try:
+        cap = client.update_capability(capability_id, **updates)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_json(cap)
+
+
+@app.command()
 def verify(
     capability_id: str,
 ) -> None:

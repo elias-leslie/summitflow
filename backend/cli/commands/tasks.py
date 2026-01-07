@@ -426,6 +426,12 @@ def update(
     move_to: Annotated[str | None, typer.Option("--move-to")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
     capability: Annotated[int | None, typer.Option("--capability")] = None,
+    objective: Annotated[
+        str | None, typer.Option("--objective", help="Task objective (spirit statement)")
+    ] = None,
+    branch: Annotated[str | None, typer.Option("--branch", help="Git branch name")] = None,
+    pr_url: Annotated[str | None, typer.Option("--pr-url", help="Pull request URL")] = None,
+    parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID")] = None,
 ) -> None:
     """Update a task.
 
@@ -436,6 +442,8 @@ def update(
         st update task-abc123 --remove-label tier:1 --add-label tier:2
         st update task-abc123 --move-to other-project
         st update task-abc123 --capability 615
+        st update task-abc123 --objective "Enable X to do Y"
+        st update task-abc123 --branch feature/auth --pr-url https://github.com/...
     """
     client = STClient()
 
@@ -496,6 +504,14 @@ def update(
             raise typer.Exit(1) from None
     if capability is not None:
         updates["capability_id"] = capability
+    if objective:
+        updates["objective"] = objective
+    if branch:
+        updates["branch_name"] = branch
+    if pr_url:
+        updates["pull_request_url"] = pr_url
+    if parent:
+        updates["parent_task_id"] = parent
 
     if not updates:
         output_error("No updates specified")

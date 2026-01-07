@@ -434,6 +434,24 @@ class STClient:
         response = self._client.post(self._url(f"/capabilities/{capability_id}/verify"))
         return self._handle_response(response)
 
+    def update_capability(
+        self,
+        capability_id: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Update a capability.
+
+        Args:
+            capability_id: Capability ID
+            **kwargs: Fields to update (name, description, priority, status)
+
+        Returns:
+            Updated capability dict.
+        """
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        response = self._client.patch(self._url(f"/capabilities/{capability_id}"), json=data)
+        return self._handle_response(response)
+
     # Criterion Linkage
 
     def link_test_to_criterion(
@@ -482,6 +500,73 @@ class STClient:
         data = {"verified": verified, "verified_by": verified_by}
         response = self._client.patch(
             self._url(f"/tasks/{task_id}/criteria/{criterion_id}/verify"),
+            json=data,
+        )
+        return self._handle_response(response)
+
+    def list_criteria(self, capability_id: str) -> list[dict[str, Any]]:
+        """List criteria for a capability.
+
+        Args:
+            capability_id: Capability ID (slug)
+
+        Returns:
+            List of criterion dicts.
+        """
+        # Get capability with criteria included
+        cap = self.get_capability(capability_id)
+        return cap.get("criteria", [])
+
+    def create_criterion(
+        self,
+        capability_id: str,
+        criterion: str,
+        category: str = "correctness",
+        measurement: str = "test",
+        threshold: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a criterion and link to a capability.
+
+        Args:
+            capability_id: Capability ID (slug)
+            criterion: The criterion text (min 10 chars)
+            category: correctness, performance, security, quality
+            measurement: test, metric, tool, manual
+            threshold: Optional threshold value
+
+        Returns:
+            Created criterion dict.
+        """
+        data: dict[str, Any] = {
+            "criterion": criterion,
+            "category": category,
+            "measurement": measurement,
+        }
+        if threshold:
+            data["threshold"] = threshold
+        response = self._client.post(
+            self._url(f"/capabilities/{capability_id}/criteria"),
+            json=data,
+        )
+        return self._handle_response(response)
+
+    def update_criterion(
+        self,
+        criterion_id: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Update a criterion.
+
+        Args:
+            criterion_id: Criterion ID (e.g., "ac-001")
+            **kwargs: Fields to update (criterion, category, measurement, threshold)
+
+        Returns:
+            Updated criterion dict.
+        """
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        response = self._client.patch(
+            self._url(f"/criteria/{criterion_id}"),
             json=data,
         )
         return self._handle_response(response)
