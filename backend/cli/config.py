@@ -137,3 +137,50 @@ def get_config() -> Config:
         file=sys.stderr,
     )
     sys.exit(1)
+
+
+def get_config_optional() -> Config:
+    """Get CLI configuration without requiring a project.
+
+    Same as get_config() but returns a Config with empty project_id
+    instead of exiting if no project can be determined. Useful for
+    commands that can operate without project context (e.g., global
+    task lookups).
+
+    Returns:
+        Config with api_base always set; project_id may be empty string.
+    """
+    api_base = os.getenv("ST_API_BASE", "http://localhost:8001/api")
+
+    # Priority 1: --project flag override
+    if _project_override:
+        return Config(
+            api_base=api_base,
+            project_id=_project_override,
+            project_root=None,
+        )
+
+    # Priority 2: Environment variable
+    env_project = os.getenv("ST_PROJECT_ID")
+    if env_project:
+        return Config(
+            api_base=api_base,
+            project_id=env_project,
+            project_root=None,
+        )
+
+    # Priority 3: Auto-detect from cwd
+    detected_id, detected_root = _detect_project_from_cwd(api_base)
+    if detected_id:
+        return Config(
+            api_base=api_base,
+            project_id=detected_id,
+            project_root=detected_root,
+        )
+
+    # No project found - return minimal config
+    return Config(
+        api_base=api_base,
+        project_id="",  # Empty string signals no project
+        project_root=None,
+    )

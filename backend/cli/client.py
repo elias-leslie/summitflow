@@ -27,6 +27,7 @@ class STClient:
         base_url: str | None = None,
         project_id: str | None = None,
         timeout: float = 30.0,
+        require_project: bool = True,
     ) -> None:
         """Initialize the client.
 
@@ -34,10 +35,19 @@ class STClient:
             base_url: API base URL (default from ST_API_BASE)
             project_id: Project ID (default from ST_PROJECT_ID)
             timeout: Request timeout in seconds
+            require_project: If False, allow operations without project context
         """
-        config = get_config()
-        self.base_url = base_url or config.api_base
-        self.project_id = project_id or config.project_id
+        from .config import get_config_optional
+
+        if require_project:
+            config = get_config()
+            self.base_url = base_url or config.api_base
+            self.project_id = project_id or config.project_id
+        else:
+            config = get_config_optional()
+            self.base_url = base_url or config.api_base
+            self.project_id = project_id or config.project_id
+
         self._client = httpx.Client(timeout=timeout)
 
     def _url(self, path: str) -> str:

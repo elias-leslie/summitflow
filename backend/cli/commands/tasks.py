@@ -324,6 +324,7 @@ def show(
     """Show task details with subtask progress.
 
     Supports multiple task IDs for batch inspection in a single call.
+    Works from any directory - no project context required.
 
     Examples:
         st show task-abc123
@@ -331,12 +332,20 @@ def show(
         st show task-abc123 --full     # Shows all details including progress log
         st show task-abc123 task-def456  # Multiple tasks
     """
-    client = STClient()
+    # Use require_project=False since show uses global task lookup
+    client = STClient(require_project=False)
 
     for task_id in task_ids:
         try:
             task = client.get_task(task_id)
-            subtask_data = client.get_subtasks(task_id, include_steps=True)
+            # Subtasks endpoint is project-scoped, so use task's project_id
+            task_project_id = task.get("project_id")
+            if task_project_id and client.project_id != task_project_id:
+                # Create a project-scoped client for subtasks
+                subtask_client = STClient(project_id=task_project_id, require_project=False)
+                subtask_data = subtask_client.get_subtasks(task_id, include_steps=True)
+            else:
+                subtask_data = client.get_subtasks(task_id, include_steps=True)
         except APIError as e:
             handle_api_error(e)
             continue
