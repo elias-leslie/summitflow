@@ -5,26 +5,8 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
-import {
-  fetchProject,
-  createRoundtableSession,
-  streamRoundtableMessage,
-  generateFeaturesFromRoundtable,
-  generateVisionFromRoundtable,
-  generateGoalsFromRoundtable,
-  generateSpecFromRoundtable,
-  acceptSpecFromRoundtable,
-  saveVisionFromRoundtable,
-  saveGoalsFromRoundtable,
-  updateRoundtableTools,
-  updateRoundtableAgentConfig,
-  resolvePermission,
-  type GeneratedFeature,
-  type GeneratedMission,
-  type GeneratedNarrative,
-  type GeneratedGoal,
-  type PermissionRequest,
-} from "@/lib/api";
+import { fetchProject } from "@/lib/api";
+import { useRoundtableHandlers, type PermissionRequest } from "@/lib/hooks/useRoundtableHandlers";
 import { type AgentConfig } from "@/components/settings/AgentConfigPanel";
 import { TasksTab } from "@/components/tasks/TasksTab";
 import { type TaskFilterValues } from "@/components/tasks/TaskFilters";
@@ -97,7 +79,6 @@ export default function ProjectDetailPage() {
     setMode: setRoundtableMode,
     messages: roundtableMessages,
     setMessages: setRoundtableMessages,
-    // sessionLoaded not used in this component
     toolsEnabled,
     setToolsEnabled,
     writeEnabled,
@@ -116,14 +97,46 @@ export default function ProjectDetailPage() {
     clearSession: handleNewRoundtableSession,
   } = useRoundtableSession(projectId);
 
-  // Remaining roundtable UI state
-  const [roundtableLoading, setRoundtableLoading] = useState(false);
-  const [streamingAgent, setStreamingAgent] = useState<"claude" | "gemini" | null>(null);
-  const [roundtableError, setRoundtableError] = useState<string | null>(null);
-
-  // Permission prompting state
-  const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
-  const [permissionLoading, setPermissionLoading] = useState(false);
+  // Roundtable handlers (extracted to hook)
+  const {
+    loading: roundtableLoading,
+    error: roundtableError,
+    streamingAgent,
+    clearError: clearRoundtableError,
+    pendingPermission,
+    permissionLoading,
+    handleSendMessage,
+    handleToolsChange,
+    handleAgentConfigChange,
+    handleApprovePermission,
+    handleDenyPermission,
+    handleGenerateFeatures,
+    handleGenerateVision,
+    handleGenerateGoals,
+    handleSaveVision,
+    handleSaveGoals,
+    handleGenerateSpec,
+    handleAcceptSpec,
+  } = useRoundtableHandlers({
+    projectId,
+    sessionId: roundtableSessionId,
+    setSessionId: setRoundtableSessionId,
+    mode: roundtableMode,
+    messages: roundtableMessages,
+    setMessages: setRoundtableMessages,
+    toolsEnabled,
+    setToolsEnabled,
+    writeEnabled,
+    setWriteEnabled,
+    yoloMode,
+    setYoloMode,
+    setToolStats,
+    agentOverride,
+    setAgentOverride,
+    modelOverride,
+    setModelOverride,
+    setGeneratedSpec,
+  });
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -172,255 +185,18 @@ export default function ProjectDetailPage() {
   // Wrapper to clear error when starting new session
   const handleNewSession = () => {
     handleNewRoundtableSession();
-    setRoundtableError(null);
+    clearRoundtableError();
   };
 
   // Wrapper to handle session selection with error handling
   const handleSessionSelect = async (sessionId: string) => {
     try {
       await handleSelectSession(sessionId);
-      setRoundtableError(null);
+      clearRoundtableError();
     } catch (err) {
       console.error("Failed to load session:", err);
-      setRoundtableError("Failed to load session");
     }
   };
-
-  const handleToolsChange = async (settings: { toolsEnabled?: boolean; writeEnabled?: boolean; yoloMode?: boolean }) => {
-    // Optimistically update UI
-    const prevToolsEnabled = toolsEnabled;
-    const prevWriteEnabled = writeEnabled;
-    const prevYoloMode = yoloMode;
-
-    if (settings.toolsEnabled !== undefined) setToolsEnabled(settings.toolsEnabled);
-    if (settings.writeEnabled !== undefined) setWriteEnabled(settings.writeEnabled);
-    if (settings.yoloMode !== undefined) setYoloMode(settings.yoloMode);
-
-    // If we have a session, persist the change
-    if (roundtableSessionId) {
-      try {
-        const result = await updateRoundtableTools(projectId, roundtableSessionId, settings);
-        setToolsEnabled(result.tools_enabled);
-        setWriteEnabled(result.write_enabled);
-        setYoloMode(result.yolo_mode);
-        setToolStats(result.tool_stats);
-      } catch (err) {
-        // Revert on error
-        setToolsEnabled(prevToolsEnabled);
-        setWriteEnabled(prevWriteEnabled);
-        setYoloMode(prevYoloMode);
-        console.error("Failed to update tools settings:", err);
-      }
-    }
-  };
-
-  // Agent config handler
-  const handleAgentConfigChange = async (config: AgentConfig) => {
-    // Optimistically update UI
-    const prevAgentOverride = agentOverride;
-    const prevModelOverride = modelOverride;
-
-    setAgentOverride(config.agentOverride);
-    setModelOverride(config.modelOverride);
-
-    // If we have a session, persist the change
-    if (roundtableSessionId) {
-      try {
-        const result = await updateRoundtableAgentConfig(projectId, roundtableSessionId, {
-          agent_override: config.agentOverride,
-          model_override: config.modelOverride,
-        });
-        setAgentOverride(result.agent_override);
-        setModelOverride(result.model_override);
-      } catch (err) {
-        // Revert on error
-        setAgentOverride(prevAgentOverride);
-        setModelOverride(prevModelOverride);
-        console.error("Failed to update agent config:", err);
-      }
-    }
-  };
-
-  // Permission handlers
-  const handleResolvePermission = async (approve: boolean) => {
-    if (!pendingPermission || !roundtableSessionId) return;
-    setPermissionLoading(true);
-    try {
-      await resolvePermission(projectId, roundtableSessionId, pendingPermission.permission_id, approve);
-      setPendingPermission(null);
-    } catch (error) {
-      console.error(`Failed to ${approve ? "approve" : "deny"} permission:`, error);
-    } finally {
-      setPermissionLoading(false);
-    }
-  };
-
-  const handleApprovePermission = () => handleResolvePermission(true);
-  const handleDenyPermission = () => handleResolvePermission(false);
-
-  const handleSendMessage = async (
-    message: string
-  ) => {
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-
-    try {
-      // Create session if needed
-      let sessionId = roundtableSessionId;
-      if (!sessionId) {
-        const session = await createRoundtableSession(projectId, {
-          mode: roundtableMode,
-          toolsEnabled,
-          writeEnabled,
-          yoloMode,
-        });
-        sessionId = session.session_id;
-        setRoundtableSessionId(sessionId);
-        setToolsEnabled(session.tools_enabled);
-        setWriteEnabled(session.write_enabled);
-        setYoloMode(session.yolo_mode);
-      }
-
-      // Add user message to UI immediately
-      const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
-        agent: "user",
-        content: message,
-        timestamp: new Date(),
-      };
-      setRoundtableMessages((prev) => [...prev, userMessage]);
-
-      // Stream responses via SSE
-      const stream = streamRoundtableMessage(
-        projectId,
-        sessionId,
-        message,
-        "both" // Always send to both agents
-      );
-
-      for await (const event of stream) {
-        switch (event.type) {
-          case "agent_start":
-            // Show which agent is typing
-            if (event.data.agent) {
-              setStreamingAgent(event.data.agent);
-            }
-            break;
-
-          case "keepalive":
-            // Keepalive ping to prevent connection timeout
-            // Just ensures the streaming agent indicator stays visible
-            console.debug(`Keepalive from ${event.data.agent}`);
-            break;
-
-          case "agent_complete":
-            // Add agent response when complete
-            if (event.data.id && event.data.agent && event.data.content) {
-              const agentMessage: ChatMessage = {
-                id: event.data.id,
-                agent: event.data.agent,
-                content: event.data.content,
-                timestamp: event.data.timestamp ? new Date(event.data.timestamp) : new Date(),
-                tokensUsed: event.data.tokens_used,
-              };
-              setRoundtableMessages((prev) => [...prev, agentMessage]);
-            }
-            setStreamingAgent(null);
-            break;
-
-          case "error":
-            setRoundtableError(event.data.message || "An error occurred");
-            break;
-
-          case "permission_request":
-            // Agent needs permission for a write operation
-            if (event.data.permission_id && event.data.tool_name && event.data.agent) {
-              setPendingPermission({
-                permission_id: event.data.permission_id,
-                tool_name: event.data.tool_name,
-                params: event.data.params || {},
-                preview: event.data.preview,
-                agent: event.data.agent,
-              });
-            }
-            break;
-
-          case "done":
-            // Stream complete
-            break;
-        }
-      }
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : "Failed to send message");
-    } finally {
-      setRoundtableLoading(false);
-      setStreamingAgent(null);
-    }
-  };
-
-  // Wrapper to handle common generation pattern (loading state, error handling, session check)
-  const withGeneration = async <T,>(
-    defaultValue: T,
-    errorPrefix: string,
-    fn: (sessionId: string) => Promise<T>
-  ): Promise<T> => {
-    if (!roundtableSessionId) {
-      setRoundtableError("No active session");
-      return defaultValue;
-    }
-    setRoundtableLoading(true);
-    setRoundtableError(null);
-    try {
-      return await fn(roundtableSessionId);
-    } catch (err) {
-      setRoundtableError(err instanceof Error ? err.message : `Failed to ${errorPrefix}`);
-      return defaultValue;
-    } finally {
-      setRoundtableLoading(false);
-    }
-  };
-
-  const handleGenerateFeatures = (): Promise<GeneratedFeature[]> =>
-    withGeneration([], "generate features", async (sessionId) => {
-      const result = await generateFeaturesFromRoundtable(projectId, sessionId, "gemini");
-      return result.features;
-    });
-
-  const handleGenerateVision = (): Promise<GeneratedVision> =>
-    withGeneration({ mission: null, narratives: [] }, "generate vision", async (sessionId) => {
-      const result = await generateVisionFromRoundtable(projectId, sessionId, "claude");
-      return { mission: result.mission, narratives: result.narratives };
-    });
-
-  const handleGenerateGoals = (): Promise<GeneratedGoal[]> =>
-    withGeneration([], "generate goals", async (sessionId) => {
-      const result = await generateGoalsFromRoundtable(projectId, sessionId, "claude");
-      return result.goals;
-    });
-
-  const handleSaveVision = (mission: GeneratedMission | null, narratives: GeneratedNarrative[]): Promise<void> =>
-    withGeneration(undefined, "save vision", async (sessionId) => {
-      await saveVisionFromRoundtable(projectId, sessionId, mission, narratives);
-    });
-
-  const handleSaveGoals = (goals: GeneratedGoal[]): Promise<void> =>
-    withGeneration(undefined, "save goals", async (sessionId) => {
-      await saveGoalsFromRoundtable(projectId, sessionId, goals);
-    });
-
-  const handleGenerateSpec = () =>
-    withGeneration({ components: [] }, "generate spec", async (sessionId) => {
-      const result = await generateSpecFromRoundtable(projectId, sessionId, "gemini");
-      setGeneratedSpec(result.spec);
-      return result.spec;
-    });
-
-  const handleAcceptSpec = (): Promise<void> =>
-    withGeneration(undefined, "accept spec", async (sessionId) => {
-      const result = await acceptSpecFromRoundtable(projectId, sessionId, "user");
-      setGeneratedSpec(null);
-      console.log(`Spec accepted: ${result.components_created} components, ${result.capabilities_created} capabilities, ${result.tests_created} tests`);
-    });
 
   if (isLoading) {
     return (
