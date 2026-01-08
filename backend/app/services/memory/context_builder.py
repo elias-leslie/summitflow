@@ -28,7 +28,7 @@ REDIS_URL = "redis://localhost:6379/1"
 CACHE_TTL = 3600  # 1 hour TTL
 
 
-def get_redis() -> redis.Redis[str]:
+def get_redis() -> redis.Redis:  # type: ignore[type-arg]
     """Get Redis connection for caching."""
     return redis.from_url(REDIS_URL, decode_responses=True)
 

@@ -68,7 +68,7 @@ class EmbeddingService:
         try:
             import google.auth
 
-            google.auth.default()  # type: ignore[no-untyped-call]
+            google.auth.default()
             return True
         except Exception:
             return False
@@ -144,7 +144,7 @@ class EmbeddingService:
             try:
                 result = client.models.embed_content(
                     model=EMBEDDING_MODEL,
-                    contents=chunk,  # type: ignore[arg-type]
+                    contents=chunk,
                 )
 
                 # Extract embeddings from response

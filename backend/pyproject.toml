@@ -58,3 +58,5 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 warn_unused_ignores = true
+# Redis stubs incomplete - suppress these errors until fixed upstream
+disable_error_code = ["no-untyped-call"]

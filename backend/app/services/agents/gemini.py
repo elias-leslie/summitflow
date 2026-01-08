@@ -84,7 +84,7 @@ class GeminiClient(LLMClient):
         try:
             import google.auth
 
-            google.auth.default()  # type: ignore[no-untyped-call]
+            google.auth.default()
             return True
         except Exception:
             return False
