@@ -581,6 +581,7 @@ async def list_evidence_endpoint(
     capability_id: str | None = Query(None, description="Filter by capability ID"),
     status: str | None = Query(None, description="Filter by quality status"),
     search: str | None = Query(None, description="Search capability/criterion IDs"),
+    entry_id: int | None = Query(None, description="Filter by explorer entry ID"),
 ) -> dict[str, Any]:
     """List all evidence for a project with optional filtering."""
     evidence_list, total = list_evidence(
@@ -590,6 +591,7 @@ async def list_evidence_endpoint(
         capability_id=capability_id,
         quality_status=status,
         search=search,
+        explorer_entry_id=entry_id,
     )
 
     return {
@@ -604,6 +606,51 @@ async def list_evidence_endpoint(
 async def get_evidence_summary(project_id: str) -> dict[str, Any]:
     """Get evidence statistics for a project."""
     return get_summary(project_id)
+
+
+@router.get("/projects/{project_id}/evidence/by-id/{evidence_id}")
+async def get_evidence_by_id(project_id: str, evidence_id: int) -> dict[str, Any]:
+    """Get a single evidence record by its database ID.
+
+    Returns the evidence with metadata for regression review.
+    """
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, evidence_id, capability_id, criterion_id,
+                   version, is_current, captured_at, quality_status, confidence,
+                   user_approved, user_notes, file_size_bytes, metadata
+            FROM evidence
+            WHERE id = %s AND project_id = %s
+            """,
+            (evidence_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    captured_at = row[7]
+    captured_at_str = captured_at.isoformat() if captured_at else None
+
+    return {
+        "id": row[0],
+        "project_id": row[1],
+        "evidence_id": row[2],
+        "capability_id": row[3],
+        "criterion_id": row[4],
+        "version": row[5],
+        "is_current": row[6],
+        "captured_at": captured_at_str,
+        "quality_status": row[8],
+        "confidence": row[9],
+        "user_approved": row[10],
+        "user_notes": row[11],
+        "file_size_bytes": row[12],
+        "metadata": row[13] or {},
+    }
 
 
 # =========================================================================

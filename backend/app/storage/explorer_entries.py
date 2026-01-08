@@ -246,6 +246,32 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | N
         return _row_to_entry(row)
 
 
+def get_entry_by_id(entry_id: int) -> dict[str, Any] | None:
+    """Get a single explorer entry by ID.
+
+    Args:
+        entry_id: Entry database ID
+
+    Returns:
+        Entry dict or None if not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {_ENTRY_COLUMNS}
+            FROM explorer_entries
+            WHERE id = %s
+            """,
+            (entry_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            return None
+
+        return _row_to_entry(row)
+
+
 def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict[str, Any]]:
     """Get direct children of a path (for tree navigation).
 

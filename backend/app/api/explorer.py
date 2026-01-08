@@ -334,6 +334,28 @@ async def get_scan_comparison(
     return comparison
 
 
+@router.get("/{project_id}/explorer/entry/{entry_id}")
+async def get_entry_by_id(
+    project_id: str,
+    entry_id: int,
+) -> dict[str, Any]:
+    """Get a single explorer entry by ID.
+
+    Returns full entry dict.
+    """
+    _validate_project_exists(project_id)
+
+    entry = explorer_storage.get_entry_by_id(entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
+
+    # Verify entry belongs to project
+    if entry.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found in project")
+
+    return entry
+
+
 @router.get("/{project_id}/explorer/entry/{entry_id}/capabilities")
 async def get_entry_capabilities(
     project_id: str,

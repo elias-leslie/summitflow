@@ -39,6 +39,7 @@ from .explorer_entries import (
     get_children,
     get_entries,
     get_entry,
+    get_entry_by_id,
     get_stats,
     upsert_entries,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "get_coverage_gaps",
     "get_entries",
     "get_entry",
+    "get_entry_by_id",
     "get_entry_capabilities",
     "get_multi_capability_files",
     "get_refactor_targets",

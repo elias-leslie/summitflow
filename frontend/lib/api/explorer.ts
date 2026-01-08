@@ -210,6 +210,26 @@ export async function fetchExplorerEntry(
 }
 
 /**
+ * Fetch a single explorer entry by ID.
+ */
+export async function fetchExplorerEntryById(
+  projectId: string,
+  entryId: number
+): Promise<ExplorerEntry> {
+  const res = await fetch(
+    `/api/projects/${projectId}/explorer/entry/${entryId}`
+  );
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(`Entry ${entryId} not found`);
+    }
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer entry" }));
+    throw new Error(error.detail || "Failed to fetch explorer entry");
+  }
+  return res.json();
+}
+
+/**
  * Fetch direct children of a path for tree navigation.
  */
 export async function fetchExplorerChildren(

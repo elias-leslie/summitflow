@@ -254,6 +254,7 @@ def list_evidence(
     search: str | None = None,
     criterion_db_id: int | None = None,
     test_run_id: int | None = None,
+    explorer_entry_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """List all current evidence for a project with filtering.
 
@@ -279,6 +280,10 @@ def list_evidence(
         if test_run_id:
             where_clauses.append("e.test_run_id = %s")
             params.append(test_run_id)
+
+        if explorer_entry_id:
+            where_clauses.append("e.explorer_entry_id = %s")
+            params.append(explorer_entry_id)
 
         if search:
             where_clauses.append(

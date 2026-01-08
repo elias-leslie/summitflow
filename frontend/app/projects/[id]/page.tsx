@@ -68,6 +68,15 @@ export default function ProjectDetailPage() {
     taskInitialFilters.type = urlTaskType as TaskFilterValues["type"];
   }
 
+  // Get evidence entry_id filter from URL
+  const urlEntryId = searchParams.get("entry_id");
+  const evidenceEntryId = urlEntryId ? parseInt(urlEntryId, 10) : undefined;
+
+  // Handler to clear evidence entry filter
+  const handleClearEvidenceEntryFilter = () => {
+    router.replace(`/projects/${projectId}?tab=evidence`, { scroll: false });
+  };
+
   // Update URL when explorer type changes (without full navigation)
   const handleExplorerTypeChange = (type: ExplorerType) => {
     setExplorerType(type);
@@ -521,7 +530,11 @@ export default function ProjectDetailPage() {
         )}
         {activeTab === "evidence" && (
           <div className="h-full overflow-auto p-4">
-            <EvidenceTab projectId={projectId} />
+            <EvidenceTab
+              projectId={projectId}
+              entryId={evidenceEntryId}
+              onClearEntryFilter={evidenceEntryId ? handleClearEvidenceEntryFilter : undefined}
+            />
           </div>
         )}
         {activeTab === "explorer" && (
