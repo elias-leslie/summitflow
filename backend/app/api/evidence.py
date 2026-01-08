@@ -880,3 +880,551 @@ async def list_debug_captures(
     except Exception as e:
         logger.error("list_debug_captures_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+# =========================================================================
+# Explorer-Driven Evidence Capture Endpoints
+# =========================================================================
+
+
+class CaptureRequest(BaseModel):
+    """Request to trigger evidence capture."""
+
+    scope: str = Field(
+        "project",
+        description="Capture scope: 'project' (all entries), 'entry' (specific entries)",
+    )
+    entry_ids: list[int] | None = Field(None, description="Entry IDs when scope='entry'")
+    environment: str = Field("local", description="Environment: local, staging, production")
+
+
+class CaptureJobStatus(BaseModel):
+    """Status of a capture job."""
+
+    job_id: int
+    status: str
+    scope: str
+    entries_captured: int
+    regressions_found: int
+    started_at: str | None
+    completed_at: str | None
+    errors: list[str]
+
+
+@router.post("/projects/{project_id}/evidence/capture")
+async def trigger_capture(
+    project_id: str,
+    request: CaptureRequest,
+) -> dict[str, Any]:
+    """Trigger evidence capture for explorer entries.
+
+    Captures screenshots for pages and API responses for endpoints.
+    Returns a job_id for status polling.
+    """
+    from ..tasks.evidence_capture import daily_evidence_capture
+
+    try:
+        # Run capture async via Celery
+        result = daily_evidence_capture.apply_async(
+            kwargs={
+                "project_id": project_id,
+                "scope": request.scope,
+                "entry_ids": request.entry_ids,
+                "environment": request.environment,
+            }
+        )
+
+        # For immediate feedback, also run synchronously if small scope
+        if request.scope == "entry" and request.entry_ids and len(request.entry_ids) <= 3:
+            sync_result = daily_evidence_capture(
+                project_id=project_id,
+                scope=request.scope,
+                entry_ids=request.entry_ids,
+                environment=request.environment,
+            )
+            return {
+                "success": True,
+                "job_id": sync_result.get("job_id"),
+                "status": "completed",
+                "captured": sync_result.get("captured", 0),
+                "regressions_found": sync_result.get("regressions_found", 0),
+            }
+
+        return {
+            "success": True,
+            "task_id": result.id,
+            "message": "Capture job queued. Poll /evidence/capture/status/{job_id} for progress.",
+        }
+
+    except Exception as e:
+        logger.error("trigger_capture_failed", project_id=project_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+@router.get("/projects/{project_id}/evidence/capture/status/{job_id}")
+async def get_capture_status(
+    project_id: str,
+    job_id: int,
+) -> CaptureJobStatus:
+    """Get status of a capture job."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, status, scope, entries_captured, regressions_found,
+                   started_at, completed_at, error_message
+            FROM evidence_capture_jobs
+            WHERE id = %s AND project_id = %s
+            """,
+            (job_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Capture job not found")
+
+    return CaptureJobStatus(
+        job_id=row[0],
+        status=row[1],
+        scope=row[2],
+        entries_captured=row[3] or 0,
+        regressions_found=row[4] or 0,
+        started_at=row[5].isoformat() if row[5] else None,
+        completed_at=row[6].isoformat() if row[6] else None,
+        errors=row[7].split("\n") if row[7] else [],
+    )
+
+
+class EvidenceConfigSuggestion(BaseModel):
+    """Suggested evidence configuration for a project."""
+
+    enabled_types: list[str]
+    capture_schedule: str
+    environments: list[str]
+    viewports: list[dict[str, Any]]
+    auto_expand_elements: bool
+    regression_threshold: float
+    ai_review_enabled: bool
+    reasoning: str
+
+
+@router.post("/projects/{project_id}/evidence/config/suggest")
+async def suggest_config(
+    project_id: str,
+) -> EvidenceConfigSuggestion:
+    """Analyze project and suggest evidence configuration.
+
+    Looks at:
+    - Does project have frontend pages?
+    - Does project have API endpoints?
+    - Does project have tests?
+
+    Returns suggested configuration.
+    """
+    from ..storage.connection import get_connection
+
+    # Count entry types
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT entry_type, COUNT(*) as count
+            FROM explorer_entries
+            WHERE project_id = %s
+            GROUP BY entry_type
+            """,
+            (project_id,),
+        )
+        entry_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+    has_pages = entry_counts.get("page", 0) > 0
+    has_endpoints = entry_counts.get("endpoint", 0) > 0
+    has_files = entry_counts.get("file", 0) > 0
+
+    # Build suggestion
+    enabled_types = []
+    reasoning_parts = []
+
+    if has_pages:
+        enabled_types.append("screenshot")
+        reasoning_parts.append(f"Found {entry_counts.get('page', 0)} pages - enabling screenshots")
+
+    if has_endpoints:
+        enabled_types.append("api_response")
+        reasoning_parts.append(
+            f"Found {entry_counts.get('endpoint', 0)} endpoints - enabling API responses"
+        )
+
+    if has_files:
+        reasoning_parts.append(f"Found {entry_counts.get('file', 0)} files")
+
+    if not enabled_types:
+        enabled_types = ["screenshot"]
+        reasoning_parts.append("No specific entries found - using default screenshot capture")
+
+    return EvidenceConfigSuggestion(
+        enabled_types=enabled_types,
+        capture_schedule="daily",
+        environments=["local"],
+        viewports=[
+            {"name": "desktop", "width": 1280, "height": 720},
+            {"name": "mobile", "width": 390, "height": 844},
+        ],
+        auto_expand_elements=has_pages,
+        regression_threshold=0.05,
+        ai_review_enabled=False,
+        reasoning=". ".join(reasoning_parts),
+    )
+
+
+# =========================================================================
+# Sub-Element Discovery Endpoints
+# =========================================================================
+
+
+@router.get("/projects/{project_id}/explorer/{entry_id}/sub-elements")
+async def get_sub_elements(
+    project_id: str,
+    entry_id: int,
+) -> dict[str, Any]:
+    """Get discovered sub-elements for an explorer entry.
+
+    Sub-elements are interactive parts of a page (tabs, accordions, expandable rows)
+    that should be captured separately.
+    """
+    from ..storage import explorer_sub_elements
+
+    elements = explorer_sub_elements.get_elements_for_entry(entry_id)
+
+    return {
+        "entry_id": entry_id,
+        "sub_elements": [
+            {
+                "id": el.get("id"),
+                "selector": el.get("selector"),
+                "element_type": el.get("element_type"),
+                "label": el.get("label"),
+                "discovered_at": el.get("discovered_at"),
+                "last_captured_at": el.get("last_captured_at"),
+            }
+            for el in elements
+        ],
+        "count": len(elements),
+    }
+
+
+@router.post("/projects/{project_id}/explorer/{entry_id}/sub-elements/discover")
+async def discover_sub_elements(
+    project_id: str,
+    entry_id: int,
+) -> dict[str, Any]:
+    """Discover sub-elements for an explorer entry.
+
+    Runs the sub-element discovery script to find tabs, accordions,
+    and other interactive elements on the page.
+    """
+    from ..services.evidence.sub_element_discoverer import discover_elements
+    from ..storage.connection import get_connection
+
+    # Get entry URL
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT path, entry_type
+            FROM explorer_entries
+            WHERE id = %s AND project_id = %s
+            """,
+            (entry_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Explorer entry not found")
+
+    path, entry_type = row
+
+    if entry_type != "page":
+        raise HTTPException(
+            status_code=400,
+            detail="Sub-element discovery only works for page entries",
+        )
+
+    try:
+        # Run discovery
+        elements = await discover_elements(path)
+
+        # Store discovered elements
+        from ..storage import explorer_sub_elements
+
+        for el in elements:
+            explorer_sub_elements.upsert_element(
+                explorer_entry_id=entry_id,
+                selector=el.get("selector", ""),
+                element_type=el.get("element_type", "unknown"),
+                label=el.get("label"),
+            )
+
+        return {
+            "success": True,
+            "entry_id": entry_id,
+            "path": path,
+            "elements_found": len(elements),
+            "elements": elements,
+        }
+
+    except Exception as e:
+        logger.error(
+            "sub_element_discovery_failed",
+            entry_id=entry_id,
+            path=path,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+# =========================================================================
+# Regression Review Endpoints
+# =========================================================================
+
+
+class RegressionListItem(BaseModel):
+    """A regression item for the list endpoint."""
+
+    id: int
+    evidence_id: int
+    baseline_evidence_id: int | None
+    regression_type: str
+    pixel_diff_pct: float | None
+    console_errors_added: int
+    severity: str
+    status: str
+    linked_task_id: str | None
+    created_at: str
+
+
+@router.get("/projects/{project_id}/evidence/regressions")
+async def list_regressions(
+    project_id: str,
+    status: str | None = Query(None, description="Filter: detected, reviewed, resolved"),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict[str, Any]:
+    """List regressions for a project.
+
+    Filters by status if provided.
+    """
+    from ..storage import evidence_regressions
+    from ..storage.connection import get_connection
+
+    formatted_regressions: list[dict[str, Any]] = []
+
+    if status == "detected" or status is None:
+        # Get unreviewed (detected) regressions
+        unreviewed = evidence_regressions.get_unreviewed(project_id, limit=limit)
+        for r in unreviewed:
+            created_at = r.get("created_at")
+            created_at_str = ""
+            if created_at is not None and hasattr(created_at, "isoformat"):
+                created_at_str = created_at.isoformat()
+            elif created_at is not None:
+                created_at_str = str(created_at)
+
+            formatted_regressions.append(
+                RegressionListItem(
+                    id=r.get("id", 0),
+                    evidence_id=r.get("evidence_id", 0),
+                    baseline_evidence_id=r.get("baseline_evidence_id"),
+                    regression_type=r.get("regression_type", "unknown"),
+                    pixel_diff_pct=r.get("pixel_diff_pct"),
+                    console_errors_added=r.get("console_errors_added", 0),
+                    severity=r.get("severity", "unknown"),
+                    status=r.get("status", "detected"),
+                    linked_task_id=r.get("linked_task_id"),
+                    created_at=created_at_str,
+                ).model_dump()
+            )
+
+    if status is None or status in ("reviewed", "resolved"):
+        # Get reviewed/resolved regressions
+        with get_connection() as conn, conn.cursor() as cur:
+            status_filter = "" if status is None else "AND r.status = %s"
+            params: list[Any] = [project_id, limit]
+            if status:
+                params.insert(1, status)
+
+            cur.execute(
+                f"""
+                SELECT r.id, r.evidence_id, r.baseline_evidence_id, r.regression_type,
+                       r.pixel_diff_pct, r.console_errors_added, r.severity,
+                       r.status, r.linked_task_id, r.created_at
+                FROM evidence_regressions r
+                JOIN evidence e ON r.evidence_id = e.id
+                WHERE e.project_id = %s {status_filter}
+                ORDER BY r.created_at DESC
+                LIMIT %s
+                """,
+                params,
+            )
+            for row in cur.fetchall():
+                created_at_val = row[9]
+                created_at_str = created_at_val.isoformat() if created_at_val else ""
+                formatted_regressions.append(
+                    RegressionListItem(
+                        id=row[0],
+                        evidence_id=row[1],
+                        baseline_evidence_id=row[2],
+                        regression_type=row[3] or "unknown",
+                        pixel_diff_pct=row[4],
+                        console_errors_added=row[5] or 0,
+                        severity=row[6] or "unknown",
+                        status=row[7] or "detected",
+                        linked_task_id=row[8],
+                        created_at=created_at_str,
+                    ).model_dump()
+                )
+
+    return {
+        "regressions": formatted_regressions,
+        "count": len(formatted_regressions),
+    }
+
+
+class RegressionReviewRequest(BaseModel):
+    """Request to review a regression."""
+
+    verdict: str = Field(
+        ...,
+        description="Verdict: 'accept_change' (intentional) or 'confirm_regression' (bug)",
+    )
+    notes: str | None = Field(None, description="Optional review notes")
+
+
+@router.post("/projects/{project_id}/evidence/regressions/{regression_id}/review")
+async def review_regression(
+    project_id: str,
+    regression_id: int,
+    request: RegressionReviewRequest,
+) -> dict[str, Any]:
+    """Review a detected regression.
+
+    Verdicts:
+    - accept_change: The change was intentional. Updates the baseline.
+    - confirm_regression: The change is a bug. Optionally creates a task.
+    """
+    from ..storage import evidence_regressions
+    from ..storage.connection import get_connection
+
+    # Validate the regression exists and belongs to this project
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id, r.evidence_id, r.baseline_evidence_id, r.status
+            FROM evidence_regressions r
+            JOIN evidence e ON r.evidence_id = e.id
+            WHERE r.id = %s AND e.project_id = %s
+            """,
+            (regression_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Regression not found")
+
+    current_status = row[3]
+    if current_status == "resolved":
+        raise HTTPException(status_code=400, detail="Regression is already resolved")
+
+    if request.verdict == "accept_change":
+        # Mark as resolved - the change was intentional
+        evidence_regressions.update_status(
+            regression_id,
+            status="resolved",
+            reviewed_by="user",
+        )
+
+        # Update the baseline to be the new evidence
+        # (The current evidence becomes the new baseline)
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE evidence
+                SET is_baseline = true
+                WHERE id = %s
+                """,
+                (row[1],),  # evidence_id
+            )
+            if row[2]:  # baseline_evidence_id
+                cur.execute(
+                    """
+                    UPDATE evidence
+                    SET is_baseline = false
+                    WHERE id = %s
+                    """,
+                    (row[2],),
+                )
+            conn.commit()
+
+        return {
+            "success": True,
+            "verdict": "accept_change",
+            "message": "Change accepted. New baseline set.",
+        }
+
+    elif request.verdict == "confirm_regression":
+        # Mark as reviewed but not resolved - it's a real bug
+        evidence_regressions.update_status(
+            regression_id,
+            status="reviewed",
+            reviewed_by="user",
+        )
+
+        # Optionally create a bug task
+        from ..tasks.evidence_capture import create_regression_task
+
+        # Get entry path
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ee.path, r.regression_type, r.severity
+                FROM evidence_regressions r
+                JOIN evidence e ON r.evidence_id = e.id
+                LEFT JOIN explorer_entries ee ON e.explorer_entry_id = ee.id
+                WHERE r.id = %s
+                """,
+                (regression_id,),
+            )
+            info_row = cur.fetchone()
+
+        if info_row:
+            entry_path = info_row[0] or f"evidence-{row[1]}"
+            regression_type = info_row[1] or "unknown"
+            severity = info_row[2] or "medium"
+
+            task = create_regression_task(
+                project_id=project_id,
+                regression_id=regression_id,
+                entry_path=entry_path,
+                regression_type=regression_type,
+                severity=severity,
+                evidence_id=row[1],
+                baseline_evidence_id=row[2],
+            )
+
+            if task:
+                return {
+                    "success": True,
+                    "verdict": "confirm_regression",
+                    "message": "Regression confirmed. Bug task created.",
+                    "task_id": task["id"],
+                }
+
+        return {
+            "success": True,
+            "verdict": "confirm_regression",
+            "message": "Regression confirmed.",
+        }
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid verdict. Use 'accept_change' or 'confirm_regression'.",
+        )

@@ -138,6 +138,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24 * 7,  # Weekly
         "kwargs": {"project_id": "summitflow"},
     },
+    # Daily evidence capture - capture screenshots and API responses at 2am UTC
+    "daily-evidence-capture": {
+        "task": "summitflow.capture_all_projects",
+        "schedule": 60 * 60 * 24,  # Every 24 hours
+        "kwargs": {"environment": "local", "dry_run": False},
+    },
 }
 
 
@@ -176,6 +182,7 @@ from app.tasks import (  # noqa: F401, E402
     autonomous,
     embedding_processor,
     enrichment,
+    evidence_capture,
     evidence_tasks,
     explorer_tasks,
     lifecycle_cleanup,

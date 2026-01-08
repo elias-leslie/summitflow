@@ -144,7 +144,7 @@ class EmbeddingService:
             try:
                 result = client.models.embed_content(
                     model=EMBEDDING_MODEL,
-                    contents=chunk,
+                    contents=chunk,  # type: ignore[arg-type]
                 )
 
                 # Extract embeddings from response
