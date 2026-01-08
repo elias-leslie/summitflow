@@ -15,9 +15,10 @@ from typing import Any, Literal
 
 from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ...utils.async_helpers import run_async_in_sync_context
-from ..agents import AgentType, LLMResponse, get_agent
+from ..agents import LLMResponse
 from ..agents.claude import ClaudeClient
 from ..agents.gemini import GeminiClient
+from ..agent_hub_client import AgentType, get_agent
 from .executor import (
     to_adk_function_tools,
     to_claude_sdk_tools,

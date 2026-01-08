@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
-from ..agents import AgentType
+from ..agent_hub_client import AgentType
 
 if TYPE_CHECKING:
     from .executor import RoundtableToolExecutor
@@ -110,7 +110,7 @@ class RoundtableSession:
             Effective agent type
         """
         if self.agent_override and self.agent_override in ("claude", "gemini"):
-            return self.agent_override  # type: ignore
+            return "claude" if self.agent_override == "claude" else "gemini"
         return default_agent
 
     def get_effective_model(

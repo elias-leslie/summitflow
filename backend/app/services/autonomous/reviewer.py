@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from ...constants import CLAUDE_OPUS
 from ...logging_config import get_logger
-from ...services.agents import get_agent
+from ...services.agent_hub_client import get_agent
 from ...services.context_helpers import filter_rules_by_files
 from ...services.git_service import capture_diff, get_diff_stats, revert_to
 from ...storage import tasks as task_store

@@ -11,7 +11,7 @@ from typing import Any
 
 from ...constants import DEFAULT_GEMINI_MODEL, GEMINI_PRO
 from ...logging_config import get_logger
-from ..agents import get_agent
+from ..agent_hub_client import get_agent
 
 logger = get_logger(__name__)
 

@@ -1142,7 +1142,7 @@ async def get_evidence_config(project_id: str) -> dict[str, Any]:
     from ..storage import evidence_config
 
     config = evidence_config.get_config(project_id)
-    return config
+    return dict(config)
 
 
 @router.put("/projects/{project_id}/evidence/config")
@@ -1174,8 +1174,11 @@ async def update_evidence_config(
     current = evidence_config.get_config(project_id)
     merged = {**current, **update_data}
 
-    result = evidence_config.upsert_config(project_id, merged)
-    return result
+    result = evidence_config.upsert_config(
+        project_id,
+        merged,  # type: ignore[arg-type]  # TypedDict merge
+    )
+    return dict(result)
 
 
 # =========================================================================

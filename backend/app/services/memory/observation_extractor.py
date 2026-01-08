@@ -18,7 +18,7 @@ from .fast_path import fast_path_extract, get_fast_path_metrics
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..agents import DualProviderClient
+    from ..agent_hub_client import DualProviderClient
 
 # Observation taxonomy
 OBSERVATION_TYPES = [
@@ -230,7 +230,7 @@ class ObservationExtractor:
     def _get_client(self) -> DualProviderClient:
         """Get or create dual provider LLM client with automatic failover."""
         if self._client is None:
-            from ..agents import DualProviderClient
+            from ..agent_hub_client import DualProviderClient
 
             self._client = DualProviderClient(
                 primary="gemini",

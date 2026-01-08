@@ -148,10 +148,10 @@ def enrich_task(
     # Build the prompt
     prompt = _build_enrichment_prompt(raw_request, context)
 
-    # Import Claude client
-    from .agents.claude import ClaudeClient
+    # Import Agent Hub client
+    from .agent_hub_client import AgentHubLLMClient
 
-    client = ClaudeClient(model=CLAUDE_OPUS_FULL)
+    client = AgentHubLLMClient(model=CLAUDE_OPUS_FULL)
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 
@@ -253,11 +253,11 @@ def validate_enrichment(enriched_task: EnrichedTask) -> ValidationResult:
 Validate the acceptance criteria for this task.
 Return ONLY valid JSON matching the output format in the prompt above."""
 
-    # Import Gemini client
+    # Import Agent Hub client for Gemini
     try:
-        from .agents.gemini import GeminiClient
+        from .agent_hub_client import AgentHubLLMClient
 
-        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
+        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL)
         if not client.is_available():
             logger.warning("Gemini not available for validation, skipping")
             return ValidationResult(
@@ -453,10 +453,10 @@ User: {message}
 Respond to the user's message about this task.
 Return ONLY valid JSON matching the response format in the prompt above."""
 
-    # Call Opus
-    from .agents.claude import ClaudeClient
+    # Call Opus via Agent Hub
+    from .agent_hub_client import AgentHubLLMClient
 
-    client = ClaudeClient(model=CLAUDE_OPUS_FULL)
+    client = AgentHubLLMClient(model=CLAUDE_OPUS_FULL)
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 

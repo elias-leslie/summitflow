@@ -287,9 +287,9 @@ def gather_gemini_context(project_id: str, query: str) -> str:
         return ""
 
     try:
-        from ..services.agents.gemini import GeminiClient
+        from ..services.agent_hub_client import AgentHubLLMClient
 
-        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
+        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL)
         if not client.is_available():
             logger.warning("Gemini not available for context gathering")
             return ""

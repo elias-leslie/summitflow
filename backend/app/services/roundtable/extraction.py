@@ -12,7 +12,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
-from ..agents import AgentType, get_agent
+from ..agent_hub_client import AgentType, get_agent
 
 if TYPE_CHECKING:
     from .session import RoundtableSession

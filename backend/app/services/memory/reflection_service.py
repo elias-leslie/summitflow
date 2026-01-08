@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..agents import DualProviderClient
+    from ..agent_hub_client import DualProviderClient
 
 from app.constants import CLAUDE_HAIKU, DEFAULT_GEMINI_MODEL
 from app.storage.memory import get_observations_by_session
@@ -204,7 +204,7 @@ class ReflectionService:
     def _get_client(self) -> DualProviderClient:
         """Get or create dual provider LLM client with automatic failover."""
         if self._client is None:
-            from ..agents import DualProviderClient
+            from ..agent_hub_client import DualProviderClient
 
             self._client = DualProviderClient(
                 primary="gemini",

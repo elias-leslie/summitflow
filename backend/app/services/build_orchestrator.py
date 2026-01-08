@@ -21,7 +21,7 @@ from typing import Any, cast
 from ..storage import agent_sessions as sessions_storage
 from ..storage import capabilities as caps_storage
 from ..storage import tests as tests_storage
-from .agents import AgentType, get_agent
+from .agent_hub_client import AgentType, get_agent
 from .recovery import (
     RecoveryManager,
     RecoveryStrategy,

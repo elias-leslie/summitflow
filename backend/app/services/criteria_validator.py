@@ -90,7 +90,7 @@ def validate_criteria(
         return ValidationResult(valid=True, failures=[])
 
     # Import here to avoid circular imports
-    from .agents import get_agent
+    from .agent_hub_client import get_agent
 
     # Format criteria for prompt
     criteria_data = [
