@@ -83,7 +83,8 @@ BLOAT_THRESHOLDS: dict[str, tuple[int, int]] = {
 STALE_THRESHOLD_DAYS = 90
 
 # Schema version for metadata - increment when adding new fields
-METADATA_SCHEMA_VERSION = 2
+# v3: Added cyclomatic_complexity_avg, cyclomatic_complexity_max, complexity_method
+METADATA_SCHEMA_VERSION = 3
 
 # Regex patterns for complexity metrics
 FUNCTION_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -289,7 +290,27 @@ class FileScanner(BaseScanner):
             function_count = self._count_matches(ext, FUNCTION_PATTERNS, content)
             class_count = self._count_matches(ext, CLASS_PATTERNS, content)
             import_count = self._count_matches(ext, IMPORT_PATTERNS, content)
-            complexity_score = self._calculate_complexity_score(lines, function_count, class_count)
+
+            # Use Radon CC for Python files, heuristic for others
+            cc_avg: float | None = None
+            cc_max: float | None = None
+            complexity_method = "heuristic"
+
+            if ext == ".py" and content:
+                radon_result = self._calculate_radon_cc(content)
+                if radon_result is not None:
+                    cc_avg, cc_max = radon_result
+                    complexity_score = cc_avg
+                    complexity_method = "radon"
+                else:
+                    complexity_score = self._calculate_complexity_score(
+                        lines, function_count, class_count
+                    )
+            else:
+                complexity_score = self._calculate_complexity_score(
+                    lines, function_count, class_count
+                )
+
             refactor_priority = self._calculate_refactor_priority(complexity_score, lines)
 
             # Detect magic strings
@@ -318,6 +339,9 @@ class FileScanner(BaseScanner):
                     "class_count": class_count,
                     "import_count": import_count,
                     "complexity_score": complexity_score,
+                    "complexity_method": complexity_method,
+                    "cyclomatic_complexity_avg": cc_avg,
+                    "cyclomatic_complexity_max": cc_max,
                     "refactor_priority": refactor_priority,
                     "magic_strings": magic_strings if magic_strings else None,
                     "compat_cruft": compat_cruft if compat_cruft else None,
@@ -350,8 +374,35 @@ class FileScanner(BaseScanner):
     def _calculate_complexity_score(
         self, lines: int, function_count: int, class_count: int
     ) -> float:
-        """Calculate complexity score: lines/100 + funcs/10 + classes/5."""
+        """Calculate heuristic complexity score: lines/100 + funcs/10 + classes/5.
+
+        This is a fallback for non-Python files or when Radon fails.
+        """
         return round(lines / 100 + function_count / 10 + class_count / 5, 2)
+
+    def _calculate_radon_cc(self, content: str) -> tuple[float, float] | None:
+        """Calculate cyclomatic complexity using Radon.
+
+        Args:
+            content: Python source code
+
+        Returns:
+            Tuple of (avg_cc, max_cc) or None if analysis fails
+        """
+        try:
+            from radon.complexity import cc_visit
+
+            results = cc_visit(content)
+            if not results:
+                return (0.0, 0.0)
+
+            complexities = [r.complexity for r in results]
+            avg_cc = round(sum(complexities) / len(complexities), 2)
+            max_cc = float(max(complexities))
+            return (avg_cc, max_cc)
+        except Exception:
+            # Radon can fail on syntax errors, encoding issues, etc.
+            return None
 
     def _calculate_refactor_priority(self, complexity_score: float, lines: int) -> str:
         """Determine refactor priority based on complexity and lines."""
