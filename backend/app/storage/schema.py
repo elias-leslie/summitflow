@@ -89,15 +89,20 @@ def init_schema() -> None:
         # ============================================================
 
         # Evidence table - evidence storage for verification
+        # Primary link is explorer_entry_id; capability_id retained for backwards compatibility
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS evidence (
                     id SERIAL PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     evidence_id VARCHAR(50) NOT NULL,
-                    capability_id VARCHAR(50) NOT NULL,
+                    capability_id VARCHAR(50),
                     criterion_id VARCHAR(20),
-                    evidence_type VARCHAR(20) DEFAULT 'evidence',
+                    explorer_entry_id INTEGER REFERENCES explorer_entries(id) ON DELETE SET NULL,
+                    evidence_type VARCHAR(50) DEFAULT 'screenshot',
+                    environment VARCHAR(50) DEFAULT 'local',
+                    sub_element_selector VARCHAR(500),
+                    viewport_name VARCHAR(50),
                     file_path VARCHAR(500) NOT NULL,
                     file_size_bytes INTEGER,
                     version INTEGER DEFAULT 1,
@@ -122,6 +127,13 @@ def init_schema() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_capability ON evidence(capability_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_explorer_entry ON evidence(explorer_entry_id)"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_environment ON evidence(environment)")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_viewport ON evidence(viewport_name) WHERE viewport_name IS NOT NULL"
+        )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE"
