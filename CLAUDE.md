@@ -89,9 +89,21 @@ st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 
 **Status:** Memory system disabled pending migration to standalone system.
 
-- **Migration plan:** `tasks/memory-system/memory-system-requirements.md`
+**What's DISABLED:**
+- Pattern persistence (nothing saved between sessions)
+- `member-dis search/expand/index` commands return empty
+- Memory-based suggestions at session start
+- Diary aggregation and reflection generation
+- Embedding updates
+
+**What's ACTIVE (fire-and-forget):**
+- Observation capture (PostToolUse hook still runs)
+- API endpoints exist but return empty results
+
+**Configuration:**
 - **To re-enable:** Set `MEMORY_SYSTEM_ENABLED=true` in `backend/.env`, restart services
-- **Disabled:** 2026-01-06 - hooks, observation extraction, diary aggregation, embeddings, reflections
+- **Migration plan:** `tasks/memory-system/memory-system-requirements.md`
+- **Disabled since:** 2026-01-06
 
 ---
 

@@ -296,6 +296,9 @@ class FileScanner(BaseScanner):
             cc_max: float | None = None
             complexity_method = "heuristic"
 
+            # Comment density (Python only via radon.raw)
+            comment_density: float | None = None
+
             if ext == ".py" and content:
                 radon_result = self._calculate_radon_cc(content)
                 if radon_result is not None:
@@ -306,6 +309,8 @@ class FileScanner(BaseScanner):
                     complexity_score = self._calculate_complexity_score(
                         lines, function_count, class_count
                     )
+                # Calculate comment density for Python files
+                comment_density = self._calculate_comment_density(content)
             else:
                 complexity_score = self._calculate_complexity_score(
                     lines, function_count, class_count
@@ -342,6 +347,7 @@ class FileScanner(BaseScanner):
                     "complexity_method": complexity_method,
                     "cyclomatic_complexity_avg": cc_avg,
                     "cyclomatic_complexity_max": cc_max,
+                    "comment_density": comment_density,
                     "refactor_priority": refactor_priority,
                     "magic_strings": magic_strings if magic_strings else None,
                     "compat_cruft": compat_cruft if compat_cruft else None,
@@ -402,6 +408,25 @@ class FileScanner(BaseScanner):
             return (avg_cc, max_cc)
         except Exception:
             # Radon can fail on syntax errors, encoding issues, etc.
+            return None
+
+    def _calculate_comment_density(self, content: str) -> float | None:
+        """Calculate comment density (comment lines / total lines) using radon.raw.
+
+        Returns:
+            Comment density as percentage (0-100), or None if analysis fails.
+            >15% is flagged for review (excessive commenting).
+        """
+        try:
+            from radon.raw import analyze
+
+            result = analyze(content)
+            if result.loc == 0:
+                return 0.0
+            # comments / loc gives ratio, *100 for percentage
+            density: float = float(result.comments) / float(result.loc) * 100
+            return round(density, 1)
+        except Exception:
             return None
 
     def _calculate_refactor_priority(self, complexity_score: float, lines: int) -> str:

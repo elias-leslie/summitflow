@@ -14,7 +14,8 @@ interface FileRowProps {
 }
 
 // Helpers
-const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString();
+const formatNumber = (n: number | undefined | null) =>
+  (n ?? 0).toLocaleString();
 
 const formatBytes = (bytes: number | undefined | null) => {
   const b = bytes ?? 0;
@@ -47,22 +48,47 @@ function HealthBadge({ priority }: { priority: string | undefined }) {
     <span
       className={cn(
         "w-2 h-2 rounded-full shrink-0",
-        isHigh ? "bg-red-500" : "bg-amber-500"
+        isHigh ? "bg-red-500" : "bg-amber-500",
       )}
-      title={isHigh ? "Critical - needs refactoring" : "Warning - consider refactoring"}
+      title={
+        isHigh
+          ? "Critical - needs refactoring"
+          : "Warning - consider refactoring"
+      }
     />
+  );
+}
+
+// Comment density indicator - shows when >15% (excessive commenting)
+function CommentDensityBadge({
+  density,
+}: {
+  density: number | undefined | null;
+}) {
+  if (density === undefined || density === null || density <= 15) return null;
+
+  return (
+    <span
+      className="text-[10px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 shrink-0"
+      title={`Comment density: ${density.toFixed(1)}% (>15% is excessive)`}
+    >
+      {density.toFixed(0)}%
+    </span>
   );
 }
 
 export function FileRow({ entry }: FileRowProps) {
   const isDir = entry.metadata.is_directory;
   const loc = isDir
-    ? entry.metadata.lines_of_code ?? 0
-    : entry.metadata.lines_of_code ?? 0;
+    ? (entry.metadata.lines_of_code ?? 0)
+    : (entry.metadata.lines_of_code ?? 0);
   const size = entry.metadata.size_bytes ?? 0;
   const bloatLevel = entry.metadata.bloat_level;
   const complexityScore = entry.metadata.complexity_score as number | undefined;
-  const refactorPriority = entry.metadata.refactor_priority as string | undefined;
+  const refactorPriority = entry.metadata.refactor_priority as
+    | string
+    | undefined;
+  const commentDensity = entry.metadata.comment_density as number | undefined;
 
   return (
     <>
@@ -81,11 +107,12 @@ export function FileRow({ entry }: FileRowProps) {
           "flex-1 truncate flex items-center gap-2",
           isDir && "font-medium text-slate-200",
           bloatLevel === "critical" && "text-red-400",
-          bloatLevel === "warning" && "text-amber-400"
+          bloatLevel === "warning" && "text-amber-400",
         )}
       >
         <span className="truncate">{entry.name}</span>
         <HealthBadge priority={refactorPriority} />
+        <CommentDensityBadge density={commentDensity} />
       </ColumnValue>
 
       {/* LOC */}
