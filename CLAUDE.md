@@ -98,6 +98,7 @@ st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 ## Additional Resources
 
 - **Model Constants:** See `~/.claude/rules/model-standards.md` (never hardcode model strings)
+- **Commands vs Skills:** See `~/.claude/rules/commands-vs-skills.md` (commands are `/invoked`, skills auto-trigger)
 - **Pre-Implementation Checks:** Use `/pre_it` command
 - **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
 - **Memory System:** DISABLED - see `backend/.env` (`MEMORY_SYSTEM_ENABLED=false`)
