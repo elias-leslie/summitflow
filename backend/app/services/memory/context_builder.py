@@ -28,9 +28,9 @@ REDIS_URL = "redis://localhost:6379/1"
 CACHE_TTL = 3600  # 1 hour TTL
 
 
-def get_redis() -> redis.Redis:  # type: ignore[type-arg]
+def get_redis() -> redis.Redis:
     """Get Redis connection for caching."""
-    return redis.from_url(REDIS_URL, decode_responses=True)
+    return redis.from_url(REDIS_URL, decode_responses=True)  # type: ignore[no-any-return]
 
 
 def estimate_tokens(text: str | None) -> int:
@@ -100,7 +100,7 @@ class ContextBuilder:
             cached = r.get(self._cache_key("index"))
             if cached:
                 logger.debug(f"Cache HIT for {self._cache_key('index')}")
-                result: dict[str, Any] = json.loads(cached)
+                result: dict[str, Any] = json.loads(str(cached))
                 return result
             logger.debug(f"Cache MISS for {self._cache_key('index')}")
         except redis.RedisError as e:

@@ -330,7 +330,7 @@ class GeminiClient(LLMClient):
 
         # Initialize class-level session service if needed
         if GeminiClient._session_service is None:
-            GeminiClient._session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
+            GeminiClient._session_service = InMemorySessionService()
 
         # Use the shared session service for persistence
         runner = Runner(

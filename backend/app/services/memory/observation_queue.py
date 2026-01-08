@@ -24,13 +24,13 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DEBOUNCE_SECONDS = 5  # Only trigger Celery task once per 5 seconds per project
 
 
-def _get_redis() -> redis.Redis | None:  # type: ignore[type-arg]
+def _get_redis() -> redis.Redis | None:
     """Get Redis connection for debouncing.
 
     Returns None if Redis is unavailable (graceful degradation).
     """
     try:
-        r: redis.Redis = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)  # type: ignore[type-arg, no-untyped-call]
+        r: redis.Redis = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=1)
         r.ping()  # Verify connection
         return r
     except redis.RedisError as e:
