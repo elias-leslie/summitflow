@@ -196,10 +196,11 @@ def get_agent(
 
 
 class DualProviderClient(LLMClient):
-    """Dual provider client with automatic failover via Agent Hub.
+    """Single provider client using Agent Hub.
 
-    Tries primary provider first, falls back to secondary on error.
-    All requests go through Agent Hub which handles provider routing.
+    DEPRECATED: Named 'DualProviderClient' for backwards compatibility only.
+    Fallback logic has been removed - uses primary provider only via Agent Hub.
+    For new code, use AgentHubLLMClient directly.
     """
 
     def __init__(
@@ -208,61 +209,45 @@ class DualProviderClient(LLMClient):
         claude_model: str | None = None,
         gemini_model: str | None = None,
     ) -> None:
-        """Initialize dual provider client.
+        """Initialize client with primary provider.
 
         Args:
-            primary: Which provider to try first ("claude" or "gemini")
-            claude_model: Model for Claude (uses default if not specified)
-            gemini_model: Model for Gemini (uses default if not specified)
+            primary: Which provider to use ("claude" or "gemini")
+            claude_model: Model for Claude (used if primary="claude")
+            gemini_model: Model for Gemini (used if primary="gemini")
         """
         from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 
         self.primary = primary
-        self._claude_model = claude_model or DEFAULT_CLAUDE_MODEL
-        self._gemini_model = gemini_model or DEFAULT_GEMINI_MODEL
-        self._clients: dict[str, AgentHubLLMClient] = {}
-        self._initialized = False
+        if primary == "claude":
+            self._model = claude_model or DEFAULT_CLAUDE_MODEL
+        else:
+            self._model = gemini_model or DEFAULT_GEMINI_MODEL
+
+        self._client: AgentHubLLMClient | None = None
 
     def _ensure_initialized(self) -> None:
-        """Initialize clients on first use."""
-        if self._initialized:
+        """Initialize client on first use."""
+        if self._client is not None:
             return
 
-        try:
-            self._clients["claude"] = AgentHubLLMClient(
-                model=self._claude_model,
-                provider="claude",
-            )
-        except Exception as e:
-            logger.warning(f"Claude client init failed: {e}")
-
-        try:
-            self._clients["gemini"] = AgentHubLLMClient(
-                model=self._gemini_model,
-                provider="gemini",
-            )
-        except Exception as e:
-            logger.warning(f"Gemini client init failed: {e}")
-
-        if not self._clients:
-            raise RuntimeError("No LLM clients could be initialized")
-
-        self._initialized = True
+        self._client = AgentHubLLMClient(
+            model=self._model,
+            provider=self.primary,
+        )
 
     def is_available(self) -> bool:
-        """Check if at least one provider is available."""
+        """Check if provider is available."""
         try:
             self._ensure_initialized()
-            return any(c.is_available() for c in self._clients.values())
-        except RuntimeError:
+            return self._client.is_available() if self._client else False
+        except Exception:
             return False
 
     def get_model_name(self) -> str:
-        """Get model name of primary provider."""
+        """Get the model identifier."""
         self._ensure_initialized()
-        if self.primary in self._clients:
-            return self._clients[self.primary].get_model_name()
-        return next(iter(self._clients.values())).get_model_name()
+        return self._client.get_model_name() if self._client else self._model
 
     def generate(
         self,
@@ -272,42 +257,27 @@ class DualProviderClient(LLMClient):
         temperature: float = 1.0,
         **kwargs: Any,
     ) -> LLMResponse:
-        """Generate with automatic failover.
+        """Generate using primary provider via Agent Hub.
 
-        Tries primary provider first, falls back to secondary on error.
+        No fallback - if primary fails, error is raised.
         """
         self._ensure_initialized()
+        if not self._client:
+            raise RuntimeError("Client not initialized")
 
-        secondary = "gemini" if self.primary == "claude" else "claude"
-        order = [self.primary, secondary]
-
-        last_error = None
-        for provider_name in order:
-            if provider_name not in self._clients:
-                continue
-
-            client = self._clients[provider_name]
-            try:
-                return client.generate(
-                    prompt=prompt,
-                    system=system,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    **kwargs,
-                )
-            except Exception as e:
-                logger.warning(f"{provider_name} failed: {e}, trying fallback...")
-                last_error = e
-                continue
-
-        raise RuntimeError(f"All providers failed. Last error: {last_error}")
+        return self._client.generate(
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs,
+        )
 
     def close(self) -> None:
-        """Close all client connections."""
-        for client in self._clients.values():
-            client.close()
-        self._clients.clear()
-        self._initialized = False
+        """Close the client connection."""
+        if self._client:
+            self._client.close()
+            self._client = None
 
 
 __all__ = [

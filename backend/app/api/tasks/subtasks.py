@@ -242,9 +242,9 @@ async def cleanup_prompt_endpoint(
         CleanupPromptResponse with cleaned text and changes list
     """
     try:
-        from ...services.agents.gemini import GeminiClient
+        from ...services.agent_hub_client import AgentHubLLMClient
 
-        client = GeminiClient(model=DEFAULT_GEMINI_MODEL)
+        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL, provider="gemini")
         if not client.is_available():
             # Return unchanged if Gemini unavailable
             return CleanupPromptResponse(

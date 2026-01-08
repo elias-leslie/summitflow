@@ -15,19 +15,20 @@ from typing import Any, Literal
 
 from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ...utils.async_helpers import run_async_in_sync_context
+from ..agent_hub_client import AgentHubLLMClient, AgentType, get_agent
 from ..agents import LLMResponse
-from ..agents.claude import ClaudeClient
-from ..agents.gemini import GeminiClient
-from ..agent_hub_client import AgentType, get_agent
-from .executor import (
-    to_adk_function_tools,
-    to_claude_sdk_tools,
-)
+
+# MIGRATION NOTE: Native SDK clients removed. Using Agent Hub client.
+# Streaming tool execution (generate_with_tools_native) not yet supported.
+# See: task-37346c12 for streaming tool support.
 from .extraction import (
     accept_spec,
     extract_spec_from_conversation,
     get_effective_prompt,
 )
+
+# NOTE: to_adk_function_tools and to_claude_sdk_tools removed - not needed
+# until streaming tool support is added to Agent Hub
 from .permissions import permission_manager
 from .prompts import build_prompt_with_context, build_system_prompt
 from .session import RoundtableMessage, RoundtableSession
@@ -101,15 +102,11 @@ class RoundtableService:
         self._permission_callback = permission_callback
         self._sessions: dict[str, RoundtableSession] = {}
 
-        # Create agent clients with permission callback
-        self._claude_client = ClaudeClient(
-            model=claude_model,
-            permission_callback=permission_callback,
-        )
-        self._gemini_client = GeminiClient(
-            model=gemini_model,
-            permission_callback=permission_callback,
-        )
+        # Create Agent Hub clients
+        # NOTE: Permission callbacks not supported via Agent Hub yet
+        # TODO: Add permission hook support to Agent Hub API
+        self._claude_client = AgentHubLLMClient(model=claude_model, provider="claude")
+        self._gemini_client = AgentHubLLMClient(model=gemini_model, provider="gemini")
 
     def get_session(self, session_id: str) -> RoundtableSession | None:
         """Get an existing session by ID."""
@@ -308,39 +305,16 @@ class RoundtableService:
         Yields:
             Event dicts with message content, tool calls, and captured SDK session IDs
         """
-        tools = session.tool_executor.get_available_tools()
-        write_enabled = session.tool_executor.has_write_access()
-        yolo_mode = session.tool_executor.yolo_mode
-
-        if agent_type == "claude":
-            # Use Claude's native SDK with PreToolUse hooks
-            # Pass existing session ID for resume if available
-            sdk_tools = to_claude_sdk_tools(tools)
-            async for event, sdk_session_id in self._claude_client.generate_with_tools_native(
-                prompt=prompt,
-                tools=sdk_tools,
-                system=system,
-                write_enabled=write_enabled,
-                yolo_mode=yolo_mode,
-                session_id=session.claude_sdk_session_id,
-            ):
-                self._persist_sdk_session_id("claude", sdk_session_id, session)
-                yield {"agent": "claude", "event": event, "sdk_session_id": sdk_session_id}
-
-        else:  # gemini
-            # Use Google ADK with before_tool_callback
-            # Pass existing session ID for resume if available
-            adk_tools = to_adk_function_tools(tools, session.tool_executor)
-            async for event, gemini_session_id in self._gemini_client.generate_with_tools_native(
-                prompt=prompt,
-                tools=adk_tools,
-                system=system,
-                write_enabled=write_enabled,
-                yolo_mode=yolo_mode,
-                session_id=session.gemini_sdk_session_id,
-            ):
-                self._persist_sdk_session_id("gemini", gemini_session_id, session)
-                yield {"agent": "gemini", "event": event, "sdk_session_id": gemini_session_id}
+        # TODO(task-37346c12): Add streaming tool support to Agent Hub API
+        # Native SDK tool calling (generate_with_tools_native) has been removed.
+        # Agent Hub client supports basic tool calling via complete() with tools param,
+        # but NOT streaming tool execution with permission callbacks.
+        raise NotImplementedError(
+            f"Streaming tool execution for {agent_type} not yet supported via Agent Hub. "
+            "Use simple completions with tools parameter, or create task for streaming support."
+        )
+        # Make this an async generator to match the function signature
+        yield {}  # Unreachable but needed for type checking
 
     async def route_message_with_native_tools(
         self,
