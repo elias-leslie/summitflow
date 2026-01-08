@@ -75,3 +75,28 @@ def get_all_project_root_paths() -> list[str]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE root_path IS NOT NULL")
         return [row[0] for row in cur.fetchall()]
+
+
+def list_projects() -> list[dict[str, Any]]:
+    """List all projects.
+
+    Returns:
+        List of project dicts with id, name, root_path.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, root_path, created_at
+            FROM projects
+            ORDER BY created_at
+            """
+        )
+        return [
+            {
+                "id": row[0],
+                "name": row[1],
+                "root_path": row[2],
+                "created_at": row[3],
+            }
+            for row in cur.fetchall()
+        ]

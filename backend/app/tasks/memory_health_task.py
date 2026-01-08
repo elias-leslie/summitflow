@@ -31,7 +31,7 @@ MEMORY_SYSTEM_ENABLED = os.getenv("MEMORY_SYSTEM_ENABLED", "true").lower() in ("
 )
 def run_memory_health_check(
     self: Any,
-    project_id: str = "summitflow",
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Run memory health check and auto-correct any issues.
 
@@ -41,7 +41,7 @@ def run_memory_health_check(
     - Detect missing observation types
 
     Args:
-        project_id: Project to check (default: summitflow)
+        project_id: Project to check. If None, iterates all projects.
 
     Returns:
         Health report summary with corrections and warnings.
@@ -51,8 +51,27 @@ def run_memory_health_check(
         logger.debug("memory_health_check_skipped: memory system disabled")
         return {"status": "skipped", "reason": "memory_system_disabled"}
 
-    logger.info(f"run_memory_health_check: starting for project={project_id}")
+    # If no project specified, run for all projects
+    if project_id is None:
+        from ..storage.projects import list_projects
 
+        all_projects = list_projects()
+        all_results: dict[str, Any] = {"projects": {}}
+
+        for proj in all_projects:
+            proj_id = proj["id"]
+            logger.info(f"run_memory_health_check: starting for project={proj_id}")
+            result = _run_health_check_for_project(proj_id)
+            all_results["projects"][proj_id] = result
+
+        return all_results
+
+    logger.info(f"run_memory_health_check: starting for project={project_id}")
+    return _run_health_check_for_project(project_id)
+
+
+def _run_health_check_for_project(project_id: str) -> dict[str, Any]:
+    """Run health check for a single project."""
     try:
         checker = MemoryHealthChecker(project_id)
         report = checker.check_and_correct()
@@ -86,8 +105,8 @@ def run_memory_health_check(
         return report.to_dict()
 
     except Exception as e:
-        logger.error(f"run_memory_health_check: failed - {e}")
-        raise
+        logger.error(f"run_memory_health_check: failed for {project_id} - {e}")
+        return {"status": "error", "error": str(e)}
 
 
 @shared_task(  # type: ignore[untyped-decorator]

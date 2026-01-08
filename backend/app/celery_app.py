@@ -91,10 +91,10 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 5,  # Every 5 minutes
     },
     # Memory health check - auto-apply patterns and detect issues
+    # Note: Task iterates all projects if project_id not specified
     "run-memory-health-check": {
         "task": "summitflow.run_memory_health_check",
         "schedule": 60 * 60 * 6,  # Every 6 hours
-        "kwargs": {"project_id": "summitflow"},
     },
     # Weekly deep review - comprehensive instruction surface analysis
     "run-weekly-deep-review": {
