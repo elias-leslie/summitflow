@@ -15,8 +15,7 @@ from typing import Any, Literal
 
 from ...constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ...utils.async_helpers import run_async_in_sync_context
-from ..agent_hub_client import AgentHubLLMClient, AgentType, get_agent
-from ..agents import LLMResponse
+from ..agent_hub_client import AgentHubLLMClient, AgentType, LLMResponse, get_agent
 
 # MIGRATION NOTE: Native SDK clients removed. Using Agent Hub client.
 # Streaming tool execution (generate_with_tools_native) not yet supported.

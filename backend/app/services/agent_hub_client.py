@@ -2,20 +2,99 @@
 
 Provides LLMClient-compatible interface using Agent Hub API.
 This replaces the direct Claude/Gemini clients with centralized Agent Hub.
+
+This module provides:
+- LLMResponse: Standardized response dataclass
+- LLMClient: Abstract base class for LLM providers
+- AgentHubLLMClient: Concrete implementation using Agent Hub API
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from agent_hub import AgentHubClient, CompletionResponse
 from agent_hub.exceptions import AgentHubError
 
-from .agents.base import LLMClient, LLMResponse
-
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LLMResponse:
+    """Standardized LLM response across all providers."""
+
+    content: str
+    provider: str  # 'claude' or 'gemini'
+    model: str
+    usage: dict[str, int] = field(default_factory=dict)
+    stop_reason: str = "end_turn"  # 'end_turn', 'tool_use', 'max_tokens'
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    raw_response: dict[str, Any] = field(default_factory=dict)
+
+
+class LLMClient(ABC):
+    """Abstract base class for LLM providers.
+
+    Implementations route requests through Agent Hub for unified management.
+    """
+
+    @abstractmethod
+    def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 1.0,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Generate completion.
+
+        Args:
+            prompt: User prompt
+            system: System prompt (optional)
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Provider-specific options
+
+        Returns:
+            LLMResponse with content and metadata
+
+        Raises:
+            RuntimeError: If generation fails
+        """
+        pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Check if provider is available and operational."""
+        pass
+
+    @abstractmethod
+    def get_model_name(self) -> str:
+        """Get the model identifier used by this client."""
+        pass
+
+    def authenticate(self) -> bool:
+        """Verify authentication is working."""
+        return self.is_available()
+
+    def send_message(
+        self,
+        message: str,
+        system: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Send a message and get response text.
+
+        Simplified interface for basic chat interactions.
+        """
+        response = self.generate(prompt=message, system=system, **kwargs)
+        return response.content
+
 
 # Default Agent Hub URL - can be overridden via environment
 AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
@@ -284,5 +363,7 @@ __all__ = [
     "AgentHubLLMClient",
     "AgentType",
     "DualProviderClient",
+    "LLMClient",
+    "LLMResponse",
     "get_agent",
 ]

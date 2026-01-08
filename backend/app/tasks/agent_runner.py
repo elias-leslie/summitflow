@@ -11,7 +11,7 @@ from typing import Any
 from celery import shared_task
 
 from ..logging_config import get_logger
-from ..services.agents import AgentType, get_agent
+from ..services.agent_hub_client import AgentType, get_agent
 from ..storage import capabilities, tasks, tests
 
 logger = get_logger(__name__)

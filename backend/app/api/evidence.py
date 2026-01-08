@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..logging_config import get_logger
-from ..services.agents import AgentType, get_agent
+from ..services.agent_hub_client import AgentType, get_agent
 from ..services.evidence_manager import (
     capture_evidence,
     get_evidence,

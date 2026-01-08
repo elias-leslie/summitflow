@@ -4,7 +4,7 @@ from typing import cast
 
 from fastapi import APIRouter, HTTPException
 
-from ...services.agents import AgentType
+from ...services.agent_hub_client import AgentType
 from ...services.roundtable import get_roundtable_service
 from ...storage import roundtable as roundtable_storage
 from .helpers import restore_session_from_db
