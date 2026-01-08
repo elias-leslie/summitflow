@@ -429,7 +429,7 @@ function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 text-right"
+          className="col-span-2 justify-end"
         />
         <SortableHeader
           field="lines_of_code"
@@ -437,7 +437,7 @@ function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 text-right"
+          className="col-span-2 justify-end"
         />
         <SortableHeader
           field="priority"
@@ -445,7 +445,7 @@ function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 text-center"
+          className="col-span-2 justify-center"
         />
       </div>
 

@@ -1,0 +1,335 @@
+{
+  "project": "summitflow",
+  "version": "1.0.0",
+  "status": "complete",
+  "last_updated": "2026-01-07T16:00:00Z",
+  "objective": "All hardcoded project references and configuration gaps preventing new projects from inheriting functionality are identified with remediation paths",
+  "overview": {
+    "summary": "Comprehensive audit of SummitFlow's project parity violations - static code, hardcoded project IDs, and configuration gaps that prevent new projects (agent-hub, terminal) from receiving the same functionality as older projects (portfolio-ai, summitflow).",
+    "current_state": "4 projects registered but only 2 (summitflow, portfolio-ai) are fully supported. Hardcoded project lists, path whitelists, database mappings, and tool definitions prevent agent-hub and terminal from using explorer scanning, roundtable tools, memory system, and autonomous agents.",
+    "desired_state": "Any registered project automatically inherits all SummitFlow functionality without code changes. Configuration is database-driven, not hardcoded."
+  },
+  "gaps": [
+    {
+      "id": "GAP-001",
+      "category": "critical",
+      "title": "ALLOWED_BASES whitelist blocks new projects",
+      "location": "backend/app/services/roundtable/validation.py:12-15",
+      "description": "ALLOWED_BASES hardcodes only 2 project paths. New projects cannot use roundtable tools (read_file, write_file, search_code, etc.).",
+      "current_code": "ALLOWED_BASES = [\"/home/kasadis/summitflow\", \"/home/kasadis/portfolio-ai\"]",
+      "fix": "Query projects table for root_path values at runtime, cache with TTL",
+      "affected_features": ["roundtable agents", "multi-agent execution", "autonomous coding"]
+    },
+    {
+      "id": "GAP-002",
+      "category": "critical",
+      "title": "PROJECT_DB_ENV_VARS only supports 2 projects",
+      "location": "backend/app/services/explorer/types/database.py:52-55",
+      "description": "Database scanner cannot scan tables for new projects because env var mapping is hardcoded.",
+      "current_code": "PROJECT_DB_ENV_VARS = {\"portfolio-ai\": \"PORTFOLIO_AI_DB_URL\", \"summitflow\": \"DATABASE_URL\"}",
+      "fix": "Store db_url in projects table or use convention (PROJECT_ID_DB_URL)",
+      "affected_features": ["explorer table scanning", "database discovery"]
+    },
+    {
+      "id": "GAP-003",
+      "category": "critical",
+      "title": "Tool definitions hardcode project enum",
+      "location": "backend/app/services/roundtable/tools/definitions.py:122-123",
+      "description": "get_project_structure_tool() has enum: [\"summitflow\", \"portfolio-ai\"] - agents cannot select agent-hub or terminal.",
+      "current_code": "\"enum\": [\"summitflow\", \"portfolio-ai\"]",
+      "fix": "Remove enum constraint or dynamically populate from projects table",
+      "affected_features": ["roundtable project exploration", "agent project switching"]
+    },
+    {
+      "id": "GAP-004",
+      "category": "high",
+      "title": "Celery beat schedule hardcodes project_id=summitflow",
+      "location": "backend/app/celery_app.py:97",
+      "description": "Memory health check only runs for summitflow project. Other projects get no automated health checks.",
+      "current_code": "\"kwargs\": {\"project_id\": \"summitflow\"}",
+      "fix": "Create task that iterates all projects, or register beat tasks per project",
+      "affected_features": ["memory health checks", "automated maintenance"]
+    },
+    {
+      "id": "GAP-005",
+      "category": "high",
+      "title": "Default project fallbacks hardcode 'summitflow'",
+      "locations": [
+        "backend/app/services/autonomous/prompt_builder.py:62",
+        "backend/app/services/roundtable/executor.py:406",
+        "backend/app/services/memory/context_builder.py:586-589",
+        "backend/app/api/hooks.py:316"
+      ],
+      "description": "When project_id is missing or unknown, code falls back to 'summitflow'. Should fail explicitly or require project_id.",
+      "fix": "Remove fallbacks, make project_id required parameter",
+      "affected_features": ["autonomous agents", "roundtable", "memory system", "hooks"]
+    },
+    {
+      "id": "GAP-006",
+      "category": "high",
+      "title": "Tool path defaults hardcode /home/kasadis/summitflow",
+      "locations": [
+        "backend/app/services/roundtable/tools/definitions.py:60",
+        "backend/app/services/roundtable/tools/definitions.py:96"
+      ],
+      "description": "search_code and list_files tools default to summitflow path in descriptions and defaults.",
+      "fix": "Remove defaults or use 'current project' from context",
+      "affected_features": ["roundtable code search", "file listing"]
+    },
+    {
+      "id": "GAP-007",
+      "category": "high",
+      "title": "Hardcoded DEFAULT_REPO_PATH constants",
+      "locations": [
+        "backend/app/tasks/autonomous.py:31",
+        "backend/app/services/implementation/types.py:12",
+        "backend/app/services/autonomous/reviewer.py:31",
+        "backend/app/api/autonomous.py:15",
+        "backend/app/api/context.py:620",
+        "backend/app/api/evidence.py:84"
+      ],
+      "description": "Multiple services hardcode /home/kasadis/summitflow as default repo path.",
+      "fix": "Read from project config or require explicit project_id",
+      "affected_features": ["autonomous agents", "context building", "evidence capture"]
+    },
+    {
+      "id": "GAP-008",
+      "category": "medium",
+      "title": "Frontend hardcodes SUMMITFLOW_PROJECT_ID",
+      "location": "frontend/components/layout/TopBar.tsx:14",
+      "description": "TopBar uses const SUMMITFLOW_PROJECT_ID = 'summitflow' for notifications.",
+      "fix": "Use selected project from context/state",
+      "affected_features": ["notifications UI", "help context"]
+    },
+    {
+      "id": "GAP-009",
+      "category": "medium",
+      "title": "Explorer scan results differ drastically by project",
+      "description": "portfolio-ai: 2206 entries, summitflow: 1264, agent-hub: 279, terminal: 167. Newer projects have almost no endpoint/page/table discovery.",
+      "root_cause": "GAP-002 (no DB URL mapping) prevents table scanning. Endpoint scanner may have assumptions about directory structure.",
+      "fix": "Ensure all scanner types work for all registered projects",
+      "affected_features": ["code health dashboard", "explorer visualization"]
+    },
+    {
+      "id": "GAP-010",
+      "category": "medium",
+      "title": "TDD architecture not initialized for new projects",
+      "description": "summitflow has 71 capabilities, 390 acceptance criteria. agent-hub has 15 capabilities. terminal has 0. No automated initialization of TDD structure for new projects.",
+      "fix": "Create project initialization script that bootstraps components/capabilities/criteria",
+      "affected_features": ["TDD workflow", "capability tracking", "test verification"]
+    },
+    {
+      "id": "GAP-011",
+      "category": "medium",
+      "title": "Test registry empty for new projects",
+      "description": "summitflow has 165 tests registered. agent-hub, terminal, portfolio-ai have 0.",
+      "fix": "Auto-discover tests during scan, or provide test registration CLI",
+      "affected_features": ["test tracking", "flaky score", "capability verification"]
+    },
+    {
+      "id": "GAP-012",
+      "category": "medium",
+      "title": "backend_dir column never populated",
+      "description": "Schema has backend_dir column for per-project backend location, but it's NULL for all projects. Scanners have their own defaults.",
+      "fix": "Populate during project registration, use in scanners",
+      "affected_features": ["endpoint scanning", "test discovery"]
+    },
+    {
+      "id": "GAP-013",
+      "category": "low",
+      "title": "LocalStorage keys use hardcoded prefix",
+      "locations": [
+        "frontend/components/layout/ProjectSelector.tsx:38,42,62,80",
+        "frontend/lib/hooks/useTabPersistence.ts:9"
+      ],
+      "description": "Storage keys like 'summitflow_selected_project' hardcode the platform name.",
+      "fix": "Acceptable - these are platform-level, not project-level",
+      "affected_features": ["none - platform branding only"]
+    },
+    {
+      "id": "GAP-014",
+      "category": "low",
+      "title": "Magic string detection hardcodes project names",
+      "location": "backend/app/services/explorer/types/files.py:123-126",
+      "description": "MAGIC_STRING_PATTERNS detects 'summitflow', 'portfolio-ai', 'SummitFlow' as hardcoded strings.",
+      "fix": "Acceptable - intentional detection of anti-pattern. Could be dynamic from projects table.",
+      "affected_features": ["code health detection"]
+    }
+  ],
+  "requirements": {
+    "goals": [
+      {
+        "goal": "Dynamic project allowlist",
+        "criteria": [
+          "ALLOWED_BASES reads from projects table at runtime",
+          "New projects immediately usable by roundtable agents",
+          "Cache invalidation on project CRUD"
+        ],
+        "priority": "must",
+        "addresses": ["GAP-001"]
+      },
+      {
+        "goal": "Database URL configuration",
+        "criteria": [
+          "db_url stored in projects table or derived by convention",
+          "Database scanner works for all registered projects",
+          "Table entries appear in explorer for agent-hub, terminal"
+        ],
+        "priority": "must",
+        "addresses": ["GAP-002"]
+      },
+      {
+        "goal": "Remove tool enum constraints",
+        "criteria": [
+          "get_project_structure_tool accepts any registered project",
+          "Tool descriptions don't list specific projects"
+        ],
+        "priority": "must",
+        "addresses": ["GAP-003"]
+      },
+      {
+        "goal": "Multi-project scheduled tasks",
+        "criteria": [
+          "Memory health check runs for all projects with memory enabled",
+          "Scan tasks iterate all projects (already implemented for scan_all_projects)"
+        ],
+        "priority": "should",
+        "addresses": ["GAP-004"]
+      },
+      {
+        "goal": "Remove summitflow fallback defaults",
+        "criteria": [
+          "project_id is required parameter (not defaulted)",
+          "Unknown project_id returns 404/error, not silent fallback"
+        ],
+        "priority": "should",
+        "addresses": ["GAP-005"]
+      },
+      {
+        "goal": "Dynamic path resolution",
+        "criteria": [
+          "Tool path defaults read from project config",
+          "DEFAULT_REPO_PATH constants removed or read from context"
+        ],
+        "priority": "should",
+        "addresses": ["GAP-006", "GAP-007"]
+      },
+      {
+        "goal": "Project initialization automation",
+        "criteria": [
+          "st project init command creates components/capabilities scaffold",
+          "Or: automatic bootstrap on first access"
+        ],
+        "priority": "could",
+        "addresses": ["GAP-010", "GAP-011", "GAP-012"]
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "id": "DEC-001",
+      "title": "Dynamic vs cached ALLOWED_BASES",
+      "context": "ALLOWED_BASES is checked on every file access. Database query per access would be slow.",
+      "options": [
+        "Query projects table on every access (simple but slow)",
+        "Cache with 5-minute TTL (balanced)",
+        "Cache with invalidation signal on project CRUD (complex but fresh)"
+      ],
+      "decision": "Cache with 5-minute TTL. Project additions are rare, 5-minute delay acceptable.",
+      "status": "proposed"
+    },
+    {
+      "id": "DEC-002",
+      "title": "Database URL storage strategy",
+      "context": "Each project may have its own database. Need to map project_id to connection URL.",
+      "options": [
+        "Store db_url in projects table (explicit)",
+        "Convention: {PROJECT_ID}_DB_URL env var (implicit)",
+        "Hybrid: try projects.db_url, fallback to env var convention"
+      ],
+      "decision": "Hybrid approach. Store in table if set, fallback to {PROJECT_ID.upper().replace('-','_')}_DB_URL",
+      "status": "proposed"
+    }
+  ],
+  "recommended_next_steps": [
+    {
+      "priority": 1,
+      "action": "Fix ALLOWED_BASES to read from projects table",
+      "type": "bug",
+      "effort": "small",
+      "files": ["backend/app/services/roundtable/validation.py"],
+      "rationale": "Critical blocker - roundtable agents cannot work with new projects"
+    },
+    {
+      "priority": 2,
+      "action": "Fix PROJECT_DB_ENV_VARS to support all projects",
+      "type": "bug",
+      "effort": "small",
+      "files": ["backend/app/services/explorer/types/database.py"],
+      "rationale": "Critical blocker - database scanner fails for new projects"
+    },
+    {
+      "priority": 3,
+      "action": "Remove project enum from tool definitions",
+      "type": "bug",
+      "effort": "small",
+      "files": ["backend/app/services/roundtable/tools/definitions.py"],
+      "rationale": "Critical blocker - agents cannot select new projects"
+    },
+    {
+      "priority": 4,
+      "action": "Audit and remove hardcoded default project fallbacks",
+      "type": "tech-debt",
+      "effort": "medium",
+      "files": [
+        "backend/app/services/autonomous/prompt_builder.py",
+        "backend/app/services/roundtable/executor.py",
+        "backend/app/api/hooks.py"
+      ],
+      "rationale": "Prevents silent misdirection to wrong project"
+    },
+    {
+      "priority": 5,
+      "action": "Remove/parameterize DEFAULT_REPO_PATH constants",
+      "type": "tech-debt",
+      "effort": "medium",
+      "files": [
+        "backend/app/tasks/autonomous.py",
+        "backend/app/services/implementation/types.py",
+        "backend/app/services/autonomous/reviewer.py",
+        "backend/app/api/autonomous.py",
+        "backend/app/api/context.py",
+        "backend/app/api/evidence.py"
+      ],
+      "rationale": "Hardcoded paths break for any project not at summitflow path"
+    },
+    {
+      "priority": 6,
+      "action": "Run full explorer scan for agent-hub and terminal after fixes",
+      "type": "verification",
+      "effort": "small",
+      "rationale": "Verify fixes result in complete entity discovery"
+    }
+  ],
+  "discovery_meta": {
+    "phases_completed": ["detection", "discovery", "specification"],
+    "exploration_agents_spawned": 4,
+    "files_explored": [
+      {"path": "backend/app/services/roundtable/validation.py", "confidence": "high", "summary": "ALLOWED_BASES whitelist"},
+      {"path": "backend/app/services/explorer/types/database.py", "confidence": "high", "summary": "PROJECT_DB_ENV_VARS mapping"},
+      {"path": "backend/app/services/roundtable/tools/definitions.py", "confidence": "high", "summary": "Tool enum constraints"},
+      {"path": "backend/app/celery_app.py", "confidence": "high", "summary": "Beat schedule with hardcoded project_id"},
+      {"path": "backend/app/services/autonomous/prompt_builder.py", "confidence": "high", "summary": "Default project fallback"},
+      {"path": "backend/app/services/roundtable/executor.py", "confidence": "high", "summary": "Default project fallback"},
+      {"path": "backend/app/api/hooks.py", "confidence": "high", "summary": "Default project fallback"},
+      {"path": "frontend/components/layout/TopBar.tsx", "confidence": "high", "summary": "Frontend hardcoded constant"}
+    ],
+    "key_discoveries": [
+      "4 projects registered but only 2 fully supported",
+      "3 critical blockers preventing new project functionality",
+      "6+ files with hardcoded DEFAULT_REPO_PATH",
+      "Explorer entry counts: portfolio-ai=2206, summitflow=1264, agent-hub=279, terminal=167"
+    ],
+    "last_activity": "2026-01-07T16:00:00Z"
+  }
+}

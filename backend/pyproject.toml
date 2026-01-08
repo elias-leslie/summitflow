@@ -19,6 +19,7 @@ dependencies = [
     "typer>=0.15.0",
     "rich>=13.0.0",
     "radon>=6.0.0",
+    "anthropic>=0.40.0",
     "agent-hub-client @ file:///home/kasadis/agent-hub/packages/agent-hub-client",
 ]
 
