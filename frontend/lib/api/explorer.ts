@@ -82,6 +82,9 @@ export interface ExplorerEntry {
   healthStatus: ExplorerHealthStatus;
   lastScannedAt: string | null;
   metadata: ExplorerEntryMetadata;
+  // Evidence fields (explorer-driven evidence capture)
+  evidenceCount?: number;
+  lastEvidenceAt?: string | null;
 }
 
 export interface ExplorerStats {

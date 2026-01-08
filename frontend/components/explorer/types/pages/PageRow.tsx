@@ -1,12 +1,13 @@
 /**
  * PageRow - Row content renderer for frontend pages
  *
- * Renders page route with params, status, and response time.
+ * Renders page route with params, status, response time, and evidence badge.
  */
 
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ColumnValue } from "../../DataList";
+import { EvidenceBadge } from "../../EvidenceBadge";
 import type { ExplorerEntry } from "@/lib/api/explorer";
 
 interface PageRowProps {
@@ -79,6 +80,14 @@ export function PageRow({ entry }: PageRowProps) {
         muted={!responseTime}
       >
         {formatDuration(responseTime)}
+      </ColumnValue>
+
+      {/* Evidence badge */}
+      <ColumnValue width="60px" align="center">
+        <EvidenceBadge
+          evidenceCount={entry.evidenceCount ?? 0}
+          lastEvidenceAt={entry.lastEvidenceAt ?? null}
+        />
       </ColumnValue>
     </>
   );
