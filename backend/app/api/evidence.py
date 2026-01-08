@@ -1124,6 +1124,60 @@ async def suggest_config(
     )
 
 
+class EvidenceConfigUpdate(BaseModel):
+    """Request to update evidence configuration."""
+
+    enabled_types: list[str] | None = None
+    capture_schedule: str | None = None
+    environments: list[str] | None = None
+    viewports: list[dict[str, Any]] | None = None
+    auto_expand_elements: bool | None = None
+    regression_threshold: float | None = None
+    ai_review_enabled: bool | None = None
+
+
+@router.get("/projects/{project_id}/evidence/config")
+async def get_evidence_config(project_id: str) -> dict[str, Any]:
+    """Get evidence configuration for a project."""
+    from ..storage import evidence_config
+
+    config = evidence_config.get_config(project_id)
+    return config
+
+
+@router.put("/projects/{project_id}/evidence/config")
+async def update_evidence_config(
+    project_id: str,
+    request: EvidenceConfigUpdate,
+) -> dict[str, Any]:
+    """Update evidence configuration for a project."""
+    from ..storage import evidence_config
+
+    # Build update dict with only provided fields
+    update_data: dict[str, Any] = {}
+    if request.enabled_types is not None:
+        update_data["enabled_types"] = request.enabled_types
+    if request.capture_schedule is not None:
+        update_data["capture_schedule"] = request.capture_schedule
+    if request.environments is not None:
+        update_data["environments"] = request.environments
+    if request.viewports is not None:
+        update_data["viewports"] = request.viewports
+    if request.auto_expand_elements is not None:
+        update_data["auto_expand_elements"] = request.auto_expand_elements
+    if request.regression_threshold is not None:
+        update_data["regression_threshold"] = request.regression_threshold
+    if request.ai_review_enabled is not None:
+        update_data["ai_review_enabled"] = request.ai_review_enabled
+
+    # Merge with existing config
+    current = evidence_config.get_config(project_id)
+    merged = {**current, **update_data}
+
+    result = evidence_config.upsert_config(project_id, merged)
+    return result
+
+
 # =========================================================================
 # Sub-Element Discovery Endpoints
 # =========================================================================

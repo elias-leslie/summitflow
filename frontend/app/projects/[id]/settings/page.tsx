@@ -20,8 +20,10 @@ import {
 } from "@/lib/api";
 import { PromptEditor } from "@/components/settings/PromptEditor";
 import { AgentConfigPanel } from "@/components/settings/AgentConfigPanel";
+import { EvidenceConfigPanel } from "@/components/settings/EvidenceConfigPanel";
+import { Camera } from "lucide-react";
 
-type SettingsTab = "prompts" | "defaults";
+type SettingsTab = "prompts" | "defaults" | "evidence";
 
 const COMPONENT_SOURCE_OPTIONS = [
   { value: "manual", label: "Manual", description: "Create components manually in the UI" },
