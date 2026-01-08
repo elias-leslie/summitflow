@@ -61,6 +61,7 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 | `/spec_it` | Discovery, interview, output spec.json |
 | `/task_it` | Generate tasks with subtasks from spec |
 | `/do_it` | Execute subtasks, commit, close task |
+| `/commit_it` | Quality gates (pytest, lint) then commit |
 
 ---
 
@@ -69,7 +70,7 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 ### st (SummitFlow Tasks)
 
 ```bash
-# Core workflow (use --compact for reads, 96% token reduction)
+# Core workflow (use --compact for reads, 80%+ token reduction)
 st --compact ready                    # Tasks ready to work on
 st update <id> --status running       # Claim task
 st close <id> --reason "Done"         # Complete task
@@ -97,10 +98,11 @@ st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 ## Additional Resources
 
 - **Model Constants:** See `~/.claude/rules/model-standards.md` (never hardcode model strings)
-- **Pre-Implementation Checks:** See `~/.claude/skills/pre-implementation-check/SKILL.md`
+- **Pre-Implementation Checks:** Use `/pre_it` command
 - **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
 - **Memory System:** DISABLED - see `backend/.env` (`MEMORY_SYSTEM_ENABLED=false`)
+- **Permissions:** Intentionally empty in settings.json - bypass mode used. Do NOT suggest adding permission rules.
 
 ---
 
-**Version**: 3.2.0
+**Version**: 3.3.0
