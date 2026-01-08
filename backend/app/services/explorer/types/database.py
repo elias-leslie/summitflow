@@ -48,11 +48,31 @@ SYSTEM_TABLES = {
     "spatial_ref_sys",
 }
 
-# Map project IDs to environment variable names
-PROJECT_DB_ENV_VARS = {
-    "portfolio-ai": "PORTFOLIO_AI_DB_URL",
-    "summitflow": "DATABASE_URL",
-}
+
+def get_db_url_for_project(project_id: str) -> str | None:
+    """Get database URL for a project using naming convention.
+
+    Convention: PROJECT_ID.upper().replace('-','_') + '_DB_URL'
+    Special case: 'summitflow' uses 'DATABASE_URL' for backwards compatibility.
+
+    Args:
+        project_id: The project identifier
+
+    Returns:
+        Database URL from environment or None if not set
+    """
+    # Special case for summitflow (existing convention)
+    if project_id == "summitflow":
+        return os.environ.get("DATABASE_URL")
+
+    # Convention: agent-hub -> AGENT_HUB_DB_URL
+    env_var = f"{project_id.upper().replace('-', '_')}_DB_URL"
+    url = os.environ.get(env_var)
+
+    if not url:
+        logger.debug(f"No DB URL for {project_id} (tried {env_var})")
+
+    return url
 
 
 def categorize_table(table_name: str) -> str:
@@ -101,9 +121,7 @@ class DatabaseScanner(BaseScanner):
         # Get DB URL from config or environment variable
         self.db_url = self.config.get("db_url") if self.config else None
         if not self.db_url:
-            env_var = PROJECT_DB_ENV_VARS.get(self.project_id)
-            if env_var:
-                self.db_url = os.environ.get(env_var)
+            self.db_url = get_db_url_for_project(self.project_id)
 
         if not self.db_url:
             logger.error(f"No database URL configured for project {self.project_id}")

@@ -57,7 +57,7 @@ def get_search_code_tool() -> dict[str, Any]:
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory to search in. Defaults to /home/kasadis/summitflow",
+                    "description": "Directory to search in. Use project root_path.",
                 },
                 "file_type": {
                     "type": "string",
@@ -93,7 +93,7 @@ def get_list_files_tool() -> dict[str, Any]:
                 },
                 "path": {
                     "type": "string",
-                    "description": "Base directory for the search. Defaults to /home/kasadis/summitflow",
+                    "description": "Base directory for the search. Use project root_path.",
                 },
                 "limit": {
                     "type": "integer",
@@ -119,8 +119,7 @@ def get_project_structure_tool() -> dict[str, Any]:
             "properties": {
                 "project": {
                     "type": "string",
-                    "description": "Project to explore: 'summitflow' or 'portfolio-ai'",
-                    "enum": ["summitflow", "portfolio-ai"],
+                    "description": "Project ID to explore (any registered project)",
                 },
                 "depth": {
                     "type": "integer",
@@ -245,7 +244,7 @@ def get_codebase_metrics_tool() -> dict[str, Any]:
             "properties": {
                 "project_id": {
                     "type": "string",
-                    "description": "Project ID (e.g., 'summitflow', 'portfolio-ai')",
+                    "description": "Project ID (any registered project)",
                 },
                 "path": {
                     "type": "string",

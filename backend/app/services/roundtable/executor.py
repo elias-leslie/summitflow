@@ -27,14 +27,20 @@ from .tools.categories import (
     WRITE_TOOLS,
 )
 from .validation import (
-    ALLOWED_BASES,
+    get_allowed_bases,
     require_param,
     require_valid_path,
     validate_file_exists,
 )
 
-# Default project path (first allowed base)
-DEFAULT_PROJECT_PATH = ALLOWED_BASES[0]
+
+def get_default_project_path() -> str:
+    """Get default project path (first allowed base)."""
+    bases = get_allowed_bases()
+    if not bases:
+        raise RuntimeError("No projects registered in database")
+    return bases[0]
+
 
 logger = logging.getLogger(__name__)
 
@@ -334,11 +340,11 @@ class RoundtableToolExecutor:
         if err:
             return err
 
-        search_path = params.get("path", DEFAULT_PROJECT_PATH)
+        search_path = params.get("path", get_default_project_path())
         file_type = params.get("file_type", "")
 
         # Validate path (handles relative paths)
-        path, err = self._require_valid_path(search_path, default_base=DEFAULT_PROJECT_PATH)
+        path, err = self._require_valid_path(search_path, default_base=get_default_project_path())
         if err:
             return err
 
@@ -366,11 +372,11 @@ class RoundtableToolExecutor:
         if err:
             return err
 
-        base_path = params.get("path", DEFAULT_PROJECT_PATH)
+        base_path = params.get("path", get_default_project_path())
         limit = min(params.get("limit", 50), 200)  # Max 200 files
 
         # Validate path (handles relative paths)
-        base, err = self._require_valid_path(base_path, default_base=DEFAULT_PROJECT_PATH)
+        base, err = self._require_valid_path(base_path, default_base=get_default_project_path())
         if err:
             return err
 
@@ -407,7 +413,7 @@ class RoundtableToolExecutor:
         depth = min(params.get("depth", 2), 4)
 
         # Build project paths from allowed bases (project name = directory name)
-        project_paths = {Path(p).name: p for p in ALLOWED_BASES}
+        project_paths = {Path(p).name: p for p in get_allowed_bases()}
 
         base_path = project_paths.get(project)
         if not base_path:

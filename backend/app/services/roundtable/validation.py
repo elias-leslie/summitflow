@@ -5,14 +5,41 @@ Extracted from executor.py to provide reusable validation logic.
 
 from __future__ import annotations
 
+import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-# Allowed base directories for file access
-ALLOWED_BASES = [
-    "/home/kasadis/summitflow",
-    "/home/kasadis/portfolio-ai",
-]
+from app.storage.projects import get_all_project_root_paths
+
+# Cache TTL in seconds (5 minutes)
+_CACHE_TTL = 300
+_cache_timestamp: float = 0.0
+
+
+def get_allowed_bases() -> list[str]:
+    """Get allowed base directories from registered projects.
+
+    Uses LRU cache with 5-minute TTL for performance.
+
+    Returns:
+        List of allowed base directory paths.
+    """
+    global _cache_timestamp
+    current_time = time.time()
+
+    # Invalidate cache if TTL expired
+    if current_time - _cache_timestamp > _CACHE_TTL:
+        _get_allowed_bases_cached.cache_clear()
+        _cache_timestamp = current_time
+
+    return _get_allowed_bases_cached()
+
+
+@lru_cache(maxsize=1)
+def _get_allowed_bases_cached() -> list[str]:
+    """Internal cached function to fetch allowed bases."""
+    return get_all_project_root_paths()
 
 
 class ToolValidationResult:
@@ -102,14 +129,14 @@ def validate_path(
                     path_obj = candidate
                 else:
                     # Try other allowed bases
-                    for base in ALLOWED_BASES:
+                    for base in get_allowed_bases():
                         candidate = Path(base) / path
                         if candidate.exists():
                             path_obj = candidate
                             break
             else:
                 # Try all allowed bases
-                for base in ALLOWED_BASES:
+                for base in get_allowed_bases():
                     candidate = Path(base) / path
                     if candidate.exists():
                         path_obj = candidate
@@ -120,7 +147,7 @@ def validate_path(
         resolved_str = str(resolved)
 
         # Check against allowed bases
-        all_allowed = ALLOWED_BASES + (allowed_paths or [])
+        all_allowed = get_allowed_bases() + (allowed_paths or [])
         for base in all_allowed:
             if resolved_str.startswith(base):
                 return True, resolved_str

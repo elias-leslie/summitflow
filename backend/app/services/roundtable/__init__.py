@@ -58,10 +58,9 @@ from .tools import (
     WRITE_TOOLS,
     ToolCategory,
 )
-from .validation import ALLOWED_BASES
+from .validation import get_allowed_bases
 
 __all__ = [
-    "ALLOWED_BASES",
     "ALL_CATEGORIES",
     "MAX_FILE_SIZE",
     "MAX_SEARCH_RESULTS",
@@ -86,6 +85,7 @@ __all__ = [
     "default_permission_callback",
     "extract_spec_from_conversation",
     "format_tool_results_for_prompt",
+    "get_allowed_bases",
     "get_default_executor",
     "get_effective_prompt",
     "get_roundtable_service",

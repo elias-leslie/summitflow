@@ -64,3 +64,14 @@ def get_project_root_path(project_id: str) -> str | None:
         )
         row = cur.fetchone()
         return row[0] if row else None
+
+
+def get_all_project_root_paths() -> list[str]:
+    """Get all project root paths.
+
+    Returns:
+        List of root path strings for all registered projects.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE root_path IS NOT NULL")
+        return [row[0] for row in cur.fetchall()]
