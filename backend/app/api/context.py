@@ -616,17 +616,34 @@ class TaskContextResponse(BaseModel):
     observations: list[dict[str, Any]]
 
 
-# Rules directory (project-level and global)
-PROJECT_RULES_DIR = Path("/home/kasadis/summitflow/.claude/rules")
+# Global rules directory
 GLOBAL_RULES_DIR = Path("/home/kasadis/.claude/rules")
 
 
-def _read_rule_file(filename: str) -> str | None:
-    """Read a rule file from project or global rules directory."""
-    # Try project rules first
-    project_path = PROJECT_RULES_DIR / filename
-    if project_path.exists():
-        return project_path.read_text()
+def _get_project_rules_dir(project_id: str) -> Path | None:
+    """Get rules directory for a project."""
+    from ..storage.projects import get_project_root_path
+
+    root = get_project_root_path(project_id)
+    if root:
+        return Path(root) / ".claude" / "rules"
+    return None
+
+
+def _read_rule_file(filename: str, project_id: str | None = None) -> str | None:
+    """Read a rule file from project or global rules directory.
+
+    Args:
+        filename: Rule filename
+        project_id: Optional project ID for project-specific rules
+    """
+    # Try project rules first if project_id provided
+    if project_id:
+        project_rules = _get_project_rules_dir(project_id)
+        if project_rules:
+            project_path = project_rules / filename
+            if project_path.exists():
+                return project_path.read_text()
 
     # Fall back to global rules
     global_path = GLOBAL_RULES_DIR / filename
@@ -661,7 +678,7 @@ async def get_context_for_task(
     # Read rule contents
     rule_contents: dict[str, str] = {}
     for rule in rule_names:
-        content = _read_rule_file(rule)
+        content = _read_rule_file(rule, project_id)
         if content:
             rule_contents[rule] = content
 

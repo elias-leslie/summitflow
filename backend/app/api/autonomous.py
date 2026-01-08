@@ -11,8 +11,16 @@ from ..services.worktree_manager import WorktreeError, get_worktree_manager
 from ..storage.agent_configs import get_agent_config, update_agent_config
 from ..storage.connection import get_connection
 
-# Default repository path for worktree operations
-DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
+
+def _get_project_repo_path(project_id: str) -> Path:
+    """Get repository path for a project."""
+    from ..storage.projects import get_project_root_path
+
+    root = get_project_root_path(project_id)
+    if not root:
+        raise ValueError(f"Project {project_id} not found or has no root_path")
+    return Path(root)
+
 
 router = APIRouter()
 
@@ -374,7 +382,7 @@ async def list_worktrees(project_id: str) -> WorktreeList:
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+    manager = get_worktree_manager(_get_project_repo_path(project_id))
     active = manager.list_active_worktrees(project_id)
 
     worktrees = [
@@ -409,7 +417,7 @@ async def cleanup_worktrees(project_id: str, max_age_hours: int = 24) -> Cleanup
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+    manager = get_worktree_manager(_get_project_repo_path(project_id))
 
     # Cleanup by age
     removed_by_age = manager.cleanup_stale_worktrees(max_age_hours)
@@ -451,7 +459,7 @@ async def merge_worktree(project_id: str, task_id: str, delete_after: bool = Tru
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+    manager = get_worktree_manager(_get_project_repo_path(project_id))
 
     # Check worktree exists
     if not manager.worktree_exists(project_id, task_id):
@@ -494,7 +502,7 @@ async def remove_worktree(project_id: str, task_id: str, delete_branch: bool = T
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    manager = get_worktree_manager(DEFAULT_REPO_PATH)
+    manager = get_worktree_manager(_get_project_repo_path(project_id))
 
     try:
         manager.remove_worktree(project_id, task_id, delete_branch=delete_branch)

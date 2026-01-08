@@ -59,7 +59,9 @@ def build_execution_prompt(
         lines.append("")
 
     # Acceptance Criteria - from capability or task junction tables
-    project_id = task.get("project_id") or context.get("project_id") or "summitflow"
+    project_id = task.get("project_id") or context.get("project_id")
+    if not project_id:
+        raise ValueError("project_id is required for building execution prompt")
     with get_connection() as conn:
         criteria = get_effective_criteria(conn, project_id, task)
 

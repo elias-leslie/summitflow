@@ -27,8 +27,26 @@ from app.storage.subtasks import bulk_create_subtasks
 
 logger = logging.getLogger(__name__)
 
-# Default repo path for worktree cleanup
-DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
+
+def get_project_repo_path(project_id: str) -> Path:
+    """Get repository path for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Path to project repository
+
+    Raises:
+        ValueError: If project not found
+    """
+    from app.storage.projects import get_project_root_path
+
+    root_path = get_project_root_path(project_id)
+    if not root_path:
+        raise ValueError(f"Project {project_id} not found or has no root_path")
+    return Path(root_path)
+
 
 # Validation mode flags - disabled after phase 5 validation
 # Re-enable for debugging or controlled testing
@@ -656,7 +674,8 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
 
                 # Cleanup worktree on failure
                 try:
-                    worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+                    repo_path = get_project_repo_path(project_id)
+                    worktree_manager = get_worktree_manager(repo_path)
                     worktree_manager.remove_worktree(project_id, claimed["id"])
                     logger.info(f"Cleaned up worktree for failed task {claimed['id']}")
                 except Exception as cleanup_err:
@@ -678,7 +697,8 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
 
             # Cleanup worktree on error
             try:
-                worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+                repo_path = get_project_repo_path(project_id)
+                worktree_manager = get_worktree_manager(repo_path)
                 worktree_manager.remove_worktree(project_id, claimed["id"])
                 logger.info(f"Cleaned up worktree for errored task {claimed['id']}")
             except Exception as cleanup_err:
@@ -794,47 +814,55 @@ def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
     Returns:
         Dict with removed_count and any errors
     """
+    from app.storage.projects import get_all_project_root_paths
+
     try:
-        worktree_manager = get_worktree_manager(DEFAULT_REPO_PATH)
+        total_removed_by_age = 0
+        total_removed_by_status = 0
 
-        # First, cleanup by age
-        removed_by_age = worktree_manager.cleanup_stale_worktrees(max_age_hours)
-        logger.info(f"Cleaned up {removed_by_age} stale worktrees by age")
+        # Iterate over all projects
+        for root_path in get_all_project_root_paths():
+            worktree_manager = get_worktree_manager(Path(root_path))
 
-        # Second, cleanup worktrees for tasks no longer running
-        removed_by_status = 0
-        active_worktrees = worktree_manager.list_active_worktrees()
+            # First, cleanup by age
+            removed_by_age = worktree_manager.cleanup_stale_worktrees(max_age_hours)
+            total_removed_by_age += removed_by_age
+            if removed_by_age:
+                logger.info(f"Cleaned up {removed_by_age} stale worktrees by age in {root_path}")
 
-        for worktree in active_worktrees:
-            task_id = worktree.task_id
-            task = task_store.get_task(task_id)
+            # Second, cleanup worktrees for tasks no longer running
+            active_worktrees = worktree_manager.list_active_worktrees()
 
-            # Remove if task doesn't exist or is not in running/pending_review
-            reason = ""
-            if not task:
-                reason = "task not found"
-            elif task.get("status") not in ("running", "pending_review"):
-                reason = f"task status is {task.get('status')}"
+            for worktree in active_worktrees:
+                task_id = worktree.task_id
+                task = task_store.get_task(task_id)
 
-            if reason:  # reason being set means we should remove
-                try:
-                    worktree_manager.remove_worktree(worktree.project_id, task_id)
-                    removed_by_status += 1
-                    logger.info(f"Cleaned up worktree for {task_id}: {reason}")
-                except Exception as e:
-                    logger.warning(f"Failed to remove worktree for {task_id}: {e}")
+                # Remove if task doesn't exist or is not in running/pending_review
+                reason = ""
+                if not task:
+                    reason = "task not found"
+                elif task.get("status") not in ("running", "pending_review"):
+                    reason = f"task status is {task.get('status')}"
 
-        total_removed = removed_by_age + removed_by_status
+                if reason:  # reason being set means we should remove
+                    try:
+                        worktree_manager.remove_worktree(worktree.project_id, task_id)
+                        total_removed_by_status += 1
+                        logger.info(f"Cleaned up worktree for {task_id}: {reason}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove worktree for {task_id}: {e}")
+
+        total_removed = total_removed_by_age + total_removed_by_status
         logger.info(
             f"Worktree cleanup complete: {total_removed} removed "
-            f"(by_age={removed_by_age}, by_status={removed_by_status})"
+            f"(by_age={total_removed_by_age}, by_status={total_removed_by_status})"
         )
 
         return {
             "status": "success",
             "removed_count": total_removed,
-            "removed_by_age": removed_by_age,
-            "removed_by_status": removed_by_status,
+            "removed_by_age": total_removed_by_age,
+            "removed_by_status": total_removed_by_status,
         }
 
     except Exception as e:

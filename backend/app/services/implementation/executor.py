@@ -26,7 +26,7 @@ from ..worktree_manager import WorktreeManager, get_worktree_manager
 from .agent import consult_alternate, execute_agent, parse_and_apply_changes
 from .context import build_context
 from .subtasks import get_next_task_from_subtasks
-from .types import DEFAULT_REPO_PATH, ExecutionResult
+from .types import ExecutionResult
 from .verification import check_acceptance_criteria, compute_error_signature, run_verification
 
 logger = get_logger(__name__)
@@ -45,11 +45,19 @@ class ImplementationExecutor:
 
         Args:
             project_id: Project ID
-            repo_path: Path to git repository (default: ~/summitflow)
+            repo_path: Path to git repository. If None, looks up from projects table.
             use_worktree: If True, execute tasks in isolated git worktrees
         """
         self.project_id = project_id
-        self.repo_path = repo_path or DEFAULT_REPO_PATH
+        if repo_path:
+            self.repo_path = repo_path
+        else:
+            from app.storage.projects import get_project_root_path
+
+            root = get_project_root_path(project_id)
+            if not root:
+                raise ValueError(f"Project {project_id} not found or has no root_path")
+            self.repo_path = Path(root)
         self.use_worktree = use_worktree
         self._worktree_manager: WorktreeManager | None = None
         self._current_worktree_path: Path | None = None

@@ -18,14 +18,12 @@ Modules:
 from .executor import ImplementationExecutor
 from .types import (
     AGENT_TIMEOUT_SECONDS,
-    DEFAULT_REPO_PATH,
     SUBPROCESS_TIMEOUT_SECONDS,
     ExecutionResult,
 )
 
 __all__ = [
     "AGENT_TIMEOUT_SECONDS",
-    "DEFAULT_REPO_PATH",
     "SUBPROCESS_TIMEOUT_SECONDS",
     "ExecutionResult",
     "ImplementationExecutor",

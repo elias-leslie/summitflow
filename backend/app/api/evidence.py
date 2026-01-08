@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import os as _os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -80,8 +81,11 @@ def _format_evidence_record(e: dict[str, Any], *, project_id: str | None = None)
 
 router = APIRouter()
 
-# Debug captures directory (project-scoped)
-DEBUG_CAPTURES_BASE = Path("/home/kasadis/summitflow/data/projects")
+# Debug captures directory (SummitFlow platform storage)
+# Note: This is intentionally centralized in SummitFlow - not per-project storage
+DEBUG_CAPTURES_BASE = (
+    Path(_os.environ.get("SUMMITFLOW_DATA_DIR", "/home/kasadis/summitflow/data")) / "projects"
+)
 
 
 class RefreshRequest(BaseModel):

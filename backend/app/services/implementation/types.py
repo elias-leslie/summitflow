@@ -6,10 +6,8 @@ Shared data structures used across the implementation package.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
-# Default repository path
-DEFAULT_REPO_PATH = Path("/home/kasadis/summitflow")
+# NOTE: DEFAULT_REPO_PATH removed - use get_project_root_path(project_id) instead
 
 # Timeouts
 AGENT_TIMEOUT_SECONDS = 300  # 5 minutes

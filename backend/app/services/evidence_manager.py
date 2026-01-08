@@ -46,15 +46,21 @@ def get_evidence_base_dir(project_id: str) -> Path:
     TODO: Fetch from project config in database.
     For now, use a standard path structure.
     """
-    return Path(f"/home/kasadis/summitflow/data/projects/{project_id}/evidence")
+    import os
+
+    data_dir = os.environ.get("SUMMITFLOW_DATA_DIR", "/home/kasadis/summitflow/data")
+    return Path(data_dir) / "projects" / project_id / "evidence"
 
 
 def get_browser_scripts_dir(project_id: str) -> Path:
-    """Get browser scripts directory for a project.
+    """Get browser scripts directory.
 
-    TODO: Fetch from project config in database.
+    These are part of the SummitFlow/Claude installation, shared across projects.
     """
-    return Path("/home/kasadis/summitflow/.claude/skills/browser-automation/scripts")
+    import os
+
+    claude_dir = os.environ.get("CLAUDE_CONFIG_DIR", "/home/kasadis/.claude")
+    return Path(claude_dir) / "skills" / "browser-automation" / "scripts"
 
 
 def generate_evidence_id(capability_id: str, criterion_id: str, version: int) -> str:

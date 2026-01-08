@@ -27,8 +27,22 @@ logger = get_logger(__name__)
 
 Verdict = Literal["APPROVE", "REJECT", "REQUEST_FIX"]
 
-# Default project path (can be overridden per-task)
-DEFAULT_PROJECT_PATH = Path.home() / "summitflow"
+
+def _get_project_path(task: dict[str, Any], resolved_path: Path | str | None) -> Path:
+    """Get project path from explicit param or task's project_id."""
+    if resolved_path:
+        return Path(resolved_path)
+
+    project_id = task.get("project_id")
+    if not project_id:
+        raise ValueError("Task missing project_id and no resolved_path provided")
+
+    from app.storage.projects import get_project_root_path
+
+    root = get_project_root_path(project_id)
+    if not root:
+        raise ValueError(f"Project {project_id} not found or has no root_path")
+    return Path(root)
 
 
 def _build_review_prompt(
@@ -190,7 +204,7 @@ def _parse_review_response(response_text: str) -> dict[str, Any]:
 
 def opus_review(
     task: dict[str, Any],
-    project_path: Path | str | None = None,
+    resolved_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Review task changes using Claude Opus.
 
@@ -199,7 +213,7 @@ def opus_review(
 
     Args:
         task: Task dict (must have pre_merge_sha)
-        project_path: Path to git repo (defaults to ~/summitflow)
+        resolved_path: Path to git repo (defaults to ~/summitflow)
 
     Returns:
         Review result dict with:
@@ -211,9 +225,7 @@ def opus_review(
         - diff_stats: Files changed, insertions, deletions
         - reviewed_at: Timestamp
     """
-    if project_path is None:
-        project_path = DEFAULT_PROJECT_PATH
-    project_path = Path(project_path)
+    resolved_path = _get_project_path(task, resolved_path)
 
     pre_merge_sha = task.get("pre_merge_sha")
     if not pre_merge_sha:
@@ -229,8 +241,8 @@ def opus_review(
 
     # Get diff and stats
     try:
-        diff = capture_diff(project_path, pre_merge_sha)
-        diff_stats = get_diff_stats(project_path, pre_merge_sha)
+        diff = capture_diff(resolved_path, pre_merge_sha)
+        diff_stats = get_diff_stats(resolved_path, pre_merge_sha)
     except RuntimeError as e:
         logger.error("review_diff_failed", error=str(e))
         return {
@@ -328,7 +340,7 @@ def handle_approval(
     task: dict[str, Any],
     review_result: dict[str, Any],
     auto_push: bool = False,
-    project_path: Path | str | None = None,
+    resolved_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Handle an approved task.
 
@@ -338,14 +350,12 @@ def handle_approval(
         task: Task dict
         review_result: Review result from opus_review
         auto_push: Whether to push changes to remote (default False)
-        project_path: Path to git repo
+        resolved_path: Path to git repo
 
     Returns:
         Updated task dict
     """
-    if project_path is None:
-        project_path = DEFAULT_PROJECT_PATH
-    project_path = Path(project_path)
+    resolved_path = _get_project_path(task, resolved_path)
 
     task_id = task.get("id")
     if not task_id:
@@ -365,8 +375,8 @@ def handle_approval(
         from ...services.git_service import get_current_branch, push_branch
 
         try:
-            branch = get_current_branch(project_path)
-            push_branch(branch, project_path)
+            branch = get_current_branch(resolved_path)
+            push_branch(branch, resolved_path)
             logger.info("task_pushed", task_id=task_id, branch=branch)
         except RuntimeError as e:
             logger.warning("task_push_failed", task_id=task_id, error=str(e))
@@ -377,7 +387,7 @@ def handle_approval(
 def handle_rejection(
     task: dict[str, Any],
     review_result: dict[str, Any],
-    project_path: Path | str | None = None,
+    resolved_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Handle a rejected task.
 
@@ -386,14 +396,12 @@ def handle_rejection(
     Args:
         task: Task dict
         review_result: Review result from opus_review
-        project_path: Path to git repo
+        resolved_path: Path to git repo
 
     Returns:
         Updated task dict
     """
-    if project_path is None:
-        project_path = DEFAULT_PROJECT_PATH
-    project_path = Path(project_path)
+    resolved_path = _get_project_path(task, resolved_path)
 
     task_id = task.get("id")
     if not task_id:
@@ -403,7 +411,7 @@ def handle_rejection(
     pre_merge_sha = task.get("pre_merge_sha")
     if pre_merge_sha:
         try:
-            revert_to(project_path, pre_merge_sha)
+            revert_to(resolved_path, pre_merge_sha)
             logger.info("task_reverted", task_id=task_id, sha=pre_merge_sha[:8])
         except RuntimeError as e:
             logger.error("task_revert_failed", task_id=task_id, error=str(e))

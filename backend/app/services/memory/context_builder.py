@@ -583,18 +583,12 @@ class ContextBuilder:
 
     def _get_project_path(self) -> Path | None:
         """Get the project root path for the current project_id."""
-        if self.project_id == "summitflow":
-            return Path.home() / "summitflow"
-        elif self.project_id == "portfolio-ai":
-            return Path.home() / "portfolio-ai"
-        else:
-            # Try to find from projects table
-            from app.storage.projects import get_project_root_path
+        from app.storage.projects import get_project_root_path
 
-            root_path = get_project_root_path(self.project_id)
-            if root_path:
-                return Path(root_path)
-            return None
+        root_path = get_project_root_path(self.project_id)
+        if root_path:
+            return Path(root_path)
+        return None
 
     def build_docs_index(self) -> list[dict[str, Any]]:
         """Build index of project documentation files (CLAUDE.md, AGENTS.md).

@@ -27,13 +27,20 @@ def build_context(project_id: str, files: list[str]) -> dict[str, Any]:
     """
     rules = filter_rules_by_files(files)
 
-    # Read rule contents
+    # Read rule contents - project rules first, then global
+    from ...storage.projects import get_project_root_path
+
     rule_contents: dict[str, str] = {}
+    project_root = get_project_root_path(project_id)
+    project_rules_dir = Path(project_root) / ".claude" / "rules" if project_root else None
+    global_rules_dir = Path("/home/kasadis/.claude/rules")
+
     for rule in rules:
-        for rules_dir in [
-            Path("/home/kasadis/summitflow/.claude/rules"),
-            Path("/home/kasadis/.claude/rules"),
-        ]:
+        rule_dirs = [global_rules_dir]
+        if project_rules_dir:
+            rule_dirs.insert(0, project_rules_dir)
+
+        for rules_dir in rule_dirs:
             rule_path = rules_dir / rule
             if rule_path.exists():
                 rule_contents[rule] = rule_path.read_text()

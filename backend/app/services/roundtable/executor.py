@@ -409,7 +409,9 @@ class RoundtableToolExecutor:
 
     def _execute_get_project_structure(self, params: dict[str, Any]) -> ToolResult:
         """Execute get_project_structure tool."""
-        project = params.get("project", "summitflow")
+        project = params.get("project")
+        if not project:
+            return ToolResult(False, "", "project is required")
         depth = min(params.get("depth", 2), 4)
 
         # Build project paths from allowed bases (project name = directory name)
