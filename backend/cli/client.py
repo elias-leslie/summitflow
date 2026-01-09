@@ -926,3 +926,61 @@ class STClient:
         data = {"entry": entry}
         response = self._client.post(self._url(f"/tasks/{task_id}/log"), json=data)
         return self._handle_response(response)
+
+    # Autocode
+
+    def start_autocode(
+        self,
+        task_id: str,
+        model: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Start autocode execution for a task.
+
+        Args:
+            task_id: Task ID
+            model: Model to use for execution
+            dry_run: If true, validate but don't execute
+
+        Returns:
+            Dict with execution_id, task_id, subtask_id, status.
+        """
+        data: dict[str, Any] = {"dry_run": dry_run}
+        if model:
+            data["model"] = model
+        response = self._client.post(self._url(f"/tasks/{task_id}/autocode"), json=data)
+        return self._handle_response(response)
+
+    def get_autocode_status(
+        self,
+        task_id: str,
+        execution_id: str,
+    ) -> dict[str, Any]:
+        """Get status of an autocode execution.
+
+        Args:
+            task_id: Task ID
+            execution_id: Execution ID
+
+        Returns:
+            Dict with execution status and evidence if complete.
+        """
+        response = self._client.get(self._url(f"/tasks/{task_id}/autocode/{execution_id}"))
+        return self._handle_response(response)
+
+    def abort_autocode(
+        self,
+        task_id: str,
+        execution_id: str,
+    ) -> dict[str, Any]:
+        """Abort a running autocode execution.
+
+        Args:
+            task_id: Task ID
+            execution_id: Execution ID to abort
+
+        Returns:
+            Dict with abort confirmation.
+        """
+        response = self._client.post(self._url(f"/tasks/{task_id}/autocode/{execution_id}/abort"))
+        return self._handle_response(response)

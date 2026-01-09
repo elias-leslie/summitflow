@@ -293,3 +293,75 @@ def get_execution_status(
         retries=state.retries,
         evidence=evidence_dict,
     )
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/autocode/{execution_id}/abort")
+def abort_execution(
+    project_id: str,
+    task_id: str,
+    execution_id: str,
+) -> dict[str, Any]:
+    """Abort a running autocode execution.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        execution_id: Execution ID to abort
+
+    Returns:
+        Status dict with abort confirmation
+
+    Raises:
+        HTTPException(404): Execution not found or task not in project
+        HTTPException(400): Execution not running (already completed/failed)
+    """
+    # Verify task belongs to project
+    task = task_store.get_task(task_id)
+    if not task or task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Task {task_id} not found in project {project_id}",
+        )
+
+    state = _executions.get(execution_id)
+    if not state:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Execution {execution_id} not found",
+        )
+
+    if state.task_id != task_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Execution {execution_id} not found for task {task_id}",
+        )
+
+    if state.status != "running":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot abort execution in status '{state.status}'. Only running executions can be aborted.",
+        )
+
+    # Mark as aborted
+    from datetime import UTC, datetime
+
+    state.status = "aborted"
+    state.completed_at = datetime.now(UTC)
+
+    # Close the service if exists
+    if project_id in _services:
+        _services[project_id].close()
+        del _services[project_id]
+
+    logger.info(
+        "autocode_aborted",
+        task_id=task_id,
+        execution_id=execution_id,
+    )
+
+    return {
+        "execution_id": execution_id,
+        "task_id": task_id,
+        "status": "aborted",
+        "message": "Execution aborted successfully",
+    }

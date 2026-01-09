@@ -865,6 +865,89 @@ def verify_plan(
             typer.echo(f"  done_when: {len(plan['done_when'])} items")
 
 
+@app.command()
+def autocode(
+    task_id: str,
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Get status of execution by ID"),
+    ] = None,
+    abort: Annotated[
+        str | None,
+        typer.Option("--abort", help="Abort execution by ID"),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model to use for execution"),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Validate only, don't execute"),
+    ] = False,
+) -> None:
+    """Run autocode execution on a task via Agent Hub.
+
+    Dispatches the first incomplete subtask to an AI worker for autonomous
+    code generation, then validates and commits the results.
+
+    Examples:
+        st autocode task-abc123              # Start execution
+        st autocode task-abc123 --dry-run    # Validate without executing
+        st autocode task-abc123 --status exec-12345  # Check status
+        st autocode task-abc123 --abort exec-12345   # Abort execution
+        st autocode task-abc123 --model claude-opus-4-5  # Use specific model
+    """
+    client = STClient()
+
+    # Status check mode
+    if status:
+        try:
+            result = client.get_autocode_status(task_id, status)
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+        # Format evidence summary if present
+        evidence = result.get("evidence")
+        if evidence:
+            files = evidence.get("evidence", {}).get("files_modified", [])
+            verifications = evidence.get("evidence", {}).get("verifications", [])
+            passed = sum(1 for v in verifications if v.get("passed"))
+            result["evidence_summary"] = {
+                "files_modified": len(files),
+                "verifications": f"{passed}/{len(verifications)}",
+            }
+            del result["evidence"]  # Remove full evidence for cleaner output
+
+        output_json(result)
+        return
+
+    # Abort mode
+    if abort:
+        try:
+            result = client.abort_autocode(task_id, abort)
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+        output_json(result)
+        return
+
+    # Start execution mode
+    try:
+        result = client.start_autocode(task_id, model=model, dry_run=dry_run)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    # Format evidence summary for completed executions
+    if result.get("status") in ("completed", "failed"):
+        output_json(result)
+    else:
+        # For pending/running/dry_run, output as-is
+        output_json(result)
+
+
 @app.command("import")
 def import_plan(
     file_path: Annotated[Path, typer.Argument(help="Path to plan.json file")],
