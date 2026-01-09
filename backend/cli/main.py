@@ -43,6 +43,7 @@ TASKS:
   claim <id> [--lock 30] [--release]       # lock task for N minutes
   exec <id> [--agent claude|gemini]
   log <id> <message>
+  autocode <id> [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
 
 SUBTASK:
   subtask list <task-id>
