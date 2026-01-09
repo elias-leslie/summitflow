@@ -12,44 +12,16 @@ applied to future work. This service manages the full lifecycle:
 from __future__ import annotations
 
 import logging
-import math
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from app.storage import memory as memory_storage
 
+from . import pattern_file_handler, pattern_scoring, pattern_validation
+
 logger = logging.getLogger(__name__)
-
-
-def _parse_iso_datetime(value: str | datetime | None) -> datetime | None:
-    """Parse ISO datetime string, handling Z suffix. Returns None if input is None."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return None
-
-
-# Conciseness rules
-MAX_TITLE_LENGTH = 100
-MAX_CONTENT_LENGTH = 500
-MAX_SENTENCES = 3
-HEDGING_WORDS = [
-    "might",
-    "maybe",
-    "perhaps",
-    "possibly",
-    "could be",
-    "sometimes",
-    "often",
-    "usually",
-    "generally",
-    "typically",
-]
 
 
 class PatternService:
@@ -74,7 +46,7 @@ class PatternService:
         self.project_path = project_path
 
     # =========================================================================
-    # Validation
+    # Validation (delegates to pattern_validation)
     # =========================================================================
 
     def validate_conciseness(
@@ -82,163 +54,30 @@ class PatternService:
         title: str,
         content: str,
     ) -> tuple[bool, list[str]]:
-        """Validate pattern content for conciseness.
-
-        Rules:
-        - Title max 100 chars
-        - Content max 500 chars
-        - Max 3 sentences
-        - No hedging words
-
-        Args:
-            title: Pattern title.
-            content: Pattern content.
-
-        Returns:
-            Tuple of (is_valid, list of violation messages).
-        """
-        violations = []
-
-        # Title length
-        if len(title) > MAX_TITLE_LENGTH:
-            violations.append(f"Title exceeds {MAX_TITLE_LENGTH} chars ({len(title)} chars)")
-
-        # Content length
-        if len(content) > MAX_CONTENT_LENGTH:
-            violations.append(f"Content exceeds {MAX_CONTENT_LENGTH} chars ({len(content)} chars)")
-
-        # Sentence count
-        sentences = re.split(r"[.!?]+", content.strip())
-        sentences = [s.strip() for s in sentences if s.strip()]
-        if len(sentences) > MAX_SENTENCES:
-            violations.append(f"Content has {len(sentences)} sentences (max {MAX_SENTENCES})")
-
-        # Hedging words
-        content_lower = content.lower()
-        found_hedging = [w for w in HEDGING_WORDS if w in content_lower]
-        if found_hedging:
-            violations.append(f"Content contains hedging words: {', '.join(found_hedging)}")
-
-        return len(violations) == 0, violations
+        """Validate pattern content for conciseness."""
+        return pattern_validation.validate_conciseness(title, content)
 
     # =========================================================================
-    # Feedback & Ranking
+    # Feedback & Ranking (static methods delegate to pattern_scoring)
     # =========================================================================
 
     @staticmethod
     def get_approval_boost(pattern: dict[str, Any]) -> float:
-        """Calculate approval boost multiplier for pattern ranking.
-
-        Approved patterns get a 10% boost.
-        Rejected patterns get graduated penalties:
-        - 1-2 rejections: 0.9x (10% penalty)
-        - 3-4 rejections: 0.7x (30% penalty)
-        - 5+ rejections: 0.5x (50% penalty)
-
-        Args:
-            pattern: Pattern dict with approval_count, rejection_count, status
-
-        Returns:
-            Multiplier (0.5-1.1) to apply to pattern ranking score.
-        """
-        status = pattern.get("status", "pending")
-        approval_count = pattern.get("approval_count", 0) or 0
-        rejection_count = pattern.get("rejection_count", 0) or 0
-
-        # Base multiplier
-        multiplier = 1.0
-
-        # Approved/applied patterns get boost
-        if status in ("approved", "applied") or approval_count > 0:
-            multiplier = 1.1  # +10% boost
-
-        # Rejection penalties (can override approval boost)
-        if rejection_count >= 5:
-            multiplier = 0.5  # 50% penalty
-        elif rejection_count >= 3:
-            multiplier = 0.7  # 30% penalty
-        elif rejection_count >= 1:
-            multiplier = 0.9  # 10% penalty
-
-        return multiplier
+        """Calculate approval boost multiplier for pattern ranking."""
+        return pattern_scoring.get_approval_boost(pattern)
 
     @staticmethod
     def get_source_observation_boost(
         observation: dict[str, Any],
         pattern_multiplier: float = 1.0,
     ) -> float:
-        """Apply inherited boost to source observations from approved patterns.
-
-        When a pattern is approved, observations that sourced it get a boost.
-
-        Args:
-            observation: Observation dict
-            pattern_multiplier: Boost from the parent pattern
-
-        Returns:
-            Additional boost (0.0-0.1) to add to observation score.
-        """
-        # Inherited boost is 50% of the pattern's boost above 1.0
-        if pattern_multiplier > 1.0:
-            return (pattern_multiplier - 1.0) * 0.5
-        return 0.0
+        """Apply inherited boost to source observations from approved patterns."""
+        return pattern_scoring.get_source_observation_boost(observation, pattern_multiplier)
 
     @staticmethod
     def calculate_pattern_relevance(pattern: dict[str, Any]) -> float:
-        """Calculate relevance score for a pattern based on age and usage.
-
-        Formula: confidence * exp(-age/90) * exp(-days_unused/60)
-
-        This produces a score that:
-        - Decays as the pattern ages (half-life ~60 days)
-        - Decays faster if the pattern isn't used
-        - Ranges from 0.0 to ~1.0
-
-        Used for pattern cap enforcement (lowest relevance patterns removed first).
-
-        Args:
-            pattern: Pattern dict with confidence, created_at, last_used_at
-
-        Returns:
-            Relevance score between 0.0 and 1.0.
-        """
-        # Get confidence (default 0.5)
-        confidence = float(pattern.get("confidence", 0.5) or 0.5)
-
-        # Parse timestamps
-        now = datetime.now(UTC)
-
-        created_at = _parse_iso_datetime(pattern.get("created_at"))
-        if not created_at:
-            created_at = now  # Fallback for missing created_at
-
-        # Ensure timezone-aware
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=UTC)
-
-        last_used_at = _parse_iso_datetime(pattern.get("last_used_at"))
-        if not last_used_at:
-            last_used_at = created_at  # Use created_at if never used
-
-        if last_used_at.tzinfo is None:
-            last_used_at = last_used_at.replace(tzinfo=UTC)
-
-        # Calculate days since creation and last use
-        age_days = max(0, (now - created_at).days)
-        unused_days = max(0, (now - last_used_at).days)
-
-        # Apply exponential decay
-        # Age decay: half-life of ~60 days (decay constant = 90)
-        age_decay = math.exp(-age_days / 90)
-
-        # Usage decay: half-life of ~40 days (decay constant = 60)
-        usage_decay = math.exp(-unused_days / 60)
-
-        # Combine factors
-        relevance = confidence * age_decay * usage_decay
-
-        # Clamp to [0.0, 1.0]
-        return max(0.0, min(1.0, relevance))
+        """Calculate relevance score for a pattern based on age and usage."""
+        return pattern_scoring.calculate_pattern_relevance(pattern)
 
     # =========================================================================
     # CRUD Operations
@@ -300,14 +139,7 @@ class PatternService:
         return pattern
 
     def get_pattern(self, pattern_id: str) -> dict[str, Any] | None:
-        """Get a pattern by ID.
-
-        Args:
-            pattern_id: The pattern ID.
-
-        Returns:
-            The pattern or None if not found.
-        """
+        """Get a pattern by ID."""
         return memory_storage.get_pattern(pattern_id)
 
     def list_patterns(
@@ -317,17 +149,7 @@ class PatternService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """List patterns with filtering.
-
-        Args:
-            status: Filter by status.
-            pattern_type: Filter by type.
-            limit: Maximum patterns to return.
-            offset: Offset for pagination.
-
-        Returns:
-            List of patterns.
-        """
+        """List patterns with filtering."""
         return memory_storage.list_patterns(
             project_id=self.project_id,
             status=status,
@@ -373,9 +195,9 @@ class PatternService:
         valid_transitions = {
             "pending": ["approved", "rejected"],
             "approved": ["applied", "rejected"],
-            "applied": [],  # Terminal state
-            "rejected": ["pending"],  # Allow re-review
-            "merged": [],  # Terminal state
+            "applied": [],
+            "rejected": ["pending"],
+            "merged": [],
         }
 
         if new_status not in valid_transitions.get(current, []):
@@ -387,7 +209,7 @@ class PatternService:
         memory_storage.update_pattern_status(
             pattern_id=pattern_id,
             status=new_status,
-            reviewed_by=reason,  # Use reviewed_by for the reason
+            reviewed_by=reason,
         )
         return self.get_pattern(pattern_id)
 
@@ -397,12 +219,6 @@ class PatternService:
         rules_file: str = "learned-patterns.md",
     ) -> dict[str, Any] | None:
         """Apply a pattern by writing to .claude/rules/.
-
-        Handles different actions:
-        - add: Append to rules file
-        - update: Find and replace existing pattern
-        - remove: Remove pattern from rules file
-        - merge: Apply merged content and mark originals
 
         Args:
             pattern_id: The pattern ID.
@@ -433,308 +249,54 @@ class PatternService:
         action = pattern.get("action", "add")
 
         if action == "remove":
-            # Remove the pattern from rules file
-            self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
+            pattern_file_handler.remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
             logger.info(f"pattern_removed: id={pattern_id} target={pattern['target_pattern_id']}")
 
         elif action == "update":
-            # Update existing pattern in rules file
             if pattern.get("target_pattern_id"):
-                self._remove_pattern_from_file(rules_path, pattern["target_pattern_id"])
-            self._append_pattern_to_file(rules_path, pattern)
+                pattern_file_handler.remove_pattern_from_file(
+                    rules_path, pattern["target_pattern_id"]
+                )
+            pattern_file_handler.append_pattern_to_file(rules_path, pattern)
             logger.info(
                 f"pattern_updated: id={pattern_id} target={pattern.get('target_pattern_id')}"
             )
 
         elif action == "merge":
-            # Remove source patterns and add merged version
             source_ids = pattern.get("source_diary_ids") or []
             for source_id in source_ids:
-                self._remove_pattern_from_file(rules_path, source_id)
-            self._append_pattern_to_file(rules_path, pattern)
+                pattern_file_handler.remove_pattern_from_file(rules_path, source_id)
+            pattern_file_handler.append_pattern_to_file(rules_path, pattern)
             logger.info(f"pattern_merged: id={pattern_id} sources={source_ids}")
 
-        else:  # add
-            self._append_pattern_to_file(rules_path, pattern)
+        else:
+            pattern_file_handler.append_pattern_to_file(rules_path, pattern)
             logger.info(f"pattern_applied: id={pattern_id} file={rules_path}")
 
-        # Update status
         memory_storage.mark_pattern_applied(pattern_id)
         return self.get_pattern(pattern_id)
 
-    def _append_pattern_to_file(self, rules_path: Path, pattern: dict[str, Any]) -> None:
-        """Append a formatted pattern to the rules file."""
-        pattern_entry = self._format_pattern_for_rules(pattern)
-        with open(rules_path, "a") as f:
-            f.write("\n\n" + pattern_entry)
-
-    def _remove_pattern_from_file(self, rules_path: Path, pattern_id: str | None) -> bool:
-        """Remove a pattern from the rules file by its ID.
-
-        Args:
-            rules_path: Path to the rules file.
-            pattern_id: The pattern ID to remove.
-
-        Returns:
-            True if pattern was found and removed.
-        """
-        if not pattern_id or not rules_path.exists():
-            return False
-
-        try:
-            content = rules_path.read_text()
-
-            # Find and remove the pattern section
-            # Pattern sections are marked with <!-- Pattern ID: xxx -->
-            pattern_marker = f"<!-- Pattern ID: {pattern_id}"
-
-            if pattern_marker not in content:
-                return False
-
-            # Find the pattern section boundaries
-            # Patterns start with "## title" and end before next "## " or end of file
-            lines = content.split("\n")
-            new_lines: list[str] = []
-            skip_until_next_section = False
-            found_pattern = False
-
-            for line in lines:
-                # Check if this line contains the pattern marker we're looking for
-                if pattern_marker in line:
-                    # Find the start of this section (go back to the ## heading)
-                    j = len(new_lines) - 1
-                    while j >= 0 and not new_lines[j].startswith("## "):
-                        j -= 1
-                    # Remove from the heading onwards
-                    if j >= 0:
-                        new_lines = new_lines[:j]
-                    skip_until_next_section = True
-                    found_pattern = True
-                    continue
-
-                if skip_until_next_section:
-                    if line.startswith("## "):
-                        skip_until_next_section = False
-                        new_lines.append(line)
-                    continue
-
-                new_lines.append(line)
-
-            if found_pattern:
-                # Clean up extra blank lines
-                cleaned = "\n".join(new_lines).strip()
-                rules_path.write_text(cleaned + "\n")
-                logger.info(f"pattern_removed_from_file: id={pattern_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to remove pattern from file: {e}")
-
-        return False
-
-    def _format_pattern_for_rules(self, pattern: dict[str, Any]) -> str:
-        """Format a pattern as markdown for rules file."""
-        lines = [
-            f"## {pattern['title']}",
-            "",
-            pattern["content"],
-        ]
-
-        if pattern.get("rationale"):
-            lines.extend(
-                [
-                    "",
-                    f"*Rationale: {pattern['rationale']}*",
-                ]
-            )
-
-        lines.extend(
-            [
-                "",
-                f"<!-- Pattern ID: {pattern['id']} | Applied: {datetime.now().isoformat()} -->",
-            ]
-        )
-
-        return "\n".join(lines)
+    # =========================================================================
+    # File parsing (static methods delegate to pattern_file_handler)
+    # =========================================================================
 
     @staticmethod
     def format_pattern_jsonl(pattern: dict[str, Any], include_content: bool = False) -> str:
-        """Format a pattern as compact JSON-lines for progressive disclosure.
-
-        Index format (for SessionStart, ~10 tokens per pattern):
-        {"id":"abc","t":"title"}
-
-        Full format (for expand, ~50 tokens per pattern):
-        {"id":"abc","t":"title","c":"content","d":"domain","conf":0.85}
-
-        Args:
-            pattern: Pattern dict with id, title, content, pattern_type, confidence
-            include_content: If True, include full content (for expand). Default False for index.
-
-        Returns:
-            Single JSON line (no trailing newline)
-        """
-        import json
-
-        # Use short UUID (last 8 chars) for index view, full for expand
-        full_id = str(pattern.get("id", ""))
-        short_id = full_id[-8:] if len(full_id) > 8 else full_id
-
-        if include_content:
-            # Full format for expansion
-            compact = {
-                "id": full_id,
-                "t": pattern.get("title", ""),
-                "c": pattern.get("content", ""),
-                "d": pattern.get("pattern_type", "rule"),
-                "conf": round(pattern.get("confidence", 0.5), 2),
-            }
-        else:
-            # Index format - minimal for session start
-            compact = {
-                "id": short_id,
-                "t": pattern.get("title", ""),
-            }
-
-        return json.dumps(compact, separators=(",", ":"))
+        """Format a pattern as compact JSON-lines."""
+        return pattern_file_handler.format_pattern_jsonl(pattern, include_content)
 
     @staticmethod
     def parse_pattern_jsonl(line: str) -> dict[str, Any] | None:
-        """Parse a JSON-lines pattern entry back to dict format.
-
-        Handles both:
-        - Index format: {"id":"short","t":"title"}
-        - Full format: {"id":"full","t":"title","c":"content","d":"type","conf":0.85}
-
-        Args:
-            line: Single JSON line to parse
-
-        Returns:
-            Pattern dict with normalized keys, or None if parse fails
-        """
-        import json
-
-        try:
-            compact = json.loads(line.strip())
-        except json.JSONDecodeError:
-            return None
-
-        # Map abbreviated keys back to full names
-        return {
-            "id": compact.get("id", ""),
-            "title": compact.get("t", ""),
-            "content": compact.get("c", ""),
-            "pattern_type": compact.get("d", "rule"),
-            "confidence": compact.get("conf", 0.5),
-        }
+        """Parse a JSON-lines pattern entry back to dict format."""
+        return pattern_file_handler.parse_pattern_jsonl(line)
 
     @staticmethod
     def parse_patterns_file(content: str) -> list[dict[str, Any]]:
-        """Parse a patterns file, detecting format automatically.
-
-        Supports:
-        - JSON-lines format (each line is a JSON object)
-        - Legacy markdown format (## Title / content / <!-- Pattern ID -->)
-
-        Args:
-            content: Full file content
-
-        Returns:
-            List of pattern dicts
-        """
-        content = content.strip()
-        if not content:
-            return []
-
-        # Detect format by checking first non-empty line
-        first_line = content.split("\n")[0].strip()
-
-        if first_line.startswith("{"):
-            # JSON-lines format
-            return PatternService._parse_jsonl_format(content)
-        elif first_line.startswith("#"):
-            # Markdown format
-            return PatternService._parse_markdown_format(content)
-        else:
-            # Unknown format
-            logger.warning(f"Unknown pattern file format: {first_line[:50]}")
-            return []
-
-    @staticmethod
-    def _parse_jsonl_format(content: str) -> list[dict[str, Any]]:
-        """Parse JSON-lines format patterns."""
-        patterns = []
-        for line in content.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            parsed = PatternService.parse_pattern_jsonl(line)
-            if parsed:
-                patterns.append(parsed)
-        return patterns
-
-    @staticmethod
-    def _parse_markdown_format(content: str) -> list[dict[str, Any]]:
-        """Parse legacy markdown format patterns.
-
-        Format:
-        ## Title
-
-        Content text here.
-
-        *Rationale: ...*
-
-        <!-- Pattern ID: uuid | Applied: timestamp -->
-        """
-        import re
-
-        patterns = []
-
-        # Split by ## headings
-        sections = re.split(r"\n(?=## )", content)
-
-        for section in sections:
-            section = section.strip()
-            if not section.startswith("## "):
-                continue
-
-            lines = section.split("\n")
-            title = lines[0][3:].strip()  # Remove "## "
-
-            # Find pattern ID from comment
-            pattern_id = ""
-            id_match = re.search(r"<!-- Pattern ID: ([^\s|]+)", section)
-            if id_match:
-                pattern_id = id_match.group(1)
-
-            # Extract content (between title and rationale/comment)
-            content_lines = []
-            rationale = ""
-            for line in lines[1:]:
-                line = line.strip()
-                if line.startswith("*Rationale:"):
-                    rationale = line[11:].rstrip("*").strip()
-                    continue
-                if line.startswith("<!--"):
-                    continue
-                if line:
-                    content_lines.append(line)
-
-            patterns.append(
-                {
-                    "id": pattern_id,
-                    "title": title,
-                    "content": "\n".join(content_lines),
-                    "rationale": rationale,
-                    "pattern_type": "rule",
-                    "confidence": 0.7,  # Default for legacy patterns
-                }
-            )
-
-        return patterns
+        """Parse a patterns file, detecting format automatically."""
+        return pattern_file_handler.parse_patterns_file(content)
 
     # =========================================================================
-    # Staleness Detection
+    # Staleness and Duplicate Detection
     # =========================================================================
 
     def get_stale_patterns(
@@ -759,21 +321,18 @@ class PatternService:
 
         stale = []
         for p in patterns:
-            last_used = _parse_iso_datetime(p.get("last_used_at"))
+            last_used = pattern_scoring.parse_iso_datetime(p.get("last_used_at"))
             if last_used:
                 if last_used < cutoff:
                     stale.append(p)
             else:
-                # Never used - check if applied long ago
-                applied_at = _parse_iso_datetime(p.get("applied_at") or p.get("created_at"))
+                applied_at = pattern_scoring.parse_iso_datetime(
+                    p.get("applied_at") or p.get("created_at")
+                )
                 if applied_at and applied_at < cutoff:
                     stale.append(p)
 
         return stale
-
-    # =========================================================================
-    # Duplicate Detection
-    # =========================================================================
 
     def detect_duplicates(
         self,
@@ -798,15 +357,12 @@ class PatternService:
             limit=1000,
         )
 
-        # Tokenize input
         input_words = set(re.findall(r"\w+", (title + " " + content).lower()))
 
         similar = []
         for p in existing:
-            # Tokenize existing pattern
             existing_words = set(re.findall(r"\w+", (p["title"] + " " + p["content"]).lower()))
 
-            # Calculate Jaccard similarity
             if not input_words or not existing_words:
                 continue
 
@@ -822,7 +378,6 @@ class PatternService:
                     }
                 )
 
-        # Sort by similarity descending
         similar.sort(key=lambda x: x["similarity_score"], reverse=True)
         return similar
 
@@ -846,17 +401,15 @@ class PatternService:
         Returns:
             The new merged pattern.
         """
-        # Create new merged pattern
         merged = self.create_pattern(
             pattern_type="rule",
             title=merged_title,
             content=merged_content,
             action="merge",
             rationale=rationale,
-            source_entry_ids=pattern_ids,  # Reference original patterns
+            source_entry_ids=pattern_ids,
         )
 
-        # Mark originals as merged
         for pid in pattern_ids:
             memory_storage.update_pattern_status(
                 pattern_id=pid,
@@ -873,16 +426,7 @@ class PatternService:
     # =========================================================================
 
     def record_usage(self, pattern_id: str) -> bool:
-        """Record that a pattern was used.
-
-        Updates usage_count and last_used_at.
-
-        Args:
-            pattern_id: The pattern ID.
-
-        Returns:
-            True if updated successfully.
-        """
+        """Record that a pattern was used."""
         result = memory_storage.increment_pattern_usage(pattern_id)
         return result is not None
 
@@ -915,7 +459,6 @@ class PatternService:
                 f"Pattern confidence ({confidence:.2f}) must be >= 0.9 for global promotion"
             )
 
-        # Create global copy using memory_storage directly (bypasses project_id check)
         global_pattern = memory_storage.create_pattern(
             project_id=None,
             pattern_type=pattern.get("pattern_type", "rule"),
@@ -923,7 +466,7 @@ class PatternService:
             content=pattern["content"],
             action="add",
             rationale=f"Promoted from {self.project_id}: {pattern.get('rationale', '')}",
-            source_diary_ids=[pattern_id],  # Reference source pattern
+            source_diary_ids=[pattern_id],
             confidence=confidence,
             reflected_by=pattern.get("reflected_by"),
         )
