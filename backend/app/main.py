@@ -32,6 +32,7 @@ from .api import (
     prompts,
     refactor_sessions,
     roundtable,
+    schemas,
     tasks,
     tdd,
     tdd_tests,
@@ -98,6 +99,7 @@ app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
+app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 
 
 @app.get("/health")

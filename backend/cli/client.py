@@ -69,6 +69,18 @@ class STClient:
             raise APIError(response.status_code, detail)
         return response.json()
 
+    def get(self, url: str) -> dict[str, Any]:
+        """Generic GET request to any URL.
+
+        Args:
+            url: Full URL to request
+
+        Returns:
+            Response JSON as dict.
+        """
+        response = self._client.get(url)
+        return self._handle_response(response)
+
     # Task CRUD operations
 
     def create_task(self, data: dict[str, Any]) -> dict[str, Any]:

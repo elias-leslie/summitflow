@@ -10,12 +10,19 @@ import {
   Compass,
   Settings2,
   FlaskConical,
-  Package,
   FileCode,
 } from "lucide-react";
 import clsx from "clsx";
 
-type TabId = "roundtable" | "kanban" | "tasks" | "tests" | "components" | "prompts" | "evidence" | "explorer" | "settings";
+type TabId =
+  | "roundtable"
+  | "kanban"
+  | "tasks"
+  | "tests"
+  | "prompts"
+  | "evidence"
+  | "explorer"
+  | "settings";
 
 interface TabConfig {
   id: TabId;
@@ -35,7 +42,8 @@ const tabs: TabConfig[] = [
     label: "Roundtable",
     icon: MessageCircle,
     activeClasses: "bg-emerald-500/15 text-emerald-400",
-    inactiveClasses: "text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400",
     iconActiveClasses: "text-emerald-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-emerald-400",
   },
@@ -53,7 +61,8 @@ const tabs: TabConfig[] = [
     label: "Tasks",
     icon: ListTodo,
     activeClasses: "bg-orange-500/15 text-orange-400",
-    inactiveClasses: "text-slate-500 hover:bg-orange-500/10 hover:text-orange-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-orange-500/10 hover:text-orange-400",
     iconActiveClasses: "text-orange-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-orange-400",
   },
@@ -62,19 +71,10 @@ const tabs: TabConfig[] = [
     label: "Tests",
     icon: FlaskConical,
     activeClasses: "bg-phosphor-500/15 text-phosphor-400",
-    inactiveClasses: "text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400",
     iconActiveClasses: "text-phosphor-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-phosphor-400",
-    isRoute: true,
-  },
-  {
-    id: "components",
-    label: "Components",
-    icon: Package,
-    activeClasses: "bg-indigo-500/15 text-indigo-400",
-    inactiveClasses: "text-slate-500 hover:bg-indigo-500/10 hover:text-indigo-400",
-    iconActiveClasses: "text-indigo-400",
-    iconInactiveClasses: "text-slate-500 group-hover:text-indigo-400",
     isRoute: true,
   },
   {
@@ -82,7 +82,8 @@ const tabs: TabConfig[] = [
     label: "Prompts",
     icon: FileCode,
     activeClasses: "bg-amber-500/15 text-amber-400",
-    inactiveClasses: "text-slate-500 hover:bg-amber-500/10 hover:text-amber-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-amber-500/10 hover:text-amber-400",
     iconActiveClasses: "text-amber-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-amber-400",
     isRoute: true,
@@ -110,7 +111,8 @@ const tabs: TabConfig[] = [
     label: "Settings",
     icon: Settings2,
     activeClasses: "bg-slate-500/15 text-slate-300",
-    inactiveClasses: "text-slate-500 hover:bg-slate-500/10 hover:text-slate-300",
+    inactiveClasses:
+      "text-slate-500 hover:bg-slate-500/10 hover:text-slate-300",
     iconActiveClasses: "text-slate-300",
     iconInactiveClasses: "text-slate-500 group-hover:text-slate-300",
     isSettings: true,
@@ -127,14 +129,15 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
   const searchParams = useSearchParams();
 
   // Get current tab from URL if not provided
-  const activeTab = currentTab || (searchParams.get("tab") as TabId) || "roundtable";
+  const activeTab =
+    currentTab || (searchParams.get("tab") as TabId) || "roundtable";
 
   return (
     <nav
       className={clsx(
         "flex items-center gap-1 overflow-x-auto scrollbar-hide",
         "max-w-[calc(100vw-500px)] lg:max-w-none",
-        className
+        className,
       )}
     >
       {tabs.map((tab) => {
@@ -145,8 +148,8 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
         const href = tab.isSettings
           ? `/projects/${projectId}/settings`
           : tab.isRoute
-          ? `/projects/${projectId}/${tab.id}`
-          : `/projects/${projectId}?tab=${tab.id}`;
+            ? `/projects/${projectId}/${tab.id}`
+            : `/projects/${projectId}?tab=${tab.id}`;
 
         return (
           <Link
@@ -154,20 +157,24 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
             href={href}
             className={clsx(
               "group flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ease-out flex-shrink-0",
-              isActive ? tab.activeClasses : tab.inactiveClasses
+              isActive ? tab.activeClasses : tab.inactiveClasses,
             )}
             title={tab.label}
           >
-            <Icon className={clsx(
-              "w-4 h-4 flex-shrink-0 transition-colors duration-200",
-              isActive ? tab.iconActiveClasses : tab.iconInactiveClasses
-            )} />
-            <span className={clsx(
-              "overflow-hidden transition-all duration-300 ease-out whitespace-nowrap",
-              isActive
-                ? "max-w-24 ml-2 opacity-100"
-                : "max-w-0 ml-0 opacity-0 group-hover:max-w-24 group-hover:ml-2 group-hover:opacity-100"
-            )}>
+            <Icon
+              className={clsx(
+                "w-4 h-4 flex-shrink-0 transition-colors duration-200",
+                isActive ? tab.iconActiveClasses : tab.iconInactiveClasses,
+              )}
+            />
+            <span
+              className={clsx(
+                "overflow-hidden transition-all duration-300 ease-out whitespace-nowrap",
+                isActive
+                  ? "max-w-24 ml-2 opacity-100"
+                  : "max-w-0 ml-0 opacity-0 group-hover:max-w-24 group-hover:ml-2 group-hover:opacity-100",
+              )}
+            >
               {tab.label}
             </span>
           </Link>

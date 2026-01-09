@@ -53,14 +53,15 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 ## Development Workflow
 
 ```
-/spec_it → /task_it → /do_it
+/plan_it → st task import → /do_it
 ```
 
 | Command | Purpose |
 |---------|---------|
-| `/spec_it` | Discovery, interview, output spec.json |
-| `/task_it` | Generate tasks with subtasks from spec |
-| `/do_it` | Execute subtasks, commit, close task |
+| `/plan_it <desc>` | Plan task with adaptive interview → plan.json |
+| `st task verify <file>` | Validate plan against schema |
+| `st task import <file>` | Create task from plan.json |
+| `/do_it <task-id>` | Execute subtasks, commit, close task |
 | `/commit_it` | Quality gates (pytest, lint) then commit |
 
 ---
@@ -111,11 +112,11 @@ st subtask pass <task-id> <subtask-id>             # Mark subtask passed
 
 - **Model Constants:** See `~/.claude/rules/model-standards.md` (never hardcode model strings)
 - **Commands vs Skills:** See `~/.claude/rules/commands-vs-skills.md` (commands are `/invoked`, skills auto-trigger)
-- **Pre-Implementation Checks:** Use `/pre_it` command
+- **Task Planning:** Use `/plan_it` for new work, `/do_it` for execution
 - **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
 - **Memory System:** DISABLED - see `backend/.env` (`MEMORY_SYSTEM_ENABLED=false`)
 - **Permissions:** Intentionally empty in settings.json - bypass mode used. Do NOT suggest adding permission rules.
 
 ---
 
-**Version**: 3.3.0
+**Version**: 4.0.0

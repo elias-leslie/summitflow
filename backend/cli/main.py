@@ -102,6 +102,9 @@ app = typer.Typer(
 for cmd in tasks.app.registered_commands:
     app.command(name=cmd.name)(cmd.callback)
 
+# Also register task as a subcommand group for `st task verify` / `st task import`
+app.add_typer(tasks.app, name="task", hidden=True)
+
 # Register subcommand groups (hidden from main help - reference above is complete)
 app.add_typer(deps.app, name="dep")
 app.add_typer(capabilities.app, name="capability")

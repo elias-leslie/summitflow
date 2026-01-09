@@ -200,6 +200,12 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         acceptance_criteria=task_criteria_list,
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
+        # Pipeline v2 fields
+        spirit_anti=task.get("spirit_anti"),
+        decisions=task.get("decisions"),
+        constraints=task.get("constraints"),
+        done_when=task.get("done_when"),
+        complexity=task.get("complexity"),
         # Optional feature context
         capability=capability_context,
         # Optional blockers context
@@ -325,6 +331,12 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         task_type=task.task_type,
         parent_task_id=task.parent_task_id,
         objective=task.objective,
+        # Pipeline v2 fields
+        spirit_anti=task.spirit_anti,
+        decisions=task.decisions,
+        constraints=task.constraints,
+        done_when=task.done_when,
+        complexity=task.complexity,
     )
     return _task_to_response(created)
 
@@ -366,6 +378,12 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                 task_type=item.task_type,
                 parent_task_id=item.parent_task_id,
                 objective=item.objective,
+                # Pipeline v2 fields
+                spirit_anti=item.spirit_anti,
+                decisions=item.decisions,
+                constraints=item.constraints,
+                done_when=item.done_when,
+                complexity=item.complexity,
             )
 
             # Create nested subtasks if provided

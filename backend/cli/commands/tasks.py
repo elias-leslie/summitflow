@@ -789,3 +789,202 @@ def log(
         return
 
     output_json(result)
+
+
+@app.command("verify")
+def verify_plan(
+    file_path: Annotated[Path, typer.Argument(help="Path to plan.json file")],
+) -> None:
+    """Verify a plan.json file against the schema.
+
+    Validates:
+    - JSON schema compliance
+    - Conditional requirements (STANDARD/COMPLEX need done_when, COMPLEX needs decisions)
+
+    Examples:
+        st task verify tasks/my-feature/plan.json
+    """
+    import jsonschema as js
+
+    # Read the plan file
+    try:
+        content = file_path.read_text()
+        plan = json.loads(content)
+    except FileNotFoundError:
+        output_error(f"File not found: {file_path}")
+        raise typer.Exit(1) from None
+    except json.JSONDecodeError as e:
+        output_error(f"Invalid JSON at line {e.lineno}: {e.msg}")
+        raise typer.Exit(1) from None
+
+    # Fetch schema from API
+    client = STClient(require_project=False)
+    try:
+        schema = client.get(f"{client.base_url}/schemas/plan")
+    except APIError as e:
+        output_error(f"Failed to fetch schema: {e.detail}")
+        raise typer.Exit(1) from None
+
+    # Validate against JSON schema
+    issues: list[str] = []
+    try:
+        js.validate(plan, schema)
+    except js.ValidationError as e:
+        # Extract the relevant part of the error message
+        path = ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        issues.append(f"Schema: {path}: {e.message}")
+
+    # Check conditional requirements
+    complexity = plan.get("complexity", "SIMPLE")
+
+    if complexity in ("STANDARD", "COMPLEX"):
+        if not plan.get("spirit_anti"):
+            issues.append(f"Conditional: {complexity} tasks require 'spirit_anti'")
+        done_when = plan.get("done_when", [])
+        if not done_when or len(done_when) < 1:
+            issues.append(
+                f"Conditional: {complexity} tasks require 'done_when' with at least 1 item"
+            )
+
+    if complexity == "COMPLEX":
+        decisions = plan.get("decisions", [])
+        if not decisions or len(decisions) < 1:
+            issues.append("Conditional: COMPLEX tasks require 'decisions' with at least 1 item")
+
+    # Output result
+    if issues:
+        typer.echo("FAIL")
+        for issue in issues:
+            typer.echo(f"  - {issue}", err=True)
+        raise typer.Exit(1)
+    else:
+        typer.echo("PASS")
+        typer.echo(f"  complexity: {complexity}")
+        typer.echo(f"  subtasks: {len(plan.get('subtasks', []))}")
+        if plan.get("done_when"):
+            typer.echo(f"  done_when: {len(plan['done_when'])} items")
+
+
+@app.command("import")
+def import_plan(
+    file_path: Annotated[Path, typer.Argument(help="Path to plan.json file")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate only, don't create")] = False,
+) -> None:
+    """Import a plan.json file as a SummitFlow task.
+
+    First runs verify, then creates the task with subtasks.
+
+    Examples:
+        st task import tasks/my-feature/plan.json
+        st task import tasks/my-feature/plan.json --dry-run
+    """
+    import jsonschema as js
+
+    # Read the plan file
+    try:
+        content = file_path.read_text()
+        plan = json.loads(content)
+    except FileNotFoundError:
+        output_error(f"File not found: {file_path}")
+        raise typer.Exit(1) from None
+    except json.JSONDecodeError as e:
+        output_error(f"Invalid JSON at line {e.lineno}: {e.msg}")
+        raise typer.Exit(1) from None
+
+    # Fetch schema and validate (same as verify)
+    client = STClient()
+    try:
+        schema = client.get(f"{client.base_url}/schemas/plan")
+    except APIError as e:
+        output_error(f"Failed to fetch schema: {e.detail}")
+        raise typer.Exit(1) from None
+
+    try:
+        js.validate(plan, schema)
+    except js.ValidationError as e:
+        path = ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        output_error(f"Schema validation failed: {path}: {e.message}")
+        raise typer.Exit(1) from None
+
+    # Check conditional requirements
+    complexity = plan.get("complexity", "SIMPLE")
+    if complexity in ("STANDARD", "COMPLEX"):
+        if not plan.get("spirit_anti"):
+            output_error(f"FAIL: {complexity} tasks require 'spirit_anti'")
+            raise typer.Exit(1)
+        if not plan.get("done_when"):
+            output_error(f"FAIL: {complexity} tasks require 'done_when'")
+            raise typer.Exit(1)
+    if complexity == "COMPLEX" and not plan.get("decisions"):
+        output_error("FAIL: COMPLEX tasks require 'decisions'")
+        raise typer.Exit(1)
+
+    # Dry run - show what would be created
+    if dry_run:
+        typer.echo(f"Would create task: {plan.get('title')}")
+        typer.echo(f"  complexity: {complexity}")
+        typer.echo(f"  objective: {plan.get('objective', '')[:60]}...")
+        subtasks = plan.get("subtasks", [])
+        typer.echo(f"  subtasks: {len(subtasks)}")
+        for st in subtasks:
+            typer.echo(f"    {st.get('id')}: {st.get('description', '')[:50]}")
+        return
+
+    # Build task data
+    task_data: dict[str, Any] = {
+        "title": plan["title"],
+        "description": plan.get("description"),
+        "task_type": plan.get("task_type", "task"),
+        "priority": plan.get("priority", 2),
+        "labels": plan.get("labels", []),
+        "objective": plan["objective"],
+        # Pipeline v2 fields
+        "spirit_anti": plan.get("spirit_anti"),
+        "decisions": plan.get("decisions"),
+        "constraints": plan.get("constraints"),
+        "done_when": plan.get("done_when"),
+        "complexity": complexity,
+    }
+
+    # Build subtasks
+    subtasks = []
+    for st in plan.get("subtasks", []):
+        subtasks.append(
+            {
+                "subtask_id": st["id"],
+                "phase": st.get("phase"),
+                "description": st["description"],
+                "steps": st.get("steps", []),
+                "display_order": int(st["id"].split(".")[0]) * 100 + int(st["id"].split(".")[1])
+                if "." in st["id"]
+                else 0,
+            }
+        )
+
+    task_data["subtasks"] = subtasks
+
+    # Create via batch API (supports nested subtasks)
+    try:
+        result = client.batch_create_tasks([task_data])
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    created = result.get("created", [])
+    errors = result.get("errors", [])
+
+    if errors:
+        for err in errors:
+            output_error(f"Failed: {err.get('error')}")
+        raise typer.Exit(1)
+
+    if created:
+        task = created[0]
+        typer.echo(f"{task['id']} created")
+        typer.echo(f"  title: {task['title']}")
+        typer.echo(f"  complexity: {task.get('complexity', 'SIMPLE')}")
+        subtask_count = len(task.get("subtasks", []))
+        typer.echo(f"  subtasks: {subtask_count}")
+    else:
+        output_error("No task created")
+        raise typer.Exit(1)

@@ -4,6 +4,7 @@ This module contains the init_schema() function which creates all database table
 It was extracted from connection.py to separate schema concerns from connection management.
 """
 
+import contextlib
 import logging
 
 import psycopg
@@ -89,7 +90,7 @@ def init_schema() -> None:
         # ============================================================
 
         # Evidence table - evidence storage for verification
-        # Primary link is explorer_entry_id; capability_id retained for backwards compatibility
+        # Primary link is task_id; capability_id retained for backwards compatibility
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS evidence (
@@ -97,7 +98,7 @@ def init_schema() -> None:
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     evidence_id VARCHAR(50) NOT NULL,
                     capability_id VARCHAR(50),
-                    criterion_id VARCHAR(20),
+                    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
                     explorer_entry_id INTEGER REFERENCES explorer_entries(id) ON DELETE SET NULL,
                     evidence_type VARCHAR(50) DEFAULT 'screenshot',
                     environment VARCHAR(50) DEFAULT 'local',
@@ -126,7 +127,6 @@ def init_schema() -> None:
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_capability ON evidence(capability_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_criterion ON evidence(criterion_id)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_explorer_entry ON evidence(explorer_entry_id)"
         )
@@ -178,6 +178,11 @@ def init_schema() -> None:
                     review_result JSONB,
                     -- AI agent reliability fields
                     objective TEXT,
+                    spirit_anti TEXT,
+                    decisions JSONB,
+                    constraints JSONB,
+                    done_when JSONB,
+                    complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX')),
                     current_phase TEXT,
                     verification_result JSONB,
                     -- AI enrichment fields
@@ -656,6 +661,17 @@ def init_schema() -> None:
             ("generated_spec JSONB", "roundtable_sessions"),
             # TDD capability linkage - link tasks to capabilities instead of features
             ("capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL", "tasks"),
+            # Pipeline v2 fields - task context for /plan_it and /do_it
+            ("spirit_anti TEXT", "tasks"),
+            # Pipeline v2 - evidence links to tasks now
+            ("task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "evidence"),
+            ("decisions JSONB", "tasks"),
+            ("constraints JSONB", "tasks"),
+            ("done_when JSONB", "tasks"),
+            (
+                "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
+                "tasks",
+            ),
         ]:
             try:
                 # Note: table and column names come from controlled internal list, not user input
@@ -670,6 +686,10 @@ def init_schema() -> None:
                 # Log unexpected errors (type mismatches, constraint failures, etc.)
                 column_name = column.split()[0]
                 logger.warning("Failed to add column %s to %s: %s", column_name, table, e)
+
+        # Create indexes for columns added via ALTER TABLE
+        with contextlib.suppress(psycopg.errors.UndefinedColumn):
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id)")
 
         conn.commit()
 

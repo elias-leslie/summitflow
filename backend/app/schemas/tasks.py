@@ -28,6 +28,22 @@ class TaskCreate(BaseModel):
     acceptance_criteria: list["AcceptanceCriterion"] | None = Field(
         default=None, description="List of acceptance criteria (validated on create)"
     )
+    # Pipeline v2 fields
+    spirit_anti: str | None = Field(
+        default=None, description="What NOT to do - failure mode to avoid"
+    )
+    decisions: list[dict[str, Any]] | None = Field(
+        default=None, description="Implementation decisions made during planning"
+    )
+    constraints: list[str] | None = Field(
+        default=None, description="Boundaries that must not be crossed"
+    )
+    done_when: list[str] | None = Field(
+        default=None, description="Checklist of completion conditions"
+    )
+    complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = Field(
+        default=None, description="Task complexity tier"
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -51,6 +67,12 @@ class TaskUpdate(BaseModel):
     acceptance_criteria: list["AcceptanceCriterion"] | None = None
     # Capability linkage (FK to capabilities table)
     capability_id: int | None = None
+    # Pipeline v2 fields
+    spirit_anti: str | None = None
+    decisions: list[dict[str, Any]] | None = None
+    constraints: list[str] | None = None
+    done_when: list[str] | None = None
+    complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
 
 
 class TaskStatusUpdate(BaseModel):
@@ -303,6 +325,12 @@ class TaskResponse(BaseModel):
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     current_phase: str | None = None
     verification_result: dict[str, Any] | None = None
+    # Pipeline v2 fields
+    spirit_anti: str | None = None
+    decisions: list[dict[str, Any]] | None = None
+    constraints: list[str] | None = None
+    done_when: list[str] | None = None
+    complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     # AI enrichment fields
     raw_request: str | None = None
     enrichment_status: str | None = None
@@ -396,6 +424,12 @@ class BatchTaskCreate(BaseModel):
     task_type: Literal["feature", "bug", "task"] = "task"
     parent_task_id: str | None = None
     objective: str | None = None
+    # Pipeline v2 fields
+    spirit_anti: str | None = None
+    decisions: list[dict[str, Any]] | None = None
+    constraints: list[str] | None = None
+    done_when: list[str] | None = None
+    complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     subtasks: list[SubtaskCreate] | None = Field(
         default=None, description="Nested subtasks to create with the task"
     )
