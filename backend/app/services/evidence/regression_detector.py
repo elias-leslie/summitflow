@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import anthropic
 import numpy as np
 from PIL import Image
 
@@ -346,46 +345,28 @@ Respond in JSON format:
 }}"""
 
     try:
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model=model,
-            max_tokens=500,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": baseline_b64,
-                            },
-                        },
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": current_b64,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
+        from agent_hub import AsyncAgentHubClient, ImageContent
+
+        async with AsyncAgentHubClient(base_url="http://localhost:8003") as client:
+            response = await client.complete(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            ImageContent.from_base64(baseline_b64, "image/png").model_dump(),
+                            ImageContent.from_base64(current_b64, "image/png").model_dump(),
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                max_tokens=500,
+                project_id="evidence",
+                persist_session=False,  # Don't persist vision analysis sessions
+            )
 
         # Parse JSON response
-        first_block = response.content[0]
-        if not hasattr(first_block, "text"):
-            return {
-                "is_regression": False,
-                "description": "AI returned non-text response",
-                "severity": "unknown",
-                "error": "unexpected_response_type",
-            }
-        response_text = first_block.text
+        response_text = response.content
         # Extract JSON from response (handle markdown code blocks)
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
