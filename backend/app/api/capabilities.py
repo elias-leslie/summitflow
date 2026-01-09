@@ -1,4 +1,9 @@
-"""Capabilities API - CRUD for TDD capabilities."""
+"""Capabilities API - DEPRECATED.
+
+This API is deprecated. Use Explorer for codebase mapping.
+All list endpoints return empty results. Other endpoints still function
+for backwards compatibility but should not be used for new integrations.
+"""
 
 from typing import Any
 
@@ -134,14 +139,16 @@ class UpdateCriterionRequest(BaseModel):
     threshold: str | None = Field(default=None)
 
 
-@router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse])
+@router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse], deprecated=True)
 async def list_capabilities(
     project_id: str,
     component: int | None = Query(None, description="Filter by component database ID"),
 ) -> list[CapabilityResponse]:
-    """List all capabilities for a project, optionally filtered by component."""
-    capabilities_list = storage.list_capabilities(project_id, component_id=component)
-    return [CapabilityResponse(**c) for c in capabilities_list]
+    """List all capabilities for a project.
+
+    DEPRECATED: Returns empty list. Use Explorer for codebase mapping.
+    """
+    return []
 
 
 @router.get(

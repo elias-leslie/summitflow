@@ -1,4 +1,9 @@
-"""Components API - CRUD for TDD components."""
+"""Components API - DEPRECATED.
+
+This API is deprecated. Use Explorer for codebase mapping.
+All list endpoints return empty results. Other endpoints still function
+for backwards compatibility but should not be used for new integrations.
+"""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -43,11 +48,13 @@ class ComponentResponse(BaseModel):
     explorer_entry_id: int | None = None
 
 
-@router.get("/{project_id}/components", response_model=list[ComponentResponse])
+@router.get("/{project_id}/components", response_model=list[ComponentResponse], deprecated=True)
 async def list_components(project_id: str) -> list[ComponentResponse]:
-    """List all components for a project."""
-    components_list = storage.list_components(project_id)
-    return [ComponentResponse(**c) for c in components_list]
+    """List all components for a project.
+
+    DEPRECATED: Returns empty list. Use Explorer for codebase mapping.
+    """
+    return []
 
 
 @router.get("/{project_id}/components/{component_id}", response_model=ComponentResponse)

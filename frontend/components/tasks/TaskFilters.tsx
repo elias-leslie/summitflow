@@ -1,16 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Filter } from "lucide-react";
-import { fetchTddCapabilities, type TaskType, type TaskStatus } from "@/lib/api";
+import { type TaskType, type TaskStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface TaskFilterValues {
   type: TaskType | "all";
   status: TaskStatus | "all" | "active" | "blocked";
   priority: number | "all";
-  capabilityId: number | "all";
-  standaloneOnly: boolean;
 }
 
 interface TaskFiltersProps {
@@ -46,15 +43,15 @@ const PRIORITY_OPTIONS = [
   { value: 4, label: "P4 - Backlog" },
 ];
 
-export function TaskFilters({ projectId, filters, onChange, className }: TaskFiltersProps) {
-  // Fetch capabilities for the capability filter dropdown
-  const { data: capabilities = [] } = useQuery({
-    queryKey: ["capabilities", projectId],
-    queryFn: () => fetchTddCapabilities(projectId),
-    staleTime: 60000, // 1 minute
-  });
-
-  const handleChange = (key: keyof TaskFilterValues, value: string | number | boolean) => {
+export function TaskFilters({
+  filters,
+  onChange,
+  className,
+}: TaskFiltersProps) {
+  const handleChange = (
+    key: keyof TaskFilterValues,
+    value: string | number | boolean,
+  ) => {
     onChange({ ...filters, [key]: value });
   };
 
@@ -103,34 +100,6 @@ export function TaskFilters({ projectId, filters, onChange, className }: TaskFil
           </option>
         ))}
       </select>
-
-      {/* Capability Filter */}
-      <select
-        value={filters.capabilityId}
-        onChange={(e) => {
-          const val = e.target.value;
-          handleChange("capabilityId", val === "all" ? "all" : parseInt(val, 10));
-        }}
-        className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-white"
-      >
-        <option value="all">All Capabilities</option>
-        {capabilities.map((cap) => (
-          <option key={cap.id} value={cap.id}>
-            {cap.capability_id} - {cap.name}
-          </option>
-        ))}
-      </select>
-
-      {/* Standalone Only Checkbox */}
-      <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={filters.standaloneOnly}
-          onChange={(e) => handleChange("standaloneOnly", e.target.checked)}
-          className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
-        />
-        <span>Standalone only</span>
-      </label>
     </div>
   );
 }
@@ -139,6 +108,4 @@ export const DEFAULT_FILTERS: TaskFilterValues = {
   type: "all",
   status: "all",
   priority: "all",
-  capabilityId: "all",
-  standaloneOnly: false,
 };

@@ -25,15 +25,17 @@ import { Button } from "@/components/ui/button";
 import {
   fetchTasks,
   fetchBlockedTasks,
-  fetchTddCapabilities,
   type Task,
   type TaskType,
   type TaskStatus,
-  type TddCapability,
 } from "@/lib/api";
 import { type Subtask } from "@/lib/api/tasks";
 import { cn } from "@/lib/utils";
-import { TaskFilters, DEFAULT_FILTERS, type TaskFilterValues } from "./TaskFilters";
+import {
+  TaskFilters,
+  DEFAULT_FILTERS,
+  type TaskFilterValues,
+} from "./TaskFilters";
 import { SimpleCreateDialog } from "./SimpleCreateDialog";
 import { TaskExpandedView } from "./TaskExpandedView";
 import { CriteriaProgress } from "./CriteriaProgress";
@@ -50,14 +52,29 @@ interface TasksTabProps {
 // Priority config
 const priorityConfig: Record<number, { label: string; className: string }> = {
   0: { label: "P0", className: "bg-red-500/20 text-red-400 border-red-500/30" },
-  1: { label: "P1", className: "bg-rose-500/20 text-rose-400 border-rose-500/30" },
-  2: { label: "P2", className: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-  3: { label: "P3", className: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
-  4: { label: "P4", className: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
+  1: {
+    label: "P1",
+    className: "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  },
+  2: {
+    label: "P2",
+    className: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  },
+  3: {
+    label: "P3",
+    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  },
+  4: {
+    label: "P4",
+    className: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  },
 };
 
 // Type config
-const typeConfig: Record<TaskType, { icon: React.ReactNode; label: string; className: string }> = {
+const typeConfig: Record<
+  TaskType,
+  { icon: React.ReactNode; label: string; className: string }
+> = {
   feature: {
     icon: <Package className="h-3.5 w-3.5" />,
     label: "Feature",
@@ -76,18 +93,38 @@ const typeConfig: Record<TaskType, { icon: React.ReactNode; label: string; class
 };
 
 // Status config
-const statusConfig: Record<TaskStatus, { icon: React.ReactNode; className: string }> = {
-  pending: { icon: <Clock className="h-3.5 w-3.5" />, className: "text-slate-400" },
-  running: { icon: <Play className="h-3.5 w-3.5" />, className: "text-blue-400" },
-  paused: { icon: <Pause className="h-3.5 w-3.5" />, className: "text-amber-400" },
-  completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: "text-green-400" },
-  failed: { icon: <XCircle className="h-3.5 w-3.5" />, className: "text-rose-400" },
-  cancelled: { icon: <XCircle className="h-3.5 w-3.5" />, className: "text-slate-500" },
+const statusConfig: Record<
+  TaskStatus,
+  { icon: React.ReactNode; className: string }
+> = {
+  pending: {
+    icon: <Clock className="h-3.5 w-3.5" />,
+    className: "text-slate-400",
+  },
+  running: {
+    icon: <Play className="h-3.5 w-3.5" />,
+    className: "text-blue-400",
+  },
+  paused: {
+    icon: <Pause className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+  },
+  completed: {
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+    className: "text-green-400",
+  },
+  failed: {
+    icon: <XCircle className="h-3.5 w-3.5" />,
+    className: "text-rose-400",
+  },
+  cancelled: {
+    icon: <XCircle className="h-3.5 w-3.5" />,
+    className: "text-slate-500",
+  },
 };
 
 function TaskRow({
   task,
-  capability,
   isExpanded,
   onToggle,
   onTaskUpdated,
@@ -96,7 +133,6 @@ function TaskRow({
   projectId,
 }: {
   task: Task;
-  capability?: TddCapability;
   isExpanded: boolean;
   onToggle: () => void;
   onTaskUpdated?: (task: Task) => void;
@@ -126,7 +162,7 @@ function TaskRow({
       <tr
         className={cn(
           "border-b border-slate-800 hover:bg-slate-800/30 transition-colors cursor-pointer",
-          isExpanded && "bg-slate-800/50"
+          isExpanded && "bg-slate-800/50",
         )}
         onClick={onToggle}
       >
@@ -141,7 +177,9 @@ function TaskRow({
 
         {/* Priority */}
         <td className="px-3 py-3">
-          <span className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityStyle.className}`}>
+          <span
+            className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityStyle.className}`}
+          >
             {priorityStyle.label}
           </span>
         </td>
@@ -162,7 +200,9 @@ function TaskRow({
         {/* Title + Warning */}
         <td className="px-3 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-200 line-clamp-1">{task.title}</span>
+            <span className="text-sm text-slate-200 line-clamp-1">
+              {task.title}
+            </span>
             {!task.objective && task.enrichment_status !== "enriching" && (
               <span title="No objective set">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
@@ -173,7 +213,9 @@ function TaskRow({
 
         {/* Phase Badge */}
         <td className="px-3 py-3">
-          <span className={`text-2xs px-1.5 py-0.5 rounded font-medium ${phaseStyle.className}`}>
+          <span
+            className={`text-2xs px-1.5 py-0.5 rounded font-medium ${phaseStyle.className}`}
+          >
             {phaseStyle.label}
           </span>
         </td>
@@ -182,9 +224,13 @@ function TaskRow({
         <td className="px-3 py-3">
           <div className="flex items-center gap-3">
             {/* Criteria Progress */}
-            {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
-              <CriteriaProgress criteria={task.acceptance_criteria} maxVisible={4} />
-            )}
+            {task.acceptance_criteria &&
+              task.acceptance_criteria.length > 0 && (
+                <CriteriaProgress
+                  criteria={task.acceptance_criteria}
+                  maxVisible={4}
+                />
+              )}
             {/* Subtask Progress */}
             {subtasks.length > 0 && (
               <SubtaskProgress subtasks={subtasks} maxVisible={5} />
@@ -194,18 +240,11 @@ function TaskRow({
           </div>
         </td>
 
-        {/* Capability */}
-        <td className="px-3 py-3">
-          {capability ? (
-            <span className="text-xs text-purple-400">{capability.capability_id}</span>
-          ) : (
-            <span className="text-xs text-slate-600">—</span>
-          )}
-        </td>
-
         {/* Status */}
         <td className="px-3 py-3">
-          <span className={`flex items-center gap-1.5 ${statusStyle.className}`}>
+          <span
+            className={`flex items-center gap-1.5 ${statusStyle.className}`}
+          >
             {statusStyle.icon}
             <span className="text-xs capitalize">{task.status}</span>
           </span>
@@ -216,7 +255,7 @@ function TaskRow({
       <AnimatePresence>
         {isExpanded && (
           <tr>
-            <td colSpan={9}>
+            <td colSpan={8}>
               <TaskExpandedView
                 projectId={projectId}
                 task={task}
@@ -278,53 +317,63 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     }
   }, [refetchTasks, refetchBlocked, filters.status]);
 
-  // Fetch capabilities for linking
-  const { data: capabilities = [] } = useQuery({
-    queryKey: ["capabilities", projectId],
-    queryFn: () => fetchTddCapabilities(projectId),
-    staleTime: 60000,
-  });
-
   // Handler for task created from SimpleCreateDialog
-  const handleTaskCreated = useCallback((task: Task, mode: "queue" | "verify") => {
-    if (mode === "verify" && task.enrichment_status === "review") {
-      // Sync mode completed - go directly to review
-      setReviewingTask(task);
-    } else if (mode === "queue" && task.enrichment_status === "enriching") {
-      // Async mode - show enrichment progress
-      setEnrichingTask(task);
-    }
-    // Refresh task list
-    refetch();
-  }, [refetch]);
+  const handleTaskCreated = useCallback(
+    (task: Task, mode: "queue" | "verify") => {
+      if (mode === "verify" && task.enrichment_status === "review") {
+        // Sync mode completed - go directly to review
+        setReviewingTask(task);
+      } else if (mode === "queue" && task.enrichment_status === "enriching") {
+        // Async mode - show enrichment progress
+        setEnrichingTask(task);
+      }
+      // Refresh task list
+      refetch();
+    },
+    [refetch],
+  );
 
   // Handler for task updated
-  const handleTaskUpdated = useCallback((updatedTask: Task) => {
-    queryClient.setQueryData(["tasks", projectId, "all"], (old: { tasks: Task[] } | undefined) => {
-      if (!old) return old;
-      return {
-        ...old,
-        tasks: old.tasks.map((t) => t.id === updatedTask.id ? updatedTask : t),
-      };
-    });
-  }, [queryClient, projectId]);
+  const handleTaskUpdated = useCallback(
+    (updatedTask: Task) => {
+      queryClient.setQueryData(
+        ["tasks", projectId, "all"],
+        (old: { tasks: Task[] } | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            tasks: old.tasks.map((t) =>
+              t.id === updatedTask.id ? updatedTask : t,
+            ),
+          };
+        },
+      );
+    },
+    [queryClient, projectId],
+  );
 
   // Handler for enrichment complete
-  const handleEnrichmentComplete = useCallback((task: Task) => {
-    setEnrichingTask(null);
-    if (task.enrichment_status === "review") {
-      setReviewingTask(task);
-    }
-    refetch();
-  }, [refetch]);
+  const handleEnrichmentComplete = useCallback(
+    (task: Task) => {
+      setEnrichingTask(null);
+      if (task.enrichment_status === "review") {
+        setReviewingTask(task);
+      }
+      refetch();
+    },
+    [refetch],
+  );
 
   // Handler for task accepted from review modal
-  const handleTaskAccepted = useCallback((acceptedTask: Task) => {
-    setReviewingTask(null);
-    // Update task in cache
-    handleTaskUpdated(acceptedTask);
-    refetch();
-  }, [refetch, handleTaskUpdated]);
+  const handleTaskAccepted = useCallback(
+    (acceptedTask: Task) => {
+      setReviewingTask(null);
+      // Update task in cache
+      handleTaskUpdated(acceptedTask);
+      refetch();
+    },
+    [refetch, handleTaskUpdated],
+  );
 
   // Handler for task deleted
   const handleTaskDeleted = useCallback(() => {
@@ -332,21 +381,13 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     refetch();
   }, [refetch]);
 
-  // Create capability lookup map
-  const capabilityMap = useMemo(() => {
-    const map = new Map<number, TddCapability>();
-    for (const cap of capabilities) {
-      map.set(cap.id, cap);
-    }
-    return map;
-  }, [capabilities]);
-
   // Apply client-side filters
   const filteredTasks = useMemo(() => {
     // For "blocked" status, use the blocked tasks endpoint data
-    const tasks = filters.status === "blocked"
-      ? (blockedTasksData?.tasks || [])
-      : (tasksData?.tasks || []);
+    const tasks =
+      filters.status === "blocked"
+        ? blockedTasksData?.tasks || []
+        : tasksData?.tasks || [];
 
     return tasks.filter((task) => {
       // Type filter
@@ -357,7 +398,11 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
       // Status filter (skip for "blocked" since we already fetched blocked tasks)
       if (filters.status !== "all" && filters.status !== "blocked") {
         if (filters.status === "active") {
-          if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+          if (
+            task.status === "completed" ||
+            task.status === "failed" ||
+            task.status === "cancelled"
+          ) {
             return false;
           }
         } else if (task.status !== filters.status) {
@@ -370,21 +415,12 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         return false;
       }
 
-      // Feature filter
-      if (filters.capabilityId !== "all" && task.capability_id !== filters.capabilityId) {
-        return false;
-      }
-
-      // Standalone only filter
-      if (filters.standaloneOnly && task.capability_id !== null) {
-        return false;
-      }
-
       return true;
     });
   }, [tasksData, blockedTasksData, filters]);
 
-  const isLoading = filters.status === "blocked" ? blockedLoading : tasksLoading;
+  const isLoading =
+    filters.status === "blocked" ? blockedLoading : tasksLoading;
 
   return (
     <div className="space-y-4">
@@ -404,7 +440,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 "p-1.5 transition-colors",
                 viewMode === "list"
                   ? "bg-slate-700 text-white"
-                  : "bg-transparent text-slate-500 hover:text-slate-300"
+                  : "bg-transparent text-slate-500 hover:text-slate-300",
               )}
               title="List view"
             >
@@ -416,7 +452,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 "p-1.5 transition-colors",
                 viewMode === "kanban"
                   ? "bg-slate-700 text-white"
-                  : "bg-transparent text-slate-500 hover:text-slate-300"
+                  : "bg-transparent text-slate-500 hover:text-slate-300",
               )}
               title="Kanban view"
             >
@@ -449,28 +485,45 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           <div className="flex flex-col items-center justify-center py-12 text-slate-500">
             <CheckCircle2 className="h-8 w-8 mb-2" />
             <span className="text-sm">No tasks found</span>
-            <span className="text-xs text-slate-600">Try adjusting your filters</span>
+            <span className="text-xs text-slate-600">
+              Try adjusting your filters
+            </span>
           </div>
         ) : viewMode === "kanban" ? (
           // Kanban view placeholder
           <div className="flex flex-col items-center justify-center py-12 text-slate-500">
             <LayoutGrid className="h-8 w-8 mb-2" />
             <span className="text-sm">Kanban view coming soon</span>
-            <span className="text-xs text-slate-600">Switch to list view for now</span>
+            <span className="text-xs text-slate-600">
+              Switch to list view for now
+            </span>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
                 <th className="w-8 px-2 py-2"></th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Pri</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20">Type</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-28">ID</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">Title</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">Phase</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-36">Progress</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Capability</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">Status</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
+                  Pri
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20">
+                  Type
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-28">
+                  ID
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">
+                  Title
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
+                  Phase
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-36">
+                  Progress
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -478,9 +531,10 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <TaskRow
                   key={task.id}
                   task={task}
-                  capability={task.capability_id ? capabilityMap.get(task.capability_id) : undefined}
                   isExpanded={expandedId === task.id}
-                  onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
+                  onToggle={() =>
+                    setExpandedId(expandedId === task.id ? null : task.id)
+                  }
                   onTaskUpdated={handleTaskUpdated}
                   onTaskDeleted={handleTaskDeleted}
                   subtasks={[]}
@@ -495,7 +549,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         <div className="px-4 py-2 border-t border-slate-700 bg-slate-800/30">
           <span className="text-xs text-slate-500">
             {filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""}
-            {filters.standaloneOnly && " (standalone only)"}
           </span>
         </div>
       </div>

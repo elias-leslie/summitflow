@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -12,7 +12,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { fetchTddCapabilities, createTask, type TaskType } from "@/lib/api";
+import { createTask, type TaskType } from "@/lib/api";
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -44,24 +44,15 @@ export function CreateTaskDialog({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState(2);
   const [taskType, setTaskType] = useState<TaskType>("task");
-  const [capabilityId, setFeatureId] = useState<number | null>(null);
   const [labels, setLabels] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Fetch capabilities for the select dropdown
-  const { data: capabilities = [] } = useQuery({
-    queryKey: ["capabilities", projectId],
-    queryFn: () => fetchTddCapabilities(projectId),
-    enabled: open,
-  });
 
   const resetForm = () => {
     setTitle("");
     setDescription("");
     setPriority(2);
     setTaskType("task");
-    setFeatureId(null);
     setLabels("");
     setError(null);
   };
@@ -93,7 +84,6 @@ export function CreateTaskDialog({
         description: description.trim() || undefined,
         priority,
         task_type: taskType,
-        capability_id: capabilityId ?? undefined,
         labels: labelsArray.length > 0 ? labelsArray : undefined,
       });
 
@@ -114,9 +104,7 @@ export function CreateTaskDialog({
         <DialogClose onClose={handleClose} />
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
-          <DialogDescription>
-            Add a new task to track work
-          </DialogDescription>
+          <DialogDescription>Add a new task to track work</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
@@ -187,26 +175,6 @@ export function CreateTaskDialog({
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Capability (optional) */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">
-              Linked Capability
-            </label>
-            <select
-              value={capabilityId ?? ""}
-              onChange={(e) => setFeatureId(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white
-                focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500"
-            >
-              <option value="">No capability linked</option>
-              {capabilities.map((cap) => (
-                <option key={cap.id} value={cap.id}>
-                  {cap.capability_id} - {cap.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Labels */}

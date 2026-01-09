@@ -48,7 +48,6 @@ function estimateSteps(task: Task, elapsedMs: number): ProgressStep[] {
 
   // Extract some info from the task if available
   const criteriaCount = task.acceptance_criteria?.length ?? 0;
-  const capabilityName = task.capability?.name;
 
   return [
     {
@@ -59,11 +58,9 @@ function estimateSteps(task: Task, elapsedMs: number): ProgressStep[] {
       status: getStatus(0),
     },
     {
-      id: "capabilities",
-      label: "Analyzing existing capabilities...",
-      completedLabel: capabilityName
-        ? `Linked to: ${capabilityName}`
-        : "No direct matches",
+      id: "analysis",
+      label: "Analyzing codebase patterns...",
+      completedLabel: "Analysis complete",
       icon: Layers,
       status: getStatus(1),
     },
