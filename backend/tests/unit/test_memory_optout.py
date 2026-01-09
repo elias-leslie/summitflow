@@ -132,7 +132,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_observations.is_memory_feature_enabled")
     def test_create_observation_returns_none_when_disabled(self, mock_enabled):
         """create_observation returns None when observations disabled."""
         from app.storage.memory import create_observation
@@ -181,7 +181,7 @@ class TestStorageGuards:
 
         assert result is None
 
-    @patch("app.storage.memory.is_memory_feature_enabled")
+    @patch("app.storage.memory_checkpoints.is_memory_feature_enabled")
     def test_create_checkpoint_returns_none_when_disabled(self, mock_enabled):
         """create_checkpoint returns None when checkpoints disabled."""
         from app.storage.memory import create_checkpoint

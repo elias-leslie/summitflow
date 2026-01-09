@@ -6,13 +6,13 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from app.storage.memory import (
-    _compute_observation_hash,
     archive_failed_queue_items,
     cleanup_old_checkpoints,
     create_observation,
     get_lifecycle_stats,
     reset_stuck_queue_items,
 )
+from app.storage.memory_observations import _compute_observation_hash
 
 
 class TestGetLifecycleStats:
