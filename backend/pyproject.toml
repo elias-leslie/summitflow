@@ -56,6 +56,11 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"**/scripts/**" = ["E402", "SIM105", "SIM117"]
+"**/tests/**" = ["SIM105"]
+"**/migrations/**" = ["SIM117"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

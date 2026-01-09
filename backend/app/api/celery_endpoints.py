@@ -139,7 +139,7 @@ def get_schedule() -> list[ScheduleInfo]:
     for name, config in beat_schedule.items():
         schedule_seconds = config.get("schedule", 0)
 
-        if isinstance(schedule_seconds, (int, float)):
+        if isinstance(schedule_seconds, int | float):
             if schedule_seconds >= 86400:
                 days = schedule_seconds / 86400
                 schedule_str = f"every {days:.1f} day(s)"

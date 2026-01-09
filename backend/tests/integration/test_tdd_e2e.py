@@ -5,8 +5,8 @@ verifying all state fields are updated correctly.
 """
 
 import pytest
-from app.storage import tasks as task_store
 from app.storage import criteria as criteria_store
+from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
 
@@ -103,8 +103,9 @@ class TestTDDVerificationE2E:
             assert not crit["criterion"].startswith("Test passes:")
 
         # Verify capability (should pass since we ran tests earlier)
-        from app.api.capabilities import verify_capability
         import asyncio
+
+        from app.api.capabilities import verify_capability
 
         result = asyncio.get_event_loop().run_until_complete(
             verify_capability("summitflow", "worktree-isolation")
@@ -116,8 +117,9 @@ class TestTDDVerificationE2E:
 
     def test_evidence_count_in_verification(self):
         """Test that evidence_captured reflects actual evidence count."""
-        from app.api.capabilities import verify_capability
         import asyncio
+
+        from app.api.capabilities import verify_capability
 
         result = asyncio.get_event_loop().run_until_complete(
             verify_capability("summitflow", "worktree-isolation")

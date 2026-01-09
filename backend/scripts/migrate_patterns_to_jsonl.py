@@ -28,7 +28,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
-from app.services.memory.pattern_service import PatternService  # noqa: E402
+from app.services.memory.pattern_service import PatternService
 
 # Default pattern file locations
 DEFAULT_PATTERN_FILES = [

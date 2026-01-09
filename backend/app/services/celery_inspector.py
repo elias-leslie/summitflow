@@ -42,7 +42,7 @@ def _deserialize_celery_field(value: Any) -> str | None:
             try:
                 unpickled = pickle.loads(bytes_value)
                 return (
-                    json.dumps(unpickled) if isinstance(unpickled, (dict, list)) else str(unpickled)
+                    json.dumps(unpickled) if isinstance(unpickled, dict | list) else str(unpickled)
                 )
             except (pickle.UnpicklingError, Exception):
                 try:
@@ -74,7 +74,7 @@ def get_active_tasks() -> list[dict[str, Any]]:
             for task in worker_tasks:
                 args = task.get("args", [])
                 kwargs = task.get("kwargs", {})
-                args_str = json.dumps(args) if isinstance(args, (list, tuple)) else str(args)
+                args_str = json.dumps(args) if isinstance(args, list | tuple) else str(args)
                 kwargs_str = json.dumps(kwargs) if isinstance(kwargs, dict) else str(kwargs)
 
                 normalized_task = {
@@ -121,7 +121,7 @@ def get_pending_tasks() -> list[dict[str, Any]]:
             for task in worker_tasks:
                 args = task.get("args", [])
                 kwargs = task.get("kwargs", {})
-                args_str = json.dumps(args) if isinstance(args, (list, tuple)) else str(args)
+                args_str = json.dumps(args) if isinstance(args, list | tuple) else str(args)
                 kwargs_str = json.dumps(kwargs) if isinstance(kwargs, dict) else str(kwargs)
 
                 normalized_task = {

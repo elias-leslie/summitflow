@@ -26,8 +26,8 @@ from typing import Any
 BACKEND_PATH = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BACKEND_PATH))
 
-from claude_agent_sdk import ClaudeAgentOptions, query  # noqa: E402
-from claude_agent_sdk.types import (  # noqa: E402
+from claude_agent_sdk import ClaudeAgentOptions, query
+from claude_agent_sdk.types import (
     AssistantMessage,
     TextBlock,
     ToolUseBlock,
