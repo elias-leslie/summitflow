@@ -72,18 +72,18 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 
 ```bash
 # Core workflow (use --compact for reads, 80%+ token reduction)
-st --compact ready                    # Tasks ready to work on
-st update <id> --status running       # Claim task
-st close <id> --reason "Done"         # Complete task
+st --compact ready # Tasks ready to work on
+st update <id> --status running # Claim task
+st close <id> --reason "Done" # Complete task
 
 # Create
 st create "Title" -t task -p 2 -d "Description"
-st bug "Fix: X" -p 2                  # Shorthand for -t bug
+st bug "Fix: X" -p 2 # Shorthand for -t bug
 
 # Subtasks & Steps
-st --compact subtask list <task-id>   # List subtasks
-st step pass <task-id> <subtask-id> <step-number>  # Mark step passed
-st subtask pass <task-id> <subtask-id>             # Mark subtask passed
+st --compact subtask list <task-id> # List subtasks
+st step pass <task-id> <subtask-id> <step-number> # Mark step passed
+st subtask pass <task-id> <subtask-id> # Mark subtask passed
 ```
 
 ### member-dis (Memory) - DISABLED
