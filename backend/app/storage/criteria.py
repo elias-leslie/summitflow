@@ -11,6 +11,8 @@ from typing import Any
 import psycopg
 from psycopg import sql
 
+from .connection import get_connection
+
 logger = logging.getLogger(__name__)
 
 
@@ -500,6 +502,21 @@ def get_criteria_for_task(
         }
         for row in rows
     ]
+
+
+def get_criteria_count_for_task(task_id: str) -> int:
+    """Get count of criteria linked to a task.
+
+    This is a lightweight query for /do_it pre-checks and compact display.
+    Does not require project_id since task_id is globally unique.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM task_criteria WHERE task_id = %s",
+            (task_id,),
+        )
+        row = cur.fetchone()
+    return row[0] if row else 0
 
 
 def update_task_criterion_verification(

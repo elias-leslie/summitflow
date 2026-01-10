@@ -132,16 +132,25 @@ def output_json(data: Any) -> None:
 
 
 def output_task(task: dict[str, Any]) -> None:
-    """Output a single task."""
+    """Output a single task.
+
+    Compact format includes fields needed for /do_it pre-checks:
+    id|status|P<priority>|type|complexity|done/total|criteria:N|title
+    """
     if _compact_output:
-        # Single line: id|status|P<priority>|type|done/total subtasks|title
         subtask_summary = task.get("subtask_summary") or {}
         done = subtask_summary.get("completed", 0)
         total = subtask_summary.get("total", 0)
         priority = task.get("priority", 3)
+        complexity = task.get("complexity") or "SIMPLE"
+        # criteria_count comes from task_criteria join (populated by API)
+        criteria_count = task.get("criteria_count", 0)
+        decisions = task.get("decisions") or []
+        decisions_count = len(decisions) if isinstance(decisions, list) else 0
         print(
             f"{task.get('id')}|{task.get('status')}|P{priority}|"
-            f"{task.get('task_type')}|{done}/{total} subtasks|{task.get('title')}"
+            f"{task.get('task_type')}|{complexity}|{done}/{total}|"
+            f"criteria:{criteria_count}|decisions:{decisions_count}|{task.get('title')}"
         )
     else:
         output_json(task)

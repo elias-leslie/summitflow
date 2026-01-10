@@ -33,7 +33,7 @@ from ...schemas.tasks import (
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from ...storage.connection import get_connection
-from ...storage.criteria import get_effective_criteria
+from ...storage.criteria import get_criteria_count_for_task, get_effective_criteria
 
 logger = get_logger(__name__)
 
@@ -198,6 +198,7 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         # AI agent reliability fields
         objective=task.get("objective"),
         acceptance_criteria=task_criteria_list,
+        criteria_count=get_criteria_count_for_task(task["id"]),
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
         # Pipeline v2 fields

@@ -323,6 +323,7 @@ class TaskResponse(BaseModel):
     # AI agent reliability fields
     objective: str | None = None
     acceptance_criteria: list[AcceptanceCriterion] | None = None
+    criteria_count: int | None = None  # Count from task_criteria junction table
     current_phase: str | None = None
     verification_result: dict[str, Any] | None = None
     # Pipeline v2 fields
