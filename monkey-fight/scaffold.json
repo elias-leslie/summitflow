@@ -1,0 +1,78 @@
+{
+  "project": {
+    "name": "monkey-fight",
+    "description": "Side-scrolling monkey adventure game",
+    "domains": {
+      "frontend": "test.summitflow.dev",
+      "api": "testapi.summitflow.dev"
+    }
+  },
+  "characters": {
+    "coco": {
+      "species": "gorilla",
+      "role": "protagonist",
+      "gender": "male",
+      "age": "young",
+      "ability": "super_speed"
+    },
+    "kiki": {
+      "species": "capuchin",
+      "role": "protagonist",
+      "gender": "female",
+      "ability": "camouflage_when_still"
+    },
+    "gnash": {
+      "species": "mandrill",
+      "role": "antagonist",
+      "age": "old",
+      "personality": "bully",
+      "abilities": ["super_strength", "rage_mode"]
+    }
+  },
+  "gameplay": {
+    "genre": "side-scrolling platformer",
+    "perspective": "2D side-scroll",
+    "players": {
+      "single": true,
+      "coop": {
+        "enabled": true,
+        "max_players": 2,
+        "characters": ["coco", "kiki"]
+      }
+    },
+    "collectible": "bananas",
+    "progression": "level_ups_via_bananas"
+  },
+  "features": {
+    "fight_splash": {
+      "description": "Dramatic 'MONKEY FIGHT!' announcement on game start",
+      "inspiration": "classic arcade fighting games"
+    },
+    "ai_generation": {
+      "levels": true,
+      "story_cutscenes": true,
+      "purpose": "keep_content_fresh"
+    },
+    "mini_games": {
+      "jungle_tag": {
+        "perspective": "first_person",
+        "type": "tag_hide_and_seek",
+        "players": ["coco", "kiki"]
+      }
+    }
+  },
+  "platforms": {
+    "mobile": {
+      "controls": "touch",
+      "responsive": true
+    },
+    "desktop": {
+      "controls": "keyboard"
+    }
+  },
+  "tech_suggestions": {
+    "frontend": ["phaser", "pixi", "or_similar"],
+    "backend": ["fastapi"],
+    "note": "be_creative_with_implementation"
+  }
+}
