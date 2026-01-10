@@ -327,10 +327,10 @@ class TestCleanup:
         # Create a worktree
         info = worktree_manager.create_worktree("test-project", "task-stale")
 
-        # Cleanup with 0 hour max age (should remove everything)
-        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=0)
+        # Cleanup with 0 days max age (should remove everything)
+        result = worktree_manager.cleanup_stale_worktrees(max_age_days=0)
 
-        assert removed == 1
+        assert len(result.get("removed", [])) == 1
         assert not info.path.exists()
 
 
@@ -761,13 +761,13 @@ class TestCleanupTask:
         import os
         import time
 
-        old_time = time.time() - (25 * 3600)  # 25 hours ago
+        old_time = time.time() - (2 * 86400)  # 2 days ago
         os.utime(info1.path, (old_time, old_time))
 
-        # Cleanup with 24 hour threshold
-        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
+        # Cleanup with 1 day threshold
+        result = worktree_manager.cleanup_stale_worktrees(max_age_days=1)
 
-        assert removed == 1
+        assert len(result.get("removed", [])) == 1
         assert not info1.path.exists()  # Old one removed
         assert info2.path.exists()  # New one kept
 
@@ -780,9 +780,9 @@ class TestCleanupTask:
         if worktree_manager.WORKTREE_BASE_DIR.exists():
             shutil.rmtree(worktree_manager.WORKTREE_BASE_DIR)
 
-        # Should return 0, not error
-        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
-        assert removed == 0
+        # Should return empty result, not error
+        result = worktree_manager.cleanup_stale_worktrees(max_age_days=1)
+        assert len(result.get("removed", [])) == 0
 
     def test_cleanup_handles_many_worktrees(self, worktree_manager: WorktreeManager) -> None:
         """Test cleanup with many worktrees (performance check)."""
@@ -795,14 +795,14 @@ class TestCleanupTask:
         import os
         import time
 
-        old_time = time.time() - (25 * 3600)
+        old_time = time.time() - (2 * 86400)  # 2 days ago
         for task_id in task_ids:
             path = worktree_manager.get_worktree_path("test-project", task_id)
             os.utime(path, (old_time, old_time))
 
         # Cleanup should remove all
-        removed = worktree_manager.cleanup_stale_worktrees(max_age_hours=24)
-        assert removed == 10
+        result = worktree_manager.cleanup_stale_worktrees(max_age_days=1)
+        assert len(result.get("removed", [])) == 10
 
     def test_remove_worktree_deletes_branch(
         self, worktree_manager: WorktreeManager, temp_git_repo: Path

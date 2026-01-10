@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="summitflow.review_pending_tasks")  # type: ignore[untyped-decorator]
 def review_pending_tasks(project_id: str) -> dict[str, Any]:
-    """Review tasks in pending_review status via Opus.
+    """Review tasks in ai_reviewing status via Opus.
 
     Fetches tasks awaiting review and runs Opus review on each.
     Applies the appropriate handler based on verdict.
@@ -38,10 +38,10 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
             logger.debug(f"Autonomous execution disabled for {project_id}")
             return {"status": "disabled", "reason": "autonomous_enabled=false"}
 
-        # Get tasks in pending_review status
+        # Get tasks in ai_reviewing status
         pending_tasks = task_store.list_tasks(
             project_id=project_id,
-            status_filter="pending_review",
+            status_filter="ai_reviewing",
             limit=5,  # Review up to 5 at a time
         )
 

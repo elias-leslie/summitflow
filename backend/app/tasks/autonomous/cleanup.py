@@ -61,8 +61,10 @@ def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
         for root_path in get_all_project_root_paths():
             worktree_manager = get_worktree_manager(Path(root_path))
 
-            # First, cleanup by age
-            removed_by_age = worktree_manager.cleanup_stale_worktrees(max_age_hours)
+            # First, cleanup by age (convert hours to days, minimum 1 day)
+            max_age_days = max(1, max_age_hours // 24)
+            cleanup_result = worktree_manager.cleanup_stale_worktrees(max_age_days=max_age_days)
+            removed_by_age = len(cleanup_result.get("removed", []))
             total_removed_by_age += removed_by_age
             if removed_by_age:
                 logger.info(f"Cleaned up {removed_by_age} stale worktrees by age in {root_path}")
@@ -74,11 +76,11 @@ def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
                 task_id = worktree.task_id
                 task = task_store.get_task(task_id)
 
-                # Remove if task doesn't exist or is not in running/pending_review
+                # Remove if task doesn't exist or is not in running/ai_reviewing
                 reason = ""
                 if not task:
                     reason = "task not found"
-                elif task.get("status") not in ("running", "pending_review"):
+                elif task.get("status") not in ("running", "ai_reviewing"):
                     reason = f"task status is {task.get('status')}"
 
                 if reason:  # reason being set means we should remove

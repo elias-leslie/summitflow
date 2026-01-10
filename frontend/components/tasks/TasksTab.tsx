@@ -125,10 +125,6 @@ const statusConfig: Record<
     icon: <Bot className="h-3.5 w-3.5" />,
     className: "text-amber-400",
   },
-  pending_review: {
-    icon: <Bot className="h-3.5 w-3.5" />,
-    className: "text-amber-400",
-  },
   human_review: {
     icon: <Eye className="h-3.5 w-3.5" />,
     className: "text-violet-400",

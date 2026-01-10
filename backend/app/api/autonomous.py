@@ -221,12 +221,12 @@ async def get_status(project_id: str) -> AutonomousStatus:
         result = cur.fetchone()
         in_progress = int(result[0]) if result and result[0] else 0
 
-        # Count pending_review tasks
+        # Count ai_reviewing tasks (tasks awaiting review)
         cur.execute(
             """
             SELECT COUNT(*) FROM tasks
             WHERE project_id = %s
-              AND status = 'pending_review'
+              AND status = 'ai_reviewing'
             """,
             (project_id,),
         )
@@ -419,8 +419,10 @@ async def cleanup_worktrees(project_id: str, max_age_hours: int = 24) -> Cleanup
 
     manager = get_worktree_manager(_get_project_repo_path(project_id))
 
-    # Cleanup by age
-    removed_by_age = manager.cleanup_stale_worktrees(max_age_hours)
+    # Cleanup by age (convert hours to days, minimum 1 day)
+    max_age_days = max(1, max_age_hours // 24)
+    cleanup_result = manager.cleanup_stale_worktrees(max_age_days=max_age_days)
+    removed_by_age = len(cleanup_result.get("removed", []))
 
     # Cleanup by task status (only for this project)
     from ..storage import tasks as task_store
@@ -430,7 +432,7 @@ async def cleanup_worktrees(project_id: str, max_age_hours: int = 24) -> Cleanup
 
     for worktree in active_worktrees:
         task = task_store.get_task(worktree.task_id)
-        if not task or task.get("status") not in ("running", "pending_review"):
+        if not task or task.get("status") not in ("running", "ai_reviewing"):
             try:
                 manager.remove_worktree(project_id, worktree.task_id)
                 removed_by_status += 1

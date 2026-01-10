@@ -15,7 +15,6 @@ export type TaskStatus =
   | "blocked"
   | "pr_created"
   | "ai_reviewing"
-  | "pending_review" // Legacy
   | "human_review"
   | "completed"
   | "failed"

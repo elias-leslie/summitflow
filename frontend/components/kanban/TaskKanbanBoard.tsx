@@ -64,7 +64,6 @@ const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // AI Review column
   pr_created: "ai_review",
   ai_reviewing: "ai_review",
-  pending_review: "ai_review", // Legacy
   // Human Review column
   human_review: "human_review",
   // Done column

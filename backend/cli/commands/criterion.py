@@ -98,12 +98,24 @@ def update_criterion(
     threshold: Annotated[
         str | None, typer.Option("--threshold", "-t", help="New threshold value")
     ] = None,
+    verify_command: Annotated[
+        str | None, typer.Option("--verify-command", "-v", help="Bash command to verify")
+    ] = None,
+    verify_by: Annotated[
+        str | None,
+        typer.Option("--verify-by", help="Verification method: test, agent, human, opus"),
+    ] = None,
+    expected_output: Annotated[
+        str | None, typer.Option("--expected-output", "-e", help="Expected output for verification")
+    ] = None,
 ) -> None:
     """Update a criterion.
 
     Examples:
         st criterion update ac-001 --criterion "Updated criterion text"
         st criterion update ac-001 --category performance --threshold "<100ms"
+        st criterion update ac-001 --verify-command "ba check http://localhost:3001 --no-errors"
+        st criterion update ac-001 --verify-by agent --expected-output "Screenshot shows 5 columns"
     """
     client = STClient()
 
@@ -117,6 +129,12 @@ def update_criterion(
         updates["measurement"] = measurement
     if threshold is not None:
         updates["threshold"] = threshold
+    if verify_command is not None:
+        updates["verify_command"] = verify_command
+    if verify_by is not None:
+        updates["verify_by"] = verify_by
+    if expected_output is not None:
+        updates["expected_output"] = expected_output
 
     if not updates:
         output_error("No updates specified")

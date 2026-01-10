@@ -135,9 +135,9 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             result = executor.execute_next_task(session_id, max_iterations=5)
 
             if result.success:
-                # Transition to pending_review for Opus gate
-                task_store.update_task_status(claimed["id"], "pending_review")
-                logger.info(f"Task {claimed['id']} succeeded, moved to pending_review")
+                # Transition to ai_reviewing for Opus gate
+                task_store.update_task_status(claimed["id"], "ai_reviewing")
+                logger.info(f"Task {claimed['id']} succeeded, moved to ai_reviewing")
                 return {
                     "status": "success",
                     "task_id": claimed["id"],

@@ -17,6 +17,7 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from ..logging_config import get_logger
 
@@ -584,20 +585,35 @@ class WorktreeManager:
 
         return worktrees
 
-    def cleanup_stale_worktrees(self, max_age_hours: int = 24) -> int:
-        """Remove worktrees older than max_age_hours.
+    # Default cleanup age: 30 days in hours
+    DEFAULT_CLEANUP_AGE_DAYS = 30
+
+    def cleanup_stale_worktrees(
+        self,
+        max_age_days: int | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Remove worktrees older than max_age_days.
 
         Args:
-            max_age_hours: Maximum age in hours before cleanup
+            max_age_days: Maximum age in days before cleanup (default 30)
+            dry_run: If True, only report what would be removed
 
         Returns:
-            Number of worktrees removed
+            Dict with 'removed' list (or 'would_remove' if dry_run) of worktree info
         """
-        removed = 0
-        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+        if max_age_days is None:
+            max_age_days = self.DEFAULT_CLEANUP_AGE_DAYS
+
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
+        result: dict[str, list[dict[str, Any]]] = {
+            "removed": [],
+            "would_remove": [],
+        }
+        key = "would_remove" if dry_run else "removed"
 
         if not self.WORKTREE_BASE_DIR.exists():
-            return 0
+            return result
 
         for project_dir in self.WORKTREE_BASE_DIR.iterdir():
             if not project_dir.is_dir():
@@ -610,19 +626,92 @@ class WorktreeManager:
                 # Check modification time
                 mtime = datetime.fromtimestamp(task_dir.stat().st_mtime, tz=UTC)
                 if mtime < cutoff:
-                    logger.info(
-                        "cleanup_stale_worktree",
-                        project=project_dir.name,
-                        task=task_dir.name,
-                        age_hours=(datetime.now(UTC) - mtime).total_seconds() / 3600,
-                    )
-                    self.remove_worktree(project_dir.name, task_dir.name, delete_branch=True)
-                    removed += 1
+                    age_days = (datetime.now(UTC) - mtime).total_seconds() / 86400
+                    worktree_info = {
+                        "project_id": project_dir.name,
+                        "task_id": task_dir.name,
+                        "path": str(task_dir),
+                        "age_days": round(age_days, 1),
+                        "last_modified": mtime.isoformat(),
+                    }
 
-        # Also prune any orphaned worktree entries
-        self._run_git(["worktree", "prune"])
+                    if dry_run:
+                        logger.info(
+                            "cleanup_would_remove",
+                            project=project_dir.name,
+                            task=task_dir.name,
+                            age_days=age_days,
+                        )
+                    else:
+                        logger.info(
+                            "cleanup_stale_worktree",
+                            project=project_dir.name,
+                            task=task_dir.name,
+                            age_days=age_days,
+                        )
+                        self.remove_worktree(project_dir.name, task_dir.name, delete_branch=True)
 
-        return removed
+                    result[key].append(worktree_info)
+
+        # Also prune any orphaned worktree entries (unless dry run)
+        if not dry_run:
+            self._run_git(["worktree", "prune"])
+
+        return result
+
+    def get_worktree_count_warning(
+        self,
+        warning_threshold: int = 10,
+        critical_threshold: int = 25,
+    ) -> dict[str, int | str | None]:
+        """Check if worktree count exceeds thresholds.
+
+        Args:
+            warning_threshold: Count at which to warn
+            critical_threshold: Count at which to flag critical
+
+        Returns:
+            Dict with count, level (None, 'warning', 'critical'), and message
+        """
+        worktrees = self.list_active_worktrees()
+        count = len(worktrees)
+
+        if count >= critical_threshold:
+            level = "critical"
+            message = (
+                f"Critical: {count} worktrees exist (threshold: {critical_threshold}). Run cleanup."
+            )
+        elif count >= warning_threshold:
+            level = "warning"
+            message = f"Warning: {count} worktrees exist (threshold: {warning_threshold}). Consider cleanup."
+        else:
+            level = None
+            message = None
+
+        return {
+            "count": count,
+            "level": level,
+            "message": message,
+            "warning_threshold": warning_threshold,
+            "critical_threshold": critical_threshold,
+        }
+
+    def cleanup_old_worktrees(
+        self, max_age_days: int = 30, dry_run: bool = False
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Convenience alias for cleanup_stale_worktrees with 30-day default.
+
+        This is the primary API for cleanup - uses days instead of hours.
+        Matches criterion ac-658: 30 day default, configurable.
+
+        Args:
+            max_age_days: Maximum age in days (default 30)
+            dry_run: If True, only preview what would be removed
+
+        Returns:
+            Dict with removal results
+        """
+        return self.cleanup_stale_worktrees(max_age_days=max_age_days, dry_run=dry_run)
 
     def get_changed_files(self, project_id: str, task_id: str) -> list[tuple[str, str]]:
         """Get list of changed files in a task's worktree.

@@ -60,7 +60,6 @@ const statusConfig: Record<
   blocked: { icon: XCircle, variant: "amber" },
   pr_created: { icon: CheckCircle, variant: "amber" },
   ai_reviewing: { icon: PlayCircle, variant: "amber" },
-  pending_review: { icon: PlayCircle, variant: "amber" },
   human_review: { icon: Clock, variant: "violet" },
   completed: { icon: CheckCircle, variant: "phosphor" },
   failed: { icon: XCircle, variant: "rose" },

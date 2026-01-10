@@ -11,14 +11,13 @@ Status values (extended for git management workflow):
 - pr_created: Pull request created, awaiting review
 - ai_reviewing: AI review in progress
 - human_review: Needs human review (escalated from AI)
-- pending_review: Legacy - alias for ai_reviewing
 - completed: Successfully completed
 - cancelled: Task cancelled
 
 Kanban column mapping (5 columns per decision d2):
 - Planning: pending
 - In Progress: running, paused, blocked
-- AI Review: pr_created, ai_reviewing, pending_review
+- AI Review: pr_created, ai_reviewing
 - Human Review: human_review
 - Done: completed, failed, cancelled
 """
@@ -32,7 +31,6 @@ from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, get_task
 
 # Valid task status transitions (extended for git management workflow)
-# Includes both legacy states (paused, pending_review) and new states
 VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
     "pending": {"running", "paused", "blocked", "cancelled"},
@@ -43,17 +41,15 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "blocked",
         "pr_created",
         "completed",
-        "pending_review",  # Legacy
         "ai_reviewing",
         "cancelled",
     },
-    "paused": {"running", "pending", "failed", "cancelled"},  # Legacy - human pause
-    "blocked": {"running", "pending", "failed", "cancelled"},  # Agent workflow block
+    "paused": {"running", "pending", "failed", "cancelled"},
+    "blocked": {"running", "pending", "failed", "cancelled"},
     "failed": {"pending", "running", "cancelled"},
     # PR/Review states (agent workflow)
     "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled"},
     "ai_reviewing": {"completed", "human_review", "running", "failed"},
-    "pending_review": {"completed", "failed", "running", "cancelled"},  # Legacy alias
     "human_review": {"completed", "running", "cancelled"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
@@ -68,7 +64,6 @@ STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
     "blocked": "In Progress",
     "pr_created": "AI Review",
     "ai_reviewing": "AI Review",
-    "pending_review": "AI Review",  # Legacy
     "human_review": "Human Review",
     "completed": "Done",
     "failed": "Done",
@@ -129,7 +124,6 @@ def update_task_status(
         "blocked",
         "pr_created",
         "ai_reviewing",
-        "pending_review",  # Legacy
         "human_review",
         "completed",
         "cancelled",

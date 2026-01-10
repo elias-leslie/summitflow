@@ -78,7 +78,7 @@ class TaskUpdate(BaseModel):
 class TaskStatusUpdate(BaseModel):
     """Request model for updating task status."""
 
-    status: str  # pending, running, paused, failed, completed, pending_review, cancelled
+    status: str  # pending, running, paused, blocked, pr_created, ai_reviewing, human_review, completed, failed, cancelled
     error_message: str | None = None
     reason: str | None = None  # Completion reason (stored in progress_log)
     # NOTE: force flag removed - gates cannot be bypassed, complete the work instead

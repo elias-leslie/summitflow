@@ -54,11 +54,6 @@ const taskStatusConfig: Record<
     className: "text-amber-400",
     title: "AI reviewing",
   },
-  pending_review: {
-    icon: <Bot className="h-3.5 w-3.5" />,
-    className: "text-amber-400",
-    title: "Pending review",
-  },
   human_review: {
     icon: <Eye className="h-3.5 w-3.5" />,
     className: "text-violet-400",

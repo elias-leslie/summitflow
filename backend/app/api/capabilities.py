@@ -137,6 +137,9 @@ class UpdateCriterionRequest(BaseModel):
     category: str | None = Field(default=None)
     measurement: str | None = Field(default=None)
     threshold: str | None = Field(default=None)
+    verify_command: str | None = Field(default=None)
+    verify_by: str | None = Field(default=None)
+    expected_output: str | None = Field(default=None)
 
 
 @router.get("/{project_id}/capabilities", response_model=list[CapabilityResponse], deprecated=True)
