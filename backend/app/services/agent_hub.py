@@ -284,13 +284,9 @@ class AgentHubService:
 
     def _build_system_prompt(self) -> str:
         """Build system prompt for worker."""
-        return """You are a coding worker executing a specific subtask. Your job is to:
+        return """You are a coding worker. Execute the subtask and return results.
 
-1. Implement the required changes according to the task description and steps
-2. Return your changes in a structured format
-3. Verify your changes work
-
-Output format - you MUST return a JSON evidence contract at the end of your response:
+CRITICAL: Your response MUST end with a JSON evidence contract in this EXACT format:
 
 ```json
 {
@@ -299,19 +295,24 @@ Output format - you MUST return a JSON evidence contract at the end of your resp
     {"path": "relative/path/to/file.py", "content": "full file content here"}
   ],
   "commands": [
-    {"cmd": "pytest tests/test_file.py", "description": "run tests"}
+    {"cmd": "npm install", "description": "install dependencies"}
   ],
   "verifications": [
-    {"check": "file exists", "passed": true, "details": "verified file was created"}
+    {"check": "file exists", "passed": true, "details": "verified"}
   ]
 }
 ```
 
-If blocked, set status to "blocked" and include "blocked_by" with the blocking task ID.
-If deferring, set status to "deferred" and include "deferred_reason" (min 10 chars).
-If failed, set status to "failed" and include "error" message.
+Status values: "completed", "blocked", "deferred", "failed"
+- blocked: include "blocked_by": "task-id"
+- deferred: include "deferred_reason": "reason (10+ chars)"
+- failed: include "error": "what went wrong"
 
-Focus on making minimal, correct changes. Do not over-engineer."""
+RULES:
+1. Output valid JSON inside ```json code fence
+2. Include ALL file contents in "files" array (full content, not diffs)
+3. List commands to run in "commands" array
+4. Minimal changes only - do not over-engineer"""
 
     def _build_execution_prompt(self, context: TaskContext) -> str:
         """Build prompt for task execution."""
@@ -374,8 +375,44 @@ Focus on making minimal, correct changes. Do not over-engineer."""
         commands_run: list[dict[str, Any]] = []
         verifications: list[dict[str, Any]] = []
 
+        # Try multiple JSON extraction patterns in order of preference
+        json_match = None
+        json_content = None
+
+        # Pattern 1: ```json ... ``` (preferred)
         json_match = re.search(r"```json\s*\n(.*?)\n```", output, re.DOTALL)
-        if not json_match:
+        if json_match:
+            json_content = json_match.group(1)
+
+        # Pattern 2: ``` ... ``` (generic code block)
+        if not json_content:
+            json_match = re.search(r"```\s*\n?(.*?)\n?```", output, re.DOTALL)
+            if json_match:
+                content = json_match.group(1).strip()
+                if content.startswith("{"):
+                    json_content = content
+
+        # Pattern 3: Raw JSON object (find outermost { })
+        if not json_content:
+            # Find JSON with "status" key (our evidence contract)
+            raw_match = re.search(r'\{[^{}]*"status"\s*:\s*"[^"]+?"[^{}]*\}', output, re.DOTALL)
+            if raw_match:
+                json_content = raw_match.group(0)
+            else:
+                # Last resort: find any JSON-like structure
+                brace_start = output.find("{")
+                if brace_start != -1:
+                    depth = 0
+                    for i, char in enumerate(output[brace_start:], brace_start):
+                        if char == "{":
+                            depth += 1
+                        elif char == "}":
+                            depth -= 1
+                            if depth == 0:
+                                json_content = output[brace_start : i + 1]
+                                break
+
+        if not json_content:
             return EvidenceContract(
                 task_id=context.subtask_id,
                 status="failed",
@@ -384,11 +421,11 @@ Focus on making minimal, correct changes. Do not over-engineer."""
                     "commands_run": [],
                     "verifications": [],
                 },
-                error="No JSON evidence contract found in output",
+                error=f"No JSON evidence contract found in output. Output was: {output[:500]}...",
             )
 
         try:
-            worker_output = json.loads(json_match.group(1))
+            worker_output = json.loads(json_content)
         except json.JSONDecodeError as e:
             return EvidenceContract(
                 task_id=context.subtask_id,

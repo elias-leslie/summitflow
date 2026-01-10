@@ -948,7 +948,12 @@ class STClient:
         data: dict[str, Any] = {"dry_run": dry_run}
         if model:
             data["model"] = model
-        response = self._client.post(self._url(f"/tasks/{task_id}/autocode"), json=data)
+        # Autocode requests can take 10+ minutes with Claude OAuth for complex tasks
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/autocode"),
+            json=data,
+            timeout=600.0,
+        )
         return self._handle_response(response)
 
     def get_autocode_status(

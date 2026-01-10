@@ -83,6 +83,10 @@ def _build_task_context(
         for i, s in enumerate(steps)
     ]
 
+    # spirit_anti is a string, but constraints expects list[str]
+    spirit_anti = task.get("spirit_anti")
+    constraints = [spirit_anti] if spirit_anti else None
+
     return TaskContext(
         task_id=task["id"],
         subtask_id=subtask["subtask_id"],
@@ -91,7 +95,7 @@ def _build_task_context(
         steps=step_dicts,
         objective=task.get("objective"),
         done_when=task.get("done_when"),
-        constraints=task.get("spirit_anti"),
+        constraints=constraints,
     )
 
 
