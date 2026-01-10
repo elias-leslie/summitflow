@@ -10,6 +10,7 @@ from .commands import (
     components,
     criterion,
     deps,
+    git,
     projects,
     sessions,
     step,
@@ -119,6 +120,7 @@ app.add_typer(worktree.app, name="worktree")
 app.add_typer(components.app, name="component")
 app.add_typer(criterion.app, name="criterion")
 app.add_typer(projects.app, name="projects")
+app.add_typer(git.app, name="git")
 
 
 @app.callback()

@@ -615,19 +615,46 @@ def claim(
     task_id: str,
     lock: Annotated[int, typer.Option("--lock")] = 30,
     release: Annotated[bool, typer.Option("--release")] = False,
+    agent: Annotated[
+        bool, typer.Option("--agent", help="Create worktree for agent execution")
+    ] = False,
 ) -> None:
     """Claim or release a task.
+
+    Use --agent to create an isolated git worktree for agent execution.
+    The worktree will be created at .worktrees/exec/{task_id}/.
 
     Examples:
         st claim task-abc123 --lock 60
         st claim task-abc123 --release
+        st claim task-abc123 --agent
     """
+    from ..config import get_config
+
     client = STClient()
 
     try:
         if release:
             task = client.release_task(task_id)
             task["action"] = "released"
+        elif agent:
+            # Claim with worktree creation for agent execution
+            from app.services.git_service import auto_claim_with_worktree
+
+            config = get_config()
+            project_root = config.project_root or str(Path.cwd())
+
+            worktree_info = auto_claim_with_worktree(
+                task_id=task_id,
+                project_path=project_root,
+                project_id=config.project_id,
+            )
+
+            task = client.get_task(task_id)
+            task["action"] = "claimed_with_worktree"
+            task["worktree_path"] = worktree_info["worktree_path"]
+            task["branch_name"] = worktree_info["branch_name"]
+            task["base_sha"] = worktree_info["base_sha"]
         else:
             task = client.claim_task(task_id, lock_minutes=lock)
             task["action"] = "claimed"
