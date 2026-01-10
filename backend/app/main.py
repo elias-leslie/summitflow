@@ -22,6 +22,7 @@ from .api import (
     diary,
     evidence,
     explorer,
+    git,
     hooks,
     implementation,
     memory,
@@ -100,6 +101,7 @@ app.include_router(implementation.router, prefix="/api/projects", tags=["impleme
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
+app.include_router(git.router, prefix="/api", tags=["git"])
 
 
 @app.get("/health")
