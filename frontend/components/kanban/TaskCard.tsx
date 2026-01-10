@@ -12,6 +12,10 @@ import {
   Check,
   X,
   Link2,
+  GitPullRequest,
+  Bot,
+  Eye,
+  OctagonX,
 } from "lucide-react";
 
 import type { Task, TaskStatus, TaskType } from "@/lib/api";
@@ -20,7 +24,10 @@ import type { Task, TaskStatus, TaskType } from "@/lib/api";
 // Task Status Configuration
 // ============================================================================
 
-const taskStatusConfig: Record<TaskStatus, { icon: React.ReactNode; className: string; title: string }> = {
+const taskStatusConfig: Record<
+  TaskStatus,
+  { icon: React.ReactNode; className: string; title: string }
+> = {
   pending: { icon: null, className: "", title: "" },
   running: {
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
@@ -31,6 +38,31 @@ const taskStatusConfig: Record<TaskStatus, { icon: React.ReactNode; className: s
     icon: <Pause className="h-3.5 w-3.5" />,
     className: "text-yellow-400",
     title: "Task paused",
+  },
+  blocked: {
+    icon: <OctagonX className="h-3.5 w-3.5" />,
+    className: "text-orange-400",
+    title: "Task blocked",
+  },
+  pr_created: {
+    icon: <GitPullRequest className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+    title: "PR created",
+  },
+  ai_reviewing: {
+    icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
+    className: "text-amber-400",
+    title: "AI reviewing",
+  },
+  pending_review: {
+    icon: <Bot className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+    title: "Pending review",
+  },
+  human_review: {
+    icon: <Eye className="h-3.5 w-3.5" />,
+    className: "text-violet-400",
+    title: "Human review required",
   },
   completed: {
     icon: <Check className="h-3.5 w-3.5" />,
@@ -53,7 +85,10 @@ const taskStatusConfig: Record<TaskStatus, { icon: React.ReactNode; className: s
 // Task Type Configuration
 // ============================================================================
 
-const taskTypeConfig: Record<TaskType, { icon: React.ReactNode; className: string }> = {
+const taskTypeConfig: Record<
+  TaskType,
+  { icon: React.ReactNode; className: string }
+> = {
   feature: {
     icon: <Package className="h-3.5 w-3.5" />,
     className: "text-purple-400",
@@ -115,7 +150,8 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
   // Capability context for criteria progress
   const capability = task.capability;
   const hasCriteria = capability && capability.criteria_total > 0;
-  const allPassed = hasCriteria && capability.criteria_passed === capability.criteria_total;
+  const allPassed =
+    hasCriteria && capability.criteria_passed === capability.criteria_total;
 
   return (
     <div
@@ -173,9 +209,13 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
           {capability ? (
             <div className="flex items-center gap-1.5">
               <Link2 className="h-3 w-3 text-slate-500" />
-              <span className="text-xs text-phosphor-400 mono">{capability.capability_id}</span>
+              <span className="text-xs text-phosphor-400 mono">
+                {capability.capability_id}
+              </span>
               {hasCriteria && (
-                <span className={`text-xs mono ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}>
+                <span
+                  className={`text-xs mono ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}
+                >
                   ({capability.criteria_passed}/{capability.criteria_total})
                 </span>
               )}
@@ -187,14 +227,18 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
           {/* Criteria Progress Dots for capability-linked tasks */}
           {hasCriteria && (
             <div className="flex items-center gap-0.5">
-              {Array.from({ length: capability!.criteria_total }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    i < capability!.criteria_passed ? "bg-phosphor-500" : "bg-slate-600"
-                  }`}
-                />
-              ))}
+              {Array.from({ length: capability!.criteria_total }).map(
+                (_, i) => (
+                  <div
+                    key={i}
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      i < capability!.criteria_passed
+                        ? "bg-phosphor-500"
+                        : "bg-slate-600"
+                    }`}
+                  />
+                ),
+              )}
             </div>
           )}
         </div>

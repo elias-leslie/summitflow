@@ -12,6 +12,11 @@ export type TaskStatus =
   | "pending"
   | "running"
   | "paused"
+  | "blocked"
+  | "pr_created"
+  | "ai_reviewing"
+  | "pending_review" // Legacy
+  | "human_review"
   | "completed"
   | "failed"
   | "cancelled";

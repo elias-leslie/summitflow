@@ -47,10 +47,21 @@ interface TaskLogViewerProps {
 //   data: Record<string, unknown>;
 // }
 
-const statusConfig: Record<TaskStatus, { icon: typeof CheckCircle; variant: "phosphor" | "amber" | "rose" | "slate" }> = {
+const statusConfig: Record<
+  TaskStatus,
+  {
+    icon: typeof CheckCircle;
+    variant: "phosphor" | "amber" | "rose" | "slate" | "violet";
+  }
+> = {
   pending: { icon: Clock, variant: "slate" },
   running: { icon: PlayCircle, variant: "phosphor" },
   paused: { icon: PauseCircle, variant: "amber" },
+  blocked: { icon: XCircle, variant: "amber" },
+  pr_created: { icon: CheckCircle, variant: "amber" },
+  ai_reviewing: { icon: PlayCircle, variant: "amber" },
+  pending_review: { icon: PlayCircle, variant: "amber" },
+  human_review: { icon: Clock, variant: "violet" },
   completed: { icon: CheckCircle, variant: "phosphor" },
   failed: { icon: XCircle, variant: "rose" },
   cancelled: { icon: XCircle, variant: "slate" },
@@ -202,7 +213,12 @@ export function TaskLogViewer({
   const statusVariant = statusConfig[status]?.variant || "slate";
 
   return (
-    <div className={clsx("flex flex-col bg-slate-900 rounded-lg border border-slate-800", className)}>
+    <div
+      className={clsx(
+        "flex flex-col bg-slate-900 rounded-lg border border-slate-800",
+        className,
+      )}
+    >
       {/* Feature Context (if provided) */}
       {feature && (
         <div className="px-4 py-3 border-b border-slate-800 bg-slate-800/30">
@@ -210,11 +226,17 @@ export function TaskLogViewer({
             <FileCode className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 mono">{feature.id}</span>
+                <span className="text-xs text-slate-500 mono">
+                  {feature.id}
+                </span>
               </div>
-              <h4 className="text-sm font-medium text-white truncate">{feature.name}</h4>
+              <h4 className="text-sm font-medium text-white truncate">
+                {feature.name}
+              </h4>
               {feature.description && (
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{feature.description}</p>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                  {feature.description}
+                </p>
               )}
             </div>
           </div>

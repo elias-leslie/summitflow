@@ -20,6 +20,10 @@ import {
   List,
   LayoutGrid,
   AlertCircle,
+  GitPullRequest,
+  Bot,
+  Eye,
+  OctagonX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,6 +112,26 @@ const statusConfig: Record<
   paused: {
     icon: <Pause className="h-3.5 w-3.5" />,
     className: "text-amber-400",
+  },
+  blocked: {
+    icon: <OctagonX className="h-3.5 w-3.5" />,
+    className: "text-orange-400",
+  },
+  pr_created: {
+    icon: <GitPullRequest className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+  },
+  ai_reviewing: {
+    icon: <Bot className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+  },
+  pending_review: {
+    icon: <Bot className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+  },
+  human_review: {
+    icon: <Eye className="h-3.5 w-3.5" />,
+    className: "text-violet-400",
   },
   completed: {
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
