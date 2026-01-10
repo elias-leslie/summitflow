@@ -593,6 +593,43 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def batch_create_task_criteria(
+        self,
+        task_id: str,
+        criteria: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Batch create criteria and link them to a task.
+
+        Args:
+            task_id: Task ID
+            criteria: List of criterion dicts with keys:
+                - criterion: text (required)
+                - category: correctness, performance, security, quality
+                - verify_command: bash command to verify
+                - verify_by: test, opus, human, agent
+                - expected_output: expected output pattern
+
+        Returns:
+            Dict with 'created' list and 'errors' list.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/criteria/batch"),
+            json={"items": criteria},
+        )
+        return self._handle_response(response)
+
+    def list_task_criteria(self, task_id: str) -> list[dict[str, Any]]:
+        """List criteria for a task with verification status.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of criterion dicts with verified/verified_at/verified_by fields.
+        """
+        response = self._client.get(self._url(f"/tasks/{task_id}/criteria"))
+        return self._handle_response(response)
+
     # Tests
 
     def list_tests(self, test_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:

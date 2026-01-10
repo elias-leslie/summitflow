@@ -79,6 +79,35 @@ async def validate_task_criteria(
     )
 
 
+@router.get(
+    "/projects/{project_id}/tasks/{task_id}/criteria",
+    response_model=list[dict[str, Any]],
+)
+async def list_task_criteria(
+    project_id: str,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    """List all criteria linked to a task with verification status.
+
+    Returns criteria from task_criteria junction with verified/verified_at/verified_by.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        List of criterion dicts with verification state.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.criteria import get_criteria_for_task
+
+    with get_connection() as conn:
+        criteria = get_criteria_for_task(conn, project_id, task_id)
+
+    return criteria
+
+
 @router.post(
     "/projects/{project_id}/tasks/{task_id}/criteria",
     response_model=dict[str, Any],
@@ -113,6 +142,9 @@ async def create_task_criterion(
             measurement=request.measurement,
             threshold=request.threshold,
             created_by_task_id=task_id,
+            verify_command=request.verify_command,
+            verify_by=request.verify_by,
+            expected_output=request.expected_output,
         )
 
         # Link to task
@@ -131,6 +163,9 @@ async def create_task_criterion(
         "category": criterion["category"],
         "measurement": criterion["measurement"],
         "threshold": criterion["threshold"],
+        "verify_command": criterion["verify_command"],
+        "verify_by": criterion["verify_by"],
+        "expected_output": criterion["expected_output"],
         "task_id": task_id,
     }
 
@@ -216,6 +251,9 @@ async def batch_create_task_criteria(
                     measurement=item.measurement,
                     threshold=item.threshold,
                     created_by_task_id=task_id,
+                    verify_command=item.verify_command,
+                    verify_by=item.verify_by,
+                    expected_output=item.expected_output,
                 )
 
                 # Link to task
@@ -229,6 +267,9 @@ async def batch_create_task_criteria(
                         "category": criterion["category"],
                         "measurement": criterion["measurement"],
                         "threshold": criterion["threshold"],
+                        "verify_command": criterion["verify_command"],
+                        "verify_by": criterion["verify_by"],
+                        "expected_output": criterion["expected_output"],
                         "task_id": task_id,
                     }
                 )

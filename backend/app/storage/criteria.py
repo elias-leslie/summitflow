@@ -62,18 +62,35 @@ def create_criterion(
     measurement: str = "test",
     threshold: str | None = None,
     created_by_task_id: str | None = None,
+    verify_command: str | None = None,
+    verify_by: str = "test",
+    expected_output: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new acceptance criterion with auto-generated criterion_id."""
+    """Create a new acceptance criterion with auto-generated criterion_id.
+
+    Args:
+        conn: Database connection
+        project_id: Project ID
+        criterion: The criterion text (what to verify)
+        category: Category (correctness, performance, security, quality)
+        measurement: Legacy field for measurement type
+        threshold: Legacy field for threshold value
+        created_by_task_id: Task ID that created this criterion
+        verify_command: Bash command to verify the criterion
+        verify_by: How to verify (test, opus, human, agent)
+        expected_output: Expected output from verify_command
+    """
     criterion_id = get_next_criterion_id(conn, project_id)
 
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO acceptance_criteria
-                (project_id, criterion_id, criterion, category, measurement, threshold, created_by_task_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (project_id, criterion_id, criterion, category, measurement, threshold,
+                 created_by_task_id, verify_command, verify_by, expected_output)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, project_id, criterion_id, criterion, category, measurement, threshold,
-                      created_at, created_by_task_id
+                      created_at, created_by_task_id, verify_command, verify_by, expected_output
             """,
             (
                 project_id,
@@ -83,6 +100,9 @@ def create_criterion(
                 measurement,
                 threshold,
                 created_by_task_id,
+                verify_command,
+                verify_by,
+                expected_output,
             ),
         )
         row = cur.fetchone()
@@ -99,6 +119,9 @@ def create_criterion(
         "threshold": row[6],
         "created_at": row[7],
         "created_by_task_id": row[8],
+        "verify_command": row[9],
+        "verify_by": row[10],
+        "expected_output": row[11],
     }
 
 
@@ -110,7 +133,7 @@ def get_criterion(
         cur.execute(
             """
             SELECT id, project_id, criterion_id, criterion, category, measurement, threshold,
-                   created_at, created_by_task_id
+                   created_at, created_by_task_id, verify_command, verify_by, expected_output
             FROM acceptance_criteria
             WHERE project_id = %s AND criterion_id = %s
             """,
@@ -131,6 +154,9 @@ def get_criterion(
         "threshold": row[6],
         "created_at": row[7],
         "created_by_task_id": row[8],
+        "verify_command": row[9],
+        "verify_by": row[10],
+        "expected_output": row[11],
     }
 
 
@@ -140,7 +166,7 @@ def get_criterion_by_id(conn: psycopg.Connection, db_id: int) -> dict[str, Any] 
         cur.execute(
             """
             SELECT id, project_id, criterion_id, criterion, category, measurement, threshold,
-                   created_at, created_by_task_id
+                   created_at, created_by_task_id, verify_command, verify_by, expected_output
             FROM acceptance_criteria
             WHERE id = %s
             """,
@@ -161,6 +187,9 @@ def get_criterion_by_id(conn: psycopg.Connection, db_id: int) -> dict[str, Any] 
         "threshold": row[6],
         "created_at": row[7],
         "created_by_task_id": row[8],
+        "verify_command": row[9],
+        "verify_by": row[10],
+        "expected_output": row[11],
     }
 
 
@@ -185,12 +214,21 @@ def update_criterion(
         conn: Database connection
         project_id: Project ID
         criterion_id: The string criterion_id (e.g., 'ac-001')
-        updates: Dict of fields to update (criterion, category, measurement, threshold)
+        updates: Dict of fields to update (criterion, category, measurement, threshold,
+                 verify_command, verify_by, expected_output)
 
     Returns:
         Updated criterion dict, or None if not found
     """
-    allowed_fields = {"criterion", "category", "measurement", "threshold"}
+    allowed_fields = {
+        "criterion",
+        "category",
+        "measurement",
+        "threshold",
+        "verify_command",
+        "verify_by",
+        "expected_output",
+    }
     filtered = {k: v for k, v in updates.items() if k in allowed_fields}
 
     if not filtered:
@@ -209,7 +247,7 @@ def update_criterion(
         SET {}
         WHERE project_id = %s AND criterion_id = %s
         RETURNING id, project_id, criterion_id, criterion, category, measurement, threshold,
-                  created_at, created_by_task_id
+                  created_at, created_by_task_id, verify_command, verify_by, expected_output
     """).format(set_clauses)
 
     with conn.cursor() as cur:
@@ -230,6 +268,9 @@ def update_criterion(
         "threshold": row[6],
         "created_at": row[7],
         "created_by_task_id": row[8],
+        "verify_command": row[9],
+        "verify_by": row[10],
+        "expected_output": row[11],
     }
 
 
@@ -328,7 +369,8 @@ def get_criteria_for_capability(
             cur.execute(
                 """
                 SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id
+                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
+                       ac.verify_command, ac.verify_by, ac.expected_output
                 FROM acceptance_criteria ac
                 JOIN capability_criteria cc ON ac.id = cc.criterion_id
                 JOIN capabilities c ON cc.capability_id = c.id
@@ -341,7 +383,8 @@ def get_criteria_for_capability(
             cur.execute(
                 """
                 SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id
+                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
+                       ac.verify_command, ac.verify_by, ac.expected_output
                 FROM acceptance_criteria ac
                 JOIN capability_criteria cc ON ac.id = cc.criterion_id
                 JOIN capabilities c ON cc.capability_id = c.id
@@ -363,6 +406,9 @@ def get_criteria_for_capability(
             "threshold": row[6],
             "created_at": row[7],
             "created_by_task_id": row[8],
+            "verify_command": row[9],
+            "verify_by": row[10],
+            "expected_output": row[11],
         }
         for row in rows
     ]
@@ -423,6 +469,7 @@ def get_criteria_for_task(
             """
             SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
                    ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
+                   ac.verify_command, ac.verify_by, ac.expected_output,
                    tc.verified, tc.verified_at, tc.verified_by
             FROM acceptance_criteria ac
             JOIN task_criteria tc ON ac.id = tc.criterion_id
@@ -444,9 +491,12 @@ def get_criteria_for_task(
             "threshold": row[6],
             "created_at": row[7],
             "created_by_task_id": row[8],
-            "verified": row[9],
-            "verified_at": row[10],
-            "verified_by": row[11],
+            "verify_command": row[9],
+            "verify_by": row[10],
+            "expected_output": row[11],
+            "verified": row[12],
+            "verified_at": row[13],
+            "verified_by_who": row[14],  # Renamed to avoid conflict with ac.verify_by
         }
         for row in rows
     ]
@@ -651,9 +701,12 @@ def get_effective_criteria(
                 "category": c.get("category", "correctness"),
                 "measurement": c.get("measurement", "test"),
                 "threshold": c.get("threshold"),
+                "verify_command": c.get("verify_command"),
+                "verify_by": c.get("verify_by", "test"),
+                "expected_output": c.get("expected_output"),
                 "verified": c.get("verified", False),
                 "verified_at": c.get("verified_at"),
-                "verified_by": c.get("verified_by"),
+                "verified_by_who": c.get("verified_by_who"),
             }
             for i, c in enumerate(jsonb_criteria)
         ]

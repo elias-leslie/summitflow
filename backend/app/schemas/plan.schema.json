@@ -100,8 +100,48 @@
 
     "done_when": {
       "type": "array",
-      "description": "Checklist of conditions that must be true when task is complete. Required for STANDARD/COMPLEX.",
+      "description": "Simple checklist of conditions (strings). For verifiable criteria, use acceptance_criteria instead.",
       "items": { "type": "string" }
+    },
+
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "Structured, verifiable acceptance criteria. Each criterion has a verification command and expected output.",
+      "items": {
+        "type": "object",
+        "required": ["id", "criterion"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^ac-[0-9]+$",
+            "description": "Criterion ID like ac-1, ac-2"
+          },
+          "criterion": {
+            "type": "string",
+            "description": "What to verify - clear, specific, measurable"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["correctness", "performance", "security", "quality"],
+            "default": "correctness",
+            "description": "Category of the criterion"
+          },
+          "verify_command": {
+            "type": "string",
+            "description": "Bash command to verify this criterion (e.g., 'pytest tests/...', 'grep -q ...')"
+          },
+          "expected_output": {
+            "type": "string",
+            "description": "Expected output or success pattern from verify_command"
+          },
+          "verify_by": {
+            "type": "string",
+            "enum": ["test", "opus", "human", "agent"],
+            "default": "test",
+            "description": "How to verify: test (automated), opus (AI review), human (manual), agent (during execution)"
+          }
+        }
+      }
     },
 
     "subtasks": {

@@ -1068,6 +1068,33 @@ def import_plan(
         typer.echo(f"  complexity: {task.get('complexity', 'SIMPLE')}")
         subtask_count = len(task.get("subtasks", []))
         typer.echo(f"  subtasks: {subtask_count}")
+
+        # Create acceptance criteria if provided
+        ac_list = plan.get("acceptance_criteria", [])
+        if ac_list:
+            criteria_items = []
+            for ac in ac_list:
+                criteria_items.append(
+                    {
+                        "criterion": ac["criterion"],
+                        "category": ac.get("category", "correctness"),
+                        "verify_command": ac.get("verify_command"),
+                        "verify_by": ac.get("verify_by", "test"),
+                        "expected_output": ac.get("expected_output"),
+                    }
+                )
+
+            try:
+                result = client.batch_create_task_criteria(task["id"], criteria_items)
+                created_count = len(result.get("created", []))
+                error_count = len(result.get("errors", []))
+                typer.echo(f"  criteria: {created_count} created")
+                if error_count > 0:
+                    typer.echo(f"  criteria errors: {error_count}")
+                    for err in result.get("errors", []):
+                        typer.echo(f"    - {err.get('criterion', '')[:30]}: {err.get('error', '')}")
+            except APIError as e:
+                typer.echo(f"  Warning: Failed to create criteria: {e.detail}")
     else:
         output_error("No task created")
         raise typer.Exit(1)

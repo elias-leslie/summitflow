@@ -8,21 +8,31 @@ import { fetchWithErrorHandling, buildQueryString, getApiBase } from "./utils";
 // Task Types
 // ============================================================================
 
-export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
 export type TaskType = "feature" | "bug" | "task";
 export type AgentType = "claude" | "gemini";
 
 export interface TaskAcceptanceCriterion {
   id: string;
+  criterion_id?: string;
   criterion: string;
   category?: "performance" | "correctness" | "security" | "quality";
   measurement?: string;
   threshold?: string | null;
+  verify_command?: string | null;
+  verify_by?: "test" | "opus" | "human" | "agent";
+  expected_output?: string | null;
   test_file?: string | null;
   test_name?: string | null;
   verified: boolean;
   verified_at?: string | null;
-  verified_by?: "opus" | "test" | "human" | null;
+  verified_by_who?: "opus" | "test" | "human" | "agent" | null;
 }
 
 export interface CapabilityContext {
@@ -113,7 +123,7 @@ export async function createTask(
     labels?: string[];
     task_type?: TaskType;
     parent_task_id?: string;
-  }
+  },
 ): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks`, {
     method: "POST",
@@ -133,7 +143,7 @@ export async function fetchTasks(
     include?: string;
     limit?: number;
     offset?: number;
-  } = {}
+  } = {},
 ): Promise<TaskListResponse> {
   const query = buildQueryString(options);
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks${query}`, {
@@ -141,16 +151,28 @@ export async function fetchTasks(
   });
 }
 
-export async function fetchReadyTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/ready?limit=${limit}`, {
-    errorMessage: "Failed to fetch ready tasks",
-  });
+export async function fetchReadyTasks(
+  projectId: string,
+  limit = 50,
+): Promise<TaskListResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/ready?limit=${limit}`,
+    {
+      errorMessage: "Failed to fetch ready tasks",
+    },
+  );
 }
 
-export async function fetchBlockedTasks(projectId: string, limit = 50): Promise<TaskListResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/blocked?limit=${limit}`, {
-    errorMessage: "Failed to fetch blocked tasks",
-  });
+export async function fetchBlockedTasks(
+  projectId: string,
+  limit = 50,
+): Promise<TaskListResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/blocked?limit=${limit}`,
+    {
+      errorMessage: "Failed to fetch blocked tasks",
+    },
+  );
 }
 
 export async function updateTask(
@@ -163,7 +185,7 @@ export async function updateTask(
     labels?: string[];
     task_type?: TaskType;
     parent_task_id?: string;
-  }
+  },
 ): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
     method: "PATCH",
@@ -173,7 +195,10 @@ export async function updateTask(
   });
 }
 
-export async function fetchTask(projectId: string, taskId: string): Promise<Task> {
+export async function fetchTask(
+  projectId: string,
+  taskId: string,
+): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
     errorMessage: "Failed to fetch task",
   });
@@ -186,28 +211,34 @@ export async function startTask(
     agent_type: AgentType;
     model?: string;
     allow_delegation?: boolean;
-  }
+  },
 ): Promise<StartTaskResult> {
-  return fetchWithErrorHandling(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(options),
-    errorMessage: "Failed to start task",
-  });
+  return fetchWithErrorHandling(
+    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+      errorMessage: "Failed to start task",
+    },
+  );
 }
 
 export async function updateTaskStatus(
   projectId: string,
   taskId: string,
   status: TaskStatus,
-  taskErrorMessage?: string
+  taskErrorMessage?: string,
 ): Promise<Task> {
-  return fetchWithErrorHandling(`${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, error_message: taskErrorMessage }),
-    errorMessage: "Failed to update task status",
-  });
+  return fetchWithErrorHandling(
+    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, error_message: taskErrorMessage }),
+      errorMessage: "Failed to update task status",
+    },
+  );
 }
 
 // ============================================================================
@@ -239,7 +270,7 @@ export interface BatchTaskResponse {
 
 export async function batchCreateTasks(
   projectId: string,
-  items: BatchTaskCreateItem[]
+  items: BatchTaskCreateItem[],
 ): Promise<BatchTaskResponse> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/batch`, {
     method: "POST",
@@ -284,9 +315,9 @@ export interface Subtask {
   subtask_id: string;
   phase: string;
   description: string;
-  steps: string[];  // JSONB array (legacy)
-  steps_from_table?: Step[];  // Normalized table steps (when include_steps=true)
-  step_summary?: StepSummary;  // Step completion summary (when include_steps=true)
+  steps: string[]; // JSONB array (legacy)
+  steps_from_table?: Step[]; // Normalized table steps (when include_steps=true)
+  step_summary?: StepSummary; // Step completion summary (when include_steps=true)
   passes: boolean;
   passed_at: string | null;
   display_order: number;
@@ -335,7 +366,7 @@ export interface DiscussionResponse {
 export async function enrichTask(
   projectId: string,
   request: EnrichmentRequest,
-  sync = false
+  sync = false,
 ): Promise<Task> {
   const url = `/api/projects/${projectId}/tasks/enrich${sync ? "?sync=true" : ""}`;
   return fetchWithErrorHandling(url, {
@@ -351,14 +382,17 @@ export async function enrichTask(
  */
 export async function cleanupPrompt(
   projectId: string,
-  rawRequest: string
+  rawRequest: string,
 ): Promise<CleanupPromptResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/cleanup-prompt`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ raw_request: rawRequest }),
-    errorMessage: "Failed to cleanup prompt",
-  });
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/cleanup-prompt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw_request: rawRequest }),
+      errorMessage: "Failed to cleanup prompt",
+    },
+  );
 }
 
 /**
@@ -367,24 +401,33 @@ export async function cleanupPrompt(
 export async function discussTask(
   projectId: string,
   taskId: string,
-  message: string
+  message: string,
 ): Promise<DiscussionResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/discuss`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-    errorMessage: "Failed to discuss task",
-  });
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/discuss`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+      errorMessage: "Failed to discuss task",
+    },
+  );
 }
 
 /**
  * Accept an enriched task, moving it to 'pending' status for execution.
  */
-export async function acceptTask(projectId: string, taskId: string): Promise<Task> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/accept`, {
-    method: "POST",
-    errorMessage: "Failed to accept task",
-  });
+export async function acceptTask(
+  projectId: string,
+  taskId: string,
+): Promise<Task> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/accept`,
+    {
+      method: "POST",
+      errorMessage: "Failed to accept task",
+    },
+  );
 }
 
 /**
@@ -392,11 +435,14 @@ export async function acceptTask(projectId: string, taskId: string): Promise<Tas
  */
 export async function getSubtasks(
   projectId: string,
-  taskId: string
+  taskId: string,
 ): Promise<SubtasksResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}/subtasks`, {
-    errorMessage: "Failed to fetch subtasks",
-  });
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/subtasks`,
+    {
+      errorMessage: "Failed to fetch subtasks",
+    },
+  );
 }
 
 /**
@@ -406,7 +452,7 @@ export async function updateSubtask(
   projectId: string,
   taskId: string,
   subtaskId: string,
-  passes: boolean
+  passes: boolean,
 ): Promise<Subtask> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`,
@@ -415,7 +461,7 @@ export async function updateSubtask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ passes }),
       errorMessage: "Failed to update subtask",
-    }
+    },
   );
 }
 
@@ -429,13 +475,13 @@ export async function updateSubtask(
 export async function getSteps(
   projectId: string,
   taskId: string,
-  subtaskId: string
+  subtaskId: string,
 ): Promise<Step[]> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps`,
     {
       errorMessage: "Failed to fetch steps",
-    }
+    },
   );
 }
 
@@ -447,7 +493,7 @@ export async function updateStep(
   taskId: string,
   subtaskId: string,
   stepNumber: number,
-  passes: boolean
+  passes: boolean,
 ): Promise<Step> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/${stepNumber}`,
@@ -456,7 +502,7 @@ export async function updateStep(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ passes }),
       errorMessage: "Failed to update step",
-    }
+    },
   );
 }
 
@@ -466,13 +512,13 @@ export async function updateStep(
 export async function getStepSummary(
   projectId: string,
   taskId: string,
-  subtaskId: string
+  subtaskId: string,
 ): Promise<StepSummary> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/summary`,
     {
       errorMessage: "Failed to fetch step summary",
-    }
+    },
   );
 }
 
@@ -481,12 +527,12 @@ export async function getStepSummary(
  */
 export async function getSubtasksWithSteps(
   projectId: string,
-  taskId: string
+  taskId: string,
 ): Promise<SubtasksResponse> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks?include_steps=true`,
     {
       errorMessage: "Failed to fetch subtasks with steps",
-    }
+    },
   );
 }

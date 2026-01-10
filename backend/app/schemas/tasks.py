@@ -399,6 +399,13 @@ class CreateTaskCriterionRequest(BaseModel):
     category: Literal["performance", "correctness", "security", "quality"] = "correctness"
     measurement: str = "test"
     threshold: str | None = None
+    verify_command: str | None = Field(
+        default=None, description="Bash command to verify this criterion"
+    )
+    verify_by: Literal["test", "opus", "human", "agent"] = "test"
+    expected_output: str | None = Field(
+        default=None, description="Expected output from verify_command"
+    )
 
 
 class VerifyTaskCriterionRequest(BaseModel):
@@ -469,6 +476,13 @@ class BatchTaskCriterionCreate(BaseModel):
     category: Literal["performance", "correctness", "security", "quality"] = "correctness"
     measurement: str = "test"
     threshold: str | None = None
+    verify_command: str | None = Field(
+        default=None, description="Bash command to verify this criterion"
+    )
+    verify_by: Literal["test", "opus", "human", "agent"] = "test"
+    expected_output: str | None = Field(
+        default=None, description="Expected output from verify_command"
+    )
 
 
 class BatchTaskCriteriaRequest(BaseModel):

@@ -41,7 +41,7 @@ export function CriteriaProgress({
   const tooltipContent = criteria
     .map(
       (c, i) =>
-        `${c.verified ? "✓" : "○"} ${i + 1}. ${c.criterion.slice(0, 40)}${c.criterion.length > 40 ? "..." : ""}`
+        `${c.verified ? "✓" : "○"} ${i + 1}. ${c.criterion.slice(0, 40)}${c.criterion.length > 40 ? "..." : ""}`,
     )
     .join("\n");
 
@@ -101,16 +101,58 @@ export function CriteriaProgress({
           {criteria.map((c, i) => (
             <div
               key={c.id || i}
-              className="flex items-start gap-2 p-1.5 rounded hover:bg-slate-700/50"
+              className="flex flex-col gap-1 p-2 rounded hover:bg-slate-700/50 border-b border-slate-700/50 last:border-0"
             >
-              {c.verified ? (
-                <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 text-phosphor-400 flex-shrink-0" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5 mt-0.5 text-slate-500 flex-shrink-0" />
+              <div className="flex items-start gap-2">
+                {c.verified ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 text-phosphor-400 flex-shrink-0" />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5 mt-0.5 text-slate-500 flex-shrink-0" />
+                )}
+                <span className="text-xs text-slate-300 line-clamp-2">
+                  {c.criterion}
+                </span>
+              </div>
+              {c.verify_command && (
+                <div className="ml-5 mt-1">
+                  <div className="text-2xs text-slate-500 uppercase tracking-wider mb-0.5">
+                    Verify
+                  </div>
+                  <code className="text-2xs text-slate-400 bg-slate-900/50 px-1.5 py-0.5 rounded block whitespace-pre-wrap break-all">
+                    {c.verify_command.length > 80
+                      ? c.verify_command.slice(0, 80) + "..."
+                      : c.verify_command}
+                  </code>
+                </div>
               )}
-              <span className="text-xs text-slate-300 line-clamp-2">
-                {c.criterion}
-              </span>
+              {c.expected_output && (
+                <div className="ml-5 mt-1">
+                  <div className="text-2xs text-slate-500 uppercase tracking-wider mb-0.5">
+                    Expected
+                  </div>
+                  <span className="text-2xs text-slate-400">
+                    {c.expected_output}
+                  </span>
+                </div>
+              )}
+              {c.verify_by && (
+                <div className="ml-5 flex items-center gap-2 mt-1">
+                  <span className="text-2xs text-slate-500">via</span>
+                  <span
+                    className={`text-2xs px-1.5 py-0.5 rounded ${
+                      c.verify_by === "test"
+                        ? "bg-blue-900/50 text-blue-400"
+                        : c.verify_by === "opus"
+                          ? "bg-purple-900/50 text-purple-400"
+                          : c.verify_by === "human"
+                            ? "bg-amber-900/50 text-amber-400"
+                            : "bg-slate-700 text-slate-400"
+                    }`}
+                  >
+                    {c.verify_by}
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>
