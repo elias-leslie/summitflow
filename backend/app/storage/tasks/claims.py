@@ -51,7 +51,8 @@ def claim_task(
         task = _row_to_dict(row)
 
         # Check if task is in a claimable status
-        claimable_statuses = {"pending", "paused", "failed"}
+        # Includes paused (legacy) and blocked (agent workflow)
+        claimable_statuses = {"pending", "paused", "blocked", "failed"}
         if task["status"] not in claimable_statuses:
             return None
 

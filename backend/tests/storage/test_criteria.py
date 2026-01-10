@@ -338,7 +338,9 @@ class TestTaskCriteriaJunction:
 
         linked = criteria.get_criteria_for_task(conn, project_id, task)
         assert linked[0]["verified"] is True
-        assert linked[0]["verified_by"] == "test"
+        assert (
+            linked[0]["verified_by_who"] == "test"
+        )  # Key renamed to avoid conflict with verify_by
 
 
 class TestCriterionTestsJunction:

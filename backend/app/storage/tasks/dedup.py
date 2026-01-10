@@ -28,7 +28,7 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
             SELECT EXISTS (
                 SELECT 1 FROM tasks
                 WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused')
+                AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing', 'human_review')
                 AND (
                     -- Check description contains file path
                     description LIKE %s
@@ -117,7 +117,7 @@ def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
             SELECT EXISTS (
                 SELECT 1 FROM tasks
                 WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused', 'pending_review')
+                AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing', 'pending_review', 'human_review')
                 AND task_type = 'bug'
                 AND (
                     LOWER(title) LIKE %s
@@ -137,7 +137,7 @@ def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
             """
             SELECT title, description FROM tasks
             WHERE project_id = %s
-            AND status IN ('pending', 'running', 'paused', 'pending_review')
+            AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing', 'pending_review', 'human_review')
             AND task_type = 'bug'
             """,
             (project_id,),

@@ -1,6 +1,26 @@
 """Tasks storage - Status transitions and state machine.
 
 This module handles task status validation and updates.
+
+Status values (extended for git management workflow):
+- pending: Task created, not started
+- running: Work in progress
+- paused: Temporarily paused (human workflow) - maps to "blocked" concept
+- failed: Task failed, can retry
+- blocked: Task blocked by dependency or issue (agent workflow)
+- pr_created: Pull request created, awaiting review
+- ai_reviewing: AI review in progress
+- human_review: Needs human review (escalated from AI)
+- pending_review: Legacy - alias for ai_reviewing
+- completed: Successfully completed
+- cancelled: Task cancelled
+
+Kanban column mapping (5 columns per decision d2):
+- Planning: pending
+- In Progress: running, paused, blocked
+- AI Review: pr_created, ai_reviewing, pending_review
+- Human Review: human_review
+- Done: completed, failed, cancelled
 """
 
 from __future__ import annotations
@@ -11,16 +31,61 @@ from typing import Any
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, get_task
 
-# Valid task status transitions
+# Valid task status transitions (extended for git management workflow)
+# Includes both legacy states (paused, pending_review) and new states
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"running", "paused", "cancelled"},
-    "running": {"paused", "failed", "completed", "pending_review", "cancelled"},
-    "paused": {"running", "pending", "failed", "cancelled"},
-    "failed": {"pending", "running", "cancelled"},  # Allow retry or cancel
+    # Initial state
+    "pending": {"running", "paused", "blocked", "cancelled"},
+    # Work states
+    "running": {
+        "paused",
+        "failed",
+        "blocked",
+        "pr_created",
+        "completed",
+        "pending_review",  # Legacy
+        "ai_reviewing",
+        "cancelled",
+    },
+    "paused": {"running", "pending", "failed", "cancelled"},  # Legacy - human pause
+    "blocked": {"running", "pending", "failed", "cancelled"},  # Agent workflow block
+    "failed": {"pending", "running", "cancelled"},
+    # PR/Review states (agent workflow)
+    "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled"},
+    "ai_reviewing": {"completed", "human_review", "running", "failed"},
+    "pending_review": {"completed", "failed", "running", "cancelled"},  # Legacy alias
+    "human_review": {"completed", "running", "cancelled"},
+    # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
-    "pending_review": {"completed", "failed", "running", "cancelled"},  # Opus review gate
-    "cancelled": set(),  # Terminal - task was invalid/obsolete
+    "cancelled": set(),
 }
+
+# Status to kanban column mapping (5 columns per decision d2)
+STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
+    "pending": "Planning",
+    "running": "In Progress",
+    "paused": "In Progress",
+    "blocked": "In Progress",
+    "pr_created": "AI Review",
+    "ai_reviewing": "AI Review",
+    "pending_review": "AI Review",  # Legacy
+    "human_review": "Human Review",
+    "completed": "Done",
+    "failed": "Done",
+    "cancelled": "Done",
+}
+
+
+def status_to_kanban_column(status: str) -> str:
+    """Map task status to kanban column name.
+
+    Args:
+        status: Task status value
+
+    Returns:
+        Kanban column name (Planning, In Progress, AI Review, Human Review, Done)
+    """
+    return STATUS_TO_KANBAN_COLUMN.get(status, "Planning")
 
 
 def validate_status_transition(current: str, target: str) -> bool:
@@ -46,7 +111,7 @@ def update_task_status(
 
     Args:
         task_id: Task ID
-        status: New status (pending, running, paused, failed, completed, pending_review, cancelled)
+        status: New status (see module docstring for valid values)
         error_message: Optional error message (for failed status)
         validate_transition: Whether to validate status transition (default True)
 
@@ -61,8 +126,12 @@ def update_task_status(
         "running",
         "paused",
         "failed",
+        "blocked",
+        "pr_created",
+        "ai_reviewing",
+        "pending_review",  # Legacy
+        "human_review",
         "completed",
-        "pending_review",
         "cancelled",
     }
     if status not in valid_statuses:
