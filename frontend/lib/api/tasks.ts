@@ -536,3 +536,55 @@ export async function getSubtasksWithSteps(
     },
   );
 }
+
+// ============================================================================
+// Acceptance Criteria Functions
+// ============================================================================
+
+export interface CriterionVerifyRequest {
+  verified?: boolean;
+  verified_by: "test" | "opus" | "human" | "agent";
+}
+
+export interface CriterionVerifyResponse {
+  status: string;
+  task_id: string;
+  criterion_id: string;
+  verified_by: string;
+}
+
+/**
+ * Get all acceptance criteria for a task.
+ */
+export async function getTaskCriteria(
+  projectId: string,
+  taskId: string,
+): Promise<TaskAcceptanceCriterion[]> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/criteria`,
+    {
+      errorMessage: "Failed to fetch task criteria",
+    },
+  );
+}
+
+/**
+ * Verify (mark as passed/failed) a task criterion.
+ */
+export async function verifyTaskCriterion(
+  projectId: string,
+  taskId: string,
+  criterionId: string,
+  verifiedBy: "test" | "opus" | "human" | "agent" = "human",
+  verified: boolean = true,
+): Promise<CriterionVerifyResponse> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/criteria/${criterionId}/verify`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verified, verified_by: verifiedBy }),
+      errorMessage: "Failed to verify criterion",
+    },
+  );
+}
