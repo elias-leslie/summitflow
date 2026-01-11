@@ -106,21 +106,6 @@ def format_compact_dep(dep: dict[str, Any]) -> str:
     return f"{from_id} {dep_type} {to_id}"
 
 
-def format_compact_capability(cap: dict[str, Any]) -> str:
-    """Format capability as compact one-liner."""
-    cap_id = (cap.get("id") or "?")[:20].ljust(20)
-    test_count = cap.get("test_count", 0)
-    status = cap.get("status") or "unknown"
-    return f"{cap_id} tests:{test_count} status:{status}"
-
-
-def format_compact_component(comp: dict[str, Any]) -> str:
-    """Format component as compact one-liner."""
-    path = (comp.get("path") or "?")[:25].ljust(25)
-    file_count = comp.get("file_count", 0)
-    return f"{path} files:{file_count}"
-
-
 def output_json(data: Any) -> None:
     """Output data as JSON to stdout.
 
@@ -174,26 +159,6 @@ def output_deps(deps: list[dict[str, Any]]) -> None:
             print(format_compact_dep(dep))
     else:
         output_json(deps)
-
-
-def output_capabilities(caps: list[dict[str, Any]]) -> None:
-    """Output capabilities."""
-    if _compact_output:
-        print(f"CAPS[{len(caps)}]")
-        for cap in caps:
-            print(format_compact_capability(cap))
-    else:
-        output_json(caps)
-
-
-def output_components(comps: list[dict[str, Any]]) -> None:
-    """Output components."""
-    if _compact_output:
-        print(f"COMPONENTS[{len(comps)}]")
-        for comp in comps:
-            print(format_compact_component(comp))
-    else:
-        output_json(comps)
 
 
 def output_tests(tests: list[dict[str, Any]]) -> None:

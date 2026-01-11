@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from ..constants import DEFAULT_GEMINI_MODEL
-from ..storage.capabilities import list_capabilities
 from ..storage.explorer_entries import get_entries
 from ..storage.memory import list_observations
 from ..storage.memory_patterns import list_patterns
@@ -28,7 +27,6 @@ MAX_RULES_TOKENS = 4000
 MAX_DOCS_TOKENS = 6000
 MAX_MEMORY_TOKENS = 2000
 MAX_EXPLORER_TOKENS = 3000
-MAX_CAPABILITIES_TOKENS = 2000
 MAX_GEMINI_TOKENS = 4000
 MAX_TOTAL_TOKENS = 25000
 
@@ -230,34 +228,6 @@ def gather_explorer_context(project_id: str, query: str) -> str:
     return _truncate_to_tokens(combined, MAX_EXPLORER_TOKENS)
 
 
-def gather_capabilities_context(project_id: str) -> str:
-    """Gather existing capabilities for the project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        Capabilities context as string.
-    """
-    try:
-        capabilities = list_capabilities(project_id)
-        if not capabilities:
-            return ""
-
-        lines = ["## Existing Capabilities\n"]
-        for cap in capabilities:
-            cap_id = cap.get("capability_id", "unknown")
-            name = cap.get("name", "Unnamed")
-            status = cap.get("status", "pending")
-            lines.append(f"- {cap_id}: {name} ({status})")
-
-        combined = "\n".join(lines)
-        return _truncate_to_tokens(combined, MAX_CAPABILITIES_TOKENS)
-    except Exception as e:
-        logger.warning("Failed to get capabilities for %s: %s", project_id, e)
-        return ""
-
-
 def gather_gemini_context(project_id: str, query: str) -> str:
     """Use Gemini 1M context for deep codebase search.
 
@@ -339,7 +309,6 @@ def gather_all_context(
             - docs: Project documentation content
             - memory: Recent observations and patterns
             - explorer: Relevant files, endpoints, tables
-            - capabilities: Existing capabilities
             - gemini: Gemini deep search analysis (if use_gemini=True)
             - total_tokens: Estimated total token count
     """
@@ -348,7 +317,6 @@ def gather_all_context(
         "docs": "",
         "memory": "",
         "explorer": "",
-        "capabilities": "",
         "gemini": "",
         "total_tokens": 0,
     }
@@ -358,27 +326,25 @@ def gather_all_context(
     context["docs"] = gather_docs_context(project_id)
     context["memory"] = gather_memory_context(project_id)
     context["explorer"] = gather_explorer_context(project_id, raw_request)
-    context["capabilities"] = gather_capabilities_context(project_id)
 
     # Optionally include Gemini deep search
     if use_gemini:
         context["gemini"] = gather_gemini_context(project_id, raw_request)
 
     # Calculate total tokens
-    context_keys = ["rules", "docs", "memory", "explorer", "capabilities", "gemini"]
+    context_keys = ["rules", "docs", "memory", "explorer", "gemini"]
     total = sum(_estimate_tokens(context[key]) for key in context_keys)
     context["total_tokens"] = total
 
     # Log summary
     gemini_tokens = _estimate_tokens(context["gemini"]) if use_gemini else 0
     logger.info(
-        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d, caps=%d, gemini=%d (total ~%d tokens)",
+        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d, gemini=%d (total ~%d tokens)",
         project_id,
         _estimate_tokens(context["rules"]),
         _estimate_tokens(context["docs"]),
         _estimate_tokens(context["memory"]),
         _estimate_tokens(context["explorer"]),
-        _estimate_tokens(context["capabilities"]),
         gemini_tokens,
         total,
     )

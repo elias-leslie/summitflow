@@ -308,115 +308,6 @@ def check_and_delete_orphan(conn: psycopg.Connection, criterion_db_id: int) -> b
 
 
 # =============================================================================
-# Capability-Criteria Junction Operations
-# =============================================================================
-
-
-def link_criterion_to_capability(
-    conn: psycopg.Connection, capability_db_id: int, criterion_db_id: int
-) -> bool:
-    """Link a criterion to a capability."""
-    with conn.cursor() as cur:
-        try:
-            cur.execute(
-                """
-                INSERT INTO capability_criteria (capability_id, criterion_id)
-                VALUES (%s, %s)
-                ON CONFLICT DO NOTHING
-                """,
-                (capability_db_id, criterion_db_id),
-            )
-            conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to link criterion to capability: {e}")
-            conn.rollback()
-            return False
-
-
-def unlink_criterion_from_capability(
-    conn: psycopg.Connection, capability_db_id: int, criterion_db_id: int
-) -> bool:
-    """Unlink a criterion from a capability and clean up orphans."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            DELETE FROM capability_criteria
-            WHERE capability_id = %s AND criterion_id = %s
-            """,
-            (capability_db_id, criterion_db_id),
-        )
-        deleted = cur.rowcount > 0
-        conn.commit()
-
-    if deleted:
-        # Check if criterion is now orphaned
-        check_and_delete_orphan(conn, criterion_db_id)
-
-    return deleted
-
-
-def get_criteria_for_capability(
-    conn: psycopg.Connection, project_id: str, capability_id: int | str
-) -> list[dict[str, Any]]:
-    """Get all criteria linked to a capability.
-
-    Args:
-        project_id: Project ID
-        capability_id: Either the integer capability ID or string capability_id
-    """
-    with conn.cursor() as cur:
-        # Support both integer id and string capability_id
-        if isinstance(capability_id, int):
-            cur.execute(
-                """
-                SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
-                       ac.verify_command, ac.verify_by, ac.expected_output
-                FROM acceptance_criteria ac
-                JOIN capability_criteria cc ON ac.id = cc.criterion_id
-                JOIN capabilities c ON cc.capability_id = c.id
-                WHERE c.project_id = %s AND c.id = %s
-                ORDER BY ac.criterion_id
-                """,
-                (project_id, capability_id),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                       ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
-                       ac.verify_command, ac.verify_by, ac.expected_output
-                FROM acceptance_criteria ac
-                JOIN capability_criteria cc ON ac.id = cc.criterion_id
-                JOIN capabilities c ON cc.capability_id = c.id
-                WHERE c.project_id = %s AND c.capability_id = %s
-                ORDER BY ac.criterion_id
-                """,
-                (project_id, capability_id),
-            )
-        rows = cur.fetchall()
-
-    return [
-        {
-            "id": row[0],
-            "project_id": row[1],
-            "criterion_id": row[2],
-            "criterion": row[3],
-            "category": row[4],
-            "measurement": row[5],
-            "threshold": row[6],
-            "created_at": row[7],
-            "created_by_task_id": row[8],
-            "verify_command": row[9],
-            "verify_by": row[10],
-            "expected_output": row[11],
-        }
-        for row in rows
-    ]
-
-
-# =============================================================================
 # Task-Criteria Junction Operations
 # =============================================================================
 
@@ -689,21 +580,7 @@ def get_effective_criteria(
             logger.debug(f"criteria_from_task: task_id={task_id}, count={len(criteria)}")
             return criteria
 
-    # Source 2: Capability-linked criteria (lazy-copy to task_criteria)
-    if capability_id and task_id:
-        cap_criteria = get_criteria_for_capability(conn, project_id, capability_id)
-        if cap_criteria:
-            # Copy to task_criteria for per-task verification tracking
-            for c in cap_criteria:
-                link_criterion_to_task(conn, task_id, c["id"])
-            logger.debug(
-                f"criteria_copied_from_capability: task_id={task_id}, "
-                f"capability_id={capability_id}, count={len(cap_criteria)}"
-            )
-            # Return with verification state (now from task_criteria)
-            return get_criteria_for_task(conn, project_id, task_id)
-
-    # Source 3: JSONB fallback (bridge until Phase 7 migration)
+    # Source 2: JSONB fallback (bridge until Phase 7 migration)
     jsonb_criteria = task.get("acceptance_criteria") or []
     if jsonb_criteria:
         logger.debug(

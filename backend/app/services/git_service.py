@@ -301,8 +301,6 @@ def create_pull_request(
     Raises:
         RuntimeError: If PR creation fails
     """
-    from ..storage import capabilities as capability_store
-
     project_path = Path(project_path)
 
     branch_name = task.get("branch_name")
@@ -310,20 +308,11 @@ def create_pull_request(
         logger.error("no_branch_for_pr", task_id=task.get("id"))
         raise RuntimeError("Task has no branch_name, cannot create PR")
 
-    # Get capability info for PR content (TDD architecture)
-    capability = None
-    capability_id = task.get("capability_id")
-    if capability_id:
-        capability = capability_store.get_capability_by_id(capability_id)
-
     # Build PR title
-    if capability:
-        pr_title = f"{capability.get('name', 'Capability')} [{task.get('id', 'task')}]"
-    else:
-        pr_title = task.get("title", f"Task {task.get('id', '')}")
+    pr_title = task.get("title", f"Task {task.get('id', '')}")
 
-    # Build PR body with tests checklist
-    pr_body = _build_pr_body(task, capability)
+    # Build PR body
+    pr_body = _build_pr_body(task)
 
     # Ensure branch is pushed to remote
     try:
@@ -375,52 +364,25 @@ def create_pull_request(
     return pr_url
 
 
-def _build_pr_body(task: dict[str, Any], capability: dict[str, Any] | None) -> str:
-    """Build the PR body with tests checklist.
+def _build_pr_body(task: dict[str, Any]) -> str:
+    """Build the PR body.
 
     Args:
         task: Task dict
-        capability: Capability dict (may be None)
 
     Returns:
         Formatted PR body as markdown
     """
-    from ..storage import tests as test_store
-
     lines = ["## Summary\n"]
 
-    # Add capability description if available
-    if capability:
-        desc = capability.get("description", "")
-        if desc:
-            lines.append(f"{desc}\n")
-        else:
-            lines.append(f"Implementation of **{capability.get('name', 'capability')}**\n")
-    else:
-        desc = task.get("description", "")
-        if desc:
-            lines.append(f"{desc}\n")
-
-    # Add tests checklist (TDD architecture)
-    if capability:
-        project_id = capability.get("project_id")
-        cap_id = capability.get("capability_id")
-        if project_id and cap_id:
-            cap_tests = test_store.get_tests_for_capability(project_id, cap_id)
-            if cap_tests:
-                lines.append("\n## Tests\n")
-                for t in cap_tests:
-                    passes = t.get("passes", False)
-                    checkbox = "[x]" if passes else "[ ]"
-                    test_name = t.get("name", "Unknown test")
-                    lines.append(f"- {checkbox} {test_name}")
-                lines.append("")
+    # Add task description
+    desc = task.get("description", "")
+    if desc:
+        lines.append(f"{desc}\n")
 
     # Add task metadata
     lines.append("\n## Task Info\n")
     lines.append(f"- **Task ID:** `{task.get('id', 'N/A')}`")
-    if capability:
-        lines.append(f"- **Capability ID:** `{capability.get('capability_id', 'N/A')}`")
     lines.append(f"- **Status:** {task.get('status', 'N/A')}")
 
     # Add commits if any

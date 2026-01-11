@@ -14,11 +14,8 @@ from .api import (
     agent_sessions,
     autonomous,
     backups,
-    build,
-    capabilities,
     celery_endpoints,
     checkpoints,
-    components,
     context,
     diary,
     evidence,
@@ -33,7 +30,6 @@ from .api import (
     projects,
     prompts,
     refactor_sessions,
-    roundtable,
     schemas,
     tasks,
     tdd,
@@ -82,7 +78,6 @@ app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
-app.include_router(roundtable.router, prefix="/api", tags=["roundtable"])
 app.include_router(observations.router, prefix="/api/projects", tags=["observations"])
 app.include_router(context.router, prefix="/api/projects", tags=["context"])
 app.include_router(checkpoints.router, prefix="/api/projects", tags=["checkpoints"])
@@ -90,12 +85,9 @@ app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 app.include_router(diary.router, prefix="/api/projects", tags=["learning"])
 app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
-app.include_router(components.router, prefix="/api/projects", tags=["tdd"])
-app.include_router(capabilities.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(accepted_specs.router, prefix="/api/projects", tags=["tdd"])
-app.include_router(build.router, prefix="/api", tags=["build"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])

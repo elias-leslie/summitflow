@@ -2,8 +2,7 @@
 
 This module handles:
 - Refactor target identification
-- Coverage gap analysis
-- Multi-capability file detection (god files)
+- Coverage gap analysis (list endpoints/pages/tables)
 - Stale metadata detection
 """
 
@@ -64,45 +63,30 @@ def _build_refactor_filter_conditions(
 def _get_unlinked_entries(
     cur: Any, project_id: str, entry_type: str, check_components: bool = True
 ) -> list[tuple[Any, ...]]:
-    """Get entries not linked to any capability.
+    """Get entries of a given type.
+
+    Note: The capability/component linking system has been deprecated.
+    This function now returns all entries of the given type.
 
     Args:
         cur: Database cursor
         project_id: Project ID for scoping
         entry_type: Entry type to query
-        check_components: If True, also exclude entries linked via components table
+        check_components: Ignored (deprecated parameter)
 
     Returns:
         List of tuples (path, name, metadata)
     """
-    if check_components:
-        cur.execute(
-            """
-            SELECT ee.path, ee.name, ee.metadata
-            FROM explorer_entries ee
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            LEFT JOIN components c ON c.explorer_entry_id = ee.id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = %s
-              AND ecl.id IS NULL
-              AND c.id IS NULL
-            ORDER BY ee.path
-            """,
-            (project_id, entry_type),
-        )
-    else:
-        cur.execute(
-            """
-            SELECT ee.path, ee.name, ee.metadata
-            FROM explorer_entries ee
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = %s
-              AND ecl.id IS NULL
-            ORDER BY ee.path
-            """,
-            (project_id, entry_type),
-        )
+    cur.execute(
+        """
+        SELECT ee.path, ee.name, ee.metadata
+        FROM explorer_entries ee
+        WHERE ee.project_id = %s
+          AND ee.entry_type = %s
+        ORDER BY ee.path
+        """,
+        (project_id, entry_type),
+    )
     return list(cur.fetchall())
 
 
@@ -311,73 +295,5 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
                 "endpoint_count": len(uncovered_endpoints),
                 "page_count": len(uncovered_pages),
                 "table_count": len(orphan_tables),
-            },
-        }
-
-
-def get_multi_capability_files(
-    project_id: str,
-    min_capabilities: int = 3,
-    limit: int = 50,
-) -> dict[str, Any]:
-    """Get files linked to multiple capabilities (potential god files).
-
-    Args:
-        project_id: Project ID for scoping
-        min_capabilities: Minimum number of capabilities (default 3)
-        limit: Max results (default 50)
-
-    Returns:
-        Dict with files list and summary stats
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                ee.path,
-                ee.name,
-                (ee.metadata->>'lines_of_code')::int as lines_of_code,
-                (ee.metadata->>'complexity_score')::float as complexity_score,
-                COUNT(DISTINCT ecl.capability_id) as capability_count,
-                ARRAY_AGG(DISTINCT c.name) as capability_names
-            FROM explorer_entries ee
-            JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
-            JOIN capabilities c ON c.id = ecl.capability_id
-            WHERE ee.project_id = %s
-              AND ee.entry_type = 'file'
-            GROUP BY ee.id, ee.path, ee.name, ee.metadata
-            HAVING COUNT(DISTINCT ecl.capability_id) >= %s
-            ORDER BY COUNT(DISTINCT ecl.capability_id) DESC, ee.path
-            LIMIT %s
-            """,
-            (project_id, min_capabilities, limit),
-        )
-        rows = cur.fetchall()
-
-        files = []
-        for row in rows:
-            cap_count = row[4]
-            recommendation = (
-                "Critical: Consider splitting this file"
-                if cap_count >= 5
-                else "Consider reviewing responsibilities"
-            )
-            files.append(
-                {
-                    "path": row[0],
-                    "name": row[1],
-                    "lines_of_code": row[2],
-                    "complexity_score": row[3],
-                    "capability_count": cap_count,
-                    "capabilities": row[5] if row[5] else [],
-                    "recommendation": recommendation,
-                }
-            )
-
-        return {
-            "files": files,
-            "summary": {
-                "total_files": len(files),
-                "max_capabilities": files[0]["capability_count"] if files else 0,
             },
         }

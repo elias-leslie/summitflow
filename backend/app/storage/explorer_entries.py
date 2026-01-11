@@ -164,16 +164,15 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
         params.append(f"{filters['path']}%")
 
     # Handle association filter in HAVING clause
+    # Note: "linked" status was based on explorer_capability_links which has been removed
+    # Now we only support is_component (linked to components table) or orphan
     association_filter = filters.get("association")
     having_clause = ""
     if association_filter == "is_component":
         having_clause = "HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1"
-    elif association_filter == "linked":
-        having_clause = """HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0
-                          AND MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 1"""
-    elif association_filter == "orphan":
-        having_clause = """HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0
-                          AND MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 0"""
+    elif association_filter in ("linked", "orphan"):
+        # Both "linked" and "orphan" now map to "not a component" since capability links were removed
+        having_clause = "HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0"
 
     where_clause = _build_where_clause(conditions)
 
@@ -193,12 +192,10 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
                    ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at,
                    CASE
                        WHEN MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'is_component'
-                       WHEN MAX(CASE WHEN ecl.id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'linked'
                        ELSE 'orphan'
                    END as association_status
             FROM explorer_entries ee
             LEFT JOIN components c ON c.explorer_entry_id = ee.id
-            LEFT JOIN explorer_capability_links ecl ON ecl.explorer_entry_id = ee.id
             WHERE {where_clause}
             GROUP BY ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
                      ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at

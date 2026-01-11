@@ -23,7 +23,6 @@ from .core import (
 )
 from .dedup import bug_task_exists_for_error, task_exists_for_file
 from .queries import (
-    get_tasks_by_capability,
     get_tasks_by_enrichment_status,
     list_blocked_tasks,
     list_ready_tasks,
@@ -50,7 +49,6 @@ __all__ = [
     "create_task",
     "delete_task",
     "get_task",
-    "get_tasks_by_capability",
     "get_tasks_by_enrichment_status",
     "list_blocked_tasks",
     "list_ready_tasks",

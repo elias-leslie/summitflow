@@ -434,7 +434,6 @@ def update(
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     move_to: Annotated[str | None, typer.Option("--move-to")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
-    capability: Annotated[int | None, typer.Option("--capability")] = None,
     objective: Annotated[
         str | None, typer.Option("--objective", help="Task objective (spirit statement)")
     ] = None,
@@ -450,7 +449,6 @@ def update(
         st update task-abc123 --add-label auto-generated
         st update task-abc123 --remove-label tier:1 --add-label tier:2
         st update task-abc123 --move-to other-project
-        st update task-abc123 --capability 615
         st update task-abc123 --objective "Enable X to do Y"
         st update task-abc123 --branch feature/auth --pr-url https://github.com/...
     """
@@ -511,8 +509,6 @@ def update(
         except json.JSONDecodeError as e:
             output_error(f"Invalid plan JSON: {e}")
             raise typer.Exit(1) from None
-    if capability is not None:
-        updates["capability_id"] = capability
     if objective:
         updates["objective"] = objective
     if branch:

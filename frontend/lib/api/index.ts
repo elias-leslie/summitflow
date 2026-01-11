@@ -4,7 +4,6 @@
 
 // Utilities
 export * from "./utils";
-export * from "./wrappers";
 
 // Domain modules
 export * from "./evidence";

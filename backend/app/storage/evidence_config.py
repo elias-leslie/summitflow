@@ -143,21 +143,3 @@ def upsert_config(project_id: str, config: ProjectEvidenceConfig) -> ProjectEvid
 def get_default_config() -> ProjectEvidenceConfig:
     """Return default evidence configuration."""
     return DEFAULT_EVIDENCE_CONFIG.copy()
-
-
-def get_capability_id_for_entry(project_id: str, explorer_entry_id: int) -> int | None:
-    """Get capability_id linked to an explorer entry via explorer_capability_links.
-
-    Used to inherit capability linkage when creating evidence for an explorer entry.
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT capability_id FROM explorer_capability_links
-            WHERE project_id = %s AND explorer_entry_id = %s
-            LIMIT 1
-            """,
-            (project_id, explorer_entry_id),
-        )
-        row = cur.fetchone()
-        return row[0] if row else None

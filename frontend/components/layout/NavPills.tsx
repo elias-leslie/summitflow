@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  MessageCircle,
   Kanban,
   ListTodo,
   Camera,
@@ -17,7 +16,6 @@ import {
 import clsx from "clsx";
 
 type TabId =
-  | "roundtable"
   | "kanban"
   | "tasks"
   | "tests"
@@ -41,16 +39,6 @@ interface TabConfig {
 }
 
 const tabs: TabConfig[] = [
-  {
-    id: "roundtable",
-    label: "Roundtable",
-    icon: MessageCircle,
-    activeClasses: "bg-emerald-500/15 text-emerald-400",
-    inactiveClasses:
-      "text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400",
-    iconActiveClasses: "text-emerald-400",
-    iconInactiveClasses: "text-slate-500 group-hover:text-emerald-400",
-  },
   {
     id: "kanban",
     label: "Kanban",
@@ -156,7 +144,7 @@ export function NavPills({ projectId, currentTab, className }: NavPillsProps) {
 
   // Get current tab from URL if not provided
   const activeTab =
-    currentTab || (searchParams.get("tab") as TabId) || "roundtable";
+    currentTab || (searchParams.get("tab") as TabId) || "kanban";
 
   return (
     <nav

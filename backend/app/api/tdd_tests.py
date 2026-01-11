@@ -71,7 +71,6 @@ class TestWithHistoryResponse(TestResponse):
     """Response model for test with run history."""
 
     run_history: list[dict[str, Any]] = []
-    linked_capabilities: list[dict[str, Any]] = []
 
 
 @router.get("/{project_id}/tests", response_model=list[TestResponse])
@@ -95,12 +94,7 @@ async def get_test(project_id: str, test_id: str) -> TestWithHistoryResponse:
     # Get run history
     run_history = test_runs_storage.get_test_runs(project_id, test_db_id=test["id"], limit=10)
 
-    # Get linked capabilities
-    linked_capabilities = storage.get_capabilities_for_test(project_id, test_id)
-
-    return TestWithHistoryResponse(
-        **test, run_history=run_history, linked_capabilities=linked_capabilities
-    )
+    return TestWithHistoryResponse(**test, run_history=run_history)
 
 
 @router.post("/{project_id}/tests", response_model=TestResponse)
@@ -166,74 +160,6 @@ async def delete_test(project_id: str, test_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
 
     return {"status": "deleted", "test_id": test_id}
-
-
-# ============================================================
-# Test-Capability Linking
-# ============================================================
-
-
-class LinkTestRequest(BaseModel):
-    """Request for linking test to capability."""
-
-    is_primary: bool = False
-    create_pseudo_criterion: bool = False  # Default False - prefer real criteria
-
-
-@router.post("/{project_id}/tests/{test_id}/link/{capability_id}")
-async def link_test_to_capability(
-    project_id: str, test_id: str, capability_id: str, body: LinkTestRequest | None = None
-) -> dict[str, str | bool]:
-    """Link a test to a capability."""
-    from ..storage import capabilities as cap_storage
-
-    # Get test and capability db IDs
-    test = storage.get_test(project_id, test_id)
-    if not test:
-        raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
-
-    capability = cap_storage.get_capability(project_id, capability_id)
-    if not capability:
-        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
-
-    is_primary = body.is_primary if body else False
-    create_pseudo = body.create_pseudo_criterion if body else False
-    storage.link_test_to_capability(
-        capability["id"], test["id"], is_primary, create_pseudo_criterion=create_pseudo
-    )
-
-    return {
-        "status": "linked",
-        "test_id": test_id,
-        "capability_id": capability_id,
-        "is_primary": is_primary,
-    }
-
-
-@router.delete("/{project_id}/tests/{test_id}/link/{capability_id}")
-async def unlink_test_from_capability(
-    project_id: str, test_id: str, capability_id: str
-) -> dict[str, str]:
-    """Unlink a test from a capability."""
-    from ..storage import capabilities as cap_storage
-
-    # Get test and capability db IDs
-    test = storage.get_test(project_id, test_id)
-    if not test:
-        raise HTTPException(status_code=404, detail=f"Test {test_id} not found")
-
-    capability = cap_storage.get_capability(project_id, capability_id)
-    if not capability:
-        raise HTTPException(status_code=404, detail=f"Capability {capability_id} not found")
-
-    unlinked = storage.unlink_test_from_capability(capability["id"], test["id"])
-    if not unlinked:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Test {test_id} is not linked to capability {capability_id}",
-        )
-
-    return {"status": "unlinked", "test_id": test_id, "capability_id": capability_id}
 
 
 # ============================================================

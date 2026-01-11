@@ -60,7 +60,7 @@ async def list_entries(
     path: str | None = Query(None, description="Filter by path prefix"),
     association: str | None = Query(
         None,
-        description="Filter by association status (orphan, linked, is_component)",
+        description="Filter by association status (orphan, is_component). Note: 'linked' is accepted for backwards compat but treated as 'orphan'",
     ),
     sort: str = Query("path", description="Sort field: path, name, health_status, last_scanned_at"),
     dir: str = Query("asc", description="Sort direction: asc, desc"),
@@ -356,21 +356,6 @@ async def get_entry_by_id(
     return entry
 
 
-@router.get("/{project_id}/explorer/entry/{entry_id}/capabilities")
-async def get_entry_capabilities(
-    project_id: str,
-    entry_id: int,
-) -> list[dict[str, Any]]:
-    """Get all capabilities linked to an explorer entry.
-
-    Returns list of capabilities with link info.
-    """
-    _validate_project_exists(project_id)
-
-    caps = explorer_storage.get_entry_capabilities(entry_id)
-    return caps
-
-
 @router.get("/{project_id}/explorer/refactor-targets")
 async def get_refactor_targets(
     project_id: str,
@@ -427,26 +412,6 @@ async def get_coverage_gaps(project_id: str) -> dict[str, Any]:
     _validate_project_exists(project_id)
 
     return explorer_storage.get_coverage_gaps(project_id)
-
-
-@router.get("/{project_id}/analysis/multi-capability-files")
-async def get_multi_capability_files(
-    project_id: str,
-    min_capabilities: int = Query(3, ge=2, le=20, description="Minimum capabilities per file"),
-    limit: int = Query(50, ge=1, le=200, description="Max results"),
-) -> dict[str, Any]:
-    """Get files linked to multiple capabilities (potential god files).
-
-    Returns files that implement or are involved in many capabilities,
-    which may indicate overly complex modules that should be split.
-    """
-    _validate_project_exists(project_id)
-
-    return explorer_storage.get_multi_capability_files(
-        project_id,
-        min_capabilities=min_capabilities,
-        limit=limit,
-    )
 
 
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")

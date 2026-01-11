@@ -7,8 +7,6 @@ import typer
 from .commands import (
     autonomous,
     backup,
-    capabilities,
-    components,
     criterion,
     deps,
     git,
@@ -74,8 +72,6 @@ CRITERION:
   criterion update <id> [--criterion text] [--category C] [--verify-command cmd] [--verify-by M] [--expected-output text]
   criterion verify <task-id> <criterion-id> --by test|manual       # verify criterion for task
 
-[DEPRECATED] CAPABILITY/COMPONENT: These systems are deprecated. Use task criteria instead.
-
 TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
 
 WORKTREE: worktree list | worktree prune
@@ -119,15 +115,12 @@ app.add_typer(tasks.app, name="task", hidden=True)
 
 # Register subcommand groups (hidden from main help - reference above is complete)
 app.add_typer(deps.app, name="dep")
-app.add_typer(capabilities.app, name="capability")
-app.add_typer(capabilities.app, name="cap", hidden=True)  # Alias
 app.add_typer(tests.app, name="test")
 app.add_typer(subtask.app, name="subtask")
 app.add_typer(step.app, name="step")
 app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(worktree.app, name="worktree")
-app.add_typer(components.app, name="component")
 app.add_typer(criterion.app, name="criterion")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")

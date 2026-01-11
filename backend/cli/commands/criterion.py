@@ -14,35 +14,18 @@ app = typer.Typer(help="Criterion management commands")
 
 @app.command("list")
 def list_criteria(
-    capability_id: Annotated[
-        str | None, typer.Option("--capability", "-c", help="Capability ID")
-    ] = None,
-    task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
+    task_id: Annotated[str, typer.Option("--task", "-t", help="Task ID")],
 ) -> None:
-    """List criteria for a capability or task.
-
-    Must provide either --capability or --task.
+    """List criteria for a task.
 
     Examples:
-        st criterion list --capability user-login
         st criterion list --task task-abc123
         st criterion list -t task-abc123
     """
-    if not capability_id and not task_id:
-        output_error("Must provide --capability or --task")
-        raise typer.Exit(1)
-
-    if capability_id and task_id:
-        output_error("Cannot provide both --capability and --task")
-        raise typer.Exit(1)
-
     client = STClient()
 
     try:
-        if capability_id:
-            criteria = client.list_criteria(capability_id)
-        else:
-            criteria = client.list_task_criteria(task_id)  # type: ignore
+        criteria = client.list_task_criteria(task_id)
     except APIError as e:
         handle_api_error(e)
         return

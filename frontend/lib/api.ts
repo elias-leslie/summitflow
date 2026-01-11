@@ -8,10 +8,8 @@ export * from "./api/tasks";
 export * from "./api/notifications";
 export * from "./api/projects";
 export * from "./api/prompts";
-export * from "./api/roundtable";
 export * from "./api/extraction";
 export * from "./api/tests";
-export * from "./api/components";
 export * from "./api/git";
 
 // Re-export utilities for consumers that need them directly

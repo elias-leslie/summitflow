@@ -197,64 +197,6 @@ def check_reflection_trigger(
 
 
 @shared_task(  # type: ignore[untyped-decorator]
-    name="summitflow.trigger_feature_reflection",
-    bind=True,
-)
-def trigger_capability_reflection(
-    self: Any,
-    project_id: str,
-    capability_id: str,
-    project_path: str | None = None,
-    auto_apply: bool = True,
-) -> dict[str, Any]:
-    """Trigger reflection after capability completion.
-
-    Called when a capability is marked complete. Analyzes all diary entries
-    since the capability started.
-
-    Args:
-        project_id: Project ID
-        capability_id: Completed capability ID
-        project_path: Path to project root
-        auto_apply: Whether to auto-apply high-confidence patterns
-
-    Returns:
-        Summary dict with reflection results
-    """
-    logger.info(
-        "capability_reflection_triggered",
-        project_id=project_id,
-        capability_id=capability_id,
-    )
-
-    try:
-        # Trigger reflection with higher limit for capabilities
-        result = process_reflection.delay(
-            project_id=project_id,
-            project_path=project_path,
-            auto_apply=auto_apply,
-            limit=20,  # More entries for capability reflection
-        )
-
-        return {
-            "triggered": True,
-            "capability_id": capability_id,
-            "task_id": result.id,
-        }
-
-    except Exception as e:
-        logger.error(
-            "capability_reflection_trigger_error",
-            capability_id=capability_id,
-            error=str(e),
-        )
-        return {
-            "triggered": False,
-            "error": str(e),
-        }
-
-
-@shared_task(  # type: ignore[untyped-decorator]
     name="summitflow.process_pending_reflections",
     bind=True,
 )

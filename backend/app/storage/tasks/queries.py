@@ -80,30 +80,6 @@ def list_tasks(
     return [_row_to_dict(row) for row in rows]
 
 
-def get_tasks_by_capability(capability_id: int) -> list[dict[str, Any]]:
-    """Get all tasks linked to a capability.
-
-    Args:
-        capability_id: Capability database ID
-
-    Returns:
-        List of task dicts.
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {TASK_COLUMNS}
-            FROM tasks
-            WHERE capability_id = %s
-            ORDER BY created_at DESC
-            """,
-            (capability_id,),
-        )
-        rows = cur.fetchall()
-
-    return [_row_to_dict(row) for row in rows]
-
-
 def get_tasks_by_enrichment_status(
     project_id: str,
     status: str,
