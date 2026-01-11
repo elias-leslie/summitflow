@@ -90,14 +90,12 @@ def init_schema() -> None:
         # ============================================================
 
         # Evidence table - evidence storage for verification
-        # Primary link is task_id; capability_id retained for backwards compatibility
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS evidence (
                     id SERIAL PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     evidence_id VARCHAR(50) NOT NULL,
-                    capability_id VARCHAR(50),
                     task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
                     explorer_entry_id INTEGER REFERENCES explorer_entries(id) ON DELETE SET NULL,
                     evidence_type VARCHAR(50) DEFAULT 'screenshot',
@@ -126,7 +124,6 @@ def init_schema() -> None:
                 """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_capability ON evidence(capability_id)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_explorer_entry ON evidence(explorer_entry_id)"
         )
@@ -167,8 +164,6 @@ def init_schema() -> None:
                     labels TEXT[] DEFAULT '{}',
                     task_type VARCHAR(20) DEFAULT 'task',
                     parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-                    -- TDD linkage
-                    capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL,
                     -- Autonomous execution fields
                     claimed_by TEXT,
                     claimed_at TIMESTAMPTZ,
@@ -220,56 +215,6 @@ def init_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)"
         )
 
-        # ============================================================
-        # TDD Architecture Tables - Components, Capabilities, Tests
-        # ============================================================
-
-        # Components - Major parts of the system (3-8 per project)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS components (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    component_id VARCHAR(50) NOT NULL,
-                    name VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    priority INTEGER DEFAULT 2,
-                    status VARCHAR(20) DEFAULT 'planned',
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, component_id)
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_components_status ON components(status)")
-
-        # Capabilities - What must work (5-15 per component)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS capabilities (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    component_id INTEGER NOT NULL REFERENCES components(id) ON DELETE CASCADE,
-                    capability_id VARCHAR(50) NOT NULL,
-                    name VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    priority INTEGER DEFAULT 2,
-                    status VARCHAR(20) DEFAULT 'pending',
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, capability_id)
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_capabilities_project ON capabilities(project_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_capabilities_component ON capabilities(component_id)"
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_capabilities_status ON capabilities(status)")
-
         # Tests - Centralized test registry (how we verify)
         cur.execute(
             """
@@ -309,7 +254,7 @@ def init_schema() -> None:
         # Unified Criteria Tables (TDD Architecture)
         # ============================================================
 
-        # Acceptance criteria - reusable criteria linked to capabilities or tasks
+        # Acceptance criteria - reusable criteria linked to tasks
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS acceptance_criteria (
@@ -330,21 +275,7 @@ def init_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_acceptance_criteria_project ON acceptance_criteria(project_id)"
         )
 
-        # Capability-Criteria junction (capability owns criteria)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS capability_criteria (
-                    capability_id INTEGER NOT NULL REFERENCES capabilities(id) ON DELETE CASCADE,
-                    criterion_id INTEGER NOT NULL REFERENCES acceptance_criteria(id) ON DELETE CASCADE,
-                    PRIMARY KEY (capability_id, criterion_id)
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_capability_criteria_capability ON capability_criteria(capability_id)"
-        )
-
-        # Task-Criteria junction (standalone or verification tracking)
+        # Task-Criteria junction (verification tracking)
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS task_criteria (
@@ -377,10 +308,6 @@ def init_schema() -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_criterion_tests_criterion ON criterion_tests(criterion_id)"
         )
-
-        # NOTE: capability_tests table REMOVED in migration 035
-        # Tests are now linked to capabilities via criterion_tests junction table:
-        #   capability -> capability_criteria -> acceptance_criteria -> criterion_tests -> test
 
         # Test runs - Historical test execution records
         cur.execute(
@@ -444,62 +371,6 @@ def init_schema() -> None:
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)"
-        )
-
-        # Accepted specs - Permanent storage for accepted spec definitions
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS accepted_specs (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    spec_json JSONB NOT NULL,
-                    accepted_at TIMESTAMPTZ DEFAULT NOW(),
-                    accepted_by VARCHAR(50),
-                    notes TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_accepted_specs_project ON accepted_specs(project_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_accepted_specs_accepted ON accepted_specs(accepted_at DESC)"
-        )
-
-        # ============================================================
-        # Roundtable Sessions - Multi-agent chat persistence
-        # ============================================================
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS roundtable_sessions (
-                    id TEXT PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    title VARCHAR(255),
-                    description TEXT,
-                    status VARCHAR(20) DEFAULT 'active',
-                    agent_mode VARCHAR(20) DEFAULT 'both',
-                    mode VARCHAR(20) NOT NULL DEFAULT 'quick',
-                    tools_enabled BOOLEAN DEFAULT TRUE,
-                    tool_stats JSONB DEFAULT '{"total_calls": 0, "files_read": 0, "searches": 0}'::jsonb,
-                    messages JSONB DEFAULT '[]'::jsonb,
-                    generated_features JSONB DEFAULT '[]'::jsonb,
-                    generated_spec JSONB DEFAULT NULL,
-                    claude_sdk_session_id TEXT,
-                    gemini_sdk_session_id TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW()
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_roundtable_project ON roundtable_sessions(project_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_roundtable_created ON roundtable_sessions(created_at DESC)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_roundtable_updated ON roundtable_sessions(updated_at DESC)"
         )
 
         # ============================================================
@@ -639,28 +510,6 @@ def init_schema() -> None:
             ("labels TEXT[] DEFAULT '{}'", "tasks"),
             ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
             ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
-            # Roundtable tools fields
-            ("tools_enabled BOOLEAN DEFAULT TRUE", "roundtable_sessions"),
-            ("write_enabled BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
-            ("yolo_mode BOOLEAN DEFAULT FALSE", "roundtable_sessions"),
-            (
-                'tool_stats JSONB DEFAULT \'{"total_calls": 0, "files_read": 0, "searches": 0, "writes": 0}\'::jsonb',
-                "roundtable_sessions",
-            ),
-            # Agent config override for per-session customization
-            ("agent_override VARCHAR(50)", "roundtable_sessions"),
-            ("model_override VARCHAR(100)", "roundtable_sessions"),
-            # Roundtable session enhancements (SDK sessions, multi-session)
-            ("title VARCHAR(255)", "roundtable_sessions"),
-            ("description TEXT", "roundtable_sessions"),
-            ("status VARCHAR(20) DEFAULT 'active'", "roundtable_sessions"),
-            ("agent_mode VARCHAR(20) DEFAULT 'both'", "roundtable_sessions"),
-            ("claude_sdk_session_id TEXT", "roundtable_sessions"),
-            ("gemini_sdk_session_id TEXT", "roundtable_sessions"),
-            # TDD spec generation - ephemeral working storage during roundtable
-            ("generated_spec JSONB", "roundtable_sessions"),
-            # TDD capability linkage - link tasks to capabilities instead of features
-            ("capability_id INTEGER REFERENCES capabilities(id) ON DELETE SET NULL", "tasks"),
             # Pipeline v2 fields - task context for /plan_it and /do_it
             ("spirit_anti TEXT", "tasks"),
             # Pipeline v2 - evidence links to tasks now

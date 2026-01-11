@@ -10,7 +10,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
-    accepted_specs,
     agent_sessions,
     autonomous,
     backups,
@@ -87,7 +86,6 @@ app.include_router(patterns.router, prefix="/api/projects", tags=["learning"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
 app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
-app.include_router(accepted_specs.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])

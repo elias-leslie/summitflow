@@ -5,33 +5,16 @@ Explorer-driven capture orchestration via Celery tasks.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-# Note: daily_evidence_capture is a Celery task with dynamic attributes (.apply_async, .delay)
-# Type checker may not recognize these - they work at runtime
 from ...logging_config import get_logger
-from ...services.evidence_manager import (
-    capture_evidence,
-    get_evidence_base_dir,
-    get_next_version,
-    save_evidence,
-)
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-class RefreshRequest(BaseModel):
-    """Request to capture new evidence."""
-
-    capability_id: str
-    criterion_id: str
-    url: str
 
 
 class CaptureRequest(BaseModel):
@@ -56,69 +39,6 @@ class CaptureJobStatus(BaseModel):
     started_at: str | None
     completed_at: str | None
     errors: list[str]
-
-
-@router.post("/projects/{project_id}/evidence/refresh")
-async def refresh_evidence(
-    project_id: str,
-    request: RefreshRequest,
-) -> dict[str, Any]:
-    """Capture new evidence for a criterion.
-
-    DEPRECATED: Evidence now auto-captures on test pass. Use POST /capabilities/{id}/verify
-    to run tests and auto-capture evidence for linked criteria with verification_url.
-    """
-    logger.warning(
-        "deprecated_endpoint_called",
-        endpoint="/evidence/refresh",
-        project_id=project_id,
-        capability_id=request.capability_id,
-    )
-    next_version = get_next_version(project_id, request.capability_id, request.criterion_id)
-
-    result = await capture_evidence(
-        project_id=project_id,
-        url=request.url,
-        capability_id=request.capability_id,
-        criterion_id=request.criterion_id,
-    )
-
-    if not result.get("success"):
-        return {
-            "success": False,
-            "error": result.get("error", "Capture failed"),
-        }
-
-    evidence_base = get_evidence_base_dir(project_id)
-    file_path = str(
-        evidence_base
-        / request.capability_id
-        / request.criterion_id
-        / f"v{result.get('version', next_version)}"
-    )
-
-    file_size = 0
-    path = Path(file_path)
-    if path.exists():
-        for f in path.iterdir():
-            if f.is_file():
-                file_size += f.stat().st_size
-
-    save_evidence(
-        project_id=project_id,
-        capability_id=request.capability_id,
-        criterion_id=request.criterion_id,
-        version=result.get("version", next_version),
-        file_path=file_path,
-        file_size_bytes=file_size,
-    )
-
-    return {
-        "success": True,
-        "version": result.get("version", next_version),
-        "message": f"Evidence captured (v{result.get('version', next_version)})",
-        "warning": "Deprecated: evidence auto-captures on test pass. Use POST /capabilities/{id}/verify",
-    }
 
 
 @router.post("/projects/{project_id}/evidence/capture")

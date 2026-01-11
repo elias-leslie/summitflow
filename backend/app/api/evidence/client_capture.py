@@ -1,6 +1,6 @@
-"""Client-side viewport capture endpoints.
+"""Client-side debug capture endpoints.
 
-Handles browser Screen Capture API uploads and debug captures.
+Handles browser Screen Capture API uploads for debug captures.
 """
 
 from __future__ import annotations
@@ -16,11 +16,6 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...logging_config import get_logger
-from ...services.evidence_manager import (
-    get_evidence_base_dir,
-    get_next_version,
-    save_evidence,
-)
 
 logger = get_logger(__name__)
 
@@ -36,23 +31,6 @@ class ClientEvidence(BaseModel):
 
     console: dict[str, Any] = Field(default_factory=dict, description="Console errors/warnings")
     network: dict[str, Any] = Field(default_factory=dict, description="Network failures")
-
-
-class ViewportCaptureRequest(BaseModel):
-    """Request to upload a client-side viewport capture."""
-
-    capability_id: str = Field(..., description="Capability ID")
-    criterion_id: str = Field(..., description="Criterion ID")
-    screenshot_base64: str = Field(..., description="Base64-encoded PNG screenshot")
-    url: str = Field(..., description="URL of the captured page")
-    viewport_width: int = Field(..., description="Viewport width")
-    viewport_height: int = Field(..., description="Viewport height")
-    scroll_x: int = Field(0, description="Horizontal scroll position")
-    scroll_y: int = Field(0, description="Vertical scroll position")
-    page_title: str = Field("", description="Page title")
-    client_evidence: ClientEvidence | None = Field(
-        None, description="Client-side console/network evidence"
-    )
 
 
 class DebugCaptureRequest(BaseModel):
@@ -94,116 +72,6 @@ def _extract_client_evidence(client_evidence: ClientEvidence | None) -> dict[str
             "failures": client_evidence.network.get("failures", []),
         },
     }
-
-
-@router.post("/projects/{project_id}/evidence/viewport-capture")
-async def viewport_capture(
-    project_id: str,
-    request: ViewportCaptureRequest,
-) -> dict[str, Any]:
-    """Upload a client-side viewport capture.
-
-    Receives a screenshot captured directly from the user's browser using the
-    Screen Capture API, preserving exact viewport state.
-    """
-    try:
-        try:
-            screenshot_data = base64.b64decode(request.screenshot_base64)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 screenshot data") from None
-
-        version = get_next_version(project_id, request.capability_id, request.criterion_id)
-        evidence_base = get_evidence_base_dir(project_id)
-        output_dir = evidence_base / request.capability_id / request.criterion_id / f"v{version}"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        screenshot_path = output_dir / "screenshot.png"
-        screenshot_path.write_bytes(screenshot_data)
-
-        client_ev = _extract_client_evidence(request.client_evidence)
-
-        evidence_data = {
-            "metadata": {
-                "url": request.url,
-                "capabilityId": request.capability_id,
-                "criterionId": request.criterion_id,
-                "projectId": project_id,
-                "version": version,
-                "capturedAt": datetime.now(UTC).isoformat(),
-                "pageTitle": request.page_title,
-                "viewport": {
-                    "width": request.viewport_width,
-                    "height": request.viewport_height,
-                },
-                "scroll": {
-                    "x": request.scroll_x,
-                    "y": request.scroll_y,
-                },
-                "captureMethod": "client-side-screen-capture-api",
-            },
-            "console": {
-                **client_ev["console"],
-                "note": "Client-side evidence from visible error elements",
-            },
-            "network": {
-                "totalRequests": 0,
-                "failedRequests": client_ev["network"]["failureCount"],
-                "failures": client_ev["network"]["failures"],
-                "slowRequests": [],
-                "note": "Client-side evidence from Performance API",
-            },
-            "pageState": {
-                "hasContent": True,
-                "visibleTextSample": "",
-                "keyElements": {},
-                "note": "Captured user's exact viewport state",
-            },
-        }
-
-        evidence_path = output_dir / "evidence.json"
-        evidence_path.write_text(json.dumps(evidence_data, indent=2))
-
-        current_link = evidence_base / request.capability_id / request.criterion_id / "current"
-        if current_link.is_symlink():
-            current_link.unlink()
-        current_link.symlink_to(f"v{version}")
-
-        file_size = len(screenshot_data) + len(json.dumps(evidence_data))
-        save_evidence(
-            project_id=project_id,
-            capability_id=request.capability_id,
-            criterion_id=request.criterion_id,
-            version=version,
-            file_path=str(output_dir),
-            file_size_bytes=file_size,
-        )
-
-        logger.info(
-            "viewport_capture_saved",
-            project_id=project_id,
-            capability_id=request.capability_id,
-            criterion_id=request.criterion_id,
-            version=version,
-            scroll_y=request.scroll_y,
-        )
-
-        return {
-            "success": True,
-            "version": version,
-            "capability_id": request.capability_id,
-            "criterion_id": request.criterion_id,
-            "evidence": evidence_data,
-            "files": [
-                {"name": "screenshot.png", "size": len(screenshot_data)},
-                {"name": "evidence.json", "size": len(json.dumps(evidence_data))},
-            ],
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("viewport_capture_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from None
 
 
 @router.post("/projects/{project_id}/evidence/debug-capture")

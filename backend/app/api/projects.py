@@ -174,18 +174,6 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
 
         project_ids = [p[0] for p in projects]
 
-        # Get capability counts per project (new TDD schema uses capabilities table)
-        cur.execute(
-            """
-            SELECT project_id, COUNT(*) as count
-            FROM capabilities
-            WHERE project_id = ANY(%s)
-            GROUP BY project_id
-            """,
-            (project_ids,),
-        )
-        feature_counts = {row[0]: row[1] for row in cur.fetchall()}
-
         # Get task counts per project (non-bug, active tasks only)
         cur.execute(
             """
@@ -245,7 +233,6 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
                 logo_url=None,  # Logo support will be added later
                 created_at=row[5],
                 stats=ProjectStats(
-                    features=feature_counts.get(project_id, 0),
                     tasks=task_counts.get(project_id, 0),
                     bugs=bug_counts.get(project_id, 0),
                     blocked=blocked_counts.get(project_id, 0),
