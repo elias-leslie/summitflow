@@ -15,12 +15,37 @@ from ..storage import tasks as task_store
 
 router = APIRouter()
 
+# Config repos always included (not SummitFlow projects)
+CONFIG_REPOS = [Path.home() / ".claude"]
 
-# Known managed repositories
-MANAGED_REPOS = [
-    Path.home() / "summitflow",
-    Path.home() / ".claude",
-]
+
+def _get_managed_repos() -> list[Path]:
+    """Get list of managed repos from database + config repos.
+
+    Returns:
+        List of Path objects for repos with valid .git directories.
+    """
+    from ..storage.connection import get_connection
+
+    repos: list[Path] = []
+
+    # Get project root paths from database
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT root_path FROM projects WHERE root_path IS NOT NULL")
+            for row in cur.fetchall():
+                path = Path(row[0])
+                if path.exists() and (path / ".git").exists():
+                    repos.append(path)
+    except Exception:
+        pass
+
+    # Always include config repos
+    for config_repo in CONFIG_REPOS:
+        if config_repo.exists() and (config_repo / ".git").exists() and config_repo not in repos:
+            repos.append(config_repo)
+
+    return repos
 
 
 class RepoStatus(BaseModel):
@@ -166,7 +191,7 @@ async def get_git_status() -> GitStatusResponse:
     """Get git status for all managed repositories."""
     repos: list[RepoStatus] = []
 
-    for repo_path in MANAGED_REPOS:
+    for repo_path in _get_managed_repos():
         repo_status = _get_repo_status(repo_path)
         if repo_status:
             repos.append(repo_status)
@@ -213,7 +238,7 @@ async def sync_repositories() -> GitSyncResponse:
     failed = 0
     skipped = 0
 
-    for repo_path in MANAGED_REPOS:
+    for repo_path in _get_managed_repos():
         repo_status = _get_repo_status(repo_path)
         if not repo_status:
             continue

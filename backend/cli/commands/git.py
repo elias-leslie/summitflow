@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Annotated, Any
 
+import httpx
 import typer
 
 from ..config import get_config
@@ -13,12 +14,57 @@ from ..output import is_compact, output_error, output_json
 
 app = typer.Typer(help="Git repository management")
 
+# SummitFlow API for dynamic repo discovery
+SUMMITFLOW_API = "http://localhost:8001/api/projects"
 
-# Known managed repositories (can be extended via config)
-MANAGED_REPOS = [
-    Path.home() / "summitflow",
-    Path.home() / ".claude",
-]
+# Config repos always included (not SummitFlow projects)
+CONFIG_REPOS = [Path.home() / ".claude"]
+
+# Fallback file when API unavailable
+FALLBACK_FILE = Path.home() / ".claude/config/managed-repos.txt"
+
+
+def _get_managed_repos() -> list[Path]:
+    """Get list of managed repos from SummitFlow API + config repos.
+
+    Priority:
+    1. SummitFlow API projects (root_path field)
+    2. Fallback to static config file if API unavailable
+    3. Always include CONFIG_REPOS (e.g., ~/.claude)
+
+    Returns:
+        List of Path objects for repos with valid .git directories.
+    """
+    repos: list[Path] = []
+
+    # Try SummitFlow API first
+    try:
+        response = httpx.get(SUMMITFLOW_API, timeout=2.0)
+        if response.status_code == 200:
+            projects = response.json()
+            for project in projects:
+                root_path = project.get("root_path")
+                if root_path:
+                    path = Path(root_path)
+                    if path.exists() and (path / ".git").exists():
+                        repos.append(path)
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+        # API unavailable - fall back to static config file
+        if FALLBACK_FILE.exists():
+            for line in FALLBACK_FILE.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                path = Path(line).expanduser()
+                if path.exists() and (path / ".git").exists():
+                    repos.append(path)
+
+    # Always include config repos
+    for config_repo in CONFIG_REPOS:
+        if config_repo.exists() and (config_repo / ".git").exists() and config_repo not in repos:
+            repos.append(config_repo)
+
+    return repos
 
 
 def _run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -124,7 +170,7 @@ def status(
     """
     repos: list[dict[str, Any]] = []
 
-    for repo_path in MANAGED_REPOS:
+    for repo_path in _get_managed_repos():
         repo_status = _get_repo_status(repo_path)
         if repo_status:
             repos.append(repo_status)
@@ -155,7 +201,7 @@ def sync(
     """
     results: list[dict[str, Any]] = []
 
-    for repo_path in MANAGED_REPOS:
+    for repo_path in _get_managed_repos():
         repo_status = _get_repo_status(repo_path)
         if not repo_status:
             continue
