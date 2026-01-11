@@ -114,7 +114,7 @@ st subtask pass <task-id> <subtask-id> # Mark subtask passed
 - **Commands vs Skills:** See `~/.claude/rules/commands-vs-skills.md` (commands are `/invoked`, skills auto-trigger)
 - **Task Planning:** Use `/plan_it` for new work, `/do_it` for execution
 - **Issue Tracking:** Use `st create "Fix: X" -t bug` for discovered bugs
-- **Rules Taxonomy:** See `/optimize_rules` command for canonical file structure (behavior, process, reference, domain)
+- **Rules Taxonomy:** See `/claude_it --audit` for config optimization (behavior, process, reference, domain)
 - **Memory System:** DISABLED - see `backend/.env` (`MEMORY_SYSTEM_ENABLED=false`)
 - **Permissions:** Intentionally empty in settings.json - bypass mode used. Do NOT suggest adding permission rules.
 
