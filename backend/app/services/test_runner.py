@@ -291,16 +291,6 @@ async def run_test(
         session_id=session_id,
     )
 
-    if test_type == "ui" and result.evidence_path and test_run:
-        from . import evidence_manager
-
-        evidence_manager.register_test_evidence(
-            project_id=project_id,
-            test_id=test_id,
-            test_run_id=test_run["id"],
-            evidence_path=result.evidence_path,
-        )
-
     # Auto-capture evidence for linked criteria on test pass
     if result.passed and test_run:
         await _auto_capture_evidence_for_criteria(

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from ...logging_config import get_logger
 from ...services.agent_hub_client import AgentType, get_agent
 from ...services.evidence_manager import (
-    get_evidence,
+    get_evidence_by_id,
     read_evidence_file,
     update_ai_review,
     update_user_review,
@@ -75,23 +75,11 @@ async def agent_review(
     The agent analyzes screenshot content, console errors, network failures,
     page state, and performance metrics. Returns proposed issues with fixes.
     """
-    parts = evidence_id.rsplit("-v", 1)
-    if len(parts) == 2:
-        prefix = parts[0]
-        version = int(parts[1]) if parts[1].isdigit() else None
-        prefix_parts = prefix.split("-")
-        if len(prefix_parts) >= 2:
-            capability_id = prefix_parts[0]
-            criterion_id = "-".join(prefix_parts[1:])
-        else:
-            raise HTTPException(status_code=400, detail="Invalid evidence_id format")
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid evidence_id format. Expected: CAP-XXX-ac-XXX-vN",
-        )
+    evidence = get_evidence_by_id(project_id, evidence_id)
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
 
-    evidence_data = read_evidence_file(project_id, capability_id, criterion_id, version)
+    evidence_data = read_evidence_file(project_id, evidence_id, evidence.get("version"))
     if not evidence_data:
         raise HTTPException(status_code=404, detail="Evidence data not found")
 
@@ -238,16 +226,14 @@ Always format response as valid JSON."""
             quality_status = "failed"
             confidence = score / 100.0
 
-        evidence_record = get_evidence(project_id, capability_id, criterion_id, version)
-        if evidence_record:
-            update_ai_review(
-                project_id=project_id,
-                evidence_id=evidence_record["evidence_id"],
-                quality_status=quality_status,
-                confidence=confidence,
-                ai_evidence=json.dumps(analysis),
-                reviewed_by=f"{request.agent}:{agent.get_model_name()}",
-            )
+        update_ai_review(
+            project_id=project_id,
+            evidence_id=evidence_id,
+            quality_status=quality_status,
+            confidence=confidence,
+            ai_evidence=json.dumps(analysis),
+            reviewed_by=f"{request.agent}:{agent.get_model_name()}",
+        )
 
         logger.info(
             "agent_review_complete",

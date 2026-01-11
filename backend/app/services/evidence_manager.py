@@ -6,25 +6,21 @@ This module provides functions to:
 - Manage AI and user reviews
 - Clean up old versions
 
-Evidence is stored at: {project_data_dir}/evidence/{capability_id}/{criterion_id}/v{n}/
+Evidence is stored at: {project_data_dir}/evidence/{evidence_id}/v{n}/
 Each version contains:
   - screenshot.png: Full page screenshot
   - evidence.json: Console, network, page state, performance data
 
-Extracted from portfolio-ai/backend/app/services/artifact_manager.py
-Changes from source:
-  - Renamed "artifacts" -> "evidence" throughout
-  - Added project_id parameter to all functions
-  - Uses get_connection() context manager
-  - Evidence paths are project-relative
-  - Database operations moved to storage/evidence.py
+Evidence is linked to:
+- task_id: For task verification workflows
+- explorer_entry_id: For explorer-driven captures (pages, components)
+At least one is required.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -41,57 +37,70 @@ CAPTURE_TIMEOUT_SECONDS = 60
 
 
 def get_evidence_base_dir(project_id: str) -> Path:
-    """Get evidence base directory for a project.
-
-    TODO: Fetch from project config in database.
-    For now, use a standard path structure.
-    """
+    """Get evidence base directory for a project."""
     import os
 
     data_dir = os.environ.get("SUMMITFLOW_DATA_DIR", "/home/kasadis/summitflow/data")
     return Path(data_dir) / "projects" / project_id / "evidence"
 
 
-def get_browser_scripts_dir(project_id: str) -> Path:
-    """Get browser scripts directory.
-
-    These are part of the SummitFlow/Claude installation, shared across projects.
-    """
+def get_browser_scripts_dir() -> Path:
+    """Get browser scripts directory."""
     import os
 
     claude_dir = os.environ.get("CLAUDE_CONFIG_DIR", "/home/kasadis/.claude")
     return Path(claude_dir) / "skills" / "browser-automation" / "scripts"
 
 
-def generate_evidence_id(capability_id: str, criterion_id: str, version: int) -> str:
-    """Generate a unique evidence ID."""
-    return f"{capability_id}-{criterion_id}-v{version}"
+def get_evidence_path(
+    project_id: str,
+    evidence_id: str,
+    version: int,
+) -> Path:
+    """Get the path for an evidence version.
+
+    Uses flat structure: evidence/{evidence_id}/v{version}/
+    """
+    return get_evidence_base_dir(project_id) / evidence_id / f"v{version}"
 
 
 async def capture_evidence(
     project_id: str,
     url: str,
-    capability_id: str,
-    criterion_id: str,
+    *,
+    task_id: str | None = None,
+    explorer_entry_id: int | None = None,
+    evidence_type: str = "screenshot",
     criterion_db_id: int | None = None,
     test_run_id: int | None = None,
     auto_captured: bool = False,
+    environment: str = "local",
+    viewport_name: str | None = None,
 ) -> dict[str, Any]:
-    """Capture evidence for a UI criterion using the capture-evidence.js script.
+    """Capture evidence for a URL using the capture-evidence.js script.
 
     Args:
         project_id: Project ID for scoping
         url: The full URL to capture
-        capability_id: Capability ID (e.g., login, password-reset)
-        criterion_id: Criterion ID (e.g., ac-001)
+        task_id: Task ID for linking (at least one of task_id/explorer_entry_id required)
+        explorer_entry_id: Explorer entry ID for linking
+        evidence_type: Type of evidence (screenshot, mockup, test-output, api-response, console_error)
         criterion_db_id: FK to acceptance_criteria.id (optional)
         test_run_id: FK to test_runs.id if captured during test run (optional)
         auto_captured: True if evidence was auto-captured on test pass
+        environment: Environment (local, staging, production)
+        viewport_name: Viewport name for multi-viewport captures
 
     Returns:
         Dict with success, version, file_path, evidence data
     """
-    scripts_dir = get_browser_scripts_dir(project_id)
+    if not task_id and not explorer_entry_id:
+        return {
+            "success": False,
+            "error": "At least one of task_id or explorer_entry_id is required",
+        }
+
+    scripts_dir = get_browser_scripts_dir()
     script_path = scripts_dir / "capture-evidence.js"
     evidence_base = get_evidence_base_dir(project_id)
 
@@ -103,14 +112,20 @@ async def capture_evidence(
 
     evidence_base.mkdir(parents=True, exist_ok=True)
 
+    # Generate evidence_id upfront so we can create the directory structure
+    evidence_id = evidence_storage.generate_evidence_id()
+    version = 1  # New evidence always starts at v1
+
+    # Create the evidence directory
+    evidence_dir = get_evidence_path(project_id, evidence_id, version)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "node",
             str(script_path),
             url,
-            capability_id,
-            criterion_id,
-            str(evidence_base),
+            str(evidence_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -131,25 +146,52 @@ async def capture_evidence(
         if result_line:
             parsed: dict[str, Any] = json.loads(result_line)
 
-            # If capture was successful and we have FK links, save to database
-            if parsed.get("success") and (criterion_db_id or test_run_id or auto_captured):
-                version = parsed.get("version", 1)
-                file_path = parsed.get("file_path", "")
+            if parsed.get("success"):
+                file_path = str(evidence_dir.relative_to(evidence_base))
+                file_size = parsed.get("file_size_bytes")
 
-                # Save with new FK columns
-                save_result = save_evidence(
+                # Save to database
+                with get_connection() as conn, conn.cursor() as cur:
+                    # Mark previous versions as stale
+                    evidence_storage.mark_previous_as_stale(
+                        cur,
+                        project_id,
+                        task_id=task_id,
+                        explorer_entry_id=explorer_entry_id,
+                        evidence_type=evidence_type,
+                    )
+
+                    # Insert new record
+                    rec_id, rec_evidence_id, captured_ts = evidence_storage.insert_evidence_record(
+                        cur,
+                        project_id,
+                        file_path,
+                        file_size,
+                        task_id=task_id,
+                        explorer_entry_id=explorer_entry_id,
+                        evidence_type=evidence_type,
+                        version=version,
+                        criterion_db_id=criterion_db_id,
+                        test_run_id=test_run_id,
+                        auto_captured=auto_captured,
+                        environment=environment,
+                        viewport_name=viewport_name,
+                    )
+                    conn.commit()
+
+                parsed["evidence_id"] = rec_evidence_id
+                parsed["db_id"] = rec_id
+                parsed["file_path"] = file_path
+                parsed["version"] = version
+
+                logger.info(
+                    "evidence_captured",
                     project_id=project_id,
-                    capability_id=capability_id,
-                    criterion_id=criterion_id,
+                    evidence_id=rec_evidence_id,
+                    task_id=task_id,
+                    explorer_entry_id=explorer_entry_id,
                     version=version,
-                    file_path=file_path,
-                    file_size_bytes=parsed.get("file_size_bytes"),
-                    criterion_db_id=criterion_db_id,
-                    test_run_id=test_run_id,
-                    auto_captured=auto_captured,
                 )
-                parsed["evidence_id"] = save_result.get("evidence_id")
-                parsed["db_id"] = save_result.get("id")
 
             return parsed
 
@@ -170,60 +212,169 @@ async def capture_evidence(
         }
 
 
+async def capture_console_errors(
+    project_id: str,
+    url: str,
+    *,
+    task_id: str | None = None,
+    explorer_entry_id: int | None = None,
+    console_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Capture console errors as separate evidence.
+
+    Args:
+        project_id: Project ID for scoping
+        url: The URL where errors were captured
+        task_id: Task ID for linking
+        explorer_entry_id: Explorer entry ID for linking
+        console_data: Pre-captured console data (errors, warnings)
+
+    Returns:
+        Dict with success, evidence_id
+    """
+    if not task_id and not explorer_entry_id:
+        return {
+            "success": False,
+            "error": "At least one of task_id or explorer_entry_id is required",
+        }
+
+    if not console_data or not console_data.get("errors"):
+        return {
+            "success": False,
+            "error": "No console errors to capture",
+        }
+
+    evidence_base = get_evidence_base_dir(project_id)
+    evidence_id = evidence_storage.generate_evidence_id()
+    version = 1
+
+    evidence_dir = get_evidence_path(project_id, evidence_id, version)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save console data as JSON
+    console_file = evidence_dir / "console_errors.json"
+    console_file.write_text(
+        json.dumps(
+            {
+                "url": url,
+                "captured_at": datetime.now().isoformat(),
+                "errors": console_data.get("errors", []),
+                "warnings": console_data.get("warnings", []),
+                "error_count": len(console_data.get("errors", [])),
+                "warning_count": len(console_data.get("warnings", [])),
+            },
+            indent=2,
+        )
+    )
+
+    file_path = str(evidence_dir.relative_to(evidence_base))
+    file_size = console_file.stat().st_size
+
+    with get_connection() as conn, conn.cursor() as cur:
+        rec_id, rec_evidence_id, _ = evidence_storage.insert_evidence_record(
+            cur,
+            project_id,
+            file_path,
+            file_size,
+            task_id=task_id,
+            explorer_entry_id=explorer_entry_id,
+            evidence_type="console_error",
+            version=version,
+        )
+        conn.commit()
+
+    logger.info(
+        "console_errors_captured",
+        project_id=project_id,
+        evidence_id=rec_evidence_id,
+        error_count=len(console_data.get("errors", [])),
+    )
+
+    return {
+        "success": True,
+        "evidence_id": rec_evidence_id,
+        "db_id": rec_id,
+        "file_path": file_path,
+        "error_count": len(console_data.get("errors", [])),
+    }
+
+
 def save_evidence(
     project_id: str,
-    capability_id: str,
-    criterion_id: str,
-    version: int,
     file_path: str,
+    *,
+    task_id: str | None = None,
+    explorer_entry_id: int | None = None,
+    evidence_type: str = "screenshot",
     file_size_bytes: int | None = None,
-    evidence_data: dict[str, Any] | None = None,
     criterion_db_id: int | None = None,
     test_run_id: int | None = None,
     auto_captured: bool = False,
+    linked_evidence_id: int | None = None,
+    mockup_status: str | None = None,
+    environment: str = "local",
+    viewport_name: str | None = None,
 ) -> dict[str, Any]:
     """Save an evidence record to the database.
 
     Args:
         project_id: Project ID for scoping
-        capability_id: Feature ID (e.g., FEAT-001)
-        criterion_id: Criterion ID (e.g., ac-001)
-        version: Version number
         file_path: Relative path to evidence directory
+        task_id: Task ID for linking (at least one required)
+        explorer_entry_id: Explorer entry ID for linking
+        evidence_type: Type of evidence
         file_size_bytes: Total size of files
-        evidence_data: Parsed evidence.json data
         criterion_db_id: FK to acceptance_criteria.id (optional)
         test_run_id: FK to test_runs.id if captured during test run (optional)
         auto_captured: True if evidence was auto-captured on test pass
+        linked_evidence_id: FK to evidence.id for mockup comparison
+        mockup_status: Status for mockup evidence
+        environment: Environment (local, staging, production)
+        viewport_name: Viewport name for multi-viewport captures
 
     Returns:
         Created evidence record
     """
-    evidence_id = generate_evidence_id(capability_id, criterion_id, version)
+    version = evidence_storage.get_next_version(
+        project_id,
+        task_id=task_id,
+        explorer_entry_id=explorer_entry_id,
+        evidence_type=evidence_type,
+    )
 
     with get_connection() as conn, conn.cursor() as cur:
-        evidence_storage.mark_previous_as_stale(cur, project_id, capability_id, criterion_id)
+        evidence_storage.mark_previous_as_stale(
+            cur,
+            project_id,
+            task_id=task_id,
+            explorer_entry_id=explorer_entry_id,
+            evidence_type=evidence_type,
+        )
         rec_id, rec_evidence_id, captured_ts = evidence_storage.insert_evidence_record(
             cur,
             project_id,
-            evidence_id,
-            capability_id,
-            criterion_id,
             file_path,
             file_size_bytes,
-            version,
-            criterion_db_id,
-            test_run_id,
-            auto_captured,
+            task_id=task_id,
+            explorer_entry_id=explorer_entry_id,
+            evidence_type=evidence_type,
+            version=version,
+            criterion_db_id=criterion_db_id,
+            test_run_id=test_run_id,
+            auto_captured=auto_captured,
+            linked_evidence_id=linked_evidence_id,
+            mockup_status=mockup_status,
+            environment=environment,
+            viewport_name=viewport_name,
         )
         conn.commit()
 
         logger.info(
             "evidence_saved",
             project_id=project_id,
-            evidence_id=evidence_id,
-            capability_id=capability_id,
-            criterion_id=criterion_id,
+            evidence_id=rec_evidence_id,
+            task_id=task_id,
+            explorer_entry_id=explorer_entry_id,
             version=version,
         )
 
@@ -240,18 +391,24 @@ def save_evidence(
         }
 
 
-# Re-export storage functions for backwards compatibility
-get_evidence = evidence_storage.get_evidence
+# Re-export storage functions
+get_evidence_by_id = evidence_storage.get_evidence_by_id
+get_evidence_for_task = evidence_storage.get_evidence_for_task
+get_evidence_for_entry = evidence_storage.get_evidence_for_entry
 get_latest_evidence = evidence_storage.get_latest_evidence
 get_next_version = evidence_storage.get_next_version
-get_evidence_versions = evidence_storage.get_evidence_versions
 list_evidence = evidence_storage.list_evidence
 get_pending_review = evidence_storage.get_pending_review
 get_needs_user_review = evidence_storage.get_needs_user_review
 get_with_user_notes = evidence_storage.get_with_user_notes
 get_auto_captured_evidence = evidence_storage.get_auto_captured_evidence
 get_summary = evidence_storage.get_summary
-get_test_evidence = evidence_storage.get_test_evidence
+get_mockups_for_entry = evidence_storage.get_mockups_for_entry
+get_approved_mockup = evidence_storage.get_approved_mockup
+update_mockup_status = evidence_storage.update_mockup_status
+EVIDENCE_TYPES = evidence_storage.EVIDENCE_TYPES
+MOCKUP_STATUSES = evidence_storage.MOCKUP_STATUSES
+generate_evidence_id = evidence_storage.generate_evidence_id
 
 
 def update_ai_review(
@@ -307,80 +464,26 @@ def update_user_review(
     return result
 
 
-def cleanup_old_versions(
-    project_id: str,
-    capability_id: str | None = None,
-    max_versions: int = MAX_VERSIONS_TO_KEEP,
-    dry_run: bool = False,
-) -> dict[str, Any]:
-    """Delete old evidence versions beyond retention limit.
-
-    Args:
-        project_id: Project ID for scoping
-        capability_id: Optional filter by feature
-        max_versions: Max versions to keep per criterion
-        dry_run: If True, only report what would be deleted
-
-    Returns:
-        Summary of cleanup operation
-    """
-    evidence_base = get_evidence_base_dir(project_id)
-    deleted_count = 0
-    deleted_size = 0
-
-    with get_connection() as conn, conn.cursor() as cur:
-        pairs = evidence_storage.get_evidence_pairs_to_clean(cur, project_id, capability_id)
-
-        for feat_id, crit_id in pairs:
-            count, size = evidence_storage.delete_old_versions_for_pair(
-                cur, project_id, feat_id, crit_id, max_versions, evidence_base, dry_run
-            )
-            deleted_count += count
-            deleted_size += size
-
-        if not dry_run:
-            conn.commit()
-
-    logger.info(
-        "cleanup_old_versions",
-        project_id=project_id,
-        deleted_count=deleted_count,
-        deleted_size_bytes=deleted_size,
-        dry_run=dry_run,
-    )
-
-    return {
-        "deleted_count": deleted_count,
-        "deleted_size_bytes": deleted_size,
-        "dry_run": dry_run,
-    }
-
-
 def read_evidence_file(
     project_id: str,
-    capability_id: str,
-    criterion_id: str,
+    evidence_id: str,
     version: int | None = None,
 ) -> dict[str, Any] | None:
     """Read the evidence.json file for evidence.
 
     Args:
         project_id: Project ID for scoping
-        capability_id: Feature ID
-        criterion_id: Criterion ID
-        version: Optional version (defaults to current)
+        evidence_id: Evidence ID (ev-{uuid})
+        version: Optional version (defaults to 1)
 
     Returns:
         Parsed evidence.json data or None
     """
-    evidence_base = get_evidence_base_dir(project_id)
+    if version is None:
+        version = 1
 
-    if version:
-        evidence_path = (
-            evidence_base / capability_id / criterion_id / f"v{version}" / "evidence.json"
-        )
-    else:
-        evidence_path = evidence_base / capability_id / criterion_id / "current" / "evidence.json"
+    evidence_dir = get_evidence_path(project_id, evidence_id, version)
+    evidence_path = evidence_dir / "evidence.json"
 
     if not evidence_path.exists():
         return None
@@ -392,84 +495,3 @@ def read_evidence_file(
     except Exception as e:
         logger.error("read_evidence_failed", path=str(evidence_path), error=str(e))
         return None
-
-
-# ============================================================
-# Test Evidence Integration
-# ============================================================
-
-
-def register_test_evidence(
-    project_id: str,
-    test_id: str,
-    test_run_id: int,
-    evidence_path: str,
-    capability_id: str | None = None,
-) -> dict[str, Any] | None:
-    """Register evidence from a UI test run.
-
-    Creates an evidence record linked to a test run. Uses test_id as capability_id
-    and "test-run" as criterion_id for test-generated evidence.
-
-    Args:
-        project_id: Project ID for scoping
-        test_id: The test ID (used as capability_id for evidence)
-        test_run_id: The test_runs table ID for linking
-        evidence_path: Path to the evidence file (screenshot, etc.)
-        capability_id: Optional capability ID if test is linked to one
-
-    Returns:
-        Created evidence record or None if path doesn't exist
-    """
-    evidence_file = Path(evidence_path)
-    if not evidence_file.exists():
-        logger.warning(
-            "test_evidence_not_found",
-            project_id=project_id,
-            test_id=test_id,
-            path=evidence_path,
-        )
-        return None
-
-    # Use test_id as capability_id and "test-run-{id}" as criterion for uniqueness
-    test_capability_id = f"test-{test_id}"
-    criterion_id = f"run-{test_run_id}"
-
-    # Get next version
-    version = evidence_storage.get_next_version(project_id, test_capability_id, criterion_id)
-
-    # Get file size
-    file_size = evidence_file.stat().st_size if evidence_file.exists() else 0
-
-    # Copy evidence to standard location
-    evidence_base = get_evidence_base_dir(project_id)
-    dest_dir = evidence_base / test_capability_id / criterion_id / f"v{version}"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    dest_path = dest_dir / evidence_file.name
-    shutil.copy2(evidence_file, dest_path)
-
-    # Save evidence record with test_run_id link
-    result = save_evidence(
-        project_id=project_id,
-        capability_id=test_capability_id,
-        criterion_id=criterion_id,
-        version=version,
-        file_path=str(dest_dir.relative_to(evidence_base)),
-        file_size_bytes=file_size,
-        test_run_id=test_run_id,
-    )
-
-    # Update test_runs with evidence_path
-    evidence_storage.update_test_run_evidence_path(test_run_id, str(dest_path))
-
-    logger.info(
-        "test_evidence_registered",
-        project_id=project_id,
-        test_id=test_id,
-        test_run_id=test_run_id,
-        evidence_id=result.get("evidence_id"),
-        version=version,
-    )
-
-    return result

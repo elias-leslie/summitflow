@@ -90,6 +90,7 @@ def init_schema() -> None:
         # ============================================================
 
         # Evidence table - evidence storage for verification
+        # Uses task_id and/or explorer_entry_id (at least one required via CHECK constraint)
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS evidence (
@@ -98,7 +99,9 @@ def init_schema() -> None:
                     evidence_id VARCHAR(50) NOT NULL,
                     task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
                     explorer_entry_id INTEGER REFERENCES explorer_entries(id) ON DELETE SET NULL,
-                    evidence_type VARCHAR(50) DEFAULT 'screenshot',
+                    criterion_db_id INTEGER REFERENCES acceptance_criteria(id) ON DELETE CASCADE,
+                    evidence_type VARCHAR(50) DEFAULT 'screenshot'
+                        CHECK (evidence_type IN ('screenshot', 'mockup', 'test-output', 'api-response', 'console_error')),
                     environment VARCHAR(50) DEFAULT 'local',
                     sub_element_selector VARCHAR(500),
                     viewport_name VARCHAR(50),
@@ -117,15 +120,23 @@ def init_schema() -> None:
                     user_reviewed_at TIMESTAMPTZ,
                     user_approved BOOLEAN,
                     user_notes TEXT,
+                    -- Mockup support fields
+                    linked_evidence_id INTEGER REFERENCES evidence(id) ON DELETE SET NULL,
+                    mockup_status VARCHAR(20) CHECK (mockup_status IN ('generated', 'pending_approval', 'approved', 'rejected') OR mockup_status IS NULL),
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, evidence_id)
+                    UNIQUE(project_id, evidence_id),
+                    CONSTRAINT evidence_task_or_entry_check CHECK (task_id IS NOT NULL OR explorer_entry_id IS NOT NULL)
                 )
                 """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_explorer_entry ON evidence(explorer_entry_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_criterion_db ON evidence(criterion_db_id)"
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_environment ON evidence(environment)")
         cur.execute(
@@ -134,6 +145,9 @@ def init_schema() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_linked ON evidence(linked_evidence_id) WHERE linked_evidence_id IS NOT NULL"
         )
 
         # ============================================================
@@ -512,8 +526,6 @@ def init_schema() -> None:
             ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
             # Pipeline v2 fields - task context for /plan_it and /do_it
             ("spirit_anti TEXT", "tasks"),
-            # Pipeline v2 - evidence links to tasks now
-            ("task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "evidence"),
             ("decisions JSONB", "tasks"),
             ("constraints JSONB", "tasks"),
             ("done_when JSONB", "tasks"),
