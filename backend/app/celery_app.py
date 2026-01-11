@@ -144,6 +144,11 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24,  # Every 24 hours
         "kwargs": {"environment": "local", "dry_run": False},
     },
+    # Scheduled backups - check and run due backups every hour
+    "run-scheduled-backups": {
+        "task": "summitflow.run_scheduled_backups",
+        "schedule": 60 * 60,  # Hourly
+    },
 }
 
 
@@ -180,6 +185,7 @@ def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) 
 from app.tasks import (  # noqa: F401, E402
     agent_runner,
     autonomous,
+    backup,
     embedding_processor,
     enrichment,
     evidence_capture,
