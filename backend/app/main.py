@@ -13,6 +13,7 @@ from .api import (
     accepted_specs,
     agent_sessions,
     autonomous,
+    backups,
     build,
     capabilities,
     celery_endpoints,
@@ -102,6 +103,7 @@ app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
+app.include_router(backups.router, prefix="/api", tags=["backups"])
 
 
 @app.get("/health")
