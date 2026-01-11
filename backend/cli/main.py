@@ -81,6 +81,8 @@ TEST: test list [--type T] | link <id> --criterion <id> | import --framework pyt
 
 WORKTREE: worktree list | worktree prune
 
+GIT: git status | git sync
+
 SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status

@@ -647,12 +647,11 @@ def auto_claim_with_worktree(
         # Create worktree
         worktree_info = manager.create_worktree(project_id, task_id)
 
-        # Update task with worktree info
+        # Update task with branch info (worktree path derivable from task_id)
         task_store.update_task(
             task_id,
             branch_name=worktree_info.branch,
-            worktree_path=str(worktree_info.path),
-            pre_merge_sha=base_sha,
+            status="running",
         )
 
         logger.info(
