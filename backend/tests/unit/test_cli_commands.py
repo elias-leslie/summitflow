@@ -332,3 +332,63 @@ class TestStepCreate:
         )
 
         assert result.exit_code == 1
+
+
+class TestBackupCommands:
+    """Test st backup commands."""
+
+    def test_backup_list(self):
+        """Test st backup list command."""
+        from cli.commands.backup import app as backup_app
+
+        result = runner.invoke(backup_app, ["list"])
+        # Should succeed even with no backups
+        assert result.exit_code == 0
+
+    def test_backup_list_compact(self):
+        """Test st --compact backup list outputs TOON format."""
+        from cli.commands.backup import app as backup_app
+        from cli.output import set_compact_output
+
+        # Enable compact mode
+        set_compact_output(True)
+        try:
+            result = runner.invoke(backup_app, ["list"])
+            assert result.exit_code == 0
+            assert "BACKUPS[" in result.output
+        finally:
+            set_compact_output(False)
+
+    def test_backup_schedule_view(self):
+        """Test st backup schedule shows current config."""
+        from cli.commands.backup import app as backup_app
+
+        result = runner.invoke(backup_app, ["schedule"])
+        # Should succeed even with no schedule configured
+        assert result.exit_code == 0
+
+    def test_backup_status(self):
+        """Test st backup status shows latest backup."""
+        from cli.commands.backup import app as backup_app
+
+        result = runner.invoke(backup_app, ["status"])
+        # Should succeed even with no backups
+        assert result.exit_code == 0
+
+    def test_backup_create_help(self):
+        """Test st backup create --help."""
+        from cli.commands.backup import app as backup_app
+
+        result = runner.invoke(backup_app, ["create", "--help"])
+        assert result.exit_code == 0
+        assert "--note" in result.output
+        assert "--keep-local" in result.output
+
+    def test_backup_restore_help(self):
+        """Test st backup restore --help."""
+        from cli.commands.backup import app as backup_app
+
+        result = runner.invoke(backup_app, ["restore", "--help"])
+        assert result.exit_code == 0
+        assert "--dry-run" in result.output
+        assert "--yes" in result.output

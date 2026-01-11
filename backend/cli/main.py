@@ -6,6 +6,7 @@ import typer
 
 from .commands import (
     autonomous,
+    backup,
     capabilities,
     components,
     criterion,
@@ -83,6 +84,15 @@ WORKTREE: worktree list | worktree prune
 
 GIT: git status | git sync
 
+BACKUP:
+  backup list [--limit N] [--status S]
+  backup create [--note 'message'] [--keep-local]
+  backup restore <id> [--dry-run] [--yes]
+  backup status [<task-id>]
+  backup schedule [--enable|--disable] [--frequency daily|weekly|monthly] [--retention N]
+  backup show <id>
+  backup delete <id> [--yes]
+
 SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status
@@ -123,6 +133,7 @@ app.add_typer(components.app, name="component")
 app.add_typer(criterion.app, name="criterion")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
+app.add_typer(backup.app, name="backup")
 
 
 @app.callback()
