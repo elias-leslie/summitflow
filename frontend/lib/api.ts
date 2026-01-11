@@ -11,9 +11,14 @@ export * from "./api/roundtable";
 export * from "./api/extraction";
 export * from "./api/tests";
 export * from "./api/components";
+export * from "./api/git";
 
 // Re-export utilities for consumers that need them directly
-export { buildQueryString, fetchWithErrorHandling, getApiBase } from "./api/utils";
+export {
+  buildQueryString,
+  fetchWithErrorHandling,
+  getApiBase,
+} from "./api/utils";
 
 // Legacy type export for backwards compatibility
 export interface AcceptanceCriterion {
