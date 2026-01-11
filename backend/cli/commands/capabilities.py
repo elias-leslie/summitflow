@@ -1,7 +1,13 @@
-"""Capability commands for the CLI."""
+"""Capability commands for the CLI.
+
+DEPRECATED: The capability system has been replaced by task-based acceptance criteria.
+Use `st criterion create --task <task-id>` to create criteria linked to tasks.
+These commands will be removed in a future version.
+"""
 
 from __future__ import annotations
 
+import sys
 from typing import Annotated
 
 import typer
@@ -14,7 +20,16 @@ from ..output import (
     output_json,
 )
 
-app = typer.Typer(help="Capability management commands")
+app = typer.Typer(help="[DEPRECATED] Capability management commands - use task criteria instead")
+
+
+def _warn_deprecated() -> None:
+    """Print deprecation warning."""
+    print(
+        "\033[33mWARNING: The capability system is deprecated. "
+        "Use 'st criterion create --task <task-id>' instead.\033[0m",
+        file=sys.stderr,
+    )
 
 
 @app.command("list")
@@ -24,6 +39,7 @@ def list_caps() -> None:
     Examples:
         st capability list
     """
+    _warn_deprecated()
     client = STClient()
 
     try:
@@ -44,6 +60,7 @@ def show(
     Examples:
         st capability show login
     """
+    _warn_deprecated()
     client = STClient()
 
     try:
@@ -76,6 +93,7 @@ def create(
         st capability create user-login --component cli
         st capability create user-login -c cli --name "User Login" -p 1
     """
+    _warn_deprecated()
     client = STClient()
 
     # Use capability_id as name if not provided
@@ -129,6 +147,7 @@ def update(
         st capability update user-login --priority 1
         st capability update user-login --status deprecated
     """
+    _warn_deprecated()
     client = STClient()
 
     # Build update dict
@@ -164,6 +183,7 @@ def verify(
     Examples:
         st capability verify login
     """
+    _warn_deprecated()
     client = STClient()
 
     try:

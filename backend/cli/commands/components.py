@@ -1,7 +1,12 @@
-"""Component commands for the CLI."""
+"""Component commands for the CLI.
+
+DEPRECATED: The component system has been replaced by task-based workflows.
+These commands will be removed in a future version.
+"""
 
 from __future__ import annotations
 
+import sys
 from typing import Annotated
 
 import typer
@@ -9,7 +14,15 @@ import typer
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
 
-app = typer.Typer(help="Component management commands")
+app = typer.Typer(help="[DEPRECATED] Component management commands")
+
+
+def _warn_deprecated() -> None:
+    """Print deprecation warning."""
+    print(
+        "\033[33mWARNING: The component system is deprecated and will be removed.\033[0m",
+        file=sys.stderr,
+    )
 
 
 @app.command("list")
@@ -19,6 +32,7 @@ def list_components() -> None:
     Examples:
         st component list
     """
+    _warn_deprecated()
     client = STClient()
 
     try:
@@ -39,6 +53,7 @@ def show(
     Examples:
         st component show cli
     """
+    _warn_deprecated()
     client = STClient()
 
     try:
@@ -67,6 +82,7 @@ def create(
         st component create cli-tools
         st component create cli-tools --name "CLI Tools" -d "Command line interface"
     """
+    _warn_deprecated()
     client = STClient()
 
     # Use component_id as name if not provided

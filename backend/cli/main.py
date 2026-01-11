@@ -68,15 +68,13 @@ DEP:
 
 PROJECTS: projects list | projects current
 
-CAPABILITY: capability list | show <id> | create <name> --component <id> | update <id> [--name N] [-d desc] [-p 0-4] [-s status] | verify <id>
-
-COMPONENT: component list | show <id> | create <name> [-d desc]
-
 CRITERION:
-  criterion list --capability <cap-id>                             # list criteria for capability
-  criterion create <text> --capability <cap-id> [--category C] [--measurement M] [--threshold T]
-  criterion update <id> [--criterion text] [--category C] [--measurement M] [--threshold T]
+  criterion list --task <task-id>                                  # list criteria for task
+  criterion create <text> --task <task-id> [--category C] [--verify-by test|agent|human] [--verify-command cmd] [--expected-output text]
+  criterion update <id> [--criterion text] [--category C] [--verify-command cmd] [--verify-by M] [--expected-output text]
   criterion verify <task-id> <criterion-id> --by test|manual       # verify criterion for task
+
+[DEPRECATED] CAPABILITY/COMPONENT: These systems are deprecated. Use task criteria instead.
 
 TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
 

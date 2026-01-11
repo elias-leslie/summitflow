@@ -53,38 +53,54 @@ def list_criteria(
 @app.command("create")
 def create_criterion(
     criterion: Annotated[str, typer.Argument(help="Criterion text (min 10 chars)")],
-    capability_id: Annotated[str, typer.Option("--capability", "-c", help="Capability to link")],
+    task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID to link")] = None,
     category: Annotated[
         str, typer.Option("--category", help="correctness, performance, security, quality")
     ] = "correctness",
-    measurement: Annotated[
-        str, typer.Option("--measurement", "-m", help="test, metric, tool, manual")
+    verify_command: Annotated[
+        str | None, typer.Option("--verify-command", "-v", help="Bash command to verify")
+    ] = None,
+    verify_by: Annotated[
+        str, typer.Option("--verify-by", help="Verification method: test, agent, human, opus")
     ] = "test",
-    threshold: Annotated[
-        str | None, typer.Option("--threshold", "-t", help="Threshold value e.g., '<200ms'")
+    expected_output: Annotated[
+        str | None, typer.Option("--expected-output", "-e", help="Expected output for verification")
     ] = None,
 ) -> None:
-    """Create a criterion and link to a capability.
+    """Create a criterion and link to a task.
 
     Examples:
-        st criterion create "API response time under 200ms" --capability api-performance --category performance --threshold "<200ms"
-        st criterion create "All tests pass" -c task-tracking
+        st criterion create "All pytest tests pass" --task task-abc123 --verify-by test
+        st criterion create "UI renders correctly" -t task-abc123 --verify-by agent -v "ba check http://localhost:3001 --no-errors"
     """
+    if not task_id:
+        output_error("--task is required")
+        raise typer.Exit(1)
+
     client = STClient()
 
+    criterion_data = {
+        "criterion": criterion,
+        "category": category,
+        "verify_by": verify_by,
+    }
+    if verify_command:
+        criterion_data["verify_command"] = verify_command
+    if expected_output:
+        criterion_data["expected_output"] = expected_output
+
     try:
-        result = client.create_criterion(
-            capability_id=capability_id,
-            criterion=criterion,
-            category=category,
-            measurement=measurement,
-            threshold=threshold,
-        )
+        result = client.batch_create_task_criteria(task_id, [criterion_data])
     except APIError as e:
         handle_api_error(e)
         return
 
-    output_json(result)
+    # Return the created criterion (first item from batch)
+    if result.get("created"):
+        output_json(result["created"][0])
+    else:
+        output_error(f"Failed to create criterion: {result.get('errors', 'Unknown error')}")
+        raise typer.Exit(1)
 
 
 @app.command("update")
