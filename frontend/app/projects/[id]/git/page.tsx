@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import {
-  fetchGitStatus,
+  fetchProjectGitStatus,
   syncRepositories,
   fetchWorktrees,
   type RepoStatus,
@@ -36,8 +36,8 @@ export default function GitDashboardPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["git-status"],
-    queryFn: fetchGitStatus,
+    queryKey: ["git-status", projectId],
+    queryFn: () => fetchProjectGitStatus(projectId),
     refetchInterval: 30000,
   });
 
@@ -50,7 +50,7 @@ export default function GitDashboardPage() {
     mutationFn: syncRepositories,
     onSuccess: (data) => {
       setSyncResults(data.results);
-      queryClient.invalidateQueries({ queryKey: ["git-status"] });
+      queryClient.invalidateQueries({ queryKey: ["git-status", projectId] });
       setTimeout(() => setSyncResults(null), 5000);
     },
   });

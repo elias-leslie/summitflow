@@ -174,6 +174,34 @@ async def get_git_status() -> GitStatusResponse:
     return GitStatusResponse(repositories=repos, total=len(repos))
 
 
+@router.get(
+    "/projects/{project_id}/git/status",
+    response_model=GitStatusResponse,
+    tags=["git"],
+)
+async def get_project_git_status(project_id: str) -> GitStatusResponse:
+    """Get git status for a specific project's repository."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        project_root = row[0]
+
+    if not project_root:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    repo_path = Path(project_root)
+    repo_status = _get_repo_status(repo_path)
+
+    if not repo_status:
+        return GitStatusResponse(repositories=[], total=0)
+
+    return GitStatusResponse(repositories=[repo_status], total=1)
+
+
 @router.post("/git/sync", response_model=GitSyncResponse, tags=["git"])
 async def sync_repositories() -> GitSyncResponse:
     """Sync all managed repositories by pulling from remote.

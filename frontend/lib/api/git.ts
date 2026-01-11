@@ -62,6 +62,18 @@ export async function fetchGitStatus(): Promise<GitStatusResponse> {
 }
 
 /**
+ * Get git status for a specific project.
+ */
+export async function fetchProjectGitStatus(
+  projectId: string,
+): Promise<GitStatusResponse> {
+  return fetchWithErrorHandling<GitStatusResponse>(
+    `${getApiBase()}/api/projects/${projectId}/git/status`,
+    { errorMessage: "Failed to fetch project git status" },
+  );
+}
+
+/**
  * Sync all repositories (pull from remote).
  */
 export async function syncRepositories(): Promise<GitSyncResponse> {
