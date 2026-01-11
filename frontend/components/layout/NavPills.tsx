@@ -11,6 +11,7 @@ import {
   Settings2,
   FlaskConical,
   FileCode,
+  GitBranch,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -22,6 +23,7 @@ type TabId =
   | "prompts"
   | "evidence"
   | "explorer"
+  | "git"
   | "settings";
 
 interface TabConfig {
@@ -105,6 +107,17 @@ const tabs: TabConfig[] = [
     inactiveClasses: "text-slate-500 hover:bg-teal-500/10 hover:text-teal-400",
     iconActiveClasses: "text-teal-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-teal-400",
+  },
+  {
+    id: "git",
+    label: "Git",
+    icon: GitBranch,
+    activeClasses: "bg-violet-500/15 text-violet-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-violet-500/10 hover:text-violet-400",
+    iconActiveClasses: "text-violet-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-violet-400",
+    isRoute: true,
   },
   {
     id: "settings",
