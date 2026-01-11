@@ -2,6 +2,7 @@
 // All domain-specific API functions are now in separate modules under lib/api/
 
 // Re-export domain modules
+export * from "./api/backups";
 export * from "./api/evidence";
 export * from "./api/tasks";
 export * from "./api/notifications";
