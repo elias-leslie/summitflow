@@ -369,3 +369,220 @@ async def get_pr_status(task_id: str) -> dict[str, Any]:
         "branch_name": task.get("branch_name"),
         "status": task.get("status"),
     }
+
+
+class WorktreeDiffResponse(BaseModel):
+    """Response for worktree diff."""
+
+    task_id: str
+    files: list[dict[str, str]]
+    diff: str
+    commit_count: int
+    additions: int
+    deletions: int
+
+
+@router.get(
+    "/projects/{project_id}/worktrees/{task_id}/diff",
+    response_model=WorktreeDiffResponse,
+    tags=["git"],
+)
+async def get_worktree_diff(project_id: str, task_id: str) -> WorktreeDiffResponse:
+    """Get diff for a worktree compared to base branch."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        project_root = row[0]
+
+    if not project_root:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    manager = get_worktree_manager(Path(project_root))
+
+    if not manager.worktree_exists(project_id, task_id):
+        raise HTTPException(status_code=404, detail=f"Worktree for task {task_id} not found")
+
+    info = manager.get_worktree_info(project_id, task_id)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"Could not get worktree info for {task_id}")
+
+    changed_files = manager.get_changed_files(project_id, task_id)
+    files = [{"status": status, "path": path} for status, path in changed_files]
+
+    worktree_path = manager.get_worktree_path(project_id, task_id)
+    diff_result = _run_git(
+        ["diff", f"{manager.base_branch}...HEAD", "--stat"],
+        cwd=worktree_path,
+    )
+
+    return WorktreeDiffResponse(
+        task_id=task_id,
+        files=files,
+        diff=diff_result.stdout if diff_result.returncode == 0 else "",
+        commit_count=info.commit_count,
+        additions=info.additions,
+        deletions=info.deletions,
+    )
+
+
+class MergeRequest(BaseModel):
+    """Request for merge operation."""
+
+    delete_after: bool = True
+
+
+class MergeResponse(BaseModel):
+    """Response for merge operation."""
+
+    success: bool
+    message: str
+    task_id: str
+
+
+@router.post(
+    "/projects/{project_id}/worktrees/{task_id}/merge",
+    response_model=MergeResponse,
+    tags=["git"],
+)
+async def merge_worktree(project_id: str, task_id: str, request: MergeRequest) -> MergeResponse:
+    """Merge a worktree's branch to base branch."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        project_root = row[0]
+
+    if not project_root:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    manager = get_worktree_manager(Path(project_root))
+
+    if not manager.worktree_exists(project_id, task_id):
+        raise HTTPException(status_code=404, detail=f"Worktree for task {task_id} not found")
+
+    success = await manager.merge_worktree(
+        project_id=project_id,
+        task_id=task_id,
+        delete_after=request.delete_after,
+    )
+
+    if success:
+        return MergeResponse(
+            success=True,
+            message=f"Successfully merged {task_id} to main",
+            task_id=task_id,
+        )
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Merge failed for {task_id}. Check for conflicts.",
+        )
+
+
+class PushResponse(BaseModel):
+    """Response for push operation."""
+
+    success: bool
+    message: str
+    task_id: str
+    branch: str
+
+
+@router.post(
+    "/projects/{project_id}/worktrees/{task_id}/push",
+    response_model=PushResponse,
+    tags=["git"],
+)
+async def push_worktree(project_id: str, task_id: str) -> PushResponse:
+    """Push a worktree's branch to remote."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        project_root = row[0]
+
+    if not project_root:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    manager = get_worktree_manager(Path(project_root))
+
+    if not manager.worktree_exists(project_id, task_id):
+        raise HTTPException(status_code=404, detail=f"Worktree for task {task_id} not found")
+
+    info = manager.get_worktree_info(project_id, task_id)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"Could not get worktree info for {task_id}")
+
+    worktree_path = manager.get_worktree_path(project_id, task_id)
+    result = _run_git(["push", "-u", "origin", info.branch], cwd=worktree_path)
+
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Push failed: {result.stderr}",
+        )
+
+    return PushResponse(
+        success=True,
+        message=f"Successfully pushed {info.branch} to origin",
+        task_id=task_id,
+        branch=info.branch,
+    )
+
+
+class CleanupRequest(BaseModel):
+    """Request for cleanup operation."""
+
+    max_age_days: int = 30
+    dry_run: bool = True
+
+
+class CleanupResponse(BaseModel):
+    """Response for cleanup operation."""
+
+    removed: list[dict[str, Any]]
+    would_remove: list[dict[str, Any]]
+    dry_run: bool
+
+
+@router.post(
+    "/projects/{project_id}/worktrees/cleanup",
+    response_model=CleanupResponse,
+    tags=["git"],
+)
+async def cleanup_worktrees(project_id: str, request: CleanupRequest) -> CleanupResponse:
+    """Cleanup old worktrees for a project."""
+    from ..storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        project_root = row[0]
+
+    if not project_root:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    manager = get_worktree_manager(Path(project_root))
+
+    result = manager.cleanup_old_worktrees(
+        max_age_days=request.max_age_days,
+        dry_run=request.dry_run,
+    )
+
+    return CleanupResponse(
+        removed=result.get("removed", []),
+        would_remove=result.get("would_remove", []),
+        dry_run=request.dry_run,
+    )
