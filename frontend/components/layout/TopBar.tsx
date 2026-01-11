@@ -3,7 +3,16 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Search, Terminal, Camera, Settings, Info, Brain, ExternalLink } from "lucide-react";
+import {
+  Search,
+  Terminal,
+  Camera,
+  Settings,
+  Info,
+  Brain,
+  ExternalLink,
+  Archive,
+} from "lucide-react";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { EvidenceCaptureModal } from "@/components/evidence";
 import { NotificationBell } from "@/components/notifications";
@@ -111,7 +120,8 @@ export function TopBar() {
                   transform: isExpanded
                     ? "translateX(0)"
                     : `translateX(-${LOGO_SHIFT_COLLAPSED}px)`,
-                  transition: "transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                  transition:
+                    "transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                   filter: isExpanded
                     ? "drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.2))"
                     : "drop-shadow(0 0 12px rgba(255,102,0,0.3)) drop-shadow(0 0 24px rgba(255,0,102,0.15))",
@@ -140,7 +150,8 @@ export function TopBar() {
                   backgroundClip: "text",
                   // Slide left as it collapses
                   transform: isExpanded ? "translateX(-20px)" : "translateX(0)",
-                  transition: "transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                  transition:
+                    "transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                 }}
               >
                 SummitFlow
@@ -164,15 +175,26 @@ export function TopBar() {
 
         {/* Project Selector - wrapped in Suspense for useSearchParams */}
         <div className="relative z-20 flex-shrink-0">
-          <Suspense fallback={<div className="w-40 h-9 bg-slate-800 rounded-lg animate-pulse" />}>
+          <Suspense
+            fallback={
+              <div className="w-40 h-9 bg-slate-800 rounded-lg animate-pulse" />
+            }
+          >
             <ProjectSelector />
           </Suspense>
         </div>
 
         {/* Nav Pills (only when project selected) - wrapped in Suspense for useSearchParams */}
         {selectedProjectId && (
-          <Suspense fallback={<div className="w-64 h-9 bg-slate-800/50 rounded-lg animate-pulse" />}>
-            <NavPills projectId={selectedProjectId} className="flex-shrink-0 z-10" />
+          <Suspense
+            fallback={
+              <div className="w-64 h-9 bg-slate-800/50 rounded-lg animate-pulse" />
+            }
+          >
+            <NavPills
+              projectId={selectedProjectId}
+              className="flex-shrink-0 z-10"
+            />
           </Suspense>
         )}
 
@@ -244,6 +266,15 @@ export function TopBar() {
           >
             <Camera className="w-5 h-5" />
           </button>
+
+          {/* Backups - global backup overview */}
+          <Link
+            href="/backups"
+            className="p-3 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
+            title="All Backups"
+          >
+            <Archive className="w-5 h-5" />
+          </Link>
 
           {/* Settings */}
           <Link

@@ -12,6 +12,7 @@ import {
   FlaskConical,
   FileCode,
   GitBranch,
+  Archive,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -24,6 +25,7 @@ type TabId =
   | "evidence"
   | "explorer"
   | "git"
+  | "backups"
   | "settings";
 
 interface TabConfig {
@@ -117,6 +119,17 @@ const tabs: TabConfig[] = [
       "text-slate-500 hover:bg-violet-500/10 hover:text-violet-400",
     iconActiveClasses: "text-violet-400",
     iconInactiveClasses: "text-slate-500 group-hover:text-violet-400",
+    isRoute: true,
+  },
+  {
+    id: "backups",
+    label: "Backups",
+    icon: Archive,
+    activeClasses: "bg-indigo-500/15 text-indigo-400",
+    inactiveClasses:
+      "text-slate-500 hover:bg-indigo-500/10 hover:text-indigo-400",
+    iconActiveClasses: "text-indigo-400",
+    iconInactiveClasses: "text-slate-500 group-hover:text-indigo-400",
     isRoute: true,
   },
   {
