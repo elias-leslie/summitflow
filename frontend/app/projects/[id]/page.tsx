@@ -131,7 +131,7 @@ export default function ProjectDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
+      <div className="flex items-center justify-center h-full">
         <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
       </div>
     );
@@ -139,7 +139,7 @@ export default function ProjectDetailPage() {
 
   if (error || !project) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
+      <div className="flex items-center justify-center h-full">
         <div className="card p-8 text-center max-w-md">
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
           <h2 className="display text-lg font-semibold text-white mb-2">
@@ -158,7 +158,7 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Tab Content - Full height, no header redundancy */}
       <section className="flex-1 overflow-hidden">
         {activeTab === "kanban" && (
