@@ -19,8 +19,13 @@ import {
   TestTube,
   ChevronRight,
   X,
+  Sparkles,
+  Eye,
+  Layers,
+  Video,
 } from "lucide-react";
 import { EvidenceViewerModal } from "./EvidenceViewerModal";
+import { MockupComparisonDialog } from "./MockupComparisonDialog";
 import { fetchExplorerEntryById } from "@/lib/api/explorer";
 
 interface EvidenceTabProps {
@@ -73,6 +78,7 @@ export function EvidenceTab({
 }: EvidenceTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const pageSize = 50;
@@ -83,6 +89,13 @@ export function EvidenceTab({
   );
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Mockup comparison dialog state
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [comparisonEntry, setComparisonEntry] = useState<{
+    id: number;
+    path?: string;
+  } | null>(null);
+
   // Fetch entry details when filtering by entry_id
   const { data: entryData } = useQuery({
     queryKey: ["explorerEntry", projectId, entryId],
@@ -92,14 +105,27 @@ export function EvidenceTab({
   });
 
   // Queries
-  const { data: evidenceData, isLoading: evidenceLoading } = useQuery({
-    queryKey: ["evidence", projectId, statusFilter, searchQuery, page, entryId],
+  const {
+    data: evidenceData,
+    isLoading: evidenceLoading,
+    refetch: refetchEvidence,
+  } = useQuery({
+    queryKey: [
+      "evidence",
+      projectId,
+      statusFilter,
+      typeFilter,
+      searchQuery,
+      page,
+      entryId,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
         offset: String(page * pageSize),
       });
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (typeFilter !== "all") params.set("type", typeFilter);
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
       if (entryId) params.set("entry_id", String(entryId));
 
@@ -132,6 +158,16 @@ export function EvidenceTab({
   const handleEvidenceClick = (evidence: Evidence) => {
     setSelectedEvidence(evidence);
     setModalOpen(true);
+  };
+
+  const handleCompare = (evidence: Evidence) => {
+    if (evidence.explorerEntryId) {
+      setComparisonEntry({
+        id: evidence.explorerEntryId,
+        path: undefined,
+      });
+      setComparisonOpen(true);
+    }
   };
 
   // Status badge component
@@ -181,6 +217,71 @@ export function EvidenceTab({
           </span>
         );
     }
+  };
+
+  // Mockup status badge
+  const MockupStatusBadge = ({ status }: { status: string | null }) => {
+    const base =
+      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium";
+    switch (status) {
+      case "approved":
+        return (
+          <span className={`${base} bg-green-500/20 text-green-400`}>
+            <CheckCircle2 className="w-3 h-3" />
+            Approved
+          </span>
+        );
+      case "rejected":
+        return (
+          <span className={`${base} bg-red-500/20 text-red-400`}>
+            <XCircle className="w-3 h-3" />
+            Rejected
+          </span>
+        );
+      case "pending_approval":
+        return (
+          <span className={`${base} bg-amber-500/20 text-amber-400`}>
+            <Eye className="w-3 h-3" />
+            Pending
+          </span>
+        );
+      case "generated":
+        return (
+          <span className={`${base} bg-purple-500/20 text-purple-400`}>
+            <Sparkles className="w-3 h-3" />
+            Generated
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Type badge (mockup indicator)
+  const TypeBadge = ({ type }: { type: string }) => {
+    const base =
+      "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium";
+    if (type === "mockup") {
+      return (
+        <span
+          className={`${base} bg-pink-500/20 text-pink-400 border border-pink-500/30`}
+        >
+          <Sparkles className="w-2.5 h-2.5" />
+          Mockup
+        </span>
+      );
+    }
+    if (type === "video") {
+      return (
+        <span
+          className={`${base} bg-blue-500/20 text-blue-400 border border-blue-500/30`}
+        >
+          <Video className="w-2.5 h-2.5" />
+          Video
+        </span>
+      );
+    }
+    return null;
   };
 
   // Format date relative
@@ -319,6 +420,21 @@ export function EvidenceTab({
           <option value="migrated">Migrated</option>
         </select>
 
+        {/* Type filter */}
+        <select
+          value={typeFilter}
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            setPage(0);
+          }}
+          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-phosphor-500"
+        >
+          <option value="all">All Types</option>
+          <option value="screenshot">Screenshots</option>
+          <option value="mockup">Mockups</option>
+          <option value="video">Videos</option>
+        </select>
+
         {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-[300px]">
           <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-500" />
@@ -391,9 +507,32 @@ export function EvidenceTab({
                   <StatusBadge status={evidence.qualityStatus} />
                 </div>
                 <div className="flex items-center justify-between text-2xs text-slate-500">
-                  <span>{evidence.evidenceType}</span>
+                  <div className="flex items-center gap-1">
+                    <span>{evidence.evidenceType}</span>
+                    <TypeBadge type={evidence.evidenceType} />
+                  </div>
                   <span>v{evidence.version}</span>
                 </div>
+                {/* Mockup status row */}
+                {evidence.evidenceType === "mockup" &&
+                  evidence.mockupStatus && (
+                    <div className="flex items-center justify-between">
+                      <MockupStatusBadge status={evidence.mockupStatus} />
+                      {evidence.explorerEntryId && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCompare(evidence);
+                          }}
+                          className="flex items-center gap-0.5 px-1.5 py-0.5 text-2xs text-pink-400 hover:bg-pink-500/10 rounded transition-colors"
+                          title="Compare with actual"
+                        >
+                          <Layers className="w-3 h-3" />
+                          Compare
+                        </button>
+                      )}
+                    </div>
+                  )}
                 <div className="flex items-center justify-between text-2xs text-slate-500">
                   <span>{formatDate(evidence.capturedAt)}</span>
                   {evidence.autoCaptured && (
@@ -557,6 +696,18 @@ export function EvidenceTab({
           projectId={projectId}
           evidenceId={selectedEvidence.evidenceId}
           criterionText={selectedEvidence.criterionText ?? undefined}
+        />
+      )}
+
+      {/* Mockup Comparison Dialog */}
+      {comparisonEntry && (
+        <MockupComparisonDialog
+          open={comparisonOpen}
+          onOpenChange={setComparisonOpen}
+          projectId={projectId}
+          entryId={comparisonEntry.id}
+          entryPath={comparisonEntry.path}
+          onStatusChange={() => refetchEvidence()}
         />
       )}
     </div>

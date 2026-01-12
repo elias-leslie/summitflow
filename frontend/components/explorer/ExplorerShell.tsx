@@ -19,6 +19,7 @@ import { Folder, Database, Globe, FileText, Zap } from "lucide-react";
 import { TypeNavigator } from "./TypeNavigator";
 import { SummaryBar, ScanningOverlay } from "./SummaryBar";
 import { CodeHealthPanel } from "./CodeHealthPanel";
+import { DesignStandardsPanel } from "./DesignStandardsPanel";
 import {
   fetchExplorerEntries,
   triggerExplorerScan,
@@ -88,10 +89,14 @@ export function ExplorerShell({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(null);
+  const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(
+    null,
+  );
 
   // Stats state - fetched from API
-  const [statsData, setStatsData] = useState<Record<ExplorerType, ExplorerStats>>({
+  const [statsData, setStatsData] = useState<
+    Record<ExplorerType, ExplorerStats>
+  >({
     files: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     database: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
@@ -102,7 +107,13 @@ export function ExplorerShell({
   // Fetch stats for all types on mount and when scanning completes
   useEffect(() => {
     const fetchAllStats = async () => {
-      const types: ExplorerType[] = ["files", "database", "celery", "api", "pages"];
+      const types: ExplorerType[] = [
+        "files",
+        "database",
+        "celery",
+        "api",
+        "pages",
+      ];
       // Start with empty stats object to avoid dependency on statsData
       const newStats: Record<ExplorerType, ExplorerStats> = {
         files: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
@@ -143,14 +154,17 @@ export function ExplorerShell({
   }, [projectId, isScanning]); // Re-fetch when scanning completes
 
   // Handlers
-  const handleTypeChange = useCallback((type: ExplorerType) => {
-    setActiveType(type);
-    setActiveFilter("all"); // Reset filter on type change
-    setExpandedIds(new Set()); // Reset expansion on type change
-    setSortField("name");
-    setSortDir("asc");
-    onTypeChangeProp?.(type); // Notify parent of type change
-  }, [onTypeChangeProp]);
+  const handleTypeChange = useCallback(
+    (type: ExplorerType) => {
+      setActiveType(type);
+      setActiveFilter("all"); // Reset filter on type change
+      setExpandedIds(new Set()); // Reset expansion on type change
+      setSortField("name");
+      setSortDir("asc");
+      onTypeChangeProp?.(type); // Notify parent of type change
+    },
+    [onTypeChangeProp],
+  );
 
   const handleFilterChange = useCallback((filter: HealthStatus | "all") => {
     setActiveFilter(filter);
@@ -165,7 +179,7 @@ export function ExplorerShell({
         setSortDir("asc");
       }
     },
-    [sortField]
+    [sortField],
   );
 
   const handleToggleExpand = useCallback((id: string) => {
@@ -190,7 +204,10 @@ export function ExplorerShell({
 
     try {
       const apiType = uiTypeToApiType[activeType];
-      await triggerExplorerScan(projectId, apiType as "file" | "table" | "task" | "endpoint" | "page");
+      await triggerExplorerScan(
+        projectId,
+        apiType as "file" | "table" | "task" | "endpoint" | "page",
+      );
 
       // Poll for completion every 500ms
       const pollInterval = setInterval(async () => {
@@ -243,7 +260,7 @@ export function ExplorerShell({
       api: statsData.api.total,
       pages: statsData.pages.total,
     }),
-    [statsData]
+    [statsData],
   );
 
   // Props for child render function
@@ -263,7 +280,7 @@ export function ExplorerShell({
       className={cn(
         "flex h-full overflow-hidden rounded-lg",
         "bg-slate-850 border border-slate-700/50",
-        className
+        className,
       )}
     >
       {/* Left: Type Navigator */}
@@ -284,7 +301,7 @@ export function ExplorerShell({
         <div
           className={cn(
             "flex items-center gap-3 px-4 py-3",
-            "border-b border-slate-700/50"
+            "border-b border-slate-700/50",
           )}
         >
           <span className="text-slate-400">{typeIcons[activeType]}</span>
@@ -306,6 +323,11 @@ export function ExplorerShell({
         {/* Code Health Panel - only shown for files view */}
         {activeType === "files" && <CodeHealthPanel projectId={projectId} />}
 
+        {/* Design Standards Panel - shown for pages view */}
+        {activeType === "pages" && (
+          <DesignStandardsPanel projectId={projectId} />
+        )}
+
         {/* Content area */}
         <div className="flex-1 overflow-hidden">
           {children ? (
@@ -326,9 +348,7 @@ function ExplorerPlaceholder({ type }: { type: ExplorerType }) {
   return (
     <div className="flex flex-col items-center justify-center h-full text-slate-500">
       <div className="opacity-20 mb-4">{typeIcons[type]}</div>
-      <p className="text-sm">
-        {typeTitles[type]} content will render here
-      </p>
+      <p className="text-sm">{typeTitles[type]} content will render here</p>
       <p className="text-xs text-slate-600 mt-1">
         Connect data source to display items
       </p>
@@ -355,7 +375,7 @@ export function ExplorerHeader({
       className={cn(
         "flex items-center justify-between gap-4 px-4 py-3",
         "border-b border-slate-700/50",
-        className
+        className,
       )}
     >
       <div className="flex items-center gap-3">
