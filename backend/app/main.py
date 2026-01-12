@@ -16,6 +16,7 @@ from .api import (
     celery_endpoints,
     checkpoints,
     context,
+    design_standards,
     diary,
     evidence,
     explorer,
@@ -94,6 +95,7 @@ app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refa
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
+app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 
 
 @app.get("/health")

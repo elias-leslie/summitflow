@@ -1,0 +1,243 @@
+{
+  "name": "Outrun Design System",
+  "description": "Base UI/UX design standard for SummitFlow projects. Dark mode only with Outrun theme.",
+  "categories": {
+    "layout": {
+      "description": "Page structure and navigation patterns",
+      "rules": [
+        {
+          "rule_id": "layout-001",
+          "name": "Primary/Secondary Navigation Pattern",
+          "requirements": {
+            "nav_pattern": {
+              "exact": "primary_secondary",
+              "severity": "error"
+            }
+          }
+        },
+        {
+          "rule_id": "layout-002",
+          "name": "TopBar Global Elements",
+          "requirements": {
+            "topbar_left": {"allowed": ["logo", "brand"], "severity": "warning"},
+            "topbar_right": {"allowed": ["notifications", "settings", "user_menu"], "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "layout-003",
+          "name": "Sidebar Context Navigation",
+          "requirements": {
+            "sidebar_position": {"exact": "left", "severity": "error"},
+            "sidebar_collapsible": {"exact": true, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "layout-004",
+          "name": "Dark Mode Only",
+          "requirements": {
+            "color_scheme": {"exact": "dark", "severity": "error"},
+            "light_mode_toggle": {"exact": false, "severity": "error"}
+          }
+        },
+        {
+          "rule_id": "layout-005",
+          "name": "Content Area Spacing",
+          "requirements": {
+            "content_padding": {"min": 16, "max": 32, "severity": "warning"},
+            "max_content_width": {"max": 1400, "severity": "warning"}
+          }
+        }
+      ]
+    },
+    "typography": {
+      "description": "Font families, sizes, and hierarchy",
+      "rules": [
+        {
+          "rule_id": "typo-001",
+          "name": "Display Font",
+          "requirements": {
+            "display_font": {"exact": "Space Grotesk", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "typo-002",
+          "name": "Body Font",
+          "requirements": {
+            "body_font": {"exact": "IBM Plex Sans", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "typo-003",
+          "name": "Code Font",
+          "requirements": {
+            "code_font": {"exact": "JetBrains Mono", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "typo-004",
+          "name": "Heading Sizes",
+          "requirements": {
+            "h1_size": {"min": 28, "max": 36, "severity": "warning"},
+            "h2_size": {"min": 22, "max": 28, "severity": "warning"},
+            "h3_size": {"min": 18, "max": 22, "severity": "warning"},
+            "body_size": {"min": 14, "max": 16, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "typo-005",
+          "name": "Font Weights",
+          "requirements": {
+            "heading_weight": {"allowed": [500, 600, 700], "severity": "warning"},
+            "body_weight": {"allowed": [400, 500], "severity": "warning"}
+          }
+        }
+      ]
+    },
+    "color": {
+      "description": "Outrun color palette and usage patterns",
+      "rules": [
+        {
+          "rule_id": "color-001",
+          "name": "Background Colors",
+          "requirements": {
+            "bg_primary": {"exact": "#0f172a", "severity": "error"},
+            "bg_secondary": {"exact": "#1e293b", "severity": "error"},
+            "bg_tertiary": {"exact": "#334155", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "color-002",
+          "name": "Primary Accent",
+          "requirements": {
+            "primary_color": {"exact": "#ec4899", "severity": "error"}
+          }
+        },
+        {
+          "rule_id": "color-003",
+          "name": "Secondary Accent",
+          "requirements": {
+            "secondary_color": {"exact": "#00D9FF", "severity": "error"}
+          }
+        },
+        {
+          "rule_id": "color-004",
+          "name": "Text Colors",
+          "requirements": {
+            "text_primary": {"exact": "#f8fafc", "severity": "error"},
+            "text_secondary": {"exact": "#94a3b8", "severity": "warning"},
+            "text_muted": {"exact": "#64748b", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "color-005",
+          "name": "Status Colors",
+          "requirements": {
+            "success_color": {"exact": "#22c55e", "severity": "warning"},
+            "warning_color": {"exact": "#eab308", "severity": "warning"},
+            "error_color": {"exact": "#ef4444", "severity": "warning"},
+            "info_color": {"exact": "#3b82f6", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "color-006",
+          "name": "Gradient Usage",
+          "requirements": {
+            "gradient_direction": {"allowed": ["to-r", "to-br", "to-b"], "severity": "warning"},
+            "gradient_from": {"allowed": ["#ec4899", "#00D9FF", "#8b5cf6"], "severity": "warning"}
+          }
+        }
+      ]
+    },
+    "components": {
+      "description": "UI component patterns and styling",
+      "rules": [
+        {
+          "rule_id": "comp-001",
+          "name": "Button Primary",
+          "requirements": {
+            "button_primary_bg": {"exact": "#ec4899", "severity": "error"},
+            "button_border_radius": {"min": 6, "max": 12, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-002",
+          "name": "Button Secondary",
+          "requirements": {
+            "button_secondary_bg": {"exact": "transparent", "severity": "warning"},
+            "button_secondary_border": {"exact": "#334155", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-003",
+          "name": "Card Styling",
+          "requirements": {
+            "card_bg": {"exact": "#1e293b", "severity": "warning"},
+            "card_border": {"exact": "#334155", "severity": "warning"},
+            "card_border_radius": {"min": 8, "max": 16, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-004",
+          "name": "Badge Patterns",
+          "requirements": {
+            "badge_font_size": {"min": 10, "max": 14, "severity": "warning"},
+            "badge_padding_x": {"min": 6, "max": 12, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-005",
+          "name": "Input Elements",
+          "requirements": {
+            "input_bg": {"exact": "#0f172a", "severity": "warning"},
+            "input_border": {"exact": "#334155", "severity": "warning"},
+            "input_focus_border": {"exact": "#00D9FF", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-006",
+          "name": "Table Styling",
+          "requirements": {
+            "table_header_bg": {"exact": "#1e293b", "severity": "warning"},
+            "table_row_hover": {"exact": "#334155", "severity": "warning"},
+            "table_border": {"exact": "#334155", "severity": "warning"}
+          }
+        }
+      ]
+    },
+    "navigation": {
+      "description": "Navigation discoverability and anti-silo rules",
+      "rules": [
+        {
+          "rule_id": "nav-001",
+          "name": "Page Discoverability",
+          "requirements": {
+            "has_nav_link": {"exact": true, "severity": "error"}
+          }
+        },
+        {
+          "rule_id": "nav-002",
+          "name": "No Siloed Pages",
+          "requirements": {
+            "accessible_from_navigation": {"exact": true, "severity": "error"},
+            "requires_direct_url": {"exact": false, "severity": "error"}
+          }
+        },
+        {
+          "rule_id": "nav-003",
+          "name": "Sidebar Items",
+          "requirements": {
+            "sidebar_item_height": {"min": 36, "max": 48, "severity": "warning"},
+            "sidebar_icon_size": {"min": 16, "max": 24, "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "nav-004",
+          "name": "Breadcrumb Navigation",
+          "requirements": {
+            "show_breadcrumbs": {"exact": true, "severity": "warning"}
+          }
+        }
+      ]
+    }
+  }
+}
