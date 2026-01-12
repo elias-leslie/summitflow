@@ -14,6 +14,7 @@ Review Pipeline:
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -41,6 +42,58 @@ class ReviewVerdict(str, Enum):
     NEEDS_FIX = "NEEDS_FIX"
 
 
+class RiskLevel(str, Enum):
+    """Risk classification for changes."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+# High-risk file patterns that require human review
+# These patterns match sensitive areas: auth, database, API schemas, credentials
+HIGH_RISK_FILE_PATTERNS = [
+    # Authentication and authorization
+    r"auth[/\._-]",
+    r"login",
+    r"session",
+    r"oauth",
+    r"jwt",
+    r"permission",
+    # Credentials and secrets
+    r"password",
+    r"credential",
+    r"secret",
+    r"token",
+    r"api[_-]?key",
+    r"\.env",
+    # Database and migrations
+    r"migration",
+    r"schema\.py",
+    r"models\.py",
+    r"\.sql$",
+    r"alembic",
+    # API schemas and contracts
+    r"openapi",
+    r"swagger",
+    r"schemas/",
+    r"api/.*schema",
+    # Security-sensitive directories
+    r"/security/",
+    r"/crypto/",
+    r"/payment/",
+]
+
+# Medium-risk patterns (flagged but not auto-escalated)
+MEDIUM_RISK_FILE_PATTERNS = [
+    r"config",
+    r"settings",
+    r"middleware",
+    r"celery",
+    r"redis",
+]
+
+
 @dataclass
 class ReviewResult:
     """Result of the AI review process."""
@@ -51,6 +104,7 @@ class ReviewResult:
     issues: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     reviewed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    risk_level: RiskLevel = RiskLevel.LOW
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +114,7 @@ class ReviewResult:
             "issues": self.issues,
             "suggestions": self.suggestions,
             "reviewed_at": self.reviewed_at,
+            "risk_level": self.risk_level.value,
         }
 
 
@@ -243,6 +298,107 @@ def _has_frontend_changes(task: dict[str, Any]) -> bool:
 
     frontend_patterns = ["frontend/", ".tsx", ".jsx", ".css", ".scss"]
     return any(any(pattern in f for pattern in frontend_patterns) for f in affected_files)
+
+
+def _get_affected_files(task: dict[str, Any]) -> list[str]:
+    """Extract affected files from task plan_content.
+
+    Args:
+        task: Task dict
+
+    Returns:
+        List of affected file paths
+    """
+    plan_content = task.get("plan_content") or {}
+    files = plan_content.get("context", {}).get("affected_files", [])
+    return list(files) if files else []
+
+
+def _classify_risk_level(
+    task: dict[str, Any],
+    project_path: Path | None = None,
+) -> tuple[RiskLevel, list[str]]:
+    """Classify risk level of changes based on file patterns.
+
+    This is the security gate that runs early in the review pipeline.
+    High-risk changes involving auth, database, credentials, or API schemas
+    are flagged for human review.
+
+    Args:
+        task: Task dict
+        project_path: Optional path to project root (for future file content analysis)
+
+    Returns:
+        Tuple of (risk_level, list of reasons for the classification)
+    """
+    affected_files = _get_affected_files(task)
+    if not affected_files:
+        return RiskLevel.LOW, ["No affected files detected"]
+
+    high_risk_matches: list[str] = []
+    medium_risk_matches: list[str] = []
+
+    for file_path in affected_files:
+        file_lower = file_path.lower()
+
+        # Check high-risk patterns
+        for pattern in HIGH_RISK_FILE_PATTERNS:
+            if re.search(pattern, file_lower):
+                high_risk_matches.append(f"{file_path} matches pattern '{pattern}'")
+                break  # One match per file is enough
+
+        # Check medium-risk patterns (only if not already high-risk)
+        if not any(file_path in m for m in high_risk_matches):
+            for pattern in MEDIUM_RISK_FILE_PATTERNS:
+                if re.search(pattern, file_lower):
+                    medium_risk_matches.append(f"{file_path} matches pattern '{pattern}'")
+                    break
+
+    # Determine overall risk level
+    if high_risk_matches:
+        return RiskLevel.HIGH, high_risk_matches
+    elif medium_risk_matches:
+        return RiskLevel.MEDIUM, medium_risk_matches
+    else:
+        return RiskLevel.LOW, ["No sensitive file patterns detected"]
+
+
+def _run_security_risk_classification(
+    task: dict[str, Any],
+    project_path: Path,
+) -> dict[str, Any]:
+    """Run security risk classification check.
+
+    This check runs early in the review pipeline and can short-circuit
+    to human_review for high-risk changes.
+
+    Args:
+        task: Task dict
+        project_path: Path to project root
+
+    Returns:
+        Check result dict with risk_level and matches
+    """
+    risk_level, reasons = _classify_risk_level(task, project_path)
+
+    result = {
+        "status": "pass" if risk_level != RiskLevel.HIGH else "escalate",
+        "risk_level": risk_level.value,
+        "reasons": reasons,
+    }
+
+    if risk_level == RiskLevel.HIGH:
+        result["escalation_reason"] = (
+            f"High-risk changes detected: {len(reasons)} sensitive file(s)"
+        )
+        logger.info(
+            "security_gate_high_risk",
+            task_id=task.get("id"),
+            risk_level=risk_level.value,
+            matches=len(reasons),
+        )
+
+    return result
 
 
 def _run_ui_review(
@@ -548,7 +704,35 @@ def review_pull_request(
         all_issues: list[str] = []
         all_suggestions: list[str] = []
 
-        # Run checks
+        # Step 1: Security risk classification (runs first, can short-circuit)
+        logger.info("running_security_risk_classification", task_id=task_id)
+        checks["security_risk"] = _run_security_risk_classification(task, project_path)
+        risk_level = RiskLevel(checks["security_risk"].get("risk_level", "low"))
+
+        # High-risk changes short-circuit to human review immediately
+        if checks["security_risk"].get("status") == "escalate":
+            escalation_reason = checks["security_risk"].get(
+                "escalation_reason", "High-risk changes"
+            )
+            logger.info("security_gate_escalation", task_id=task_id, reason=escalation_reason)
+
+            security_reasons: list[str] = checks["security_risk"].get("reasons", [])
+            result = ReviewResult(
+                verdict=ReviewVerdict.FAIL,
+                summary=f"Security gate: {escalation_reason}",
+                checks=checks,
+                issues=[f"SECURITY GATE: {escalation_reason}", *security_reasons],
+                risk_level=risk_level,
+            )
+
+            # Update task and escalate to human review
+            task_store.update_task(task_id, review_result=result.to_dict())
+            task_store.update_task_status(task_id, "human_review")
+            _notify_human_review_needed(task_id, escalation_reason)
+
+            return result.to_dict()
+
+        # Step 2: Run remaining checks
         logger.info("running_pytest", task_id=task_id)
         checks["pytest"] = _run_pytest(project_path)
         if checks["pytest"].get("status") == "fail":
@@ -617,6 +801,7 @@ def review_pull_request(
             checks=checks,
             issues=all_issues,
             suggestions=all_suggestions,
+            risk_level=risk_level,
         )
 
         # Update task with review result
