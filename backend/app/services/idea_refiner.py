@@ -81,6 +81,7 @@ def refine_idea(raw_text: str, additional_context: str | None = None) -> Refinem
             system=REFINEMENT_SYSTEM_PROMPT,
             max_tokens=1024,
             temperature=0.3,
+            purpose="idea_refinement",
         )
 
         # Parse JSON from response
@@ -154,6 +155,7 @@ Complexity: {complexity}"""
             system=SCORING_SYSTEM_PROMPT,
             max_tokens=256,
             temperature=0.2,
+            purpose="idea_scoring",
         )
 
         content = response.content.strip()

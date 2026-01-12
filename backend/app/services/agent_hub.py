@@ -277,6 +277,7 @@ class AgentHubService:
             system=system_prompt,
             max_tokens=8192,
             temperature=0.7,
+            purpose="code_generation",
         )
 
         evidence = self._parse_and_execute(response.content, task_context)

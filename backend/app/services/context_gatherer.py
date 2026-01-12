@@ -342,7 +342,9 @@ Based on this request, identify:
 Be concise - focus on the most important context for implementing this task.
 Limit your response to ~500 words."""
 
-        response = client.generate(prompt, max_tokens=2000, temperature=0.3)
+        response = client.generate(
+            prompt, max_tokens=2000, temperature=0.3, purpose="context_gathering"
+        )
         result = response.content
 
         # Cache the result

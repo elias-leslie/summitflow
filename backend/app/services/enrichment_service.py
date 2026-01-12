@@ -164,6 +164,7 @@ def enrich_task(
                 prompt=prompt,
                 max_tokens=4096,
                 temperature=0.3,
+                purpose="task_enrichment",
             )
 
             # Parse response
@@ -271,6 +272,7 @@ Return ONLY valid JSON matching the output format in the prompt above."""
             prompt=prompt,
             max_tokens=2000,
             temperature=0.2,
+            purpose="criteria_validation",
         )
 
         data = _parse_enrichment_response(response.content)
@@ -465,6 +467,7 @@ Return ONLY valid JSON matching the response format in the prompt above."""
             prompt=prompt,
             max_tokens=4096,
             temperature=0.5,
+            purpose="task_discussion",
         )
 
         data = _parse_enrichment_response(response.content)

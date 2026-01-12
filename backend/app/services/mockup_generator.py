@@ -300,6 +300,7 @@ Output ONLY the HTML code, no explanation."""
             system="You are a UI designer creating HTML/CSS prototypes. Output only valid HTML.",
             max_tokens=8000,
             temperature=0.7,
+            purpose="mockup_generation",
         )
 
         html_content = response.content.strip()

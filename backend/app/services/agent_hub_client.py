@@ -49,6 +49,7 @@ class LLMClient(ABC):
         system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
+        purpose: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion.
@@ -58,6 +59,7 @@ class LLMClient(ABC):
             system: System prompt (optional)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
+            purpose: Purpose of this request for session tracking
             **kwargs: Provider-specific options
 
         Returns:
@@ -194,6 +196,7 @@ class AgentHubLLMClient(LLMClient):
         system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
+        purpose: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion via Agent Hub.
@@ -203,7 +206,8 @@ class AgentHubLLMClient(LLMClient):
             system: System prompt (optional)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
-            **kwargs: Additional options (session_id, persist_session, etc.)
+            purpose: Purpose of this request (task_enrichment, code_generation, etc.)
+            **kwargs: Additional options (session_id, enable_caching, etc.)
 
         Returns:
             LLMResponse with content and metadata
@@ -227,7 +231,7 @@ class AgentHubLLMClient(LLMClient):
                 temperature=temperature,
                 project_id=self.project_id,
                 session_id=kwargs.get("session_id"),
-                persist_session=kwargs.get("persist_session", False),
+                purpose=purpose,
                 enable_caching=kwargs.get("enable_caching", True),
             )
             return _response_to_llm_response(response)
@@ -334,6 +338,7 @@ class DualProviderClient(LLMClient):
         system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
+        purpose: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate using primary provider via Agent Hub.
@@ -349,6 +354,7 @@ class DualProviderClient(LLMClient):
             system=system,
             max_tokens=max_tokens,
             temperature=temperature,
+            purpose=purpose,
             **kwargs,
         )
 

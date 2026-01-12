@@ -110,7 +110,7 @@ def validate_criteria(
     try:
         # Use Opus for validation (highest quality judgment)
         agent = get_agent("claude", model=CLAUDE_OPUS)
-        response = agent.generate(prompt)
+        response = agent.generate(prompt, purpose="criteria_validation")
 
         if not response.content:
             logger.warning("Empty response from Opus validation")
