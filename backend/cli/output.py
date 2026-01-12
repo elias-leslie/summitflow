@@ -151,6 +151,30 @@ def output_task_list(tasks: list[dict[str, Any]], header: str = "TASKS") -> None
         output_json({"tasks": tasks, "total": len(tasks)})
 
 
+def output_blocked_tasks(tasks: list[dict[str, Any]], blockers_map: dict[str, list[str]]) -> None:
+    """Output blocked tasks with blocker info.
+
+    Compact format:
+    BLOCKED[N]
+    P<priority> <task-id> <type> <status> <title>
+      ↳ blocked by: <blocker-id>|<blocker-status>|<blocker-title>
+    """
+    if _compact_output:
+        print(f"BLOCKED[{len(tasks)}]")
+        for task in tasks:
+            # Print task line
+            print(format_compact_task(task))
+            # Print blockers indented
+            blockers = task.get("blockers", [])
+            for b in blockers:
+                blocker_id = b.get("depends_on_task_id", "?")
+                blocker_status = b.get("depends_on_status", "?")
+                blocker_title = _truncate(b.get("depends_on_title", ""), 40)
+                print(f"  ↳ blocked by: {blocker_id}|{blocker_status}|{blocker_title}")
+    else:
+        output_json({"tasks": tasks, "blockers_impact": blockers_map})
+
+
 def output_deps(deps: list[dict[str, Any]]) -> None:
     """Output dependency list."""
     if _compact_output:
@@ -248,3 +272,183 @@ def handle_api_error(e: APIError) -> None:
     """
     output_error(e.detail)
     raise typer.Exit(1)
+
+
+# --- Context Output Formatters ---
+
+
+def format_context_task(task: dict[str, Any]) -> str:
+    """Format task header for context output.
+
+    Format: TASK:<id>|<status>|P<priority>|<type>|<complexity>
+    OBJECTIVE:<objective>
+    SPIRIT_ANTI:<anti-patterns>
+    CONSTRAINTS[N]:<constraint1>|<constraint2>|...
+    DONE_WHEN[N]:<criterion1>|<criterion2>|...
+    """
+    lines = []
+    task_id = task.get("id", "unknown")
+    status = task.get("status", "pending")
+    priority = task.get("priority", 3)
+    task_type = task.get("task_type", "task")
+    complexity = task.get("complexity") or "SIMPLE"
+
+    lines.append(f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}")
+
+    if objective := task.get("objective"):
+        lines.append(f"OBJECTIVE:{_truncate(objective, 100)}")
+
+    if spirit_anti := task.get("spirit_anti"):
+        lines.append(f"SPIRIT_ANTI:{_truncate(spirit_anti, 150)}")
+
+    constraints = task.get("constraints") or []
+    if constraints:
+        lines.append(f"CONSTRAINTS[{len(constraints)}]:{' | '.join(constraints)}")
+
+    done_when = task.get("done_when") or []
+    if done_when:
+        lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
+
+    return "\n".join(lines)
+
+
+def format_context_decisions(decisions: list[dict[str, Any]]) -> str:
+    """Format decisions for context output.
+
+    Format: DECISIONS[N]
+    d<id>:<title>→<outcome>
+    """
+    if not decisions:
+        return ""
+
+    lines = [f"DECISIONS[{len(decisions)}]"]
+    for d in decisions:
+        d_id = d.get("id", "?")
+        title = d.get("title", "")
+        outcome = d.get("outcome", "")
+        lines.append(f"{d_id}:{_truncate(title, 30)}→{_truncate(outcome, 80)}")
+
+    return "\n".join(lines)
+
+
+def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
+    """Format subtasks with steps inline for context output.
+
+    Format: SUBTASKS[N]:<done>/<total>:<pct>%
+    <subtask_id> <PASS|____> <description> [steps: <done>/<total>]
+      1. <PASS|____> <step_desc>
+      2. <PASS|____> <step_desc>
+    """
+    if not subtasks:
+        return "SUBTASKS[0]:0/0:0%"
+
+    done = sum(1 for s in subtasks if s.get("passes"))
+    total = len(subtasks)
+    pct = (done / total * 100) if total > 0 else 0
+
+    lines = [f"SUBTASKS[{total}]:{done}/{total}:{pct:.0f}%"]
+
+    for subtask in subtasks:
+        subtask_id = subtask.get("subtask_id", "?")
+        passes = "PASS" if subtask.get("passes") else "____"
+        desc = _truncate(subtask.get("description") or "", 50)
+        step_summary = subtask.get("step_summary", {})
+        step_done = step_summary.get("completed", 0)
+        step_total = step_summary.get("total", 0)
+
+        lines.append(f"{subtask_id:5} {passes} {desc} [{step_done}/{step_total}]")
+
+        # Include steps inline
+        steps = subtask.get("steps") or []
+        for step in steps:
+            step_num = step.get("step_number", 0)
+            step_pass = "PASS" if step.get("passes") else "____"
+            step_desc = _truncate(step.get("description") or "", 60)
+            lines.append(f"  {step_num}. {step_pass} {step_desc}")
+
+    return "\n".join(lines)
+
+
+def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
+    """Format acceptance criteria for context output.
+
+    Format: CRITERIA[N]:<verified>/<total>
+    <criterion_id> <PASS|____> <criterion>
+      verify_by:<test|agent|human> cmd:<verify_command> expect:<expected_output>
+    """
+    if not criteria:
+        return "CRITERIA[0]:0/0"
+
+    verified = sum(1 for c in criteria if c.get("verified"))
+    total = len(criteria)
+
+    lines = [f"CRITERIA[{total}]:{verified}/{total}"]
+
+    for c in criteria:
+        c_id = c.get("criterion_id", "?")
+        passes = "PASS" if c.get("verified") else "____"
+        criterion = _truncate(c.get("criterion") or "", 60)
+        lines.append(f"{c_id} {passes} {criterion}")
+
+        verify_by = c.get("verify_by") or "human"
+        verify_cmd = c.get("verify_command") or ""
+        expected = c.get("expected_output") or ""
+
+        if verify_cmd or expected:
+            cmd_str = _truncate(verify_cmd, 50) if verify_cmd else "-"
+            expect_str = _truncate(expected, 30) if expected else "-"
+            lines.append(f"  verify_by:{verify_by} cmd:{cmd_str} expect:{expect_str}")
+
+    return "\n".join(lines)
+
+
+def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
+    """Format blockers for context output.
+
+    Format: BLOCKERS[N]
+    <blocker_task_id>|<status>|<title>
+    """
+    if not blockers:
+        return ""
+
+    lines = [f"BLOCKERS[{len(blockers)}]"]
+    for b in blockers:
+        b_id = b.get("id", "?")
+        status = b.get("status", "?")
+        title = _truncate(b.get("title") or "", 50)
+        lines.append(f"{b_id}|{status}|{title}")
+
+    return "\n".join(lines)
+
+
+def output_context(
+    task: dict[str, Any],
+    subtasks: list[dict[str, Any]],
+    criteria: list[dict[str, Any]],
+    blockers: list[dict[str, Any]] | None = None,
+) -> None:
+    """Output full task context in TOON format.
+
+    Combines task header, decisions, subtasks with steps, criteria, and blockers.
+    """
+    if _compact_output:
+        sections = [
+            format_context_task(task),
+            format_context_decisions(task.get("decisions") or []),
+            format_context_subtasks(subtasks),
+            format_context_criteria(criteria),
+        ]
+
+        if blockers:
+            sections.append(format_context_blockers(blockers))
+
+        print("\n".join(s for s in sections if s))
+    else:
+        output_json(
+            {
+                "task": task,
+                "subtasks": subtasks,
+                "criteria": criteria,
+                "blockers": blockers or [],
+            }
+        )

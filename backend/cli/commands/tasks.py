@@ -12,6 +12,8 @@ import typer
 from ..client import APIError, STClient
 from ..output import (
     handle_api_error,
+    output_blocked_tasks,
+    output_context,
     output_error,
     output_json,
     output_success,
@@ -155,12 +157,17 @@ def create(
     task_type: Annotated[str, typer.Option("-t", "--type")] = "task",
     parent: Annotated[str | None, typer.Option("--parent")] = None,
     plan: Annotated[str | None, typer.Option("--plan")] = None,
+    blocked_by: Annotated[
+        str | None,
+        typer.Option("--blocked-by", help="Task ID that blocks this task"),
+    ] = None,
 ) -> None:
     """Create a new task or batch create from file.
 
     Examples:
         st create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
         st create "Add feature" -t feature -p 1 --parent task-abc123
+        st create "Implement X" --blocked-by task-abc123
         st create --from-file tasks.json
         st create --from-file tasks.json --dry-run
     """
@@ -205,6 +212,14 @@ def create(
             task = client.update_task(task["id"], plan_content=plan_content)
         except (json.JSONDecodeError, APIError) as e:
             output_error(f"Failed to set plan: {e}")
+
+    # Create blocking dependency if --blocked-by provided
+    if blocked_by:
+        try:
+            client.add_dependency(task["id"], blocked_by, dep_type="blocks")
+            task["blocked_by"] = blocked_by
+        except APIError as e:
+            task["dependency_error"] = e.detail
 
     output_task(task)
 
@@ -302,7 +317,7 @@ def ready(
                         blockers_map[blocker_id].append(task_id)
 
             blocked_tasks = blocked_tasks[:limit]
-            output_json({"tasks": blocked_tasks, "blockers_impact": blockers_map})
+            output_blocked_tasks(blocked_tasks, blockers_map)
         else:
             result = client.list_ready(limit=limit)
             output_task_list(result["tasks"], header="READY")
@@ -422,6 +437,64 @@ def inspect(
 
 
 @app.command()
+def context(
+    task_id: str,
+) -> None:
+    """Get full task context in a single call.
+
+    Returns task details, subtasks with steps, acceptance criteria, decisions,
+    and blockers in TOON format (with --compact) or JSON.
+
+    This is optimized for /do_it workflow - one command instead of 4+ calls.
+
+    Examples:
+        st --compact context task-abc123
+        st context task-abc123
+    """
+    client = STClient(require_project=False)
+
+    try:
+        # Fetch task
+        task = client.get_task(task_id)
+
+        # Fetch subtasks with steps (use task's project_id)
+        task_project_id = task.get("project_id")
+        if task_project_id and client.project_id != task_project_id:
+            subtask_client = STClient(project_id=task_project_id, require_project=False)
+            subtask_data = subtask_client.get_subtasks(task_id, include_steps=True)
+        else:
+            subtask_data = client.get_subtasks(task_id, include_steps=True)
+
+        subtasks = subtask_data.get("subtasks", [])
+
+        # Fetch criteria
+        criteria = client.list_task_criteria(task_id)
+
+        # Fetch blockers (dependencies where this task is blocked by others)
+        deps = client.list_dependencies(task_id)
+        blockers = []
+        for d in deps:
+            if d.get("dependency_type") == "blocks" and d.get("depends_on_status") not in (
+                "completed",
+                "cancelled",
+            ):
+                # Fetch blocker task details
+                blocker_id = d.get("depends_on_task_id")
+                if blocker_id:
+                    try:
+                        blocker_task = client.get_task(blocker_id)
+                        blockers.append(blocker_task)
+                    except APIError:
+                        blockers.append({"id": blocker_id, "status": "unknown", "title": "?"})
+
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_context(task, subtasks, criteria, blockers)
+
+
+@app.command()
 def update(
     task_id: str,
     status: Annotated[str | None, typer.Option("-s", "--status")] = None,
@@ -440,6 +513,12 @@ def update(
     branch: Annotated[str | None, typer.Option("--branch", help="Git branch name")] = None,
     pr_url: Annotated[str | None, typer.Option("--pr-url", help="Pull request URL")] = None,
     parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID")] = None,
+    blocked_by: Annotated[
+        str | None, typer.Option("--blocked-by", help="Add blocking dependency on task ID")
+    ] = None,
+    unblock: Annotated[
+        str | None, typer.Option("--unblock", help="Remove blocking dependency on task ID")
+    ] = None,
 ) -> None:
     """Update a task.
 
@@ -451,6 +530,8 @@ def update(
         st update task-abc123 --move-to other-project
         st update task-abc123 --objective "Enable X to do Y"
         st update task-abc123 --branch feature/auth --pr-url https://github.com/...
+        st update task-abc123 --blocked-by task-def456
+        st update task-abc123 --unblock task-def456
     """
     client = STClient()
 
@@ -518,12 +599,40 @@ def update(
     if parent:
         updates["parent_task_id"] = parent
 
+    # Handle dependency operations (can be standalone or combined with other updates)
+    dep_result = {}
+    if blocked_by:
+        try:
+            client.add_dependency(task_id, blocked_by, dep_type="blocks")
+            dep_result["blocked_by_added"] = blocked_by
+        except APIError as e:
+            dep_result["blocked_by_error"] = e.detail
+
+    if unblock:
+        try:
+            client.remove_dependency(task_id, unblock)
+            dep_result["unblocked"] = unblock
+        except APIError as e:
+            dep_result["unblock_error"] = e.detail
+
+    # If only dependency operations (no other updates)
+    if not updates and (blocked_by or unblock):
+        try:
+            task = client.get_task(task_id)
+            task.update(dep_result)
+            output_task(task)
+            return
+        except APIError as e:
+            handle_api_error(e)
+            return
+
     if not updates:
         output_error("No updates specified")
         raise typer.Exit(1)
 
     try:
         task = client.update_task(task_id, **updates)
+        task.update(dep_result)
     except APIError as e:
         handle_api_error(e)
         return

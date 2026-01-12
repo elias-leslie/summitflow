@@ -30,12 +30,13 @@ FLAGS: --compact(-c) --human --project(-P)<id> --progress-only
 WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
 
 TASKS:
-  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc]
+  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]
   list [--status S] [--type T] [--priority P]
   ready                                    # unblocked tasks
   show <id>... [--full] [--summary]        # --summary=one-liner
   inspect <id>...                          # id|status|done/total
-  update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--branch name] [--pr-url url] [--parent id]
+  context <id>                             # full task context (TOON format)
+  update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--blocked-by id] [--unblock id]
   close <id> --reason <text>
   cancel <id> --reason <text>
   delete <id>

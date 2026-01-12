@@ -47,6 +47,7 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 2. **Track discovered bugs immediately** - `st create "Fix: X" -t bug`
 3. **SummitFlow vs App** - Dev tooling goes in SummitFlow. User-facing functionality stays in the app.
 4. **Consolidate over create** - Check for existing implementations before writing new code
+5. **ALWAYS use /commit_it** - Never use direct `git commit`. /commit_it runs quality gates (pytest, lint) and handles multi-repo commits automatically.
 
 ---
 
@@ -62,7 +63,7 @@ source ~/.cloudflare-access && curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_I
 | `st task verify <file>` | Validate plan against schema |
 | `st task import <file>` | Create task from plan.json |
 | `/do_it <task-id>` | Execute subtasks, commit, close task |
-| `/commit_it` | Quality gates (pytest, lint) then commit |
+| `/commit_it` | **ALWAYS use for commits** - quality gates, multi-repo support |
 
 ---
 
