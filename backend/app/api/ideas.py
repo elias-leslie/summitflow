@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -16,6 +16,78 @@ from pydantic import BaseModel
 from ..storage.connection import generate_prefixed_id, get_connection
 
 router = APIRouter()
+
+# Rate limiting constants
+MAX_IDEAS_PER_USER_PER_HOUR = 5
+ESTIMATED_COST_PER_REFINEMENT = 0.002  # ~$0.002 for Gemini Flash (refine + score)
+DEFAULT_DAILY_BUDGET_USD = 5.0
+
+
+def get_project_daily_budget(project_id: str) -> float:
+    """Get the daily budget for a project from automation settings."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT automation_settings FROM projects WHERE id = %s",
+            (project_id,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            return float(row[0].get("daily_budget_usd", DEFAULT_DAILY_BUDGET_USD))
+        return DEFAULT_DAILY_BUDGET_USD
+
+
+def check_rate_limit(project_id: str, user_identifier: str) -> None:
+    """Check if user/project has exceeded rate limits.
+
+    Uses project's daily_budget_usd from automation settings.
+    Raises HTTPException 429 if limits exceeded.
+    """
+    now = datetime.now(UTC)
+    hour_ago = now - timedelta(hours=1)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check per-user hourly limit (only for identified users)
+        if user_identifier and user_identifier != "anonymous":
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM ideas
+                WHERE user_email = %s
+                AND created_at > %s
+                AND project_id = %s
+                """,
+                (user_identifier, hour_ago, project_id),
+            )
+            user_count = cur.fetchone()[0]
+
+            if user_count >= MAX_IDEAS_PER_USER_PER_HOUR:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Rate limit exceeded. Maximum {MAX_IDEAS_PER_USER_PER_HOUR} ideas per hour.",
+                )
+
+        # Check project daily budget
+        # Count today's refinements and compare against budget
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM ideas
+            WHERE project_id = %s
+            AND created_at > %s
+            AND status IN ('refined', 'approved', 'rejected', 'executing', 'completed')
+            """,
+            (project_id, day_start),
+        )
+        daily_refinements = cur.fetchone()[0]
+
+    # Calculate cost and check against budget
+    daily_cost = daily_refinements * ESTIMATED_COST_PER_REFINEMENT
+    daily_budget = get_project_daily_budget(project_id)
+
+    if daily_cost >= daily_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily budget exhausted (${daily_cost:.2f}/${daily_budget:.2f}). Try again tomorrow.",
+        )
 
 
 class IdeaCreate(BaseModel):
@@ -60,13 +132,19 @@ async def create_idea(
     project_id: str,
     body: IdeaCreate,
     cf_access_jwt: str | None = Header(None, alias="CF-Access-JWT-Assertion"),
+    x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
 ) -> dict[str, Any]:
     """Submit a new improvement idea.
 
     Extracts user email from Cloudflare Access JWT for attribution.
+    Rate limited to prevent abuse.
     Returns idea_id for frontend tracking.
     """
     user_email = extract_email_from_cf_jwt(cf_access_jwt)
+
+    # Use email for rate limiting, fallback to IP
+    user_identifier = user_email or x_forwarded_for or "anonymous"
+    check_rate_limit(project_id, user_identifier)
 
     with get_connection() as conn, conn.cursor() as cur:
         # Validate project exists
@@ -91,7 +169,27 @@ async def create_idea(
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create idea")
 
-    return {"idea_id": row[0], "status": "pending_refinement"}
+    created_idea_id = row[0]
+
+    # Auto-trigger refinement in background
+    import asyncio
+
+    from ..services.idea_refiner import refine_idea, update_idea_with_refinement
+
+    async def run_refinement():
+        try:
+            result = refine_idea(body.raw_text, project_id=project_id)
+            update_idea_with_refinement(created_idea_id, result, project_id=project_id)
+        except Exception as e:
+            # Log but don't fail - idea is created, refinement can be retried
+            import logging
+
+            logging.getLogger(__name__).error(f"Auto-refinement failed for {created_idea_id}: {e}")
+
+    # Fire and forget - don't block the response
+    asyncio.create_task(run_refinement())
+
+    return {"idea_id": created_idea_id, "status": "pending_refinement"}
 
 
 @router.get("/projects/{project_id}/ideas")
@@ -200,8 +298,8 @@ async def refine_idea_endpoint(project_id: str, idea_id: str) -> dict[str, Any]:
     raw_text = row[0]
 
     # Run AI refinement
-    result = refine_idea(raw_text)
-    update_idea_with_refinement(idea_id, result)
+    result = refine_idea(raw_text, project_id=project_id)
+    update_idea_with_refinement(idea_id, result, project_id=project_id)
 
     return {
         "idea_id": idea_id,
@@ -250,8 +348,8 @@ async def retry_refinement(project_id: str, idea_id: str, body: IdeaRetry) -> di
         conn.commit()
 
     # Run AI refinement with additional context
-    result = refine_idea(raw_text, body.additional_context)
-    update_idea_with_refinement(idea_id, result)
+    result = refine_idea(raw_text, body.additional_context, project_id=project_id)
+    update_idea_with_refinement(idea_id, result, project_id=project_id)
 
     return {
         "idea_id": idea_id,

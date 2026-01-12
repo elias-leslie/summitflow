@@ -9,8 +9,9 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
-from app.main import app
 from fastapi.testclient import TestClient
+
+from app.main import app
 
 client = TestClient(app)
 
@@ -56,7 +57,10 @@ class TestIdeaSubmission:
     def test_submit_idea_returns_idea_id(self, mock_conn: MagicMock):
         """Test that submitting an idea returns an idea_id."""
         mock_cursor = MagicMock()
+        # No JWT header → user_identifier = "anonymous" → skip user hourly check
         mock_cursor.fetchone.side_effect = [
+            [0],  # Rate limit: daily refinements count
+            [{"daily_budget_usd": 5.0}],  # Rate limit: project automation_settings
             [1],  # Project exists
             ["idea-abc123"],  # Created idea ID
         ]
@@ -78,7 +82,14 @@ class TestIdeaSubmission:
     def test_submit_idea_extracts_email(self, mock_conn: MagicMock):
         """Test that submitting with JWT extracts and stores email."""
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.side_effect = [[1], ["idea-abc123"]]
+        # With JWT header → user_identifier = email → checks user hourly limit
+        mock_cursor.fetchone.side_effect = [
+            [0],  # Rate limit: user hourly count
+            [0],  # Rate limit: daily refinements count
+            [{"daily_budget_usd": 5.0}],  # Rate limit: project automation_settings
+            [1],  # Project exists
+            ["idea-abc123"],  # Created idea ID
+        ]
         mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
             mock_cursor
         )

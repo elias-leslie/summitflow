@@ -65,6 +65,8 @@ app.add_middleware(
         "http://localhost:3001",
         "http://192.168.8.233:3001",
         "https://dev.summitflow.dev",
+        "http://localhost:4001",
+        "https://test1.summitflow.dev",
     ],
     allow_credentials=True,
     allow_methods=["*"],

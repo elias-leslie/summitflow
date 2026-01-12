@@ -106,6 +106,31 @@ export function TaskFilters({
 
 export const DEFAULT_FILTERS: TaskFilterValues = {
   type: "all",
-  status: "all",
+  status: "active",
   priority: "all",
 };
+
+const STORAGE_KEY = "summitflow-task-filters";
+
+export function loadFilters(): TaskFilterValues {
+  if (typeof window === "undefined") return DEFAULT_FILTERS;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_FILTERS, ...parsed };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return DEFAULT_FILTERS;
+}
+
+export function saveFilters(filters: TaskFilterValues): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // Ignore storage errors
+  }
+}

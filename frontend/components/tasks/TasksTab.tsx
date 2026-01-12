@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import {
@@ -24,6 +24,8 @@ import {
   Bot,
   Eye,
   OctagonX,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +39,8 @@ import { type Subtask } from "@/lib/api/tasks";
 import { cn } from "@/lib/utils";
 import {
   TaskFilters,
-  DEFAULT_FILTERS,
+  loadFilters,
+  saveFilters,
   type TaskFilterValues,
 } from "./TaskFilters";
 import { SimpleCreateDialog } from "./SimpleCreateDialog";
@@ -47,6 +50,24 @@ import { SubtaskProgress } from "./SubtaskProgress";
 import { EnrichmentStatusBadge } from "./EnrichmentStatusBadge";
 import { EnrichmentProgress } from "./EnrichmentProgress";
 import { TaskReviewModal } from "./TaskReviewModal";
+
+type SortField = "priority" | "created_at" | "title" | "status" | "type";
+type SortDirection = "asc" | "desc";
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 interface TasksTabProps {
   projectId: string;
@@ -269,13 +290,20 @@ function TaskRow({
             <span className="text-xs capitalize">{task.status}</span>
           </span>
         </td>
+
+        {/* Created */}
+        <td className="px-3 py-3">
+          <span className="text-xs text-slate-500">
+            {task.created_at ? formatRelativeTime(task.created_at) : "-"}
+          </span>
+        </td>
       </tr>
 
       {/* Expanded Details - now using TaskExpandedView */}
       <AnimatePresence>
         {isExpanded && (
           <tr>
-            <td colSpan={8}>
+            <td colSpan={9}>
               <TaskExpandedView
                 projectId={projectId}
                 task={task}
@@ -294,10 +322,12 @@ type ViewMode = "list" | "kanban";
 
 export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<TaskFilterValues>({
-    ...DEFAULT_FILTERS,
-    ...initialFilters,
+  const [filters, setFilters] = useState<TaskFilterValues>(() => {
+    const loaded = loadFilters();
+    return { ...loaded, ...initialFilters };
   });
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -305,6 +335,31 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   // Enrichment flow state
   const [enrichingTask, setEnrichingTask] = useState<Task | null>(null);
   const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
+
+  // Persist filters when they change
+  useEffect(() => {
+    saveFilters(filters);
+  }, [filters]);
+
+  // Handle column header click for sorting
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection(field === "created_at" ? "desc" : "asc");
+    }
+  };
+
+  // Render sort indicator
+  const SortIndicator = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return null;
+    return sortDirection === "asc" ? (
+      <ArrowUp className="w-3 h-3 inline ml-1" />
+    ) : (
+      <ArrowDown className="w-3 h-3 inline ml-1" />
+    );
+  };
 
   // Fetch all tasks
   const {
@@ -401,7 +456,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     refetch();
   }, [refetch]);
 
-  // Apply client-side filters
+  // Apply client-side filters and sorting
   const filteredTasks = useMemo(() => {
     // For "blocked" status, use the blocked tasks endpoint data
     const tasks =
@@ -409,7 +464,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         ? blockedTasksData?.tasks || []
         : tasksData?.tasks || [];
 
-    return tasks.filter((task) => {
+    const filtered = tasks.filter((task) => {
       // Type filter
       if (filters.type !== "all" && task.task_type !== filters.type) {
         return false;
@@ -437,7 +492,34 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
       return true;
     });
-  }, [tasksData, blockedTasksData, filters]);
+
+    // Sort tasks
+    return filtered.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case "priority":
+          comparison = (a.priority ?? 2) - (b.priority ?? 2);
+          break;
+        case "created_at":
+          comparison =
+            new Date(a.created_at || 0).getTime() -
+            new Date(b.created_at || 0).getTime();
+          break;
+        case "title":
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case "status":
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case "type":
+          comparison = (a.task_type || "task").localeCompare(
+            b.task_type || "task",
+          );
+          break;
+      }
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+  }, [tasksData, blockedTasksData, filters, sortField, sortDirection]);
 
   const isLoading =
     filters.status === "blocked" ? blockedLoading : tasksLoading;
@@ -523,17 +605,29 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
                 <th className="w-8 px-2 py-2"></th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
+                <th
+                  className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16 cursor-pointer hover:text-slate-200 select-none"
+                  onClick={() => handleSort("priority")}
+                >
                   Pri
+                  <SortIndicator field="priority" />
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20">
+                <th
+                  className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20 cursor-pointer hover:text-slate-200 select-none"
+                  onClick={() => handleSort("type")}
+                >
                   Type
+                  <SortIndicator field="type" />
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-28">
                   ID
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">
+                <th
+                  className="px-3 py-2 text-left text-xs font-medium text-slate-400 cursor-pointer hover:text-slate-200 select-none"
+                  onClick={() => handleSort("title")}
+                >
                   Title
+                  <SortIndicator field="title" />
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
                   Phase
@@ -541,8 +635,19 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-36">
                   Progress
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24">
+                <th
+                  className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
+                  onClick={() => handleSort("status")}
+                >
                   Status
+                  <SortIndicator field="status" />
+                </th>
+                <th
+                  className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
+                  onClick={() => handleSort("created_at")}
+                >
+                  Created
+                  <SortIndicator field="created_at" />
                 </th>
               </tr>
             </thead>

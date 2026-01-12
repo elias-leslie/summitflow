@@ -227,7 +227,9 @@ class TestReviewPullRequest:
         mock_store.update_task_status.assert_called_with("task-123", "completed")
 
     @patch("app.tasks.ai_review._get_project_path")
+    @patch("app.tasks.ai_review._run_security_risk_classification")
     @patch("app.tasks.ai_review._run_pytest")
+    @patch("app.tasks.ai_review._run_breaking_change_detection")
     @patch("app.tasks.ai_review._run_precommit")
     @patch("app.tasks.ai_review._run_mypy")
     @patch("app.tasks.ai_review._run_code_quality_review")
@@ -242,7 +244,9 @@ class TestReviewPullRequest:
         mock_code_quality: MagicMock,
         mock_mypy: MagicMock,
         mock_precommit: MagicMock,
+        mock_breaking_change: MagicMock,
         mock_pytest: MagicMock,
+        mock_security_risk: MagicMock,
         mock_project_path: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -253,7 +257,11 @@ class TestReviewPullRequest:
         }
         mock_project_path.return_value = tmp_path
 
+        # Security check passes (no escalation)
+        mock_security_risk.return_value = {"status": "pass", "risk_level": "low"}
         mock_pytest.return_value = {"status": "fail", "output": "1 failed"}
+        # Breaking change detection returns pass to avoid escalation
+        mock_breaking_change.return_value = {"status": "pass", "has_breaking_change": False}
         mock_precommit.return_value = {"status": "pass"}
         mock_mypy.return_value = {"status": "pass"}
         mock_code_quality.return_value = {"status": "pass"}
