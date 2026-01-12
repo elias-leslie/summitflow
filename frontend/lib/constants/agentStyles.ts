@@ -1,5 +1,5 @@
 /**
- * Agent styling configuration for roundtable chat UI.
+ * Agent styling configuration for chat UI.
  * Defines colors, icons, and display names for each agent type.
  */
 

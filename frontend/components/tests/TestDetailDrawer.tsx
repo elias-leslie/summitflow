@@ -10,7 +10,6 @@ import {
   Clock,
   Timer,
   Terminal,
-  Link2,
   ChevronDown,
   ChevronRight,
   AlertTriangle,
@@ -102,7 +101,9 @@ export function TestDetailDrawer({
     try {
       await runTddTest(projectId, test.test_id);
       // Refresh test details and list
-      queryClient.invalidateQueries({ queryKey: ["tdd-test", projectId, test.test_id] });
+      queryClient.invalidateQueries({
+        queryKey: ["tdd-test", projectId, test.test_id],
+      });
       queryClient.invalidateQueries({ queryKey: ["tdd-tests", projectId] });
     } finally {
       setIsRunning(false);
@@ -130,12 +131,16 @@ export function TestDetailDrawer({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               {details && getResultIcon(details.last_result, "md")}
-              <span className={`text-xs px-2 py-0.5 rounded border font-medium ${getTypeColor(details?.test_type || "")}`}>
+              <span
+                className={`text-xs px-2 py-0.5 rounded border font-medium ${getTypeColor(details?.test_type || "")}`}
+              >
                 {details?.test_type}
               </span>
             </div>
             <SheetTitle className="truncate">{details?.name}</SheetTitle>
-            <p className="text-xs text-slate-500 mono mt-1">{details?.test_id}</p>
+            <p className="text-xs text-slate-500 mono mt-1">
+              {details?.test_id}
+            </p>
           </div>
           <SheetClose onClose={() => onOpenChange(false)} />
         </SheetHeader>
@@ -143,7 +148,11 @@ export function TestDetailDrawer({
         <SheetBody className="space-y-6">
           {/* Actions */}
           <div className="flex gap-2">
-            <Button onClick={handleRunTest} disabled={isRunning} className="flex-1">
+            <Button
+              onClick={handleRunTest}
+              disabled={isRunning}
+              className="flex-1"
+            >
               {isRunning ? (
                 <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
               ) : (
@@ -156,15 +165,21 @@ export function TestDetailDrawer({
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center">
-              <div className="text-lg font-bold text-white mono">{details?.run_count || 0}</div>
+              <div className="text-lg font-bold text-white mono">
+                {details?.run_count || 0}
+              </div>
               <div className="text-xs text-slate-500">Runs</div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center">
-              <div className="text-lg font-bold text-phosphor-400 mono">{details?.pass_count || 0}</div>
+              <div className="text-lg font-bold text-phosphor-400 mono">
+                {details?.pass_count || 0}
+              </div>
               <div className="text-xs text-slate-500">Passed</div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center">
-              <div className="text-lg font-bold text-rose-400 mono">{details?.fail_count || 0}</div>
+              <div className="text-lg font-bold text-rose-400 mono">
+                {details?.fail_count || 0}
+              </div>
               <div className="text-xs text-slate-500">Failed</div>
             </div>
           </div>
@@ -173,46 +188,65 @@ export function TestDetailDrawer({
           {(details?.flaky_score || 0) > 0.2 && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-400 text-sm">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>This test is flaky ({((details?.flaky_score || 0) * 100).toFixed(0)}% inconsistent results)</span>
+              <span>
+                This test is flaky (
+                {((details?.flaky_score || 0) * 100).toFixed(0)}% inconsistent
+                results)
+              </span>
             </div>
           )}
 
           {/* UI Test Config (for browser-automation tests) */}
-          {details?.test_type === "ui" && details?.config && Object.keys(details.config).length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Image className="h-3.5 w-3.5" aria-label="Browser automation icon" />
-                Browser Automation
-              </h3>
-              <div className="rounded-lg bg-slate-800 p-3 space-y-2">
-                {(details.config as { script_name?: string }).script_name && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Script:</span>
-                    <span className="text-xs font-medium text-purple-400">
-                      {(details.config as { script_name?: string }).script_name}
-                    </span>
-                  </div>
-                )}
-                {(details.config as { url?: string }).url && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">URL:</span>
-                    <code className="text-xs text-blue-400 truncate max-w-[280px]">
-                      {(details.config as { url?: string }).url}
-                    </code>
-                  </div>
-                )}
-                {(details.config as { assertions?: unknown[] }).assertions &&
-                 ((details.config as { assertions: unknown[] }).assertions.length > 0) && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Assertions:</span>
-                    <span className="text-xs text-slate-300">
-                      {(details.config as { assertions: unknown[] }).assertions.length} checks
-                    </span>
-                  </div>
-                )}
+          {details?.test_type === "ui" &&
+            details?.config &&
+            Object.keys(details.config).length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Image
+                    className="h-3.5 w-3.5"
+                    aria-label="Browser automation icon"
+                  />
+                  Browser Automation
+                </h3>
+                <div className="rounded-lg bg-slate-800 p-3 space-y-2">
+                  {(details.config as { script_name?: string }).script_name && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">Script:</span>
+                      <span className="text-xs font-medium text-purple-400">
+                        {
+                          (details.config as { script_name?: string })
+                            .script_name
+                        }
+                      </span>
+                    </div>
+                  )}
+                  {(details.config as { url?: string }).url && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">URL:</span>
+                      <code className="text-xs text-blue-400 truncate max-w-[280px]">
+                        {(details.config as { url?: string }).url}
+                      </code>
+                    </div>
+                  )}
+                  {(details.config as { assertions?: unknown[] }).assertions &&
+                    (details.config as { assertions: unknown[] }).assertions
+                      .length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">
+                          Assertions:
+                        </span>
+                        <span className="text-xs text-slate-300">
+                          {
+                            (details.config as { assertions: unknown[] })
+                              .assertions.length
+                          }{" "}
+                          checks
+                        </span>
+                      </div>
+                    )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Command/Script */}
           {details?.command && (
@@ -235,7 +269,9 @@ export function TestDetailDrawer({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Date</span>
-                  <span className="text-slate-300">{formatDate(details.last_run_at)}</span>
+                  <span className="text-slate-300">
+                    {formatDate(details.last_run_at)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Duration</span>
@@ -248,7 +284,13 @@ export function TestDetailDrawer({
                   <span className="text-slate-500">Result</span>
                   <span className="flex items-center gap-1.5">
                     {getResultIcon(details.last_result)}
-                    <span className={details.last_result === "passed" ? "text-phosphor-400" : "text-rose-400"}>
+                    <span
+                      className={
+                        details.last_result === "passed"
+                          ? "text-phosphor-400"
+                          : "text-rose-400"
+                      }
+                    >
                       {details.last_result || "Not run"}
                     </span>
                   </span>
@@ -272,38 +314,6 @@ export function TestDetailDrawer({
             </div>
           )}
 
-          {/* Linked Capabilities */}
-          {testDetails?.linked_capabilities && testDetails.linked_capabilities.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Link2 className="h-3.5 w-3.5" />
-                Linked Capabilities
-              </h3>
-              <div className="space-y-2">
-                {testDetails.linked_capabilities.map((cap) => (
-                  <div
-                    key={cap.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/50 p-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="mono text-xs text-slate-500">{cap.capability_id}</span>
-                      <span className="text-sm text-slate-300">{cap.name}</span>
-                      {cap.is_primary && (
-                        <Badge variant="phosphor" className="text-xs">Primary</Badge>
-                      )}
-                    </div>
-                    <Badge
-                      variant={cap.status === "tests_passing" ? "phosphor" : cap.status === "failing" ? "rose" : "slate"}
-                      className="text-xs"
-                    >
-                      {cap.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Run History */}
           {testDetails?.run_history && testDetails.run_history.length > 0 && (
             <div>
@@ -314,7 +324,10 @@ export function TestDetailDrawer({
                 {testDetails.run_history.map((run) => {
                   const isExpanded = expandedRuns.has(run.id);
                   return (
-                    <div key={run.id} className="rounded border border-slate-700 bg-slate-800/30 overflow-hidden">
+                    <div
+                      key={run.id}
+                      className="rounded border border-slate-700 bg-slate-800/30 overflow-hidden"
+                    >
                       <div
                         className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-800/50"
                         onClick={() => toggleRun(run.id)}
@@ -337,8 +350,13 @@ export function TestDetailDrawer({
                           {run.evidence_path && (
                             <div className="p-2 bg-slate-800/50">
                               <div className="flex items-center gap-1.5 text-xs text-purple-400 mb-1.5">
-                                <Image className="h-3 w-3" aria-label="Evidence captured icon" />
-                                <span className="font-medium">Evidence Captured</span>
+                                <Image
+                                  className="h-3 w-3"
+                                  aria-label="Evidence captured icon"
+                                />
+                                <span className="font-medium">
+                                  Evidence Captured
+                                </span>
                               </div>
                               <code className="text-xs text-slate-500 break-all">
                                 {run.evidence_path}

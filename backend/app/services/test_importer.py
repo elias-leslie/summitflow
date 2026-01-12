@@ -4,8 +4,6 @@ This module provides test discovery and import for various test frameworks:
 - pytest: Python unit/integration tests
 - vitest: JavaScript/TypeScript unit tests
 
-UI tests are defined via roundtable conversations and use browser-automation skill.
-
 Tests are discovered via framework-specific methods and registered in the
 centralized test registry for tracking and execution.
 """

@@ -68,13 +68,6 @@ def _row_to_entry(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def _row_to_entry_with_association(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert a database row with association_status to an entry dict."""
-    entry = _row_to_entry(row[:10])
-    entry["association_status"] = row[10] if len(row) > 10 else "orphan"
-    return entry
-
-
 def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any]]) -> int:
     """Upsert explorer entries (insert or update on conflict).
 
@@ -136,14 +129,13 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
             - type: Filter by entry_type
             - health: Filter by health_status
             - path: Filter by path prefix (LIKE 'path%')
-            - association: Filter by association_status ('orphan', 'linked', 'is_component')
             - sort: Sort field (default: 'path')
             - dir: Sort direction ('asc' or 'desc', default: 'asc')
             - limit: Max results (default: 1000)
             - offset: Skip results (default: 0)
 
     Returns:
-        List of entry dicts with association_status field
+        List of entry dicts
     """
     filters = filters or {}
 
@@ -163,17 +155,6 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
         conditions.append("ee.path LIKE %s")
         params.append(f"{filters['path']}%")
 
-    # Handle association filter in HAVING clause
-    # Note: "linked" status was based on explorer_capability_links which has been removed
-    # Now we only support is_component (linked to components table) or orphan
-    association_filter = filters.get("association")
-    having_clause = ""
-    if association_filter == "is_component":
-        having_clause = "HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1"
-    elif association_filter in ("linked", "orphan"):
-        # Both "linked" and "orphan" now map to "not a component" since capability links were removed
-        having_clause = "HAVING MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 0"
-
     where_clause = _build_where_clause(conditions)
 
     # Sort and pagination
@@ -189,30 +170,21 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
         cur.execute(
             sql.SQL("""
             SELECT ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
-                   ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at,
-                   CASE
-                       WHEN MAX(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'is_component'
-                       ELSE 'orphan'
-                   END as association_status
+                   ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at
             FROM explorer_entries ee
-            LEFT JOIN components c ON c.explorer_entry_id = ee.id
             WHERE {where_clause}
-            GROUP BY ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
-                     ee.metadata, ee.last_scanned_at, ee.created_at, ee.updated_at
-            {having_clause}
             ORDER BY {sort_field} {sort_dir}
             LIMIT %s OFFSET %s
             """).format(
                 where_clause=where_clause,
                 sort_field=sql.Identifier("ee", sort_field),
                 sort_dir=sql.SQL(sort_dir),
-                having_clause=sql.SQL(having_clause),
             ),
             (*params, limit, offset),
         )
         rows = cur.fetchall()
 
-        return [_row_to_entry_with_association(row) for row in rows]
+        return [_row_to_entry(row) for row in rows]
 
 
 def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | None:

@@ -276,39 +276,22 @@ async def _store_evidence(
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         evidence_id = f"ev-{explorer_entry_id or 'manual'}-{timestamp}"
 
-        # Get capability_id if entry is linked to a capability
-        capability_id = None
-        if explorer_entry_id:
-            cur.execute(
-                """
-                SELECT capability_id FROM explorer_capability_links
-                WHERE explorer_entry_id = %s
-                LIMIT 1
-                """,
-                (explorer_entry_id,),
-            )
-            row = cur.fetchone()
-            if row:
-                capability_id = row[0]
-
         cur.execute(
             """
             INSERT INTO evidence (
-                project_id, evidence_id, capability_id, explorer_entry_id,
-                evidence_type, environment, viewport_name,
+                project_id, evidence_id, explorer_entry_id,
+                evidence_type, environment,
                 file_path, file_size_bytes
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 project_id,
                 evidence_id,
-                capability_id,
                 explorer_entry_id,
                 evidence_result.evidence_type,
                 environment,
-                evidence_result.metadata.get("viewport"),
                 evidence_result.file_path,
                 evidence_result.file_size_bytes,
             ),

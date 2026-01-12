@@ -41,17 +41,8 @@ export interface TddTestRunHistory {
   created_at: string | null;
 }
 
-export interface TddTestLinkedCapability {
-  id: number;
-  capability_id: string;
-  name: string;
-  status: string;
-  is_primary: boolean;
-}
-
 export interface TddTestWithHistory extends TddTest {
   run_history: TddTestRunHistory[];
-  linked_capabilities: TddTestLinkedCapability[];
 }
 
 export interface TestRunResult {
@@ -75,7 +66,7 @@ export interface ImportTestsResult {
 
 export async function fetchTddTests(
   projectId: string,
-  type?: string
+  type?: string,
 ): Promise<TddTest[]> {
   const query = buildQueryString({ type });
   return fetchWithErrorHandling(`/api/projects/${projectId}/tests${query}`, {
@@ -85,7 +76,7 @@ export async function fetchTddTests(
 
 export async function fetchTddTest(
   projectId: string,
-  testId: string
+  testId: string,
 ): Promise<TddTestWithHistory> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tests/${testId}`, {
     errorMessage: "Failed to fetch test",
@@ -94,17 +85,20 @@ export async function fetchTddTest(
 
 export async function runTddTest(
   projectId: string,
-  testId: string
+  testId: string,
 ): Promise<TestRunResult> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tests/${testId}/run`, {
-    method: "POST",
-    errorMessage: "Failed to run test",
-  });
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tests/${testId}/run`,
+    {
+      method: "POST",
+      errorMessage: "Failed to run test",
+    },
+  );
 }
 
 export async function runTddTests(
   projectId: string,
-  options: { testIds?: string[]; tier?: string }
+  options: { testIds?: string[]; tier?: string },
 ): Promise<TestRunResult[]> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tests/run`, {
     method: "POST",
@@ -120,7 +114,7 @@ export async function runTddTests(
 export async function importTddTests(
   projectId: string,
   sourceType: string = "all",
-  discover: boolean = true
+  discover: boolean = true,
 ): Promise<ImportTestsResult> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tests/import`, {
     method: "POST",

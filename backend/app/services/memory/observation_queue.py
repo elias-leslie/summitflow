@@ -70,7 +70,7 @@ class ObservationQueue:
 
         Args:
             project_id: Project ID
-            session_id: Session ID (e.g., from roundtable or CLI)
+            session_id: Session ID (e.g., from CLI)
             agent_type: Agent type ('claude-code', 'claude', 'gemini')
             tool_name: Name of the tool that was executed
             tool_input: Tool input parameters

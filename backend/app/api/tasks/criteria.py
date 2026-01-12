@@ -182,7 +182,7 @@ async def delete_task_criterion(
     """Unlink a criterion from a task.
 
     Removes the link from task_criteria. If criterion becomes orphaned
-    (no links in capability_criteria or task_criteria), it's deleted.
+    (no links in task_criteria), it's deleted.
 
     Args:
         project_id: Project ID

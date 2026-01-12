@@ -153,7 +153,7 @@ export interface ExplorerFilters {
  */
 export async function fetchExplorerEntries(
   projectId: string,
-  filters: ExplorerFilters = {}
+  filters: ExplorerFilters = {},
 ): Promise<ExplorerResponse> {
   const params = new URLSearchParams();
 
@@ -162,15 +162,19 @@ export async function fetchExplorerEntries(
   if (filters.path) params.append("path", filters.path);
   if (filters.sort) params.append("sort", filters.sort);
   if (filters.dir) params.append("dir", filters.dir);
-  if (filters.limit !== undefined) params.append("limit", filters.limit.toString());
-  if (filters.offset !== undefined) params.append("offset", filters.offset.toString());
+  if (filters.limit !== undefined)
+    params.append("limit", filters.limit.toString());
+  if (filters.offset !== undefined)
+    params.append("offset", filters.offset.toString());
 
   const queryString = params.toString();
   const res = await fetch(
-    `/api/projects/${projectId}/explorer${queryString ? `?${queryString}` : ""}`
+    `/api/projects/${projectId}/explorer${queryString ? `?${queryString}` : ""}`,
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer entries" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch explorer entries" }));
     throw new Error(error.detail || "Failed to fetch explorer entries");
   }
   return res.json();
@@ -179,10 +183,14 @@ export async function fetchExplorerEntries(
 /**
  * Fetch aggregated statistics for explorer entries.
  */
-export async function fetchExplorerStats(projectId: string): Promise<StatsResponse> {
+export async function fetchExplorerStats(
+  projectId: string,
+): Promise<StatsResponse> {
   const res = await fetch(`/api/projects/${projectId}/explorer/stats`);
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer stats" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch explorer stats" }));
     throw new Error(error.detail || "Failed to fetch explorer stats");
   }
   return res.json();
@@ -194,16 +202,18 @@ export async function fetchExplorerStats(projectId: string): Promise<StatsRespon
 export async function fetchExplorerEntry(
   projectId: string,
   type: ExplorerEntryType,
-  path: string
+  path: string,
 ): Promise<ExplorerEntry> {
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/${type}/${encodeURIComponent(path)}`
+    `/api/projects/${projectId}/explorer/${type}/${encodeURIComponent(path)}`,
   );
   if (!res.ok) {
     if (res.status === 404) {
       throw new Error(`Entry not found: ${type}/${path}`);
     }
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer entry" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch explorer entry" }));
     throw new Error(error.detail || "Failed to fetch explorer entry");
   }
   return res.json();
@@ -214,16 +224,18 @@ export async function fetchExplorerEntry(
  */
 export async function fetchExplorerEntryById(
   projectId: string,
-  entryId: number
+  entryId: number,
 ): Promise<ExplorerEntry> {
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/entry/${entryId}`
+    `/api/projects/${projectId}/explorer/entry/${entryId}`,
   );
   if (!res.ok) {
     if (res.status === 404) {
       throw new Error(`Entry ${entryId} not found`);
     }
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer entry" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch explorer entry" }));
     throw new Error(error.detail || "Failed to fetch explorer entry");
   }
   return res.json();
@@ -235,16 +247,20 @@ export async function fetchExplorerEntryById(
 export async function fetchExplorerChildren(
   projectId: string,
   type: ExplorerEntryType,
-  parentPath: string = ""
+  parentPath: string = "",
 ): Promise<ExplorerEntry[]> {
   const params = new URLSearchParams({
     type,
     path: parentPath,
   });
 
-  const res = await fetch(`/api/projects/${projectId}/explorer/children?${params}`);
+  const res = await fetch(
+    `/api/projects/${projectId}/explorer/children?${params}`,
+  );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch explorer children" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch explorer children" }));
     throw new Error(error.detail || "Failed to fetch explorer children");
   }
   return res.json();
@@ -259,7 +275,7 @@ export async function fetchExplorerChildren(
  */
 export async function triggerExplorerScan(
   projectId: string,
-  type?: ExplorerEntryType
+  type?: ExplorerEntryType,
 ): Promise<ScanResponse> {
   const params = new URLSearchParams();
   if (type) params.append("type", type);
@@ -267,10 +283,12 @@ export async function triggerExplorerScan(
   const queryString = params.toString();
   const res = await fetch(
     `/api/projects/${projectId}/explorer/scan${queryString ? `?${queryString}` : ""}`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to trigger scan" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to trigger scan" }));
     throw new Error(error.detail || "Failed to trigger scan");
   }
   return res.json();
@@ -282,11 +300,13 @@ export async function triggerExplorerScan(
  * @param projectId - Project to check
  */
 export async function fetchScanStatus(
-  projectId: string
+  projectId: string,
 ): Promise<ScanStatusResponse> {
   const res = await fetch(`/api/projects/${projectId}/explorer/scan/status`);
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan status" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch scan status" }));
     throw new Error(error.detail || "Failed to fetch scan status");
   }
   return res.json();
@@ -308,14 +328,6 @@ export interface CoverageGapsResponse {
   uncovered_endpoints: Array<{ id: number; path: string; name: string }>;
   uncovered_pages: Array<{ id: number; path: string; name: string }>;
   uncovered_tables: Array<{ id: number; path: string; name: string }>;
-}
-
-export interface MultiCapabilityFile {
-  entry_id: number;
-  path: string;
-  name: string;
-  capability_count: number;
-  capabilities: Array<{ id: number; capability_id: string; name: string }>;
 }
 
 export interface RefactorTarget {
@@ -349,25 +361,15 @@ export interface RefactorTargetsResponse {
 /**
  * Fetch coverage gaps (uncovered endpoints, pages, tables).
  */
-export async function fetchCoverageGaps(projectId: string): Promise<CoverageGapsResponse> {
+export async function fetchCoverageGaps(
+  projectId: string,
+): Promise<CoverageGapsResponse> {
   const res = await fetch(`/api/projects/${projectId}/analysis/coverage-gaps`);
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch coverage gaps" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch coverage gaps" }));
     throw new Error(error.detail || "Failed to fetch coverage gaps");
-  }
-  return res.json();
-}
-
-/**
- * Fetch files linked to multiple capabilities.
- */
-export async function fetchMultiCapabilityFiles(
-  projectId: string
-): Promise<MultiCapabilityFile[]> {
-  const res = await fetch(`/api/projects/${projectId}/analysis/multi-capability-files`);
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch multi-capability files" }));
-    throw new Error(error.detail || "Failed to fetch multi-capability files");
   }
   return res.json();
 }
@@ -387,7 +389,7 @@ export async function fetchRefactorTargets(
     codeOnly?: boolean;
     extensions?: string;
     limit?: number;
-  } = {}
+  } = {},
 ): Promise<RefactorTargetsResponse> {
   const params = new URLSearchParams();
 
@@ -402,10 +404,12 @@ export async function fetchRefactorTargets(
   }
 
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/refactor-targets?${params}`
+    `/api/projects/${projectId}/explorer/refactor-targets?${params}`,
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch refactor targets" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch refactor targets" }));
     throw new Error(error.detail || "Failed to fetch refactor targets");
   }
   return res.json();
@@ -504,7 +508,7 @@ export interface ScanComparison {
 export async function fetchScanHistory(
   projectId: string,
   days: number = 30,
-  scanType?: string
+  scanType?: string,
 ): Promise<ScanHistoryResponse> {
   const params = new URLSearchParams();
   params.append("days", String(days));
@@ -513,10 +517,12 @@ export async function fetchScanHistory(
   }
 
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/scan-history?${params}`
+    `/api/projects/${projectId}/explorer/scan-history?${params}`,
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan history" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch scan history" }));
     throw new Error(error.detail || "Failed to fetch scan history");
   }
   return res.json();
@@ -532,17 +538,19 @@ export async function fetchScanHistory(
 export async function fetchScanComparison(
   projectId: string,
   before: number,
-  after: number
+  after: number,
 ): Promise<ScanComparison> {
   const params = new URLSearchParams();
   params.append("before", String(before));
   params.append("after", String(after));
 
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/scan-comparison?${params}`
+    `/api/projects/${projectId}/explorer/scan-comparison?${params}`,
   );
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to fetch scan comparison" }));
+    const error = await res
+      .json()
+      .catch(() => ({ detail: "Failed to fetch scan comparison" }));
     throw new Error(error.detail || "Failed to fetch scan comparison");
   }
   return res.json();

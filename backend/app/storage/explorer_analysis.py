@@ -60,19 +60,13 @@ def _build_refactor_filter_conditions(
     return conditions, params
 
 
-def _get_unlinked_entries(
-    cur: Any, project_id: str, entry_type: str, check_components: bool = True
-) -> list[tuple[Any, ...]]:
+def _get_unlinked_entries(cur: Any, project_id: str, entry_type: str) -> list[tuple[Any, ...]]:
     """Get entries of a given type.
-
-    Note: The capability/component linking system has been deprecated.
-    This function now returns all entries of the given type.
 
     Args:
         cur: Database cursor
         project_id: Project ID for scoping
         entry_type: Entry type to query
-        check_components: Ignored (deprecated parameter)
 
     Returns:
         List of tuples (path, name, metadata)
@@ -253,13 +247,13 @@ def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
 
 
 def get_coverage_gaps(project_id: str) -> dict[str, Any]:
-    """Get endpoints, pages, and tables without capability links.
+    """Get all endpoints, pages, and tables for coverage analysis.
 
     Args:
         project_id: Project ID for scoping
 
     Returns:
-        Dict with uncovered_endpoints, uncovered_pages, orphan_tables arrays
+        Dict with endpoints, pages, tables arrays
     """
     with get_connection() as conn, conn.cursor() as cur:
         endpoint_rows = _get_unlinked_entries(cur, project_id, "endpoint")
@@ -274,7 +268,7 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
             for row in page_rows
         ]
 
-        table_rows = _get_unlinked_entries(cur, project_id, "table", check_components=False)
+        table_rows = _get_unlinked_entries(cur, project_id, "table")
         orphan_tables = [
             {
                 "path": row[0],

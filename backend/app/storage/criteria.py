@@ -279,7 +279,7 @@ def update_criterion(
 def check_and_delete_orphan(conn: psycopg.Connection, criterion_db_id: int) -> bool:
     """Check if criterion is orphaned and delete if so.
 
-    A criterion is orphaned if it has no links in capability_criteria or task_criteria.
+    A criterion is orphaned if it has no links in task_criteria.
     Returns True if criterion was deleted, False if still in use.
     """
     with conn.cursor() as cur:
@@ -287,12 +287,10 @@ def check_and_delete_orphan(conn: psycopg.Connection, criterion_db_id: int) -> b
         cur.execute(
             """
             SELECT EXISTS (
-                SELECT 1 FROM capability_criteria WHERE criterion_id = %s
-                UNION ALL
                 SELECT 1 FROM task_criteria WHERE criterion_id = %s
             )
             """,
-            (criterion_db_id, criterion_db_id),
+            (criterion_db_id,),
         )
         result = cur.fetchone()
         assert result is not None, "EXISTS query should always return a row"
