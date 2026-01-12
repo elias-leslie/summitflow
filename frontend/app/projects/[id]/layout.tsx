@@ -13,7 +13,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const projectId = params.id as string;
 
   return (
-    <div className="flex h-[calc(100vh-6rem)]">
+    <div className="flex h-[calc(100vh-4.5rem)]">
       <Suspense
         fallback={
           <div className="w-16 h-full bg-slate-900/50 border-r border-slate-700/50" />
