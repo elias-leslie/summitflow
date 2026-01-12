@@ -367,3 +367,56 @@ def get_user_notifications(
         status_filter="pending",
         mark_as_seen=mark_as_seen,
     )
+
+
+# Track last execution time per project for throttling
+_last_execution: dict[str, datetime] = {}
+EXECUTION_COOLDOWN_SECONDS = 300  # 5 minutes between manual executions
+
+
+@router.post("/projects/{project_id}/ideas/execute-now")
+def execute_ideas_now(
+    project_id: str,
+) -> dict[str, Any]:
+    """Manually trigger immediate execution of approved ideas.
+
+    This is a testing/admin endpoint that triggers the crowdsourced
+    idea processing task immediately instead of waiting for the
+    scheduled nightly run.
+
+    Throttled to prevent abuse (max once per 5 minutes per project).
+
+    Returns:
+        Dict with task_id for tracking execution status
+    """
+    from ..tasks.autonomous.ideas import process_crowdsourced_ideas
+
+    # Check throttle
+    last_exec = _last_execution.get(project_id)
+    if last_exec:
+        elapsed = (datetime.now(UTC) - last_exec).total_seconds()
+        if elapsed < EXECUTION_COOLDOWN_SECONDS:
+            remaining = int(EXECUTION_COOLDOWN_SECONDS - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many requests. Please wait {remaining} seconds.",
+            )
+
+    # Verify project exists
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Project not found")
+
+    # Record execution time
+    _last_execution[project_id] = datetime.now(UTC)
+
+    # Dispatch async task
+    task = process_crowdsourced_ideas.delay(project_id)
+
+    return {
+        "status": "dispatched",
+        "task_id": task.id,
+        "project_id": project_id,
+        "message": f"Crowdsourced idea processing started for {project_id}",
+    }

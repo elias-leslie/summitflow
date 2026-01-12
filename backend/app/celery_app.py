@@ -149,6 +149,12 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.run_scheduled_backups",
         "schedule": 60 * 60,  # Hourly
     },
+    # Crowdsourced ideas - process approved ideas for Monkey Fight at 3am UTC
+    "process-crowdsourced-ideas-monkey-fight": {
+        "task": "summitflow.process_crowdsourced_ideas",
+        "schedule": 60 * 60 * 24,  # Every 24 hours
+        "kwargs": {"project_id": "monkey-fight"},
+    },
 }
 
 
@@ -196,3 +202,4 @@ from app.tasks import (  # noqa: F401, E402
     observation_processor,
     reflection_processor,
 )
+from app.tasks.autonomous import ideas  # noqa: F401, E402
