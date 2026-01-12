@@ -38,6 +38,10 @@ class AgentReviewRequest(BaseModel):
     """Request for agent to review evidence."""
 
     agent: str = Field(default="gemini", description="Agent type: 'claude' or 'gemini'")
+    mode: str = Field(
+        default="quality",
+        description="Review mode: 'quality' (default) or 'design_audit'",
+    )
     focus: str | None = Field(
         None,
         description="Optional focus area for analysis (e.g., 'accessibility', 'performance')",
@@ -64,44 +68,66 @@ async def submit_review(
     return {"success": True, "message": "Review submitted"}
 
 
-@router.post("/projects/{project_id}/evidence/{evidence_id}/agent-review")
-async def agent_review(
-    project_id: str,
-    evidence_id: str,
-    request: AgentReviewRequest,
-) -> dict[str, Any]:
-    """Request an AI agent to analyze evidence and propose issues/features.
+def _get_agent_with_fallback(preferred: str, mode: str) -> tuple[Any, str]:
+    """Get agent with fallback logic.
 
-    The agent analyzes screenshot content, console errors, network failures,
-    page state, and performance metrics. Returns proposed issues with fixes.
+    For design_audit mode: Gemini primary, Claude fallback.
+    For quality mode: Use requested agent, no fallback.
+
+    Returns:
+        Tuple of (agent instance, agent name used)
+
+    Raises:
+        HTTPException if no agent available
     """
-    evidence = get_evidence_by_id(project_id, evidence_id)
-    if not evidence:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+    if preferred not in ("claude", "gemini"):
+        raise HTTPException(status_code=400, detail="Agent must be 'claude' or 'gemini'")
 
-    evidence_data = read_evidence_file(project_id, evidence_id, evidence.get("version"))
-    if not evidence_data:
-        raise HTTPException(status_code=404, detail="Evidence data not found")
+    if mode == "design_audit":
+        # Design audit: Gemini primary, Claude fallback
+        try:
+            agent = get_agent("gemini")
+            if agent.is_available():
+                return agent, "gemini"
+        except RuntimeError:
+            pass
 
-    try:
-        if request.agent not in ("claude", "gemini"):
-            raise HTTPException(status_code=400, detail="Agent must be 'claude' or 'gemini'")
-        agent_type: AgentType = "claude" if request.agent == "claude" else "gemini"
-        agent = get_agent(agent_type)
-        if not agent.is_available():
-            raise HTTPException(
-                status_code=503,
-                detail=f"{request.agent} agent is not available. Check CLI installation.",
-            )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from None
+        try:
+            agent = get_agent("claude")
+            if agent.is_available():
+                logger.warning("design_audit_fallback", reason="Gemini unavailable, using Claude")
+                return agent, "claude"
+        except RuntimeError:
+            pass
 
-    console_summary = evidence_data.get("console", {})
-    network_summary = evidence_data.get("network", {})
-    page_state = evidence_data.get("pageState", {})
-    performance = evidence_data.get("performance", {})
-    metadata = evidence_data.get("metadata", {})
+        raise HTTPException(
+            status_code=503,
+            detail="No agents available for design audit. Both Gemini and Claude unavailable.",
+        )
+    else:
+        # Quality mode: Use requested agent only
+        agent_type: AgentType = "claude" if preferred == "claude" else "gemini"
+        try:
+            agent = get_agent(agent_type)
+            if not agent.is_available():
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"{preferred} agent is not available. Check CLI installation.",
+                )
+            return agent, preferred
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from None
 
+
+def _build_quality_prompt(
+    metadata: dict[str, Any],
+    console_summary: dict[str, Any],
+    network_summary: dict[str, Any],
+    page_state: dict[str, Any],
+    performance: dict[str, Any],
+    focus: str | None,
+) -> tuple[str, str]:
+    """Build prompt for quality review mode."""
     prompt = f"""Analyze this UI evidence capture and identify issues.
 
 ## Page Information
@@ -140,7 +166,7 @@ Slow Requests (>3s):
 - DOM Ready: {performance.get("domContentLoadedMs", "N/A")} ms
 - LCP: {performance.get("largestContentfulPaintMs", "N/A")} ms
 
-{f"Focus Area: {request.focus}" if request.focus else ""}
+{f"Focus Area: {focus}" if focus else ""}
 
 Based on this evidence, provide:
 
@@ -174,57 +200,222 @@ Format your response as JSON:
 }}
 ```
 """
-
     system = """You are a UI quality analyst. Analyze evidence captures and identify issues.
 Be specific and actionable. Cite evidence from the capture data.
 Always format response as valid JSON."""
 
-    try:
-        response = agent.generate(prompt=prompt, system=system, max_tokens=4096)
+    return prompt, system
 
-        response_text = response.content
-        analysis = None
 
-        json_match = None
+def _build_design_audit_prompt(
+    metadata: dict[str, Any],
+    page_state: dict[str, Any],
+    design_rules: list[dict[str, Any]],
+) -> tuple[str, str]:
+    """Build prompt for design audit mode."""
+    # Format rules by category for the prompt
+    rules_by_category: dict[str, list[dict[str, Any]]] = {}
+    for rule in design_rules:
+        cat = rule.get("category", "other")
+        if cat not in rules_by_category:
+            rules_by_category[cat] = []
+        rules_by_category[cat].append(rule)
+
+    rules_text = ""
+    for category, rules in rules_by_category.items():
+        rules_text += f"\n### {category.title()}\n"
+        for rule in rules:
+            rules_text += f"- **{rule['rule_id']}**: {rule['name']}\n"
+            req = rule.get("requirements", {})
+            if req:
+                rules_text += f"  Requirements: {json.dumps(req)}\n"
+
+    prompt = f"""Perform a design audit of this UI against the provided design standards.
+
+## Page Information
+- URL: {metadata.get("url", "Unknown")}
+- Title: {metadata.get("pageTitle", "Unknown")}
+- Viewport: {metadata.get("viewport", {})}
+
+## Page State
+- Has Content: {page_state.get("hasContent", False)}
+- Key Elements: {json.dumps(page_state.get("keyElements", {}), indent=2)}
+- Visible Text Sample: {page_state.get("visibleTextSample", "")[:300]}
+
+## Design Standards to Check Against
+{rules_text}
+
+Analyze the UI evidence (screenshot and page data) and evaluate compliance with each design rule.
+
+Provide a detailed compliance report in JSON format:
+```json
+{{
+  "compliance_report": {{
+    "passed_rules": [
+      {{
+        "rule_id": "layout-001",
+        "rule_name": "Content Width",
+        "evidence": "What shows compliance"
+      }}
+    ],
+    "violated_rules": [
+      {{
+        "rule_id": "typography-001",
+        "rule_name": "Font Family",
+        "severity": "high|medium|low",
+        "violation": "What is wrong",
+        "expected": "What the standard requires",
+        "actual": "What was observed",
+        "recommendation": "How to fix"
+      }}
+    ],
+    "overall_score": 75,
+    "summary": "Brief compliance summary",
+    "recommendations": [
+      "Priority recommendation 1",
+      "Priority recommendation 2"
+    ]
+  }}
+}}
+```
+
+Score calculation:
+- 100 = All rules pass
+- Deduct points per violation: high severity (-15), medium (-10), low (-5)
+- Minimum score is 0
+"""
+
+    system = """You are a UI/UX design auditor. Evaluate screenshots and page data against design standards.
+Be objective and specific. Cite visual evidence for each assessment.
+Always format response as valid JSON with compliance_report structure."""
+
+    return prompt, system
+
+
+def _parse_agent_response(response_text: str, mode: str) -> dict[str, Any]:
+    """Parse agent response based on mode."""
+    json_match = None
+
+    if mode == "design_audit":
+        patterns = [
+            r"```json\s*(.*?)\s*```",
+            r"```\s*(\{.*?\})\s*```",
+            r"(\{[\s\S]*\"compliance_report\"[\s\S]*\})",
+        ]
+    else:
         patterns = [
             r"```json\s*(.*?)\s*```",
             r"```\s*(\{.*?\})\s*```",
             r"(\{[\s\S]*\"issues\"[\s\S]*\})",
         ]
 
-        for pattern in patterns:
-            match = re.search(pattern, response_text, re.DOTALL)
-            if match:
-                json_match = match.group(1)
-                break
+    for pattern in patterns:
+        match = re.search(pattern, response_text, re.DOTALL)
+        if match:
+            json_match = match.group(1)
+            break
 
-        if json_match:
-            with contextlib.suppress(json.JSONDecodeError):
-                analysis = json.loads(json_match)
+    if json_match:
+        with contextlib.suppress(json.JSONDecodeError):
+            parsed = json.loads(json_match)
+            if isinstance(parsed, dict):
+                return parsed
 
-        if not analysis:
-            analysis = {
-                "issues": [],
-                "overall": {
-                    "score": 50,
-                    "status": "needs_work",
-                    "summary": "Could not parse structured response. Raw analysis available.",
-                },
-                "raw_analysis": response_text,
-            }
+    # Fallback structure based on mode
+    if mode == "design_audit":
+        return {
+            "compliance_report": {
+                "passed_rules": [],
+                "violated_rules": [],
+                "overall_score": 50,
+                "summary": "Could not parse structured response. Raw analysis available.",
+                "recommendations": [],
+            },
+            "raw_analysis": response_text,
+        }
+    else:
+        return {
+            "issues": [],
+            "overall": {
+                "score": 50,
+                "status": "needs_work",
+                "summary": "Could not parse structured response. Raw analysis available.",
+            },
+            "raw_analysis": response_text,
+        }
 
-        overall = analysis.get("overall", {})
-        score = overall.get("score", 50)
+
+@router.post("/projects/{project_id}/evidence/{evidence_id}/agent-review")
+async def agent_review(
+    project_id: str,
+    evidence_id: str,
+    request: AgentReviewRequest,
+) -> dict[str, Any]:
+    """Request an AI agent to analyze evidence.
+
+    Modes:
+    - quality (default): Analyze for bugs, performance, UX issues
+    - design_audit: Compare against project design standards, generate compliance report
+    """
+    # Validate mode
+    if request.mode not in ("quality", "design_audit"):
+        raise HTTPException(status_code=400, detail="Mode must be 'quality' or 'design_audit'")
+
+    evidence = get_evidence_by_id(project_id, evidence_id)
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    evidence_data = read_evidence_file(project_id, evidence_id, evidence.get("version"))
+    if not evidence_data:
+        raise HTTPException(status_code=404, detail="Evidence data not found")
+
+    # Get agent with fallback for design_audit mode
+    agent, agent_used = _get_agent_with_fallback(request.agent, request.mode)
+
+    console_summary = evidence_data.get("console", {})
+    network_summary = evidence_data.get("network", {})
+    page_state = evidence_data.get("pageState", {})
+    performance = evidence_data.get("performance", {})
+    metadata = evidence_data.get("metadata", {})
+
+    # Build prompt based on mode
+    if request.mode == "design_audit":
+        # Import here to avoid circular import
+        from ...storage.design_standards import get_effective_rules
+
+        design_rules = get_effective_rules(project_id)
+        if not design_rules:
+            raise HTTPException(
+                status_code=400,
+                detail="No design standards found for project. Create standards first.",
+            )
+        prompt, system = _build_design_audit_prompt(metadata, page_state, design_rules)
+    else:
+        prompt, system = _build_quality_prompt(
+            metadata, console_summary, network_summary, page_state, performance, request.focus
+        )
+
+    try:
+        response = agent.generate(prompt=prompt, system=system, max_tokens=4096)
+        response_text = response.content
+        analysis = _parse_agent_response(response_text, request.mode)
+
+        # Extract score and determine status based on mode
+        if request.mode == "design_audit":
+            compliance = analysis.get("compliance_report", {})
+            score = compliance.get("overall_score", 50)
+        else:
+            overall = analysis.get("overall", {})
+            score = overall.get("score", 50)
 
         if score >= 80:
             quality_status = "passed"
-            confidence = score / 100.0
         elif score >= 50:
             quality_status = "needs_review"
-            confidence = score / 100.0
         else:
             quality_status = "failed"
-            confidence = score / 100.0
+
+        confidence = score / 100.0
 
         update_ai_review(
             project_id=project_id,
@@ -232,27 +423,41 @@ Always format response as valid JSON."""
             quality_status=quality_status,
             confidence=confidence,
             ai_evidence=json.dumps(analysis),
-            reviewed_by=f"{request.agent}:{agent.get_model_name()}",
+            reviewed_by=f"{agent_used}:{agent.get_model_name()}",
         )
 
-        logger.info(
-            "agent_review_complete",
-            project_id=project_id,
-            evidence_id=evidence_id,
-            agent=request.agent,
-            issues_found=len(analysis.get("issues", [])),
-            score=score,
-        )
+        log_kwargs: dict[str, Any] = {
+            "project_id": project_id,
+            "evidence_id": evidence_id,
+            "agent": agent_used,
+            "mode": request.mode,
+            "score": score,
+        }
+        if request.mode == "design_audit":
+            compliance = analysis.get("compliance_report", {})
+            log_kwargs["violations"] = len(compliance.get("violated_rules", []))
+        else:
+            log_kwargs["issues_found"] = len(analysis.get("issues", []))
 
-        return {
+        logger.info("agent_review_complete", **log_kwargs)
+
+        # Build response based on mode
+        response_data: dict[str, Any] = {
             "success": True,
-            "agent": request.agent,
+            "agent": agent_used,
             "model": agent.get_model_name(),
-            "analysis": analysis,
+            "mode": request.mode,
             "quality_status": quality_status,
             "confidence": confidence,
         }
 
+        if request.mode == "design_audit":
+            response_data["compliance_report"] = analysis.get("compliance_report", {})
+        else:
+            response_data["analysis"] = analysis
+
+        return response_data
+
     except RuntimeError as e:
-        logger.error("agent_review_failed", error=str(e))
+        logger.error("agent_review_failed", error=str(e), mode=request.mode)
         raise HTTPException(status_code=500, detail=str(e)) from None
