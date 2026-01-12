@@ -341,3 +341,29 @@ async def approve_idea(project_id: str, idea_id: str) -> dict[str, Any]:
         "task_id": task["id"],
         "status": "approved",
     }
+
+
+@router.get("/notifications")
+def get_user_notifications(
+    user_email: str = Query(..., description="User email to fetch notifications for"),
+    mark_as_seen: bool = Query(True, description="Whether to mark notifications as read"),
+    cf_access_jwt: str | None = Header(None, alias="CF-Access-JWT-Assertion"),
+) -> list[dict[str, Any]]:
+    """Get notifications for a user by email.
+
+    This endpoint is used by game clients to fetch user-specific notifications,
+    such as when their crowdsourced idea has been implemented.
+
+    The notifications are automatically marked as read when fetched (default behavior).
+    """
+    from ..storage.notifications import get_notifications_by_user_email
+
+    # Optional: verify the requesting user matches the email (security)
+    # For now, we allow any authenticated user to check any email
+    # In production, you might want to verify cf_access_jwt matches user_email
+
+    return get_notifications_by_user_email(
+        user_email=user_email,
+        status_filter="pending",
+        mark_as_seen=mark_as_seen,
+    )

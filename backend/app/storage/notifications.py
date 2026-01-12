@@ -28,6 +28,8 @@ def create_notification(
     message: str,
     severity: NotificationSeverity = "info",
     task_id: str | None = None,
+    user_email: str | None = None,
+    idea_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new notification.
@@ -39,6 +41,8 @@ def create_notification(
         message: Detailed notification message
         severity: Severity level (info, warning, error, critical)
         task_id: Optional task ID to link to
+        user_email: Optional user email for user-specific notifications
+        idea_id: Optional idea ID for crowdsourced idea notifications
         metadata: Optional additional metadata
 
     Returns:
@@ -52,15 +56,17 @@ def create_notification(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO notifications (id, project_id, task_id, type, title, message, severity, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING id, project_id, task_id, type, title, message, severity, status,
+            INSERT INTO notifications (id, project_id, task_id, user_email, idea_id, type, title, message, severity, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (
                 notification_id,
                 project_id,
                 task_id,
+                user_email,
+                idea_id,
                 notification_type,
                 title,
                 message,
@@ -83,7 +89,7 @@ def get_notification(notification_id: str) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, task_id, type, title, message, severity, status,
+            SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                    metadata, created_at, read_at, dismissed_at
             FROM notifications
             WHERE id = %s
@@ -120,7 +126,7 @@ def list_notifications(
         if status_filter:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s AND status = %s
@@ -132,7 +138,7 @@ def list_notifications(
         elif not include_dismissed:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s AND status != 'dismissed'
@@ -144,7 +150,7 @@ def list_notifications(
         else:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s
@@ -189,7 +195,7 @@ def mark_as_read(notification_id: str) -> dict[str, Any] | None:
             UPDATE notifications
             SET status = 'read', read_at = NOW()
             WHERE id = %s
-            RETURNING id, project_id, task_id, type, title, message, severity, status,
+            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (notification_id,),
@@ -214,7 +220,7 @@ def dismiss_notification(notification_id: str) -> dict[str, Any] | None:
             UPDATE notifications
             SET status = 'dismissed', dismissed_at = NOW()
             WHERE id = %s
-            RETURNING id, project_id, task_id, type, title, message, severity, status,
+            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (notification_id,),
@@ -302,6 +308,107 @@ def create_task_failure_notification(
     )
 
 
+def get_notifications_by_user_email(
+    user_email: str,
+    status_filter: NotificationStatus | None = "pending",
+    mark_as_seen: bool = True,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Get notifications for a specific user by email.
+
+    This is used by game clients to fetch user-specific notifications
+    (e.g., when their crowdsourced idea is implemented).
+
+    Args:
+        user_email: User's email address
+        status_filter: Filter by status (default: pending only)
+        mark_as_seen: Whether to mark returned notifications as read (default: True)
+        limit: Max results (default 20)
+
+    Returns:
+        List of notification dicts
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Build query
+        if status_filter:
+            cur.execute(
+                """
+                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                       metadata, created_at, read_at, dismissed_at
+                FROM notifications
+                WHERE user_email = %s AND status = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (user_email, status_filter, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                       metadata, created_at, read_at, dismissed_at
+                FROM notifications
+                WHERE user_email = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (user_email, limit),
+            )
+
+        rows = cur.fetchall()
+        notifications = [_row_to_dict(row) for row in rows]
+
+        # Mark as seen if requested
+        if mark_as_seen and notifications:
+            notification_ids = [n["id"] for n in notifications if n["status"] == "pending"]
+            if notification_ids:
+                cur.execute(
+                    """
+                    UPDATE notifications
+                    SET status = 'read', read_at = NOW()
+                    WHERE id = ANY(%s::text[])
+                    """,
+                    (notification_ids,),
+                )
+                conn.commit()
+
+    return notifications
+
+
+def create_idea_completion_notification(
+    project_id: str,
+    user_email: str,
+    idea_id: str,
+    idea_title: str,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a notification for when a user's idea is implemented.
+
+    This is called when a crowdsourced idea task completes successfully.
+
+    Args:
+        project_id: Project ID
+        user_email: User's email (idea submitter)
+        idea_id: Idea ID
+        idea_title: Short description of the idea
+        task_id: Optional task ID that implemented the idea
+
+    Returns:
+        Created notification dict
+    """
+    return create_notification(
+        project_id=project_id,
+        notification_type="task_completed",
+        title="Your idea was implemented!",
+        message=f'Your suggestion "{idea_title}" has been implemented and is now live.',
+        severity="info",
+        task_id=task_id,
+        user_email=user_email,
+        idea_id=idea_id,
+        metadata={"idea_title": idea_title},
+    )
+
+
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a notification dict."""
     if row is None:
@@ -310,13 +417,15 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "id": row[0],
         "project_id": row[1],
         "task_id": row[2],
-        "type": row[3],
-        "title": row[4],
-        "message": row[5],
-        "severity": row[6],
-        "status": row[7],
-        "metadata": row[8] or {},
-        "created_at": row[9],
-        "read_at": row[10],
-        "dismissed_at": row[11],
+        "user_email": row[3],
+        "idea_id": row[4],
+        "type": row[5],
+        "title": row[6],
+        "message": row[7],
+        "severity": row[8],
+        "status": row[9],
+        "metadata": row[10] or {},
+        "created_at": row[11],
+        "read_at": row[12],
+        "dismissed_at": row[13],
     }

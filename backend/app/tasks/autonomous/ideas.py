@@ -63,7 +63,7 @@ def get_approved_ideas_by_priority(project_id: str, limit: int = 10) -> list[dic
 
 
 def update_idea_status(idea_id: str, status: str) -> None:
-    """Update idea status."""
+    """Update idea status and create notification if completed."""
     from datetime import UTC, datetime
 
     now = datetime.now(UTC)
@@ -77,6 +77,38 @@ def update_idea_status(idea_id: str, status: str) -> None:
                 "UPDATE ideas SET completed_at = %s WHERE id = %s",
                 (now, idea_id),
             )
+
+            # Create notification for the idea submitter
+            cur.execute(
+                """
+                SELECT project_id, user_email, refined_text, task_id
+                FROM ideas WHERE id = %s
+                """,
+                (idea_id,),
+            )
+            idea_row = cur.fetchone()
+            if idea_row and idea_row[1]:  # Has user_email
+                from app.storage.notifications import create_idea_completion_notification
+
+                project_id = idea_row[0]
+                user_email = idea_row[1]
+                idea_title = (idea_row[2] or "")[:50]  # First 50 chars
+                task_id = idea_row[3]
+
+                try:
+                    create_idea_completion_notification(
+                        project_id=project_id,
+                        user_email=user_email,
+                        idea_id=idea_id,
+                        idea_title=idea_title,
+                        task_id=task_id,
+                    )
+                    logger.info(
+                        f"Created completion notification for idea {idea_id} to {user_email}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create notification for idea {idea_id}: {e}")
+
         conn.commit()
 
 
