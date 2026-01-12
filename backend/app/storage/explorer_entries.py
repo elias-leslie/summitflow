@@ -453,3 +453,61 @@ def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[s
         deleted: int = cur.rowcount or 0
         conn.commit()
         return deleted
+
+
+def update_health_check(
+    entry_id: int,
+    health_status: str,
+    health_data: dict[str, Any],
+) -> bool:
+    """Update health check data for an explorer entry.
+
+    Args:
+        entry_id: Explorer entry ID
+        health_status: New health status ('healthy', 'warning', 'error', 'unknown')
+        health_data: Health check results to merge into metadata
+
+    Returns:
+        True if updated, False if entry not found
+    """
+    from psycopg.types.json import Jsonb
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE explorer_entries
+            SET health_status = %s,
+                metadata = metadata || %s,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id
+            """,
+            (health_status, Jsonb(health_data), entry_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return row is not None
+
+
+def get_pages_for_health_check(project_id: str) -> list[dict[str, Any]]:
+    """Get page entries that need health checks.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        List of page entry dicts with id, path, metadata
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {_ENTRY_COLUMNS}
+            FROM explorer_entries
+            WHERE project_id = %s
+              AND entry_type = 'page'
+            ORDER BY path
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+        return [_row_to_entry(row) for row in rows]

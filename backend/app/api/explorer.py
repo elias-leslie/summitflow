@@ -435,3 +435,34 @@ async def get_entry(
         )
 
     return entry
+
+
+@router.post("/{project_id}/explorer/health-check")
+async def trigger_health_check(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Trigger health checks for all page entries.
+
+    Runs ba check on each page to verify:
+    - HTTP response status
+    - Console errors
+    - Response time
+
+    Returns immediately with task ID for polling.
+    """
+    _validate_project_exists(project_id)
+
+    from celery import current_app
+
+    result = current_app.send_task(
+        "summitflow.run_page_health_checks",
+        args=[project_id],
+    )
+
+    return {
+        "status": "started",
+        "project_id": project_id,
+        "task_id": result.id,
+        "message": "Health check started. Results will update page entries.",
+    }
