@@ -110,7 +110,7 @@ export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
 }
 
 export async function getAgentConfig(
-  projectId: string
+  projectId: string,
 ): Promise<ProjectAgentConfig> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
     errorMessage: "Failed to fetch agent config",
@@ -119,7 +119,7 @@ export async function getAgentConfig(
 
 export async function updateAgentConfig(
   projectId: string,
-  config: ProjectAgentConfigUpdate
+  config: ProjectAgentConfigUpdate,
 ): Promise<ProjectAgentConfig> {
   const res = await fetch(`/api/projects/${projectId}/agents`, {
     method: "PATCH",
@@ -142,4 +142,73 @@ export async function createProject(project: {
     body: JSON.stringify(project),
     errorMessage: "Failed to create project",
   });
+}
+
+// ============================================================================
+// Automation Settings (for crowdsourced idea processing)
+// ============================================================================
+
+export interface AutomationSettings {
+  schedule_preset: "nightly" | "weekly" | "monthly";
+  cron_expression: string;
+  daily_budget_usd: number;
+  primary_agent: "claude" | "gemini";
+  secondary_agent: "claude" | "gemini";
+  enabled: boolean;
+}
+
+export async function getAutomationSettings(
+  projectId: string,
+): Promise<AutomationSettings> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/settings/automation`,
+    {
+      errorMessage: "Failed to fetch automation settings",
+    },
+  );
+}
+
+export async function updateAutomationSettings(
+  projectId: string,
+  settings: Partial<AutomationSettings>,
+): Promise<AutomationSettings> {
+  // Fetch current settings first to merge
+  const current = await getAutomationSettings(projectId);
+  const merged = { ...current, ...settings };
+
+  const res = await fetch(`/api/projects/${projectId}/settings/automation`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(merged),
+  });
+  if (!res.ok) throw new Error("Failed to update automation settings");
+  return res.json();
+}
+
+// ============================================================================
+// Execute Now (manual trigger for crowdsourced idea processing)
+// ============================================================================
+
+export interface ExecuteNowResponse {
+  status: string;
+  task_id: string;
+  project_id: string;
+  message: string;
+}
+
+export async function executeIdeasNow(
+  projectId: string,
+): Promise<ExecuteNowResponse> {
+  const res = await fetch(`/api/projects/${projectId}/ideas/execute-now`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    if (res.status === 429) {
+      const data = await res.json();
+      throw new Error(data.detail || "Too many requests");
+    }
+    throw new Error("Failed to execute ideas");
+  }
+  return res.json();
 }

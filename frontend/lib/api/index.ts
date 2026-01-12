@@ -11,3 +11,4 @@ export * from "./extraction";
 export * from "./tasks";
 export * from "./notifications";
 export * from "./git";
+export * from "./projects";

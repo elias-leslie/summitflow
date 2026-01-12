@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -18,6 +19,8 @@ import {
   OctagonX,
   ExternalLink,
   RotateCw,
+  Zap,
+  Lightbulb,
 } from "lucide-react";
 
 import type { Task, TaskStatus, TaskType } from "@/lib/api";
@@ -119,13 +122,28 @@ const priorityColors: Record<number, string> = {
 interface TaskCardProps {
   task: Task;
   onClick?: () => void;
+  onExecuteNow?: (taskId: string) => void;
+  isExecuting?: boolean;
+}
+
+// Check if task is a crowdsourced idea
+function isCrowdsourcedIdea(task: Task): boolean {
+  return (
+    task.status === "pending" &&
+    task.labels?.some((label) => label.toLowerCase() === "crowdsourced")
+  );
 }
 
 // ============================================================================
 // Task Card Component
 // ============================================================================
 
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export function TaskCard({
+  task,
+  onClick,
+  onExecuteNow,
+  isExecuting,
+}: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -143,6 +161,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
 
   const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task;
   const statusConfig = taskStatusConfig[task.status];
+  const isIdea = isCrowdsourcedIdea(task);
 
   // Capability context for criteria progress
   const capability = task.capability;
@@ -281,6 +300,39 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
             </div>
           )}
         </div>
+
+        {/* Execute Now button for crowdsourced ideas */}
+        {isIdea && onExecuteNow && (
+          <div className="mt-3 pt-2 border-t border-slate-700/50">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onExecuteNow(task.id);
+              }}
+              disabled={isExecuting}
+              className="flex items-center justify-center gap-1.5 w-full px-3 py-1.5 text-xs font-medium rounded bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExecuting ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Executing...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3 w-3" />
+                  Execute Now
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Idea indicator badge */}
+        {isIdea && (
+          <div className="absolute top-2 right-2">
+            <Lightbulb className="h-4 w-4 text-yellow-400" />
+          </div>
+        )}
       </div>
     </div>
   );

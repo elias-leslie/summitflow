@@ -20,14 +20,16 @@ import {
 } from "@dnd-kit/sortable";
 
 import type { Task, TaskStatus } from "@/lib/api";
+import { executeIdeasNow } from "@/lib/api";
 import { TaskCard, DragOverlayTaskCard } from "./TaskCard";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-// Kanban columns for git management workflow (5 columns per decision d2)
+// Kanban columns for git management workflow (6 columns: Ideas + 5 workflow per decision d2/d4)
 export type TaskKanbanColumn =
+  | "ideas"
   | "planning"
   | "in_progress"
   | "ai_review"
@@ -38,7 +40,7 @@ export interface KanbanColumn {
   id: TaskKanbanColumn;
   title: string;
   color: string;
-  icon: "sparkles" | "eye" | null;
+  icon: "sparkles" | "eye" | "lightbulb" | null;
 }
 
 interface TaskKanbanBoardProps {
@@ -54,6 +56,7 @@ interface TaskKanbanBoardProps {
 // ============================================================================
 
 // Map task status to Kanban column
+// Note: 'idea' status handled specially via crowdsourced label check
 const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // Planning column
   pending: "planning",
@@ -72,8 +75,19 @@ const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   cancelled: "done",
 };
 
+// Check if task is a crowdsourced idea (should be in Ideas column)
+function isCrowdsourcedIdea(task: Task): boolean {
+  // Tasks with crowdsourced label that are still pending go to Ideas column
+  // Once they start (running/etc), they move to normal workflow
+  return (
+    task.status === "pending" &&
+    task.labels?.some((label) => label.toLowerCase() === "crowdsourced")
+  );
+}
+
 // Map Kanban column to task status (for drag-drop)
 const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
+  ideas: "pending", // Ideas are pending tasks with crowdsourced label
   planning: "pending",
   in_progress: "running",
   ai_review: "ai_reviewing",
@@ -82,10 +96,11 @@ const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
 };
 
 // ============================================================================
-// Column Configuration (5 columns per decision d2)
+// Column Configuration (6 columns: Ideas + 5 workflow per decision d2/d4)
 // ============================================================================
 
 const COLUMNS: KanbanColumn[] = [
+  { id: "ideas", title: "Ideas", color: "yellow", icon: "lightbulb" },
   { id: "planning", title: "Planning", color: "slate", icon: null },
   { id: "in_progress", title: "In Progress", color: "blue", icon: null },
   { id: "ai_review", title: "AI Review", color: "amber", icon: "sparkles" },
@@ -94,8 +109,16 @@ const COLUMNS: KanbanColumn[] = [
 ];
 
 // ============================================================================
-// Icons for Review Columns
+// Icons for Column Headers
 // ============================================================================
+
+function LightbulbIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm2 15h-4v-1h4v1zm0-3h-4v-1.26l-.25-.18A5 5 0 0 1 7 9a5 5 0 1 1 10 0 5 5 0 0 1-2.75 4.56l-.25.18V14zm-1 5h-2v1a1 1 0 0 0 1 1 1 1 0 0 0 1-1v-1z" />
+    </svg>
+  );
+}
 
 function SparklesIcon({ className }: { className?: string }) {
   return (
@@ -121,13 +144,26 @@ interface DroppableColumnProps {
   column: KanbanColumn;
   tasks: Task[];
   onTaskClick?: (task: Task) => void;
+  onExecuteNow?: (taskId: string) => void;
+  executingTaskId?: string | null;
 }
 
-function DroppableColumn({ column, tasks, onTaskClick }: DroppableColumnProps) {
+function DroppableColumn({
+  column,
+  tasks,
+  onTaskClick,
+  onExecuteNow,
+  executingTaskId,
+}: DroppableColumnProps) {
   const colorClasses: Record<
     string,
     { header: string; border: string; bg: string }
   > = {
+    yellow: {
+      header: "text-yellow-400",
+      border: "border-yellow-500/30",
+      bg: "bg-yellow-950/20",
+    },
     slate: {
       header: "text-slate-400",
       border: "border-slate-700",
@@ -166,6 +202,7 @@ function DroppableColumn({ column, tasks, onTaskClick }: DroppableColumnProps) {
         <h3
           className={`text-sm font-medium flex items-center gap-1.5 ${colors.header}`}
         >
+          {column.icon === "lightbulb" && <LightbulbIcon className="w-4 h-4" />}
           {column.icon === "sparkles" && (
             <SparklesIcon className="w-4 h-4 animate-pulse" />
           )}
@@ -190,6 +227,10 @@ function DroppableColumn({ column, tasks, onTaskClick }: DroppableColumnProps) {
                   key={task.id}
                   task={task}
                   onClick={() => onTaskClick?.(task)}
+                  onExecuteNow={
+                    column.id === "ideas" ? onExecuteNow : undefined
+                  }
+                  isExecuting={executingTaskId === task.id}
                 />
               ))
             ) : (
@@ -210,10 +251,25 @@ function DroppableColumn({ column, tasks, onTaskClick }: DroppableColumnProps) {
 
 export function TaskKanbanBoard({
   tasks,
+  projectId,
   onStatusChange,
   onTaskClick,
 }: TaskKanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [executingTaskId, setExecutingTaskId] = useState<string | null>(null);
+
+  const handleExecuteNow = async (taskId: string) => {
+    setExecutingTaskId(taskId);
+    try {
+      await executeIdeasNow(projectId);
+      // Optionally refresh data here or let parent handle
+    } catch (error) {
+      console.error("Execute now failed:", error);
+      // Could show toast notification here
+    } finally {
+      setExecutingTaskId(null);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -238,6 +294,7 @@ export function TaskKanbanBoard({
   // Group tasks by column (using filtered tasks)
   const tasksByColumn = useMemo(() => {
     const grouped: Record<TaskKanbanColumn, Task[]> = {
+      ideas: [],
       planning: [],
       in_progress: [],
       ai_review: [],
@@ -246,8 +303,13 @@ export function TaskKanbanBoard({
     };
 
     for (const task of filteredTasks) {
-      const column = statusToColumn[task.status] || "planning";
-      grouped[column].push(task);
+      // Check if task is a crowdsourced idea (pending tasks with crowdsourced label)
+      if (isCrowdsourcedIdea(task)) {
+        grouped.ideas.push(task);
+      } else {
+        const column = statusToColumn[task.status] || "planning";
+        grouped[column].push(task);
+      }
     }
 
     // Sort each column by priority (lower is higher priority)
@@ -337,6 +399,8 @@ export function TaskKanbanBoard({
               column={column}
               tasks={tasksByColumn[column.id]}
               onTaskClick={onTaskClick}
+              onExecuteNow={handleExecuteNow}
+              executingTaskId={executingTaskId}
             />
           ))}
         </div>
