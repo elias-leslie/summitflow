@@ -32,12 +32,12 @@ import { EvidenceViewerModal } from "./EvidenceViewerModal";
 interface EvidenceItem {
   id: number;
   evidenceId: string;
-  capabilityId: string;
-  criterionId: string;
+  taskId: string | null;
+  explorerEntryId: number | null;
+  evidenceType: string;
   version: number;
   isCurrent: boolean;
   capturedAt: string;
-  expiresAt: string | null;
   qualityStatus: string;
   confidence: number | null;
   userApproved: boolean | null;
@@ -62,21 +62,21 @@ async function fetchEvidenceList(
   params: {
     limit: number;
     offset: number;
-    capabilityId?: string;
+    taskId?: string;
     status?: string;
     search?: string;
-  }
+  },
 ): Promise<EvidenceListResponse> {
   const searchParams = new URLSearchParams({
     limit: params.limit.toString(),
     offset: params.offset.toString(),
   });
-  if (params.capabilityId) searchParams.set("capability_id", params.capabilityId);
+  if (params.taskId) searchParams.set("task_id", params.taskId);
   if (params.status) searchParams.set("status", params.status);
   if (params.search) searchParams.set("search", params.search);
 
   const res = await fetch(
-    `/api/projects/${projectId}/evidence?${searchParams.toString()}`
+    `/api/projects/${projectId}/evidence?${searchParams.toString()}`,
   );
   if (!res.ok) throw new Error("Failed to fetch evidence");
   return res.json();
@@ -87,7 +87,9 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
   const [featureFilter, setFeatureFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(
+    null,
+  );
   const pageSize = 12;
 
   // Fetch evidence with filters
@@ -104,16 +106,18 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
       fetchEvidenceList(projectId, {
         limit: pageSize,
         offset: page * pageSize,
-        capabilityId: featureFilter !== "all" ? featureFilter : undefined,
+        taskId: featureFilter !== "all" ? featureFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
         search: searchQuery || undefined,
       }),
   });
 
-  // Get unique feature IDs for filter dropdown
-  const capabilityIds = useMemo(() => {
+  // Get unique task IDs for filter dropdown
+  const taskIds = useMemo(() => {
     if (!data?.evidence) return [];
-    const ids = new Set(data.evidence.map((e) => e.capabilityId));
+    const ids = new Set(
+      data.evidence.map((e) => e.taskId || `entry-${e.explorerEntryId}`),
+    );
     return Array.from(ids).sort();
   }, [data]);
 
@@ -200,7 +204,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Features</SelectItem>
-              {capabilityIds.map((id) => (
+              {taskIds.map((id) => (
                 <SelectItem key={id} value={id}>
                   {id}
                 </SelectItem>
@@ -270,7 +274,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
                 <div className="relative aspect-video bg-slate-900 overflow-hidden">
                   <Image
                     src={item.screenshotUrl}
-                    alt={`${item.capabilityId} / ${item.criterionId} evidence screenshot`}
+                    alt={`${item.taskId || `entry-${item.explorerEntryId}`} / ${item.evidenceType} evidence screenshot`}
                     fill
                     className="object-cover object-top group-hover:scale-105 transition-transform duration-300"
                     unoptimized
@@ -290,14 +294,14 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
                     <div className="flex items-center gap-1.5 min-w-0">
                       <FileJson className="h-4 w-4 text-slate-500 shrink-0" />
                       <span className="mono text-sm text-phosphor-400 truncate">
-                        {item.capabilityId}
+                        {item.taskId || `entry-${item.explorerEntryId}`}
                       </span>
                     </div>
                     {getStatusBadge(item.qualityStatus, item.userApproved)}
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <span className="mono">{item.criterionId}</span>
+                    <span className="mono">{item.evidenceType}</span>
                     <span className="text-slate-600">•</span>
                     <span>{formatFileSize(item.fileSizeBytes)}</span>
                   </div>
@@ -344,8 +348,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
           open={!!selectedEvidence}
           onOpenChange={(open) => !open && setSelectedEvidence(null)}
           projectId={projectId}
-          capabilityId={selectedEvidence.capabilityId}
-          criterionId={selectedEvidence.criterionId}
+          evidenceId={selectedEvidence.evidenceId}
         />
       )}
     </div>

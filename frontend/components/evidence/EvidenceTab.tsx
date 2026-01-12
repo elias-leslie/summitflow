@@ -34,8 +34,9 @@ interface EvidenceTabProps {
 interface Evidence {
   id: number;
   evidenceId: string;
-  capabilityId: string;
-  criterionId: string;
+  taskId: string | null;
+  explorerEntryId: number | null;
+  evidenceType: string;
   version: number;
   isCurrent: boolean;
   capturedAt: string;
@@ -45,11 +46,14 @@ interface Evidence {
   userNotes: string | null;
   fileSizeBytes: number | null;
   screenshotUrl: string;
-  // New fields for criteria linkage
   criterionDbId: number | null;
   testRunId: number | null;
   autoCaptured: boolean;
   criterionText: string | null;
+  linkedEvidenceId: number | null;
+  mockupStatus: string | null;
+  environment: string | null;
+  viewportName: string | null;
 }
 
 interface EvidenceSummary {
@@ -62,7 +66,11 @@ interface EvidenceSummary {
 
 type ViewMode = "grid" | "list";
 
-export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: EvidenceTabProps) {
+export function EvidenceTab({
+  projectId,
+  entryId,
+  onClearEntryFilter,
+}: EvidenceTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,7 +78,9 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
   const pageSize = 50;
 
   // Modal state
-  const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null);
+  const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(
+    null,
+  );
   const [modalOpen, setModalOpen] = useState(false);
 
   // Fetch entry details when filtering by entry_id
@@ -93,7 +103,9 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
       if (entryId) params.set("entry_id", String(entryId));
 
-      const response = await fetch(`/api/projects/${projectId}/evidence?${params}`);
+      const response = await fetch(
+        `/api/projects/${projectId}/evidence?${params}`,
+      );
       if (!response.ok) throw new Error("Failed to fetch evidence");
       return response.json() as Promise<{
         evidence: Evidence[];
@@ -108,7 +120,9 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
   const { data: summary } = useQuery({
     queryKey: ["evidence", projectId, "summary"],
     queryFn: async () => {
-      const response = await fetch(`/api/projects/${projectId}/evidence/summary`);
+      const response = await fetch(
+        `/api/projects/${projectId}/evidence/summary`,
+      );
       if (!response.ok) throw new Error("Failed to fetch summary");
       return response.json() as Promise<EvidenceSummary>;
     },
@@ -122,7 +136,8 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
 
   // Status badge component
   const StatusBadge = ({ status }: { status: string }) => {
-    const base = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium";
+    const base =
+      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium";
     switch (status) {
       case "passed":
         return (
@@ -188,13 +203,16 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
       {entryId && entryData && (
         <div className="flex items-center gap-2 text-sm">
           <Link
-            href={`/projects/${projectId}?tab=explorer&type=${(entryData as unknown as {entry_type: string}).entry_type}s`}
+            href={`/projects/${projectId}?tab=explorer&type=${(entryData as unknown as { entry_type: string }).entry_type}s`}
             className="text-slate-400 hover:text-white transition-colors"
           >
             Explorer
           </Link>
           <ChevronRight className="w-4 h-4 text-slate-600" />
-          <span className="text-phosphor-400 font-medium truncate max-w-[300px]" title={entryData.path}>
+          <span
+            className="text-phosphor-400 font-medium truncate max-w-[300px]"
+            title={entryData.path}
+          >
             {entryData.path}
           </span>
           <ChevronRight className="w-4 h-4 text-slate-600" />
@@ -216,7 +234,9 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="card p-4">
             <div className="text-xs text-slate-400">Total</div>
-            <div className="text-2xl font-bold text-white tabular-nums">{summary?.total_current || 0}</div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {summary?.total_current || 0}
+            </div>
           </div>
           <div className="card p-4">
             <div className="flex items-center gap-1">
@@ -304,7 +324,7 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
           <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Search capability/criterion..."
+            placeholder="Search task/entry..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -335,8 +355,8 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
             {searchQuery
               ? "Try adjusting your search"
               : entryId
-              ? "No evidence has been captured for this entry yet"
-              : "Evidence is captured when verifying capabilities"}
+                ? "No evidence has been captured for this entry yet"
+                : "Evidence is captured when verifying tasks"}
           </p>
         </div>
       ) : viewMode === "grid" ? (
@@ -352,7 +372,7 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
               <div className="aspect-video bg-slate-800 relative overflow-hidden">
                 <Image
                   src={evidence.screenshotUrl}
-                  alt={`${evidence.capabilityId} ${evidence.criterionId} evidence screenshot`}
+                  alt={`${evidence.evidenceId} evidence screenshot`}
                   fill
                   className="object-cover object-top group-hover:scale-105 transition-transform"
                   unoptimized
@@ -366,29 +386,38 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
               <div className="p-2 space-y-1">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-xs font-mono text-white truncate">
-                    {evidence.capabilityId}
+                    {evidence.taskId || `entry-${evidence.explorerEntryId}`}
                   </span>
                   <StatusBadge status={evidence.qualityStatus} />
                 </div>
                 <div className="flex items-center justify-between text-2xs text-slate-500">
-                  <span>{evidence.criterionId}</span>
+                  <span>{evidence.evidenceType}</span>
                   <span>v{evidence.version}</span>
                 </div>
                 <div className="flex items-center justify-between text-2xs text-slate-500">
                   <span>{formatDate(evidence.capturedAt)}</span>
                   {evidence.autoCaptured && (
-                    <span className="flex items-center gap-0.5 text-purple-400" title="Auto-captured on test pass">
+                    <span
+                      className="flex items-center gap-0.5 text-purple-400"
+                      title="Auto-captured on test pass"
+                    >
                       <Bot className="w-3 h-3" />
                     </span>
                   )}
                   {evidence.testRunId && !evidence.autoCaptured && (
-                    <span className="flex items-center gap-0.5 text-cyan-400" title={`Test run #${evidence.testRunId}`}>
+                    <span
+                      className="flex items-center gap-0.5 text-cyan-400"
+                      title={`Test run #${evidence.testRunId}`}
+                    >
                       <TestTube className="w-3 h-3" />
                     </span>
                   )}
                 </div>
                 {evidence.criterionText && (
-                  <div className="text-2xs text-slate-400 truncate" title={evidence.criterionText}>
+                  <div
+                    className="text-2xs text-slate-400 truncate"
+                    title={evidence.criterionText}
+                  >
                     Verifies: {evidence.criterionText}
                   </div>
                 )}
@@ -403,10 +432,10 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
             <thead className="bg-slate-800/50 border-b border-slate-700">
               <tr>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
-                  Capability
+                  Task/Entry
                 </th>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
-                  Criterion
+                  Type
                 </th>
                 <th className="text-left px-3 py-2 font-medium text-slate-400 text-xs">
                   Status
@@ -433,12 +462,17 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
                   className="hover:bg-slate-800/30 cursor-pointer transition-colors"
                 >
                   <td className="px-3 py-2 font-mono text-xs text-white">
-                    {evidence.capabilityId}
+                    {evidence.taskId || `entry-${evidence.explorerEntryId}`}
                   </td>
                   <td className="px-3 py-2">
-                    <div className="font-mono text-xs text-slate-400">{evidence.criterionId}</div>
+                    <div className="font-mono text-xs text-slate-400">
+                      {evidence.evidenceType}
+                    </div>
                     {evidence.criterionText && (
-                      <div className="text-2xs text-slate-500 truncate max-w-[200px]" title={evidence.criterionText}>
+                      <div
+                        className="text-2xs text-slate-500 truncate max-w-[200px]"
+                        title={evidence.criterionText}
+                      >
                         {evidence.criterionText}
                       </div>
                     )}
@@ -446,18 +480,26 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
                   <td className="px-3 py-2">
                     <StatusBadge status={evidence.qualityStatus} />
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-400">v{evidence.version}</td>
+                  <td className="px-3 py-2 text-xs text-slate-400">
+                    v{evidence.version}
+                  </td>
                   <td className="px-3 py-2 text-xs text-slate-500">
                     {formatDate(evidence.capturedAt)}
                   </td>
                   <td className="px-3 py-2">
                     {evidence.autoCaptured ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-purple-400" title="Auto-captured on test pass">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs text-purple-400"
+                        title="Auto-captured on test pass"
+                      >
                         <Bot className="w-3 h-3" />
                         Auto
                       </span>
                     ) : evidence.testRunId ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-cyan-400" title={`Test run #${evidence.testRunId}`}>
+                      <span
+                        className="inline-flex items-center gap-1 text-xs text-cyan-400"
+                        title={`Test run #${evidence.testRunId}`}
+                      >
                         <TestTube className="w-3 h-3" />
                         Test
                       </span>
@@ -513,8 +555,8 @@ export function EvidenceTab({ projectId, entryId, onClearEntryFilter }: Evidence
           open={modalOpen}
           onOpenChange={setModalOpen}
           projectId={projectId}
-          capabilityId={selectedEvidence.capabilityId}
-          criterionId={selectedEvidence.criterionId}
+          evidenceId={selectedEvidence.evidenceId}
+          criterionText={selectedEvidence.criterionText ?? undefined}
         />
       )}
     </div>

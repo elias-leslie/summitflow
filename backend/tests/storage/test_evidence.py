@@ -39,6 +39,29 @@ def cleanup_project(conn):
         conn.commit()
 
 
+@pytest.fixture
+def test_explorer_entry(conn, cleanup_project):
+    """Create a test explorer entry for linking evidence."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO explorer_entries (project_id, path, entry_type, name)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (cleanup_project, "/test/path", "file", "test"),
+        )
+        entry_id = cur.fetchone()[0]
+        conn.commit()
+
+    yield entry_id
+
+    # Cleanup: delete the entry since it may conflict with project cleanup FK
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM explorer_entries WHERE id = %s", (entry_id,))
+        conn.commit()
+
+
 class TestEvidenceCountForCriteria:
     """Tests for get_evidence_count_for_criteria."""
 
@@ -65,7 +88,7 @@ class TestEvidenceCountForCriteria:
         result = evidence.get_evidence_count_for_criteria(cleanup_project, [crit_id])
         assert result == {}
 
-    def test_counts_evidence_per_criterion(self, conn, cleanup_project):
+    def test_counts_evidence_per_criterion(self, conn, cleanup_project, test_explorer_entry):
         """Returns correct counts per criterion."""
         # Create two criteria
         with conn.cursor() as cur:
@@ -89,20 +112,19 @@ class TestEvidenceCountForCriteria:
             )
             crit2_id = cur.fetchone()[0]
 
-            # Add 2 evidence for crit1
+            # Add 2 evidence for crit1 (linked via explorer_entry_id)
             for i in range(2):
                 cur.execute(
                     """
                     INSERT INTO evidence (
-                        project_id, evidence_id, capability_id, criterion_id, evidence_type,
+                        project_id, evidence_id, explorer_entry_id, evidence_type,
                         file_path, version, is_current, criterion_db_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
                     """,
                     (
                         cleanup_project,
                         f"ev-{i}",
-                        "cap-1",
-                        "ac-001",
+                        test_explorer_entry,
                         "screenshot",
                         f"/path/ev-{i}.png",
                         i + 1,
@@ -115,15 +137,14 @@ class TestEvidenceCountForCriteria:
                 cur.execute(
                     """
                     INSERT INTO evidence (
-                        project_id, evidence_id, capability_id, criterion_id, evidence_type,
+                        project_id, evidence_id, explorer_entry_id, evidence_type,
                         file_path, version, is_current, criterion_db_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
                     """,
                     (
                         cleanup_project,
                         f"ev-c2-{i}",
-                        "cap-2",
-                        "ac-002",
+                        test_explorer_entry,
                         "screenshot",
                         f"/path/ev-c2-{i}.png",
                         i + 1,
@@ -137,7 +158,7 @@ class TestEvidenceCountForCriteria:
         assert result[crit1_id] == 2
         assert result[crit2_id] == 3
 
-    def test_only_counts_current_versions(self, conn, cleanup_project):
+    def test_only_counts_current_versions(self, conn, cleanup_project, test_explorer_entry):
         """Only counts is_current=TRUE evidence."""
         with conn.cursor() as cur:
             cur.execute(
@@ -154,15 +175,14 @@ class TestEvidenceCountForCriteria:
             cur.execute(
                 """
                 INSERT INTO evidence (
-                    project_id, evidence_id, capability_id, criterion_id, evidence_type,
+                    project_id, evidence_id, explorer_entry_id, evidence_type,
                     file_path, version, is_current, criterion_db_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
                 """,
                 (
                     cleanup_project,
                     "ev-current",
-                    "cap-1",
-                    "ac-001",
+                    test_explorer_entry,
                     "screenshot",
                     "/path/current.png",
                     3,
@@ -173,15 +193,14 @@ class TestEvidenceCountForCriteria:
                 cur.execute(
                     """
                     INSERT INTO evidence (
-                        project_id, evidence_id, capability_id, criterion_id, evidence_type,
+                        project_id, evidence_id, explorer_entry_id, evidence_type,
                         file_path, version, is_current, criterion_db_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s)
                     """,
                     (
                         cleanup_project,
                         f"ev-old-{i}",
-                        "cap-1",
-                        "ac-001",
+                        test_explorer_entry,
                         "screenshot",
                         f"/path/old-{i}.png",
                         i + 1,
