@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { TopBar } from "@/components/layout/TopBar";
 import { AppShell } from "@/components/layout/AppShell";
+import { Sidebar } from "@/components/layout/Sidebar";
 
 export const metadata: Metadata = {
   title: "SummitFlow",
@@ -22,11 +23,15 @@ export default function RootLayout({
             {/* Top navigation bar */}
             <TopBar />
 
-            {/* Main content area with terminal */}
+            {/* Main content area with sidebar */}
             <AppShell>
-              <main className="flex-1 overflow-auto bg-grid">
-                {children}
-              </main>
+              <div className="flex flex-1 overflow-hidden">
+                {/* Sidebar - shows on all pages, adapts to context */}
+                <Sidebar />
+
+                {/* Main content */}
+                <main className="flex-1 overflow-auto bg-grid">{children}</main>
+              </div>
             </AppShell>
           </div>
         </Providers>
