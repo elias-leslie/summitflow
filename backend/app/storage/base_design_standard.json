@@ -94,29 +94,29 @@
       ]
     },
     "color": {
-      "description": "Outrun color palette and usage patterns",
+      "description": "Outrun color palette - purple-tinted darks with neon accents",
       "rules": [
         {
           "rule_id": "color-001",
           "name": "Background Colors",
           "requirements": {
-            "bg_primary": {"exact": "#0f172a", "severity": "error"},
-            "bg_secondary": {"exact": "#1e293b", "severity": "error"},
-            "bg_tertiary": {"exact": "#334155", "severity": "warning"}
+            "bg_primary": {"exact": "#0f0a18", "severity": "error"},
+            "bg_secondary": {"exact": "#1a0a2e", "severity": "error"},
+            "bg_tertiary": {"exact": "#251538", "severity": "warning"}
           }
         },
         {
           "rule_id": "color-002",
-          "name": "Primary Accent",
+          "name": "Primary Accent (Outrun Pink)",
           "requirements": {
-            "primary_color": {"exact": "#ec4899", "severity": "error"}
+            "primary_color": {"exact": "#ff0066", "severity": "error"}
           }
         },
         {
           "rule_id": "color-003",
-          "name": "Secondary Accent",
+          "name": "Secondary Accent (Phosphor Cyan)",
           "requirements": {
-            "secondary_color": {"exact": "#00D9FF", "severity": "error"}
+            "secondary_color": {"exact": "#00f5ff", "severity": "error"}
           }
         },
         {
@@ -132,9 +132,9 @@
           "rule_id": "color-005",
           "name": "Status Colors",
           "requirements": {
-            "success_color": {"exact": "#22c55e", "severity": "warning"},
-            "warning_color": {"exact": "#eab308", "severity": "warning"},
-            "error_color": {"exact": "#ef4444", "severity": "warning"},
+            "success_color": {"exact": "#00f5ff", "severity": "warning"},
+            "warning_color": {"exact": "#f59e0b", "severity": "warning"},
+            "error_color": {"exact": "#f43f5e", "severity": "warning"},
             "info_color": {"exact": "#3b82f6", "severity": "warning"}
           }
         },
@@ -143,7 +143,17 @@
           "name": "Gradient Usage",
           "requirements": {
             "gradient_direction": {"allowed": ["to-r", "to-br", "to-b"], "severity": "warning"},
-            "gradient_from": {"allowed": ["#ec4899", "#00D9FF", "#8b5cf6"], "severity": "warning"}
+            "gradient_from": {"allowed": ["#ff0066", "#00f5ff", "#bf00ff"], "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "color-007",
+          "name": "Priority Colors",
+          "requirements": {
+            "priority_critical": {"exact": "#ff0066", "severity": "warning"},
+            "priority_high": {"exact": "#ff6600", "severity": "warning"},
+            "priority_medium": {"exact": "#f59e0b", "severity": "warning"},
+            "priority_low": {"exact": "#64748b", "severity": "warning"}
           }
         }
       ]
@@ -155,7 +165,7 @@
           "rule_id": "comp-001",
           "name": "Button Primary",
           "requirements": {
-            "button_primary_bg": {"exact": "#ec4899", "severity": "error"},
+            "button_primary_bg": {"exact": "#ff0066", "severity": "error"},
             "button_border_radius": {"min": 6, "max": 12, "severity": "warning"}
           }
         },
@@ -164,15 +174,15 @@
           "name": "Button Secondary",
           "requirements": {
             "button_secondary_bg": {"exact": "transparent", "severity": "warning"},
-            "button_secondary_border": {"exact": "#334155", "severity": "warning"}
+            "button_secondary_border": {"exact": "#2d1d42", "severity": "warning"}
           }
         },
         {
           "rule_id": "comp-003",
           "name": "Card Styling",
           "requirements": {
-            "card_bg": {"exact": "#1e293b", "severity": "warning"},
-            "card_border": {"exact": "#334155", "severity": "warning"},
+            "card_bg": {"exact": "#1a0a2e", "severity": "warning"},
+            "card_border": {"exact": "#2d1d42", "severity": "warning"},
             "card_border_radius": {"min": 8, "max": 16, "severity": "warning"}
           }
         },
@@ -188,18 +198,26 @@
           "rule_id": "comp-005",
           "name": "Input Elements",
           "requirements": {
-            "input_bg": {"exact": "#0f172a", "severity": "warning"},
-            "input_border": {"exact": "#334155", "severity": "warning"},
-            "input_focus_border": {"exact": "#00D9FF", "severity": "warning"}
+            "input_bg": {"exact": "#0f0a18", "severity": "warning"},
+            "input_border": {"exact": "#2d1d42", "severity": "warning"},
+            "input_focus_border": {"exact": "#00f5ff", "severity": "warning"}
           }
         },
         {
           "rule_id": "comp-006",
           "name": "Table Styling",
           "requirements": {
-            "table_header_bg": {"exact": "#1e293b", "severity": "warning"},
-            "table_row_hover": {"exact": "#334155", "severity": "warning"},
-            "table_border": {"exact": "#334155", "severity": "warning"}
+            "table_header_bg": {"exact": "#1a0a2e", "severity": "warning"},
+            "table_row_hover": {"exact": "#251538", "severity": "warning"},
+            "table_border": {"exact": "#2d1d42", "severity": "warning"}
+          }
+        },
+        {
+          "rule_id": "comp-007",
+          "name": "Glow Effects",
+          "requirements": {
+            "glow_color_primary": {"exact": "rgba(255, 0, 102, 0.3)", "severity": "warning"},
+            "glow_color_secondary": {"exact": "rgba(0, 245, 255, 0.3)", "severity": "warning"}
           }
         }
       ]
