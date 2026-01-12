@@ -56,8 +56,10 @@ def test_explorer_entry(conn, cleanup_project):
 
     yield entry_id
 
-    # Cleanup: delete the entry since it may conflict with project cleanup FK
+    # Cleanup: delete evidence first (CHECK constraint requires task_id OR explorer_entry_id),
+    # then delete the entry
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM evidence WHERE explorer_entry_id = %s", (entry_id,))
         cur.execute("DELETE FROM explorer_entries WHERE id = %s", (entry_id,))
         conn.commit()
 
