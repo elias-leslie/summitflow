@@ -211,6 +211,7 @@ def _build_design_audit_prompt(
     metadata: dict[str, Any],
     page_state: dict[str, Any],
     design_rules: list[dict[str, Any]],
+    sub_elements: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Build prompt for design audit mode."""
     # Format rules by category for the prompt
@@ -230,6 +231,17 @@ def _build_design_audit_prompt(
             if req:
                 rules_text += f"  Requirements: {json.dumps(req)}\n"
 
+    # Format sub-elements if present
+    sub_elements_text = ""
+    if sub_elements:
+        sub_elements_text = "\n## Interactive Sub-Elements (require individual verification)\n"
+        for el in sub_elements:
+            el_type = el.get("element_type", "unknown")
+            label = el.get("label", "unlabeled")
+            captured = "Yes" if el.get("last_captured_at") else "No"
+            sub_elements_text += f"- **{el_type}**: {label} (captured: {captured})\n"
+        sub_elements_text += "\nNote: Sub-elements like tabs and accordions may need individual screenshots for full coverage.\n"
+
     prompt = f"""Perform a design audit of this UI against the provided design standards.
 
 ## Page Information
@@ -241,7 +253,7 @@ def _build_design_audit_prompt(
 - Has Content: {page_state.get("hasContent", False)}
 - Key Elements: {json.dumps(page_state.get("keyElements", {}), indent=2)}
 - Visible Text Sample: {page_state.get("visibleTextSample", "")[:300]}
-
+{sub_elements_text}
 ## Design Standards to Check Against
 {rules_text}
 
@@ -269,6 +281,11 @@ Provide a detailed compliance report in JSON format:
         "recommendation": "How to fix"
       }}
     ],
+    "sub_element_coverage": {{
+      "total": 0,
+      "captured": 0,
+      "uncaptured": ["list of uncaptured element labels"]
+    }},
     "overall_score": 75,
     "summary": "Brief compliance summary",
     "recommendations": [
@@ -282,11 +299,13 @@ Provide a detailed compliance report in JSON format:
 Score calculation:
 - 100 = All rules pass
 - Deduct points per violation: high severity (-15), medium (-10), low (-5)
+- Deduct 2 points per uncaptured sub-element (coverage gap)
 - Minimum score is 0
 """
 
     system = """You are a UI/UX design auditor. Evaluate screenshots and page data against design standards.
 Be objective and specific. Cite visual evidence for each assessment.
+Include sub-element coverage analysis when sub-elements are present.
 Always format response as valid JSON with compliance_report structure."""
 
     return prompt, system
@@ -382,6 +401,7 @@ async def agent_review(
     if request.mode == "design_audit":
         # Import here to avoid circular import
         from ...storage.design_standards import get_effective_rules
+        from ...storage.explorer_sub_elements import get_elements_for_entry
 
         design_rules = get_effective_rules(project_id)
         if not design_rules:
@@ -389,7 +409,17 @@ async def agent_review(
                 status_code=400,
                 detail="No design standards found for project. Create standards first.",
             )
-        prompt, system = _build_design_audit_prompt(metadata, page_state, design_rules)
+
+        # Get sub-elements if evidence is linked to an explorer entry
+        sub_elements: list[dict[str, Any]] = []
+        explorer_entry_id = evidence.get("explorer_entry_id")
+        if explorer_entry_id:
+            # TypedDict is compatible with dict[str, Any] at runtime
+            sub_elements = list(get_elements_for_entry(explorer_entry_id))  # type: ignore[arg-type]
+
+        prompt, system = _build_design_audit_prompt(
+            metadata, page_state, design_rules, sub_elements or None
+        )
     else:
         prompt, system = _build_quality_prompt(
             metadata, console_summary, network_summary, page_state, performance, request.focus

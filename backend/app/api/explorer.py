@@ -97,6 +97,26 @@ async def list_entries(
     filters = {k: v for k, v in filters.items() if v is not None}
 
     entries = explorer.get_entries(project_id, filters)
+
+    # For page entries, include sub_elements if any exist
+    if type == "page" or not type:
+        from ..storage import explorer_sub_elements
+
+        for entry in entries:
+            if entry.get("entry_type") == "page":
+                sub_els = explorer_sub_elements.get_elements_for_entry(entry["id"])
+                entry["sub_elements"] = [
+                    {
+                        "id": el["id"],
+                        "selector": el["selector"],
+                        "element_type": el["element_type"],
+                        "label": el.get("label"),
+                        "last_captured_at": el.get("last_captured_at"),
+                        "capture_count": el.get("capture_count", 0),
+                    }
+                    for el in sub_els
+                ]
+
     # Get stats filtered by type if type filter is applied
     stats = explorer.get_stats(project_id, entry_type=type)
 
