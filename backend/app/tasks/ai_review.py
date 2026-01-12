@@ -401,6 +401,117 @@ def _run_security_risk_classification(
     return result
 
 
+# API contract patterns that may indicate breaking changes
+API_CONTRACT_PATTERNS = [
+    # Python function signatures
+    r"^-\s*def\s+\w+\s*\(",  # Removed function definition
+    r"^-\s*class\s+\w+",  # Removed class
+    r"^-\s*@(api|router|app)\.",  # Removed API decorator
+    # TypeScript/JavaScript exports
+    r"^-\s*export\s+(const|function|class|interface|type)",  # Removed export
+    r"^-\s*export\s+default",  # Removed default export
+    # Props and types
+    r"^-\s*interface\s+\w+Props",  # Removed Props interface
+    r"^-\s*type\s+\w+Props",  # Removed Props type
+    # API schemas
+    r"^-\s*(class|def)\s+\w+(Schema|Request|Response)",  # Removed schema
+]
+
+
+def _detect_api_contract_changes(
+    diff: str,
+) -> tuple[bool, list[str]]:
+    """Detect potential API contract changes in a diff.
+
+    Looks for patterns that may indicate breaking changes:
+    - Removed function/class definitions
+    - Removed exports
+    - Changed Props interfaces
+    - Removed API schemas
+
+    Args:
+        diff: Git diff output
+
+    Returns:
+        Tuple of (has_breaking_changes, list of detected patterns)
+    """
+    if not diff:
+        return False, []
+
+    detected: list[str] = []
+
+    for line in diff.split("\n"):
+        for pattern in API_CONTRACT_PATTERNS:
+            if re.search(pattern, line):
+                detected.append(line.strip()[:80])
+                break
+
+    return len(detected) > 0, detected
+
+
+def _run_breaking_change_detection(
+    task: dict[str, Any],
+    project_path: Path,
+    pytest_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Run breaking change detection.
+
+    Combines test failure analysis with semantic diff analysis.
+
+    Args:
+        task: Task dict
+        project_path: Path to project root
+        pytest_result: Result from pytest check
+
+    Returns:
+        Check result dict with breaking_change flag and details
+    """
+    from app.services.git_service import capture_diff
+
+    result: dict[str, Any] = {
+        "status": "pass",
+        "has_breaking_change": False,
+        "reasons": [],
+    }
+
+    # Step 1: Check test results - test failures indicate potential breaking changes
+    if pytest_result.get("status") == "fail":
+        result["has_breaking_change"] = True
+        result["reasons"].append("Test suite failed - changes may break existing functionality")
+        result["test_output"] = pytest_result.get("output", "")[:500]
+
+    # Step 2: Analyze diff for API contract changes
+    try:
+        # Get the diff from main branch or pre_merge_sha
+        pre_merge_sha = task.get("pre_merge_sha")
+        if pre_merge_sha:
+            diff = capture_diff(project_path, base_sha=pre_merge_sha)
+        else:
+            diff = capture_diff(project_path, base_sha="HEAD~1")
+
+        has_contract_changes, patterns = _detect_api_contract_changes(diff)
+
+        if has_contract_changes:
+            result["has_breaking_change"] = True
+            result["reasons"].append(f"Detected {len(patterns)} potential API contract change(s)")
+            result["api_changes"] = patterns[:10]  # Limit to 10
+
+    except Exception as e:
+        logger.warning("breaking_change_diff_failed", error=str(e))
+        result["diff_error"] = str(e)
+
+    # Set final status
+    if result["has_breaking_change"]:
+        result["status"] = "escalate"
+        logger.info(
+            "breaking_change_detected",
+            task_id=task.get("id"),
+            reasons=result["reasons"],
+        )
+
+    return result
+
+
 def _run_ui_review(
     task: dict[str, Any],
     project_path: Path,
@@ -737,6 +848,33 @@ def review_pull_request(
         checks["pytest"] = _run_pytest(project_path)
         if checks["pytest"].get("status") == "fail":
             all_issues.append("pytest: Tests failed")
+
+        # Step 3: Breaking change detection (runs after pytest to include test results)
+        logger.info("running_breaking_change_detection", task_id=task_id)
+        checks["breaking_change"] = _run_breaking_change_detection(
+            task, project_path, checks["pytest"]
+        )
+
+        # Breaking changes escalate to human review
+        if checks["breaking_change"].get("status") == "escalate":
+            bc_reasons = checks["breaking_change"].get("reasons", [])
+            escalation_reason = f"Breaking changes detected: {'; '.join(bc_reasons)}"
+            logger.info("breaking_change_escalation", task_id=task_id, reason=escalation_reason)
+
+            result = ReviewResult(
+                verdict=ReviewVerdict.FAIL,
+                summary=f"Breaking change gate: {escalation_reason}",
+                checks=checks,
+                issues=[f"BREAKING CHANGE: {r}" for r in bc_reasons],
+                risk_level=risk_level,
+            )
+
+            # Update task and escalate to human review
+            task_store.update_task(task_id, review_result=result.to_dict())
+            task_store.update_task_status(task_id, "human_review")
+            _notify_human_review_needed(task_id, escalation_reason)
+
+            return result.to_dict()
 
         logger.info("running_precommit", task_id=task_id)
         checks["precommit"] = _run_precommit(project_path)
