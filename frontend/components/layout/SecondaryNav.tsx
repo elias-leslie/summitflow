@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Kanban,
   ListTodo,
@@ -14,12 +14,14 @@ import {
   Archive,
   ChevronLeft,
   ChevronRight,
-  Folder,
+  ChevronDown,
+  LayoutGrid,
+  Check,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchProject } from "@/lib/api";
+import { fetchProject, fetchProjects } from "@/lib/api";
 import clsx from "clsx";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type NavItemId =
   | "kanban"
@@ -149,13 +151,21 @@ interface SecondaryNavProps {
 export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => fetchProject(projectId),
     staleTime: 60000,
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: fetchProjects,
   });
 
   useEffect(() => {
@@ -166,10 +176,42 @@ export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
     setMounted(true);
   }, []);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const toggleCollapsed = () => {
     const newValue = !isCollapsed;
     setIsCollapsed(newValue);
     localStorage.setItem(STORAGE_KEY, String(newValue));
+    if (newValue) setDropdownOpen(false);
+  };
+
+  const handleSelectProject = (newProjectId: string) => {
+    setDropdownOpen(false);
+    if (newProjectId !== projectId) {
+      const currentTab = searchParams.get("tab");
+      let targetUrl = `/projects/${newProjectId}`;
+      if (currentTab) {
+        targetUrl += `?tab=${currentTab}`;
+      }
+      router.push(targetUrl);
+    }
+  };
+
+  const handleGoToDashboard = () => {
+    setDropdownOpen(false);
+    router.push("/");
   };
 
   const getActiveTab = (): NavItemId => {
@@ -207,32 +249,179 @@ export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
         className,
       )}
     >
-      {/* Project Header */}
-      <div className="p-3 border-b border-slate-700/50">
-        <div
+      {/* Project Selector Header */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => !isCollapsed && setDropdownOpen(!dropdownOpen)}
+          disabled={isCollapsed}
           className={clsx(
-            "flex items-center gap-2 text-slate-300",
-            isCollapsed && "justify-center",
+            "w-full p-3 border-b border-slate-700/50 transition-all duration-200",
+            !isCollapsed && "hover:bg-slate-800/50 cursor-pointer group",
+            isCollapsed && "cursor-default",
           )}
           title={isCollapsed ? project?.name || projectId : undefined}
         >
           <div
             className={clsx(
-              "flex-shrink-0 flex items-center justify-center rounded-md",
-              "bg-outrun-500/20 text-outrun-400",
-              isCollapsed ? "w-10 h-10" : "w-8 h-8",
+              "flex items-center gap-2.5",
+              isCollapsed && "justify-center",
             )}
           >
-            <Folder className={clsx(isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+            {/* Project Icon with Health Glow */}
+            <div className="relative flex-shrink-0">
+              <div
+                className={clsx(
+                  "flex items-center justify-center rounded-lg transition-all duration-300",
+                  "bg-gradient-to-br from-outrun-500/20 to-pink-500/10",
+                  "border border-outrun-500/30",
+                  isCollapsed ? "w-10 h-10" : "w-9 h-9",
+                  !isCollapsed &&
+                    "group-hover:border-outrun-500/50 group-hover:shadow-[0_0_12px_rgba(255,0,102,0.2)]",
+                )}
+              >
+                <span
+                  className={clsx(
+                    "font-bold text-outrun-400 transition-all duration-300",
+                    isCollapsed ? "text-base" : "text-sm",
+                    !isCollapsed && "group-hover:text-outrun-300",
+                  )}
+                >
+                  {(project?.name || projectId).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              {/* Health Status Indicator */}
+              <div
+                className={clsx(
+                  "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900",
+                  project?.health_status === "healthy"
+                    ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
+                    : "bg-slate-500",
+                )}
+              />
+            </div>
+
+            {/* Project Name & Chevron */}
+            {!isCollapsed && (
+              <>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-sm font-semibold text-slate-200 truncate group-hover:text-white transition-colors">
+                    {project?.name || projectId}
+                  </div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">
+                    Project
+                  </div>
+                </div>
+                <ChevronDown
+                  className={clsx(
+                    "w-4 h-4 text-slate-500 transition-all duration-300 flex-shrink-0",
+                    "group-hover:text-slate-300",
+                    dropdownOpen && "rotate-180 text-outrun-400",
+                  )}
+                />
+              </>
+            )}
           </div>
-          {!isCollapsed && (
-            <span className="text-sm font-medium truncate">
-              {project?.name || projectId}
-            </span>
-          )}
-        </div>
+        </button>
+
+        {/* Dropdown Menu */}
+        {dropdownOpen && !isCollapsed && (
+          <div
+            className={clsx(
+              "absolute left-0 right-0 top-full z-50",
+              "bg-slate-900/95 backdrop-blur-sm",
+              "border-x border-b border-slate-700/50",
+              "shadow-2xl shadow-black/50",
+              "animate-in fade-in slide-in-from-top-2 duration-200",
+              "max-h-80 overflow-y-auto",
+            )}
+          >
+            {/* Dashboard Link */}
+            <button
+              onClick={handleGoToDashboard}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-outrun-500/10 transition-colors border-b border-slate-700/30"
+            >
+              <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
+                <LayoutGrid className="w-4 h-4 text-outrun-400" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-outrun-400">
+                  Dashboard
+                </div>
+                <div className="text-[10px] text-slate-500">All projects</div>
+              </div>
+            </button>
+
+            {/* Projects List */}
+            <div className="py-1">
+              {projects?.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => handleSelectProject(p.id)}
+                  className={clsx(
+                    "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all duration-150",
+                    p.id === projectId
+                      ? "bg-outrun-500/15"
+                      : "hover:bg-slate-800/50",
+                  )}
+                >
+                  {/* Project Icon */}
+                  <div className="relative flex-shrink-0">
+                    <div
+                      className={clsx(
+                        "w-8 h-8 rounded-lg flex items-center justify-center",
+                        "bg-gradient-to-br from-slate-800 to-slate-800/50",
+                        "border",
+                        p.id === projectId
+                          ? "border-outrun-500/50"
+                          : "border-slate-700/50",
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "text-xs font-bold",
+                          p.id === projectId
+                            ? "text-outrun-400"
+                            : "text-slate-400",
+                        )}
+                      >
+                        {p.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    {/* Health dot */}
+                    <div
+                      className={clsx(
+                        "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900",
+                        p.health_status === "healthy"
+                          ? "bg-emerald-400"
+                          : "bg-slate-500",
+                      )}
+                    />
+                  </div>
+
+                  {/* Project Name */}
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={clsx(
+                        "text-sm font-medium truncate",
+                        p.id === projectId ? "text-white" : "text-slate-300",
+                      )}
+                    >
+                      {p.name}
+                    </div>
+                  </div>
+
+                  {/* Selected Check */}
+                  {p.id === projectId && (
+                    <Check className="w-4 h-4 text-outrun-400 flex-shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Nav Items */}
       <div className="flex-1 overflow-y-auto py-3 px-2">
         <div className="space-y-1">
           {navItems.map((item) => {
@@ -273,6 +462,7 @@ export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
         </div>
       </div>
 
+      {/* Collapse Toggle */}
       <div className="p-2 border-t border-slate-700/50">
         <button
           onClick={toggleCollapsed}

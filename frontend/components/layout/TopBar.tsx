@@ -6,15 +6,14 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   Search,
   Settings,
-  LayoutGrid,
   Brain,
   Archive,
   Terminal,
   ExternalLink,
 } from "lucide-react";
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NotificationBell } from "@/components/notifications";
-import { ProjectSelector, useSelectedProject } from "./ProjectSelector";
+import { useSelectedProject } from "./ProjectSelector";
 
 const SUMMITFLOW_PROJECT_ID = "summitflow";
 
@@ -32,8 +31,6 @@ export function TopBar() {
 
   const [isExpanded, setIsExpanded] = useState(false);
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const isOnDashboard = pathname === "/";
 
   useEffect(() => {
     if (isExpanded) {
@@ -143,20 +140,6 @@ export function TopBar() {
             }}
           />
         </button>
-
-        {/* Divider */}
-        <div className="w-px h-8 bg-gradient-to-b from-transparent via-slate-600 to-transparent flex-shrink-0" />
-
-        {/* Project Selector - for quick project switching */}
-        <div className="relative z-20 flex-shrink-0">
-          <Suspense
-            fallback={
-              <div className="w-40 h-9 bg-slate-800 rounded-lg animate-pulse" />
-            }
-          >
-            <ProjectSelector />
-          </Suspense>
-        </div>
 
         {/* Spacer */}
         <div className="flex-1" />
