@@ -6,7 +6,6 @@ Mockups are stored as evidence records with type='mockup'.
 
 from __future__ import annotations
 
-import base64
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,7 +197,8 @@ def generate_mockup_gemini(
         mockup_dir.mkdir(parents=True, exist_ok=True)
 
         image_path = mockup_dir / "mockup.png"
-        image_bytes = base64.b64decode(image_data)
+        # inline_data.data is already raw bytes from Gemini SDK
+        image_bytes = image_data if isinstance(image_data, bytes) else image_data.encode()
         image_path.write_bytes(image_bytes)
 
         # Store as evidence
