@@ -97,6 +97,10 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 
+from .api import ideas  # noqa: E402
+
+app.include_router(ideas.router, prefix="/api", tags=["ideas"])
+
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:

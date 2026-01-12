@@ -176,3 +176,168 @@ async def get_idea(project_id: str, idea_id: str) -> dict[str, Any]:
         "approved_at": row[17].isoformat() if row[17] else None,
         "completed_at": row[18].isoformat() if row[18] else None,
     }
+
+
+@router.post("/projects/{project_id}/ideas/{idea_id}/refine")
+async def refine_idea_endpoint(project_id: str, idea_id: str) -> dict[str, Any]:
+    """Trigger AI refinement of an idea.
+
+    Returns the refined result including category, complexity, and feasibility.
+    """
+    from ..services.idea_refiner import refine_idea, update_idea_with_refinement
+
+    # Get idea
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT raw_text, status FROM ideas WHERE id = %s AND project_id = %s",
+            (idea_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    raw_text = row[0]
+
+    # Run AI refinement
+    result = refine_idea(raw_text)
+    update_idea_with_refinement(idea_id, result)
+
+    return {
+        "idea_id": idea_id,
+        "refined_text": result.refined_text,
+        "category": result.category,
+        "complexity": result.complexity,
+        "feasibility_score": result.feasibility_score,
+        "rejection_reason": result.rejection_reason,
+        "status": "rejected" if result.rejection_reason else "refined",
+    }
+
+
+@router.post("/projects/{project_id}/ideas/{idea_id}/retry")
+async def retry_refinement(project_id: str, idea_id: str, body: IdeaRetry) -> dict[str, Any]:
+    """Retry AI refinement with additional context.
+
+    Limited to 3 retries per idea. Returns 429 if limit exceeded.
+    """
+    from ..services.idea_refiner import refine_idea, update_idea_with_refinement
+
+    # Get idea and check retry count
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT raw_text, retry_count FROM ideas WHERE id = %s AND project_id = %s",
+            (idea_id, project_id),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Idea not found")
+
+        raw_text = row[0]
+        retry_count = row[1]
+
+        if retry_count >= 3:
+            raise HTTPException(
+                status_code=429,
+                detail="Retry limit reached (3 retries maximum)",
+            )
+
+        # Increment retry count
+        cur.execute(
+            "UPDATE ideas SET retry_count = retry_count + 1 WHERE id = %s",
+            (idea_id,),
+        )
+        conn.commit()
+
+    # Run AI refinement with additional context
+    result = refine_idea(raw_text, body.additional_context)
+    update_idea_with_refinement(idea_id, result)
+
+    return {
+        "idea_id": idea_id,
+        "refined_text": result.refined_text,
+        "category": result.category,
+        "complexity": result.complexity,
+        "feasibility_score": result.feasibility_score,
+        "rejection_reason": result.rejection_reason,
+        "status": "rejected" if result.rejection_reason else "refined",
+        "retry_count": retry_count + 1,
+        "retries_remaining": 2 - retry_count,
+    }
+
+
+@router.post("/projects/{project_id}/ideas/{idea_id}/approve")
+async def approve_idea(project_id: str, idea_id: str) -> dict[str, Any]:
+    """Approve an idea and create a task from it.
+
+    Creates a new task in SummitFlow with the refined idea as description.
+    Links the task back to the idea for tracking.
+    """
+    from ..storage.tasks.core import create_task
+
+    # Get idea
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT refined_text, category, complexity, status, user_email
+            FROM ideas WHERE id = %s AND project_id = %s
+            """,
+            (idea_id, project_id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    refined_text = row[0]
+    category = row[1]
+    complexity = row[2]
+    status = row[3]
+    user_email = row[4]
+
+    if status == "rejected":
+        raise HTTPException(status_code=400, detail="Cannot approve a rejected idea")
+    if status == "approved":
+        raise HTTPException(status_code=400, detail="Idea already approved")
+
+    # Create task from idea
+    task_type = "bug" if category == "bug" else "task"
+    labels = ["crowdsourced"]
+    if user_email:
+        labels.append(f"contributor:{user_email}")
+
+    # Map idea complexity to task complexity (simple->SIMPLE, medium->STANDARD, complex->COMPLEX)
+    complexity_map = {"simple": "SIMPLE", "medium": "STANDARD", "complex": "COMPLEX"}
+    task_complexity = complexity_map.get(complexity, "STANDARD") if complexity else "STANDARD"
+
+    task = create_task(
+        project_id=project_id,
+        title=refined_text[:100] if refined_text else "Crowdsourced idea",
+        description=refined_text,
+        task_type=task_type,
+        labels=labels,
+        priority=3,  # Lower priority for crowdsourced ideas
+        complexity=task_complexity,
+    )
+
+    # Update idea with task link
+    now = datetime.now(UTC)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE ideas SET
+                status = 'approved',
+                task_id = %s,
+                approved_at = %s,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (task["id"], now, now, idea_id),
+        )
+        conn.commit()
+
+    return {
+        "idea_id": idea_id,
+        "task_id": task["id"],
+        "status": "approved",
+    }

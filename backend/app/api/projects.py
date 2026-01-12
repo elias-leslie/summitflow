@@ -553,3 +553,75 @@ async def get_enabled_agents(project_id: str) -> list[str]:
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
     return agent_configs.get_enabled_agents(project_id)
+
+
+# ============================================================================
+# Automation Settings
+# ============================================================================
+
+
+class AutomationSettings(BaseModel):
+    """Automation settings for crowdsourced idea processing."""
+
+    schedule_preset: str = "nightly"  # nightly, weekly, monthly
+    cron_expression: str = "0 3 * * *"
+    daily_budget_usd: float = 5.0
+    primary_agent: str = "gemini"
+    secondary_agent: str = "claude"
+    enabled: bool = False
+
+
+DEFAULT_AUTOMATION_SETTINGS = {
+    "schedule_preset": "nightly",
+    "cron_expression": "0 3 * * *",
+    "daily_budget_usd": 5.0,
+    "primary_agent": "gemini",
+    "secondary_agent": "claude",
+    "enabled": False,
+}
+
+
+@router.get("/{project_id}/settings/automation", response_model=AutomationSettings)
+async def get_automation_settings(project_id: str) -> AutomationSettings:
+    """Get automation settings for a project."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT automation_settings FROM projects WHERE id = %s",
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    settings = row[0] or DEFAULT_AUTOMATION_SETTINGS
+    return AutomationSettings(**settings)
+
+
+@router.put("/{project_id}/settings/automation", response_model=AutomationSettings)
+async def update_automation_settings(
+    project_id: str, settings: AutomationSettings
+) -> AutomationSettings:
+    """Update automation settings for a project."""
+    # Validate agents
+    if settings.primary_agent not in ("claude", "gemini"):
+        raise HTTPException(status_code=400, detail="primary_agent must be 'claude' or 'gemini'")
+    if settings.secondary_agent not in ("claude", "gemini"):
+        raise HTTPException(status_code=400, detail="secondary_agent must be 'claude' or 'gemini'")
+
+    # Validate budget
+    if settings.daily_budget_usd < 0:
+        raise HTTPException(status_code=400, detail="daily_budget_usd cannot be negative")
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+        cur.execute(
+            "UPDATE projects SET automation_settings = %s WHERE id = %s",
+            (settings.model_dump_json(), project_id),
+        )
+        conn.commit()
+
+    return settings
