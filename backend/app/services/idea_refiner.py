@@ -60,12 +60,17 @@ class RefinementResult:
     raw_response: str | None = None
 
 
-def refine_idea(raw_text: str, additional_context: str | None = None) -> RefinementResult:
+def refine_idea(
+    raw_text: str,
+    additional_context: str | None = None,
+    project_id: str = "summitflow",
+) -> RefinementResult:
     """Refine a raw idea using AI.
 
     Args:
         raw_text: The user's original idea text
         additional_context: Optional additional context from retry
+        project_id: Project ID for session tracking (default: summitflow)
 
     Returns:
         RefinementResult with structured data
@@ -74,7 +79,7 @@ def refine_idea(raw_text: str, additional_context: str | None = None) -> Refinem
     if additional_context:
         prompt += f"\n\nAdditional context: {additional_context}"
 
-    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini")
+    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini", project_id=project_id)
     try:
         response = client.generate(
             prompt=prompt,
@@ -133,13 +138,19 @@ class ScoringResult:
     priority_score: float  # ROI = impact / ease
 
 
-def score_idea(refined_text: str, category: str, complexity: str) -> ScoringResult:
+def score_idea(
+    refined_text: str,
+    category: str,
+    complexity: str,
+    project_id: str = "summitflow",
+) -> ScoringResult:
     """Score an idea for prioritization.
 
     Args:
         refined_text: The refined idea text
         category: bug/feature/content/enhancement
         complexity: simple/medium/complex
+        project_id: Project ID for session tracking (default: summitflow)
 
     Returns:
         ScoringResult with ease, impact, and priority scores
@@ -148,7 +159,7 @@ def score_idea(refined_text: str, category: str, complexity: str) -> ScoringResu
 Category: {category}
 Complexity: {complexity}"""
 
-    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini")
+    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini", project_id=project_id)
     try:
         response = client.generate(
             prompt=prompt,
@@ -209,12 +220,17 @@ Complexity: {complexity}"""
         client.close()
 
 
-def update_idea_with_refinement(idea_id: str, result: RefinementResult) -> None:
+def update_idea_with_refinement(
+    idea_id: str,
+    result: RefinementResult,
+    project_id: str = "summitflow",
+) -> None:
     """Update idea record with refinement results.
 
     Args:
         idea_id: The idea ID to update
         result: RefinementResult from AI
+        project_id: Project ID for session tracking (default: summitflow)
     """
     now = datetime.now(UTC)
     status = "rejected" if result.rejection_reason else "refined"
@@ -222,7 +238,9 @@ def update_idea_with_refinement(idea_id: str, result: RefinementResult) -> None:
     # Score the idea if not rejected
     scores = None
     if not result.rejection_reason:
-        scores = score_idea(result.refined_text, result.category, result.complexity)
+        scores = score_idea(
+            result.refined_text, result.category, result.complexity, project_id=project_id
+        )
 
     with get_connection() as conn, conn.cursor() as cur:
         if scores:

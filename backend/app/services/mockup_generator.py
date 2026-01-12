@@ -1,18 +1,19 @@
 """Mockup generator service for design audit workflows.
 
-Uses Gemini 3 Pro Image for mockup generation with Claude as fallback.
+Uses Agent Hub for image generation (Gemini) with Claude HTML as fallback.
 Mockups are stored as evidence records with type='mockup'.
 """
 
 from __future__ import annotations
 
-import os
+import base64
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from google import genai
+from agent_hub import AgentHubClient
+from agent_hub.exceptions import AgentHubError
 
 from ..constants import CLAUDE_SONNET, GEMINI_IMAGE
 from ..logging_config import get_logger
@@ -22,6 +23,9 @@ logger = get_logger(__name__)
 
 # Directory for storing mockup images
 MOCKUP_BASE_DIR = Path("/tmp/summitflow/mockups")
+
+# Agent Hub configuration
+AGENT_HUB_URL = "http://localhost:8003"
 
 
 @dataclass
@@ -37,28 +41,9 @@ class MockupResult:
     generation_time_ms: int = 0
 
 
-def _check_credentials() -> bool:
-    """Check if Gemini credentials are available."""
-    if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
-        return True
-
-    gemini_env = Path.home() / ".gemini" / ".env"
-    if gemini_env.exists():
-        with open(gemini_env) as f:
-            for line in f:
-                if line.startswith("GEMINI_API_KEY="):
-                    key = line.strip().split("=", 1)[1]
-                    os.environ["GOOGLE_API_KEY"] = key
-                    return True
-
-    return False
-
-
-def _get_gemini_client() -> genai.Client:
-    """Get or create Gemini client."""
-    from google import genai
-
-    return genai.Client()
+def _get_agent_hub_client() -> AgentHubClient:
+    """Get Agent Hub client for image generation."""
+    return AgentHubClient(base_url=AGENT_HUB_URL)
 
 
 def _build_mockup_prompt(
@@ -137,7 +122,7 @@ def generate_mockup_gemini(
     design_standard: dict[str, Any],
     design_direction: str | None = None,
 ) -> MockupResult:
-    """Generate mockup using Gemini 3 Pro Image.
+    """Generate mockup using Agent Hub image generation (Gemini backend).
 
     Args:
         project_id: Project ID
@@ -149,56 +134,37 @@ def generate_mockup_gemini(
     Returns:
         MockupResult with evidence details
     """
-    import time
-
     start_time = time.monotonic()
 
-    if not _check_credentials():
-        return MockupResult(
-            success=False,
-            error="Gemini credentials not available",
-        )
-
     try:
-        client = _get_gemini_client()
+        client = _get_agent_hub_client()
         prompt = _build_mockup_prompt(page_info, design_standard, design_direction)
 
-        # Generate image using Gemini
-        response = client.models.generate_content(
+        # Generate image using Agent Hub
+        response = client.generate_image(
+            prompt=prompt,
+            project_id="summitflow",
+            purpose="mockup_generation",
             model=GEMINI_IMAGE,
-            contents=prompt,
-            config={
-                "response_modalities": ["IMAGE", "TEXT"],
-                "temperature": 0.7,
-            },
+            size="1920x1080",
         )
 
-        # Extract image from response
-        image_data = None
-        candidates = response.candidates
-        if candidates and candidates[0].content and candidates[0].content.parts:
-            for part in candidates[0].content.parts:
-                inline_data = getattr(part, "inline_data", None)
-                if inline_data and getattr(inline_data, "mime_type", "").startswith("image/"):
-                    image_data = inline_data.data
-                    break
+        # Decode base64 image data
+        image_bytes = base64.b64decode(response.image_base64)
 
-        if not image_data:
-            return MockupResult(
-                success=False,
-                error="No image generated in response",
-                generator="gemini",
-                generation_time_ms=int((time.monotonic() - start_time) * 1000),
-            )
+        # Determine file extension from mime type
+        ext = "png"
+        if response.mime_type == "image/jpeg":
+            ext = "jpg"
+        elif response.mime_type == "image/webp":
+            ext = "webp"
 
         # Save image to file
         evidence_id = evidence_storage.generate_evidence_id()
         mockup_dir = MOCKUP_BASE_DIR / project_id / evidence_id
         mockup_dir.mkdir(parents=True, exist_ok=True)
 
-        image_path = mockup_dir / "mockup.png"
-        # inline_data.data is already raw bytes from Gemini SDK
-        image_bytes = image_data if isinstance(image_data, bytes) else image_data.encode()
+        image_path = mockup_dir / f"mockup.{ext}"
         image_path.write_bytes(image_bytes)
 
         # Store as evidence
@@ -226,6 +192,7 @@ def generate_mockup_gemini(
             evidence_id=evidence_id,
             generator="gemini",
             generation_time_ms=generation_time,
+            session_id=response.session_id,
         )
 
         return MockupResult(
@@ -237,6 +204,20 @@ def generate_mockup_gemini(
             generation_time_ms=generation_time,
         )
 
+    except AgentHubError as e:
+        logger.error(
+            "mockup_generation_failed",
+            project_id=project_id,
+            explorer_entry_id=explorer_entry_id,
+            generator="gemini",
+            error=str(e),
+        )
+        return MockupResult(
+            success=False,
+            error=str(e),
+            generator="gemini",
+            generation_time_ms=int((time.monotonic() - start_time) * 1000),
+        )
     except Exception as e:
         logger.error(
             "mockup_generation_failed",
@@ -274,8 +255,6 @@ def generate_mockup_claude_fallback(
     Returns:
         MockupResult with evidence details
     """
-    import time
-
     from .agent_hub_client import get_agent
 
     start_time = time.monotonic()
@@ -380,7 +359,7 @@ def generate_mockup(
 ) -> MockupResult:
     """Generate a mockup for a page using design standards.
 
-    Uses Gemini 3 Pro Image as primary, Claude HTML as fallback.
+    Uses Agent Hub (Gemini) as primary, Claude HTML as fallback.
 
     Args:
         project_id: Project ID
@@ -426,7 +405,7 @@ def generate_mockup(
             error=f"Design standard '{standards_id}' not found",
         )
 
-    # Try Gemini first, fallback to Claude
+    # Try Agent Hub (Gemini) first, fallback to Claude
     result = generate_mockup_gemini(
         project_id=project_id,
         explorer_entry_id=explorer_entry_id,
