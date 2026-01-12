@@ -228,6 +228,67 @@ def gather_explorer_context(project_id: str, query: str) -> str:
     return _truncate_to_tokens(combined, MAX_EXPLORER_TOKENS)
 
 
+MAX_DESIGN_TOKENS = 2000
+
+
+def gather_design_standards_context(project_id: str) -> str:
+    """Gather design standards for frontend tasks.
+
+    Returns design rules organized by category for UI/UX compliance.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Formatted design standards content, or empty string if none found.
+    """
+    try:
+        from ..storage.design_standards import get_effective_rules
+
+        rules = get_effective_rules(project_id)
+        if not rules:
+            return ""
+
+        # Group by category
+        by_category: dict[str, list[dict[str, Any]]] = {}
+        for rule in rules:
+            cat = rule.get("category", "general")
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(rule)
+
+        # Format output
+        lines = ["# Design Standards\n"]
+        for category, cat_rules in sorted(by_category.items()):
+            lines.append(f"## {category.title()}\n")
+            for rule in cat_rules:
+                name = rule.get("name", rule.get("rule_id", "unknown"))
+                reqs = rule.get("requirements", {})
+                if reqs:
+                    req_strs = []
+                    for key, val in list(reqs.items())[:3]:
+                        if isinstance(val, dict):
+                            if "exact" in val:
+                                req_strs.append(f"{key}={val['exact']}")
+                            elif "min" in val or "max" in val:
+                                req_strs.append(
+                                    f"{key}:[{val.get('min', '')}-{val.get('max', '')}]"
+                                )
+                        else:
+                            req_strs.append(f"{key}={val}")
+                    lines.append(f"- **{name}**: {', '.join(req_strs)}")
+                else:
+                    lines.append(f"- **{name}**")
+            lines.append("")
+
+        result = "\n".join(lines)
+        return _truncate_to_tokens(result, MAX_DESIGN_TOKENS)
+
+    except Exception as e:
+        logger.warning("Failed to gather design standards for %s: %s", project_id, e)
+        return ""
+
+
 def gather_gemini_context(project_id: str, query: str) -> str:
     """Use Gemini 1M context for deep codebase search.
 
@@ -293,8 +354,40 @@ Limit your response to ~500 words."""
         return ""
 
 
+def _is_frontend_task(raw_request: str) -> bool:
+    """Detect if task involves frontend/UI work."""
+    frontend_keywords = [
+        "frontend",
+        "ui",
+        "ux",
+        "component",
+        "page",
+        "layout",
+        "design",
+        "button",
+        "form",
+        "modal",
+        "dialog",
+        "style",
+        "css",
+        "tailwind",
+        "react",
+        "next",
+        "tsx",
+        "jsx",
+        "dashboard",
+        "screen",
+        "view",
+    ]
+    lower_request = raw_request.lower()
+    return any(kw in lower_request for kw in frontend_keywords)
+
+
 def gather_all_context(
-    project_id: str, raw_request: str, use_gemini: bool = False
+    project_id: str,
+    raw_request: str,
+    use_gemini: bool = False,
+    include_design_standards: bool | None = None,
 ) -> dict[str, Any]:
     """Gather context from all sources for AI enrichment.
 
@@ -302,6 +395,8 @@ def gather_all_context(
         project_id: Project ID
         raw_request: User's raw request for context-aware gathering
         use_gemini: Whether to include Gemini deep search (slower, uses API)
+        include_design_standards: Include design standards context.
+            If None (default), auto-detects based on raw_request.
 
     Returns:
         Dict with keys:
@@ -309,6 +404,7 @@ def gather_all_context(
             - docs: Project documentation content
             - memory: Recent observations and patterns
             - explorer: Relevant files, endpoints, tables
+            - design_standards: Design standards for UI tasks
             - gemini: Gemini deep search analysis (if use_gemini=True)
             - total_tokens: Estimated total token count
     """
@@ -317,6 +413,7 @@ def gather_all_context(
         "docs": "",
         "memory": "",
         "explorer": "",
+        "design_standards": "",
         "gemini": "",
         "total_tokens": 0,
     }
@@ -327,24 +424,35 @@ def gather_all_context(
     context["memory"] = gather_memory_context(project_id)
     context["explorer"] = gather_explorer_context(project_id, raw_request)
 
+    # Include design standards for frontend tasks
+    should_include_design = (
+        include_design_standards
+        if include_design_standards is not None
+        else _is_frontend_task(raw_request)
+    )
+    if should_include_design:
+        context["design_standards"] = gather_design_standards_context(project_id)
+
     # Optionally include Gemini deep search
     if use_gemini:
         context["gemini"] = gather_gemini_context(project_id, raw_request)
 
     # Calculate total tokens
-    context_keys = ["rules", "docs", "memory", "explorer", "gemini"]
+    context_keys = ["rules", "docs", "memory", "explorer", "design_standards", "gemini"]
     total = sum(_estimate_tokens(context[key]) for key in context_keys)
     context["total_tokens"] = total
 
     # Log summary
     gemini_tokens = _estimate_tokens(context["gemini"]) if use_gemini else 0
+    design_tokens = _estimate_tokens(context["design_standards"])
     logger.info(
-        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d, gemini=%d (total ~%d tokens)",
+        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d, design=%d, gemini=%d (total ~%d tokens)",
         project_id,
         _estimate_tokens(context["rules"]),
         _estimate_tokens(context["docs"]),
         _estimate_tokens(context["memory"]),
         _estimate_tokens(context["explorer"]),
+        design_tokens,
         gemini_tokens,
         total,
     )
@@ -374,6 +482,9 @@ def format_context_for_prompt(context: dict[str, Any]) -> str:
 
     if context.get("explorer"):
         sections.append(f"# Codebase Structure\n\n{context['explorer']}")
+
+    if context.get("design_standards"):
+        sections.append(context["design_standards"])  # Already has header
 
     if context.get("capabilities"):
         sections.append(f"# Existing Capabilities\n\n{context['capabilities']}")
