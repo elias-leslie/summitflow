@@ -403,3 +403,67 @@ async def validate_element(
             for v in violations
         ],
     )
+
+
+# ============================================================================
+# Design Audit / Mockup Generation
+# ============================================================================
+
+
+class GenerateMockupRequest(BaseModel):
+    """Request to generate a mockup for a page."""
+
+    explorer_entry_id: int
+    standards_id: str = "base"
+    design_direction: str | None = None
+
+
+class MockupResponse(BaseModel):
+    """Response from mockup generation."""
+
+    success: bool
+    evidence_id: str | None = None
+    db_id: int | None = None
+    image_path: str | None = None
+    error: str | None = None
+    generator: str | None = None
+    generation_time_ms: int = 0
+    mockup_url: str | None = None
+
+
+@router.post(
+    "/projects/{project_id}/design-audit/generate-mockup",
+    response_model=MockupResponse,
+)
+async def generate_mockup_endpoint(
+    project_id: str,
+    request: GenerateMockupRequest,
+) -> MockupResponse:
+    """Generate a design mockup for an explorer entry (page).
+
+    Uses Gemini 3 Pro Image for mockup generation with Claude HTML fallback.
+    Mockups are stored as evidence with type='mockup' and status='pending_approval'.
+    """
+    from ..services.mockup_generator import generate_mockup
+
+    result = generate_mockup(
+        project_id=project_id,
+        explorer_entry_id=request.explorer_entry_id,
+        standards_id=request.standards_id,
+        design_direction=request.design_direction,
+    )
+
+    mockup_url = None
+    if result.success and result.evidence_id:
+        mockup_url = f"/api/projects/{project_id}/evidence/{result.evidence_id}/screenshot"
+
+    return MockupResponse(
+        success=result.success,
+        evidence_id=result.evidence_id,
+        db_id=result.db_id,
+        image_path=result.image_path,
+        error=result.error,
+        generator=result.generator,
+        generation_time_ms=result.generation_time_ms,
+        mockup_url=mockup_url,
+    )

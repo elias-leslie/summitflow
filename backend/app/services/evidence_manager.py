@@ -393,6 +393,7 @@ def save_evidence(
 
 # Re-export storage functions
 get_evidence_by_id = evidence_storage.get_evidence_by_id
+get_evidence_by_db_id = evidence_storage.get_evidence_by_db_id
 get_evidence_for_task = evidence_storage.get_evidence_for_task
 get_evidence_for_entry = evidence_storage.get_evidence_for_entry
 get_latest_evidence = evidence_storage.get_latest_evidence

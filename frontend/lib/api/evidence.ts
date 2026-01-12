@@ -20,7 +20,11 @@ export type EvidenceType =
   | "console_error";
 
 /** Valid mockup status values */
-export type MockupStatus = "pending" | "approved" | "rejected";
+export type MockupStatus =
+  | "generated"
+  | "pending_approval"
+  | "approved"
+  | "rejected";
 
 /** Evidence.json file structure */
 export interface EvidenceData {
@@ -292,17 +296,65 @@ export async function updateMockupStatus(
   projectId: string,
   evidenceId: string,
   status: MockupStatus,
-  notes?: string,
-): Promise<{ success: boolean }> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/evidence/${evidenceId}/mockup-status`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, notes }),
-      errorMessage: "Failed to update mockup status",
-    },
+): Promise<{ success: boolean; evidenceId: string; mockupStatus: string }> {
+  const params = new URLSearchParams({ status });
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/evidence/${evidenceId}/mockup-status?${params}`,
+    { method: "PATCH" },
   );
+  if (!res.ok) {
+    throw new Error("Failed to update mockup status");
+  }
+  return res.json();
+}
+
+/** Mockup list response */
+export interface MockupListResponse {
+  mockups: EvidenceRecord[];
+  total: number;
+}
+
+/** Mockup comparison response */
+export interface MockupComparisonResponse {
+  mockup: EvidenceRecord;
+  actualScreenshot: EvidenceRecord | null;
+}
+
+/**
+ * Get all mockups for an explorer entry
+ */
+export async function fetchEntryMockups(
+  projectId: string,
+  entryId: number,
+  status?: MockupStatus,
+): Promise<MockupListResponse> {
+  const params = new URLSearchParams();
+  if (status) params.append("status", status);
+
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/explorer/${entryId}/mockups?${params}`,
+  );
+  if (!res.ok) {
+    throw new Error("Failed to fetch mockups");
+  }
+  return res.json();
+}
+
+/**
+ * Get mockup comparison (approved mockup + linked actual screenshot)
+ */
+export async function fetchMockupComparison(
+  projectId: string,
+  entryId: number,
+): Promise<MockupComparisonResponse> {
+  const res = await fetch(
+    `${getApiBase()}/api/projects/${projectId}/explorer/${entryId}/mockups/comparison`,
+  );
+  if (!res.ok) {
+    if (res.status === 404) throw new Error("No approved mockup found");
+    throw new Error("Failed to fetch mockup comparison");
+  }
+  return res.json();
 }
 
 /**

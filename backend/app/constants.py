@@ -22,6 +22,9 @@ CLAUDE_SONNET_FULL = "claude-sonnet-4-5-20251101"
 GEMINI_FLASH = "gemini-3-flash-preview"
 GEMINI_PRO = "gemini-3-pro-preview"
 
+# Gemini image generation model
+GEMINI_IMAGE = "gemini-3-pro-image-preview"
+
 # Default models for each use case
 DEFAULT_CLAUDE_MODEL = CLAUDE_SONNET
 DEFAULT_GEMINI_MODEL = GEMINI_FLASH

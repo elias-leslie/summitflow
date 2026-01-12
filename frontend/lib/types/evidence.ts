@@ -5,11 +5,27 @@
 /**
  * Evidence record - UI verification evidence.
  */
+export type EvidenceType =
+  | "screenshot"
+  | "mockup"
+  | "test-output"
+  | "api-response"
+  | "console_error";
+
+export type MockupStatus =
+  | "generated"
+  | "pending_approval"
+  | "approved"
+  | "rejected";
+
 export interface Evidence {
   id: number;
   evidenceId: string;
   capabilityId: string;
   criterionId: string;
+  taskId: string | null;
+  explorerEntryId: number | null;
+  evidenceType: EvidenceType;
   version: number;
   isCurrent: boolean;
   capturedAt: string;
@@ -19,11 +35,14 @@ export interface Evidence {
   userNotes: string | null;
   fileSizeBytes: number | null;
   screenshotUrl: string;
-  // New fields for criteria linkage
-  criterionDbId: number | null; // FK to acceptance_criteria.id
-  testRunId: number | null; // FK to test_runs.id
-  autoCaptured: boolean; // True if auto-captured on test pass
-  criterionText: string | null; // Human-readable criterion text from JOIN
+  criterionDbId: number | null;
+  testRunId: number | null;
+  autoCaptured: boolean;
+  criterionText: string | null;
+  linkedEvidenceId: number | null;
+  mockupStatus: MockupStatus | null;
+  environment: string | null;
+  viewportName: string | null;
 }
 
 /**
@@ -35,6 +54,23 @@ export interface EvidenceSummary {
   auto_captured_count: number;
   with_user_notes: number;
   total_storage_bytes: number;
+  mockup_count: number;
+}
+
+/**
+ * Mockup list response from API.
+ */
+export interface MockupListResponse {
+  mockups: Evidence[];
+  total: number;
+}
+
+/**
+ * Mockup comparison response - approved mockup with linked actual screenshot.
+ */
+export interface MockupComparisonResponse {
+  mockup: Evidence;
+  actualScreenshot: Evidence | null;
 }
 
 /**

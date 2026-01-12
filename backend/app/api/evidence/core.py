@@ -61,6 +61,19 @@ def _format_evidence_record(e: dict[str, Any], *, project_id: str | None = None)
     return result
 
 
+# Static routes must be defined before dynamic {evidence_id} routes
+@router.get("/projects/{project_id}/evidence/summary")
+async def get_evidence_summary(project_id: str) -> dict[str, Any]:
+    """Get evidence statistics for a project."""
+    return get_summary(project_id)
+
+
+@router.get("/projects/{project_id}/evidence/types")
+async def get_evidence_types() -> dict[str, Any]:
+    """Get valid evidence types."""
+    return {"types": list(EVIDENCE_TYPES)}
+
+
 @router.get("/projects/{project_id}/evidence/{evidence_id}")
 async def get_evidence_endpoint(
     project_id: str,
@@ -205,13 +218,96 @@ async def get_entry_evidence(
     }
 
 
-@router.get("/projects/{project_id}/evidence/summary")
-async def get_evidence_summary(project_id: str) -> dict[str, Any]:
-    """Get evidence statistics for a project."""
-    return get_summary(project_id)
+# ============================================================
+# Mockup-specific endpoints
+# ============================================================
 
 
-@router.get("/projects/{project_id}/evidence/types")
-async def get_evidence_types() -> dict[str, Any]:
-    """Get valid evidence types."""
-    return {"types": list(EVIDENCE_TYPES)}
+@router.get("/projects/{project_id}/explorer/{entry_id}/mockups")
+async def get_entry_mockups(
+    project_id: str,
+    entry_id: int,
+    status: str | None = Query(None, description="Filter by mockup status"),
+) -> dict[str, Any]:
+    """Get all mockups for an explorer entry.
+
+    Optionally filter by mockup_status (generated, pending_approval, approved, rejected).
+    """
+    from ...services.evidence_manager import MOCKUP_STATUSES, get_mockups_for_entry
+
+    if status and status not in MOCKUP_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {', '.join(MOCKUP_STATUSES)}",
+        )
+
+    mockups = get_mockups_for_entry(project_id, entry_id, status=status)
+
+    return {
+        "mockups": [_format_evidence_record(m, project_id=project_id) for m in mockups],
+        "total": len(mockups),
+    }
+
+
+@router.get("/projects/{project_id}/explorer/{entry_id}/mockups/comparison")
+async def get_mockup_comparison(
+    project_id: str,
+    entry_id: int,
+) -> dict[str, Any]:
+    """Get approved mockup paired with latest screenshot for comparison.
+
+    Returns the approved mockup (target state) and the linked screenshot (actual state)
+    for side-by-side comparison in the UI.
+    """
+    from ...services.evidence_manager import get_approved_mockup, get_evidence_by_db_id
+
+    approved_mockup = get_approved_mockup(project_id, entry_id)
+
+    if not approved_mockup:
+        raise HTTPException(
+            status_code=404,
+            detail="No approved mockup found for this entry",
+        )
+
+    linked_id = approved_mockup.get("linked_evidence_id")
+    linked_screenshot = None
+    if linked_id:
+        linked_screenshot = get_evidence_by_db_id(linked_id)
+
+    return {
+        "mockup": _format_evidence_record(approved_mockup, project_id=project_id),
+        "actualScreenshot": (
+            _format_evidence_record(linked_screenshot, project_id=project_id)
+            if linked_screenshot
+            else None
+        ),
+    }
+
+
+@router.patch("/projects/{project_id}/evidence/{evidence_id}/mockup-status")
+async def update_evidence_mockup_status(
+    project_id: str,
+    evidence_id: str,
+    status: str = Query(..., description="New mockup status"),
+) -> dict[str, Any]:
+    """Update the mockup_status of an evidence record.
+
+    Valid statuses: generated, pending_approval, approved, rejected.
+    """
+    from ...services.evidence_manager import MOCKUP_STATUSES, update_mockup_status
+
+    if status not in MOCKUP_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {', '.join(MOCKUP_STATUSES)}",
+        )
+
+    success = update_mockup_status(project_id, evidence_id, status)
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence not found or not a mockup",
+        )
+
+    return {"success": True, "evidenceId": evidence_id, "mockupStatus": status}

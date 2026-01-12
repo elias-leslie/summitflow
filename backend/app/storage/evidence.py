@@ -255,6 +255,28 @@ def get_evidence_by_id(
         return _row_to_evidence(row, include_criterion_text=True)
 
 
+def get_evidence_by_db_id(
+    db_id: int,
+) -> dict[str, Any] | None:
+    """Get evidence by database ID (primary key).
+
+    Used for following linked_evidence_id references.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {EVIDENCE_SELECT_WITH_CRITERION} FROM evidence e "
+            "LEFT JOIN acceptance_criteria ac ON e.criterion_db_id = ac.id "
+            "WHERE e.id = %s",
+            (db_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            return None
+
+        return _row_to_evidence(row, include_criterion_text=True)
+
+
 def get_evidence_for_task(
     project_id: str,
     task_id: str,
