@@ -3,9 +3,18 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { Search, Settings, LayoutGrid } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import {
+  Search,
+  Settings,
+  LayoutGrid,
+  Brain,
+  Archive,
+  Terminal,
+  ExternalLink,
+} from "lucide-react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { NotificationBell } from "@/components/notifications";
+import { ProjectSelector, useSelectedProject } from "./ProjectSelector";
 
 const SUMMITFLOW_PROJECT_ID = "summitflow";
 
@@ -19,6 +28,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const selectedProjectId = useSelectedProject();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -134,20 +144,19 @@ export function TopBar() {
           />
         </button>
 
-        {/* Dashboard link (when not on dashboard) */}
-        {!isOnDashboard && (
-          <>
-            <div className="w-px h-8 bg-gradient-to-b from-transparent via-slate-600 to-transparent flex-shrink-0" />
-            <Link
-              href="/"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
-              title="Back to Dashboard"
-            >
-              <LayoutGrid className="w-4 h-4" />
-              <span className="text-sm font-medium">Dashboard</span>
-            </Link>
-          </>
-        )}
+        {/* Divider */}
+        <div className="w-px h-8 bg-gradient-to-b from-transparent via-slate-600 to-transparent flex-shrink-0" />
+
+        {/* Project Selector - for quick project switching */}
+        <div className="relative z-20 flex-shrink-0">
+          <Suspense
+            fallback={
+              <div className="w-40 h-9 bg-slate-800 rounded-lg animate-pulse" />
+            }
+          >
+            <ProjectSelector />
+          </Suspense>
+        </div>
 
         {/* Spacer */}
         <div className="flex-1" />
@@ -170,8 +179,46 @@ export function TopBar() {
           </div>
         </div>
 
-        {/* Right side actions - minimal */}
+        {/* Right side actions - global features + settings */}
         <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Memory */}
+          <Link
+            href="/memory"
+            className="p-2.5 rounded-lg text-slate-400 hover:bg-purple-500/10 hover:text-purple-400 transition-all duration-200"
+            title="Memory"
+          >
+            <Brain className="w-5 h-5" />
+          </Link>
+
+          {/* Backups */}
+          <Link
+            href="/backups"
+            className="p-2.5 rounded-lg text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400 transition-all duration-200"
+            title="Backups"
+          >
+            <Archive className="w-5 h-5" />
+          </Link>
+
+          {/* Terminal - external */}
+          <a
+            href={(() => {
+              const params = new URLSearchParams();
+              if (selectedProjectId) params.set("project", selectedProjectId);
+              const query = params.toString();
+              return `https://terminal.summitflow.dev${query ? `?${query}` : ""}`;
+            })()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2.5 rounded-lg text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all duration-200 flex items-center gap-0.5"
+            title="Terminal"
+          >
+            <Terminal className="w-5 h-5" />
+            <ExternalLink className="w-3 h-3" />
+          </a>
+
+          {/* Divider */}
+          <div className="w-px h-6 bg-slate-700 mx-1" />
+
           {/* Settings */}
           <Link
             href="/settings"

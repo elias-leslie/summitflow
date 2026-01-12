@@ -189,8 +189,9 @@ export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
     return (
       <nav
         className={clsx(
-          "h-full bg-slate-900/50 border-r border-slate-700/50 flex flex-col",
+          "h-full bg-slate-900/50 border-r border-slate-700/50 flex-col",
           "w-16",
+          "hidden md:flex",
           className,
         )}
       />
@@ -200,8 +201,9 @@ export function SecondaryNav({ projectId, className }: SecondaryNavProps) {
   return (
     <nav
       className={clsx(
-        "h-full bg-slate-900/50 border-r border-slate-700/50 flex flex-col transition-all duration-300",
+        "h-full bg-slate-900/50 border-r border-slate-700/50 flex-col transition-all duration-300",
         isCollapsed ? "w-16" : "w-56",
+        "hidden md:flex",
         className,
       )}
     >
