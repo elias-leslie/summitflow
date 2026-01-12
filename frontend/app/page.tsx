@@ -2,7 +2,20 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderKanban, Activity, AlertCircle, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  FolderKanban,
+  Activity,
+  AlertCircle,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Brain,
+  Camera,
+  Archive,
+  Info,
+  Terminal,
+  ExternalLink,
+} from "lucide-react";
 import Link from "next/link";
 import { fetchProjectsWithStats, type ProjectWithStats } from "@/lib/api";
 import { ProjectCard, ActivityFeed } from "@/components/dashboard";
@@ -29,8 +42,87 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 space-y-8">
-      {/* All Projects Section */}
+      {/* Global Features Section */}
       <section className="animate-in">
+        <h2 className="display font-semibold text-lg text-white flex items-center gap-2 mb-4">
+          <Info className="w-5 h-5 text-outrun-500" />
+          Quick Access
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <Link
+            href="/memory"
+            className="card p-4 flex items-center gap-3 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400 group-hover:bg-purple-500/30 transition-colors">
+              <Brain className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">Memory</div>
+              <div className="text-xs text-slate-500">AI patterns</div>
+            </div>
+          </Link>
+
+          <Link
+            href="/evidence"
+            className="card p-4 flex items-center gap-3 hover:border-pink-500/50 hover:bg-pink-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-pink-500/20 text-pink-400 group-hover:bg-pink-500/30 transition-colors">
+              <Camera className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">Evidence</div>
+              <div className="text-xs text-slate-500">All screenshots</div>
+            </div>
+          </Link>
+
+          <Link
+            href="/backups"
+            className="card p-4 flex items-center gap-3 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500/30 transition-colors">
+              <Archive className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">Backups</div>
+              <div className="text-xs text-slate-500">DB snapshots</div>
+            </div>
+          </Link>
+
+          <a
+            href="https://terminal.summitflow.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="card p-4 flex items-center gap-3 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500/30 transition-colors">
+              <Terminal className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-white flex items-center gap-1">
+                Terminal
+                <ExternalLink className="w-3 h-3 text-slate-500" />
+              </div>
+              <div className="text-xs text-slate-500">Interactive</div>
+            </div>
+          </a>
+
+          <Link
+            href="/about"
+            className="card p-4 flex items-center gap-3 hover:border-outrun-500/50 hover:bg-outrun-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-outrun-500/20 text-outrun-400 group-hover:bg-outrun-500/30 transition-colors">
+              <Info className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">About</div>
+              <div className="text-xs text-slate-500">SummitFlow</div>
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      {/* All Projects Section */}
+      <section className="animate-in" style={{ animationDelay: "0.05s" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="display font-semibold text-lg text-white flex items-center gap-2">
             <FolderKanban className="w-5 h-5 text-phosphor-500" />
@@ -59,7 +151,10 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
-            <Link href="/projects/new" className="btn-primary text-sm flex items-center gap-2">
+            <Link
+              href="/projects/new"
+              className="btn-primary text-sm flex items-center gap-2"
+            >
               <Plus className="w-4 h-4" />
               Add Project
             </Link>
@@ -73,7 +168,7 @@ export default function DashboardPage() {
       </section>
 
       {/* Recent Activity Section */}
-      <section className="animate-fade-in" style={{ animationDelay: "0.1s" }}>
+      <section className="animate-fade-in" style={{ animationDelay: "0.15s" }}>
         <h2 className="display font-semibold text-lg text-white flex items-center gap-2 mb-4">
           <Activity className="w-5 h-5 text-phosphor-500" />
           Recent Activity
@@ -120,7 +215,10 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
         <p className="text-sm text-slate-500 mb-4">
           Add your first project to start tracking
         </p>
-        <Link href="/projects/new" className="btn-primary inline-flex items-center gap-2">
+        <Link
+          href="/projects/new"
+          className="btn-primary inline-flex items-center gap-2"
+        >
           <Plus className="w-4 h-4" />
           Add Project
         </Link>
