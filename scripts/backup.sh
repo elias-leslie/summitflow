@@ -112,8 +112,18 @@ show_status() {
 }
 
 # Database dump function
+# Returns 0 on success, 1 on failure, 2 if skipped (no database)
 dump_database() {
     local dump_file="$1"
+
+    # Skip if no database credentials configured
+    if [ -z "$DB_PASSWORD" ]; then
+        log_warn "No database credentials found for $PROJECT_NAME - skipping DB dump"
+        log_info "To enable DB backups, add ${PROJECT_NAME^^}_DB_URL to ~/.env.local"
+        # Create empty placeholder so archive creation doesn't fail
+        echo "-- No database for this project" | gzip > "$dump_file"
+        return 2
+    fi
 
     export PGPASSWORD="$DB_PASSWORD"
 
@@ -134,6 +144,7 @@ dump_database() {
             log_success "Database dump created ($(du -h "$dump_file" | cut -f1))"
         else
             log_error "Database dump failed"
+            unset PGPASSWORD
             return 1
         fi
     fi
@@ -229,8 +240,15 @@ main() {
     local db_dump="$STAGING_DIR/database.sql.gz"
     local archive_path="$STAGING_DIR/$ARCHIVE_NAME"
 
-    # Dump database
-    dump_database "$db_dump"
+    # Dump database (may be skipped for projects without DB)
+    local db_dump_result=0
+    dump_database "$db_dump" || db_dump_result=$?
+
+    if [ $db_dump_result -eq 1 ]; then
+        log_error "Database dump failed, aborting backup"
+        exit 1
+    fi
+
     local db_size
     db_size=$(stat -c%s "$db_dump" 2>/dev/null || stat -f%z "$db_dump" 2>/dev/null || echo "0")
 
