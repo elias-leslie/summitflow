@@ -42,6 +42,16 @@ class AutonomousSettings(BaseModel):
         default=["auto-generated"],
         description="Task labels eligible for autonomous execution",
     )
+    # Schedule settings (per-project time window)
+    start_hour: int = Field(
+        default=0, ge=0, le=23, description="Hour (0-23) when execution can start"
+    )
+    end_hour: int = Field(
+        default=24, ge=1, le=24, description="Hour (1-24) when execution must stop"
+    )
+    max_concurrent: int = Field(
+        default=1, ge=1, le=3, description="Max concurrent autonomous tasks (1-3)"
+    )
 
 
 class AutonomousSettingsUpdate(BaseModel):
@@ -51,6 +61,10 @@ class AutonomousSettingsUpdate(BaseModel):
     frequency_minutes: int | None = Field(default=None, ge=5, le=1440)
     auto_merge_tiers: list[int] | None = None
     task_types: list[str] | None = None
+    # Schedule settings
+    start_hour: int | None = Field(default=None, ge=0, le=23)
+    end_hour: int | None = Field(default=None, ge=1, le=24)
+    max_concurrent: int | None = Field(default=None, ge=1, le=3)
 
 
 # --- Status Models ---
@@ -116,11 +130,19 @@ def _get_autonomous_settings(project_id: str) -> AutonomousSettings:
     task_types_raw = config.get("autonomous_task_types")
     task_types = list(cast(list[str], task_types_raw)) if task_types_raw else ["auto-generated"]
 
+    # Schedule settings
+    start_hour = int(config.get("autonomous_start_hour", 0))
+    end_hour = int(config.get("autonomous_end_hour", 24))
+    max_concurrent = int(config.get("autonomous_max_concurrent", 1))
+
     return AutonomousSettings(
         enabled=enabled,
         frequency_minutes=frequency_minutes,
         auto_merge_tiers=auto_merge_tiers,
         task_types=task_types,
+        start_hour=start_hour,
+        end_hour=end_hour,
+        max_concurrent=max_concurrent,
     )
 
 
@@ -138,6 +160,13 @@ def _update_autonomous_settings(
         updates["autonomous_auto_merge_tiers"] = settings.auto_merge_tiers
     if settings.task_types is not None:
         updates["autonomous_task_types"] = settings.task_types
+    # Schedule settings
+    if settings.start_hour is not None:
+        updates["autonomous_start_hour"] = settings.start_hour
+    if settings.end_hour is not None:
+        updates["autonomous_end_hour"] = settings.end_hour
+    if settings.max_concurrent is not None:
+        updates["autonomous_max_concurrent"] = settings.max_concurrent
 
     if updates:
         update_agent_config(project_id, updates)  # type: ignore[arg-type]

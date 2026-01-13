@@ -411,6 +411,9 @@ class AgentConfigResponse(BaseModel):
 
     # Autonomous execution
     autonomous_enabled: bool = False
+    autonomous_start_hour: int = 0
+    autonomous_end_hour: int = 24
+    autonomous_max_concurrent: int = 1
 
     # Extraction throttle
     extraction_enabled: bool = True

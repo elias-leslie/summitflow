@@ -35,6 +35,9 @@ class AgentConfig(TypedDict, total=False):
 
     # Autonomous execution controls
     autonomous_enabled: bool  # Enable autonomous task pickup and execution
+    autonomous_start_hour: int  # Hour (0-23) when autonomous execution can start
+    autonomous_end_hour: int  # Hour (0-23) when autonomous execution must stop
+    autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
 
     # Extraction throttle controls
     extraction_enabled: bool  # Master kill switch for AI extraction
@@ -58,6 +61,9 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "component_source": "manual",
     # Autonomous execution - disabled by default (opt-in)
     "autonomous_enabled": False,
+    "autonomous_start_hour": 0,  # Default: 24/7 execution allowed
+    "autonomous_end_hour": 24,  # 24 means end of day (midnight)
+    "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
     # Extraction throttle - enabled, default 10 RPM (lean and mean)
     "extraction_enabled": True,
     "extraction_rpm_limit": 10,
@@ -311,6 +317,99 @@ def is_autonomous_enabled(project_id: str) -> bool:
     """
     config = get_agent_config(project_id)
     return bool(config.get("autonomous_enabled", False))
+
+
+class AutonomousScheduleConfig(TypedDict):
+    """Autonomous execution schedule configuration."""
+
+    enabled: bool
+    start_hour: int  # 0-23
+    end_hour: int  # 1-24 (24 = end of day)
+    max_concurrent: int  # 1-3
+
+
+def get_autonomous_schedule(project_id: str) -> AutonomousScheduleConfig:
+    """Get autonomous execution schedule for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        AutonomousScheduleConfig with schedule settings
+    """
+    config = get_agent_config(project_id)
+    return {
+        "enabled": config.get("autonomous_enabled", False),
+        "start_hour": config.get("autonomous_start_hour", 0),
+        "end_hour": config.get("autonomous_end_hour", 24),
+        "max_concurrent": config.get("autonomous_max_concurrent", 1),
+    }
+
+
+def is_within_autonomous_hours(project_id: str, current_hour: int) -> bool:
+    """Check if current hour is within the autonomous execution window.
+
+    Args:
+        project_id: Project ID
+        current_hour: Current hour (0-23)
+
+    Returns:
+        True if current_hour is within [start_hour, end_hour)
+    """
+    schedule = get_autonomous_schedule(project_id)
+    if not schedule["enabled"]:
+        return False
+
+    start = schedule["start_hour"]
+    end = schedule["end_hour"]
+
+    # Handle wrap-around (e.g., 22:00 to 06:00)
+    if start < end:
+        # Normal range: 8-18 means 8:00 to 17:59
+        return start <= current_hour < end
+    else:
+        # Wrap-around: 22-6 means 22:00-23:59 or 00:00-05:59
+        return current_hour >= start or current_hour < end
+
+
+def update_autonomous_schedule(
+    project_id: str,
+    start_hour: int | None = None,
+    end_hour: int | None = None,
+    max_concurrent: int | None = None,
+) -> AgentConfig:
+    """Update autonomous execution schedule for a project.
+
+    Args:
+        project_id: Project ID
+        start_hour: Hour (0-23) when execution can start
+        end_hour: Hour (1-24) when execution must stop
+        max_concurrent: Max concurrent tasks (1-3)
+
+    Returns:
+        Updated config
+
+    Raises:
+        ValueError: If invalid values provided
+    """
+    updates: AgentConfig = {}
+
+    if start_hour is not None:
+        if not 0 <= start_hour <= 23:
+            raise ValueError("start_hour must be 0-23")
+        updates["autonomous_start_hour"] = start_hour
+
+    if end_hour is not None:
+        if not 1 <= end_hour <= 24:
+            raise ValueError("end_hour must be 1-24")
+        updates["autonomous_end_hour"] = end_hour
+
+    if max_concurrent is not None:
+        if not 1 <= max_concurrent <= 3:
+            raise ValueError("max_concurrent must be 1-3")
+        updates["autonomous_max_concurrent"] = max_concurrent
+
+    return update_agent_config(project_id, updates)
 
 
 # Valid RPM limit values (slider stops)
