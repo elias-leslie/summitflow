@@ -47,3 +47,6 @@ backups/
 
 # Celery beat schedule files
 celerybeat-schedule*
+
+# Dev tools output (TOON details)
+.dev-tools/

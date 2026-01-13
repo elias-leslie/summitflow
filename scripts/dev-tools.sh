@@ -36,10 +36,21 @@ PROJECT_NAME=$(basename "$PROJECT_DIR")
 VENV_PATH=$(get_venv_path "$PROJECT_NAME" "$PROJECT_DIR")
 BACKEND_PATH=$(get_backend_path "$PROJECT_NAME" "$PROJECT_DIR")
 
-# Parse arguments
+# Output directory for TOON details
+OUTPUT_DIR="$PROJECT_DIR/.dev-tools"
+
+# Parse arguments - subcommands first, then flags
 ACTION="status"
 TARGET="all"
 
+# Check for subcommands (first positional argument)
+case "${1:-}" in
+    pytest) ACTION="pytest_toon"; shift ;;
+    ruff) ACTION="ruff_toon"; shift ;;
+    mypy) ACTION="mypy_toon"; shift ;;
+esac
+
+# Parse remaining flags
 for arg in "$@"; do
     case $arg in
         --check|-c) ACTION="check"; TARGET="current" ;;
@@ -59,6 +70,16 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
+
+# Ensure .dev-tools output directory exists
+ensure_output_dir() {
+    mkdir -p "$OUTPUT_DIR"
+}
+
+# Strip ANSI codes from text
+strip_ansi() {
+    sed 's/\x1b\[[0-9;]*m//g' | sed 's/\x1b\[K//g'
+}
 
 # Get installed version of a package
 get_installed_version() {
@@ -420,11 +441,110 @@ status_dashboard() {
     echo "SUMMARY:$healthy/$total:healthy"
 }
 
+# =============================================================================
+# TOON WRAPPER FUNCTIONS - Token-optimized output for Claude
+# =============================================================================
+
+run_pytest_toon() {
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/pytest-details.txt"
+    local pytest_bin="${VENV_PATH}/bin/pytest"
+
+    if [[ ! -x "$pytest_bin" ]]; then
+        echo "TEST:FAIL:pytest_not_found"
+        return 1
+    fi
+
+    cd "$BACKEND_PATH"
+    local output retval=0
+    output=$("$pytest_bin" --tb=short -q 2>&1) || retval=$?
+
+    # Parse summary line (last non-empty line), strip ANSI codes
+    local summary
+    summary=$(echo "$output" | strip_ansi | grep -E '(passed|failed|error|skipped)' | tail -1)
+
+    if [[ $retval -eq 0 ]]; then
+        # Success: compact TOON output only
+        echo "TEST:OK:$summary"
+    else
+        # Failure: write details to file, output path
+        echo "$output" | strip_ansi > "$details_file"
+        echo "TEST:FAIL:$summary|details:$details_file"
+        return 1
+    fi
+}
+
+run_ruff_toon() {
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/ruff-details.txt"
+    local ruff_bin="${VENV_PATH}/bin/ruff"
+
+    if [[ ! -x "$ruff_bin" ]]; then
+        ruff_bin=$(which ruff 2>/dev/null || echo "")
+        if [[ -z "$ruff_bin" ]]; then
+            echo "LINT:FAIL:ruff_not_found"
+            return 1
+        fi
+    fi
+
+    local app_dir="$BACKEND_PATH/app"
+    [[ ! -d "$app_dir" ]] && app_dir="$BACKEND_PATH"
+
+    local output retval=0
+    output=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1) || retval=$?
+    local violations
+    violations=$(echo "$output" | wc -l) || violations=0
+    # Empty output = 1 line from wc, adjust
+    [[ -z "$output" ]] && violations=0
+
+    if [[ $retval -eq 0 && "$violations" -eq 0 ]]; then
+        echo "LINT:OK:0"
+    else
+        echo "$output" | strip_ansi > "$details_file"
+        echo "LINT:FAIL:$violations|details:$details_file"
+        return 1
+    fi
+}
+
+run_mypy_toon() {
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/mypy-details.txt"
+    local mypy_bin="${VENV_PATH}/bin/mypy"
+
+    if [[ ! -x "$mypy_bin" ]]; then
+        echo "TYPES:FAIL:mypy_not_found"
+        return 1
+    fi
+
+    local app_dir="$BACKEND_PATH/app"
+    [[ ! -d "$app_dir" ]] && app_dir="$BACKEND_PATH"
+
+    cd "$BACKEND_PATH"
+    local output retval=0
+    output=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1) || retval=$?
+    local errors
+    errors=$(echo "$output" | grep -c "error:") || errors=0
+
+    if [[ "$errors" -eq 0 ]]; then
+        echo "TYPES:OK:0"
+    else
+        echo "$output" | strip_ansi > "$details_file"
+        echo "TYPES:FAIL:$errors|details:$details_file"
+        return 1
+    fi
+}
+
 show_help() {
     echo "Dev Standards - Cross-project tooling management"
     echo ""
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0 [SUBCOMMAND] [OPTIONS]"
     echo ""
+    echo "Subcommands (TOON output for Claude):"
+    echo "  pytest           Run pytest with TOON output (<100 bytes on pass)"
+    echo "  ruff             Run ruff with TOON output (<50 bytes on clean)"
+    echo "  mypy             Run mypy with TOON output (<50 bytes on clean)"
+    echo ""
+    echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"
     echo "  --check, -c      Quality gate: lint, types, tests (current project)"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
@@ -458,5 +578,14 @@ case "$ACTION" in
         ;;
     rebuild)
         rebuild_venv "$PROJECT_DIR"
+        ;;
+    pytest_toon)
+        run_pytest_toon
+        ;;
+    ruff_toon)
+        run_ruff_toon
+        ;;
+    mypy_toon)
+        run_mypy_toon
         ;;
 esac
