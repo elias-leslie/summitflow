@@ -369,6 +369,28 @@ async def _run_regression_detection(project_id: str, job_id: int) -> int:
                 severity=result.severity,
             )
 
+            # Check if this regression was previously resolved and reopen the task
+            explorer_entry_id = evidence.get("explorer_entry_id")
+            if explorer_entry_id and result.regression_type:
+                resolved = evidence_regressions.get_resolved_for_entry(
+                    project_id=project_id,
+                    explorer_entry_id=explorer_entry_id,
+                    regression_type=result.regression_type,
+                )
+                linked_task_id = resolved.get("linked_task_id") if resolved else None
+                if linked_task_id:
+                    reopened = _reopen_regression_task(
+                        linked_task_id,
+                        reason=f"Regression re-detected: {result.regression_type}",
+                    )
+                    if reopened:
+                        logger.info(
+                            "regression_task_reopened",
+                            project_id=project_id,
+                            task_id=linked_task_id,
+                            regression_type=result.regression_type,
+                        )
+
     return regressions_found
 
 
@@ -771,4 +793,41 @@ def _close_regression_task(task_id: str) -> bool:
 
     except Exception as e:
         logger.error("regression_task_close_failed", task_id=task_id, error=str(e))
+        return False
+
+
+def _reopen_regression_task(task_id: str, reason: str) -> bool:
+    """Reopen a previously closed regression task.
+
+    Called when a regression is re-detected after being marked as resolved.
+
+    Args:
+        task_id: Task ID to reopen
+        reason: Reason for reopening (added to progress log)
+
+    Returns:
+        True if task was reopened
+    """
+    from ..storage.tasks.core import get_task, update_task
+
+    try:
+        task = get_task(task_id)
+        if not task:
+            return False
+
+        # Only reopen if it was completed (closed by auto-close)
+        if task.get("status") != "completed":
+            return False
+
+        update_task(
+            task_id,
+            status="pending",
+            progress_log=f"Auto-reopened: {reason}",
+        )
+
+        logger.info("regression_task_reopened", task_id=task_id, reason=reason)
+        return True
+
+    except Exception as e:
+        logger.error("regression_task_reopen_failed", task_id=task_id, error=str(e))
         return False

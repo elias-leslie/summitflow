@@ -223,3 +223,38 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
+
+
+def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, Any]]:
+    """Get tasks that have been pending without activity for too long.
+
+    A task is considered stale if:
+    - Status is 'pending'
+    - Has 'auto-generated' label (not user-created)
+    - Created more than max_age_days ago
+    - No recent updates (updated_at < max_age_days ago)
+
+    Args:
+        max_age_days: Number of days without activity to consider stale
+        limit: Max results
+
+    Returns:
+        List of stale task dicts.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {TASK_COLUMNS}
+            FROM tasks
+            WHERE status = 'pending'
+              AND 'auto-generated' = ANY(labels)
+              AND created_at < NOW() - INTERVAL '%s days'
+              AND (updated_at IS NULL OR updated_at < NOW() - INTERVAL '%s days')
+            ORDER BY created_at ASC
+            LIMIT %s
+            """,
+            (max_age_days, max_age_days, limit),
+        )
+        rows = cur.fetchall()
+
+    return [_row_to_dict(row) for row in rows]

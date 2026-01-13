@@ -155,6 +155,24 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24,  # Every 24 hours
         "kwargs": {"project_id": "monkey-fight"},
     },
+    # Refactor task generation - weekly scan for refactor targets
+    "generate-refactor-tasks-summitflow": {
+        "task": "summitflow.generate_tasks_from_scan",
+        "schedule": 60 * 60 * 24 * 7,  # Weekly
+        "kwargs": {"project_id": "summitflow"},
+    },
+    # Resolved regressions check - auto-close tasks when regressions fixed
+    "check-resolved-regressions-summitflow": {
+        "task": "summitflow.check_resolved_regressions",
+        "schedule": 60 * 60 * 6,  # Every 6 hours
+        "kwargs": {"project_id": "summitflow", "auto_close_tasks": True},
+    },
+    # Stale task cleanup - archive tasks pending >30 days with no activity
+    "cleanup-stale-tasks": {
+        "task": "summitflow.cleanup_stale_tasks",
+        "schedule": 60 * 60 * 24,  # Daily
+        "kwargs": {"max_age_days": 30},
+    },
 }
 
 

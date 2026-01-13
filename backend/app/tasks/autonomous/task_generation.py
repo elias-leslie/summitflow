@@ -93,7 +93,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 title=title,
                 description=description,
                 priority=2 if priority == "high" else 3,
-                task_type="task",
+                task_type="refactor",
                 labels=["auto-generated", f"tier:{tier}"],
                 tier=tier,
             )
@@ -314,3 +314,64 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error generating bug tasks: {e}")
         return {"error": str(e), "created_count": 0, "errors_scanned": 0, "skipped_count": 0}
+
+
+@celery_app.task(name="summitflow.cleanup_stale_tasks")  # type: ignore[untyped-decorator]
+def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
+    """Archive auto-generated tasks that have been pending without activity.
+
+    Tasks are considered stale if:
+    - Status is 'pending'
+    - Has 'auto-generated' label
+    - Created more than max_age_days ago
+    - No recent updates
+
+    Stale tasks are moved to 'cancelled' status to clear the backlog
+    while preserving them for audit purposes.
+
+    Args:
+        max_age_days: Number of days without activity to consider stale
+
+    Returns:
+        Dict with cancelled_count and skipped_count
+    """
+    from app.storage.tasks import get_stale_tasks
+
+    try:
+        stale_tasks = get_stale_tasks(max_age_days=max_age_days, limit=100)
+
+        cancelled = 0
+        skipped = 0
+
+        for task in stale_tasks:
+            task_id = task.get("id")
+            if not task_id:
+                skipped += 1
+                continue
+
+            try:
+                task_store.update_task(
+                    task_id,
+                    status="cancelled",
+                    progress_log=(
+                        f"Auto-cancelled: No activity for {max_age_days}+ days. "
+                        "Stale auto-generated task archived."
+                    ),
+                )
+                cancelled += 1
+                logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
+            except Exception as task_err:
+                logger.error(f"Failed to cancel task {task_id}: {task_err}")
+                skipped += 1
+
+        logger.info(f"Stale task cleanup complete: cancelled={cancelled}, skipped={skipped}")
+
+        return {
+            "cancelled_count": cancelled,
+            "skipped_count": skipped,
+            "max_age_days": max_age_days,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in stale task cleanup: {e}")
+        return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}

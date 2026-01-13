@@ -146,6 +146,45 @@ def link_task(regression_id: int, task_id: str) -> EvidenceRegression | None:
     return update_status(regression_id, "linked", linked_task_id=task_id)
 
 
+def get_resolved_for_entry(
+    project_id: str,
+    explorer_entry_id: int,
+    regression_type: str,
+) -> EvidenceRegression | None:
+    """Get the most recent resolved regression for an explorer entry.
+
+    Used to check if a regression that was previously resolved has reoccurred.
+
+    Args:
+        project_id: Project ID
+        explorer_entry_id: Explorer entry ID
+        regression_type: Type of regression to check for
+
+    Returns:
+        Most recent resolved regression for this entry/type, or None
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id, r.evidence_id, r.baseline_evidence_id, r.regression_type,
+                   r.pixel_diff_pct, r.console_errors_added, r.ai_analysis, r.severity,
+                   r.status, r.linked_task_id, r.reviewed_at, r.reviewed_by,
+                   r.resolved_at, r.created_at
+            FROM evidence_regressions r
+            JOIN evidence e ON r.evidence_id = e.id
+            WHERE e.project_id = %s
+              AND e.explorer_entry_id = %s
+              AND r.regression_type = %s
+              AND r.status = 'resolved'
+            ORDER BY r.resolved_at DESC
+            LIMIT 1
+            """,
+            (project_id, explorer_entry_id, regression_type),
+        )
+        row = cur.fetchone()
+        return _row_to_regression(row) if row else None
+
+
 def _row_to_regression(row: tuple[Any, ...]) -> EvidenceRegression:
     """Convert database row to EvidenceRegression."""
     return {
