@@ -54,6 +54,7 @@ for arg in "$@"; do
     case $arg in
         --check|-c) ACTION="check"; TARGET="current" ;;
         --quick|-q) ACTION="quick_check"; TARGET="current" ;;
+        --frontend-only|--fe) ACTION="frontend_only_check"; TARGET="current" ;;
         --fix|-f) ACTION="fix"; TARGET="current" ;;
         --fix-all) ACTION="fix"; TARGET="all" ;;
         --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
@@ -71,9 +72,34 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
 
+# Max detail files to keep for rotation (last N runs)
+MAX_DETAIL_FILES=5
+
 # Ensure .dev-tools output directory exists
 ensure_output_dir() {
     mkdir -p "$OUTPUT_DIR"
+}
+
+# Rotate detail files: tool-details.txt -> tool-details.1.txt -> ... -> tool-details.N.txt
+# Keeps last MAX_DETAIL_FILES runs for comparison
+rotate_details() {
+    local base_file="$1"
+    local dir=$(dirname "$base_file")
+    local name=$(basename "$base_file" .txt)
+
+    # Delete oldest if at max
+    local oldest="$dir/${name}.${MAX_DETAIL_FILES}.txt"
+    [[ -f "$oldest" ]] && rm -f "$oldest"
+
+    # Rotate existing numbered files (N-1 -> N, N-2 -> N-1, etc.)
+    for ((i=MAX_DETAIL_FILES-1; i>=1; i--)); do
+        local src="$dir/${name}.${i}.txt"
+        local dst="$dir/${name}.$((i+1)).txt"
+        [[ -f "$src" ]] && mv "$src" "$dst"
+    done
+
+    # Move current to .1 if exists
+    [[ -f "$base_file" ]] && mv "$base_file" "$dir/${name}.1.txt"
 }
 
 # Strip ANSI codes from text
@@ -322,6 +348,33 @@ quick_check() {
     return $errors
 }
 
+# Frontend-only check: skip Python tools, run only eslint and tsc
+# Useful for pure frontend projects (e.g., monkey-fight)
+frontend_only_check() {
+    local project_dir="$1"
+    local project_name=$(basename "$project_dir")
+    local errors=0
+
+    echo "FRONTEND_CHECK:$project_name"
+
+    if ! has_frontend "$project_dir"; then
+        echo "ERROR:no_frontend_detected"
+        echo "CHECK_RESULT:FAIL:1"
+        return 1
+    fi
+
+    run_tool_toon eslint || ((errors++))
+    run_tool_toon tsc || ((errors++))
+
+    if [[ $errors -eq 0 ]]; then
+        echo "CHECK_RESULT:OK"
+    else
+        echo "CHECK_RESULT:FAIL:$errors"
+    fi
+
+    return $errors
+}
+
 full_check() {
     local project_dir="$1"
     local project_name=$(basename "$project_dir")
@@ -502,8 +555,12 @@ has_frontend() {
             return 0
         fi
     fi
-    # Check root for eslint config (frontend-only projects like monkey-fight)
+    # Check root for frontend-only projects (eslint config OR package.json with no backend/)
     if ls "$project_dir"/eslint.config.* 2>/dev/null | head -1 >/dev/null; then
+        return 0
+    fi
+    # Frontend-only project: has package.json at root but no backend/
+    if [[ -f "$project_dir/package.json" && ! -d "$project_dir/backend" ]]; then
         return 0
     fi
     return 1
@@ -637,10 +694,12 @@ run_tool_toon() {
     esac
 
     if [[ $is_success -eq 1 ]]; then
-        # Clear stale details file on success
+        # Clear stale details file on success (don't rotate passes)
         rm -f "$details_file"
         echo "$label:OK:$count"
     else
+        # Rotate previous failures before writing new one
+        rotate_details "$details_file"
         echo "$output" | strip_ansi > "$details_file"
         echo "$label:FAIL:$count|details:$details_file"
         return 1
@@ -663,6 +722,7 @@ show_help() {
     echo "  (no args)        Dashboard of all projects (default)"
     echo "  --check, -c      Quality gate: lint, types, tests + frontend (current project)"
     echo "  --quick, -q      Fast check: lint, types + frontend (for commits)"
+    echo "  --frontend-only  Frontend only: eslint + tsc (skip Python tools)"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
     echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"
@@ -687,6 +747,9 @@ case "$ACTION" in
         ;;
     quick_check)
         quick_check "$PROJECT_DIR"
+        ;;
+    frontend_only_check)
+        frontend_only_check "$PROJECT_DIR"
         ;;
     fix)
         if [[ "$TARGET" == "all" ]]; then
