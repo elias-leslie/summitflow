@@ -22,6 +22,7 @@ import {
   type AutomationSettings,
 } from "@/lib/api";
 import { AgentConfigPanel } from "@/components/settings/AgentConfigPanel";
+import { AutonomousSettingsPanel } from "@/components/settings/AutonomousSettings";
 
 const COMPONENT_SOURCE_OPTIONS = [
   {
@@ -61,7 +62,7 @@ const AGENT_OPTIONS = [
   { value: "claude", label: "Claude", description: "High quality reasoning" },
 ] as const;
 
-type SettingsTab = "general" | "automation";
+type SettingsTab = "general" | "automation" | "execution";
 
 export default function ProjectSettingsPage() {
   const params = useParams();
@@ -183,6 +184,18 @@ export default function ProjectSettingsPage() {
           >
             <Lightbulb className="w-4 h-4" />
             Automation
+          </button>
+          <button
+            onClick={() => setActiveTab("execution")}
+            className={clsx(
+              "px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2",
+              activeTab === "execution"
+                ? "text-phosphor-400 border-b-2 border-phosphor-400"
+                : "text-slate-400 hover:text-slate-200",
+            )}
+          >
+            <Zap className="w-4 h-4" />
+            Execution
           </button>
         </div>
       </header>
@@ -475,6 +488,12 @@ export default function ProjectSettingsPage() {
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {activeTab === "execution" && (
+          <div className="max-w-xl">
+            <AutonomousSettingsPanel projectId={projectId} />
           </div>
         )}
       </section>

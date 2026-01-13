@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { AnimatePresence } from "motion/react";
 import {
   GripVertical,
   Package,
@@ -21,9 +22,12 @@ import {
   RotateCw,
   Zap,
   Lightbulb,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 import type { Task, TaskStatus, TaskType } from "@/lib/api";
+import { ExecutionPanel, type ExecutionState } from "./ExecutionPanel";
 
 // ============================================================================
 // Task Status Configuration
@@ -124,6 +128,11 @@ interface TaskCardProps {
   onClick?: () => void;
   onExecuteNow?: (taskId: string) => void;
   isExecuting?: boolean;
+  // Execution panel props
+  execution?: ExecutionState;
+  wsConnected?: boolean;
+  onStopExecution?: () => void;
+  onSendMessage?: (message: string) => void;
 }
 
 // Check if task is a crowdsourced idea
@@ -143,7 +152,12 @@ export function TaskCard({
   onClick,
   onExecuteNow,
   isExecuting,
+  execution,
+  wsConnected = false,
+  onStopExecution,
+  onSendMessage,
 }: TaskCardProps) {
+  const [expanded, setExpanded] = useState(false);
   const {
     attributes,
     listeners,
@@ -162,6 +176,14 @@ export function TaskCard({
   const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task;
   const statusConfig = taskStatusConfig[task.status];
   const isIdea = isCrowdsourcedIdea(task);
+
+  // Show expand button for running or ai_reviewing tasks
+  const canExpand = task.status === "running" || task.status === "ai_reviewing";
+
+  const handleExpandToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpanded(!expanded);
+  };
 
   // Capability context for criteria progress
   const capability = task.capability;
@@ -333,6 +355,43 @@ export function TaskCard({
             <Lightbulb className="h-4 w-4 text-yellow-400" />
           </div>
         )}
+
+        {/* Expand/Collapse button for running tasks */}
+        {canExpand && (
+          <button
+            onClick={handleExpandToggle}
+            className="mt-3 flex items-center justify-center gap-1 w-full py-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                Hide execution details
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                Show execution details
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Execution Panel (animated expand/collapse) */}
+        <AnimatePresence>
+          {expanded &&
+            canExpand &&
+            execution &&
+            onStopExecution &&
+            onSendMessage && (
+              <ExecutionPanel
+                taskId={task.id}
+                execution={execution}
+                connected={wsConnected}
+                onStop={onStopExecution}
+                onSendMessage={onSendMessage}
+              />
+            )}
+        </AnimatePresence>
       </div>
     </div>
   );

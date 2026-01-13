@@ -212,3 +212,51 @@ export async function executeIdeasNow(
   }
   return res.json();
 }
+
+// ============================================================================
+// Autonomous Execution Settings (for orchestrator task execution)
+// ============================================================================
+
+export interface AutonomousExecutionSettings {
+  enabled: boolean;
+  frequency_minutes: number;
+  auto_merge_tiers: number[];
+  task_types: string[];
+  start_hour: number;
+  end_hour: number;
+  max_concurrent: number;
+}
+
+export interface AutonomousExecutionSettingsUpdate {
+  enabled?: boolean;
+  frequency_minutes?: number;
+  auto_merge_tiers?: number[];
+  task_types?: string[];
+  start_hour?: number;
+  end_hour?: number;
+  max_concurrent?: number;
+}
+
+export async function getAutonomousSettings(
+  projectId: string,
+): Promise<AutonomousExecutionSettings> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/autonomous/settings`,
+    {
+      errorMessage: "Failed to fetch autonomous settings",
+    },
+  );
+}
+
+export async function updateAutonomousSettings(
+  projectId: string,
+  settings: AutonomousExecutionSettingsUpdate,
+): Promise<AutonomousExecutionSettings> {
+  const res = await fetch(`/api/projects/${projectId}/autonomous/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to update autonomous settings");
+  return res.json();
+}

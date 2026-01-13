@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useEffect,
+  type ReactNode,
+} from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, Check } from "lucide-react";
 import { clsx } from "clsx";
@@ -24,14 +31,32 @@ interface SelectProps {
   value: string;
   onValueChange: (value: string) => void;
   children: ReactNode;
+  disabled?: boolean;
 }
 
-export function Select({ value, onValueChange, children }: SelectProps) {
+export function Select({
+  value,
+  onValueChange,
+  children,
+  disabled = false,
+}: SelectProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <SelectContext.Provider value={{ value, onChange: onValueChange, open, setOpen }}>
-      <div className="relative">
+    <SelectContext.Provider
+      value={{
+        value,
+        onChange: onValueChange,
+        open,
+        setOpen: disabled ? () => {} : setOpen,
+      }}
+    >
+      <div
+        className={clsx(
+          "relative",
+          disabled && "opacity-50 pointer-events-none",
+        )}
+      >
         {children}
       </div>
     </SelectContext.Provider>
@@ -58,11 +83,16 @@ export function SelectTrigger({ children, className }: SelectTriggerProps) {
         "text-slate-200 hover:border-slate-600",
         "focus:outline-none focus:border-phosphor-500/50 focus:ring-1 focus:ring-phosphor-500/20",
         "transition-all duration-200",
-        className
+        className,
       )}
     >
       {children}
-      <ChevronDown className={clsx("w-4 h-4 text-slate-500 transition-transform", open && "rotate-180")} />
+      <ChevronDown
+        className={clsx(
+          "w-4 h-4 text-slate-500 transition-transform",
+          open && "rotate-180",
+        )}
+      />
     </button>
   );
 }
@@ -76,7 +106,11 @@ export function SelectValue({ placeholder, children }: SelectValueProps) {
   const { value } = useSelect();
   // If children provided, use them as display; otherwise show value or placeholder
   const displayValue = children ?? value;
-  return <span className={!value ? "text-slate-500" : ""}>{displayValue || placeholder}</span>;
+  return (
+    <span className={!value ? "text-slate-500" : ""}>
+      {displayValue || placeholder}
+    </span>
+  );
 }
 
 interface SelectContentProps {
@@ -93,7 +127,10 @@ export function SelectContent({ children, className }: SelectContentProps) {
     if (!open) return;
 
     function handleClick(e: MouseEvent) {
-      if (contentRef.current && !contentRef.current.contains(e.target as Node)) {
+      if (
+        contentRef.current &&
+        !contentRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -115,12 +152,10 @@ export function SelectContent({ children, className }: SelectContentProps) {
             "absolute z-50 mt-1 min-w-full",
             "bg-slate-900 border border-slate-700 rounded-md shadow-lg shadow-black/30",
             "max-h-64 overflow-auto",
-            className
+            className,
           )}
         >
-          <div className="p-1">
-            {children}
-          </div>
+          <div className="p-1">{children}</div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -150,7 +185,7 @@ export function SelectItem({ value, children, className }: SelectItemProps) {
         isSelected
           ? "bg-phosphor-500/10 text-phosphor-400"
           : "text-slate-300 hover:bg-slate-800/50",
-        className
+        className,
       )}
     >
       {children}

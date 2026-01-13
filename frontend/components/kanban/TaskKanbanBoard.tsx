@@ -22,6 +22,7 @@ import {
 import type { Task, TaskStatus } from "@/lib/api";
 import { executeIdeasNow } from "@/lib/api";
 import { TaskCard, DragOverlayTaskCard } from "./TaskCard";
+import { useExecutionWebSocket } from "@/hooks/useExecutionWebSocket";
 
 // ============================================================================
 // Types
@@ -146,6 +147,9 @@ interface DroppableColumnProps {
   onTaskClick?: (task: Task) => void;
   onExecuteNow?: (taskId: string) => void;
   executingTaskId?: string | null;
+  // WebSocket execution state for running tasks
+  runningTaskId?: string | null;
+  executionHook?: ReturnType<typeof useExecutionWebSocket>;
 }
 
 function DroppableColumn({
@@ -154,6 +158,8 @@ function DroppableColumn({
   onTaskClick,
   onExecuteNow,
   executingTaskId,
+  runningTaskId,
+  executionHook,
 }: DroppableColumnProps) {
   const colorClasses: Record<
     string,
@@ -222,17 +228,32 @@ function DroppableColumn({
         >
           <div className="space-y-2">
             {tasks.length > 0 ? (
-              tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onClick={() => onTaskClick?.(task)}
-                  onExecuteNow={
-                    column.id === "ideas" ? onExecuteNow : undefined
-                  }
-                  isExecuting={executingTaskId === task.id}
-                />
-              ))
+              tasks.map((task) => {
+                const isRunningTask = task.id === runningTaskId;
+                return (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onClick={() => onTaskClick?.(task)}
+                    onExecuteNow={
+                      column.id === "ideas" ? onExecuteNow : undefined
+                    }
+                    isExecuting={executingTaskId === task.id}
+                    execution={
+                      isRunningTask ? executionHook?.execution : undefined
+                    }
+                    wsConnected={
+                      isRunningTask ? executionHook?.connected : false
+                    }
+                    onStopExecution={
+                      isRunningTask ? executionHook?.sendStop : undefined
+                    }
+                    onSendMessage={
+                      isRunningTask ? executionHook?.sendMessage : undefined
+                    }
+                  />
+                );
+              })
             ) : (
               <div className="flex items-center justify-center h-24 text-xs text-slate-600 italic">
                 No tasks
@@ -257,6 +278,18 @@ export function TaskKanbanBoard({
 }: TaskKanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [executingTaskId, setExecutingTaskId] = useState<string | null>(null);
+
+  // Find the first running task to connect WebSocket
+  const runningTask = useMemo(
+    () => tasks.find((t) => t.status === "running"),
+    [tasks],
+  );
+
+  // WebSocket connection for the running task
+  const executionHook = useExecutionWebSocket({
+    taskId: runningTask?.id || "",
+    enabled: !!runningTask,
+  });
 
   const handleExecuteNow = async (taskId: string) => {
     setExecutingTaskId(taskId);
@@ -401,6 +434,8 @@ export function TaskKanbanBoard({
               onTaskClick={onTaskClick}
               onExecuteNow={handleExecuteNow}
               executingTaskId={executingTaskId}
+              runningTaskId={runningTask?.id}
+              executionHook={executionHook}
             />
           ))}
         </div>
