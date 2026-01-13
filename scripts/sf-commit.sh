@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # sf-commit - Streamlined commit with TOON output for Claude
-# Version: 1.0.0
-# Usage: sf-commit [--push] [--task ID] [--type TYPE] [--full] [--skip-tests] [--msg "..."]
+# Version: 2.0.0
+# Usage: sf-commit [--push] [--task ID] [--type TYPE] [--skip-checks] [--msg "..."]
 #
-# Lets pre-commit handle lint/type checks. Only runs pytest separately.
+# Delegates quality gates to dev-tools.sh --check for consistent TOON output.
 # Output: TOON format (<sf-commit>...</sf-commit>)
 
 set -euo pipefail
@@ -12,8 +12,7 @@ set -euo pipefail
 PUSH=false
 TASK_ID=""
 COMMIT_TYPE=""
-FULL_TESTS=false
-SKIP_TESTS=false
+SKIP_CHECKS=false
 CUSTOM_MSG=""
 
 while [[ $# -gt 0 ]]; do
@@ -21,12 +20,16 @@ while [[ $# -gt 0 ]]; do
         --push) PUSH=true; shift ;;
         --task) TASK_ID="$2"; shift 2 ;;
         --type) COMMIT_TYPE="$2"; shift 2 ;;
-        --full) FULL_TESTS=true; shift ;;
-        --skip-tests) SKIP_TESTS=true; shift ;;
+        --skip-checks|--skip-tests) SKIP_CHECKS=true; shift ;;
         --msg) CUSTOM_MSG="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+# Find dev-tools.sh (in project scripts/ or ~/summitflow/scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEV_TOOLS="$SCRIPT_DIR/dev-tools.sh"
+[[ ! -x "$DEV_TOOLS" ]] && DEV_TOOLS="$HOME/summitflow/scripts/dev-tools.sh"
 
 # Detect layers from staged + unstaged changes
 detect_layers() {
@@ -69,41 +72,27 @@ detect_type() {
     fi
 }
 
-# Run targeted pytest for backend
-run_pytest() {
-    local layer=$1
-    local full=$2
-
-    [[ "$layer" != "backend" && "$layer" != "both" ]] && return 0
-
-    cd backend || return 1
-
-    if $full; then
-        .venv/bin/pytest tests/ --tb=line -q 2>&1
-        return $?
+# Run quality gates via dev-tools.sh --check
+run_quality_gates() {
+    if [[ ! -x "$DEV_TOOLS" ]]; then
+        echo "GATES:FAIL:dev-tools.sh not found"
+        return 1
     fi
 
-    # Find test files for changed source files
-    local changed_py test_files=""
-    changed_py=$(git diff --cached --name-only | grep "^backend/app/.*\.py$" || true)
+    local output retval=0
+    output=$("$DEV_TOOLS" --check 2>&1) || retval=$?
 
-    for f in $changed_py; do
-        local module
-        module=$(echo "$f" | sed 's|backend/app/||; s|\.py$||')
-        local base="${module##*/}"
-        local dir="${module%/*}"
-
-        # Check common test patterns
-        for pattern in "tests/${dir}/test_${base}.py" "tests/unit/${dir}/test_${base}.py" "tests/test_${base}.py"; do
-            [[ -f "$pattern" ]] && test_files="$test_files $pattern"
-        done
-    done
-
-    if [[ -n "$test_files" ]]; then
-        .venv/bin/pytest $test_files --tb=line -q 2>&1
+    # Parse TOON output for CHECK_RESULT line
+    if echo "$output" | grep -q "CHECK_RESULT:OK"; then
+        echo "GATES:OK"
+        return 0
     else
-        # No targeted tests found, run a quick smoke test
-        .venv/bin/pytest tests/ --tb=line -q -x --timeout=30 2>&1 || true
+        # Extract error count and return failure details
+        local errors
+        errors=$(echo "$output" | grep "CHECK_RESULT:FAIL" | sed 's/.*FAIL:\([0-9]*\).*/\1/' || echo "?")
+        echo "GATES:FAIL:$errors|details:.dev-tools/"
+        echo "$output"  # Include full output for debugging
+        return 1
     fi
 }
 
@@ -184,29 +173,21 @@ main() {
     # Stage all changes
     git add -A
 
-    # Run pytest if not skipped (before commit so we catch issues early)
-    if ! $SKIP_TESTS; then
-        local pytest_out pytest_status=0
-        pytest_out=$(run_pytest "$layer" "$FULL_TESTS" 2>&1) || pytest_status=$?
+    # Run quality gates BEFORE commit (via dev-tools.sh)
+    if ! $SKIP_CHECKS; then
+        local gates_out gates_status=0
+        gates_out=$(run_quality_gates 2>&1) || gates_status=$?
 
-        if [[ $pytest_status -ne 0 ]]; then
-            # Check if it's a real failure or just warnings
-            if echo "$pytest_out" | grep -qE "FAILED|ERROR"; then
-                status="BLOCKED"
-                gates="pytest:FAIL"
-                errors=$(echo "$pytest_out" | grep -E "FAILED|ERROR" | head -3 | tr '\n' '|')
-
-                echo "<sf-commit>"
-                echo "<status>$status</status>"
-                echo "<gates>$gates</gates>"
-                echo "<errors>$errors</errors>"
-                echo "</sf-commit>"
-                exit 1
-            fi
+        if [[ $gates_status -ne 0 ]]; then
+            echo "<sf-commit>"
+            echo "<status>BLOCKED</status>"
+            echo "<gates>$gates_out</gates>"
+            echo "</sf-commit>"
+            exit 1
         fi
-        gates="pytest:PASS"
+        gates="checks:PASS"
     else
-        gates="pytest:SKIP"
+        gates="checks:SKIP"
     fi
 
     # Generate message
@@ -221,48 +202,30 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 EOF
 )
 
-    # Attempt commit (pre-commit runs automatically)
+    # Attempt commit (pre-commit hooks still run for formatting)
     local commit_out commit_status=0
     commit_out=$(git commit -m "$full_message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
-        # Check if files were modified by pre-commit
+        # Check if files were modified by pre-commit formatters
         if [[ -n "$(git status --porcelain)" ]]; then
-            # Re-stage and retry
+            # Re-stage formatted files and retry
             git add -A
             commit_out=$(git commit -m "$full_message" 2>&1) || commit_status=$?
         fi
 
         if [[ $commit_status -ne 0 ]]; then
-            status="BLOCKED"
-            # Parse pre-commit output for specific failures
-            if echo "$commit_out" | grep -q "ruff"; then
-                gates="$gates|ruff:FAIL"
-            fi
-            if echo "$commit_out" | grep -q "mypy"; then
-                gates="$gates|mypy:FAIL"
-            fi
-            if echo "$commit_out" | grep -q "eslint"; then
-                gates="$gates|eslint:FAIL"
-            fi
-            if echo "$commit_out" | grep -q "typescript"; then
-                gates="$gates|tsc:FAIL"
-            fi
-            errors=$(echo "$commit_out" | grep -E "error|Error|FAILED" | head -5 | tr '\n' '|')
-
+            # Commit still failed - likely pre-commit found new issues
             echo "<sf-commit>"
-            echo "<status>$status</status>"
-            echo "<gates>${gates#|}</gates>"
-            echo "<errors>$errors</errors>"
+            echo "<status>BLOCKED</status>"
+            echo "<gates>$gates|hooks:FAIL</gates>"
+            echo "<errors>$(echo "$commit_out" | grep -E "error|Error|FAILED" | head -5 | tr '\n' '|')</errors>"
             echo "</sf-commit>"
             exit 1
         fi
     fi
 
-    # Pre-commit passed
     gates="$gates|hooks:PASS"
-
-    # Get commit SHA
     sha=$(git rev-parse --short HEAD)
 
     # Cross-layer check (warning only)
@@ -279,7 +242,7 @@ EOF
             pushed="true"
         else
             status="PARTIAL"
-            errors="push_failed:$push_out"
+            errors="push_failed:$(echo "$push_out" | head -2 | tr '\n' ' ')"
         fi
     fi
 
