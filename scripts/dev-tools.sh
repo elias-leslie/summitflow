@@ -637,6 +637,8 @@ run_tool_toon() {
     esac
 
     if [[ $is_success -eq 1 ]]; then
+        # Clear stale details file on success
+        rm -f "$details_file"
         echo "$label:OK:$count"
     else
         echo "$output" | strip_ansi > "$details_file"
