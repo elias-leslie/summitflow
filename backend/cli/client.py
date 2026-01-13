@@ -430,6 +430,19 @@ class STClient:
         response = self._client.get(self._url(f"/tasks/{task_id}/criteria"))
         return self._handle_response(response)
 
+    def delete_task_criterion(self, task_id: str, criterion_id: str) -> dict[str, Any]:
+        """Delete/unlink a criterion from a task.
+
+        Args:
+            task_id: Task ID
+            criterion_id: Criterion ID (e.g., "ac-001")
+
+        Returns:
+            Deletion confirmation dict.
+        """
+        response = self._client.delete(self._url(f"/tasks/{task_id}/criteria/{criterion_id}"))
+        return self._handle_response(response)
+
     # Tests
 
     def list_tests(self, test_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:

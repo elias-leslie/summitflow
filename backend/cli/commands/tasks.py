@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC
 from pathlib import Path
@@ -519,6 +520,19 @@ def update(
     unblock: Annotated[
         str | None, typer.Option("--unblock", help="Remove blocking dependency on task ID")
     ] = None,
+    spirit_anti: Annotated[str | None, typer.Option("--spirit-anti", help="What NOT to do")] = None,
+    done_when: Annotated[
+        list[str] | None, typer.Option("--done-when", help="Completion conditions (repeatable)")
+    ] = None,
+    complexity: Annotated[
+        str | None, typer.Option("--complexity", help="SIMPLE, STANDARD, or COMPLEX")
+    ] = None,
+    decisions_json: Annotated[
+        str | None, typer.Option("--decisions", help="Decisions as JSON array")
+    ] = None,
+    constraints_json: Annotated[
+        str | None, typer.Option("--constraints", help="Constraints as JSON array")
+    ] = None,
 ) -> None:
     """Update a task.
 
@@ -535,18 +549,10 @@ def update(
     """
     client = STClient()
 
-    # Handle status update separately (uses /status endpoint)
-    if status:
-        try:
-            task = client.update_status(task_id, status)
-            output_task(task)
-            return
-        except APIError as e:
-            handle_api_error(e)
-            return
-
     # Build update data
     updates: dict = {}
+    status_to_update = status  # Handle status with other updates, not separately
+
     if priority is not None:
         updates["priority"] = priority
 
@@ -598,6 +604,31 @@ def update(
         updates["pull_request_url"] = pr_url
     if parent:
         updates["parent_task_id"] = parent
+    if spirit_anti:
+        updates["spirit_anti"] = spirit_anti
+    if done_when:
+        updates["done_when"] = done_when
+    if complexity:
+        if complexity.upper() not in ("SIMPLE", "STANDARD", "COMPLEX"):
+            output_error("complexity must be SIMPLE, STANDARD, or COMPLEX")
+            raise typer.Exit(1)
+        updates["complexity"] = complexity.upper()
+    if decisions_json:
+        import json
+
+        try:
+            updates["decisions"] = json.loads(decisions_json)
+        except json.JSONDecodeError as e:
+            output_error(f"Invalid decisions JSON: {e}")
+            raise typer.Exit(1) from None
+    if constraints_json:
+        import json
+
+        try:
+            updates["constraints"] = json.loads(constraints_json)
+        except json.JSONDecodeError as e:
+            output_error(f"Invalid constraints JSON: {e}")
+            raise typer.Exit(1) from None
 
     # Handle dependency operations (can be standalone or combined with other updates)
     dep_result = {}
@@ -615,8 +646,8 @@ def update(
         except APIError as e:
             dep_result["unblock_error"] = e.detail
 
-    # If only dependency operations (no other updates)
-    if not updates and (blocked_by or unblock):
+    # If only dependency operations (no other updates, no status)
+    if not updates and not status_to_update and (blocked_by or unblock):
         try:
             task = client.get_task(task_id)
             task.update(dep_result)
@@ -626,17 +657,36 @@ def update(
             handle_api_error(e)
             return
 
-    if not updates:
+    if not updates and not status_to_update:
         output_error("No updates specified")
         raise typer.Exit(1)
 
-    try:
-        task = client.update_task(task_id, **updates)
-        task.update(dep_result)
-    except APIError as e:
-        handle_api_error(e)
-        return
+    task = None
+    # Apply field updates first
+    if updates:
+        try:
+            task = client.update_task(task_id, **updates)
+        except APIError as e:
+            handle_api_error(e)
+            return
 
+    # Apply status update (uses separate endpoint)
+    if status_to_update:
+        try:
+            task = client.update_status(task_id, status_to_update)
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+    # Fetch task if neither update was done but we have dep operations
+    if task is None:
+        try:
+            task = client.get_task(task_id)
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+    task.update(dep_result)
     output_task(task)
 
 
@@ -1084,14 +1134,19 @@ def autocode(
 def import_plan(
     file_path: Annotated[Path, typer.Argument(help="Path to plan.json file")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate only, don't create")] = False,
+    task_id: Annotated[
+        str | None,
+        typer.Option("--task", "-t", help="Update existing task instead of creating new"),
+    ] = None,
 ) -> None:
     """Import a plan.json file as a SummitFlow task.
 
-    First runs verify, then creates the task with subtasks.
+    First runs verify, then creates or updates the task with subtasks.
 
     Examples:
         st task import tasks/my-feature/plan.json
         st task import tasks/my-feature/plan.json --dry-run
+        st task import tasks/my-feature/plan.json --task task-abc123
     """
     import jsonschema as js
 
@@ -1178,55 +1233,102 @@ def import_plan(
 
     task_data["subtasks"] = subtasks
 
-    # Create via batch API (supports nested subtasks)
-    try:
-        result = client.batch_create_tasks([task_data])
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
+    # Update existing task or create new
+    if task_id:
+        # UPDATE existing task
+        try:
+            # 1. Verify task exists
+            existing = client.get_task(task_id)
+            if not existing:
+                output_error(f"Task not found: {task_id}")
+                raise typer.Exit(1)
 
-    created = result.get("created", [])
-    errors = result.get("errors", [])
+            # 2. Update task fields
+            update_fields = {
+                k: v for k, v in task_data.items() if k != "subtasks" and v is not None
+            }
+            client.update_task(task_id, **update_fields)
 
-    if errors:
-        for err in errors:
-            output_error(f"Failed: {err.get('error')}")
-        raise typer.Exit(1)
+            # 3. Delete existing subtasks
+            existing_subtasks = client.get_subtasks(task_id).get("subtasks", [])
+            for sub in existing_subtasks:
+                with contextlib.suppress(APIError):
+                    client.delete_subtask(task_id, sub["subtask_id"])
 
-    if created:
-        task = created[0]
-        typer.echo(f"{task['id']} created")
-        typer.echo(f"  title: {task['title']}")
-        typer.echo(f"  complexity: {task.get('complexity', 'SIMPLE')}")
-        subtask_count = len(task.get("subtasks", []))
-        typer.echo(f"  subtasks: {subtask_count}")
-
-        # Create acceptance criteria if provided
-        ac_list = plan.get("acceptance_criteria", [])
-        if ac_list:
-            criteria_items = []
-            for ac in ac_list:
-                criteria_items.append(
-                    {
-                        "criterion": ac["criterion"],
-                        "category": ac.get("category", "correctness"),
-                        "verify_command": ac.get("verify_command"),
-                        "verify_by": ac.get("verify_by", "test"),
-                        "expected_output": ac.get("expected_output"),
-                    }
+            # 4. Create new subtasks
+            for sub in subtasks:
+                client.create_subtask(
+                    task_id,
+                    sub["subtask_id"],
+                    sub["description"],
+                    phase=sub.get("phase"),
+                    steps=sub.get("steps", []),
                 )
 
-            try:
-                result = client.batch_create_task_criteria(task["id"], criteria_items)
-                created_count = len(result.get("created", []))
-                error_count = len(result.get("errors", []))
-                typer.echo(f"  criteria: {created_count} created")
-                if error_count > 0:
-                    typer.echo(f"  criteria errors: {error_count}")
-                    for err in result.get("errors", []):
-                        typer.echo(f"    - {err.get('criterion', '')[:30]}: {err.get('error', '')}")
-            except APIError as e:
-                typer.echo(f"  Warning: Failed to create criteria: {e.detail}")
+            # 5. Delete existing criteria
+            existing_criteria = client.list_task_criteria(task_id)
+            for crit in existing_criteria:
+                with contextlib.suppress(APIError):
+                    client.delete_task_criterion(task_id, crit["criterion_id"])
+
+            task = client.get_task(task_id)
+            typer.echo(f"{task_id} updated")
+
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
     else:
-        output_error("No task created")
-        raise typer.Exit(1)
+        # CREATE new task via batch API
+        try:
+            result = client.batch_create_tasks([task_data])
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+        created = result.get("created", [])
+        errors = result.get("errors", [])
+
+        if errors:
+            for err in errors:
+                output_error(f"Failed: {err.get('error')}")
+            raise typer.Exit(1)
+
+        if not created:
+            output_error("No task created")
+            raise typer.Exit(1)
+
+        task = created[0]
+        task_id = task["id"]
+        typer.echo(f"{task_id} created")
+
+    # Output summary
+    typer.echo(f"  title: {task.get('title', plan['title'])}")
+    typer.echo(f"  complexity: {task.get('complexity', complexity)}")
+    typer.echo(f"  subtasks: {len(subtasks)}")
+
+    # Create acceptance criteria if provided
+    ac_list = plan.get("acceptance_criteria", [])
+    if ac_list:
+        criteria_items = []
+        for ac in ac_list:
+            criteria_items.append(
+                {
+                    "criterion": ac["criterion"],
+                    "category": ac.get("category", "correctness"),
+                    "verify_command": ac.get("verify_command"),
+                    "verify_by": ac.get("verify_by", "test"),
+                    "expected_output": ac.get("expected_output"),
+                }
+            )
+
+        try:
+            result = client.batch_create_task_criteria(task_id, criteria_items)
+            created_count = len(result.get("created", []))
+            error_count = len(result.get("errors", []))
+            typer.echo(f"  criteria: {created_count} created")
+            if error_count > 0:
+                typer.echo(f"  criteria errors: {error_count}")
+                for err in result.get("errors", []):
+                    typer.echo(f"    - {err.get('criterion', '')[:30]}: {err.get('error', '')}")
+        except APIError as e:
+            typer.echo(f"  Warning: Failed to create criteria: {e.detail}")
