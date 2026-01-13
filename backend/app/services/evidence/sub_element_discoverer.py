@@ -63,7 +63,7 @@ async def discover_elements(url: str) -> list[dict[str, str]]:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await asyncio.wait_for(
+        stdout, _stderr = await asyncio.wait_for(
             proc.communicate(),
             timeout=60,
         )

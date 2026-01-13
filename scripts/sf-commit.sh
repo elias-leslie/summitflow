@@ -72,15 +72,17 @@ detect_type() {
     fi
 }
 
-# Run quality gates via dev-tools.sh --check
+# Run quality gates via dev-tools.sh --quick (lint+types, no tests)
+# Use --check for full validation including tests
 run_quality_gates() {
     if [[ ! -x "$DEV_TOOLS" ]]; then
         echo "GATES:FAIL:dev-tools.sh not found"
         return 1
     fi
 
+    # Use --quick for fast pre-commit validation (lint+types only)
     local output retval=0
-    output=$("$DEV_TOOLS" --check 2>&1) || retval=$?
+    output=$("$DEV_TOOLS" --quick 2>&1) || retval=$?
 
     # Parse TOON output for CHECK_RESULT line
     if echo "$output" | grep -q "CHECK_RESULT:OK"; then
@@ -202,16 +204,17 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 EOF
 )
 
-    # Attempt commit (pre-commit hooks still run for formatting)
+    # Attempt commit - skip lint/types in pre-commit (already ran via dev-tools.sh)
+    # Pre-commit still runs formatters (ruff-format, prettier, trailing-whitespace, etc.)
     local commit_out commit_status=0
-    commit_out=$(git commit -m "$full_message" 2>&1) || commit_status=$?
+    commit_out=$(SKIP=ruff,mypy,eslint,tsc git commit -m "$full_message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
         # Check if files were modified by pre-commit formatters
         if [[ -n "$(git status --porcelain)" ]]; then
             # Re-stage formatted files and retry
             git add -A
-            commit_out=$(git commit -m "$full_message" 2>&1) || commit_status=$?
+            commit_out=$(SKIP=ruff,mypy,eslint,tsc git commit -m "$full_message" 2>&1) || commit_status=$?
         fi
 
         if [[ $commit_status -ne 0 ]]; then

@@ -171,7 +171,7 @@ def generate_mockup_gemini(
         from ..storage.connection import get_connection
 
         with get_connection() as conn, conn.cursor() as cur:
-            db_id, evidence_id, captured_at = evidence_storage.insert_evidence_record(
+            db_id, evidence_id, _captured_at = evidence_storage.insert_evidence_record(
                 cur,
                 project_id=project_id,
                 file_path=str(image_path),
@@ -302,7 +302,7 @@ Output ONLY the HTML code, no explanation."""
         from ..storage.connection import get_connection
 
         with get_connection() as conn, conn.cursor() as cur:
-            db_id, evidence_id, captured_at = evidence_storage.insert_evidence_record(
+            db_id, evidence_id, _captured_at = evidence_storage.insert_evidence_record(
                 cur,
                 project_id=project_id,
                 file_path=str(html_path),

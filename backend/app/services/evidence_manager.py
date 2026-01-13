@@ -162,7 +162,7 @@ async def capture_evidence(
                     )
 
                     # Insert new record
-                    rec_id, rec_evidence_id, captured_ts = evidence_storage.insert_evidence_record(
+                    rec_id, rec_evidence_id, _captured_ts = evidence_storage.insert_evidence_record(
                         cur,
                         project_id,
                         file_path,

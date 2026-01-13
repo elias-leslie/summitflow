@@ -234,7 +234,7 @@ async def capture_single_screenshot(
             env={**os.environ, "VIEWPORT_WIDTH": str(width), "VIEWPORT_HEIGHT": str(height)},
         )
 
-        stdout, stderr = await asyncio.wait_for(
+        _stdout, stderr = await asyncio.wait_for(
             proc.communicate(),
             timeout=CAPTURE_TIMEOUT_SECONDS,
         )

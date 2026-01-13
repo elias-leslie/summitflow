@@ -44,16 +44,16 @@ ACTION="status"
 TARGET="all"
 
 # Check for subcommands (first positional argument)
+# All TOOL_DEFS keys are valid subcommands
 case "${1:-}" in
-    pytest) ACTION="pytest_toon"; shift ;;
-    ruff) ACTION="ruff_toon"; shift ;;
-    mypy) ACTION="mypy_toon"; shift ;;
+    pytest|ruff|mypy|eslint|tsc) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
 esac
 
 # Parse remaining flags
 for arg in "$@"; do
     case $arg in
         --check|-c) ACTION="check"; TARGET="current" ;;
+        --quick|-q) ACTION="quick_check"; TARGET="current" ;;
         --fix|-f) ACTION="fix"; TARGET="current" ;;
         --fix-all) ACTION="fix"; TARGET="all" ;;
         --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
@@ -204,12 +204,14 @@ run_lint() {
         echo "FIXED:ruff=$ruff_src"
     else
         # Use concise format for reliable one-line-per-violation counting
-        # wc -l always succeeds, avoiding pipefail issues
-        local violations
-        violations=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1 | wc -l) || true
-        if [[ "$violations" -eq 0 ]]; then
+        # Check exit code first - if 0, no violations
+        local output retval=0
+        output=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1) || retval=$?
+        if [[ $retval -eq 0 ]]; then
             echo "OK:violations=0"
         else
+            local violations
+            violations=$(echo "$output" | wc -l) || violations=0
             echo "FAIL:violations=$violations"
             return 1
         fi
@@ -296,6 +298,30 @@ run_hooks() {
     fi
 }
 
+quick_check() {
+    local project_dir="$1"
+    local project_name=$(basename "$project_dir")
+    local errors=0
+
+    echo "QUICK_CHECK:$project_name"
+    run_lint "$project_dir" || ((errors++))
+    run_types "$project_dir" || ((errors++))
+
+    # Frontend tools if project has frontend
+    if has_frontend "$project_dir"; then
+        run_tool_toon eslint || ((errors++))
+        run_tool_toon tsc || ((errors++))
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        echo "CHECK_RESULT:OK"
+    else
+        echo "CHECK_RESULT:FAIL:$errors"
+    fi
+
+    return $errors
+}
+
 full_check() {
     local project_dir="$1"
     local project_name=$(basename "$project_dir")
@@ -305,6 +331,12 @@ full_check() {
     run_lint "$project_dir" || ((errors++))
     run_types "$project_dir" || ((errors++))
     run_tests "$project_dir" || ((errors++))
+
+    # Frontend tools if project has frontend
+    if has_frontend "$project_dir"; then
+        run_tool_toon eslint || ((errors++))
+        run_tool_toon tsc || ((errors++))
+    fi
 
     if [[ $errors -eq 0 ]]; then
         echo "CHECK_RESULT:OK"
@@ -445,91 +477,170 @@ status_dashboard() {
 # TOON WRAPPER FUNCTIONS - Token-optimized output for Claude
 # =============================================================================
 
-run_pytest_toon() {
-    ensure_output_dir
-    local details_file="$OUTPUT_DIR/pytest-details.txt"
-    local pytest_bin="${VENV_PATH}/bin/pytest"
+# Tool definitions: LABEL|binary|args|count_method|working_dir_type|fallback_global|pass_path
+# count_method: wc_l (count lines), grep_error (grep -c error:), pytest_parse (special)
+# working_dir_type: backend, frontend, root
+# fallback_global: 1 = try global binary if venv not found, 0 = fail
+# pass_path: 1 = pass work_dir as argument, 0 = just cd to dir
+declare -A TOOL_DEFS
+TOOL_DEFS[ruff]='LINT|ruff|check --output-format=concise|wc_l|backend|1|1'
+TOOL_DEFS[mypy]='TYPES|mypy|--ignore-missing-imports|grep_error|backend|0|1'
+TOOL_DEFS[pytest]='TEST|pytest|--tb=short -q|pytest_parse|backend|0|0'
+TOOL_DEFS[eslint]='ESLINT|npx|eslint .|grep_warn_error|frontend|1|0'
+TOOL_DEFS[tsc]='TSC|npx|tsc --noEmit|grep_error_ts|frontend|1|0'
 
-    if [[ ! -x "$pytest_bin" ]]; then
-        echo "TEST:FAIL:pytest_not_found"
-        return 1
+# Check if project has frontend (eslint.config.* or package.json in frontend/)
+has_frontend() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    local frontend_dir="$project_dir/frontend"
+    # Check for frontend/ with eslint config or package.json
+    if [[ -d "$frontend_dir" ]]; then
+        if ls "$frontend_dir"/eslint.config.* 2>/dev/null | head -1 >/dev/null; then
+            return 0
+        fi
+        if [[ -f "$frontend_dir/package.json" ]]; then
+            return 0
+        fi
     fi
-
-    cd "$BACKEND_PATH"
-    local output retval=0
-    output=$("$pytest_bin" --tb=short -q 2>&1) || retval=$?
-
-    # Parse summary line (last non-empty line), strip ANSI codes
-    local summary
-    summary=$(echo "$output" | strip_ansi | grep -E '(passed|failed|error|skipped)' | tail -1)
-
-    if [[ $retval -eq 0 ]]; then
-        # Success: compact TOON output only
-        echo "TEST:OK:$summary"
-    else
-        # Failure: write details to file, output path
-        echo "$output" | strip_ansi > "$details_file"
-        echo "TEST:FAIL:$summary|details:$details_file"
-        return 1
+    # Check root for eslint config (frontend-only projects like monkey-fight)
+    if ls "$project_dir"/eslint.config.* 2>/dev/null | head -1 >/dev/null; then
+        return 0
     fi
+    return 1
 }
 
-run_ruff_toon() {
-    ensure_output_dir
-    local details_file="$OUTPUT_DIR/ruff-details.txt"
-    local ruff_bin="${VENV_PATH}/bin/ruff"
+# Get working directory for a tool
+get_tool_working_dir() {
+    local dir_type="$1"
+    case "$dir_type" in
+        backend)
+            local app_dir="$BACKEND_PATH/app"
+            [[ ! -d "$app_dir" ]] && app_dir="$BACKEND_PATH"
+            echo "$app_dir"
+            ;;
+        frontend)
+            local frontend_dir="$PROJECT_DIR/frontend"
+            [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
+            echo "$frontend_dir"
+            ;;
+        root)
+            echo "$PROJECT_DIR"
+            ;;
+    esac
+}
 
-    if [[ ! -x "$ruff_bin" ]]; then
-        ruff_bin=$(which ruff 2>/dev/null || echo "")
-        if [[ -z "$ruff_bin" ]]; then
-            echo "LINT:FAIL:ruff_not_found"
+# Count issues from output based on method
+count_issues() {
+    local method="$1"
+    local output="$2"
+    local retval="$3"
+
+    case "$method" in
+        wc_l)
+            local count
+            count=$(echo "$output" | wc -l) || count=0
+            [[ -z "$output" ]] && count=0
+            echo "$count"
+            ;;
+        grep_error)
+            local count
+            count=$(echo "$output" | grep -c "error:") || count=0
+            echo "$count"
+            ;;
+        grep_error_ts)
+            # TypeScript errors: "error TS" pattern
+            local count
+            count=$(echo "$output" | grep -c "error TS") || count=0
+            echo "$count"
+            ;;
+        grep_warn_error)
+            # ESLint style: count lines with "warning" or "error"
+            local count
+            count=$(echo "$output" | grep -cE '\s+(warning|error)\s+' ) || count=0
+            echo "$count"
+            ;;
+        pytest_parse)
+            # For pytest, extract summary line
+            echo "$output" | strip_ansi | grep -E '(passed|failed|error|skipped)' | tail -1
+            ;;
+    esac
+}
+
+# Generic TOON wrapper - runs any tool defined in TOOL_DEFS
+run_tool_toon() {
+    local tool_name="$1"
+
+    # Parse tool definition
+    local def="${TOOL_DEFS[$tool_name]}"
+    if [[ -z "$def" ]]; then
+        echo "ERROR:unknown_tool:$tool_name"
+        return 1
+    fi
+
+    IFS='|' read -r label binary args count_method dir_type fallback_global pass_path <<< "$def"
+
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/${tool_name}-details.txt"
+
+    # Find binary
+    local tool_bin="${VENV_PATH}/bin/$binary"
+    if [[ ! -x "$tool_bin" ]]; then
+        if [[ "$fallback_global" == "1" ]]; then
+            tool_bin=$(which "$binary" 2>/dev/null || echo "")
+        else
+            tool_bin=""
+        fi
+        if [[ -z "$tool_bin" ]]; then
+            echo "$label:FAIL:${binary}_not_found"
             return 1
         fi
     fi
 
-    local app_dir="$BACKEND_PATH/app"
-    [[ ! -d "$app_dir" ]] && app_dir="$BACKEND_PATH"
+    # Get working directory
+    local work_dir
+    work_dir=$(get_tool_working_dir "$dir_type")
 
-    local output retval=0
-    output=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1) || retval=$?
-    local violations
-    violations=$(echo "$output" | wc -l) || violations=0
-    # Empty output = 1 line from wc, adjust
-    [[ -z "$output" ]] && violations=0
-
-    if [[ $retval -eq 0 && "$violations" -eq 0 ]]; then
-        echo "LINT:OK:0"
-    else
-        echo "$output" | strip_ansi > "$details_file"
-        echo "LINT:FAIL:$violations|details:$details_file"
-        return 1
-    fi
-}
-
-run_mypy_toon() {
-    ensure_output_dir
-    local details_file="$OUTPUT_DIR/mypy-details.txt"
-    local mypy_bin="${VENV_PATH}/bin/mypy"
-
-    if [[ ! -x "$mypy_bin" ]]; then
-        echo "TYPES:FAIL:mypy_not_found"
-        return 1
+    # Change to appropriate directory for tools that need it
+    if [[ "$dir_type" == "backend" ]]; then
+        cd "$BACKEND_PATH"
+    elif [[ "$dir_type" == "frontend" ]]; then
+        cd "$PROJECT_DIR/frontend" 2>/dev/null || cd "$PROJECT_DIR"
     fi
 
-    local app_dir="$BACKEND_PATH/app"
-    [[ ! -d "$app_dir" ]] && app_dir="$BACKEND_PATH"
-
-    cd "$BACKEND_PATH"
+    # Execute tool
     local output retval=0
-    output=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1) || retval=$?
-    local errors
-    errors=$(echo "$output" | grep -c "error:") || errors=0
+    if [[ "$pass_path" == "1" ]]; then
+        output=$("$tool_bin" $args "$work_dir" 2>&1) || retval=$?
+    else
+        output=$("$tool_bin" $args 2>&1) || retval=$?
+    fi
 
-    if [[ "$errors" -eq 0 ]]; then
-        echo "TYPES:OK:0"
+    # Count issues
+    local count
+    count=$(count_issues "$count_method" "$output" "$retval")
+
+    # Determine success based on method
+    local is_success=0
+    case "$count_method" in
+        pytest_parse)
+            # pytest uses exit code
+            [[ $retval -eq 0 ]] && is_success=1
+            ;;
+        wc_l)
+            # For line counting, exit code 0 means success regardless of output
+            [[ $retval -eq 0 ]] && is_success=1 && count=0
+            ;;
+        *)
+            # Others use count == 0 AND exit code
+            [[ $retval -eq 0 && "$count" == "0" ]] && is_success=1
+            ;;
+    esac
+
+    if [[ $is_success -eq 1 ]]; then
+        echo "$label:OK:$count"
     else
         echo "$output" | strip_ansi > "$details_file"
-        echo "TYPES:FAIL:$errors|details:$details_file"
+        echo "$label:FAIL:$count|details:$details_file"
         return 1
     fi
 }
@@ -547,6 +658,7 @@ show_help() {
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"
     echo "  --check, -c      Quality gate: lint, types, tests (current project)"
+    echo "  --quick, -q      Fast check: lint, types only (for commits)"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
     echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"
@@ -569,6 +681,9 @@ case "$ACTION" in
     check)
         full_check "$PROJECT_DIR"
         ;;
+    quick_check)
+        quick_check "$PROJECT_DIR"
+        ;;
     fix)
         if [[ "$TARGET" == "all" ]]; then
             fix_all
@@ -579,13 +694,7 @@ case "$ACTION" in
     rebuild)
         rebuild_venv "$PROJECT_DIR"
         ;;
-    pytest_toon)
-        run_pytest_toon
-        ;;
-    ruff_toon)
-        run_ruff_toon
-        ;;
-    mypy_toon)
-        run_mypy_toon
+    tool_toon)
+        run_tool_toon "$TOOL_NAME"
         ;;
 esac

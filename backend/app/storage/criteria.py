@@ -354,7 +354,13 @@ def unlink_criterion_from_task(
 def get_criteria_for_task(
     conn: psycopg.Connection, project_id: str, task_id: str
 ) -> list[dict[str, Any]]:
-    """Get all criteria linked to a task with verification state."""
+    """Get all criteria linked to a task with verification state.
+
+    Note: project_id is kept for API compatibility but not used in query.
+    The task_criteria junction already constrains results by task_id,
+    and criteria may have different project_id if task was moved.
+    """
+    _ = project_id  # Unused - criteria project may differ from task project
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -364,10 +370,10 @@ def get_criteria_for_task(
                    tc.verified, tc.verified_at, tc.verified_by
             FROM acceptance_criteria ac
             JOIN task_criteria tc ON ac.id = tc.criterion_id
-            WHERE ac.project_id = %s AND tc.task_id = %s
+            WHERE tc.task_id = %s
             ORDER BY ac.criterion_id
             """,
-            (project_id, task_id),
+            (task_id,),
         )
         rows = cur.fetchall()
 
