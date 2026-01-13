@@ -104,8 +104,11 @@ def generate_index(project_id: str) -> str:
         output_folders[folder] = " - ".join(desc_parts)
 
     # Build final structure
+    from datetime import UTC, datetime
+
     index_data = {
         "project": project_id,
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         "total_files": len(entries),
         "folders": output_folders,
     }
