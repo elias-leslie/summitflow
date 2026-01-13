@@ -30,6 +30,7 @@ from typing import Any, Literal
 from ...storage import explorer as storage
 from .base import BaseScanner, get_project_config, get_project_root
 from .health import calculate_health
+from .index_generator import generate_index, write_index_file
 from .models import (
     ExplorerEntry,
     ExplorerEntryCreate,
@@ -41,17 +42,15 @@ from .models import (
 from .types import get_scanner, list_registered_types
 
 __all__ = [
-    # Base
     "BaseScanner",
-    # Models
     "ExplorerEntry",
     "ExplorerEntryCreate",
     "ExplorerFilters",
     "ExplorerRelationship",
     "ExplorerStats",
     "ScanResult",
-    # Health
     "calculate_health",
+    "generate_index",
     "get_children",
     "get_entries",
     "get_entry",
@@ -60,9 +59,9 @@ __all__ = [
     "get_scan_status",
     "get_stats",
     "run_scan_with_tracking",
-    # Public functions
     "scan",
     "start_scan",
+    "write_index_file",
 ]
 
 
@@ -231,6 +230,10 @@ def run_scan_with_tracking(project_id: str, entry_type: str | None = None) -> No
         error=error_msg,
         results={"scans": scan_results},
     )
+
+    # Generate index file at project root on successful scan
+    if not error_msg:
+        write_index_file(project_id)
 
 
 def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:

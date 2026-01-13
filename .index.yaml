@@ -1,0 +1,20 @@
+project: summitflow
+total_files: 1167
+folders:
+  (root): 20 files - config, docs, services, tests - (claude, gitignore, html, json,
+    md)
+  .claude: 16 files - docs, tests - (gitignore, json, md)
+  .summitflow: 33 files - config, docs, models, services - (bak, md)
+  assets: 2 files - (html)
+  backend: 419 files - api, config, docs, models, services, storage, tests - (env,
+    ini, json, md, py)
+  docs: 63 files - docs - (json, md)
+  frontend: 238 files - api, components, config, docs, storage, tests - (css, js,
+    json, md, mjs)
+  mockups: 7 files - (html)
+  project_review: 11 files - docs - (json, md, txt)
+  scripts: 27 files - services, tests - (conf, py, service, sh)
+  services: 4 files - docs, services - (claude, md)
+  spec: 2 files - tests - (json)
+  tasks: 325 files - components, config, docs, models, services, tests - (gitkeep,
+    json, md)

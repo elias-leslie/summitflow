@@ -58,7 +58,8 @@ def check_rate_limit(project_id: str, user_identifier: str) -> None:
                 """,
                 (user_identifier, hour_ago, project_id),
             )
-            user_count = cur.fetchone()[0]
+            row = cur.fetchone()
+            user_count = row[0] if row else 0
 
             if user_count >= MAX_IDEAS_PER_USER_PER_HOUR:
                 raise HTTPException(
@@ -77,7 +78,8 @@ def check_rate_limit(project_id: str, user_identifier: str) -> None:
             """,
             (project_id, day_start),
         )
-        daily_refinements = cur.fetchone()[0]
+        row = cur.fetchone()
+        daily_refinements = row[0] if row else 0
 
     # Calculate cost and check against budget
     daily_cost = daily_refinements * ESTIMATED_COST_PER_REFINEMENT
@@ -176,7 +178,7 @@ async def create_idea(
 
     from ..services.idea_refiner import refine_idea, update_idea_with_refinement
 
-    async def run_refinement():
+    async def run_refinement() -> None:
         try:
             result = refine_idea(body.raw_text, project_id=project_id)
             update_idea_with_refinement(created_idea_id, result, project_id=project_id)
@@ -187,7 +189,7 @@ async def create_idea(
             logging.getLogger(__name__).error(f"Auto-refinement failed for {created_idea_id}: {e}")
 
     # Fire and forget - don't block the response
-    asyncio.create_task(run_refinement())
+    _task = asyncio.create_task(run_refinement())  # noqa: RUF006
 
     return {"idea_id": created_idea_id, "status": "pending_refinement"}
 
