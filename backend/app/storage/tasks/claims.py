@@ -152,3 +152,28 @@ def reset_expired_claims() -> int:
         conn.commit()
 
     return count
+
+
+def count_running_tasks(project_id: str) -> int:
+    """Count tasks currently running for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Number of tasks with status='running' and valid claim
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM tasks
+            WHERE project_id = %s
+              AND status = 'running'
+              AND claimed_by IS NOT NULL
+              AND (lock_expires_at IS NULL OR lock_expires_at > NOW())
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else 0

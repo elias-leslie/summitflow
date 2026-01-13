@@ -10,7 +10,7 @@ Modules:
     dedup: Semantic deduplication helpers
 """
 
-from .claims import claim_task, release_task, reset_expired_claims
+from .claims import claim_task, count_running_tasks, release_task, reset_expired_claims
 from .core import (
     EXPECTED_TASK_COLUMNS,
     TASK_COLUMNS,
@@ -46,6 +46,7 @@ __all__ = [
     "append_progress_log",
     "bug_task_exists_for_error",
     "claim_task",
+    "count_running_tasks",
     "create_task",
     "delete_task",
     "get_task",

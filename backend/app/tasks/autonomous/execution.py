@@ -1,8 +1,14 @@
-"""Celery task for autonomous work pickup and execution."""
+"""Celery task for autonomous work pickup and execution.
+
+Uses OrchestratorService (Sonnet coordinator with Flash workers) for execution.
+Respects time windows and concurrency limits from project's agent_configs.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from app.celery_app import celery_app
@@ -19,6 +25,9 @@ from .utils import get_project_repo_path
 
 logger = logging.getLogger(__name__)
 
+# Valid task types for autonomous execution
+AUTONOMOUS_TASK_TYPES = frozenset({"task", "bug", "feature", "refactor", "debt", "regression"})
+
 
 @celery_app.task(name="summitflow.autonomous_work_pickup")  # type: ignore[untyped-decorator]
 def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
@@ -27,9 +36,12 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     Finds tasks that:
     - tier <= 3 (mechanical, not architectural)
     - status in (pending, paused, failed)
+    - task_type in (task, bug, feature, refactor, debt, regression)
     - Pass all exclusion criteria
+    - Within time window (start_hour <= current_hour < end_hour)
+    - Under concurrency limit (max_concurrent)
 
-    Claims one task atomically and executes it via ImplementationExecutor.
+    Uses OrchestratorService (Sonnet coordinator with Flash workers) for execution.
 
     Args:
         project_id: Project to pick up work for
@@ -37,14 +49,49 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     Returns:
         Dict with execution results and exclusion stats
     """
-    from app.services.implementation import ImplementationExecutor
-    from app.storage.agent_configs import is_autonomous_enabled
+    from app.services.orchestrator import OrchestratorService
+    from app.storage.agent_configs import (
+        get_autonomous_schedule,
+        is_autonomous_enabled,
+        is_within_autonomous_hours,
+    )
 
     try:
         # Check if autonomous execution is enabled
         if not is_autonomous_enabled(project_id):
             logger.debug(f"Autonomous execution disabled for {project_id}")
             return {"status": "disabled", "reason": "autonomous_enabled=false"}
+
+        # Check time window
+        current_hour = datetime.now(UTC).hour
+        if not is_within_autonomous_hours(project_id, current_hour):
+            schedule = get_autonomous_schedule(project_id)
+            logger.debug(
+                f"Outside autonomous hours for {project_id}: "
+                f"current={current_hour}, window={schedule['start_hour']}-{schedule['end_hour']}"
+            )
+            return {
+                "status": "outside_hours",
+                "current_hour": current_hour,
+                "start_hour": schedule["start_hour"],
+                "end_hour": schedule["end_hour"],
+            }
+
+        # Check concurrency limit
+        schedule = get_autonomous_schedule(project_id)
+        max_concurrent = schedule["max_concurrent"]
+        running_count = task_store.count_running_tasks(project_id)
+
+        if running_count >= max_concurrent:
+            logger.debug(
+                f"Concurrency limit reached for {project_id}: "
+                f"running={running_count}, max={max_concurrent}"
+            )
+            return {
+                "status": "concurrency_limit",
+                "running_count": running_count,
+                "max_concurrent": max_concurrent,
+            }
 
         # In validation mode, fetch allowed tasks directly (bypass limit)
         if VALIDATION_MODE and ALLOWED_TASK_IDS:
@@ -53,7 +100,8 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 task = task_store.get_task(task_id)
                 if task and task.get("status") in ("pending", "paused", "failed"):
                     tier = task.get("tier") or 2
-                    if tier <= 3:
+                    task_type = task.get("task_type", "task")
+                    if tier <= 3 and task_type in AUTONOMOUS_TASK_TYPES:
                         eligible_tasks.append(task)
             if not eligible_tasks:
                 return {
@@ -64,11 +112,13 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             # Normal mode: Get ready tasks with tier <= 3
             ready_tasks = task_store.list_ready_tasks(project_id, limit=50)
 
-            # Filter by tier and status
+            # Filter by tier, status, and task type
             eligible_tasks = [
                 t
                 for t in ready_tasks
-                if (t.get("tier") or 2) <= 3 and t.get("status") in ("pending", "paused", "failed")
+                if (t.get("tier") or 2) <= 3
+                and t.get("status") in ("pending", "paused", "failed")
+                and t.get("task_type", "task") in AUTONOMOUS_TASK_TYPES
             ]
 
             if not eligible_tasks:
@@ -103,6 +153,7 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 "status": "dry_run",
                 "task_id": selected_task["id"],
                 "title": selected_task["title"],
+                "task_type": selected_task.get("task_type", "task"),
                 "exclusion_stats": exclusion_stats,
             }
 
@@ -116,80 +167,62 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 "exclusion_stats": exclusion_stats,
             }
 
-        # Claim task atomically
-        worker_id = f"autonomous-{project_id}"
-        claimed = task_store.claim_task(selected_task["id"], worker_id, lock_duration_minutes=60)
+        logger.info(
+            f"Starting orchestrator for task {selected_task['id']} "
+            f"(type={selected_task.get('task_type', 'task')})"
+        )
 
-        if not claimed:
-            logger.info(f"Failed to claim task {selected_task['id']} - already claimed")
-            return {"status": "claim_failed", "task_id": selected_task["id"]}
-
-        logger.info(f"Claimed task {claimed['id']} for autonomous execution")
-
-        # Execute via ImplementationExecutor with worktree isolation
-        # TODO: Make use_worktree configurable via agent_configs when stabilized
-        executor = ImplementationExecutor(project_id, use_worktree=True)
-
+        # Execute via OrchestratorService
         try:
-            session_id = executor.start_execution(claimed["id"], agent_type="gemini")
-            result = executor.execute_next_task(session_id, max_iterations=5)
+            repo_path = get_project_repo_path(project_id)
+            orchestrator = OrchestratorService(
+                project_id=project_id,
+                repo_path=repo_path,
+                ws_task_id=selected_task["id"],
+            )
+
+            # Run the async coordinate method in the sync Celery task
+            result = asyncio.run(orchestrator.coordinate(selected_task["id"]))
 
             if result.success:
-                # Transition to ai_reviewing for Opus gate
-                task_store.update_task_status(claimed["id"], "ai_reviewing")
-                logger.info(f"Task {claimed['id']} succeeded, moved to ai_reviewing")
+                logger.info(
+                    f"Task {selected_task['id']} orchestrated successfully, "
+                    f"state={result.state.value}"
+                )
                 return {
                     "status": "success",
-                    "task_id": claimed["id"],
-                    "iterations": result.iterations,
-                    "model_used": result.model_used,
+                    "task_id": selected_task["id"],
+                    "task_type": selected_task.get("task_type", "task"),
+                    "state": result.state.value,
+                    "total_iterations": result.total_iterations,
+                    "subtask_results": len(result.subtask_results),
                     "exclusion_stats": exclusion_stats,
                 }
             else:
-                # Mark failed with error message
-                task_store.update_task_status(
-                    claimed["id"],
-                    "failed",
-                    error_message=result.reason or result.error or "Unknown error",
-                )
-                task_store.release_task(claimed["id"])
-
-                # Cleanup worktree on failure
-                try:
-                    repo_path = get_project_repo_path(project_id)
-                    worktree_manager = get_worktree_manager(repo_path)
-                    worktree_manager.remove_worktree(project_id, claimed["id"])
-                    logger.info(f"Cleaned up worktree for failed task {claimed['id']}")
-                except Exception as cleanup_err:
-                    logger.warning(f"Worktree cleanup failed: {cleanup_err}")
-
-                logger.warning(f"Task {claimed['id']} failed: {result.reason}")
+                logger.warning(f"Task {selected_task['id']} orchestration failed: {result.error}")
                 return {
-                    "status": "execution_failed",
-                    "task_id": claimed["id"],
-                    "iterations": result.iterations,
-                    "reason": result.reason,
+                    "status": "orchestration_failed",
+                    "task_id": selected_task["id"],
+                    "state": result.state.value,
                     "error": result.error,
+                    "worktree_reverted": result.worktree_reverted,
                     "exclusion_stats": exclusion_stats,
                 }
 
         except Exception as exec_error:
-            # Release task on execution error
-            task_store.release_task(claimed["id"])
-
             # Cleanup worktree on error
             try:
                 repo_path = get_project_repo_path(project_id)
                 worktree_manager = get_worktree_manager(repo_path)
-                worktree_manager.remove_worktree(project_id, claimed["id"])
-                logger.info(f"Cleaned up worktree for errored task {claimed['id']}")
+                worktree_manager.remove_worktree(project_id, selected_task["id"])
+                logger.info(f"Cleaned up worktree for errored task {selected_task['id']}")
             except Exception as cleanup_err:
                 logger.warning(f"Worktree cleanup failed: {cleanup_err}")
 
-            logger.error(f"Execution error for task {claimed['id']}: {exec_error}")
+            logger.error(f"Execution error for task {selected_task['id']}: {exec_error}")
             return {
                 "status": "execution_error",
-                "task_id": claimed["id"],
+                "task_id": selected_task["id"],
                 "error": str(exec_error),
                 "exclusion_stats": exclusion_stats,
             }
