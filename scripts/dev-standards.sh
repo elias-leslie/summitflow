@@ -5,14 +5,11 @@
 # Works for any project - auto-detects project from PWD/git root
 #
 # Usage:
-#   ./scripts/dev-standards.sh              # Show status for current project
+#   ./scripts/dev-standards.sh              # Dashboard of all projects (default)
 #   ./scripts/dev-standards.sh --check      # Full quality gate (lint, types, tests)
-#   ./scripts/dev-standards.sh --fix        # Auto-fix all issues
-#   ./scripts/dev-standards.sh --verify     # Verify setup is correct
-#   ./scripts/dev-standards.sh --install    # Install missing dev deps
-#   ./scripts/dev-standards.sh --audit-all  # Audit all managed projects
+#   ./scripts/dev-standards.sh --fix        # Auto-fix + install deps + pre-commit install
 #   ./scripts/dev-standards.sh --fix-all    # Fix all managed projects
-#   ./scripts/dev-standards.sh --status     # Dashboard of all projects
+#   ./scripts/dev-standards.sh --rebuild-venv  # Nuclear option: delete and recreate venv
 #
 
 set -o pipefail
@@ -41,23 +38,14 @@ BACKEND_PATH=$(get_backend_path "$PROJECT_NAME" "$PROJECT_DIR")
 
 # Parse arguments
 ACTION="status"
-TARGET="current"
-VERBOSE=false
+TARGET="all"
 
 for arg in "$@"; do
     case $arg in
-        --check|-c) ACTION="check" ;;
-        --fix|-f) ACTION="fix" ;;
-        --verify|-v) ACTION="verify" ;;
-        --install|-i) ACTION="install" ;;
-        --test|-t) ACTION="test" ;;
-        --lint|-l) ACTION="lint" ;;
-        --types) ACTION="types" ;;
-        --hooks) ACTION="hooks" ;;
-        --audit-all) ACTION="audit"; TARGET="all" ;;
+        --check|-c) ACTION="check"; TARGET="current" ;;
+        --fix|-f) ACTION="fix"; TARGET="current" ;;
         --fix-all) ACTION="fix"; TARGET="all" ;;
-        --status|-s) ACTION="status"; TARGET="all" ;;
-        --verbose) VERBOSE=true ;;
+        --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
         --help|-h) ACTION="help" ;;
     esac
 done
@@ -90,67 +78,51 @@ check_venv() {
     [[ -f "${venv}/bin/python" ]] && [[ -f "${venv}/bin/pip" ]]
 }
 
-# =============================================================================
-# SINGLE PROJECT FUNCTIONS
-# =============================================================================
-
-verify_project() {
+# Rebuild venv from scratch
+rebuild_venv() {
     local project_dir="$1"
     local project_name=$(basename "$project_dir")
     local venv=$(get_venv_path "$project_name" "$project_dir")
-    local backend=$(get_backend_path "$project_name" "$project_dir")
-    local issues=0
 
-    # TOON format output
-    echo "VERIFY:$project_name"
+    echo "REBUILD_VENV:$project_name"
 
-    # Check venv
-    if check_venv "$venv"; then
-        echo "  venv:OK"
-    else
-        echo "  venv:MISSING"
-        ((issues++))
-    fi
-
-    # Check dev dependencies
-    for pkg_spec in "ruff:$CANONICAL_RUFF" "mypy:$CANONICAL_MYPY" "pytest:$CANONICAL_PYTEST" "pre-commit:$CANONICAL_PRECOMMIT"; do
-        local pkg="${pkg_spec%%:*}"
-        local required="${pkg_spec#*:}"
-        local installed=$(get_installed_version "$venv" "$pkg")
-
-        if [[ -z "$installed" ]]; then
-            echo "  $pkg:MISSING(need:$required)"
-            ((issues++))
-        elif [[ "$installed" == "$required" ]]; then
-            echo "  $pkg:$installed"
-        else
-            echo "  $pkg:$installed(drift:$required)"
+    # Find Python 3.12+ (prefer 3.13)
+    local python_bin=""
+    for py in python3.13 python3.12 python3; do
+        if command -v "$py" &>/dev/null; then
+            local ver=$("$py" --version 2>&1 | grep -oP '\d+\.\d+')
+            if [[ $(echo "$ver >= 3.12" | bc -l) -eq 1 ]]; then
+                python_bin="$py"
+                break
+            fi
         fi
     done
 
-    # Check pre-commit config
-    if [[ -f "$project_dir/.pre-commit-config.yaml" ]]; then
-        echo "  precommit-config:OK"
-    else
-        echo "  precommit-config:MISSING"
-        ((issues++))
+    if [[ -z "$python_bin" ]]; then
+        echo "ERROR:no_python_3.12+"
+        return 1
     fi
 
-    # Check for tests
-    local test_count=0
-    if [[ -d "$backend/tests" ]]; then
-        test_count=$(find "$backend/tests" -name "test_*.py" 2>/dev/null | wc -l)
-    fi
-    echo "  tests:$test_count"
-
-    if [[ $issues -eq 0 ]]; then
-        echo "RESULT:OK"
-    else
-        echo "RESULT:ISSUES:$issues"
+    # Remove old venv
+    if [[ -d "$venv" ]]; then
+        rm -rf "$venv"
+        echo "  removed:$venv"
     fi
 
-    return $issues
+    # Create new venv
+    if ! "$python_bin" -m venv "$venv" 2>/dev/null; then
+        echo "ERROR:venv_creation_failed"
+        return 1
+    fi
+    echo "  created:$venv"
+
+    # Install dev deps
+    install_deps "$project_dir"
 }
+
+# =============================================================================
+# SINGLE PROJECT FUNCTIONS
+# =============================================================================
 
 install_deps() {
     local project_dir="$1"
@@ -210,7 +182,10 @@ run_lint() {
         "$ruff_bin" format "$app_dir" 2>&1 >/dev/null || true
         echo "FIXED:ruff=$ruff_src"
     else
-        local violations=$("$ruff_bin" check "$app_dir" 2>&1 | grep -c "^" || echo "0")
+        # Use concise format for reliable one-line-per-violation counting
+        # wc -l always succeeds, avoiding pipefail issues
+        local violations
+        violations=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1 | wc -l) || true
         if [[ "$violations" -eq 0 ]]; then
             echo "OK:violations=0"
         else
@@ -238,7 +213,10 @@ run_types() {
     [[ ! -d "$app_dir" ]] && app_dir="$backend"
 
     cd "$backend"
-    local errors=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1 | grep -c "error:" || echo "0")
+    # Capture output first, then count errors to avoid pipefail issues
+    local output errors
+    output=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1) || true
+    errors=$(echo "$output" | grep -c "error:") || errors=0
     if [[ "$errors" -eq 0 ]]; then
         echo "OK:errors=0"
     else
@@ -262,10 +240,12 @@ run_tests() {
     fi
 
     cd "$backend"
-    local output=$("$pytest_bin" --tb=no -q 2>&1)
+    # Use pytest exit code, not text matching (avoids "6 failed, 677 passed" false positive)
+    local output retval=0
+    output=$("$pytest_bin" --tb=no -q 2>&1) || retval=$?
     local summary=$(echo "$output" | tail -1)
 
-    if echo "$output" | grep -q "passed"; then
+    if [[ $retval -eq 0 ]]; then
         echo "OK:$summary"
     else
         echo "FAIL:$summary"
@@ -317,12 +297,34 @@ full_check() {
 full_fix() {
     local project_dir="$1"
     local project_name=$(basename "$project_dir")
+    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local errors=0
 
     echo "FIX:$project_name"
-    install_deps "$project_dir"
+    install_deps "$project_dir" || ((errors++))
     run_lint "$project_dir" "fix"
-    run_hooks "$project_dir" || true
-    echo "FIX_RESULT:DONE"
+
+    # Install pre-commit hooks into git
+    local precommit_bin="${venv}/bin/pre-commit"
+    if [[ -x "$precommit_bin" && -f "$project_dir/.pre-commit-config.yaml" ]]; then
+        cd "$project_dir"
+        if "$precommit_bin" install >/dev/null 2>&1; then
+            echo "HOOKS_INSTALLED:OK"
+        else
+            echo "HOOKS_INSTALLED:FAIL"
+            ((errors++))
+        fi
+    fi
+
+    # Run hooks to validate
+    run_hooks "$project_dir" || ((errors++))
+
+    if [[ $errors -eq 0 ]]; then
+        echo "FIX_RESULT:OK"
+    else
+        echo "FIX_RESULT:PARTIAL:$errors"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -336,22 +338,6 @@ get_all_project_dirs() {
             echo "$dir"
         fi
     done
-}
-
-audit_all() {
-    echo "AUDIT_ALL:start"
-
-    local total=0
-    local healthy=0
-
-    for project_dir in $(get_all_project_dirs); do
-        if verify_project "$project_dir"; then
-            ((healthy++))
-        fi
-        ((total++))
-    done
-
-    echo "AUDIT_ALL:$healthy/$total:healthy"
 }
 
 fix_all() {
@@ -368,8 +354,7 @@ fix_all() {
 
 status_dashboard() {
     # TOON format: token-optimized for machine readability
-    # Format: PROJECT|venv|ruff|mypy|pytest|hooks|tests
-    # Values: Y=installed, N=missing, version numbers where relevant
+    # Status: OK (healthy), DRIFT (version mismatch), WARN (0 tests), FAIL (missing tools)
 
     local total=0
     local healthy=0
@@ -388,6 +373,7 @@ status_dashboard() {
         local hooks_v="-"
         local test_count="0"
         local status="FAIL"
+        local drift=""
 
         if check_venv "$venv"; then
             venv_ok="Y"
@@ -399,50 +385,54 @@ status_dashboard() {
             [[ -z "$mypy_v" ]] && mypy_v="-"
             [[ -z "$pytest_v" ]] && pytest_v="-"
             [[ -z "$hooks_v" ]] && hooks_v="-"
+
+            # Check for version drift (exact match required)
+            [[ "$ruff_v" != "-" && "$ruff_v" != "$CANONICAL_RUFF" ]] && drift="ruff"
+            [[ "$mypy_v" != "-" && "$mypy_v" != "$CANONICAL_MYPY" ]] && drift="${drift:+$drift,}mypy"
+            [[ "$pytest_v" != "-" && "$pytest_v" != "$CANONICAL_PYTEST" ]] && drift="${drift:+$drift,}pytest"
+            [[ "$hooks_v" != "-" && "$hooks_v" != "$CANONICAL_PRECOMMIT" ]] && drift="${drift:+$drift,}hooks"
         fi
 
         if [[ -d "$backend/tests" ]]; then
             test_count=$(find "$backend/tests" -name "test_*.py" 2>/dev/null | wc -l)
         fi
 
-        # Determine health
-        if [[ "$venv_ok" == "Y" && "$ruff_v" != "-" && "$mypy_v" != "-" && "$pytest_v" != "-" && "$hooks_v" != "-" ]]; then
+        # Determine health status
+        if [[ "$venv_ok" == "N" || "$ruff_v" == "-" || "$mypy_v" == "-" || "$pytest_v" == "-" || "$hooks_v" == "-" ]]; then
+            status="FAIL"
+        elif [[ -n "$drift" ]]; then
+            status="DRIFT"
+        elif [[ "$test_count" -eq 0 ]]; then
+            status="WARN"
+            ((healthy++))  # WARN still counts as healthy (0 tests is warning, not failure)
+        else
             status="OK"
             ((healthy++))
         fi
         ((total++))
 
-        echo "$status $name|venv=$venv_ok|ruff=$ruff_v|mypy=$mypy_v|pytest=$pytest_v|hooks=$hooks_v|tests=$test_count"
+        # Output line with drift info if present
+        local line="$status $name|venv=$venv_ok|ruff=$ruff_v|mypy=$mypy_v|pytest=$pytest_v|hooks=$hooks_v|tests=$test_count"
+        [[ -n "$drift" ]] && line="$line|drift=$drift"
+        echo "$line"
     done
 
     echo "SUMMARY:$healthy/$total:healthy"
 }
 
 show_help() {
-    echo "Dev Standards - Universal development tooling management"
+    echo "Dev Standards - Cross-project tooling management"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Single Project (auto-detects from git root):"
-    echo "  --check, -c      Full quality gate (lint, types, tests)"
-    echo "  --fix, -f        Auto-fix all issues + install deps"
-    echo "  --verify, -v     Verify setup is correct"
-    echo "  --install, -i    Install missing dev dependencies"
-    echo "  --test, -t       Run tests only"
-    echo "  --lint, -l       Run linting only"
-    echo "  --types          Run type checking only"
-    echo "  --hooks          Run pre-commit hooks"
-    echo ""
-    echo "Multi-Project:"
-    echo "  --audit-all      Audit all managed projects"
+    echo "  (no args)        Dashboard of all projects (default)"
+    echo "  --check, -c      Quality gate: lint, types, tests (current project)"
+    echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
-    echo "  --status, -s     Dashboard of all projects"
-    echo ""
-    echo "Other:"
-    echo "  --verbose        Show detailed output"
+    echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"
     echo "  --help, -h       Show this help"
     echo ""
-    echo "Managed projects: ${MANAGED_PROJECTS[*]}"
+    echo "Managed: ${MANAGED_PROJECTS[*]}"
 }
 
 # =============================================================================
@@ -454,29 +444,7 @@ case "$ACTION" in
         show_help
         ;;
     status)
-        if [[ "$TARGET" == "all" ]]; then
-            status_dashboard
-        else
-            verify_project "$PROJECT_DIR"
-        fi
-        ;;
-    verify)
-        verify_project "$PROJECT_DIR"
-        ;;
-    install)
-        install_deps "$PROJECT_DIR"
-        ;;
-    lint)
-        run_lint "$PROJECT_DIR"
-        ;;
-    types)
-        run_types "$PROJECT_DIR"
-        ;;
-    test)
-        run_tests "$PROJECT_DIR"
-        ;;
-    hooks)
-        run_hooks "$PROJECT_DIR"
+        status_dashboard
         ;;
     check)
         full_check "$PROJECT_DIR"
@@ -488,7 +456,7 @@ case "$ACTION" in
             full_fix "$PROJECT_DIR"
         fi
         ;;
-    audit)
-        audit_all
+    rebuild)
+        rebuild_venv "$PROJECT_DIR"
         ;;
 esac

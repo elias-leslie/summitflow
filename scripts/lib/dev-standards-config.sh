@@ -25,12 +25,12 @@ export MIN_PYTHON_VERSION="3.12"
 # =============================================================================
 
 # Projects registered in SummitFlow (auto-discovered via API if available)
+# Note: Only Python projects with backend - JS-only projects (monkey-fight) excluded
 MANAGED_PROJECTS=(
     "summitflow"
     "agent-hub"
     "terminal"
     "portfolio-ai"
-    "monkey-fight"
 )
 export MANAGED_PROJECTS
 
@@ -41,32 +41,8 @@ PROJECT_VENV_MAP=(
     "agent-hub:backend/.venv:backend"
     "terminal:.venv:terminal"
     "portfolio-ai:backend/.venv:backend"
-    "monkey-fight:backend/.venv:backend"
 )
 export PROJECT_VENV_MAP
-
-# =============================================================================
-# QUALITY THRESHOLDS
-# =============================================================================
-
-export MIN_TEST_COVERAGE=70
-export MAX_RUFF_VIOLATIONS=0
-export MAX_MYPY_ERRORS=0
-
-# =============================================================================
-# DEV DEPENDENCIES - Full list for pyproject.toml sync
-# =============================================================================
-
-DEV_DEPS=(
-    "pytest>=${CANONICAL_PYTEST}"
-    "pytest-asyncio>=${CANONICAL_PYTEST_ASYNCIO}"
-    "pytest-cov>=${CANONICAL_PYTEST_COV}"
-    "pytest-xdist>=${CANONICAL_PYTEST_XDIST}"
-    "ruff>=${CANONICAL_RUFF}"
-    "mypy>=${CANONICAL_MYPY}"
-    "pre-commit>=${CANONICAL_PRECOMMIT}"
-)
-export DEV_DEPS
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -110,13 +86,4 @@ get_backend_path() {
 
     # Default fallback
     echo "${project_root}"
-}
-
-# Check if version meets minimum
-version_gte() {
-    local installed="$1"
-    local required="$2"
-
-    # Simple version comparison using sort -V
-    printf '%s\n%s\n' "$required" "$installed" | sort -V | head -n1 | grep -q "^${required}$"
 }
