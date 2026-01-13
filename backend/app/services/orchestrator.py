@@ -198,7 +198,7 @@ class OrchestratorService:
 
         def handle_stop() -> None:
             logger.info("stop_signal_received", task_id=self.ws_task_id)
-            self._interrupted = True
+            self.receive_stop_signal()
 
         register_stop_handler(self.ws_task_id, handle_stop)
         self._stop_handler_registered = True
@@ -217,6 +217,12 @@ class OrchestratorService:
         """Handle stop signal - interrupts current execution.
 
         Per decision d2: Uses SDK native interrupt mechanism.
+        When ClaudeSDKClient is integrated, this will call client.interrupt()
+        to immediately halt the current agent execution.
+
+        TODO: Add client.interrupt() call when ClaudeSDKClient is implemented:
+            if self._sdk_client:
+                self._sdk_client.interrupt()
         """
         self._interrupted = True
         logger.info("stop_signal_handled", task_id=self.ws_task_id, state=self._state.value)
