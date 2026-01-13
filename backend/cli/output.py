@@ -63,11 +63,12 @@ def _truncate(s: str, length: int) -> str:
 def format_compact_task(task: dict[str, Any]) -> str:
     """Format task as compact one-liner.
 
-    Format: P<priority> <id> <type:7> <status:7> <title:50>
+    Format: P<priority> <id> <type:10> <status:7> <title:50>
+    Types: feature, bug, task, refactor, debt, regression
     """
     priority = task.get("priority", 3)
     task_id = task.get("id", "unknown")
-    task_type = (task.get("task_type") or "task")[:7].ljust(7)
+    task_type = (task.get("task_type") or "task")[:10].ljust(10)
     status = (task.get("status") or "pending")[:7].ljust(7)
     title = _truncate(task.get("title") or "", 50)
     return f"P{priority} {task_id} {task_type} {status} {title}"

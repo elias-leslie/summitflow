@@ -33,7 +33,7 @@ def list_tasks(
     Args:
         project_id: Project ID
         status_filter: Optional status filter (pending, running, paused, failed, completed)
-        task_type_filter: Optional type filter (task, bug, feature)
+        task_type_filter: Optional type filter (task, bug, feature, refactor, debt, regression)
         priority_filter: Optional priority filter (0-4)
         labels_filter: Optional labels filter (task must have ALL specified labels)
         orphans_only: Only return tasks not linked to a capability

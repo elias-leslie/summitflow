@@ -17,8 +17,6 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
-  List,
-  LayoutGrid,
   AlertCircle,
   GitPullRequest,
   Bot,
@@ -318,8 +316,6 @@ function TaskRow({
   );
 }
 
-type ViewMode = "list" | "kanban";
-
 export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<TaskFilterValues>(() => {
@@ -330,7 +326,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   // Enrichment flow state
   const [enrichingTask, setEnrichingTask] = useState<Task | null>(null);
@@ -365,6 +360,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const {
     data: tasksData,
     isLoading: tasksLoading,
+    isFetching: tasksFetching,
     refetch: refetchTasks,
   } = useQuery({
     queryKey: ["tasks", projectId, "all"],
@@ -376,6 +372,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const {
     data: blockedTasksData,
     isLoading: blockedLoading,
+    isFetching: blockedFetching,
     refetch: refetchBlocked,
   } = useQuery({
     queryKey: ["tasks", projectId, "blocked"],
@@ -523,6 +520,8 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
   const isLoading =
     filters.status === "blocked" ? blockedLoading : tasksLoading;
+  const isFetching =
+    filters.status === "blocked" ? blockedFetching : tasksFetching;
 
   return (
     <div className="space-y-4">
@@ -534,41 +533,15 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           onChange={setFilters}
         />
         <div className="flex items-center gap-2">
-          {/* View Toggle */}
-          <div className="flex items-center border border-slate-700 rounded-md overflow-hidden">
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === "list"
-                  ? "bg-slate-700 text-white"
-                  : "bg-transparent text-slate-500 hover:text-slate-300",
-              )}
-              title="List view"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("kanban")}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === "kanban"
-                  ? "bg-slate-700 text-white"
-                  : "bg-transparent text-slate-500 hover:text-slate-300",
-              )}
-              title="Kanban view"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
-
           <Button
             size="sm"
             variant="outline"
             onClick={() => refetch()}
-            disabled={isLoading}
+            disabled={isFetching}
           >
-            <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+            <RefreshCw
+              className={cn("w-4 h-4", isFetching && "animate-spin")}
+            />
           </Button>
           <Button size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="w-4 h-4 mr-1" />
@@ -589,15 +562,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
             <span className="text-sm">No tasks found</span>
             <span className="text-xs text-slate-600">
               Try adjusting your filters
-            </span>
-          </div>
-        ) : viewMode === "kanban" ? (
-          // Kanban view placeholder
-          <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-            <LayoutGrid className="h-8 w-8 mb-2" />
-            <span className="text-sm">Kanban view coming soon</span>
-            <span className="text-xs text-slate-600">
-              Switch to list view for now
             </span>
           </div>
         ) : (

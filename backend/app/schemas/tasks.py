@@ -21,7 +21,7 @@ class TaskCreate(BaseModel):
     labels: list[str] = Field(
         default_factory=list, description="Labels (complexity:small, domains:backend)"
     )
-    task_type: Literal["feature", "bug", "task"] = "task"
+    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
     parent_task_id: str | None = None
     # AI agent reliability fields
     objective: str | None = Field(default=None, description="Single measurable goal statement")
@@ -56,7 +56,7 @@ class TaskUpdate(BaseModel):
     # Issue tracking fields
     priority: int | None = Field(default=None, ge=0, le=4)
     labels: list[str] | None = None
-    task_type: Literal["feature", "bug", "task"] | None = None
+    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] | None = None
     parent_task_id: str | None = None
     # Implementation plan (JSON structure for /task_it and /do_it)
     plan_content: dict[str, Any] | None = None
@@ -223,7 +223,7 @@ class EnrichmentRequest(BaseModel):
 
     raw_request: str = Field(min_length=10, description="Natural language task description")
     priority: int | None = Field(default=None, ge=0, le=4, description="Optional priority override")
-    task_type: Literal["feature", "bug", "task"] | None = Field(
+    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] | None = Field(
         default=None, description="Optional type override"
     )
 
@@ -429,7 +429,7 @@ class BatchTaskCreate(BaseModel):
     capability_id: int | None = None  # Database ID of capability (optional)
     priority: int = Field(default=2, ge=0, le=4)
     labels: list[str] = Field(default_factory=list)
-    task_type: Literal["feature", "bug", "task"] = "task"
+    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
     parent_task_id: str | None = None
     objective: str | None = None
     # Pipeline v2 fields
