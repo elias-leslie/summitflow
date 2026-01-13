@@ -15,8 +15,6 @@ SummitFlow - AI-assisted development platform.
 | Commit | `/commit_it` (NEVER direct git) |
 | Restart | `bash ~/summitflow/scripts/restart.sh` |
 
-**For st command syntax**: See `.claude/rules/st-cli.md` or run `st --help`.
-
 ## Invariants
 
 1. **NEVER direct git commit** - `/commit_it` runs quality gates
