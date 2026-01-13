@@ -10,7 +10,7 @@ SummitFlow - AI-assisted development platform.
 
 | Action | How |
 |--------|-----|
-| Find work | `st --compact ready` |
+| Find work | `st ready` |
 | Execute | `/do_it <task-id>` |
 | Commit | `/commit_it` (NEVER direct git) |
 | Restart | `bash ~/summitflow/scripts/restart.sh` |
@@ -27,7 +27,7 @@ SummitFlow - AI-assisted development platform.
 | Local | Production |
 |-------|------------|
 | http://localhost:3001 | https://dev.summitflow.dev |
-| http://localhost:8001/docs | (requires CF auth) |
+| http://localhost:8001/docs | https://api.summitflow.dev (CF auth) |
 
 ---
 

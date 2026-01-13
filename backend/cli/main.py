@@ -25,7 +25,8 @@ from .output import set_compact_output, set_human_output, set_progress_only
 # Format: TOON-style, optimized for Claude consumption
 CLI_REFERENCE = """ST CLI - SummitFlow Tasks
 
-FLAGS: --compact(-c) --human --project(-P)<id> --progress-only
+FLAGS: --human (verbose JSON) | --no-compact (raw JSON) | -P <project-id> | --progress-only
+       Default output: compact TOON format
 
 WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
 
@@ -93,12 +94,13 @@ SESSIONS: sessions list [--status S] | sessions show <id>
 AUTONOMOUS: autonomous enable | disable | status
 
 EXAMPLES:
-  st --compact ready                       # find work
+  st ready                                 # find work (compact by default)
   st update task-abc --status running      # claim
-  st --compact subtask list task-abc       # view subtasks
+  st subtask list task-abc                 # view subtasks
   st step pass task-abc 1.1 1              # mark step 1 done
   st subtask pass task-abc 1.1             # mark subtask done
   st close task-abc --reason "Done"        # complete task
+  st --human show task-abc                 # verbose JSON output
 """
 
 app = typer.Typer(
@@ -145,8 +147,8 @@ def main(
     ] = False,
     compact: Annotated[
         bool,
-        typer.Option("--compact", "-c", help="TOON-style compact output"),
-    ] = False,
+        typer.Option("--compact", "-c", help="TOON-style compact output (default)"),
+    ] = True,
     progress_only: Annotated[
         bool,
         typer.Option("--progress-only", help="Progress summary only"),
