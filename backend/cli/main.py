@@ -25,7 +25,7 @@ from .output import set_compact_output, set_human_output, set_progress_only
 # Format: TOON-style, optimized for Claude consumption
 CLI_REFERENCE = """ST CLI - SummitFlow Tasks
 
-FLAGS: --human (verbose JSON) | --no-compact (raw JSON) | -P <project-id> | --progress-only
+FLAGS: --compact/-c (TOON, default) | --human (verbose JSON) | --no-compact (raw JSON) | --project/-P <id> | --progress-only
        Default output: compact TOON format
 
 WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
