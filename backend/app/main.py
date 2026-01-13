@@ -99,9 +99,10 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 
-from .api import ideas  # noqa: E402
+from .api import ideas, ws_execution  # noqa: E402
 
 app.include_router(ideas.router, prefix="/api", tags=["ideas"])
+app.include_router(ws_execution.router, tags=["execution"])
 
 
 @app.get("/health")
