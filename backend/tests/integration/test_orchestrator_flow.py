@@ -15,7 +15,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.constants import GEMINI_FLASH, GEMINI_PRO
 from app.services.orchestrator import (
     ExecutionState,

@@ -9,11 +9,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from celery import shared_task
-
-from ..logging_config import get_logger
-from ..services.orchestrator import OrchestrationResult, OrchestratorService
-from ..storage import tasks
+from app.celery_app import celery_app
+from app.logging_config import get_logger
+from app.services.orchestrator import OrchestrationResult, OrchestratorService
+from app.storage import tasks
 
 logger = get_logger(__name__)
 
@@ -42,7 +41,7 @@ def _result_to_dict(result: OrchestrationResult) -> dict[str, Any]:
     }
 
 
-@shared_task(  # type: ignore[untyped-decorator]
+@celery_app.task(  # type: ignore[untyped-decorator]
     name="summitflow.execute_orchestrator",
     bind=True,
     max_retries=1,

@@ -218,6 +218,7 @@ from app.tasks import (  # noqa: F401, E402
     lifecycle_cleanup,
     memory_health_task,
     observation_processor,
+    orchestrator_runner,
     reflection_processor,
 )
 from app.tasks.autonomous import ideas  # noqa: F401, E402
