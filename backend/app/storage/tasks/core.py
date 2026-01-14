@@ -26,7 +26,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
     objective, current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
-    spirit_anti, decisions, constraints, done_when, complexity"""
+    spirit_anti, decisions, constraints, done_when, complexity, autonomous"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -37,9 +37,9 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
     t.objective, t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
-    t.spirit_anti, t.decisions, t.constraints, t.done_when, t.complexity"""
+    t.spirit_anti, t.decisions, t.constraints, t.done_when, t.complexity, t.autonomous"""
 
-EXPECTED_TASK_COLUMNS = 39
+EXPECTED_TASK_COLUMNS = 40
 
 
 def _generate_task_id() -> str:
@@ -50,7 +50,7 @@ def _generate_task_id() -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (39 columns):
+    Column order (40 columns):
         id, project_id, capability_id, title, description, status,
         plan_content, progress_log,
         error_message, branch_name, commits, pull_request_url,
@@ -59,7 +59,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
         objective, current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
-        spirit_anti, decisions, constraints, done_when, complexity
+        spirit_anti, decisions, constraints, done_when, complexity, autonomous
 
     Note: spec_content and current_criterion_id dropped in migration 038
     """
@@ -112,6 +112,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "constraints": row[36],
         "done_when": row[37],
         "complexity": row[38],
+        "autonomous": row[39] or False,
     }
 
 
@@ -136,6 +137,7 @@ def create_task(
     constraints: list[str] | None = None,
     done_when: list[str] | None = None,
     complexity: str | None = None,
+    autonomous: bool = False,
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -159,6 +161,7 @@ def create_task(
         constraints: Boundaries that must not be crossed
         done_when: Checklist of completion conditions
         complexity: Task complexity tier (SIMPLE, STANDARD, COMPLEX)
+        autonomous: Enable autonomous execution (Flash/Opus pipeline)
 
     Note:
         Acceptance criteria are now managed via task_criteria junction table.
@@ -178,8 +181,8 @@ def create_task(
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, labels, task_type, parent_task_id, tier,
                                objective, current_phase, raw_request, enrichment_status,
-                               spirit_anti, decisions, constraints, done_when, complexity)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                               spirit_anti, decisions, constraints, done_when, complexity, autonomous)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -202,6 +205,7 @@ def create_task(
                 json.dumps(constraints) if constraints else None,
                 json.dumps(done_when) if done_when else None,
                 complexity,
+                autonomous,
             ),
         )
         row = cur.fetchone()

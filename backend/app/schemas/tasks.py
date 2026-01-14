@@ -44,6 +44,10 @@ class TaskCreate(BaseModel):
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = Field(
         default=None, description="Task complexity tier"
     )
+    autonomous: bool = Field(
+        default=False,
+        description="Enable autonomous execution (Flash/Opus pipeline) vs manual",
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -73,6 +77,7 @@ class TaskUpdate(BaseModel):
     constraints: list[str] | None = None
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
+    autonomous: bool | None = None
 
 
 class TaskStatusUpdate(BaseModel):

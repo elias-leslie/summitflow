@@ -198,7 +198,9 @@ def init_schema() -> None:
                     raw_request TEXT,
                     enrichment_status TEXT,
                     enriched_by TEXT,
-                    enriched_at TIMESTAMPTZ
+                    enriched_at TIMESTAMPTZ,
+                    -- Autonomous execution mode
+                    autonomous BOOLEAN DEFAULT FALSE
                 )
                 """
         )

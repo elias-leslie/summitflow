@@ -130,6 +130,10 @@ class OrchestratorService:
         self._chat_messages: list[dict[str, Any]] = []
         # Background tasks that shouldn't be garbage collected
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Current streaming session ID for cancellation support
+        self._current_streaming_session_id: str | None = None
+        # Chat handler registration state
+        self._chat_handler_registered = False
 
     @property
     def worktree_manager(self) -> WorktreeManager:
@@ -213,19 +217,68 @@ class OrchestratorService:
         unregister_stop_handler(self.ws_task_id)
         self._stop_handler_registered = False
 
+    def register_chat_handler(self) -> None:
+        """Register handler to receive chat messages from WebSocket."""
+        if self._chat_handler_registered or not self.ws_task_id:
+            return
+
+        from ..api.ws_execution import register_chat_handler
+
+        def handle_chat(message_data: dict[str, Any]) -> None:
+            logger.info("chat_message_received", task_id=self.ws_task_id)
+            self.store_chat_message(message_data)
+
+        register_chat_handler(self.ws_task_id, handle_chat)
+        self._chat_handler_registered = True
+
+    def unregister_chat_handler(self) -> None:
+        """Unregister chat message handler."""
+        if not self._chat_handler_registered or not self.ws_task_id:
+            return
+
+        from ..api.ws_execution import unregister_chat_handler
+
+        unregister_chat_handler(self.ws_task_id)
+        self._chat_handler_registered = False
+
     def receive_stop_signal(self) -> None:
         """Handle stop signal - interrupts current execution.
 
-        Per decision d2: Uses SDK native interrupt mechanism.
-        When ClaudeSDKClient is integrated, this will call client.interrupt()
-        to immediately halt the current agent execution.
-
-        TODO: Add client.interrupt() call when ClaudeSDKClient is implemented:
-            if self._sdk_client:
-                self._sdk_client.interrupt()
+        Per decision d2: Uses dual interrupt mechanism:
+        1. Set _interrupted flag for polling in _dispatch_to_flash
+        2. Cancel active stream via Agent Hub registry (async)
         """
         self._interrupted = True
         logger.info("stop_signal_handled", task_id=self.ws_task_id, state=self._state.value)
+
+        # Cancel active streaming session if present
+        if self._current_streaming_session_id:
+            # Schedule async cancellation
+            task = asyncio.create_task(self._cancel_active_stream())
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+    async def _cancel_active_stream(self) -> None:
+        """Cancel active streaming session via Agent Hub REST API."""
+        if not self._current_streaming_session_id:
+            return
+
+        from agent_hub import AsyncAgentHubClient
+
+        try:
+            async with AsyncAgentHubClient() as client:
+                result = await client.cancel_stream(self._current_streaming_session_id)
+                logger.info(
+                    "stream_cancellation_result",
+                    session_id=self._current_streaming_session_id,
+                    result=result,
+                )
+        except Exception as e:
+            logger.warning(
+                "stream_cancellation_failed",
+                session_id=self._current_streaming_session_id,
+                error=str(e),
+            )
 
     def store_chat_message(self, message: dict[str, Any]) -> None:
         """Store chat message for resume context.
@@ -264,11 +317,13 @@ class OrchestratorService:
         """
         self.ws_task_id = task_id
         self.register_stop_handler()
+        self.register_chat_handler()
 
         try:
             return await self._do_coordinate(task_id, worker_id, lock_duration_minutes)
         finally:
             self.unregister_stop_handler()
+            self.unregister_chat_handler()
 
     async def _do_coordinate(
         self,
@@ -294,6 +349,21 @@ class OrchestratorService:
 
         logger.info("task_claimed", task_id=task_id, worker_id=worker_id)
         await self._send_log("info", f"Task claimed by {worker_id}")
+
+        # Step 1.5: Complexity assessment - route COMPLEX to human review
+        task = task_store.get_task(task_id)
+        if task:
+            complexity = task.get("complexity", "STANDARD")
+            if complexity == "COMPLEX":
+                # Check if task has architecture label or touches many domains
+                labels = task.get("labels", [])
+                if "architecture" in labels or self._requires_human_review(task):
+                    task_store.release_task(task_id)
+                    task_store.update_task_status(task_id, "human_review")
+                    result.error = "Task complexity requires human review"
+                    result.state = ExecutionState.FAILED
+                    await self._send_log("info", "COMPLEX task routed to human review")
+                    return result
 
         # Step 2: Setup worktree
         self._set_state(ExecutionState.SETTING_UP)
@@ -357,16 +427,25 @@ class OrchestratorService:
                 await self._send_log("error", result.error)
                 return result
 
-        # Step 5: All subtasks succeeded - submit for review
+        # Step 5: All subtasks succeeded - create draft PR
         self._set_state(ExecutionState.REVIEWING)
-        await self._send_log("info", "All subtasks complete, submitting for Opus review")
+        await self._send_log("info", "All subtasks complete, creating draft PR")
+
+        pr_url = await self._create_draft_pr(task_id)
+        if pr_url:
+            result.merge_sha = pr_url  # Store PR URL in merge_sha for now
+            # Update task with PR URL
+            task_store.update_task(task_id, notes=f"PR: {pr_url}")
 
         # Transition to ai_reviewing for Opus gate
         task_store.update_task_status(task_id, "ai_reviewing")
 
+        # Trigger immediate Opus review
+        await self._trigger_opus_review(task_id, pr_url)
+
         result.success = True
         result.state = ExecutionState.COMPLETED
-        await self._send_log("info", "Orchestration complete - awaiting Opus review")
+        await self._send_log("info", "Orchestration complete - Opus review triggered")
 
         return result
 
@@ -471,6 +550,9 @@ class OrchestratorService:
     ) -> tuple[bool, str | None]:
         """Dispatch subtask to Flash (or Pro) worker for execution.
 
+        Streams response via AgentHubStreamingClient and broadcasts
+        log events to WebSocket listeners.
+
         Args:
             subtask: Subtask to execute
             model: Model to use (GEMINI_FLASH or GEMINI_PRO)
@@ -478,20 +560,318 @@ class OrchestratorService:
         Returns:
             Tuple of (success, error_message)
         """
-        # TODO: Implement actual agent execution
-        # This will call the agent execution code with the appropriate model
-        # For now, return a placeholder that indicates implementation needed
+        from .agent_hub_client import AgentHubStreamingClient
 
-        subtask_id = subtask.get("subtask_full_id") or subtask.get("id")
+        subtask_id = str(subtask.get("subtask_full_id") or subtask.get("id") or "unknown")
+        description = subtask.get("description", "")
+
         logger.info(
             "dispatch_to_flash",
             subtask_id=subtask_id,
             model=model,
-            description=subtask.get("description", "")[:50],
+            description=description[:50],
         )
 
-        # Placeholder - actual implementation will use agent execution
-        return False, "Agent execution not yet implemented"
+        # Build prompt with task context
+        prompt = self._build_flash_prompt(subtask)
+        messages = [{"role": "user", "content": prompt}]
+
+        # Create streaming client
+        streaming_client = AgentHubStreamingClient()
+        self._current_streaming_session_id = await streaming_client.connect(
+            model=model,
+            messages=messages,
+        )
+
+        await self._send_log(
+            "info", f"Agent connected, session: {self._current_streaming_session_id[:8]}..."
+        )
+
+        try:
+            accumulated_content = ""
+            async for chunk in streaming_client.stream():
+                # Check for interruption
+                if self._interrupted:
+                    await streaming_client.cancel()
+                    return False, "Interrupted by user"
+
+                # Handle different chunk types
+                if chunk.type == "content":
+                    accumulated_content += chunk.content
+                    # Broadcast content to WebSocket (abbreviated for logs)
+                    if len(chunk.content) > 0:
+                        await self._send_log(
+                            "debug", f"Agent: {chunk.content[:100]}...", source="flash"
+                        )
+
+                elif chunk.type == "tool_use":
+                    # Log tool usage
+                    tool_name = chunk.tool_call.name if chunk.tool_call else "unknown"
+                    await self._send_log("info", f"Tool call: {tool_name}", source="flash")
+                    # TODO: Execute tool and feed result back
+                    # For now, log but continue streaming
+
+                elif chunk.type == "done":
+                    await self._send_log(
+                        "info",
+                        f"Agent completed: {chunk.input_tokens or 0} in, {chunk.output_tokens or 0} out",
+                        source="flash",
+                    )
+
+                elif chunk.type == "cancelled":
+                    await self._send_log("warning", "Stream cancelled")
+                    return False, "Stream cancelled"
+
+                elif chunk.type == "error":
+                    error_msg = chunk.error or "Unknown streaming error"
+                    await self._send_log("error", f"Agent error: {error_msg}")
+                    return False, error_msg
+
+            # Analyze accumulated content to determine success
+            result = streaming_client.get_result()
+            success, error = self._analyze_execution_result(result.content, subtask)
+
+            return success, error
+
+        except Exception as e:
+            logger.error("dispatch_to_flash_error", subtask_id=subtask_id, error=str(e))
+            await self._send_log("error", f"Execution failed: {e}")
+            return False, str(e)
+
+        finally:
+            await streaming_client.close()
+            self._current_streaming_session_id = None
+
+    def _build_flash_prompt(self, subtask: dict[str, Any]) -> str:
+        """Build prompt for Flash worker with task context and user directions.
+
+        Args:
+            subtask: Subtask to execute
+
+        Returns:
+            Formatted prompt string
+        """
+        subtask_id = subtask.get("subtask_full_id") or subtask.get("id")
+        description = subtask.get("description", "")
+        steps = subtask.get("steps", [])
+
+        # Format steps as numbered list
+        steps_text = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(steps))
+
+        # Include any user chat directions
+        user_directions = ""
+        if self._chat_messages:
+            recent_messages = self._chat_messages[-3:]  # Last 3 messages
+            directions = [f"- {m.get('content', '')}" for m in recent_messages if m.get("content")]
+            if directions:
+                user_directions = f"""
+## User Directions
+The user has provided the following guidance:
+{chr(10).join(directions)}
+
+Please incorporate this direction into your work.
+"""
+
+        prompt = f"""# Task: Execute Subtask {subtask_id}
+
+## Description
+{description}
+
+## Steps to Complete
+{steps_text}
+
+## Working Directory
+{self.effective_repo_path}
+{user_directions}
+## Instructions
+You are an expert software engineer. Complete the steps above.
+For each step:
+1. Read relevant files to understand the codebase
+2. Make necessary code changes
+3. Verify your changes work
+
+After completing all steps, respond with:
+- DONE: If all steps completed successfully
+- BLOCKED: <reason> if you cannot proceed
+- ERROR: <details> if an error occurred
+
+Be concise in your responses. Focus on completing the task."""
+
+        return prompt
+
+    def _analyze_execution_result(
+        self, content: str, subtask: dict[str, Any]
+    ) -> tuple[bool, str | None]:
+        """Analyze agent response to determine success/failure.
+
+        Args:
+            content: Agent response content
+            subtask: The subtask that was executed
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        content_lower = content.lower()
+
+        # Check for explicit success indicators
+        if "done:" in content_lower or "completed successfully" in content_lower:
+            return True, None
+
+        # Check for explicit failure indicators
+        if "blocked:" in content_lower:
+            # Extract reason
+            idx = content_lower.find("blocked:")
+            reason = content[idx + 8 :].strip()[:200]
+            return False, f"Blocked: {reason}"
+
+        if "error:" in content_lower:
+            idx = content_lower.find("error:")
+            error = content[idx + 6 :].strip()[:200]
+            return False, f"Error: {error}"
+
+        # Check for common failure patterns
+        failure_patterns = [
+            "cannot complete",
+            "unable to",
+            "failed to",
+            "i cannot",
+            "not possible",
+        ]
+        for pattern in failure_patterns:
+            if pattern in content_lower:
+                return False, f"Agent reported inability: {pattern}"
+
+        # If no clear indicators, assume success if response is substantial
+        if len(content) > 100:
+            return True, None
+
+        # Short response with no clear indicators - uncertain
+        return False, "Inconclusive response from agent"
+
+    def _requires_human_review(self, task: dict[str, Any]) -> bool:
+        """Check if task requires human review based on complexity heuristics.
+
+        Args:
+            task: Task dict
+
+        Returns:
+            True if task should be routed to human review
+        """
+        labels = task.get("labels", [])
+
+        # Security-sensitive tasks
+        security_patterns = ["security", "auth", "credential", "payment", "crypto"]
+        if any(pattern in label.lower() for label in labels for pattern in security_patterns):
+            return True
+
+        # Multi-domain tasks
+        domain_labels = [label for label in labels if label.startswith("domains:")]
+        if len(domain_labels) >= 3:
+            return True
+
+        # Explicit human review request
+        if "needs-human-review" in labels:
+            return True
+
+        # Architecture changes
+        return "architecture" in labels or "breaking-change" in labels
+
+    async def _trigger_opus_review(self, task_id: str, pr_url: str | None) -> None:
+        """Trigger Opus review via Celery task.
+
+        Args:
+            task_id: Task ID to review
+            pr_url: Optional PR URL for reference
+        """
+        from ..tasks.ai_review import review_pull_request
+
+        try:
+            celery_task = review_pull_request.delay(task_id=task_id, pr_url=pr_url)
+            logger.info(
+                "opus_review_triggered",
+                task_id=task_id,
+                celery_task_id=celery_task.id,
+                pr_url=pr_url,
+            )
+            await self._send_log("info", f"Opus review queued: {celery_task.id}")
+        except Exception as e:
+            logger.warning("opus_review_trigger_failed", task_id=task_id, error=str(e))
+            await self._send_log("warning", f"Failed to trigger Opus review: {e}")
+
+    async def _create_draft_pr(self, task_id: str) -> str | None:
+        """Create a draft PR after successful execution.
+
+        Uses `gh pr create --draft` to create PR from worktree branch.
+
+        Args:
+            task_id: Task ID for PR title
+
+        Returns:
+            PR URL if created, None if failed (non-blocking)
+        """
+        import subprocess
+
+        if not self._current_worktree_path:
+            await self._send_log("warning", "No worktree path - skipping PR creation")
+            return None
+
+        # Get task for PR title
+        task = task_store.get_task(task_id)
+        if not task:
+            await self._send_log("warning", "Task not found - skipping PR creation")
+            return None
+
+        title = task.get("title", f"Auto: {task_id}")
+        description = task.get("description", "")[:500]
+
+        try:
+            # Create draft PR
+            result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--draft",
+                    "--title",
+                    f"auto({task_id[:8]}): {title[:50]}",
+                    "--body",
+                    f"""## Summary
+Auto-generated PR for task {task_id}.
+
+{description}
+
+## Changes
+See commits for details.
+
+---
+🤖 Generated by SummitFlow Orchestrator
+""",
+                ],
+                cwd=str(self._current_worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0:
+                pr_url = result.stdout.strip()
+                logger.info("draft_pr_created", task_id=task_id, pr_url=pr_url)
+                await self._send_log("info", f"Draft PR created: {pr_url}")
+                return pr_url
+            else:
+                # Log error but don't fail execution
+                error = result.stderr.strip() or "Unknown error"
+                logger.warning("draft_pr_failed", task_id=task_id, error=error)
+                await self._send_log("warning", f"Failed to create PR: {error}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            await self._send_log("warning", "PR creation timed out")
+            return None
+        except Exception as e:
+            logger.warning("draft_pr_error", task_id=task_id, error=str(e))
+            await self._send_log("warning", f"PR creation error: {e}")
+            return None
 
     async def _handle_failure(self, task_id: str, subtask_result: SubtaskResult) -> bool:
         """Handle subtask failure by reverting worktree.

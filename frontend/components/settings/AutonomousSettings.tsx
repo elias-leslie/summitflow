@@ -1,7 +1,15 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Clock, Layers, Zap } from "lucide-react";
+import {
+  Loader2,
+  Clock,
+  Layers,
+  Zap,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { clsx } from "clsx";
 import { Slider } from "../ui/slider";
 import {
@@ -30,15 +38,48 @@ function formatHour(hour: number): string {
   return `${hour - 12} PM`;
 }
 
+function isInTimeWindow(startHour: number, endHour: number): boolean {
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Handle 24/7 case
+  if (startHour === 0 && endHour === 24) return true;
+
+  // Handle same-day window (e.g., 9am - 6pm)
+  if (startHour < endHour) {
+    return currentHour >= startHour && currentHour < endHour;
+  }
+
+  // Handle overnight window (e.g., 10pm - 6am)
+  return currentHour >= startHour || currentHour < endHour;
+}
+
 export function AutonomousSettingsPanel({
   projectId,
 }: AutonomousSettingsPanelProps) {
   const queryClient = useQueryClient();
+  const [currentInWindow, setCurrentInWindow] = useState(false);
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ["autonomous-settings", projectId],
     queryFn: () => getAutonomousSettings(projectId),
   });
+
+  // Update time window status every minute
+  useEffect(() => {
+    if (!settings) return;
+
+    const updateStatus = () => {
+      setCurrentInWindow(
+        isInTimeWindow(settings.start_hour, settings.end_hour),
+      );
+    };
+
+    updateStatus();
+    const interval = setInterval(updateStatus, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [settings]);
 
   const mutation = useMutation({
     mutationFn: (update: AutonomousExecutionSettingsUpdate) =>
@@ -114,10 +155,35 @@ export function AutonomousSettingsPanel({
 
       {/* Time Range */}
       <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
-        <h3 className="text-sm font-medium text-slate-200 mb-2 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-slate-400" />
-          Execution Window
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-slate-400" />
+            Execution Window
+          </h3>
+          {/* Current window status indicator */}
+          {settings.enabled && (
+            <span
+              className={clsx(
+                "flex items-center gap-1 text-xs px-2 py-1 rounded-full",
+                currentInWindow
+                  ? "bg-phosphor-500/20 text-phosphor-400"
+                  : "bg-amber-500/20 text-amber-400",
+              )}
+            >
+              {currentInWindow ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Active window
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-3 h-3" />
+                  Outside window
+                </>
+              )}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-slate-400 mb-6">
           Set the daily time range when autonomous execution is allowed
         </p>

@@ -42,7 +42,7 @@ import {
   type TaskFilterValues,
 } from "./TaskFilters";
 import { SimpleCreateDialog } from "./SimpleCreateDialog";
-import { TaskExpandedView } from "./TaskExpandedView";
+import { TaskModal } from "./TaskModal";
 import { CriteriaProgress } from "./CriteriaProgress";
 import { SubtaskProgress } from "./SubtaskProgress";
 import { EnrichmentStatusBadge } from "./EnrichmentStatusBadge";
@@ -297,21 +297,7 @@ function TaskRow({
         </td>
       </tr>
 
-      {/* Expanded Details - now using TaskExpandedView */}
-      <AnimatePresence>
-        {isExpanded && (
-          <tr>
-            <td colSpan={9}>
-              <TaskExpandedView
-                projectId={projectId}
-                task={task}
-                onTaskUpdated={onTaskUpdated}
-                onTaskDeleted={onTaskDeleted}
-              />
-            </td>
-          </tr>
-        )}
-      </AnimatePresence>
+      {/* Expanded inline view removed - now using TaskModal */}
     </>
   );
 }
@@ -324,7 +310,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   });
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
   // Enrichment flow state
@@ -449,7 +437,8 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
   // Handler for task deleted
   const handleTaskDeleted = useCallback(() => {
-    setExpandedId(null);
+    setModalOpen(false);
+    setModalTaskId(null);
     refetch();
   }, [refetch]);
 
@@ -620,10 +609,12 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <TaskRow
                   key={task.id}
                   task={task}
-                  isExpanded={expandedId === task.id}
-                  onToggle={() =>
-                    setExpandedId(expandedId === task.id ? null : task.id)
-                  }
+                  isExpanded={false}
+                  onToggle={() => {
+                    setModalTaskId(task.id);
+                    setSelectedTask(task);
+                    setModalOpen(true);
+                  }}
                   onTaskUpdated={handleTaskUpdated}
                   onTaskDeleted={handleTaskDeleted}
                   subtasks={[]}
@@ -641,6 +632,19 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           </span>
         </div>
       </div>
+
+      {/* Task Detail Modal */}
+      <TaskModal
+        taskId={modalTaskId}
+        projectId={projectId}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onTaskUpdate={(task) => {
+          setSelectedTask(task);
+          handleTaskUpdated(task);
+        }}
+        initialTask={selectedTask}
+      />
 
       {/* Simple Create Task Dialog */}
       <SimpleCreateDialog

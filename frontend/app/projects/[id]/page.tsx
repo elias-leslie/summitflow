@@ -12,7 +12,7 @@ import { EvidenceTab } from "@/components/evidence/EvidenceTab";
 import { ExplorerTab } from "@/components/explorer/ExplorerTab";
 import type { ExplorerType } from "@/components/explorer/types";
 import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
-import { TaskDetailDrawer } from "@/components/kanban/TaskDetailDrawer";
+import { TaskModal } from "@/components/tasks/TaskModal";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import {
@@ -77,8 +77,9 @@ export default function ProjectDetailPage() {
   };
 
   // Kanban state
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
 
   const {
@@ -113,8 +114,14 @@ export default function ProjectDetailPage() {
   };
 
   const handleTaskClick = (task: Task) => {
+    setSelectedTaskId(task.id);
     setSelectedTask(task);
-    setDrawerOpen(true);
+    setModalOpen(true);
+  };
+
+  const handleTaskUpdate = (task: Task) => {
+    setSelectedTask(task);
+    refetchKanbanTasks();
   };
 
   const handleNewTask = () => {
@@ -170,12 +177,13 @@ export default function ProjectDetailPage() {
               onTaskClick={handleTaskClick}
               onNewTask={handleNewTask}
             />
-            <TaskDetailDrawer
-              task={selectedTask}
+            <TaskModal
+              taskId={selectedTaskId}
               projectId={projectId}
-              open={drawerOpen}
-              onOpenChange={setDrawerOpen}
-              onStatusChange={handleTaskStatusChange}
+              open={modalOpen}
+              onOpenChange={setModalOpen}
+              onTaskUpdate={handleTaskUpdate}
+              initialTask={selectedTask}
             />
             <CreateTaskDialog
               open={createTaskDialogOpen}

@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 
 import type { Task, TaskStatus } from "@/lib/api";
-import { executeIdeasNow } from "@/lib/api";
+import { executeTask } from "@/lib/api/tasks";
 import { TaskCard, DragOverlayTaskCard } from "./TaskCard";
 import { useExecutionWebSocket } from "@/hooks/useExecutionWebSocket";
 
@@ -294,8 +294,8 @@ export function TaskKanbanBoard({
   const handleExecuteNow = async (taskId: string) => {
     setExecutingTaskId(taskId);
     try {
-      await executeIdeasNow(projectId);
-      // Optionally refresh data here or let parent handle
+      await executeTask(projectId, taskId);
+      // Task is now queued for execution via orchestrator
     } catch (error) {
       console.error("Execute now failed:", error);
       // Could show toast notification here

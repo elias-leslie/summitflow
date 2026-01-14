@@ -16,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -157,6 +157,9 @@ manager = ConnectionManager()
 # Callback registry for stop signals
 _stop_handlers: dict[str, Callable[[], None]] = {}
 
+# Callback registry for chat messages (receives dict with message data)
+_chat_handlers: dict[str, Callable[[dict[str, Any]], None]] = {}
+
 
 def register_stop_handler(task_id: str, handler: Callable[[], None]) -> None:
     """Register a callback to be invoked when a stop signal is received."""
@@ -166,6 +169,21 @@ def register_stop_handler(task_id: str, handler: Callable[[], None]) -> None:
 def unregister_stop_handler(task_id: str) -> None:
     """Unregister a stop handler for a task."""
     _stop_handlers.pop(task_id, None)
+
+
+def register_chat_handler(task_id: str, handler: Callable[[dict[str, Any]], None]) -> None:
+    """Register a callback to be invoked when a chat message is received.
+
+    Args:
+        task_id: Task ID to handle chat messages for
+        handler: Callback that receives the message data dict
+    """
+    _chat_handlers[task_id] = handler
+
+
+def unregister_chat_handler(task_id: str) -> None:
+    """Unregister a chat handler for a task."""
+    _chat_handlers.pop(task_id, None)
 
 
 @router.websocket("/ws/execution/{task_id}")
@@ -234,13 +252,18 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
                 )
 
             elif msg_type == MessageType.CHAT_MESSAGE.value:
-                # Broadcast chat message to orchestrator and other listeners
+                # Trigger chat handler if registered (for orchestrator)
+                chat_handler = _chat_handlers.get(task_id)
+                message_data = data.get("data", {})
+                if chat_handler:
+                    chat_handler(message_data)
+                # Broadcast chat message to other listeners
                 await manager.broadcast(
                     task_id,
                     Message(
                         type=MessageType.CHAT_MESSAGE,
                         task_id=task_id,
-                        data=data.get("data", {}),
+                        data=message_data,
                     ),
                 )
 

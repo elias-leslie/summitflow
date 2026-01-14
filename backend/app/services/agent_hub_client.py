@@ -7,20 +7,26 @@ This module provides:
 - LLMResponse: Standardized response dataclass
 - LLMClient: Abstract base class for LLM providers
 - AgentHubLLMClient: Concrete implementation using Agent Hub API
+- AgentHubStreamingClient: Async streaming wrapper for WebSocket streaming
 """
 
 from __future__ import annotations
 
-import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from agent_hub import AgentHubClient, CompletionResponse
+from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
 from agent_hub.exceptions import AgentHubError
+from agent_hub.models import StreamChunk
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -365,11 +371,233 @@ class DualProviderClient(LLMClient):
             self._client = None
 
 
+@dataclass
+class StreamingResult:
+    """Result of a streaming session."""
+
+    content: str
+    session_id: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    finish_reason: str = "end_turn"
+    cancelled: bool = False
+    error: str | None = None
+
+
+class AgentHubStreamingClient:
+    """Async streaming client wrapper for Agent Hub WebSocket API.
+
+    Provides:
+    - Async iterator for streaming content via connect()/stream()
+    - Session tracking for cancellation support
+    - Integration with SummitFlow's WebSocket for log broadcasting
+
+    Usage:
+        client = AgentHubStreamingClient()
+        await client.connect(model, messages, session_id)
+
+        async for delta in client.stream():
+            # Handle content delta
+            print(delta.content, end="", flush=True)
+
+        # Cancel from another task/thread:
+        await client.cancel()
+    """
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        """Initialize streaming client.
+
+        Args:
+            base_url: Agent Hub URL (defaults to AGENT_HUB_URL env)
+            api_key: API key (defaults to AGENT_HUB_API_KEY env)
+        """
+        self.base_url = base_url or AGENT_HUB_URL
+        self.api_key = api_key or AGENT_HUB_API_KEY
+        self._client: AsyncAgentHubClient | None = None
+        self._session_id: str | None = None
+        self._model: str | None = None
+        self._messages: list[dict[str, str]] = []
+        self._connected: bool = False
+        self._cancel_requested: bool = False
+        # Accumulated content for result
+        self._accumulated_content: str = ""
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
+        self._finish_reason: str = "end_turn"
+
+    async def _get_client(self) -> AsyncAgentHubClient:
+        """Get or create async client."""
+        if self._client is None:
+            self._client = AsyncAgentHubClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        return self._client
+
+    @property
+    def session_id(self) -> str | None:
+        """Get current session ID for cancellation tracking."""
+        return self._session_id
+
+    async def connect(
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        session_id: str | None = None,
+    ) -> str:
+        """Prepare for streaming (stores config, generates session_id).
+
+        Args:
+            model: Model identifier (e.g., "gemini-3-flash-preview")
+            messages: Conversation messages
+            session_id: Optional session ID (auto-generated if None)
+
+        Returns:
+            Session ID for tracking
+        """
+        import uuid
+
+        self._model = model
+        self._messages = messages
+        self._session_id = session_id or str(uuid.uuid4())
+        self._connected = True
+        self._cancel_requested = False
+        self._accumulated_content = ""
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._finish_reason = "end_turn"
+
+        logger.info(
+            "streaming_client_connected",
+            model=model,
+            session_id=self._session_id,
+        )
+        return self._session_id
+
+    async def stream(self) -> AsyncIterator[StreamChunk]:
+        """Stream response from Agent Hub.
+
+        Yields:
+            StreamChunk events (content, done, cancelled, error)
+        """
+        if not self._connected or not self._model:
+            raise RuntimeError("Call connect() before stream()")
+
+        client = await self._get_client()
+
+        try:
+            async for chunk in client.stream(
+                model=self._model,
+                messages=self._messages,
+                session_id=self._session_id,
+            ):
+                # Check for cancellation
+                if self._cancel_requested:
+                    logger.info(
+                        "streaming_cancelled_by_request",
+                        session_id=self._session_id,
+                    )
+                    yield StreamChunk(
+                        type="cancelled",
+                        input_tokens=self._input_tokens,
+                        output_tokens=self._output_tokens,
+                        finish_reason="cancelled",
+                    )
+                    return
+
+                # Accumulate content
+                if chunk.type == "content":
+                    self._accumulated_content += chunk.content
+
+                # Track tokens from done event
+                if chunk.type == "done":
+                    if chunk.input_tokens:
+                        self._input_tokens = chunk.input_tokens
+                    if chunk.output_tokens:
+                        self._output_tokens = chunk.output_tokens
+                    if chunk.finish_reason:
+                        self._finish_reason = chunk.finish_reason
+
+                yield chunk
+
+        except AgentHubError as e:
+            logger.error("streaming_error", session_id=self._session_id, error=str(e))
+            yield StreamChunk(type="error", error=str(e))
+
+    async def cancel(self) -> dict[str, Any]:
+        """Cancel active stream.
+
+        Returns:
+            Cancellation result with token counts
+        """
+        if not self._session_id:
+            return {"cancelled": False, "error": "No active session"}
+
+        self._cancel_requested = True
+
+        # Also call REST cancel endpoint for server-side cleanup
+        try:
+            client = await self._get_client()
+            result: dict[str, Any] = await client.cancel_stream(self._session_id)
+            logger.info(
+                "streaming_cancelled_via_api",
+                session_id=self._session_id,
+                result=result,
+            )
+            return result
+        except Exception as e:
+            logger.warning(
+                "streaming_cancel_api_failed",
+                session_id=self._session_id,
+                error=str(e),
+            )
+            return {
+                "cancelled": True,
+                "error": str(e),
+                "input_tokens": self._input_tokens,
+                "output_tokens": self._output_tokens,
+            }
+
+    def get_result(self) -> StreamingResult:
+        """Get streaming result after completion.
+
+        Returns:
+            StreamingResult with accumulated content and metadata
+        """
+        return StreamingResult(
+            content=self._accumulated_content,
+            session_id=self._session_id or "",
+            input_tokens=self._input_tokens,
+            output_tokens=self._output_tokens,
+            finish_reason=self._finish_reason,
+            cancelled=self._cancel_requested,
+        )
+
+    async def close(self) -> None:
+        """Close the client connection."""
+        if self._client:
+            await self._client.close()
+            self._client = None
+        self._connected = False
+
+    async def __aenter__(self) -> AgentHubStreamingClient:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close()
+
+
 __all__ = [
     "AgentHubLLMClient",
+    "AgentHubStreamingClient",
     "AgentType",
     "DualProviderClient",
     "LLMClient",
     "LLMResponse",
+    "StreamingResult",
     "get_agent",
 ]

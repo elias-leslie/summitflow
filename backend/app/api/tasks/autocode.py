@@ -369,3 +369,118 @@ def abort_execution(
         "status": "aborted",
         "message": "Execution aborted successfully",
     }
+
+
+# =============================================================================
+# Manual Execution Endpoint (Orchestrator-based)
+# =============================================================================
+
+
+class ExecuteRequest(BaseModel):
+    """Request to start orchestrator execution."""
+
+    worker_id: str | None = Field(default=None, description="Optional worker ID for claiming")
+    lock_duration_minutes: int = Field(default=60, description="Lock duration in minutes")
+
+
+class ExecuteResponse(BaseModel):
+    """Response from execute API."""
+
+    execution_id: str = Field(description="Celery task ID for tracking")
+    task_id: str = Field(description="Task being executed")
+    status: str = Field(description="queued, running, completed, failed")
+    message: str | None = Field(default=None, description="Status message")
+
+
+# Valid statuses for execution
+EXECUTABLE_STATUSES = {"pending", "planning", "paused", "failed"}
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/execute")
+def execute_task(
+    project_id: str,
+    task_id: str,
+    request: ExecuteRequest | None = None,
+) -> ExecuteResponse:
+    """Start autonomous orchestrator execution for a task.
+
+    Queues the task for execution via Celery with the Sonnet coordinator pattern.
+    Unlike /autocode which runs synchronously on a single subtask, this executes
+    all subtasks asynchronously with WebSocket streaming.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to execute
+        request: Optional execution configuration
+
+    Returns:
+        ExecuteResponse with execution_id for tracking
+
+    Raises:
+        HTTPException(404): Task not found or not in project
+        HTTPException(400): Task not in executable status or has no subtasks
+    """
+    from ...tasks.orchestrator_runner import execute_orchestrator_task
+
+    # 1. Verify task exists and belongs to project
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
+        )
+
+    # 2. Validate task status
+    status = task.get("status", "pending")
+    if status not in EXECUTABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task {task_id} is in status '{status}'. Only tasks in {EXECUTABLE_STATUSES} can be executed.",
+        )
+
+    # 3. Validate task has subtasks
+    subtasks = get_subtasks_for_task(task_id)
+    if not subtasks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task {task_id} has no subtasks. Run /plan_it first.",
+        )
+
+    # 4. Parse request or use defaults
+    worker_id = request.worker_id if request else None
+    lock_duration = request.lock_duration_minutes if request else 60
+
+    # 5. Queue execution via Celery
+    execution_id = f"exec-{uuid.uuid4().hex[:12]}"
+
+    logger.info(
+        "task_execution_queued",
+        task_id=task_id,
+        execution_id=execution_id,
+        project_id=project_id,
+    )
+
+    # Queue async task
+    celery_task = execute_orchestrator_task.delay(
+        project_id=project_id,
+        task_id=task_id,
+        worker_id=worker_id,
+        lock_duration_minutes=lock_duration,
+    )
+
+    # Store mapping of our execution_id to Celery task_id
+    # (In memory for MVP - migrate to DB later)
+    _executions[execution_id] = ExecutionState(
+        execution_id=execution_id,
+        task_id=task_id,
+        current_subtask_id="",
+        status="queued",
+    )
+
+    return ExecuteResponse(
+        execution_id=celery_task.id,  # Use Celery task ID for tracking
+        task_id=task_id,
+        status="queued",
+        message=f"Task queued for execution. Track via WebSocket /ws/execution/{task_id}",
+    )

@@ -246,6 +246,40 @@ export async function updateTaskStatus(
 }
 
 // ============================================================================
+// Autonomous Execution
+// ============================================================================
+
+export interface ExecuteTaskOptions {
+  model?: string;
+}
+
+export interface ExecuteTaskResponse {
+  execution_id: string;
+  task_id: string;
+  status: string;
+}
+
+/**
+ * Start autonomous orchestrator execution for a task.
+ * Queues the task for execution via Celery with streaming to WebSocket.
+ */
+export async function executeTask(
+  projectId: string,
+  taskId: string,
+  options?: ExecuteTaskOptions,
+): Promise<ExecuteTaskResponse> {
+  return fetchWithErrorHandling(
+    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/execute`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options || {}),
+      errorMessage: "Failed to start task execution",
+    },
+  );
+}
+
+// ============================================================================
 // Batch Task Creation
 // ============================================================================
 

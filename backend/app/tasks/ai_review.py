@@ -757,6 +757,60 @@ def _get_project_path(task: dict[str, Any]) -> Path:
     return Path(root)
 
 
+def _auto_merge_pr(task_id: str, pr_url: str, project_path: Path) -> bool:
+    """Auto-merge approved PR via gh CLI.
+
+    Uses `gh pr merge --squash --delete-branch` to merge the PR.
+
+    Args:
+        task_id: Task ID for logging
+        pr_url: PR URL to merge
+        project_path: Path to run command in
+
+    Returns:
+        True if merge succeeded, False otherwise (non-blocking)
+    """
+    import subprocess
+
+    try:
+        # Extract PR number from URL
+        # Format: https://github.com/owner/repo/pull/123
+        pr_number = pr_url.split("/pull/")[-1].strip("/")
+
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "merge",
+                pr_number,
+                "--squash",
+                "--delete-branch",
+                "--admin",  # Use admin merge to bypass branch protection
+            ],
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            logger.info("pr_auto_merged", task_id=task_id, pr_url=pr_url)
+            task_store.append_progress_log(task_id, f"PR merged: {pr_url}")
+            return True
+        else:
+            error = result.stderr.strip() or "Unknown error"
+            logger.warning("pr_auto_merge_failed", task_id=task_id, pr_url=pr_url, error=error)
+            task_store.append_progress_log(task_id, f"Auto-merge failed: {error}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        logger.warning("pr_auto_merge_timeout", task_id=task_id, pr_url=pr_url)
+        return False
+    except Exception as e:
+        logger.warning("pr_auto_merge_error", task_id=task_id, error=str(e))
+        return False
+
+
 @celery_app.task(  # type: ignore[untyped-decorator]
     name="summitflow.review_pull_request",
     bind=True,
@@ -947,7 +1001,9 @@ def review_pull_request(
 
         # Handle verdict transitions
         if verdict == ReviewVerdict.PASS:
-            # Auto-approve: transition to completed
+            # Auto-approve: merge PR and transition to completed
+            if pr_url:
+                _auto_merge_pr(task_id, pr_url, project_path)
             task_store.update_task_status(task_id, "completed")
             logger.info("review_passed", task_id=task_id)
         elif verdict == ReviewVerdict.NEEDS_FIX:

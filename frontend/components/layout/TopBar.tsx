@@ -13,12 +13,18 @@ import {
   Bug,
   Package,
   CheckSquare,
+  Zap,
 } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NotificationBell } from "@/components/notifications";
 import { useSelectedProject } from "./ProjectSelector";
-import { fetchTasks, type Task, type TaskType } from "@/lib/api";
+import {
+  fetchTasks,
+  getAutonomousSettings,
+  type Task,
+  type TaskType,
+} from "@/lib/api";
 
 const SUMMITFLOW_PROJECT_ID = "summitflow";
 
@@ -54,6 +60,49 @@ export function TopBar() {
     enabled: !!selectedProjectId && searchValue.length > 0,
     staleTime: 30000,
   });
+
+  // Fetch autonomous settings for indicator
+  const { data: autonomousSettings } = useQuery({
+    queryKey: ["autonomous-settings", selectedProjectId],
+    queryFn: () => getAutonomousSettings(selectedProjectId!),
+    enabled: !!selectedProjectId,
+    staleTime: 60000, // Check every minute
+    refetchInterval: 60000,
+  });
+
+  // Calculate if currently in execution window
+  const isInTimeWindow = useMemo(() => {
+    if (!autonomousSettings) return false;
+    const now = new Date();
+    const currentHour = now.getHours();
+    const { start_hour, end_hour } = autonomousSettings;
+    // Handle 24/7 case
+    if (start_hour === 0 && end_hour === 24) return true;
+    // Handle same-day window
+    if (start_hour < end_hour) {
+      return currentHour >= start_hour && currentHour < end_hour;
+    }
+    // Handle overnight window
+    return currentHour >= start_hour || currentHour < end_hour;
+  }, [autonomousSettings]);
+
+  // Determine auto-exec status label
+  const autoExecStatus = useMemo(() => {
+    if (!autonomousSettings) return null;
+    if (!autonomousSettings.enabled)
+      return { label: "Off", color: "text-slate-500", bg: "bg-slate-800" };
+    if (!isInTimeWindow)
+      return {
+        label: "Paused",
+        color: "text-amber-400",
+        bg: "bg-amber-500/10",
+      };
+    return {
+      label: "Active",
+      color: "text-phosphor-400",
+      bg: "bg-phosphor-500/10",
+    };
+  }, [autonomousSettings, isInTimeWindow]);
 
   // Filter tasks based on search value
   const searchResults = useMemo(() => {
@@ -321,6 +370,19 @@ export function TopBar() {
             <Terminal className="w-5 h-5" />
             <ExternalLink className="w-3 h-3" />
           </a>
+
+          {/* Auto-exec Status Indicator */}
+          {autoExecStatus && selectedProjectId && (
+            <Link
+              href={`/projects/${selectedProjectId}/settings`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs ${autoExecStatus.bg} ${autoExecStatus.color} hover:opacity-80 transition-opacity`}
+              title="Autonomous execution status - click to configure"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Auto-exec:</span>
+              <span className="font-medium">{autoExecStatus.label}</span>
+            </Link>
+          )}
 
           {/* Divider */}
           <div className="w-px h-6 bg-slate-700 mx-1" />
