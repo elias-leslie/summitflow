@@ -216,6 +216,8 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         subtask_summary=subtask_summary_obj,
         # Subtasks with steps (from batch create)
         subtasks=subtasks_list,
+        # Autonomous execution flag
+        autonomous=task.get("autonomous", False),
     )
 
 

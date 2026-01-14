@@ -299,6 +299,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "constraints",
         "done_when",
         "complexity",
+        "autonomous",
     }
 
     invalid = set(fields.keys()) - allowed_fields

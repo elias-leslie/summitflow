@@ -121,6 +121,26 @@ function formatCost(cost?: number): string | null {
 }
 
 // ============================================================================
+// Extract model from progress log
+// ============================================================================
+
+function extractModelFromLog(progressLog?: string | null): string | undefined {
+  if (!progressLog) return undefined;
+  // Look for model mentions in progress log
+  const modelPatterns = [
+    /with\s+(claude-[a-z0-9-]+)/i,
+    /with\s+(gemini-[a-z0-9-]+)/i,
+    /model[:\s]+([a-z]+-[a-z0-9-]+)/i,
+    /(claude-sonnet|claude-opus|claude-haiku|gemini-flash|gemini-pro)/i,
+  ];
+  for (const pattern of modelPatterns) {
+    const match = progressLog.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
+// ============================================================================
 // Execution Badges Component
 // ============================================================================
 
@@ -132,10 +152,9 @@ export function ExecutionBadges({
   const statusConfig = statusIcons[task.status] || statusIcons.pending;
 
   // Extract execution metadata from task (if available)
-  // This would come from task.execution_metadata or similar field
+  // Model extracted from progress_log since it's not stored in a dedicated field
   const metadata: ExecutionMetadata = {
-    // These would be populated from actual task data
-    model: undefined,
+    model: extractModelFromLog(task.progress_log),
     retryCount: task.total_sessions > 1 ? task.total_sessions : undefined,
     cost: task.total_tokens_used ? task.total_tokens_used * 0.00001 : undefined, // Rough estimate
   };

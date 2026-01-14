@@ -17,13 +17,13 @@ import {
   ExternalLink,
   Square,
   Clock,
+  Bot,
 } from "lucide-react";
 
 import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { PhaseProgress } from "@/components/tasks/PhaseProgress";
 import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
 import { SubtasksSection } from "@/components/tasks/SubtasksSection";
 import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
@@ -40,6 +40,7 @@ import {
   type TaskType,
 } from "@/lib/api/tasks";
 import { ExecutionTimeline } from "@/components/tasks/ExecutionTimeline";
+import { ExecutionBadges } from "@/components/tasks/ExecutionBadges";
 
 // ============================================================================
 // Types
@@ -197,6 +198,7 @@ export function TaskModal({
   const [isExecuting, setIsExecuting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false);
 
   // Fetch task when modal opens
   useEffect(() => {
@@ -367,6 +369,23 @@ export function TaskModal({
     [task, onTaskUpdate],
   );
 
+  // Toggle autonomous flag
+  const handleToggleAutonomous = useCallback(async () => {
+    if (!task) return;
+    setIsTogglingAutonomous(true);
+    try {
+      const updated = await updateTask(projectId, task.id, {
+        autonomous: !task.autonomous,
+      });
+      setTask(updated);
+      onTaskUpdate?.(updated);
+    } catch (err) {
+      console.error("Failed to toggle autonomous:", err);
+    } finally {
+      setIsTogglingAutonomous(false);
+    }
+  }, [task, projectId, onTaskUpdate]);
+
   // Don't render if no task ID
   if (!taskId) return null;
 
@@ -448,6 +467,8 @@ export function TaskModal({
                   {status.icon}
                   {status.label}
                 </span>
+                {/* Execution metadata badges (model, cost, retries) */}
+                <ExecutionBadges task={task} />
               </div>
               {isEditing ? (
                 <Input
@@ -565,6 +586,29 @@ export function TaskModal({
                     AI Reviewing...
                   </Button>
                 )}
+                {/* Autonomous Toggle */}
+                <Button
+                  variant="outline"
+                  className={`gap-2 ${
+                    task.autonomous
+                      ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+                      : "border-slate-600 text-slate-400"
+                  }`}
+                  onClick={handleToggleAutonomous}
+                  disabled={isTogglingAutonomous || isRunning}
+                  title={
+                    task.autonomous
+                      ? "Autonomous execution enabled - task will be picked up by auto-exec when enabled"
+                      : "Click to enable autonomous execution for this task"
+                  }
+                >
+                  {isTogglingAutonomous ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bot className="h-4 w-4" />
+                  )}
+                  {task.autonomous ? "Autonomous" : "Manual"}
+                </Button>
                 <div className="ml-auto flex items-center gap-2">
                   {isEditing ? (
                     <>
@@ -671,9 +715,6 @@ export function TaskModal({
                   </div>
                 </div>
               )}
-
-              {/* Phase Progress */}
-              <PhaseProgress currentPhase={task.current_phase} />
 
               {/* Objective Section */}
               <ObjectiveSection

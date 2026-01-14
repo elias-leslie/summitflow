@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
 import { Loader2 } from "lucide-react";
-import { PhaseProgress } from "./PhaseProgress";
 import { ObjectiveSection } from "./ObjectiveSection";
 import { SubtasksSection } from "./SubtasksSection";
 import { DescriptionSection } from "./DescriptionSection";
@@ -71,22 +70,29 @@ export function TaskExpandedView({
         console.error("Failed to update objective:", err);
       }
     },
-    [projectId, task, onTaskUpdated]
+    [projectId, task, onTaskUpdated],
   );
 
   const handleSubtaskToggle = useCallback(
     async (subtaskId: string, passes: boolean) => {
       try {
-        const updated = await updateSubtask(projectId, task.id, subtaskId, passes);
+        const updated = await updateSubtask(
+          projectId,
+          task.id,
+          subtaskId,
+          passes,
+        );
         setSubtasks((prev) =>
-          prev.map((s) => (s.subtask_id === subtaskId ? { ...s, ...updated } : s))
+          prev.map((s) =>
+            s.subtask_id === subtaskId ? { ...s, ...updated } : s,
+          ),
         );
       } catch (err) {
         console.error("Failed to update subtask:", err);
         throw err; // Re-throw so SubtasksSection can handle loading state
       }
     },
-    [projectId, task.id]
+    [projectId, task.id],
   );
 
   const handleAction = useCallback(
@@ -126,7 +132,7 @@ export function TaskExpandedView({
         console.error(`Failed to ${action} task:`, err);
       }
     },
-    [projectId, task.id, onTaskUpdated, onTaskDeleted]
+    [projectId, task.id, onTaskUpdated, onTaskDeleted],
   );
 
   return (
@@ -139,9 +145,6 @@ export function TaskExpandedView({
     >
       {/* Header Row */}
       <div className="flex items-center justify-between flex-wrap gap-4">
-        {/* Phase Progress */}
-        <PhaseProgress currentPhase={task.current_phase} />
-
         {/* Meta Info */}
         <div className="flex items-center gap-4">
           {/* Enrichment Status */}
@@ -150,7 +153,9 @@ export function TaskExpandedView({
           {/* Criteria Progress */}
           {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-2xs text-slate-500 uppercase">Criteria</span>
+              <span className="text-2xs text-slate-500 uppercase">
+                Criteria
+              </span>
               <CriteriaProgress criteria={task.acceptance_criteria} />
             </div>
           )}

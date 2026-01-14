@@ -17,12 +17,21 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody, SheetClose } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetBody,
+  SheetClose,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckpointViewer, type Checkpoint } from "@/components/tasks/CheckpointViewer";
-import { PhaseProgress } from "@/components/tasks/PhaseProgress";
+import {
+  CheckpointViewer,
+  type Checkpoint,
+} from "@/components/tasks/CheckpointViewer";
 import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
 import { SubtasksSection } from "@/components/tasks/SubtasksSection";
 import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
@@ -44,19 +53,45 @@ interface TaskDetailDrawerProps {
 // Priority Colors
 // ============================================================================
 
-const priorityColors: Record<number, { bg: string; text: string; border: string }> = {
-  0: { bg: "bg-rose-500/30", text: "text-rose-300", border: "border-rose-500/40" },
-  1: { bg: "bg-orange-500/20", text: "text-orange-400", border: "border-orange-500/30" },
-  2: { bg: "bg-amber-500/20", text: "text-amber-400", border: "border-amber-500/30" },
-  3: { bg: "bg-blue-500/20", text: "text-blue-400", border: "border-blue-500/30" },
-  4: { bg: "bg-slate-500/20", text: "text-slate-400", border: "border-slate-500/30" },
+const priorityColors: Record<
+  number,
+  { bg: string; text: string; border: string }
+> = {
+  0: {
+    bg: "bg-rose-500/30",
+    text: "text-rose-300",
+    border: "border-rose-500/40",
+  },
+  1: {
+    bg: "bg-orange-500/20",
+    text: "text-orange-400",
+    border: "border-orange-500/30",
+  },
+  2: {
+    bg: "bg-amber-500/20",
+    text: "text-amber-400",
+    border: "border-amber-500/30",
+  },
+  3: {
+    bg: "bg-blue-500/20",
+    text: "text-blue-400",
+    border: "border-blue-500/30",
+  },
+  4: {
+    bg: "bg-slate-500/20",
+    text: "text-slate-400",
+    border: "border-slate-500/30",
+  },
 };
 
 // ============================================================================
 // Task Type Configuration
 // ============================================================================
 
-const taskTypeConfig: Record<TaskType, { icon: React.ReactNode; label: string; className: string }> = {
+const taskTypeConfig: Record<
+  TaskType,
+  { icon: React.ReactNode; label: string; className: string }
+> = {
   feature: {
     icon: <Package className="h-4 w-4" />,
     label: "Feature",
@@ -119,8 +154,11 @@ export function TaskDetailDrawer({
   // Capability context
   const capability = task.capability;
   const hasCriteria = capability && capability.criteria_total > 0;
-  const allPassed = hasCriteria && capability.criteria_passed === capability.criteria_total;
-  const progressPct = hasCriteria ? (capability.criteria_passed / capability.criteria_total) * 100 : 0;
+  const allPassed =
+    hasCriteria && capability.criteria_passed === capability.criteria_total;
+  const progressPct = hasCriteria
+    ? (capability.criteria_passed / capability.criteria_total) * 100
+    : 0;
 
   // Status checks
   const isRunning = task.status === "running";
@@ -162,10 +200,14 @@ export function TaskDetailDrawer({
           <SheetClose onClose={() => onOpenChange(false)} />
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="mono text-sm text-slate-500">{task.id}</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${colors.bg} ${colors.text} ${colors.border}`}>
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${colors.bg} ${colors.text} ${colors.border}`}
+            >
               P{task.priority}
             </span>
-            <span className={`text-xs px-1.5 py-0.5 rounded border flex items-center gap-1 ${typeConfig.className}`}>
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded border flex items-center gap-1 ${typeConfig.className}`}
+            >
               {typeConfig.icon}
               {typeConfig.label}
             </span>
@@ -250,7 +292,9 @@ export function TaskDetailDrawer({
 
           {/* Description */}
           <div>
-            <h3 className="text-sm font-medium text-slate-400 mb-2">Description</h3>
+            <h3 className="text-sm font-medium text-slate-400 mb-2">
+              Description
+            </h3>
             {isEditing ? (
               <Textarea
                 value={editDescription}
@@ -260,7 +304,9 @@ export function TaskDetailDrawer({
               />
             ) : (
               <p className="text-sm text-slate-300">
-                {task.description || <span className="italic text-slate-500">No description</span>}
+                {task.description || (
+                  <span className="italic text-slate-500">No description</span>
+                )}
               </p>
             )}
           </div>
@@ -285,8 +331,12 @@ export function TaskDetailDrawer({
               <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <span className="mono text-xs text-slate-500">{capability.capability_id}</span>
-                    <h4 className="text-sm font-medium text-white">{capability.name}</h4>
+                    <span className="mono text-xs text-slate-500">
+                      {capability.capability_id}
+                    </span>
+                    <h4 className="text-sm font-medium text-white">
+                      {capability.name}
+                    </h4>
                   </div>
                 </div>
 
@@ -295,7 +345,9 @@ export function TaskDetailDrawer({
                   <div className="mt-3">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs text-slate-500">Criteria</span>
-                      <span className={`text-xs mono font-medium ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}>
+                      <span
+                        className={`text-xs mono font-medium ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}
+                      >
                         {capability.criteria_passed}/{capability.criteria_total}
                       </span>
                     </div>
@@ -311,9 +363,6 @@ export function TaskDetailDrawer({
             </div>
           )}
 
-          {/* Phase Progress */}
-          <PhaseProgress currentPhase={task.current_phase} />
-
           {/* Objective Section */}
           <ObjectiveSection
             objective={task.objective}
@@ -327,12 +376,19 @@ export function TaskDetailDrawer({
           {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-slate-400">Acceptance Criteria</h3>
-                <CriteriaProgress criteria={task.acceptance_criteria} maxVisible={10} />
+                <h3 className="text-sm font-medium text-slate-400">
+                  Acceptance Criteria
+                </h3>
+                <CriteriaProgress
+                  criteria={task.acceptance_criteria}
+                  maxVisible={10}
+                />
               </div>
               {/* Source indicator */}
               <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                {capability ? `From: ${capability.capability_id}` : "Task-specific"}
+                {capability
+                  ? `From: ${capability.capability_id}`
+                  : "Task-specific"}
               </span>
             </div>
           )}
@@ -350,7 +406,9 @@ export function TaskDetailDrawer({
               onTogglePass={async (subtaskId, passes) => {
                 // Update local state optimistically
                 setSubtasks((prev) =>
-                  prev.map((s) => s.subtask_id === subtaskId ? { ...s, passes } : s)
+                  prev.map((s) =>
+                    s.subtask_id === subtaskId ? { ...s, passes } : s,
+                  ),
                 );
                 // Would call API here
               }}
@@ -360,7 +418,9 @@ export function TaskDetailDrawer({
           {/* Labels */}
           {task.labels && task.labels.length > 0 && (
             <div>
-              <h3 className="text-sm font-medium text-slate-400 mb-2">Labels</h3>
+              <h3 className="text-sm font-medium text-slate-400 mb-2">
+                Labels
+              </h3>
               <div className="flex flex-wrap gap-2">
                 {task.labels.map((label) => (
                   <span
@@ -380,14 +440,19 @@ export function TaskDetailDrawer({
               checkpoint={checkpoint}
               onResume={(prompt) => {
                 // Could navigate to a resume page or open a dialog
-                console.log("Resume prompt copied:", prompt.substring(0, 100) + "...");
+                console.log(
+                  "Resume prompt copied:",
+                  prompt.substring(0, 100) + "...",
+                );
               }}
             />
           )}
 
           {/* Metadata */}
           <div className="text-xs text-slate-500 space-y-1 pt-4 border-t border-slate-800">
-            <p>Status: <span className="text-slate-300">{task.status}</span></p>
+            <p>
+              Status: <span className="text-slate-300">{task.status}</span>
+            </p>
             {task.created_at && (
               <p>Created: {new Date(task.created_at).toLocaleDateString()}</p>
             )}
@@ -395,7 +460,9 @@ export function TaskDetailDrawer({
               <p>Started: {new Date(task.started_at).toLocaleDateString()}</p>
             )}
             {task.completed_at && (
-              <p>Completed: {new Date(task.completed_at).toLocaleDateString()}</p>
+              <p>
+                Completed: {new Date(task.completed_at).toLocaleDateString()}
+              </p>
             )}
           </div>
         </SheetBody>

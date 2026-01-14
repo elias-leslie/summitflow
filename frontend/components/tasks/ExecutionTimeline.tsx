@@ -246,6 +246,8 @@ export function ExecutionTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSequenceRef = useRef<number>(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptRef = useRef<number>(0);
+  const maxReconnectDelay = 30000; // Cap at 30 seconds
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -266,6 +268,7 @@ export function ExecutionTimeline({
       ws.onopen = () => {
         setIsConnected(true);
         setError(null);
+        reconnectAttemptRef.current = 0; // Reset on successful connection
       };
 
       ws.onmessage = (event) => {
@@ -290,12 +293,16 @@ export function ExecutionTimeline({
 
       ws.onclose = () => {
         setIsConnected(false);
-        // Auto-reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (autoConnect) {
-            connect();
-          }
-        }, 3000);
+        // Auto-reconnect with exponential backoff
+        if (autoConnect) {
+          const attempt = reconnectAttemptRef.current;
+          const delay = Math.min(
+            1000 * Math.pow(2, attempt),
+            maxReconnectDelay,
+          );
+          reconnectAttemptRef.current = attempt + 1;
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
+        }
       };
 
       wsRef.current = ws;

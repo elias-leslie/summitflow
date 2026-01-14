@@ -90,6 +90,8 @@ export interface Task {
   enrichment_status?: EnrichmentStatus | null;
   enriched_by?: string | null;
   enriched_at?: string | null;
+  // Autonomous execution flag
+  autonomous?: boolean;
 }
 
 export interface TaskListResponse {
@@ -189,6 +191,7 @@ export async function updateTask(
     labels?: string[];
     task_type?: TaskType;
     parent_task_id?: string;
+    autonomous?: boolean;
   },
 ): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {

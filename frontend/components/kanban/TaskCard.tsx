@@ -195,6 +195,7 @@ export function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={`task-card-${task.id}`}
       className="group relative rounded-lg border border-slate-700 bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-colors cursor-pointer"
       onClick={onClick}
     >

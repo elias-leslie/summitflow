@@ -351,6 +351,8 @@ class TaskResponse(BaseModel):
     blocked_by_incomplete: bool | None = None
     # Subtask summary (when include=subtasks or from list_ready_tasks)
     subtask_summary: SubtaskSummary | None = None
+    # Autonomous execution flag
+    autonomous: bool = False
 
 
 class TaskListResponse(BaseModel):
