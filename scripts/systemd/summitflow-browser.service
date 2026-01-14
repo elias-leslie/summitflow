@@ -1,0 +1,19 @@
+[Unit]
+Description=SummitFlow Browser Server (Playwright pre-warmed)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/summitflow/services/browser
+Environment="PATH=%h/summitflow/services/browser/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=%h"
+ExecStart=/usr/bin/node %h/summitflow/services/browser/server.js
+ExecStop=/usr/bin/node %h/summitflow/services/browser/server.js --stop
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-browser
+
+[Install]
+WantedBy=default.target
