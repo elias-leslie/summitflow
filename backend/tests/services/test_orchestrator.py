@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.constants import GEMINI_FLASH, GEMINI_PRO
 from app.services.orchestrator import (
     ExecutionState,
@@ -272,6 +273,72 @@ class TestInterruptHandling:
         assert result.success is False
         assert result.error == "Interrupted"
         assert result.iterations == 0
+
+
+class TestDispatchToFlash:
+    """Tests for _dispatch_to_flash method using Agent Hub client."""
+
+    @pytest.fixture
+    def orchestrator(self, tmp_path: Path) -> OrchestratorService:
+        """Create an OrchestratorService for testing."""
+        with patch("app.services.orchestrator.get_project_root_path", return_value=str(tmp_path)):
+            orch = OrchestratorService("test-project", repo_path=tmp_path)
+            orch._current_worktree_path = tmp_path / "worktree"
+            return orch
+
+    @pytest.mark.asyncio
+    async def test_dispatch_calls_agent_hub_run_agent(self, orchestrator: OrchestratorService):
+        """Test that _dispatch_to_flash calls AsyncAgentHubClient.run_agent with correct params."""
+        mock_result = MagicMock()
+        mock_result.status = "success"
+        mock_result.content = "DONE: Task completed"
+        mock_result.progress_log = []
+        mock_result.input_tokens = 100
+        mock_result.output_tokens = 50
+        mock_result.error = None
+
+        mock_client = AsyncMock()
+        mock_client.run_agent = AsyncMock(return_value=mock_result)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock()
+
+        with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
+            success, error = await orchestrator._dispatch_to_flash(
+                subtask={"id": "1.1", "description": "Test subtask", "steps": ["Step 1"]},
+                model=GEMINI_FLASH,
+            )
+
+            assert success is True
+            assert error is None
+            mock_client.run_agent.assert_called_once()
+
+            # Verify working_dir was passed
+            call_kwargs = mock_client.run_agent.call_args.kwargs
+            assert "working_dir" in call_kwargs
+            assert call_kwargs["working_dir"] == str(orchestrator.effective_repo_path)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_handles_agent_error(self, orchestrator: OrchestratorService):
+        """Test that _dispatch_to_flash handles agent errors correctly."""
+        mock_result = MagicMock()
+        mock_result.status = "error"
+        mock_result.content = ""
+        mock_result.progress_log = []
+        mock_result.error = "Agent failed"
+
+        mock_client = AsyncMock()
+        mock_client.run_agent = AsyncMock(return_value=mock_result)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock()
+
+        with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
+            success, error = await orchestrator._dispatch_to_flash(
+                subtask={"id": "1.1", "description": "Test"},
+                model=GEMINI_FLASH,
+            )
+
+            assert success is False
+            assert error == "Agent failed"
 
 
 class TestWebSocketIntegration:

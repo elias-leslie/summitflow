@@ -181,6 +181,7 @@ class TestTaskTypeFiltering:
                 "status": "pending",
                 "tier": 2,
                 "task_type": "refactor",
+                "autonomous": True,  # Required for pickup
             }
         ]
         mock_exclusion.return_value = None
@@ -190,6 +191,43 @@ class TestTaskTypeFiltering:
         assert result["status"] == "dry_run"
         assert result["task_id"] == "task-123"
         assert result["task_type"] == "refactor"
+
+    @patch("app.storage.agent_configs.is_autonomous_enabled")
+    @patch("app.storage.agent_configs.is_within_autonomous_hours")
+    @patch("app.storage.agent_configs.get_autonomous_schedule")
+    @patch("app.tasks.autonomous.execution.task_store")
+    def test_task_without_autonomous_flag_is_filtered(
+        self,
+        mock_store: MagicMock,
+        mock_schedule: MagicMock,
+        mock_within_hours: MagicMock,
+        mock_enabled: MagicMock,
+    ):
+        """Test that tasks without autonomous=True are not picked up."""
+        mock_enabled.return_value = True
+        mock_within_hours.return_value = True
+        mock_schedule.return_value = {
+            "enabled": True,
+            "start_hour": 0,
+            "end_hour": 24,
+            "max_concurrent": 1,
+        }
+        mock_store.count_running_tasks.return_value = 0
+        mock_store.list_ready_tasks.return_value = [
+            {
+                "id": "task-123",
+                "title": "Refactor: clean up module",
+                "status": "pending",
+                "tier": 2,
+                "task_type": "refactor",
+                "autonomous": False,  # Not enabled for autonomous
+            }
+        ]
+
+        result = autonomous_work_pickup("test-project")
+
+        # Should be filtered out even though task_type is valid
+        assert result["status"] == "no_work"
 
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")

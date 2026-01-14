@@ -590,12 +590,17 @@ class OrchestratorService:
                     max_tokens=64000,
                     max_turns=20,
                     enable_code_execution=(provider == "claude"),  # Only for Claude
+                    working_dir=str(self.effective_repo_path),
                     timeout_seconds=300.0,
                 )
 
                 # Log progress
                 for progress in result.progress_log:
-                    if progress.status == "tool_use":
+                    if progress.status == "running":
+                        await self._send_log(
+                            "info", f"Turn {progress.turn}: {progress.message}", source="flash"
+                        )
+                    elif progress.status == "tool_use":
                         tool_names = [tc.get("name", "?") for tc in progress.tool_calls]
                         await self._send_log(
                             "info", f"Tool calls: {', '.join(tool_names)}", source="flash"

@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from app.api.ws_execution import (
     ConnectionManager,
     Message,
@@ -223,3 +224,36 @@ class TestWebSocketEndpoint:
         # Check routes in app
         routes = [r.path for r in app.routes]
         assert "/ws/execution/{task_id}" in routes
+
+    @pytest.mark.asyncio
+    async def test_websocket_validates_task_id(self):
+        """Test that WebSocket sends error and closes for non-existent task."""
+        from starlette.testclient import TestClient
+
+        with patch("app.storage.tasks.get_task") as mock_get_task:
+            mock_get_task.return_value = None  # Task not found
+
+            client = TestClient(app)
+            with client.websocket_connect("/ws/execution/nonexistent-task") as websocket:
+                # Should receive error message before close
+                data = websocket.receive_json()
+                assert data["type"] == "error"
+                assert "not found" in data["data"]["error"].lower()
+                assert data["data"]["recoverable"] is False
+
+            mock_get_task.assert_called_once_with("nonexistent-task")
+
+    @pytest.mark.asyncio
+    async def test_websocket_accepts_valid_task(self):
+        """Test that WebSocket accepts connection for valid task."""
+        from starlette.testclient import TestClient
+
+        with patch("app.storage.tasks.get_task") as mock_get_task:
+            mock_get_task.return_value = {"id": "task-123", "title": "Test"}
+
+            client = TestClient(app)
+            with client.websocket_connect("/ws/execution/task-123") as websocket:
+                # Should receive connected message
+                data = websocket.receive_json()
+                assert data["type"] == "connected"
+                assert data["task_id"] == "task-123"

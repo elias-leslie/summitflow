@@ -208,6 +208,22 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
             "sequence": 123
         }
     """
+    from ..storage import tasks as task_store
+
+    # Validate task_id exists before accepting connection
+    task = task_store.get_task(task_id)
+    if not task:
+        await websocket.accept()
+        await websocket.send_json(
+            Message(
+                type=MessageType.ERROR,
+                task_id=task_id,
+                data={"error": f"Task not found: {task_id}", "recoverable": False},
+            ).to_dict()
+        )
+        await websocket.close(code=1008, reason=f"Task not found: {task_id}")
+        return
+
     # Get replay sequence from query params
     from_sequence = 0
     if "from_sequence" in websocket.query_params:

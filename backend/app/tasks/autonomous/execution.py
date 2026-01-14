@@ -101,7 +101,8 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 if task and task.get("status") in ("pending", "paused", "failed"):
                     tier = task.get("tier") or 2
                     task_type = task.get("task_type", "task")
-                    if tier <= 3 and task_type in AUTONOMOUS_TASK_TYPES:
+                    # Require autonomous=true (opt-in for safety)
+                    if tier <= 3 and task_type in AUTONOMOUS_TASK_TYPES and task.get("autonomous"):
                         eligible_tasks.append(task)
             if not eligible_tasks:
                 return {
@@ -112,13 +113,14 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
             # Normal mode: Get ready tasks with tier <= 3
             ready_tasks = task_store.list_ready_tasks(project_id, limit=50)
 
-            # Filter by tier, status, and task type
+            # Filter by tier, status, task type, and autonomous flag
             eligible_tasks = [
                 t
                 for t in ready_tasks
                 if (t.get("tier") or 2) <= 3
                 and t.get("status") in ("pending", "paused", "failed")
                 and t.get("task_type", "task") in AUTONOMOUS_TASK_TYPES
+                and t.get("autonomous")  # Require opt-in for safety
             ]
 
             if not eligible_tasks:

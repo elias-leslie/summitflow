@@ -174,6 +174,9 @@ def create_task(
         task_id = _generate_task_id()
     if labels is None:
         labels = []
+    # Auto-enable autonomous for mechanical task types (opt-in by default)
+    if not autonomous and task_type in ("refactor", "debt", "regression"):
+        autonomous = True
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
