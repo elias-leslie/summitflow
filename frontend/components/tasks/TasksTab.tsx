@@ -185,16 +185,42 @@ function TaskRow({
   const typeStyle = typeConfig[taskType] || typeConfig["task"];
   const statusStyle = statusConfig[task.status] || statusConfig["pending"];
 
-  // Phase badge config
-  const phaseConfig: Record<string, { label: string; className: string }> = {
-    plan: { label: "Plan", className: "bg-slate-600/50 text-slate-300" },
-    implement: { label: "Impl", className: "bg-blue-600/50 text-blue-300" },
-    test: { label: "Test", className: "bg-amber-600/50 text-amber-300" },
-    verify: { label: "Verify", className: "bg-purple-600/50 text-purple-300" },
-    complete: { label: "Done", className: "bg-green-600/50 text-green-300" },
+  // Phase badge config - maps status to kanban column names (DRY with TaskKanbanBoard)
+  const statusToKanbanLabel: Record<
+    string,
+    { label: string; className: string }
+  > = {
+    pending: { label: "Planning", className: "bg-slate-600/50 text-slate-300" },
+    running: {
+      label: "In Progress",
+      className: "bg-blue-600/50 text-blue-300",
+    },
+    paused: {
+      label: "In Progress",
+      className: "bg-amber-600/50 text-amber-300",
+    },
+    blocked: {
+      label: "In Progress",
+      className: "bg-orange-600/50 text-orange-300",
+    },
+    ai_reviewing: {
+      label: "AI Review",
+      className: "bg-cyan-600/50 text-cyan-300",
+    },
+    pr_created: {
+      label: "AI Review",
+      className: "bg-purple-600/50 text-purple-300",
+    },
+    human_review: {
+      label: "Human Review",
+      className: "bg-violet-600/50 text-violet-300",
+    },
+    completed: { label: "Done", className: "bg-green-600/50 text-green-300" },
+    failed: { label: "Done", className: "bg-red-600/50 text-red-300" },
+    cancelled: { label: "Done", className: "bg-slate-600/50 text-slate-300" },
   };
-  const currentPhase = task.current_phase || "plan";
-  const phaseStyle = phaseConfig[currentPhase] || phaseConfig.plan;
+  const phaseStyle =
+    statusToKanbanLabel[task.status] || statusToKanbanLabel.pending;
 
   return (
     <>

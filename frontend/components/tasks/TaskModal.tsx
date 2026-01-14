@@ -18,6 +18,8 @@ import {
   Square,
   Clock,
   Bot,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
@@ -41,6 +43,43 @@ import {
 } from "@/lib/api/tasks";
 import { ExecutionTimeline } from "@/components/tasks/ExecutionTimeline";
 import { ExecutionBadges } from "@/components/tasks/ExecutionBadges";
+
+// ============================================================================
+// Collapsible Section Component
+// ============================================================================
+
+interface CollapsibleSectionProps {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function CollapsibleSection({
+  title,
+  isOpen,
+  onToggle,
+  children,
+  className = "",
+}: CollapsibleSectionProps) {
+  return (
+    <div className={className}>
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-2 w-full text-left text-sm font-medium text-slate-400 hover:text-slate-300 transition-colors py-1"
+      >
+        {isOpen ? (
+          <ChevronDown className="h-4 w-4" />
+        ) : (
+          <ChevronRight className="h-4 w-4" />
+        )}
+        {title}
+      </button>
+      {isOpen && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
 
 // ============================================================================
 // Types
@@ -200,6 +239,11 @@ export function TaskModal({
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false);
 
+  // Collapsible section state (all collapsed by default)
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
   // Fetch task when modal opens
   useEffect(() => {
     if (open && taskId) {
@@ -250,6 +294,10 @@ export function TaskModal({
       setEditTitle("");
       setEditDescription("");
       setError(null);
+      // Reset collapsible sections to collapsed
+      setDescriptionOpen(false);
+      setSubtasksOpen(false);
+      setTimelineOpen(false);
     }
   }, [open]);
 
@@ -639,11 +687,18 @@ export function TaskModal({
                 </div>
               </div>
 
-              {/* Description */}
-              <div>
-                <h3 className="text-sm font-medium text-slate-400 mb-2">
-                  Description
-                </h3>
+              {/* Objective Section - Always visible at top */}
+              <ObjectiveSection
+                objective={task.objective}
+                onEdit={handleObjectiveEdit}
+              />
+
+              {/* Description - Collapsible, collapsed by default */}
+              <CollapsibleSection
+                title="Description"
+                isOpen={descriptionOpen}
+                onToggle={() => setDescriptionOpen(!descriptionOpen)}
+              >
                 {isEditing ? (
                   <Textarea
                     value={editDescription}
@@ -660,7 +715,7 @@ export function TaskModal({
                     )}
                   </p>
                 )}
-              </div>
+              </CollapsibleSection>
 
               {/* Linked Capability */}
               {capability && (
@@ -716,12 +771,6 @@ export function TaskModal({
                 </div>
               )}
 
-              {/* Objective Section */}
-              <ObjectiveSection
-                objective={task.objective}
-                onEdit={handleObjectiveEdit}
-              />
-
               {/* Criteria Progress */}
               {task.acceptance_criteria &&
                 task.acceptance_criteria.length > 0 && (
@@ -743,30 +792,52 @@ export function TaskModal({
                   </div>
                 )}
 
-              {/* Execution Timeline - shown when task is in active state */}
-              {showTimeline && (
-                <ExecutionTimeline
-                  taskId={task.id}
-                  autoConnect={isRunning || isAiReviewing}
-                  showChatInput={true}
-                  chatEnabled={isRunning}
-                  className="border border-slate-700 rounded-lg overflow-hidden"
-                />
-              )}
-
-              {/* Subtasks Section */}
+              {/* Subtasks Section - Collapsible, collapsed by default */}
               {isLoadingSubtasks ? (
                 <div className="flex items-center justify-center py-4">
                   <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
                 </div>
               ) : subtasks.length > 0 ? (
-                <SubtasksSection
-                  projectId={projectId}
-                  taskId={task.id}
-                  subtasks={subtasks}
-                  onTogglePass={handleSubtaskToggle}
-                />
-              ) : null}
+                <CollapsibleSection
+                  title={`Subtasks (${subtasks.filter((s) => s.passes).length}/${subtasks.length})`}
+                  isOpen={subtasksOpen}
+                  onToggle={() => setSubtasksOpen(!subtasksOpen)}
+                >
+                  <SubtasksSection
+                    projectId={projectId}
+                    taskId={task.id}
+                    subtasks={subtasks}
+                    onTogglePass={handleSubtaskToggle}
+                  />
+                </CollapsibleSection>
+              ) : (
+                <CollapsibleSection
+                  title="Subtasks"
+                  isOpen={subtasksOpen}
+                  onToggle={() => setSubtasksOpen(!subtasksOpen)}
+                >
+                  <p className="text-sm text-slate-500 italic">
+                    No subtasks defined. Run /plan_it to add subtasks.
+                  </p>
+                </CollapsibleSection>
+              )}
+
+              {/* Execution Timeline - Collapsible at bottom, collapsed by default */}
+              {showTimeline && (
+                <CollapsibleSection
+                  title="Execution Timeline"
+                  isOpen={timelineOpen}
+                  onToggle={() => setTimelineOpen(!timelineOpen)}
+                >
+                  <ExecutionTimeline
+                    taskId={task.id}
+                    autoConnect={isRunning || isAiReviewing}
+                    showChatInput={true}
+                    chatEnabled={isRunning}
+                    className="border border-slate-700 rounded-lg overflow-hidden"
+                  />
+                </CollapsibleSection>
+              )}
 
               {/* Labels */}
               {task.labels && task.labels.length > 0 && (
