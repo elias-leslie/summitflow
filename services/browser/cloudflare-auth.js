@@ -38,6 +38,13 @@ const CLOUDFLARE_DOMAINS = [
   // Port subdomain
   "port.summitflow.dev",
   "portapi.summitflow.dev",
+  // Test environments (test1 used by monkey-fight)
+  "test1.summitflow.dev",
+  "test1api.summitflow.dev",
+  "test2.summitflow.dev",
+  "test2api.summitflow.dev",
+  "test3.summitflow.dev",
+  "test3api.summitflow.dev",
   // Base domain
   "summitflow.dev",
 ];
