@@ -287,6 +287,39 @@ class WorktreeManager:
 
         return stats
 
+    def _symlink_node_modules(self, worktree_path: Path) -> None:
+        """Symlink node_modules directories from main repo to worktree.
+
+        This enables pre-commit hooks that run eslint/tsc to find their dependencies.
+        """
+        # Common locations for node_modules in monorepos
+        node_modules_locations = [
+            "frontend/node_modules",
+            "node_modules",
+        ]
+
+        for rel_path in node_modules_locations:
+            source = self.project_dir / rel_path
+            target = worktree_path / rel_path
+
+            # Only create symlink if source exists and target doesn't
+            if source.exists() and source.is_dir() and not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    target.symlink_to(source)
+                    logger.debug(
+                        "symlinked_node_modules",
+                        source=str(source),
+                        target=str(target),
+                    )
+                except OSError as e:
+                    # Non-fatal - continue without symlink
+                    logger.warning(
+                        "node_modules_symlink_failed",
+                        path=rel_path,
+                        error=str(e),
+                    )
+
     def create_worktree(self, project_id: str, task_id: str) -> WorktreeInfo:
         """Create a worktree for a task.
 
@@ -352,6 +385,9 @@ class WorktreeManager:
 
         except FileLockTimeout as e:
             raise WorktreeError(f"Timed out waiting for repo lock: {e}") from e
+
+        # Symlink node_modules for frontend projects (needed for pre-commit hooks)
+        self._symlink_node_modules(worktree_path)
 
         logger.info(
             "worktree_created",
