@@ -35,7 +35,7 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onOpenChange(false);
     },
-    [onOpenChange]
+    [onOpenChange],
   );
 
   useEffect(() => {
@@ -69,14 +69,17 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
   );
 }
 
-export function DialogContent({ children, className = "" }: DialogContentProps) {
+export function DialogContent({
+  children,
+  className = "",
+}: DialogContentProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+      initial={{ opacity: 0, scale: 0.95, x: "-50%", y: "calc(-50% + 10px)" }}
+      animate={{ opacity: 1, scale: 1, x: "-50%", y: "-50%" }}
+      exit={{ opacity: 0, scale: 0.95, x: "-50%", y: "calc(-50% + 10px)" }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2
+      className={`fixed left-1/2 top-1/2 z-50
         bg-slate-900 border border-slate-700 rounded-lg shadow-2xl
         shadow-phosphor-500/5 ${className}`}
       onClick={(e) => e.stopPropagation()}
@@ -102,11 +105,12 @@ export function DialogTitle({ children, className = "" }: DialogTitleProps) {
   );
 }
 
-export function DialogDescription({ children, className = "" }: DialogDescriptionProps) {
+export function DialogDescription({
+  children,
+  className = "",
+}: DialogDescriptionProps) {
   return (
-    <p className={`text-sm text-slate-400 mt-1 ${className}`}>
-      {children}
-    </p>
+    <p className={`text-sm text-slate-400 mt-1 ${className}`}>{children}</p>
   );
 }
 

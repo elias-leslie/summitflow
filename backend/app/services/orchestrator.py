@@ -550,17 +550,17 @@ class OrchestratorService:
     ) -> tuple[bool, str | None]:
         """Dispatch subtask to Flash (or Pro) worker for execution.
 
-        Streams response via AgentHubStreamingClient and broadcasts
-        log events to WebSocket listeners.
+        Uses Agent Hub SDK's run_agent for agentic execution with tool calling.
 
         Args:
             subtask: Subtask to execute
-            model: Model to use (GEMINI_FLASH or GEMINI_PRO)
+            model: Model to use (GEMINI_FLASH or GEMINI_PRO for Gemini,
+                   or CLAUDE_SONNET for Claude with code execution)
 
         Returns:
             Tuple of (success, error_message)
         """
-        from .agent_hub_client import AgentHubStreamingClient
+        from agent_hub import AsyncAgentHubClient
 
         subtask_id = str(subtask.get("subtask_full_id") or subtask.get("id") or "unknown")
         description = subtask.get("description", "")
@@ -574,73 +574,56 @@ class OrchestratorService:
 
         # Build prompt with task context
         prompt = self._build_flash_prompt(subtask)
-        messages = [{"role": "user", "content": prompt}]
 
-        # Create streaming client
-        streaming_client = AgentHubStreamingClient()
-        self._current_streaming_session_id = await streaming_client.connect(
-            model=model,
-            messages=messages,
-        )
+        # Determine provider from model
+        provider = "claude" if "claude" in model.lower() else "gemini"
 
-        await self._send_log(
-            "info", f"Agent connected, session: {self._current_streaming_session_id[:8]}..."
-        )
+        await self._send_log("info", f"Starting agent execution with {provider}/{model}")
 
         try:
-            accumulated_content = ""
-            async for chunk in streaming_client.stream():
-                # Check for interruption
-                if self._interrupted:
-                    await streaming_client.cancel()
-                    return False, "Interrupted by user"
+            async with AsyncAgentHubClient() as client:
+                result = await client.run_agent(
+                    task=prompt,
+                    provider=provider,
+                    model=model,
+                    system_prompt="You are an expert software engineer executing tasks. Be thorough and precise.",
+                    max_tokens=64000,
+                    max_turns=20,
+                    enable_code_execution=(provider == "claude"),  # Only for Claude
+                    timeout_seconds=300.0,
+                )
 
-                # Handle different chunk types
-                if chunk.type == "content":
-                    accumulated_content += chunk.content
-                    # Broadcast content to WebSocket (abbreviated for logs)
-                    if len(chunk.content) > 0:
+                # Log progress
+                for progress in result.progress_log:
+                    if progress.status == "tool_use":
+                        tool_names = [tc.get("name", "?") for tc in progress.tool_calls]
                         await self._send_log(
-                            "debug", f"Agent: {chunk.content[:100]}...", source="flash"
+                            "info", f"Tool calls: {', '.join(tool_names)}", source="flash"
+                        )
+                    elif progress.status == "complete":
+                        await self._send_log(
+                            "info",
+                            f"Agent completed: {result.input_tokens} in, {result.output_tokens} out",
+                            source="flash",
                         )
 
-                elif chunk.type == "tool_use":
-                    # Log tool usage
-                    tool_name = chunk.tool_call.name if chunk.tool_call else "unknown"
-                    await self._send_log("info", f"Tool call: {tool_name}", source="flash")
-                    # TODO: Execute tool and feed result back
-                    # For now, log but continue streaming
+                # Check result status
+                if result.status == "error":
+                    await self._send_log("error", f"Agent error: {result.error}")
+                    return False, result.error
 
-                elif chunk.type == "done":
-                    await self._send_log(
-                        "info",
-                        f"Agent completed: {chunk.input_tokens or 0} in, {chunk.output_tokens or 0} out",
-                        source="flash",
-                    )
+                if result.status == "max_turns":
+                    await self._send_log("warning", "Agent reached max turns")
+                    # Still analyze the partial result
 
-                elif chunk.type == "cancelled":
-                    await self._send_log("warning", "Stream cancelled")
-                    return False, "Stream cancelled"
-
-                elif chunk.type == "error":
-                    error_msg = chunk.error or "Unknown streaming error"
-                    await self._send_log("error", f"Agent error: {error_msg}")
-                    return False, error_msg
-
-            # Analyze accumulated content to determine success
-            result = streaming_client.get_result()
-            success, error = self._analyze_execution_result(result.content, subtask)
-
-            return success, error
+                # Analyze content to determine task success
+                success, error = self._analyze_execution_result(result.content, subtask)
+                return success, error
 
         except Exception as e:
             logger.error("dispatch_to_flash_error", subtask_id=subtask_id, error=str(e))
             await self._send_log("error", f"Execution failed: {e}")
             return False, str(e)
-
-        finally:
-            await streaming_client.close()
-            self._current_streaming_session_id = None
 
     def _build_flash_prompt(self, subtask: dict[str, Any]) -> str:
         """Build prompt for Flash worker with task context and user directions.
