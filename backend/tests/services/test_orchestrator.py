@@ -14,7 +14,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.constants import GEMINI_FLASH, GEMINI_PRO
 from app.services.orchestrator import (
     ExecutionState,
@@ -379,3 +378,47 @@ class TestWebSocketIntegration:
         with patch("app.api.ws_execution.send_model_change", new_callable=AsyncMock) as mock_send:
             await orchestrator._send_model_change(GEMINI_PRO, "Stuck pattern")
             mock_send.assert_called_once_with("task-123", GEMINI_PRO, "Stuck pattern")
+
+    @pytest.mark.asyncio
+    async def test_handle_failure_sets_failed_status(self, tmp_path: Path):
+        """Test that _handle_failure sets task status to 'failed' and does NOT release.
+
+        This is a regression test for the bug where release_task was called after
+        update_task_status("failed"), which reset the status back to "pending".
+        """
+        task_id = "test-failure-task"
+        subtask_result = SubtaskResult(
+            subtask_id="test-subtask",
+            success=False,
+            error="Test error message",
+        )
+
+        with (
+            patch("app.services.orchestrator.get_project_root_path", return_value=str(tmp_path)),
+            patch("app.services.orchestrator.get_worktree_manager") as mock_get_wt,
+            patch("app.services.orchestrator.task_store") as mock_store,
+        ):
+            mock_wt = MagicMock()
+            mock_wt.remove_worktree = MagicMock()
+            mock_get_wt.return_value = mock_wt
+
+            orchestrator = OrchestratorService(
+                "test-project", repo_path=tmp_path, ws_task_id="task-123"
+            )
+            orchestrator._worktree_manager = mock_wt
+
+            with patch.object(orchestrator, "_send_log", new_callable=AsyncMock):
+                result = await orchestrator._handle_failure(task_id, subtask_result)
+
+            # Should return True (revert succeeded)
+            assert result is True
+
+            # Should call update_task_status with "failed" and error_message
+            mock_store.update_task_status.assert_called_once_with(
+                task_id,
+                "failed",
+                error_message="Test error message",
+            )
+
+            # Should NOT call release_task (failed tasks stay failed)
+            mock_store.release_task.assert_not_called()

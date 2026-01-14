@@ -880,13 +880,12 @@ See commits for details.
             self.worktree_manager.remove_worktree(self.project_id, task_id, delete_branch=True)
             self._current_worktree_path = None
 
-            # Update task status
+            # Update task status (do NOT release - failed tasks stay failed until manual intervention)
             task_store.update_task_status(
                 task_id,
                 "failed",
                 error_message=subtask_result.error,
             )
-            task_store.release_task(task_id)
 
             logger.info("worktree_reverted_on_failure", task_id=task_id)
             await self._send_log("info", "Worktree reverted successfully")

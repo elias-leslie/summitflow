@@ -298,52 +298,60 @@ class WorktreeManager:
             WorktreeInfo for the created worktree
 
         Raises:
-            WorktreeError: If worktree creation fails
+            WorktreeError: If worktree creation fails or lock times out
         """
+        from .file_lock import FileLockTimeout, repo_lock
+
         worktree_path = self.get_worktree_path(project_id, task_id)
         branch_name = self.get_branch_name(task_id)
 
         # Ensure parent directory exists
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Step 1: Prune stale worktree entries first (handles manually deleted directories)
-        self._run_git(["worktree", "prune"])
+        # Acquire repo lock for concurrent safety (prevents race conditions)
+        try:
+            with repo_lock(self.project_dir, timeout=30.0):
+                # Step 1: Prune stale worktree entries first (handles manually deleted directories)
+                self._run_git(["worktree", "prune"])
 
-        # Step 2: Try git worktree remove if path exists
-        if worktree_path.exists():
-            logger.info(
-                "removing_existing_worktree",
-                path=str(worktree_path),
-                task_id=task_id,
-            )
-            result = self._run_git(["worktree", "remove", "--force", str(worktree_path)])
+                # Step 2: Try git worktree remove if path exists
+                if worktree_path.exists():
+                    logger.info(
+                        "removing_existing_worktree",
+                        path=str(worktree_path),
+                        task_id=task_id,
+                    )
+                    result = self._run_git(["worktree", "remove", "--force", str(worktree_path)])
 
-            # Step 3: If git worktree remove failed (not a proper worktree), force delete
-            if result.returncode != 0:
-                logger.warning(
-                    "worktree_remove_failed_forcing",
-                    task_id=task_id,
-                    error=result.stderr,
+                    # Step 3: If git worktree remove failed (not a proper worktree), force delete
+                    if result.returncode != 0:
+                        logger.warning(
+                            "worktree_remove_failed_forcing",
+                            task_id=task_id,
+                            error=result.stderr,
+                        )
+                        shutil.rmtree(worktree_path, ignore_errors=True)
+
+                # Step 4: Delete branch if it exists (from previous attempt or stale)
+                self._run_git(["branch", "-D", branch_name])
+
+                # Create worktree with new branch from base
+                result = self._run_git(
+                    [
+                        "worktree",
+                        "add",
+                        "-b",
+                        branch_name,
+                        str(worktree_path),
+                        self.base_branch,
+                    ]
                 )
-                shutil.rmtree(worktree_path, ignore_errors=True)
 
-        # Step 4: Delete branch if it exists (from previous attempt or stale)
-        self._run_git(["branch", "-D", branch_name])
+                if result.returncode != 0:
+                    raise WorktreeError(f"Failed to create worktree for {task_id}: {result.stderr}")
 
-        # Create worktree with new branch from base
-        result = self._run_git(
-            [
-                "worktree",
-                "add",
-                "-b",
-                branch_name,
-                str(worktree_path),
-                self.base_branch,
-            ]
-        )
-
-        if result.returncode != 0:
-            raise WorktreeError(f"Failed to create worktree for {task_id}: {result.stderr}")
+        except FileLockTimeout as e:
+            raise WorktreeError(f"Timed out waiting for repo lock: {e}") from e
 
         logger.info(
             "worktree_created",
