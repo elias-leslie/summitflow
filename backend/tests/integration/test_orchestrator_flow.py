@@ -473,6 +473,7 @@ class TestTimeWindowRespected:
             "task_type": "refactor",
             "tier": 2,
             "status": "pending",
+            "autonomous": True,  # Required for autonomous execution
         }
 
         with (
@@ -537,6 +538,7 @@ class TestConcurrencyLimitRespected:
             "task_type": "debt",
             "tier": 2,
             "status": "pending",
+            "autonomous": True,  # Required for autonomous execution
         }
 
         with (
@@ -587,9 +589,27 @@ class TestTaskTypeFiltering:
     def test_only_allowed_task_types_picked(self):
         """Test that only allowed task types are picked for execution."""
         tasks = [
-            {"id": "t1", "task_type": "refactor", "tier": 2, "status": "pending"},
-            {"id": "t2", "task_type": "feature", "tier": 2, "status": "pending"},
-            {"id": "t3", "task_type": "unknown", "tier": 2, "status": "pending"},  # Not allowed
+            {
+                "id": "t1",
+                "task_type": "refactor",
+                "tier": 2,
+                "status": "pending",
+                "autonomous": True,
+            },
+            {
+                "id": "t2",
+                "task_type": "feature",
+                "tier": 2,
+                "status": "pending",
+                "autonomous": True,
+            },
+            {
+                "id": "t3",
+                "task_type": "unknown",
+                "tier": 2,
+                "status": "pending",
+                "autonomous": True,
+            },  # Not allowed (type)
         ]
 
         with (
