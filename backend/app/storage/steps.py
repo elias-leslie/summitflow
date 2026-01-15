@@ -6,7 +6,9 @@ normalized step data for granular completion tracking within subtasks.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,18 +18,18 @@ from .connection import get_connection
 
 logger = logging.getLogger(__name__)
 
-# Column list for all step SELECT/RETURNING queries (7 columns)
-STEP_COLUMNS = """id, subtask_id, step_number, description, passes, passed_at, created_at"""
+# Column list for all step SELECT/RETURNING queries (8 columns)
+STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at"""
 
 # Expected column count for row validation
-EXPECTED_STEP_COLUMNS = 7
+EXPECTED_STEP_COLUMNS = 8
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a step dict.
 
-    Column order (7 columns):
-        id, subtask_id, step_number, description, passes, passed_at, created_at
+    Column order (8 columns):
+        id, subtask_id, step_number, description, spec, passes, passed_at, created_at
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -38,9 +40,10 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "subtask_id": row[1],
         "step_number": row[2],
         "description": row[3],
-        "passes": row[4],
-        "passed_at": row[5].isoformat() if row[5] else None,
-        "created_at": row[6].isoformat() if row[6] else None,
+        "spec": row[4],
+        "passes": row[5],
+        "passed_at": row[6].isoformat() if row[6] else None,
+        "created_at": row[7].isoformat() if row[7] else None,
     }
 
 
@@ -48,6 +51,7 @@ def create_step(
     subtask_id: str,
     step_number: int,
     description: str,
+    spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new step for a subtask.
 
@@ -55,6 +59,7 @@ def create_step(
         subtask_id: Parent subtask ID (e.g., "task-abc123-1.1")
         step_number: 1-indexed step number within subtask
         description: Step description text
+        spec: Optional JSONB spec for implementation details
 
     Returns:
         The created step dict.
@@ -62,14 +67,17 @@ def create_step(
     Raises:
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
+
+    spec_json = json.dumps(spec) if spec else None
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description)
-            VALUES (%s, %s, %s)
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
+            VALUES (%s, %s, %s, %s)
             RETURNING {STEP_COLUMNS}
             """,
-            (subtask_id, step_number, description),
+            (subtask_id, step_number, description, spec_json),
         )
         row = cur.fetchone()
         conn.commit()
@@ -181,7 +189,7 @@ def update_step_passes(
 
 def bulk_create_steps(
     subtask_id: str,
-    descriptions: list[str],
+    steps: Sequence[str | dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Create multiple steps for a subtask in a single transaction.
 
@@ -189,7 +197,8 @@ def bulk_create_steps(
 
     Args:
         subtask_id: Parent subtask ID
-        descriptions: List of step description strings
+        steps: List of step items - either strings (description only)
+               or dicts with {description: str, spec: dict | None}
 
     Returns:
         List of created step dicts.
@@ -197,19 +206,27 @@ def bulk_create_steps(
     Raises:
         Exception: If subtask_id doesn't exist or on DB error.
     """
-    if not descriptions:
+    if not steps:
         return []
 
     created = []
     with get_connection() as conn, conn.cursor() as cur:
-        for idx, description in enumerate(descriptions, start=1):
+        for idx, step in enumerate(steps, start=1):
+            if isinstance(step, str):
+                description = step
+                spec = None
+            else:
+                description = step.get("description", "")
+                spec = step.get("spec")
+
+            spec_json = json.dumps(spec) if spec else None
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description)
-                VALUES (%s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
+                VALUES (%s, %s, %s, %s)
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description),
+                (subtask_id, idx, description, spec_json),
             )
             row = cur.fetchone()
             created.append(_row_to_dict(row))
@@ -222,7 +239,7 @@ def bulk_create_steps(
 
 def append_steps(
     subtask_id: str,
-    descriptions: list[str],
+    steps: Sequence[str | dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Append steps to a subtask, continuing from the highest existing step number.
 
@@ -231,7 +248,8 @@ def append_steps(
 
     Args:
         subtask_id: Parent subtask ID
-        descriptions: List of step description strings to append
+        steps: List of step items - either strings (description only)
+               or dicts with {description: str, spec: dict | None}
 
     Returns:
         List of created step dicts.
@@ -239,7 +257,7 @@ def append_steps(
     Raises:
         Exception: If subtask_id doesn't exist or on DB error.
     """
-    if not descriptions:
+    if not steps:
         return []
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -252,14 +270,22 @@ def append_steps(
         max_step: int = row[0] if row else 0
 
         created = []
-        for idx, description in enumerate(descriptions, start=max_step + 1):
+        for idx, step in enumerate(steps, start=max_step + 1):
+            if isinstance(step, str):
+                description = step
+                spec = None
+            else:
+                description = step.get("description", "")
+                spec = step.get("spec")
+
+            spec_json = json.dumps(spec) if spec else None
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description)
-                VALUES (%s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
+                VALUES (%s, %s, %s, %s)
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description),
+                (subtask_id, idx, description, spec_json),
             )
             row = cur.fetchone()
             created.append(_row_to_dict(row))

@@ -171,13 +171,22 @@ async def create_subtask_endpoint(
 
     from ...storage.subtasks import create_subtask
 
+    # Convert StepInput objects to dicts for storage layer
+    steps: list[str | dict[str, Any]] = []
+    for step in request.steps:
+        if isinstance(step, str):
+            steps.append(step)
+        else:
+            steps.append({"description": step.description, "spec": step.spec})
+
     subtask = create_subtask(
         task_id=task_id,
         subtask_id=request.subtask_id,
         description=request.description,
         display_order=request.display_order,
         phase=request.phase,
-        steps=request.steps,
+        steps=steps,
+        details=request.details,
     )
 
     # Convert steps (list of dicts) to steps (list of strings) for response

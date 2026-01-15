@@ -499,7 +499,8 @@ class STClient:
         subtask_id: str,
         description: str,
         phase: str = "implementation",
-        steps: list[str] | None = None,
+        steps: list[str | dict[str, Any]] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a subtask for a task.
 
@@ -508,7 +509,8 @@ class STClient:
             subtask_id: Subtask ID (e.g., "1.1")
             description: Subtask description
             phase: Phase name (e.g., "backend", "frontend")
-            steps: Optional list of step descriptions
+            steps: Optional list of steps - strings or {description, spec} dicts
+            details: Optional rich implementation spec from plan.json (deprecated)
 
         Returns:
             Created subtask dict.
@@ -520,6 +522,8 @@ class STClient:
         }
         if steps:
             data["steps"] = steps
+        if details:
+            data["details"] = details
         response = self._client.post(self._url(f"/tasks/{task_id}/subtasks"), json=data)
         return self._handle_response(response)
 

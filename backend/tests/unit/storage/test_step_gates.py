@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from app.storage.steps import StepGateError, update_step_passes
 
 
@@ -52,7 +53,8 @@ class TestUpdateStepPassesGate:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         now = datetime.now(UTC)
         # No gate query should run for step 1
-        mock_cursor.fetchone.return_value = (1, "subtask-1", 1, "Step 1", False, None, now)
+        # Row format: (id, subtask_id, step_number, description, spec, passes, passed_at, created_at)
+        mock_cursor.fetchone.return_value = (1, "subtask-1", 1, "Step 1", None, False, None, now)
 
         # Should not raise
         update_step_passes("subtask-1", 1, passes=True)
@@ -82,7 +84,8 @@ class TestUpdateStepPassesGate:
         now = datetime.now(UTC)
         # Simulate all previous steps complete (empty list)
         mock_cursor.fetchall.return_value = []
-        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", True, now, now)
+        # Row format: (id, subtask_id, step_number, description, spec, passes, passed_at, created_at)
+        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", None, True, now, now)
 
         # Should not raise
         result = update_step_passes("subtask-1", 3, passes=True)
@@ -96,7 +99,8 @@ class TestUpdateStepPassesGate:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         now = datetime.now(UTC)
         # Even with incomplete steps, force should work
-        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", True, now, now)
+        # Row format: (id, subtask_id, step_number, description, spec, passes, passed_at, created_at)
+        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", None, True, now, now)
 
         # Should not raise with force=True
         result = update_step_passes("subtask-1", 3, passes=True, force=True)
@@ -111,7 +115,8 @@ class TestUpdateStepPassesGate:
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         now = datetime.now(UTC)
-        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", False, None, now)
+        # Row format: (id, subtask_id, step_number, description, spec, passes, passed_at, created_at)
+        mock_cursor.fetchone.return_value = (1, "subtask-1", 3, "Step 3", None, False, None, now)
 
         # Should not raise, gate only applies when passes=True
         result = update_step_passes("subtask-1", 3, passes=False)

@@ -175,6 +175,13 @@ class AcceptanceCriterion(BaseModel):
 # =============================================================================
 
 
+class StepInput(BaseModel):
+    """Input model for a step - can be simple string or object with spec."""
+
+    description: str = Field(description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+
 class SubtaskCreate(BaseModel):
     """Request model for creating a subtask."""
 
@@ -183,8 +190,13 @@ class SubtaskCreate(BaseModel):
         default=None, description="Phase: research, database, backend, frontend, testing"
     )
     description: str = Field(min_length=5, description="Subtask description")
-    steps: list[str] = Field(default_factory=list, description="List of implementation steps")
+    steps: list[str | StepInput] = Field(
+        default_factory=list, description="Steps as strings or {description, spec} objects"
+    )
     display_order: int = Field(default=0, ge=0, description="Order for display")
+    details: dict[str, Any] | None = Field(
+        default=None, description="Rich implementation spec from plan.json (deprecated)"
+    )
 
 
 class SubtaskResponse(BaseModel):
@@ -195,6 +207,7 @@ class SubtaskResponse(BaseModel):
     subtask_id: str
     phase: str | None
     description: str
+    details: dict[str, Any] | None = None
     steps: list[str]
     passes: bool
     passed_at: str | None

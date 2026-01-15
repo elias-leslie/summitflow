@@ -3,6 +3,8 @@
 Defines schemas for the task_subtask_steps table operations.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +13,7 @@ class StepCreate(BaseModel):
 
     step_number: int = Field(ge=1, description="1-indexed step number")
     description: str = Field(min_length=5, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
 
 
 class StepUpdate(BaseModel):
@@ -27,6 +30,7 @@ class StepResponse(BaseModel):
     subtask_id: str
     step_number: int
     description: str
+    spec: dict[str, Any] | None
     passes: bool
     passed_at: str | None
     created_at: str | None
@@ -40,11 +44,23 @@ class StepSummary(BaseModel):
     progress_percent: float
 
 
-class BatchStepCreate(BaseModel):
-    """Request model for batch step creation."""
+class StepInput(BaseModel):
+    """Input model for a step - can be simple string or object with spec."""
 
-    descriptions: list[str] = Field(
-        min_length=1, description="List of step descriptions (auto-numbered from 1)"
+    description: str = Field(min_length=5, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+
+class BatchStepCreate(BaseModel):
+    """Request model for batch step creation.
+
+    Steps can be provided as:
+    - List of strings (description only, backward compatible)
+    - List of StepInput objects with {description, spec}
+    """
+
+    steps: list[str | StepInput] = Field(
+        min_length=1, description="List of steps (strings or {description, spec} objects)"
     )
 
 

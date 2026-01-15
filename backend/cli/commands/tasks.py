@@ -1328,17 +1328,23 @@ def import_plan(
         "complexity": complexity,
     }
 
-    # Build subtasks
+    # Build subtasks with step-level specs (no longer using subtask-level details)
     subtasks = []
     for st in plan.get("subtasks", []):
+        subtask_id = st["id"]
+
+        # Steps can be strings or {description, spec} objects
+        # Pass through as-is - storage layer handles both formats
+        steps = st.get("steps", [])
+
         subtasks.append(
             {
-                "subtask_id": st["id"],
+                "subtask_id": subtask_id,
                 "phase": st.get("phase"),
                 "description": st["description"],
-                "steps": st.get("steps", []),
-                "display_order": int(st["id"].split(".")[0]) * 100 + int(st["id"].split(".")[1])
-                if "." in st["id"]
+                "steps": steps,
+                "display_order": int(subtask_id.split(".")[0]) * 100 + int(subtask_id.split(".")[1])
+                if "." in subtask_id
                 else 0,
             }
         )
@@ -1375,6 +1381,7 @@ def import_plan(
                     sub["description"],
                     phase=sub.get("phase"),
                     steps=sub.get("steps", []),
+                    details=sub.get("details"),
                 )
 
             # 5. Delete existing criteria

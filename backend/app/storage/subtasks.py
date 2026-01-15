@@ -17,13 +17,14 @@ from .steps import bulk_create_steps
 
 logger = logging.getLogger(__name__)
 
-# Column list for all subtask SELECT/RETURNING queries (9 columns)
+# Column list for all subtask SELECT/RETURNING queries (10 columns)
 # Note: steps column was dropped in migration 045 - steps are in task_subtask_steps table
+# Note: details column added in migration 061 - stores rich implementation specs
 SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description,
-    passes, passed_at, display_order, created_at"""
+    details, passes, passed_at, display_order, created_at"""
 
 # Expected column count for row validation
-EXPECTED_SUBTASK_COLUMNS = 9
+EXPECTED_SUBTASK_COLUMNS = 10
 
 
 def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
@@ -37,9 +38,9 @@ def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a subtask dict.
 
-    Column order (9 columns):
+    Column order (10 columns):
         id, task_id, subtask_id, phase, description,
-        passes, passed_at, display_order, created_at
+        details, passes, passed_at, display_order, created_at
 
     Note: steps field is always [] - steps are in task_subtask_steps table
     """
@@ -53,11 +54,12 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "subtask_id": row[2],
         "phase": row[3],
         "description": row[4],
+        "details": row[5],  # Rich implementation spec from plan.json
         # Note: "steps" field is populated separately when include_steps=True
-        "passes": row[5],
-        "passed_at": row[6].isoformat() if row[6] else None,
-        "display_order": row[7],
-        "created_at": row[8].isoformat() if row[8] else None,
+        "passes": row[6],
+        "passed_at": row[7].isoformat() if row[7] else None,
+        "display_order": row[8],
+        "created_at": row[9].isoformat() if row[9] else None,
     }
 
 
@@ -67,7 +69,8 @@ def create_subtask(
     description: str,
     display_order: int,
     phase: str | None = None,
-    steps: list[str] | None = None,
+    steps: list[str | dict[str, Any]] | None = None,
+    details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask.
 
@@ -80,7 +83,8 @@ def create_subtask(
         description: Subtask description
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
-        steps: Optional list of step strings - creates rows in task_subtask_steps
+        steps: Optional list of steps - strings or {description, spec} dicts
+        details: Optional rich implementation spec from plan.json (deprecated)
 
     Returns:
         The created subtask dict.
@@ -88,17 +92,20 @@ def create_subtask(
     Raises:
         Exception: If task_id doesn't exist (FK constraint violation)
     """
+    import json
+
     if steps is None:
         steps = []
 
     table_id = _generate_subtask_id(task_id, subtask_id)
+    details_json = json.dumps(details) if details else None
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                       display_order)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                       details, display_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING {SUBTASK_COLUMNS}
             """,
             (
@@ -107,6 +114,7 @@ def create_subtask(
                 subtask_id,
                 phase,
                 description,
+                details_json,
                 display_order,
             ),
         )
@@ -344,8 +352,9 @@ def bulk_create_subtasks(
             - subtask_id: str (required) - e.g., "1.1"
             - description: str (required)
             - phase: str (optional)
-            - steps: list[str] (optional) - creates rows in task_subtask_steps
+            - steps: list[str | dict] (optional) - strings or {description, spec} objects
             - display_order: int (optional, auto-assigned if missing)
+            - details: dict (optional) - deprecated, use step-level specs
 
     Returns:
         List of created subtask dicts.
@@ -353,11 +362,13 @@ def bulk_create_subtasks(
     Raises:
         Exception: If task_id doesn't exist or on DB error.
     """
+    import json
+
     if not subtasks:
         return []
 
     created = []
-    steps_to_create: list[tuple[str, list[str]]] = []
+    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]] = []
 
     with get_connection() as conn, conn.cursor() as cur:
         for idx, subtask in enumerate(subtasks):
@@ -365,12 +376,14 @@ def bulk_create_subtasks(
             table_id = _generate_subtask_id(task_id, subtask_id)
             display_order = subtask.get("display_order", idx)
             steps = subtask.get("steps", [])
+            details = subtask.get("details")
+            details_json = json.dumps(details) if details else None
 
             cur.execute(
                 f"""
                 INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                           display_order)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                                           details, display_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING {SUBTASK_COLUMNS}
                 """,
                 (
@@ -379,6 +392,7 @@ def bulk_create_subtasks(
                     subtask_id,
                     subtask.get("phase"),
                     subtask["description"],
+                    details_json,
                     display_order,
                 ),
             )
@@ -394,9 +408,9 @@ def bulk_create_subtasks(
     # Create steps in normalized table (outside subtask transaction for safety)
     # Track which subtasks got steps so we can update the response
     subtasks_with_steps: dict[str, list[dict[str, Any]]] = {}
-    for subtask_table_id, step_descriptions in steps_to_create:
+    for subtask_table_id, step_items in steps_to_create:
         try:
-            created_steps = bulk_create_steps(subtask_table_id, step_descriptions)
+            created_steps = bulk_create_steps(subtask_table_id, step_items)
             subtasks_with_steps[subtask_table_id] = created_steps
         except Exception as e:
             logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)

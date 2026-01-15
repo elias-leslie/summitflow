@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from app.storage.subtasks import SubtaskGateError, update_subtask_passes
 
 
@@ -75,6 +76,7 @@ class TestUpdateSubtaskPassesGate:
             "1.1",
             "implementation",
             "Description",
+            None,  # details
             True,
             now,
             0,
@@ -99,6 +101,7 @@ class TestUpdateSubtaskPassesGate:
             "1.1",
             "implementation",
             "Description",
+            None,  # details
             True,
             now,
             0,
@@ -124,6 +127,7 @@ class TestUpdateSubtaskPassesGate:
             "1.1",
             "implementation",
             "Description",
+            None,  # details
             False,
             None,
             0,
@@ -151,6 +155,7 @@ class TestUpdateSubtaskPassesGate:
             "1.1",
             "implementation",
             "Description",
+            None,  # details
             True,
             now,
             0,
@@ -221,6 +226,7 @@ class TestSubtaskIdGeneration:
             "1.1",
             "implementation",
             "Description",
+            None,  # details
             True,
             now,
             0,

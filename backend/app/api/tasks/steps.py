@@ -35,6 +35,23 @@ def _get_subtask_table_id(task_id: str, subtask_id: str) -> str:
     return f"{task_id}-{subtask_id}"
 
 
+def _convert_steps_to_storage_format(
+    steps: list[str | Any],
+) -> list[str | dict[str, Any]]:
+    """Convert BatchStepCreate.steps to storage format.
+
+    Handles both strings and StepInput objects.
+    """
+    result: list[str | dict[str, Any]] = []
+    for step in steps:
+        if isinstance(step, str):
+            result.append(step)
+        else:
+            # StepInput object - convert to dict
+            result.append({"description": step.description, "spec": step.spec})
+    return result
+
+
 @router.get(
     "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps",
     response_model=list[StepResponse],
@@ -93,9 +110,10 @@ async def create_steps_batch(
     from ...storage.steps import bulk_create_steps
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
+    steps = _convert_steps_to_storage_format(request.steps)
 
     try:
-        created = bulk_create_steps(table_id, request.descriptions)
+        created = bulk_create_steps(table_id, steps)
     except Exception as e:
         error_msg = str(e)
         if "violates foreign key constraint" in error_msg.lower():
@@ -141,9 +159,10 @@ async def append_steps_to_subtask(
     from ...storage.steps import append_steps
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
+    steps = _convert_steps_to_storage_format(request.steps)
 
     try:
-        created = append_steps(table_id, request.descriptions)
+        created = append_steps(table_id, steps)
     except Exception as e:
         error_msg = str(e)
         if "violates foreign key constraint" in error_msg.lower():

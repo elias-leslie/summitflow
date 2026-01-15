@@ -400,6 +400,7 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                             "description": s.description,
                             "steps": s.steps,
                             "display_order": s.display_order,
+                            "details": s.details,
                         }
                         for s in item.subtasks
                     ]

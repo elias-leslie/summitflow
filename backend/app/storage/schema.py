@@ -589,6 +589,10 @@ def init_schema() -> None:
                 "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
                 "tasks",
             ),
+            # Subtask details - rich implementation spec from plan.json (migration 061)
+            ("details JSONB", "task_subtasks"),
+            # Step-level specs - individual step implementation details (migration 062)
+            ("spec JSONB", "task_subtask_steps"),
         ]:
             try:
                 # Note: table and column names come from controlled internal list, not user input
