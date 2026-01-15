@@ -339,6 +339,7 @@ export interface Step {
   subtask_id: string;
   step_number: number;
   description: string;
+  spec: Record<string, unknown> | null;
   passes: boolean;
   passed_at: string | null;
   created_at: string | null;

@@ -11,6 +11,8 @@ import {
   Loader2,
   Square,
   CheckSquare,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { Subtask, Step } from "@/lib/api/tasks";
 import { getSteps, updateStep } from "@/lib/api/tasks";
@@ -32,7 +34,7 @@ function groupByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
       acc[phase].push(subtask);
       return acc;
     },
-    {} as Record<string, Subtask[]>
+    {} as Record<string, Subtask[]>,
   );
 }
 
@@ -44,49 +46,110 @@ interface StepItemProps {
   isUpdating: boolean;
 }
 
-function StepItem({ step, index, isOptimisticallyUpdated, onToggle, isUpdating }: StepItemProps) {
+function StepItem({
+  step,
+  index,
+  isOptimisticallyUpdated,
+  onToggle,
+  isUpdating,
+}: StepItemProps) {
+  const [isSpecExpanded, setIsSpecExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const passes = isOptimisticallyUpdated ? !step.passes : step.passes;
+  const hasSpec = step.spec && Object.keys(step.spec).length > 0;
+
+  const handleCopy = useCallback(async () => {
+    if (!step.spec) return;
+    await navigator.clipboard.writeText(JSON.stringify(step.spec, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [step.spec]);
 
   return (
     <motion.li
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.03 }}
-      className="group flex items-start gap-2.5"
+      className="group"
     >
-      <button
-        onClick={() => onToggle(step.step_number, !passes)}
-        disabled={isUpdating}
-        className="mt-0.5 flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded"
-        aria-label={passes ? "Mark step incomplete" : "Mark step complete"}
-      >
-        {isUpdating ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
-        ) : passes ? (
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 400, damping: 15 }}
-          >
-            <CheckSquare className="w-3.5 h-3.5 text-phosphor-400" />
-          </motion.div>
-        ) : (
-          <Square className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
-        )}
-      </button>
-      <div className="flex items-start gap-2 flex-1 min-w-0">
-        <span className="text-slate-600 text-2xs font-mono flex-shrink-0 w-4 text-right">
-          {step.step_number}.
-        </span>
-        <span
-          className={`text-xs transition-all duration-200 ${
-            passes
-              ? "text-slate-600 line-through decoration-slate-700"
-              : "text-slate-400"
-          }`}
+      <div className="flex items-start gap-2.5">
+        <button
+          onClick={() => onToggle(step.step_number, !passes)}
+          disabled={isUpdating}
+          className="mt-0.5 flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded"
+          aria-label={passes ? "Mark step incomplete" : "Mark step complete"}
         >
-          {step.description}
-        </span>
+          {isUpdating ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
+          ) : passes ? (
+            <motion.div
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-phosphor-400" />
+            </motion.div>
+          ) : (
+            <Square className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+          )}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2">
+            <span className="text-slate-600 text-2xs font-mono flex-shrink-0 w-4 text-right">
+              {step.step_number}.
+            </span>
+            <span
+              className={`text-xs transition-all duration-200 ${
+                passes
+                  ? "text-slate-600 line-through decoration-slate-700"
+                  : "text-slate-400"
+              }`}
+            >
+              {step.description}
+            </span>
+            {hasSpec && (
+              <button
+                onClick={() => setIsSpecExpanded(!isSpecExpanded)}
+                className="flex-shrink-0 p-0.5 rounded hover:bg-slate-800 transition-colors"
+                aria-label={isSpecExpanded ? "Hide spec" : "Show spec"}
+              >
+                {isSpecExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-blue-400" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-slate-500 hover:text-blue-400" />
+                )}
+              </button>
+            )}
+          </div>
+          <AnimatePresence>
+            {isSpecExpanded && hasSpec && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2 ml-6 relative">
+                  <button
+                    onClick={handleCopy}
+                    className="absolute top-1 right-1 p-1 rounded bg-slate-800 hover:bg-slate-700 transition-colors"
+                    aria-label="Copy spec"
+                  >
+                    {copied ? (
+                      <Check className="w-3 h-3 text-phosphor-400" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-slate-500" />
+                    )}
+                  </button>
+                  <pre className="text-2xs bg-slate-800/50 border border-slate-700 rounded p-2 pr-8 overflow-x-auto text-slate-400 font-mono">
+                    {JSON.stringify(step.spec, null, 2)}
+                  </pre>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </motion.li>
   );
@@ -102,7 +165,9 @@ function StepsList({ projectId, taskId, subtask }: StepsListProps) {
   const [steps, setSteps] = useState<Step[]>(subtask.steps_from_table || []);
   const [isLoading, setIsLoading] = useState(!subtask.steps_from_table?.length);
   const [updatingSteps, setUpdatingSteps] = useState<Set<number>>(new Set());
-  const [optimisticUpdates, setOptimisticUpdates] = useState<Set<number>>(new Set());
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Set<number>>(
+    new Set(),
+  );
 
   // Fetch steps if not already loaded
   const fetchStepsIfNeeded = useCallback(async () => {
@@ -120,7 +185,11 @@ function StepsList({ projectId, taskId, subtask }: StepsListProps) {
 
     try {
       setIsLoading(true);
-      const fetchedSteps = await getSteps(projectId, taskId, subtask.subtask_id);
+      const fetchedSteps = await getSteps(
+        projectId,
+        taskId,
+        subtask.subtask_id,
+      );
       setSteps(fetchedSteps);
     } catch (error) {
       console.error("Failed to fetch steps:", error);
@@ -143,10 +212,16 @@ function StepsList({ projectId, taskId, subtask }: StepsListProps) {
       setUpdatingSteps((prev) => new Set(prev).add(stepNumber));
 
       try {
-        const updated = await updateStep(projectId, taskId, subtask.subtask_id, stepNumber, passes);
+        const updated = await updateStep(
+          projectId,
+          taskId,
+          subtask.subtask_id,
+          stepNumber,
+          passes,
+        );
         // Update local state with server response
         setSteps((prev) =>
-          prev.map((s) => (s.step_number === stepNumber ? updated : s))
+          prev.map((s) => (s.step_number === stepNumber ? updated : s)),
         );
         // Clear optimistic update on success
         setOptimisticUpdates((prev) => {
@@ -170,7 +245,7 @@ function StepsList({ projectId, taskId, subtask }: StepsListProps) {
         });
       }
     },
-    [projectId, taskId, subtask.subtask_id]
+    [projectId, taskId, subtask.subtask_id],
   );
 
   // Calculate completion with optimistic updates
@@ -260,7 +335,7 @@ export function SubtasksSection({
 }: SubtasksSectionProps) {
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
 
@@ -350,7 +425,9 @@ export function SubtasksSection({
         <span className="text-2xs text-slate-500">
           {totalComplete}/{subtasks.length} complete
         </span>
-        {isLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
+        {isLoading && (
+          <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
+        )}
       </div>
 
       <div className="space-y-1 rounded-lg border border-slate-800 overflow-hidden">
@@ -405,7 +482,7 @@ export function SubtasksSection({
                         .sort((a, b) => a.display_order - b.display_order)
                         .map((subtask) => {
                           const isSubtaskExpanded = expandedSubtasks.has(
-                            subtask.id
+                            subtask.id,
                           );
                           const isUpdating = updatingIds.has(subtask.id);
                           const stepInfo = getStepInfo(subtask);
@@ -453,7 +530,8 @@ export function SubtasksSection({
                                       className="mt-1 flex items-center gap-2 text-2xs text-slate-500 hover:text-slate-400 transition-colors group"
                                     >
                                       <span>
-                                        {isSubtaskExpanded ? "Hide" : "Show"} steps
+                                        {isSubtaskExpanded ? "Hide" : "Show"}{" "}
+                                        steps
                                       </span>
                                       <span
                                         className={`font-mono px-1.5 py-0.5 rounded ${
@@ -471,20 +549,22 @@ export function SubtasksSection({
 
                               {/* Steps */}
                               <AnimatePresence>
-                                {isSubtaskExpanded && stepInfo && stepInfo.total > 0 && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden"
-                                  >
-                                    <StepsList
-                                      projectId={projectId}
-                                      taskId={taskId}
-                                      subtask={subtask}
-                                    />
-                                  </motion.div>
-                                )}
+                                {isSubtaskExpanded &&
+                                  stepInfo &&
+                                  stepInfo.total > 0 && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      className="overflow-hidden"
+                                    >
+                                      <StepsList
+                                        projectId={projectId}
+                                        taskId={taskId}
+                                        subtask={subtask}
+                                      />
+                                    </motion.div>
+                                  )}
                               </AnimatePresence>
                             </div>
                           );

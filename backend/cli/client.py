@@ -615,7 +615,7 @@ class STClient:
         """
         response = self._client.post(
             self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/batch"),
-            json={"descriptions": descriptions},
+            json={"steps": descriptions},
         )
         return self._handle_response(response)
 
@@ -640,7 +640,7 @@ class STClient:
         """
         response = self._client.post(
             self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/append"),
-            json={"descriptions": descriptions},
+            json={"steps": descriptions},
         )
         return self._handle_response(response)
 

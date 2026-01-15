@@ -589,9 +589,10 @@ def init_schema() -> None:
                 "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
                 "tasks",
             ),
-            # Subtask details - rich implementation spec from plan.json (migration 061)
+            # DEPRECATED: Subtask details column - superseded by step-level specs (migration 062)
+            # Kept for backward compatibility but no longer populated by st import
             ("details JSONB", "task_subtasks"),
-            # Step-level specs - individual step implementation details (migration 062)
+            # Step-level specs - implementation details per step, populated from plan.json (migration 062)
             ("spec JSONB", "task_subtask_steps"),
         ]:
             try:
