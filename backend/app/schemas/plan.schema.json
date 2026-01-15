@@ -164,9 +164,25 @@
           "description": { "type": "string" },
           "steps": {
             "type": "array",
-            "items": { "type": "string" },
             "minItems": 1,
-            "description": "Specific actions. Each step should be verifiable."
+            "description": "Specific actions. Each step can be a string or {description, spec} object.",
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "required": ["description"],
+                  "properties": {
+                    "description": { "type": "string" },
+                    "spec": {
+                      "type": "object",
+                      "description": "Free-form implementation details stored in task_subtask_steps.spec"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
           },
           "depends_on": {
             "type": "array",
