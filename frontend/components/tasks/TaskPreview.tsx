@@ -16,8 +16,6 @@ import {
   PHASE_ICONS,
   PHASE_COLORS,
   CATEGORY_COLORS,
-  PRIORITY_CONFIG,
-  getPhaseConfig,
   getPriorityConfig,
 } from "@/lib/utils/task-status";
 
@@ -35,7 +33,7 @@ function groupSubtasksByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
       acc[phase].push(subtask);
       return acc;
     },
-    {} as Record<string, Subtask[]>
+    {} as Record<string, Subtask[]>,
   );
 }
 
@@ -96,7 +94,9 @@ export function TaskPreview({
           {priorityInfo.label}
         </span>
         <span className="text-slate-600">·</span>
-        <span className="text-xs text-slate-400 capitalize">{task.task_type}</span>
+        <span className="text-xs text-slate-400 capitalize">
+          {task.task_type}
+        </span>
         {task.labels && task.labels.length > 0 && (
           <>
             <span className="text-slate-600">·</span>
@@ -146,7 +146,9 @@ export function TaskPreview({
                     <span className="text-2xs text-slate-500">{index + 1}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-200">{criterion.criterion}</p>
+                    <p className="text-sm text-slate-200">
+                      {criterion.criterion}
+                    </p>
                     {(criterion.category || criterion.threshold) && (
                       <div className="flex items-center gap-2 mt-1">
                         {criterion.category && (
@@ -165,7 +167,7 @@ export function TaskPreview({
                     )}
                   </div>
                 </motion.li>
-              )
+              ),
             )}
           </ul>
         </section>
@@ -186,8 +188,11 @@ export function TaskPreview({
               const phaseSubtasks = groupedSubtasks[phase];
               const isExpanded = expandedPhases.has(phase);
               const PhaseIcon = PHASE_ICONS[phase] || FileCode;
-              const phaseColor = PHASE_COLORS[phase] || "text-slate-400 bg-slate-800";
-              const completedCount = phaseSubtasks.filter((s) => s.passes).length;
+              const phaseColor =
+                PHASE_COLORS[phase] || "text-slate-400 bg-slate-800";
+              const completedCount = phaseSubtasks.filter(
+                (s) => s.passes,
+              ).length;
 
               return (
                 <div key={phase} className="rounded-lg overflow-hidden">
@@ -200,9 +205,7 @@ export function TaskPreview({
                     ) : (
                       <ChevronRight className="w-4 h-4 text-slate-500" />
                     )}
-                    <span
-                      className={`p-1 rounded ${phaseColor}`}
-                    >
+                    <span className={`p-1 rounded ${phaseColor}`}>
                       <PhaseIcon className="w-3 h-3" />
                     </span>
                     <span className="text-sm text-slate-300 capitalize flex-1 text-left">

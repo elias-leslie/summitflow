@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Settings,
@@ -42,7 +42,6 @@ const typeIcons: Record<TaskType, React.ReactNode> = {
 
 export function TopBar() {
   const router = useRouter();
-  const pathname = usePathname();
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);

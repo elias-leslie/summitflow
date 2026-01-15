@@ -25,8 +25,8 @@ from .output import set_compact_output, set_human_output, set_progress_only
 # Format: TOON-style, optimized for Claude consumption
 CLI_REFERENCE = """ST CLI - SummitFlow Tasks
 
-FLAGS: --compact/-c (TOON, default) | --human (verbose JSON) | --no-compact (raw JSON) | --project/-P <id> | --progress-only
-       Default output: compact TOON format
+FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty JSON) | --project/-P <id> | --progress-only
+       Default output: compact TOON format. Use --no-compact for raw JSON.
 
 WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
 
@@ -37,6 +37,7 @@ TASKS:
   show <id>... [--full] [--summary]        # --summary=one-liner
   inspect <id>...                          # id|status|done/total
   context <id>                             # full task context (TOON format)
+  export <id> [-o file.json]               # full JSON export (everything)
   update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--blocked-by id] [--unblock id]
   close <id> --reason <text>
   cancel <id> --reason <text>
@@ -147,7 +148,11 @@ def main(
     ] = False,
     compact: Annotated[
         bool,
-        typer.Option("--compact", "-c", help="TOON-style compact output (default)"),
+        typer.Option(
+            "--compact/--no-compact",
+            "-c",
+            help="TOON-style compact output (default: compact)",
+        ),
     ] = True,
     progress_only: Annotated[
         bool,

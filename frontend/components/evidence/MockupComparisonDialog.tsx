@@ -29,7 +29,6 @@ import {
   fetchMockupComparison,
   updateMockupStatus,
   getScreenshotUrl,
-  type EvidenceRecord,
   type MockupStatus,
 } from "@/lib/api/evidence";
 

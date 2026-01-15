@@ -346,13 +346,6 @@ export function ExecutionTimeline({
     }
   }, []);
 
-  // Send stop signal
-  const sendStopSignal = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "stop_signal" }));
-    }
-  }, []);
-
   // Expose methods via ref if needed
   // We'll add this later when integrating with TaskModal
 

@@ -84,7 +84,6 @@ export function FileRow({ entry }: FileRowProps) {
     : (entry.metadata.lines_of_code ?? 0);
   const size = entry.metadata.size_bytes ?? 0;
   const bloatLevel = entry.metadata.bloat_level;
-  const complexityScore = entry.metadata.complexity_score as number | undefined;
   const refactorPriority = entry.metadata.refactor_priority as
     | string
     | undefined;

@@ -14,7 +14,6 @@ import type { ExplorerType } from "@/components/explorer/types";
 import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
 import { TaskModal } from "@/components/tasks/TaskModal";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
-import { MemoryCaptureIndicator } from "@/components/memory/MemoryCaptureIndicator";
 import {
   fetchTasks,
   updateTaskStatus,

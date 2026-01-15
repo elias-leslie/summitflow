@@ -57,7 +57,7 @@ export function TaskExpandedView({
   const handleObjectiveEdit = useCallback(
     async (newObjective: string) => {
       try {
-        const updated = await updateTask(projectId, task.id, {
+        await updateTask(projectId, task.id, {
           title: task.title,
           description: task.description || undefined,
         });

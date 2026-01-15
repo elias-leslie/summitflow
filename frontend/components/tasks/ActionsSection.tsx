@@ -53,8 +53,8 @@ export function ActionsSection({ task, onAction }: ActionsSectionProps) {
   const canExecute = status === "pending" || status === "paused";
   const canPause = status === "running";
   const canComplete = status === "running" || status === "paused";
-  const canCancel = status === "pending" || status === "running" || status === "paused";
-  const canDelete = true; // Always available but requires confirmation
+  const canCancel =
+    status === "pending" || status === "running" || status === "paused";
 
   return (
     <section>
@@ -64,7 +64,9 @@ export function ActionsSection({ task, onAction }: ActionsSectionProps) {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => handleAction(status === "paused" ? "resume" : "execute")}
+            onClick={() =>
+              handleAction(status === "paused" ? "resume" : "execute")
+            }
             disabled={isLoading}
           >
             {loadingAction === "execute" || loadingAction === "resume" ? (

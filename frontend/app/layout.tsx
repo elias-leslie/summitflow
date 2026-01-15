@@ -4,6 +4,7 @@ import { Providers } from "./providers";
 import { TopBar } from "@/components/layout/TopBar";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { VoiceOverlay } from "@agent-hub/passport-client";
 
 export const metadata: Metadata = {
   title: "SummitFlow",
@@ -33,6 +34,7 @@ export default function RootLayout({
                 <main className="flex-1 overflow-auto bg-grid">{children}</main>
               </div>
             </AppShell>
+            <VoiceOverlay wsUrl="wss://agentapi.summitflow.dev/api/voice/ws?user_id=summitflow_user&app=summitflow" />
           </div>
         </Providers>
       </body>

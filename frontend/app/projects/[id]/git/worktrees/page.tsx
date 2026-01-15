@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,7 +33,6 @@ import {
   createPullRequest,
   cleanupWorktrees,
   type WorktreeInfo,
-  type WorktreeDiffResponse,
   type CleanupResponse,
 } from "@/lib/api";
 

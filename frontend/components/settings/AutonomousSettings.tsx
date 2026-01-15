@@ -22,7 +22,6 @@ import {
 import {
   getAutonomousSettings,
   updateAutonomousSettings,
-  type AutonomousExecutionSettings,
   type AutonomousExecutionSettingsUpdate,
 } from "@/lib/api";
 

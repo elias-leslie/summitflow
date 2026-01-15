@@ -19,7 +19,6 @@ import {
   Eye,
   OctagonX,
   ExternalLink,
-  RotateCw,
   Zap,
   Lightbulb,
   ChevronDown,
@@ -385,7 +384,6 @@ export function TaskCard({
             onStopExecution &&
             onSendMessage && (
               <ExecutionPanel
-                taskId={task.id}
                 execution={execution}
                 connected={wsConnected}
                 onStop={onStopExecution}

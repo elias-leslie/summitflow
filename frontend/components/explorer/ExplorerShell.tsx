@@ -248,7 +248,7 @@ export function ExplorerShell({
       setIsScanning(false);
       setScanProgress(null);
     }
-  }, [projectId, activeType, isScanning]);
+  }, [projectId, activeType, isScanning, queryClient]);
 
   // Current stats
   const stats = statsData[activeType];

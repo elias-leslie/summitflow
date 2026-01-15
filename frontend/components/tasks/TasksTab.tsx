@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence } from "motion/react";
 import {
   Bug,
   Package,
@@ -166,10 +165,7 @@ function TaskRow({
   task,
   isExpanded,
   onToggle,
-  onTaskUpdated,
-  onTaskDeleted,
   subtasks,
-  projectId,
 }: {
   task: Task;
   isExpanded: boolean;

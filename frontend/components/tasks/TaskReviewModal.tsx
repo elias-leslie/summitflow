@@ -3,11 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
 import { Trash2, Check, Loader2, MessageSquare, FileText } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { TaskPreview } from "./TaskPreview";
 import { DiscussionChat } from "./DiscussionChat";
@@ -16,7 +12,6 @@ import {
   getSubtasks,
   type Task,
   type Subtask,
-  type DiscussionMessage,
 } from "@/lib/api/tasks";
 
 interface TaskReviewModalProps {
@@ -38,7 +33,7 @@ export function TaskReviewModal({
 }: TaskReviewModalProps) {
   const [task, setTask] = useState<Task>(initialTask);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [discussionHistory, setDiscussionHistory] = useState<DiscussionMessage[]>([]);
+  const [discussionHistory] = useState<never[]>([]);
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,15 +57,18 @@ export function TaskReviewModal({
     setTask(initialTask);
   }, [initialTask]);
 
-  const handleTaskUpdated = useCallback((updatedTask: Task) => {
-    setTask(updatedTask);
-    // Refresh subtasks if task was updated
-    getSubtasks(projectId, updatedTask.id)
-      .then((response) => {
-        setSubtasks(response.subtasks);
-      })
-      .catch(console.error);
-  }, [projectId]);
+  const handleTaskUpdated = useCallback(
+    (updatedTask: Task) => {
+      setTask(updatedTask);
+      // Refresh subtasks if task was updated
+      getSubtasks(projectId, updatedTask.id)
+        .then((response) => {
+          setSubtasks(response.subtasks);
+        })
+        .catch(console.error);
+    },
+    [projectId],
+  );
 
   const handleAccept = async () => {
     setIsAccepting(true);

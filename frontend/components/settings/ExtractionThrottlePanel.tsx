@@ -30,7 +30,6 @@ export function ExtractionThrottlePanel({
   saving = false,
 }: ExtractionThrottlePanelProps) {
   const effectiveRpm = enabled ? rpmLimit : 0;
-  const currentStop = RPM_STOPS.find((s) => s.value === effectiveRpm) || RPM_STOPS[2];
   const isOff = effectiveRpm === 0;
   const isUnlimited = effectiveRpm >= 60;
 
@@ -52,7 +51,7 @@ export function ExtractionThrottlePanel({
         isOff
           ? "bg-red-950/20 border-red-900/50"
           : "bg-slate-800/50 border-slate-700",
-        disabled && "opacity-50 pointer-events-none"
+        disabled && "opacity-50 pointer-events-none",
       )}
     >
       {/* Header */}
@@ -61,11 +60,17 @@ export function ExtractionThrottlePanel({
           <Zap
             className={clsx(
               "w-4 h-4 transition-colors",
-              isOff ? "text-red-400" : isUnlimited ? "text-phosphor-400" : "text-amber-400"
+              isOff
+                ? "text-red-400"
+                : isUnlimited
+                  ? "text-phosphor-400"
+                  : "text-amber-400",
             )}
           />
           AI Extraction Rate
-          {saving && <Loader2 className="w-3 h-3 animate-spin text-slate-400 ml-1" />}
+          {saving && (
+            <Loader2 className="w-3 h-3 animate-spin text-slate-400 ml-1" />
+          )}
         </h3>
 
         {/* Current Value Badge */}
@@ -75,8 +80,8 @@ export function ExtractionThrottlePanel({
             isOff
               ? "bg-red-900/50 text-red-300"
               : isUnlimited
-              ? "bg-phosphor-900/50 text-phosphor-300"
-              : "bg-amber-900/40 text-amber-300"
+                ? "bg-phosphor-900/50 text-phosphor-300"
+                : "bg-amber-900/40 text-amber-300",
           )}
         >
           {isOff ? (
@@ -99,7 +104,8 @@ export function ExtractionThrottlePanel({
       </div>
 
       <p className="text-xs text-slate-400 mb-5">
-        Limit AI extraction queries to control costs. Lower values force lean observation design.
+        Limit AI extraction queries to control costs. Lower values force lean
+        observation design.
       </p>
 
       {/* Segmented Control */}
@@ -111,7 +117,11 @@ export function ExtractionThrottlePanel({
         <div
           className={clsx(
             "absolute top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-200",
-            isOff ? "bg-red-500/50" : isUnlimited ? "bg-phosphor-500/50" : "bg-amber-500/50"
+            isOff
+              ? "bg-red-500/50"
+              : isUnlimited
+                ? "bg-phosphor-500/50"
+                : "bg-amber-500/50",
           )}
           style={{
             left: 0,
@@ -134,7 +144,7 @@ export function ExtractionThrottlePanel({
                   "group flex flex-col items-center focus:outline-none",
                   "transition-all duration-150",
                   idx === 0 && "items-start",
-                  idx === RPM_STOPS.length - 1 && "items-end"
+                  idx === RPM_STOPS.length - 1 && "items-end",
                 )}
               >
                 {/* Dot */}
@@ -146,11 +156,11 @@ export function ExtractionThrottlePanel({
                       ? stop.value === 0
                         ? "bg-red-500 border-red-400 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
                         : stop.value === 60
-                        ? "bg-phosphor-500 border-phosphor-400 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
-                        : "bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                          ? "bg-phosphor-500 border-phosphor-400 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
+                          : "bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
                       : isPast
-                      ? "bg-slate-600 border-slate-500"
-                      : "bg-slate-800 border-slate-600 group-hover:border-slate-500"
+                        ? "bg-slate-600 border-slate-500"
+                        : "bg-slate-800 border-slate-600 group-hover:border-slate-500",
                   )}
                 />
 
@@ -162,9 +172,9 @@ export function ExtractionThrottlePanel({
                       ? stop.value === 0
                         ? "text-red-400"
                         : stop.value === 60
-                        ? "text-phosphor-400"
-                        : "text-amber-400"
-                      : "text-slate-500 group-hover:text-slate-400"
+                          ? "text-phosphor-400"
+                          : "text-amber-400"
+                      : "text-slate-500 group-hover:text-slate-400",
                   )}
                 >
                   {stop.label}
@@ -174,7 +184,9 @@ export function ExtractionThrottlePanel({
                 <span
                   className={clsx(
                     "text-[9px] transition-opacity",
-                    isActive ? "opacity-100 text-slate-400" : "opacity-0 group-hover:opacity-100 text-slate-500"
+                    isActive
+                      ? "opacity-100 text-slate-400"
+                      : "opacity-0 group-hover:opacity-100 text-slate-500",
                   )}
                 >
                   {stop.description}
@@ -190,7 +202,8 @@ export function ExtractionThrottlePanel({
         <div className="mt-5 p-3 rounded-md bg-red-950/50 border border-red-900/50 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-red-300/90">
-            AI extraction is disabled. Observations will not be processed until re-enabled.
+            AI extraction is disabled. Observations will not be processed until
+            re-enabled.
           </p>
         </div>
       )}

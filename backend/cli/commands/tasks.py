@@ -496,6 +496,118 @@ def context(
 
 
 @app.command()
+def export(
+    task_id: str,
+    output: Annotated[
+        str | None,
+        typer.Option("-o", "--output", help="Output file path (default: stdout)"),
+    ] = None,
+) -> None:
+    """Export complete task details to JSON file.
+
+    Exports everything: task metadata, objective, spirit, constraints, done_when,
+    decisions, subtasks with all steps, acceptance criteria, dependencies,
+    blockers, and progress log.
+
+    This is the single-command full export for task archival or comparison.
+
+    Examples:
+        st export task-abc123                      # Output to stdout
+        st export task-abc123 -o task.json        # Write to file
+        st export task-abc123 -o /tmp/task.json   # Write to specific path
+    """
+    from datetime import datetime
+
+    client = STClient(require_project=False)
+
+    try:
+        # Fetch task with full details
+        task = client.get_task(task_id)
+
+        # Fetch subtasks with steps
+        task_project_id = task.get("project_id")
+        if task_project_id and client.project_id != task_project_id:
+            subtask_client = STClient(project_id=task_project_id, require_project=False)
+            subtask_data = subtask_client.get_subtasks(task_id, include_steps=True)
+        else:
+            subtask_data = client.get_subtasks(task_id, include_steps=True)
+
+        subtasks = subtask_data.get("subtasks", [])
+
+        # Fetch criteria
+        criteria = client.list_task_criteria(task_id)
+
+        # Fetch dependencies
+        deps = client.list_dependencies(task_id)
+
+        # Fetch blockers (dependencies where this task is blocked by others)
+        blockers = []
+        for d in deps:
+            if d.get("dependency_type") == "blocks" and d.get("depends_on_status") not in (
+                "completed",
+                "cancelled",
+            ):
+                blocker_id = d.get("depends_on_task_id")
+                if blocker_id:
+                    try:
+                        blocker_task = client.get_task(blocker_id)
+                        blockers.append(blocker_task)
+                    except APIError:
+                        blockers.append({"id": blocker_id, "status": "unknown", "title": "?"})
+
+        # Progress log is already included in task response
+        progress_log_raw = task.get("progress_log") or ""
+        progress_log = [line.strip() for line in progress_log_raw.split("\n") if line.strip()]
+
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    # Build complete export structure
+    export_data = {
+        "exported_at": datetime.now(UTC).isoformat(),
+        "task": {
+            "id": task.get("id"),
+            "title": task.get("title"),
+            "description": task.get("description"),
+            "status": task.get("status"),
+            "priority": task.get("priority"),
+            "task_type": task.get("task_type"),
+            "complexity": task.get("complexity"),
+            "project_id": task.get("project_id"),
+            "objective": task.get("objective"),
+            "spirit_anti": task.get("spirit_anti"),
+            "done_when": task.get("done_when") or [],
+            "constraints": task.get("constraints") or [],
+            "decisions": task.get("decisions") or [],
+            "risks": task.get("risks") or [],
+            "files_to_create": task.get("files_to_create") or [],
+            "files_to_modify": task.get("files_to_modify") or [],
+            "context": task.get("context") or {},
+            "branch": task.get("branch"),
+            "pr_url": task.get("pr_url"),
+            "created_at": task.get("created_at"),
+            "updated_at": task.get("updated_at"),
+        },
+        "subtasks": subtasks,
+        "acceptance_criteria": criteria,
+        "dependencies": deps,
+        "blockers": blockers,
+        "progress_log": progress_log,
+    }
+
+    # Output
+    json_str = json.dumps(export_data, indent=2, default=str)
+
+    if output:
+        output_path = Path(output)
+        output_path.write_text(json_str)
+        output_success(f"Exported to {output_path}")
+    else:
+        print(json_str)
+
+
+@app.command()
 def update(
     task_id: str,
     status: Annotated[str | None, typer.Option("-s", "--status")] = None,

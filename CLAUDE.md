@@ -2,6 +2,10 @@
 
 SummitFlow - AI-assisted development platform.
 
+## Principle
+
+Fight entropy. Leave the codebase better than you found it. Patterns you establish will be copied. Corners you cut will be cut again.
+
 ## Workflow
 
 ```
@@ -31,4 +35,4 @@ SummitFlow - AI-assisted development platform.
 
 ---
 
-**Version**: 5.0.0
+**Version**: 5.1.0

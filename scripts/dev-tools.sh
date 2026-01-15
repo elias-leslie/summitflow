@@ -330,8 +330,8 @@ quick_check() {
     local errors=0
 
     echo "QUICK_CHECK:$project_name"
-    run_lint "$project_dir" || ((errors++))
-    run_types "$project_dir" || ((errors++))
+    run_tool_toon ruff || ((errors++))
+    run_tool_toon mypy || ((errors++))
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then

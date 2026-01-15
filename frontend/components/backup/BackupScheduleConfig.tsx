@@ -11,11 +11,7 @@ import {
   PowerOff,
 } from "lucide-react";
 import { clsx } from "clsx";
-import {
-  fetchBackupSchedule,
-  updateBackupSchedule,
-  type BackupSchedule,
-} from "@/lib/api/backups";
+import { fetchBackupSchedule, updateBackupSchedule } from "@/lib/api/backups";
 
 interface BackupScheduleConfigProps {
   projectId: string;

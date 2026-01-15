@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import {
-  X,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -72,11 +71,11 @@ interface RegressionReviewDialogProps {
 
 async function fetchEvidenceById(
   projectId: string,
-  evidenceId: number
+  evidenceId: number,
 ): Promise<EvidenceDetail | null> {
   try {
     const res = await fetch(
-      `/api/projects/${projectId}/evidence/by-id/${evidenceId}`
+      `/api/projects/${projectId}/evidence/by-id/${evidenceId}`,
     );
     if (!res.ok) return null;
     return res.json();
@@ -89,7 +88,7 @@ async function reviewRegression(
   projectId: string,
   regressionId: number,
   verdict: "accept_change" | "confirm_regression",
-  notes?: string
+  notes?: string,
 ): Promise<{ success: boolean }> {
   const res = await fetch(
     `/api/projects/${projectId}/evidence/regressions/${regressionId}/review`,
@@ -97,7 +96,7 @@ async function reviewRegression(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ verdict, notes }),
-    }
+    },
   );
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Review failed" }));
@@ -120,7 +119,9 @@ export function RegressionReviewDialog({
   const queryClient = useQueryClient();
   const [showDiff, setShowDiff] = useState(false);
   const [notes, setNotes] = useState("");
-  const [viewMode, setViewMode] = useState<"side-by-side" | "slider">("side-by-side");
+  const [viewMode, setViewMode] = useState<"side-by-side" | "slider">(
+    "side-by-side",
+  );
   const [sliderPos, setSliderPos] = useState(50);
 
   // Fetch evidence details
@@ -146,7 +147,7 @@ export function RegressionReviewDialog({
       toast.success(
         verdict === "accept_change"
           ? "Change accepted - baseline updated"
-          : "Regression confirmed - bug task will be created"
+          : "Regression confirmed - bug task will be created",
       );
       queryClient.invalidateQueries({ queryKey: ["regressions", projectId] });
       onReviewed?.();
@@ -173,7 +174,7 @@ export function RegressionReviewDialog({
   const currentErrors = currentEvidence?.metadata?.console?.errors ?? [];
   const baselineErrors = baselineEvidence?.metadata?.console?.errors ?? [];
   const newErrors = currentErrors.filter(
-    (e) => !baselineErrors.some((b) => b.text === e.text)
+    (e) => !baselineErrors.some((b) => b.text === e.text),
   );
 
   return (
@@ -194,7 +195,9 @@ export function RegressionReviewDialog({
                 {regression.pixel_diff_pct?.toFixed(2)}% change)
               </>
             ) : regression.regression_type === "console_errors" ? (
-              <>+{regression.console_errors_added} new console errors detected</>
+              <>
+                +{regression.console_errors_added} new console errors detected
+              </>
             ) : (
               <>Regression detected: {regression.regression_type}</>
             )}
@@ -223,7 +226,7 @@ export function RegressionReviewDialog({
                             "px-2 py-1 text-xs rounded",
                             viewMode === "side-by-side"
                               ? "bg-phosphor-500/20 text-phosphor-400"
-                              : "text-slate-400 hover:text-white"
+                              : "text-slate-400 hover:text-white",
                           )}
                         >
                           Side by Side
@@ -234,7 +237,7 @@ export function RegressionReviewDialog({
                             "px-2 py-1 text-xs rounded",
                             viewMode === "slider"
                               ? "bg-phosphor-500/20 text-phosphor-400"
-                              : "text-slate-400 hover:text-white"
+                              : "text-slate-400 hover:text-white",
                           )}
                         >
                           Slider
@@ -247,7 +250,7 @@ export function RegressionReviewDialog({
                         "px-2 py-1 text-xs rounded flex items-center gap-1",
                         showDiff
                           ? "bg-amber-500/20 text-amber-400"
-                          : "text-slate-400 hover:text-white"
+                          : "text-slate-400 hover:text-white",
                       )}
                     >
                       {showDiff ? (
@@ -306,7 +309,7 @@ export function RegressionReviewDialog({
                           fill
                           className={cn(
                             "object-contain",
-                            showDiff && "mix-blend-difference"
+                            showDiff && "mix-blend-difference",
                           )}
                           unoptimized
                         />
@@ -332,7 +335,10 @@ export function RegressionReviewDialog({
                         className="absolute inset-0 overflow-hidden"
                         style={{ width: `${sliderPos}%` }}
                       >
-                        <div className="relative w-full h-full" style={{ width: `${100 / (sliderPos / 100)}%` }}>
+                        <div
+                          className="relative w-full h-full"
+                          style={{ width: `${100 / (sliderPos / 100)}%` }}
+                        >
                           <Image
                             src={currentScreenshotUrl}
                             alt="Current"

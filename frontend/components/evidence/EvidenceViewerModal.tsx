@@ -7,14 +7,12 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  RefreshCw,
   Image as ImageIcon,
   Terminal,
   Network,
   FileJson,
   Loader2,
   ExternalLink,
-  X,
 } from "lucide-react";
 
 import {

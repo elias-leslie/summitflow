@@ -33,7 +33,6 @@ export interface ExecutionState {
 }
 
 interface ExecutionPanelProps {
-  taskId: string;
   execution: ExecutionState;
   connected: boolean;
   onStop: () => void;
@@ -48,7 +47,6 @@ const logLevelStyles: Record<ExecutionLog["level"], string> = {
 };
 
 export function ExecutionPanel({
-  taskId,
   execution,
   connected,
   onStop,

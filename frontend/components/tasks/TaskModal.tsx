@@ -464,7 +464,6 @@ export function TaskModal({
   const isPending = task?.status === "pending";
   const isHumanReview = task?.status === "human_review";
   const isAiReviewing = task?.status === "ai_reviewing";
-  const isPrCreated = task?.status === "pr_created";
 
   // Show timeline when task is in an active execution state
   const showTimeline = isRunning || isPaused || isAiReviewing;
