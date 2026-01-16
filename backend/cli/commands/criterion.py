@@ -192,8 +192,8 @@ def preflight_criteria(
         st criterion preflight task-abc123           # All criteria
         st criterion preflight task-abc123 ac-001    # Single criterion
     """
-    from ...app.storage.connection import get_connection
-    from ...app.storage.verification import (
+    from app.storage.connection import get_connection
+    from app.storage.verification import (
         get_criteria_for_task_v2,
         run_preflight_for_criterion,
     )
@@ -268,8 +268,8 @@ def amend_criterion(
     Examples:
         st criterion amend task-abc123 ac-001 --new-command "grep -q 'foo' file.py" --reason "Original command path wrong"
     """
-    from ...app.storage.amendments import create_amendment
-    from ...app.storage.connection import get_connection
+    from app.storage.amendments import create_amendment
+    from app.storage.connection import get_connection
 
     with get_connection() as conn:
         result = create_amendment(
@@ -307,8 +307,8 @@ def override_criterion(
         st criterion override task-abc123 ac-001 --action pass --reason "Verified manually"
         st criterion override task-abc123 ac-001 --action reset --reason "Fixed the test"
     """
-    from ...app.storage.connection import get_connection
-    from ...app.storage.verification import human_override_criterion
+    from app.storage.connection import get_connection
+    from app.storage.verification import human_override_criterion
 
     with get_connection() as conn:
         result = human_override_criterion(conn, task_id, criterion_id, action, reason)

@@ -21,12 +21,28 @@ def project_id():
 
 @pytest.fixture
 def test_task(project_id):
-    """Create and cleanup a test task."""
+    """Create and cleanup a test task with approved spirit record.
+
+    Note: G4 enforcement (migration 074) requires spirit record with approved plan
+    before task can transition to 'running' status.
+    """
     task = task_store.create_task(
         project_id=project_id,
         title="Test Task for Unit Tests",
         description="Created by test fixture",
     )
+
+    # Create spirit record with approved plan (required by G4 enforcement)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO task_spirit (task_id, objective, plan_status, complexity)
+            VALUES (%s, 'Test objective', 'approved', 'SIMPLE')
+            ON CONFLICT (task_id) DO UPDATE SET plan_status = 'approved'
+            """,
+            (task["id"],),
+        )
+        conn.commit()
 
     yield task
 
@@ -152,6 +168,18 @@ class TestListTasks:
         """Test filtering tasks by status."""
         task1 = task_store.create_task(project_id, "Pending Task")
         task2 = task_store.create_task(project_id, "Running Task")
+
+        # Create spirit record with approved plan (required by G4 enforcement)
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO task_spirit (task_id, objective, plan_status, complexity)
+                VALUES (%s, 'Test objective', 'approved', 'SIMPLE')
+                """,
+                (task2["id"],),
+            )
+            conn.commit()
+
         task_store.update_task_status(task2["id"], "running")
 
         try:

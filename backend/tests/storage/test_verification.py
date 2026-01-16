@@ -47,7 +47,11 @@ def test_project(conn):
 
 @pytest.fixture
 def test_task(conn, test_project):
-    """Create test task fixture."""
+    """Create test task fixture with spirit record.
+
+    Note: G4 enforcement (migration 074) requires spirit record with approved plan
+    before task can transition to 'running' status.
+    """
     task_id = "task-verification-test"
 
     with conn.cursor() as cur:
@@ -59,6 +63,15 @@ def test_task(conn, test_project):
             """,
             (task_id, test_project, "Verification Test Task", "pending"),
         )
+        # Create spirit record with approved plan (required by G4 enforcement)
+        cur.execute(
+            """
+            INSERT INTO task_spirit (task_id, objective, plan_status, complexity)
+            VALUES (%s, 'Test objective', 'approved', 'STANDARD')
+            ON CONFLICT (task_id) DO UPDATE SET plan_status = 'approved'
+            """,
+            (task_id,),
+        )
         conn.commit()
 
     yield task_id
@@ -66,6 +79,7 @@ def test_task(conn, test_project):
     # Cleanup
     with conn.cursor() as cur:
         cur.execute("DELETE FROM task_acceptance_criteria WHERE task_id = %s", (task_id,))
+        cur.execute("DELETE FROM task_spirit WHERE task_id = %s", (task_id,))
         cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
         conn.commit()
 

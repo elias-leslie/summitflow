@@ -1681,6 +1681,14 @@ def qa_pass(
     client = STClient(require_project=False)
     try:
         client.update_task(task_id, qa_status="passed")
+        # Verify the update actually took effect (DB trigger may have blocked it)
+        task = client.get_task(task_id)
+        if task.get("qa_status") != "passed":
+            output_error(
+                f"QA pass blocked by DB trigger. Current status: {task.get('qa_status')}. "
+                f"Use: st criterion list --task {task_id}"
+            )
+            raise typer.Exit(1)
         typer.echo(f"QA:PASSED: {task_id}")
     except APIError as e:
         # Check for trigger rejection
@@ -1710,27 +1718,23 @@ def qa_fail(
 @qa_app.command("skip")
 def qa_skip(
     task_id: str,
-    force: Annotated[
-        bool, typer.Option("--force", "-f", help="Force skip for STANDARD/COMPLEX tasks")
-    ] = False,
 ) -> None:
     """Skip QA for a task.
 
-    SIMPLE tasks can skip freely. STANDARD/COMPLEX require --force.
+    Only SIMPLE tasks can skip QA. STANDARD/COMPLEX tasks must pass QA.
     """
     client = STClient(require_project=False)
 
-    # Check complexity
-    if not force:
-        try:
-            task = client.get_task(task_id)
-            complexity = task.get("complexity", "SIMPLE")
-            if complexity in ("STANDARD", "COMPLEX"):
-                output_error(f"Cannot skip QA for {complexity} task without --force")
-                raise typer.Exit(1)
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
+    # Check complexity - only SIMPLE tasks can skip
+    try:
+        task = client.get_task(task_id)
+        complexity = task.get("complexity", "SIMPLE")
+        if complexity in ("STANDARD", "COMPLEX"):
+            output_error(f"Cannot skip QA for {complexity} task. Must pass QA.")
+            raise typer.Exit(1)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
 
     try:
         client.update_task(task_id, qa_status="skipped")

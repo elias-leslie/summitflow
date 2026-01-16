@@ -187,8 +187,11 @@ def approve_amendment(
 
     now = datetime.now(UTC)
 
-    # Update amendment status
+    # Update amendment status and criterion verify_command
     with conn.cursor() as cur:
+        # Set session variable to bypass lock check (transaction-scoped via SET LOCAL)
+        cur.execute("SET LOCAL app.amendment_approval = 'true'")
+
         cur.execute(
             """
             UPDATE criterion_amendments
@@ -199,8 +202,7 @@ def approve_amendment(
             (approved_by, approval_reason, now, now, amendment_id),
         )
 
-        # Update criterion verify_command (bypass lock via direct SQL)
-        # This is the ONLY way to modify a locked criterion's verify_command
+        # Update criterion verify_command (lock bypassed via session variable)
         cur.execute(
             """
             UPDATE task_acceptance_criteria
@@ -211,6 +213,7 @@ def approve_amendment(
             (new_verify_command, now, task_id, criterion_id),
         )
         conn.commit()
+        # Session variable automatically cleared when transaction ends
 
     return {
         "amendment_id": amendment_id,

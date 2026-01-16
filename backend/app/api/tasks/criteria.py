@@ -330,6 +330,8 @@ async def verify_task_criterion_junction(
             )
 
         now = datetime.now(UTC)
+        # G6 enforcement requires verification_status='passed' or 'skipped' when setting verified=TRUE
+        verification_status = "passed" if request.verified else "pending"
         updated = update_task_criterion(
             conn,
             task_id,
@@ -338,6 +340,7 @@ async def verify_task_criterion_junction(
                 "verified": request.verified,
                 "verified_at": now if request.verified else None,
                 "verified_by_actual": request.verified_by,
+                "verification_status": verification_status,
             },
         )
 
