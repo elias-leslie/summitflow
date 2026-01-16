@@ -1,11 +1,11 @@
 """Unit tests for subtasks storage layer."""
 
 import pytest
+
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
-from app.storage.subtasks import SubtaskGateError
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ class TestCreateSubtask:
             steps=steps,
         )
 
-        # Steps should be populated from normalized table
+        # Steps should be populated from normalized table (create_subtask returns "steps" key)
         assert "steps" in subtask
         assert len(subtask["steps"]) == 3
         assert subtask["steps"][0]["description"] == "Step 1"
@@ -184,8 +184,8 @@ class TestGetSubtasksForTask:
         subtasks = subtask_store.get_subtasks_for_task(test_task["id"], include_steps=True)
 
         assert len(subtasks) == 1
-        assert "steps" in subtasks[0]
-        assert len(subtasks[0]["steps"]) == 2
+        assert "steps_from_table" in subtasks[0]
+        assert len(subtasks[0]["steps_from_table"]) == 2
         assert "step_summary" in subtasks[0]
         assert subtasks[0]["step_summary"]["total"] == 2
 
@@ -319,19 +319,19 @@ class TestBulkCreateSubtasks:
         assert len(created) == 2
 
         # Verify steps populated directly in returned subtasks
-        assert "steps" in created[0]
-        assert len(created[0]["steps"]) == 3
-        assert created[0]["steps"][0]["description"] == "Step A"
-        assert created[0]["steps"][1]["description"] == "Step B"
-        assert created[0]["steps"][2]["description"] == "Step C"
-        assert created[0]["steps"][0]["step_number"] == 1
-        assert created[0]["steps"][1]["step_number"] == 2
-        assert created[0]["steps"][2]["step_number"] == 3
+        assert "steps_from_table" in created[0]
+        assert len(created[0]["steps_from_table"]) == 3
+        assert created[0]["steps_from_table"][0]["description"] == "Step A"
+        assert created[0]["steps_from_table"][1]["description"] == "Step B"
+        assert created[0]["steps_from_table"][2]["description"] == "Step C"
+        assert created[0]["steps_from_table"][0]["step_number"] == 1
+        assert created[0]["steps_from_table"][1]["step_number"] == 2
+        assert created[0]["steps_from_table"][2]["step_number"] == 3
 
-        assert "steps" in created[1]
-        assert len(created[1]["steps"]) == 2
-        assert created[1]["steps"][0]["description"] == "Step X"
-        assert created[1]["steps"][1]["description"] == "Step Y"
+        assert "steps_from_table" in created[1]
+        assert len(created[1]["steps_from_table"]) == 2
+        assert created[1]["steps_from_table"][0]["description"] == "Step X"
+        assert created[1]["steps_from_table"][1]["description"] == "Step Y"
 
     def test_bulk_create_without_steps(self, test_task):
         """Test bulk creating subtasks without steps still works."""
@@ -469,19 +469,21 @@ class TestGetSubtaskSummary:
 
 
 class TestSubtaskGates:
-    """Tests for subtask step completion gate."""
+    """Tests for subtask step completion gate.
 
-    def test_subtask_gate_blocks_incomplete_steps(self, test_task):
-        """Cannot mark subtask as passed if steps are incomplete."""
+    Note: Per ac-1050/ac-1051, gate now auto-closes incomplete steps.
+    SubtaskGateError is no longer raised.
+    """
+
+    def test_subtask_gate_auto_closes_incomplete_steps(self, test_task):
+        """Subtask pass auto-closes incomplete steps (no longer blocks)."""
         subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
         )
 
-        with pytest.raises(SubtaskGateError) as exc_info:
-            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-
-        assert exc_info.value.incomplete_steps == [1, 2]
-        assert "steps [1, 2] are not complete" in str(exc_info.value)
+        # Per ac-1050/ac-1051: incomplete steps are auto-closed, not blocked
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        assert result["passes"] is True
 
     def test_subtask_gate_allows_all_steps_complete(self, test_task):
         """Can mark subtask as passed when all steps are complete."""
@@ -497,13 +499,13 @@ class TestSubtaskGates:
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result["passes"] is True
 
-    def test_subtask_gate_force_bypasses_check(self, test_task):
-        """Force flag bypasses step gate check."""
+    def test_subtask_gate_force_param_deprecated(self, test_task):
+        """Force flag is deprecated but accepted for API compatibility."""
         subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
         )
 
-        # With force=True, should work even with incomplete steps
+        # force=True accepted but behavior unchanged (auto-closes anyway)
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
         assert result["passes"] is True
 
@@ -515,8 +517,8 @@ class TestSubtaskGates:
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result["passes"] is True
 
-    def test_subtask_gate_partial_completion_blocked(self, test_task):
-        """Subtask with some steps complete is still blocked."""
+    def test_subtask_gate_partial_completion_auto_closes(self, test_task):
+        """Subtask with some steps complete auto-closes remaining."""
         subtask = subtask_store.create_subtask(
             test_task["id"], "1.1", "Test", 0, steps=["Step 1", "Step 2", "Step 3"]
         )
@@ -524,10 +526,9 @@ class TestSubtaskGates:
         # Complete only step 1
         step_store.update_step_passes(subtask["id"], 1, True)
 
-        with pytest.raises(SubtaskGateError) as exc_info:
-            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-
-        assert exc_info.value.incomplete_steps == [2, 3]
+        # Per ac-1050/ac-1051: remaining steps auto-closed
+        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        assert result["passes"] is True
 
     def test_clearing_subtask_has_no_gate(self, test_task):
         """Setting passes=False has no gate check."""

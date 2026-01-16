@@ -58,8 +58,7 @@ class TestCreateHealthTask:
         assert "app/test.py" in call_kwargs["title"]
         assert call_kwargs["task_type"] == "task"
         assert call_kwargs["priority"] == 3
-        assert "auto-generated" in call_kwargs["labels"]
-        assert "code-health" in call_kwargs["labels"]
+        # Note: labels are now stored separately (per migration 072)
 
     @patch("app.storage.tasks.create_task")
     def test_includes_analysis_in_description(self, mock_create: MagicMock) -> None:

@@ -1,13 +1,15 @@
 """Unit tests for subtask completion gate enforcement.
 
-Tests the gate logic in subtasks.update_subtask_passes() that ensures
-a subtask cannot be marked passed until all its steps are passed.
+Tests the gate logic in subtasks.update_subtask_passes().
+Note: Per ac-1050/ac-1051, the gate now runs verification via
+_run_linked_verifications_for_subtask instead of blocking.
 """
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from app.storage.subtasks import SubtaskGateError, update_subtask_passes
 
 
@@ -31,7 +33,11 @@ class TestSubtaskGateError:
 
 
 class TestUpdateSubtaskPassesGate:
-    """Tests for the gate enforcement in update_subtask_passes()."""
+    """Tests for the gate behavior in update_subtask_passes().
+
+    Note: Per ac-1050/ac-1051, verification runs via
+    _run_linked_verifications_for_subtask.
+    """
 
     @pytest.fixture
     def mock_connection(self):
@@ -44,78 +50,91 @@ class TestUpdateSubtaskPassesGate:
         mock_conn.__exit__ = MagicMock(return_value=False)
         return mock_conn, mock_cursor
 
+    @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
     @patch("app.storage.subtasks.get_connection")
-    def test_gate_blocks_when_steps_incomplete(self, mock_get_conn, mock_connection):
-        """Marking subtask as passed should fail if any steps are incomplete."""
+    def test_gate_runs_verification(self, mock_get_conn, mock_verify, mock_connection):
+        """Marking subtask as passed should run linked verifications."""
         mock_conn, mock_cursor = mock_connection
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-        # Simulate incomplete steps 2 and 4
-        mock_cursor.fetchall.return_value = [(2,), (4,)]
-
-        with pytest.raises(SubtaskGateError) as exc_info:
-            update_subtask_passes("task-123", "1.1", passes=True)
-
-        assert exc_info.value.incomplete_steps == [2, 4]
-        assert "Cannot mark subtask 1.1 as passed" in str(exc_info.value)
-        assert "[2, 4]" in str(exc_info.value)
-
-    @patch("app.storage.subtasks.get_connection")
-    def test_gate_allows_when_all_steps_complete(self, mock_get_conn, mock_connection):
-        """Marking subtask as passed should work if all steps are complete."""
-        mock_conn, mock_cursor = mock_connection
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        mock_verify.return_value = {"passed": True, "results": [], "failed": None}
+        mock_cursor.rowcount = 0  # No steps to auto-close
         now = datetime.now(UTC)
-        # Simulate all steps complete (empty list)
-        mock_cursor.fetchall.return_value = []
         mock_cursor.fetchone.return_value = (
             "task-123-1.1",
             "task-123",
             "1.1",
             "implementation",
             "Description",
-            None,  # details
+            None,
             True,
             now,
             0,
             now,
         )
 
-        # Should not raise
         result = update_subtask_passes("task-123", "1.1", passes=True)
-        assert result is not None
+        mock_verify.assert_called_once()
 
+    @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
     @patch("app.storage.subtasks.get_connection")
-    def test_force_bypasses_gate(self, mock_get_conn, mock_connection):
-        """force=True should bypass gate check even with incomplete steps."""
+    def test_gate_allows_when_verification_passes(
+        self, mock_get_conn, mock_verify, mock_connection
+    ):
+        """Marking subtask as passed should work if verification passes."""
         mock_conn, mock_cursor = mock_connection
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        mock_verify.return_value = {"passed": True, "results": [], "failed": None}
+        mock_cursor.rowcount = 0  # No steps to auto-close
         now = datetime.now(UTC)
-        # Even with incomplete steps, force should work
         mock_cursor.fetchone.return_value = (
             "task-123-1.1",
             "task-123",
             "1.1",
             "implementation",
             "Description",
-            None,  # details
+            None,
             True,
             now,
             0,
             now,
         )
 
-        # Should not raise with force=True
+        result = update_subtask_passes("task-123", "1.1", passes=True)
+        assert mock_verify.called
+
+    @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
+    @patch("app.storage.subtasks.get_connection")
+    def test_force_param_deprecated(self, mock_get_conn, mock_verify, mock_connection):
+        """force=True is deprecated - behavior unchanged."""
+        mock_conn, mock_cursor = mock_connection
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        mock_verify.return_value = {"passed": True, "results": [], "failed": None}
+        mock_cursor.rowcount = 0  # No steps to auto-close
+        now = datetime.now(UTC)
+        mock_cursor.fetchone.return_value = (
+            "task-123-1.1",
+            "task-123",
+            "1.1",
+            "implementation",
+            "Description",
+            None,
+            True,
+            now,
+            0,
+            now,
+        )
+
+        # Should not raise with force=True (param ignored)
         result = update_subtask_passes("task-123", "1.1", passes=True, force=True)
-        assert result is not None
-        # fetchall for gate check should NOT be called
-        mock_cursor.fetchall.assert_not_called()
+        # Verification still called regardless of force
+        assert mock_verify.called
 
     @patch("app.storage.subtasks.get_connection")
-    def test_passes_false_skips_gate(self, mock_get_conn, mock_connection):
-        """Setting passes=False should skip gate check (resetting is always allowed)."""
+    def test_passes_false_skips_verification(self, mock_get_conn, mock_connection):
+        """Setting passes=False should skip verification (resetting is always allowed)."""
         mock_conn, mock_cursor = mock_connection
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
@@ -126,48 +145,48 @@ class TestUpdateSubtaskPassesGate:
             "1.1",
             "implementation",
             "Description",
-            None,  # details
+            None,
             False,
             None,
             0,
             now,
         )
 
-        # Should not raise, gate only applies when passes=True
+        # Should not raise, verification only applies when passes=True
         result = update_subtask_passes("task-123", "1.1", passes=False)
         assert result is not None
-        # Gate query should not be called for passes=False
-        mock_cursor.fetchall.assert_not_called()
 
+    @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
     @patch("app.storage.subtasks.get_connection")
-    def test_subtask_with_no_steps_can_pass(self, mock_get_conn, mock_connection):
-        """Subtask with no steps should be allowed to pass (no gate violation)."""
+    def test_subtask_with_no_linked_criteria_can_pass(
+        self, mock_get_conn, mock_verify, mock_connection
+    ):
+        """Subtask with no linked criteria should be allowed to pass."""
         mock_conn, mock_cursor = mock_connection
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        mock_verify.return_value = {"passed": True, "results": [], "failed": None}
+        mock_cursor.rowcount = 0  # No steps to auto-close
         now = datetime.now(UTC)
-        # No incomplete steps (also means no steps at all)
-        mock_cursor.fetchall.return_value = []
         mock_cursor.fetchone.return_value = (
             "task-123-1.1",
             "task-123",
             "1.1",
             "implementation",
             "Description",
-            None,  # details
+            None,
             True,
             now,
             0,
             now,
         )
 
-        # Should not raise
         result = update_subtask_passes("task-123", "1.1", passes=True)
-        assert result is not None
+        assert mock_verify.called
 
 
 class TestGateErrorMessage:
-    """Tests for gate error message formatting."""
+    """Tests for gate error message formatting (for API compatibility)."""
 
     def test_message_includes_subtask_id(self):
         """Error message should include the subtask ID being marked."""
@@ -184,55 +203,3 @@ class TestGateErrorMessage:
             incomplete_steps=[1, 2],
         )
         assert "[1, 2]" in str(error)
-
-    def test_message_includes_bypass_hint(self):
-        """Error message should mention force=True bypass option."""
-        error = SubtaskGateError(
-            "Cannot mark subtask 2.3 as passed: steps [1] are not complete. "
-            "Use force=True to bypass.",
-            incomplete_steps=[1],
-        )
-        assert "force=True" in str(error)
-
-
-class TestSubtaskIdGeneration:
-    """Tests for subtask ID generation in gate logic."""
-
-    @pytest.fixture
-    def mock_connection(self):
-        """Create a mock database connection."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        return mock_conn, mock_cursor
-
-    @patch("app.storage.subtasks._generate_subtask_id")
-    @patch("app.storage.subtasks.get_connection")
-    def test_uses_generated_table_id(self, mock_get_conn, mock_gen_id, mock_connection):
-        """Gate check should use the generated table ID format."""
-        mock_conn, mock_cursor = mock_connection
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-        now = datetime.now(UTC)
-        mock_gen_id.return_value = "task-abc-1.1"
-        mock_cursor.fetchall.return_value = []
-        mock_cursor.fetchone.return_value = (
-            "task-abc-1.1",
-            "task-abc",
-            "1.1",
-            "implementation",
-            "Description",
-            None,  # details
-            True,
-            now,
-            0,
-            now,
-        )
-
-        update_subtask_passes("task-abc", "1.1", passes=True)
-
-        # Verify _generate_subtask_id was called with correct args
-        mock_gen_id.assert_called_with("task-abc", "1.1")

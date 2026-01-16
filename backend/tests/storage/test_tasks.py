@@ -1,6 +1,7 @@
 """Unit tests for tasks storage layer."""
 
 import pytest
+
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
@@ -97,6 +98,8 @@ class TestUpdateTaskStatus:
     def test_status_running_to_completed(self, test_task):
         """Test transition from running to completed sets completed_at."""
         task_store.update_task_status(test_task["id"], "running")
+        # QA signoff required before completing (per ac-1050/ac-1051)
+        task_store.update_task(test_task["id"], qa_status="skipped")
         result = task_store.update_task_status(test_task["id"], "completed")
 
         assert result["status"] == "completed"

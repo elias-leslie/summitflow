@@ -39,6 +39,7 @@ TASKS:
   context <id>                             # full task context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--blocked-by id] [--unblock id]
+  approve <id>                             # approve plan for execution
   close <id> --reason <text>
   cancel <id> --reason <text>
   delete <id>
@@ -47,6 +48,11 @@ TASKS:
   exec <id> [--agent claude|gemini]
   log <id> <message>
   autocode <id> [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
+
+QA:
+  qa pass <task-id>                        # mark QA passed (required before close)
+  qa fail <task-id>                        # mark QA failed
+  qa skip <task-id> [--force]              # skip QA (SIMPLE tasks only, or --force)
 
 SUBTASK:
   subtask list <task-id>
@@ -73,7 +79,14 @@ CRITERION:
   criterion list --task <task-id>                                  # list criteria for task
   criterion create <text> --task <task-id> [--category C] [--verify-by test|agent|human] [--verify-command cmd] [--expected-output text]
   criterion update <id> [--criterion text] [--category C] [--verify-command cmd] [--verify-by M] [--expected-output text]
-  criterion verify <task-id> <criterion-id> --by test|manual       # verify criterion for task
+  criterion preflight --task <task-id>                             # TDD preflight: verify commands fail
+  criterion amend <task-id> <criterion-id> --new-command <cmd> --reason <text>  # request verify_command change
+  criterion override <task-id> <criterion-id> --action pass|reset --reason <text>  # human override
+
+AMENDMENT:
+  amendment list [--task <task-id>] [--status pending|approved|rejected]
+  amendment approve <amendment-id> [--reason text]
+  amendment reject <amendment-id> --reason <text>
 
 TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
 

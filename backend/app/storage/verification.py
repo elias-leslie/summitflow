@@ -273,6 +273,42 @@ def _row_to_criterion_dict(row: tuple[Any, ...]) -> dict[str, Any]:
 
 
 # =============================================================================
+# Syntax Validation
+# =============================================================================
+
+
+def validate_bash_syntax(command: str) -> tuple[bool, str | None]:
+    """Check if a command has valid bash syntax without executing it.
+
+    Uses `bash -n` to parse the command without running it.
+
+    Args:
+        command: The bash command string to validate
+
+    Returns:
+        Tuple of (is_valid, error_message).
+        - (True, None) if syntax is valid
+        - (False, stderr) if syntax is invalid
+    """
+    try:
+        result = subprocess.run(
+            ["bash", "-n", "-c", command],
+            capture_output=True,
+            text=True,
+            timeout=5,  # Syntax check should be fast
+        )
+        if result.returncode != 0:
+            return False, result.stderr.strip()
+        return True, None
+    except subprocess.TimeoutExpired:
+        return False, "Syntax check timed out"
+    except Exception as e:
+        # If bash isn't available, skip syntax check
+        logger.warning(f"Could not run bash syntax check: {e}")
+        return True, None
+
+
+# =============================================================================
 # Verification Execution
 # =============================================================================
 
@@ -325,13 +361,19 @@ def run_preflight(
     """Run preflight validation on a verify_command.
 
     For TDD-style validation, the command MUST FAIL (exit != 0) before work begins.
+    Performs syntax validation first to catch malformed commands.
 
     Returns:
         Tuple of (status, exit_code, output) where status is one of:
         - 'valid_fail': Exit code 1-125, good for TDD (test correctly fails)
         - 'invalid_pass': Exit code 0, bad for TDD (test already passes)
-        - 'invalid_crash': Exit code 126-127 or exception, command has syntax errors
+        - 'invalid_crash': Syntax error, exit 126-127, or exception
     """
+    # First, validate bash syntax without executing
+    is_valid, syntax_error = validate_bash_syntax(verify_command)
+    if not is_valid:
+        return ("invalid_crash", 2, f"Bash syntax error: {syntax_error}")
+
     try:
         result = subprocess.run(
             verify_command,

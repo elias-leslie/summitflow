@@ -1,11 +1,11 @@
 """Unit tests for steps storage layer."""
 
 import pytest
+
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
-from app.storage.steps import StepGateError
 
 
 @pytest.fixture
@@ -281,17 +281,19 @@ class TestGetStepSummary:
 
 
 class TestStepGates:
-    """Tests for step sequential completion gate."""
+    """Tests for step sequential completion gate.
 
-    def test_step_gate_blocks_out_of_order_completion(self, test_subtask):
-        """Cannot mark step 2 as passed if step 1 is not passed."""
+    Note: Per ac-1051, gate is now logging-only, not blocking.
+    Out-of-order completion is allowed but logged.
+    """
+
+    def test_step_gate_allows_out_of_order_completion(self, test_subtask):
+        """Can mark step 2 as passed even if step 1 is not passed (logs warning)."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
-        with pytest.raises(StepGateError) as exc_info:
-            step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
-
-        assert exc_info.value.missing_steps == [1]
-        assert "previous steps [1] are not complete" in str(exc_info.value)
+        # Per ac-1051: gate is logging-only, not blocking
+        result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
+        assert result["passes"] is True
 
     def test_step_gate_allows_sequential_completion(self, test_subtask):
         """Can mark step 2 as passed after step 1 is passed."""
@@ -305,11 +307,11 @@ class TestStepGates:
         result2 = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result2["passes"] is True
 
-    def test_step_gate_force_bypasses_check(self, test_subtask):
-        """Force flag bypasses gate check."""
+    def test_step_gate_force_param_deprecated(self, test_subtask):
+        """Force flag is deprecated but accepted for API compatibility."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
-        # With force=True, should work even without step 1
+        # force=True is accepted but behavior unchanged (gate doesn't block anyway)
         result = step_store.update_step_passes(
             test_subtask["id"], step_number=2, passes=True, force=True
         )
@@ -323,14 +325,13 @@ class TestStepGates:
         result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
         assert result["passes"] is True
 
-    def test_step_gate_reports_all_missing_steps(self, test_subtask):
-        """Gate reports all missing steps, not just first."""
+    def test_step_gate_logs_missing_steps(self, test_subtask):
+        """Gate logs missing steps but allows completion."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
-        with pytest.raises(StepGateError) as exc_info:
-            step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
-
-        assert exc_info.value.missing_steps == [1, 2]
+        # Per ac-1051: gate logs but doesn't block
+        result = step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
+        assert result["passes"] is True
 
     def test_clearing_step_has_no_gate(self, test_subtask):
         """Setting passes=False has no gate check (can clear any step)."""
