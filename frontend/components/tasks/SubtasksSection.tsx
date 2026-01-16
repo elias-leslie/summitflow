@@ -13,6 +13,7 @@ import {
   CheckSquare,
   Copy,
   Check,
+  Braces,
 } from "lucide-react";
 import type { Subtask, Step } from "@/lib/api/tasks";
 import { getSteps, updateStep } from "@/lib/api/tasks";
@@ -44,6 +45,49 @@ interface StepItemProps {
   isOptimisticallyUpdated: boolean;
   onToggle: (stepNumber: number, passes: boolean) => void;
   isUpdating: boolean;
+}
+
+/** Render JSON with syntax highlighting */
+function SyntaxHighlightedJSON({ data }: { data: unknown }) {
+  const jsonString = JSON.stringify(data, null, 2);
+
+  // Split into lines and highlight
+  const lines = jsonString.split("\n");
+
+  return (
+    <>
+      {lines.map((line, i) => {
+        // Match JSON key pattern: "key":
+        const keyMatch = line.match(/^(\s*)("[\w_-]+")(:)/);
+        if (keyMatch) {
+          const [, indent, key, colon] = keyMatch;
+          const rest = line.slice(keyMatch[0].length);
+          return (
+            <div key={i} className="leading-relaxed">
+              <span>{indent}</span>
+              <span className="text-blue-400">{key}</span>
+              <span className="text-slate-500">{colon}</span>
+              <span className="text-amber-300/80">{rest}</span>
+            </div>
+          );
+        }
+        // String values, arrays, etc
+        if (line.includes('"')) {
+          return (
+            <div key={i} className="leading-relaxed text-amber-300/80">
+              {line}
+            </div>
+          );
+        }
+        // Brackets, braces, etc
+        return (
+          <div key={i} className="leading-relaxed text-slate-500">
+            {line}
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 function StepItem({
@@ -110,13 +154,19 @@ function StepItem({
             {hasSpec && (
               <button
                 onClick={() => setIsSpecExpanded(!isSpecExpanded)}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-slate-800 transition-colors"
+                className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150 ${
+                  isSpecExpanded
+                    ? "bg-blue-500/15 text-blue-400"
+                    : "bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400"
+                }`}
                 aria-label={isSpecExpanded ? "Hide spec" : "Show spec"}
               >
+                <Braces className="w-3 h-3" />
+                <span className="text-2xs font-medium">spec</span>
                 {isSpecExpanded ? (
-                  <ChevronDown className="w-3 h-3 text-blue-400" />
+                  <ChevronDown className="w-3.5 h-3.5" />
                 ) : (
-                  <ChevronRight className="w-3 h-3 text-slate-500 hover:text-blue-400" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 )}
               </button>
             )}
@@ -130,21 +180,29 @@ function StepItem({
                 transition={{ duration: 0.15 }}
                 className="overflow-hidden"
               >
-                <div className="mt-2 ml-6 relative">
+                <div className="mt-2 ml-6 relative group/spec">
+                  {/* Copy button - more visible on hover */}
                   <button
                     onClick={handleCopy}
-                    className="absolute top-1 right-1 p-1 rounded bg-slate-800 hover:bg-slate-700 transition-colors"
+                    className={`absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10 ${
+                      copied
+                        ? "bg-phosphor-500/20 text-phosphor-400"
+                        : "bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200"
+                    }`}
                     aria-label="Copy spec"
                   >
                     {copied ? (
-                      <Check className="w-3 h-3 text-phosphor-400" />
+                      <Check className="w-3.5 h-3.5" />
                     ) : (
-                      <Copy className="w-3 h-3 text-slate-500" />
+                      <Copy className="w-3.5 h-3.5" />
                     )}
                   </button>
-                  <pre className="text-2xs bg-slate-800/50 border border-slate-700 rounded p-2 pr-8 overflow-x-auto text-slate-400 font-mono">
-                    {JSON.stringify(step.spec, null, 2)}
-                  </pre>
+                  {/* Code block with left accent border */}
+                  <div className="bg-slate-900/80 border border-slate-700/50 border-l-2 border-l-blue-500/40 rounded-md shadow-inner overflow-hidden">
+                    <pre className="text-2xs p-3 pr-10 overflow-x-auto font-mono whitespace-pre">
+                      <SyntaxHighlightedJSON data={step.spec} />
+                    </pre>
+                  </div>
                 </div>
               </motion.div>
             )}

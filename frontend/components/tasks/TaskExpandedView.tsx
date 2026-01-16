@@ -10,7 +10,7 @@ import { ActionsSection, type TaskAction } from "./ActionsSection";
 import { CriteriaProgress } from "./CriteriaProgress";
 import { EnrichmentStatusBadge } from "./EnrichmentStatusBadge";
 import {
-  getSubtasks,
+  getSubtasksWithSteps,
   updateSubtask,
   updateTask,
   updateTaskStatus,
@@ -41,7 +41,7 @@ export function TaskExpandedView({
     setIsLoadingSubtasks(true);
     setError(null);
 
-    getSubtasks(projectId, task.id)
+    getSubtasksWithSteps(projectId, task.id)
       .then((response) => {
         setSubtasks(response.subtasks);
       })

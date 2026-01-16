@@ -35,7 +35,7 @@ import {
 import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
 import { SubtasksSection } from "@/components/tasks/SubtasksSection";
 import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
-import { getSubtasks, type Subtask } from "@/lib/api/tasks";
+import { getSubtasksWithSteps, type Subtask } from "@/lib/api/tasks";
 import type { Task, TaskType, TaskStatus } from "@/lib/api";
 
 interface TaskDetailDrawerProps {
@@ -132,7 +132,7 @@ export function TaskDetailDrawer({
   useEffect(() => {
     if (open && task) {
       setIsLoadingSubtasks(true);
-      getSubtasks(projectId, task.id)
+      getSubtasksWithSteps(projectId, task.id)
         .then((response) => {
           setSubtasks(response.subtasks);
         })

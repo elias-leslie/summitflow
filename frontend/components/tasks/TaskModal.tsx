@@ -31,7 +31,7 @@ import { SubtasksSection } from "@/components/tasks/SubtasksSection";
 import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
 import {
   fetchTask,
-  getSubtasks,
+  getSubtasksWithSteps,
   updateTask,
   updateTaskStatus,
   updateSubtask,
@@ -273,7 +273,7 @@ export function TaskModal({
   useEffect(() => {
     if (open && task) {
       setIsLoadingSubtasks(true);
-      getSubtasks(projectId, task.id)
+      getSubtasksWithSteps(projectId, task.id)
         .then((response) => {
           setSubtasks(response.subtasks);
         })

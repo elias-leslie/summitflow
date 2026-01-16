@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from app.storage.subtasks import SubtaskGateError, update_subtask_passes
 
 

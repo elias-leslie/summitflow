@@ -192,7 +192,7 @@ def get_subtasks_for_task(
 
         for subtask in subtasks:
             subtask_table_id = subtask["id"]  # Already in table ID format
-            subtask["steps"] = get_steps_for_subtask(subtask_table_id)
+            subtask["steps_from_table"] = get_steps_for_subtask(subtask_table_id)
             subtask["step_summary"] = get_step_summary(subtask_table_id)
 
     return subtasks
@@ -420,7 +420,7 @@ def bulk_create_subtasks(
     for subtask in created:
         subtask_table_id = subtask["id"]
         if subtask_table_id in subtasks_with_steps:
-            subtask["steps"] = subtasks_with_steps[subtask_table_id]
+            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created
