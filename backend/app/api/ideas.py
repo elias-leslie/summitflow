@@ -415,7 +415,6 @@ async def approve_idea(project_id: str, idea_id: str) -> dict[str, Any]:
         title=refined_text[:100] if refined_text else "Crowdsourced idea",
         description=refined_text,
         task_type=task_type,
-        labels=labels,
         priority=3,  # Lower priority for crowdsourced ideas
         complexity=task_complexity,
     )

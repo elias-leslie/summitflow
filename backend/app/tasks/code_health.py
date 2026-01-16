@@ -350,7 +350,6 @@ Confidence: {result.confidence:.0%}
             description=description,
             task_type="task",
             priority=3,  # Medium-low priority
-            labels=["complexity:small", "auto-generated", "code-health"],
         )
 
     except Exception as e:

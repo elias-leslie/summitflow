@@ -522,7 +522,6 @@ def create_regression_task(
             description=description,
             task_type="bug",
             priority=priority,
-            labels=["regression", f"severity:{severity}", "auto-generated"],
         )
 
         # Link the task to the regression

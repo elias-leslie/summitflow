@@ -196,21 +196,22 @@
     "context": {
       "type": "object",
       "description": "Optional context for agent reference during execution",
+      "additionalProperties": false,
       "properties": {
-        "relevant_files": {
+        "files_to_modify": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Files agent should read before starting"
+          "description": "Existing files that will be modified"
         },
-        "patterns": {
+        "files_to_create": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Patterns to follow (from codebase conventions)"
+          "description": "New files that will be created"
         },
-        "gotchas": {
+        "risks": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Pitfalls to avoid (learned from prior sessions)"
+          "description": "Known risks or gotchas to watch for"
         },
         "references": {
           "type": "array",
@@ -222,6 +223,10 @@
             }
           },
           "description": "External docs, specs, examples"
+        },
+        "testing_strategy": {
+          "type": "string",
+          "description": "How to test/verify the implementation"
         }
       }
     }

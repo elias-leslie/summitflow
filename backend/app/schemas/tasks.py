@@ -62,8 +62,6 @@ class TaskUpdate(BaseModel):
     labels: list[str] | None = None
     task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] | None = None
     parent_task_id: str | None = None
-    # Implementation plan (JSON structure for /task_it and /do_it)
-    plan_content: dict[str, Any] | None = None
     # Allow moving task to different project
     project_id: str | None = None
     # AI agent reliability fields
@@ -326,7 +324,6 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     status: str
-    plan_content: dict[str, Any] | None
     progress_log: str | None
     error_message: str | None
     branch_name: str | None

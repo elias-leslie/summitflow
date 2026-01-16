@@ -108,13 +108,43 @@ def create_subtask(
 def pass_subtask(
     task_id: str,
     subtask_id: str,
+    force: Annotated[
+        bool, typer.Option("--force", "-f", help="Skip step completion check")
+    ] = False,
 ) -> None:
     """Mark a subtask as passed.
 
+    All steps must be complete before passing. Use --force to skip this check.
+
     Examples:
         st subtask pass task-abc123 1.1
+        st subtask pass task-abc123 1.1 --force
     """
     client = STClient()
+
+    # Pre-check: verify all steps are complete
+    if not force:
+        try:
+            result = client.get_subtasks(task_id, include_steps=True)
+            subtasks = result.get("subtasks", [])
+            target = None
+            for s in subtasks:
+                if s.get("subtask_id") == subtask_id:
+                    target = s
+                    break
+
+            if target:
+                steps_from_table = target.get("steps_from_table", [])
+                if steps_from_table:
+                    incomplete = [s["step_number"] for s in steps_from_table if not s.get("passes")]
+                    if incomplete:
+                        output_error(
+                            f"Incomplete steps: {', '.join(map(str, incomplete))}. "
+                            f"Complete with: st step pass {task_id} {subtask_id} <step#>"
+                        )
+                        raise typer.Exit(1)
+        except APIError:
+            pass  # Continue - let API handle any errors
 
     try:
         client.update_subtask(task_id, subtask_id, passes=True)

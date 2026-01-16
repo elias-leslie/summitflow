@@ -174,3 +174,149 @@ def verify_criterion(
         return
 
     output_json(result)
+
+
+@app.command("preflight")
+def preflight_criteria(
+    task_id: Annotated[str, typer.Argument(help="Task ID")],
+    criterion_id: Annotated[
+        str | None, typer.Argument(help="Optional specific criterion ID")
+    ] = None,
+) -> None:
+    """Run TDD-style preflight validation on verify_commands.
+
+    Preflight checks that verify_commands FAIL before work begins (TDD-style).
+    Valid results: valid_fail (good), invalid_pass (bad), invalid_crash (bad)
+
+    Examples:
+        st criterion preflight task-abc123           # All criteria
+        st criterion preflight task-abc123 ac-001    # Single criterion
+    """
+    from ...app.storage.connection import get_connection
+    from ...app.storage.verification import (
+        get_criteria_for_task_v2,
+        run_preflight_for_criterion,
+    )
+
+    with get_connection() as conn:
+        if criterion_id:
+            # Single criterion
+            result = run_preflight_for_criterion(conn, task_id, criterion_id)
+            if "error" in result:
+                output_error(result["error"])
+                raise typer.Exit(1)
+            # Detailed output for single criterion
+            status = result["status"]
+            output = result.get("output", "")[:500]  # Truncate for display
+            print(f"PREFLIGHT:{criterion_id}:{status}")
+            if output:
+                print(f"OUTPUT:{output}")
+        else:
+            # All criteria
+            criteria = get_criteria_for_task_v2(conn, task_id)
+            if not criteria:
+                output_error(f"No criteria found for task {task_id}")
+                raise typer.Exit(1)
+
+            valid = 0
+            invalid_pass = 0
+            invalid_crash = 0
+            pending = 0
+
+            for c in criteria:
+                if not c.get("verify_command"):
+                    pending += 1
+                    continue
+
+                result = run_preflight_for_criterion(conn, task_id, c["criterion_id"])
+                status = result.get("status", "error")
+
+                if status == "valid_fail":
+                    valid += 1
+                elif status == "invalid_pass":
+                    invalid_pass += 1
+                elif status == "invalid_crash":
+                    invalid_crash += 1
+                else:
+                    pending += 1
+
+            total = len(criteria)
+            print(
+                f"PREFLIGHT[{total}]:valid={valid}|invalid_pass={invalid_pass}|invalid_crash={invalid_crash}|pending={pending}"
+            )
+
+            # Exit with error if any invalid
+            if invalid_pass > 0 or invalid_crash > 0:
+                raise typer.Exit(1)
+
+
+@app.command("amend")
+def amend_criterion(
+    task_id: Annotated[str, typer.Argument(help="Task ID")],
+    criterion_id: Annotated[str, typer.Argument(help="Criterion ID to amend")],
+    new_command: Annotated[str, typer.Option("--new-command", "-c", help="New verify_command")],
+    reason: Annotated[str, typer.Option("--reason", "-r", help="Reason for amendment")],
+    evidence: Annotated[
+        str | None, typer.Option("--evidence", "-e", help="Path to evidence artifact")
+    ] = None,
+) -> None:
+    """Request an amendment to a locked criterion's verify_command.
+
+    The new command must fail preflight (TDD-style) to be valid.
+    Amendment requires supervisor/human approval.
+
+    Examples:
+        st criterion amend task-abc123 ac-001 --new-command "grep -q 'foo' file.py" --reason "Original command path wrong"
+    """
+    from ...app.storage.amendments import create_amendment
+    from ...app.storage.connection import get_connection
+
+    with get_connection() as conn:
+        result = create_amendment(
+            conn,
+            task_id,
+            criterion_id,
+            new_command,
+            reason,
+            evidence,
+        )
+
+    if "error" in result:
+        output_error(result["error"])
+        if result.get("status") == "rejected":
+            print(f"AMENDMENT:rejected|reason={result.get('reason', 'unknown')}")
+        raise typer.Exit(1)
+
+    print(f"AMENDMENT:pending|id={result['amendment_id']}|criterion={result['criterion_id']}")
+
+
+@app.command("override")
+def override_criterion(
+    task_id: Annotated[str, typer.Argument(help="Task ID")],
+    criterion_id: Annotated[str, typer.Argument(help="Criterion ID to override")],
+    action: Annotated[str, typer.Option("--action", "-a", help="pass or reset")],
+    reason: Annotated[str, typer.Option("--reason", "-r", help="Reason for override")],
+) -> None:
+    """Human override for a criterion at HUMAN escalation level.
+
+    Actions:
+        pass: Force-pass the criterion (marks as verified by human)
+        reset: Reset to WORKER level for another attempt
+
+    Examples:
+        st criterion override task-abc123 ac-001 --action pass --reason "Verified manually"
+        st criterion override task-abc123 ac-001 --action reset --reason "Fixed the test"
+    """
+    from ...app.storage.connection import get_connection
+    from ...app.storage.verification import human_override_criterion
+
+    with get_connection() as conn:
+        result = human_override_criterion(conn, task_id, criterion_id, action, reason)
+
+    if "error" in result:
+        output_error(result["error"])
+        raise typer.Exit(1)
+
+    print(
+        f"OVERRIDE:{result['status']}|criterion={result['criterion_id']}|action={result['action']}"
+    )

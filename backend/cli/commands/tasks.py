@@ -354,6 +354,26 @@ def show(
     for task_id in task_ids:
         try:
             task = client.get_task(task_id)
+
+            # Fetch task_spirit for context summary
+            from app.storage.task_spirit import get_task_spirit
+
+            spirit = get_task_spirit(task_id)
+            if spirit:
+                task["plan_status"] = spirit.get("plan_status", "draft")
+                task["context"] = spirit.get("context")
+                # Merge spirit fields if available
+                if spirit.get("objective"):
+                    task["objective"] = spirit["objective"]
+                if spirit.get("spirit_anti"):
+                    task["spirit_anti"] = spirit["spirit_anti"]
+                if spirit.get("decisions"):
+                    task["decisions"] = spirit["decisions"]
+                if spirit.get("constraints"):
+                    task["constraints"] = spirit["constraints"]
+                if spirit.get("done_when"):
+                    task["done_when"] = spirit["done_when"]
+
             # Subtasks endpoint is project-scoped, so use task's project_id
             task_project_id = task.get("project_id")
             if task_project_id and client.project_id != task_project_id:
@@ -457,6 +477,31 @@ def context(
     try:
         # Fetch task
         task = client.get_task(task_id)
+
+        # Fetch task_spirit for normalized fields (plan_status, context, etc.)
+        from app.storage.task_spirit import get_task_spirit
+
+        spirit = get_task_spirit(task_id)
+        if spirit:
+            # Merge task_spirit fields into task dict for output
+            task["plan_status"] = spirit.get("plan_status", "draft")
+            task["plan_approved_at"] = spirit.get("plan_approved_at")
+            task["plan_approved_by"] = spirit.get("plan_approved_by")
+            task["context"] = spirit.get("context")
+            # Also update spirit fields if they came from task_spirit
+            # (these may override values from tasks table during migration)
+            if spirit.get("objective"):
+                task["objective"] = spirit["objective"]
+            if spirit.get("spirit_anti"):
+                task["spirit_anti"] = spirit["spirit_anti"]
+            if spirit.get("decisions"):
+                task["decisions"] = spirit["decisions"]
+            if spirit.get("constraints"):
+                task["constraints"] = spirit["constraints"]
+            if spirit.get("done_when"):
+                task["done_when"] = spirit["done_when"]
+            if spirit.get("complexity"):
+                task["complexity"] = spirit["complexity"]
 
         # Fetch subtasks with steps (use task's project_id)
         task_project_id = task.get("project_id")
@@ -784,6 +829,19 @@ def update(
 
     # Apply status update (uses separate endpoint)
     if status_to_update:
+        # Pre-check: if transitioning to 'running', verify plan is approved
+        if status_to_update == "running":
+            from app.storage.task_spirit import get_task_spirit
+
+            spirit = get_task_spirit(task_id)
+            if spirit:
+                plan_status = spirit.get("plan_status", "draft")
+                if plan_status != "approved":
+                    output_error(
+                        f"Plan not approved (status: {plan_status}). Run: st approve {task_id}"
+                    )
+                    raise typer.Exit(1)
+
         try:
             task = client.update_status(task_id, status_to_update)
         except APIError as e:
@@ -810,12 +868,25 @@ def close(
     """Close a task (mark as completed).
 
     All subtasks must be complete and all acceptance criteria must be verified.
-    There is no bypass - if gates fail, complete the work first.
+    QA must be passed or skipped. There is no bypass - if gates fail, complete the work first.
 
     Examples:
         st close task-abc123 -r "All subtasks completed"
     """
     client = STClient()
+
+    # Pre-check: verify QA status before attempting close
+    try:
+        task_data = client.get_task(task_id)
+        qa_status = task_data.get("qa_status", "pending")
+        if qa_status not in ("passed", "skipped"):
+            output_error(
+                f"QA not passed (status: {qa_status}). "
+                f"Run: st qa pass {task_id} (or st qa skip {task_id})"
+            )
+            raise typer.Exit(1)
+    except APIError:
+        pass  # Continue - let close_task handle any errors
 
     try:
         task = client.close_task(task_id, reason=reason)
@@ -1145,6 +1216,35 @@ def verify_plan(
         if not decisions or len(decisions) < 1:
             issues.append("Conditional: COMPLEX tasks require 'decisions' with at least 1 item")
 
+    # Context validation handled by JSON schema (additionalProperties: false)
+
+    # Collect valid subtask IDs for dependency validation
+    subtasks = plan.get("subtasks", [])
+    valid_subtask_ids = {s.get("id") for s in subtasks if s.get("id")}
+
+    # Validate depends_on references point to valid subtask IDs
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "?")
+        depends_on = subtask.get("depends_on", [])
+        if depends_on:
+            for dep in depends_on:
+                if dep not in valid_subtask_ids:
+                    issues.append(f"subtask {subtask_id} depends_on '{dep}' which doesn't exist")
+                if dep == subtask_id:
+                    issues.append(f"subtask {subtask_id} cannot depend on itself")
+
+    # Validate criterion-subtask mapping if acceptance_criteria have subtask_ids
+    ac_list = plan.get("acceptance_criteria", [])
+    for ac in ac_list:
+        ac_id = ac.get("id", "?")
+        subtask_ids = ac.get("subtask_ids", [])
+        if subtask_ids:
+            for sid in subtask_ids:
+                if sid not in valid_subtask_ids:
+                    issues.append(
+                        f"criterion {ac_id} references subtask '{sid}' which doesn't exist"
+                    )
+
     # Output result
     if issues:
         typer.echo("FAIL")
@@ -1313,19 +1413,24 @@ def import_plan(
         return
 
     # Build task data
+    # Note: objective, spirit_anti, decisions, constraints, done_when go to task_spirit
+    # Labels go to task_labels (handled separately)
     task_data: dict[str, Any] = {
         "title": plan["title"],
         "description": plan.get("description"),
         "task_type": plan.get("task_type", "task"),
         "priority": plan.get("priority", 2),
-        "labels": plan.get("labels", []),
+        "complexity": complexity,
+    }
+
+    # Spirit data for task_spirit table
+    spirit_data: dict[str, Any] = {
         "objective": plan["objective"],
-        # Pipeline v2 fields
         "spirit_anti": plan.get("spirit_anti"),
         "decisions": plan.get("decisions"),
         "constraints": plan.get("constraints"),
         "done_when": plan.get("done_when"),
-        "complexity": complexity,
+        "context": plan.get("context"),
     }
 
     # Build subtasks with step-level specs (no longer using subtask-level details)
@@ -1337,17 +1442,19 @@ def import_plan(
         # Pass through as-is - storage layer handles both formats
         steps = st.get("steps", [])
 
-        subtasks.append(
-            {
-                "subtask_id": subtask_id,
-                "phase": st.get("phase"),
-                "description": st["description"],
-                "steps": steps,
-                "display_order": int(subtask_id.split(".")[0]) * 100 + int(subtask_id.split(".")[1])
-                if "." in subtask_id
-                else 0,
-            }
-        )
+        subtask_data = {
+            "subtask_id": subtask_id,
+            "phase": st.get("phase"),
+            "description": st["description"],
+            "steps": steps,
+            "display_order": int(subtask_id.split(".")[0]) * 100 + int(subtask_id.split(".")[1])
+            if "." in subtask_id
+            else 0,
+        }
+        # Include depends_on if specified (for subtask_dependencies table)
+        if st.get("depends_on"):
+            subtask_data["depends_on"] = st["depends_on"]
+        subtasks.append(subtask_data)
 
     task_data["subtasks"] = subtasks
 
@@ -1389,6 +1496,49 @@ def import_plan(
                 with contextlib.suppress(APIError):
                     client.delete_task_criterion(task_id, crit["criterion_id"])
 
+            # 6. Upsert task_spirit for normalized storage
+            from app.storage.task_spirit import upsert_task_spirit
+
+            try:
+                plan_context = plan.get("context", {})
+                context_blob = {
+                    "risks": plan_context.get("risks", []),
+                    "files_to_create": plan_context.get("files_to_create", []),
+                    "files_to_modify": plan_context.get("files_to_modify", []),
+                    "references": plan_context.get("references", []),
+                    "testing_strategy": plan_context.get("testing_strategy"),
+                }
+                context_blob = {k: v for k, v in context_blob.items() if v}
+
+                upsert_task_spirit(
+                    task_id=task_id,
+                    objective=plan["objective"],
+                    spirit_anti=plan.get("spirit_anti"),
+                    decisions=plan.get("decisions"),
+                    constraints=plan.get("constraints"),
+                    done_when=plan.get("done_when"),
+                    context=context_blob if context_blob else None,
+                    complexity=complexity,
+                )
+            except Exception as e:
+                typer.echo(f"  Warning: Failed to write task_spirit: {e}")
+
+            # 7. Handle subtask dependencies
+            from app.storage.subtask_dependencies import bulk_add_dependencies
+
+            dependencies: list[tuple[str, str]] = []
+            for sub in subtasks:
+                if sub.get("depends_on"):
+                    full_subtask_id = f"{task_id}-{sub['subtask_id']}"
+                    for dep in sub["depends_on"]:
+                        full_dep_id = f"{task_id}-{dep}"
+                        dependencies.append((full_subtask_id, full_dep_id))
+            if dependencies:
+                try:
+                    bulk_add_dependencies(dependencies)
+                except Exception as dep_err:
+                    typer.echo(f"  Warning: Failed to create dependencies: {dep_err}")
+
             task = client.get_task(task_id)
             typer.echo(f"{task_id} updated")
 
@@ -1418,6 +1568,36 @@ def import_plan(
         task = created[0]
         task_id = task["id"]
         typer.echo(f"{task_id} created")
+
+    # Write to task_spirit table for normalized storage
+    from app.storage.task_spirit import upsert_task_spirit
+
+    try:
+        # Build context blob for plan.json round-trip preservation
+        # Context can be at plan level or nested in 'context' key
+        plan_context = plan.get("context", {})
+        context_blob = {
+            "risks": plan_context.get("risks", []),
+            "files_to_create": plan_context.get("files_to_create", []),
+            "files_to_modify": plan_context.get("files_to_modify", []),
+            "references": plan_context.get("references", []),
+            "testing_strategy": plan_context.get("testing_strategy"),
+        }
+        # Remove None values and empty lists from context
+        context_blob = {k: v for k, v in context_blob.items() if v}
+
+        upsert_task_spirit(
+            task_id=task_id,
+            objective=plan["objective"],
+            spirit_anti=plan.get("spirit_anti"),
+            decisions=plan.get("decisions"),
+            constraints=plan.get("constraints"),
+            done_when=plan.get("done_when"),
+            context=context_blob if context_blob else None,
+            complexity=complexity,
+        )
+    except Exception as e:
+        typer.echo(f"  Warning: Failed to write task_spirit: {e}")
 
     # Output summary
     typer.echo(f"  title: {task.get('title', plan['title'])}")
@@ -1464,7 +1644,7 @@ def approve(
     Examples:
         st approve task-abc123
     """
-    from ..storage.task_spirit import approve_plan
+    from app.storage.task_spirit import approve_plan
 
     try:
         result = approve_plan(task_id, approved_by="user")

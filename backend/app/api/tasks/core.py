@@ -179,7 +179,6 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         title=task["title"],
         description=task["description"],
         status=task["status"],
-        plan_content=task["plan_content"],
         progress_log=task["progress_log"],
         error_message=task["error_message"],
         branch_name=task["branch_name"],
@@ -333,25 +332,33 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
 
     Args:
         project_id: Project ID
-        task: Task data (title, description, priority, labels, task_type, etc.)
+        task: Task data (title, description, priority, task_type, etc.)
     """
+    from ...storage.task_spirit import upsert_task_spirit
+
     created = task_store.create_task(
         project_id=project_id,
         title=task.title,
         description=task.description,
         capability_id=task.capability_id,
         priority=task.priority,
-        labels=task.labels,
         task_type=task.task_type,
         parent_task_id=task.parent_task_id,
-        objective=task.objective,
-        # Pipeline v2 fields
-        spirit_anti=task.spirit_anti,
-        decisions=task.decisions,
-        constraints=task.constraints,
-        done_when=task.done_when,
         complexity=task.complexity,
     )
+
+    # Save spirit fields to task_spirit table
+    if task.objective or task.spirit_anti or task.decisions or task.constraints or task.done_when:
+        upsert_task_spirit(
+            task_id=created["id"],
+            objective=task.objective or "",
+            spirit_anti=task.spirit_anti,
+            decisions=task.decisions,
+            constraints=task.constraints,
+            done_when=task.done_when,
+            complexity=task.complexity,
+        )
+
     return _task_to_response(created)
 
 
@@ -380,25 +387,44 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     created: list[TaskResponse] = []
     errors: list[BatchTaskResult] = []
 
+    from ...storage.task_spirit import upsert_task_spirit
+
     for item in body.items:
         try:
+            # Create task (basic fields only)
             task = task_store.create_task(
                 project_id=project_id,
                 title=item.title,
                 description=item.description,
                 capability_id=item.capability_id,
                 priority=item.priority,
-                labels=item.labels,
                 task_type=item.task_type,
                 parent_task_id=item.parent_task_id,
-                objective=item.objective,
-                # Pipeline v2 fields
-                spirit_anti=item.spirit_anti,
-                decisions=item.decisions,
-                constraints=item.constraints,
-                done_when=item.done_when,
                 complexity=item.complexity,
             )
+
+            # Save spirit fields to task_spirit table
+            if (
+                item.objective
+                or item.spirit_anti
+                or item.decisions
+                or item.constraints
+                or item.done_when
+            ):
+                try:
+                    upsert_task_spirit(
+                        task_id=task["id"],
+                        objective=item.objective or "",
+                        spirit_anti=item.spirit_anti,
+                        decisions=item.decisions,
+                        constraints=item.constraints,
+                        done_when=item.done_when,
+                        complexity=item.complexity,
+                    )
+                except Exception as spirit_err:
+                    logger.warning(
+                        f"Failed to create task_spirit for task {task['id']}: {spirit_err}"
+                    )
 
             # Create nested subtasks if provided
             created_subtasks = None
@@ -501,15 +527,33 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
         task_id: Task ID
         update: Fields to update
     """
+    from ...storage.task_spirit import update_task_spirit
+
     existing = _verify_task_project(task_id, project_id)
 
     update_fields = update.model_dump(exclude_unset=True)
     if not update_fields:
         return _task_to_response(existing)
 
-    updated = task_store.update_task(task_id, **update_fields)
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update task")
+    # Split into task fields and spirit fields
+    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when", "labels"}
+    task_updates = {k: v for k, v in update_fields.items() if k not in spirit_fields}
+    spirit_updates = {
+        k: v for k, v in update_fields.items() if k in spirit_fields and k != "labels"
+    }
+
+    # Update task table
+    if task_updates:
+        updated = task_store.update_task(task_id, **task_updates)
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update task")
+    else:
+        updated = existing
+
+    # Update task_spirit table
+    if spirit_updates:
+        update_task_spirit(task_id, **spirit_updates)
+
     return _task_to_response(updated)
 
 

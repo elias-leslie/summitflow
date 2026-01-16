@@ -122,33 +122,31 @@ def update_step_passes(
     subtask_id: str,
     step_number: int,
     passes: bool,
-    force: bool = False,
+    force: bool = False,  # Deprecated: kept for API compatibility, ignored
 ) -> dict[str, Any] | None:
-    """Update step passes status with sequential gate enforcement.
+    """Update step passes status.
 
     When passes is set to True, also sets passed_at timestamp.
     When passes is set to False, clears passed_at.
 
-    Gate enforcement: When setting passes=True, all previous steps (by step_number)
-    must already have passes=True. This ensures sequential completion.
+    Note: Sequential step completion is logged but not enforced as a gate.
+    Verification is now handled by criterion verification.
 
     Args:
         subtask_id: Parent subtask ID
         step_number: Step number to update
         passes: Whether the step passes
-        force: If True, bypass the sequential gate check (use with caution)
+        force: DEPRECATED - kept for API compatibility, ignored
 
     Returns:
         Updated step dict or None if not found.
-
-    Raises:
-        StepGateError: If passes=True and previous steps are not complete (unless force=True)
     """
+    _ = force  # Deprecated parameter, ignored
     passed_at = datetime.now(UTC) if passes else None
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Gate check: if marking as passed, verify all previous steps are passed
-        if passes and not force and step_number > 1:
+        # Log incomplete previous steps for context (no longer enforced as gate)
+        if passes and step_number > 1:
             cur.execute(
                 """
                 SELECT step_number FROM task_subtask_steps
@@ -159,13 +157,10 @@ def update_step_passes(
             )
             incomplete = [row[0] for row in cur.fetchall()]
             if incomplete:
-                msg = (
-                    f"Cannot mark step {step_number} as passed: "
-                    f"previous steps {incomplete} are not complete. "
-                    f"Use force=True to bypass."
+                logger.info(
+                    f"Marking step {step_number} as passed with incomplete previous steps: {incomplete}. "
+                    "Verification is handled by criterion verification."
                 )
-                logger.warning(msg)
-                raise StepGateError(msg, missing_steps=incomplete)
 
         cur.execute(
             f"""

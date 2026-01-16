@@ -154,6 +154,9 @@ def init_schema() -> None:
         # Tasks Table - Issue tracking and agent execution state
         # NOTE: Migrations are authoritative. This is fallback only.
         # ============================================================
+        # Note: objective, spirit_anti, decisions, constraints, done_when moved to task_spirit (migration 072)
+        # Note: labels moved to task_labels (migration 072)
+        # Note: plan_content dropped (migration 072)
         cur.execute(
             """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -162,7 +165,6 @@ def init_schema() -> None:
                     title TEXT NOT NULL,
                     description TEXT,
                     status TEXT DEFAULT 'pending',
-                    plan_content JSONB,
                     progress_log TEXT,
                     error_message TEXT,
                     branch_name TEXT,
@@ -175,7 +177,6 @@ def init_schema() -> None:
                     completed_at TIMESTAMPTZ,
                     -- Issue tracking fields
                     priority INTEGER DEFAULT 2,
-                    labels TEXT[] DEFAULT '{}',
                     task_type VARCHAR(20) DEFAULT 'task',
                     parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
                     -- Autonomous execution fields
@@ -185,12 +186,7 @@ def init_schema() -> None:
                     tier INTEGER,
                     pre_merge_sha TEXT,
                     review_result JSONB,
-                    -- AI agent reliability fields
-                    objective TEXT,
-                    spirit_anti TEXT,
-                    decisions JSONB,
-                    constraints JSONB,
-                    done_when JSONB,
+                    -- Complexity (still on tasks table)
                     complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX')),
                     current_phase TEXT,
                     verification_result JSONB,
@@ -577,14 +573,10 @@ def init_schema() -> None:
             ),
             # Issue tracking fields for tasks (beads migration)
             ("priority INTEGER DEFAULT 2", "tasks"),
-            ("labels TEXT[] DEFAULT '{}'", "tasks"),
+            # Note: labels moved to task_labels table in migration 072
             ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
             ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
-            # Pipeline v2 fields - task context for /plan_it and /do_it
-            ("spirit_anti TEXT", "tasks"),
-            ("decisions JSONB", "tasks"),
-            ("constraints JSONB", "tasks"),
-            ("done_when JSONB", "tasks"),
+            # Note: spirit_anti, decisions, constraints, done_when moved to task_spirit table (migration 072)
             (
                 "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
                 "tasks",

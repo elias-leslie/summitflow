@@ -94,7 +94,6 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 description=description,
                 priority=2 if priority == "high" else 3,
                 task_type="refactor",
-                labels=["auto-generated", f"tier:{tier}"],
                 tier=tier,
             )
 
