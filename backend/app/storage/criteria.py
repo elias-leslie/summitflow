@@ -30,8 +30,8 @@ def get_next_criterion_id(conn: psycopg.Connection, project_id: str) -> str:
         cur.execute(
             """
             SELECT criterion_id FROM acceptance_criteria
-            WHERE project_id = %s
-            ORDER BY criterion_id DESC
+            WHERE project_id = %s AND criterion_id ~ '^ac-[0-9]+$'
+            ORDER BY CAST(SUBSTRING(criterion_id FROM 4) AS INTEGER) DESC
             LIMIT 1
             """,
             (project_id,),
