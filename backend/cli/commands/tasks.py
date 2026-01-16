@@ -1373,7 +1373,7 @@ def import_plan(
                 with contextlib.suppress(APIError):
                     client.delete_subtask(task_id, sub["subtask_id"])
 
-            # 4. Create new subtasks
+            # 4. Create new subtasks (step-level specs, no subtask-level details)
             for sub in subtasks:
                 client.create_subtask(
                     task_id,
@@ -1381,7 +1381,6 @@ def import_plan(
                     sub["description"],
                     phase=sub.get("phase"),
                     steps=sub.get("steps", []),
-                    details=sub.get("details"),
                 )
 
             # 5. Delete existing criteria
