@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
@@ -75,11 +75,24 @@ export default function ProjectDetailPage() {
     router.replace(newUrl, { scroll: false });
   };
 
+  // Auto-open task from URL query param
+  const urlTaskId = searchParams.get("task");
+
   // Kanban state
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
+    urlTaskId,
+  );
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(!!urlTaskId);
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
+
+  // Handle URL task param changes
+  useEffect(() => {
+    if (urlTaskId) {
+      setSelectedTaskId(urlTaskId);
+      setModalOpen(true);
+    }
+  }, [urlTaskId]);
 
   const {
     data: project,

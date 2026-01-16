@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bug,
@@ -330,12 +331,23 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     const loaded = loadFilters();
     return { ...loaded, ...initialFilters };
   });
+  const searchParams = useSearchParams();
+  const urlTaskId = searchParams.get("task");
+
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [modalTaskId, setModalTaskId] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTaskId, setModalTaskId] = useState<string | null>(urlTaskId);
+  const [modalOpen, setModalOpen] = useState(!!urlTaskId);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // Handle URL task param changes
+  useEffect(() => {
+    if (urlTaskId) {
+      setModalTaskId(urlTaskId);
+      setModalOpen(true);
+    }
+  }, [urlTaskId]);
 
   // Enrichment flow state
   const [enrichingTask, setEnrichingTask] = useState<Task | null>(null);
