@@ -429,6 +429,51 @@ def get_criteria_count_for_task(task_id: str) -> int:
     return count
 
 
+def get_criteria_counts_batch(task_ids: list[str]) -> dict[str, int]:
+    """Get criteria counts for multiple tasks in a single query.
+
+    This eliminates N+1 queries when listing tasks.
+    Returns a dict mapping task_id -> count.
+
+    Checks task_acceptance_criteria (new model) first, falls back to
+    task_criteria (legacy junction) for unmigrated data.
+    """
+    if not task_ids:
+        return {}
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get counts from new model
+        cur.execute(
+            """
+            SELECT task_id, COUNT(*) as count
+            FROM task_acceptance_criteria
+            WHERE task_id = ANY(%s)
+            GROUP BY task_id
+            """,
+            (task_ids,),
+        )
+        new_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Get counts from legacy model for tasks not in new model
+        missing_ids = [tid for tid in task_ids if tid not in new_counts]
+        legacy_counts: dict[str, int] = {}
+        if missing_ids:
+            cur.execute(
+                """
+                SELECT task_id, COUNT(*) as count
+                FROM task_criteria
+                WHERE task_id = ANY(%s)
+                GROUP BY task_id
+                """,
+                (missing_ids,),
+            )
+            legacy_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+    # Merge results, default to 0 for tasks with no criteria
+    result = {tid: new_counts.get(tid, legacy_counts.get(tid, 0)) for tid in task_ids}
+    return result
+
+
 def update_task_criterion_verification(
     conn: psycopg.Connection,
     task_id: str,

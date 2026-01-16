@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from app.services.git_service import (
     auto_claim_with_worktree,
     auto_create_pr,

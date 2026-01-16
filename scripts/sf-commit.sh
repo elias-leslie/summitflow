@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # sf-commit - Streamlined commit with TOON output for Claude
-# Version: 2.0.0
+# Version: 2.1.0
 # Usage: sf-commit [--push] [--task ID] [--type TYPE] [--skip-checks] [--msg "..."]
 #
-# Delegates quality gates to dev-tools.sh --check for consistent TOON output.
+# Delegates quality gates to `dt` (dev-tools) for consistent TOON output.
 # Output: TOON format (<sf-commit>...</sf-commit>)
 
 set -euo pipefail
@@ -26,10 +26,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Find dev-tools.sh (in project scripts/ or ~/summitflow/scripts/)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEV_TOOLS="$SCRIPT_DIR/dev-tools.sh"
-[[ ! -x "$DEV_TOOLS" ]] && DEV_TOOLS="$HOME/summitflow/scripts/dev-tools.sh"
+# Use dt command (~/bin/dt -> ~/summitflow/scripts/dev-tools.sh)
+# Falls back to direct path if dt not in PATH
+if command -v dt &>/dev/null; then
+    DEV_TOOLS="dt"
+else
+    DEV_TOOLS="$HOME/summitflow/scripts/dev-tools.sh"
+fi
 
 # Detect layers from staged + unstaged changes
 detect_layers() {
@@ -72,11 +75,11 @@ detect_type() {
     fi
 }
 
-# Run quality gates via dev-tools.sh --quick (lint+types, no tests)
+# Run quality gates via dt --quick (lint+types, no tests)
 # Use --check for full validation including tests
 run_quality_gates() {
-    if [[ ! -x "$DEV_TOOLS" ]]; then
-        echo "GATES:FAIL:dev-tools.sh not found"
+    if ! command -v "$DEV_TOOLS" &>/dev/null && [[ ! -x "$DEV_TOOLS" ]]; then
+        echo "GATES:FAIL:dt not found"
         return 1
     fi
 
@@ -175,7 +178,7 @@ main() {
     # Stage all changes
     git add -A
 
-    # Run quality gates BEFORE commit (via dev-tools.sh)
+    # Run quality gates BEFORE commit (via dt)
     if ! $SKIP_CHECKS; then
         local gates_out gates_status=0
         gates_out=$(run_quality_gates 2>&1) || gates_status=$?
@@ -204,7 +207,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 EOF
 )
 
-    # Attempt commit - skip lint/types in pre-commit (already ran via dev-tools.sh)
+    # Attempt commit - skip lint/types in pre-commit (already ran via dt)
     # Pre-commit still runs formatters (ruff-format, prettier, trailing-whitespace, etc.)
     local commit_out commit_status=0
     commit_out=$(SKIP=ruff,mypy,eslint,tsc git commit -m "$full_message" 2>&1) || commit_status=$?

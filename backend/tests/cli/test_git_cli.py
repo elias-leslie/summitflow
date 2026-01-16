@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cli.commands.git import _format_compact_repo, _get_repo_status, app
 from typer.testing import CliRunner
+
+from cli.commands.git import _format_compact_repo, _get_repo_status, app
 
 runner = CliRunner()
 

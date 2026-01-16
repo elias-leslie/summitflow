@@ -42,6 +42,8 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "pr_created",
         "completed",
         "ai_reviewing",
+        "human_reviewing",
+        "needs_review",
         "cancelled",
     },
     "paused": {"running", "pending", "failed", "cancelled"},
@@ -51,6 +53,9 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled"},
     "ai_reviewing": {"completed", "human_review", "running", "failed"},
     "human_review": {"completed", "running", "cancelled"},
+    # Verification workflow states (migration 073)
+    "needs_review": {"completed", "running", "failed", "cancelled"},  # QA passed → can complete
+    "human_reviewing": {"completed", "running", "failed", "cancelled"},  # Human reviewing criteria
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
     "cancelled": set(),
@@ -65,6 +70,8 @@ STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
     "pr_created": "AI Review",
     "ai_reviewing": "AI Review",
     "human_review": "Human Review",
+    "needs_review": "Human Review",  # Awaiting QA signoff
+    "human_reviewing": "Human Review",  # Criteria escalated to human
     "completed": "Done",
     "failed": "Done",
     "cancelled": "Done",

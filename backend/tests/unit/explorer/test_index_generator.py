@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import yaml
+
 from app.services.explorer.index_generator import generate_index, write_index_file
 
 

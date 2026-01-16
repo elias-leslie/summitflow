@@ -7,6 +7,7 @@ Tasks:
 from __future__ import annotations
 
 import asyncio
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,18 @@ class PristineCheckError(Exception):
     """Raised when codebase is not in pristine state."""
 
     pass
+
+
+def _find_dev_tools() -> str | None:
+    """Find dt command or dev-tools.sh script.
+
+    Returns path to dt (if in PATH) or None if not found.
+    """
+    # Prefer dt command in PATH (~/bin/dt)
+    dt_path = shutil.which("dt")
+    if dt_path:
+        return dt_path
+    return None
 
 
 def check_pristine_codebase(project_id: str) -> None:
@@ -44,21 +57,27 @@ def check_pristine_codebase(project_id: str) -> None:
         raise PristineCheckError(f"Project {project_id} not found or has no root_path")
 
     repo_path = Path(root_path)
-    dev_tools_script = repo_path / "scripts" / "dev-tools.sh"
 
-    if not dev_tools_script.exists():
-        logger.warning(
-            "pristine_check_skipped",
-            project_id=project_id,
-            reason="dev-tools.sh not found",
-        )
-        return
+    # Find dt command (preferred) or fall back to scripts/dev-tools.sh
+    dt_cmd = _find_dev_tools()
+    if dt_cmd:
+        cmd = [dt_cmd, "--check"]
+    else:
+        dev_tools_script = repo_path / "scripts" / "dev-tools.sh"
+        if not dev_tools_script.exists():
+            logger.warning(
+                "pristine_check_skipped",
+                project_id=project_id,
+                reason="dt command and scripts/dev-tools.sh not found",
+            )
+            return
+        cmd = [str(dev_tools_script), "--check"]
 
-    logger.info("pristine_check_started", project_id=project_id)
+    logger.info("pristine_check_started", project_id=project_id, cmd=cmd[0])
 
     try:
         result = subprocess.run(
-            [str(dev_tools_script), "--check"],
+            cmd,
             cwd=str(repo_path),
             capture_output=True,
             text=True,
@@ -77,21 +96,20 @@ def check_pristine_codebase(project_id: str) -> None:
             raise PristineCheckError(
                 f"Codebase quality gates failed (exit code {result.returncode}). "
                 f"Fix lint/type/test errors before running automated execution. "
-                f"Run './scripts/dev-tools.sh --check' to see details."
+                f"Run 'dt --check' to see details."
             )
 
         logger.info("pristine_check_passed", project_id=project_id)
 
     except subprocess.TimeoutExpired as e:
         raise PristineCheckError(
-            "Pristine check timed out after 10 minutes. "
-            "Run './scripts/dev-tools.sh --check' manually to investigate."
+            "Pristine check timed out after 10 minutes. Run 'dt --check' manually to investigate."
         ) from e
     except FileNotFoundError as e:
         logger.warning(
             "pristine_check_skipped",
             project_id=project_id,
-            reason=f"Script not executable: {e}",
+            reason=f"Command not found: {e}",
         )
         return
 

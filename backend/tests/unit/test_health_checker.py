@@ -42,6 +42,7 @@ class TestGetHealthMetrics:
     def test_raises_without_project_id(self):
         """Raises ValueError when no project_id provided."""
         import pytest
+
         from app.services.memory.health_checker import MemoryHealthChecker
 
         checker = MemoryHealthChecker()  # No project_id

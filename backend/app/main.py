@@ -4,7 +4,6 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-import psycopg
 import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +34,7 @@ from .api import (
     tdd,
     tdd_tests,
 )
-from .config import DATABASE_URL, REDIS_URL
+from .config import REDIS_URL
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
 
@@ -45,9 +44,19 @@ _app_start_time = time.time()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    """Initialize database and services on startup."""
-    init_schema()
+    """Initialize database, connection pool, and services on startup."""
+    import os
+
+    from .storage.connection import close_pool, open_pool
+
+    # Skip heavy DB init during pytest (tests mock the DB anyway)
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        open_pool()  # Initialize connection pool
+        init_schema()
     yield
+    # Cleanup on shutdown
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        close_pool()
 
 
 app = FastAPI(
@@ -142,22 +151,20 @@ async def detailed_health_check() -> DetailedHealthResponse:
 
 
 def _check_database_health() -> ComponentHealth:
-    """Check PostgreSQL database connectivity and response time."""
+    """Check PostgreSQL database connectivity and response time using connection pool."""
+    from .storage.connection import get_connection
+
     start_time = time.time()
     try:
-        conn = psycopg.connect(DATABASE_URL)
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
-            response_time_ms = (time.time() - start_time) * 1000
-            return ComponentHealth(
-                status="healthy",
-                message="Database connection successful",
-                response_time_ms=round(response_time_ms, 2),
-            )
-        finally:
-            conn.close()
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        response_time_ms = (time.time() - start_time) * 1000
+        return ComponentHealth(
+            status="healthy",
+            message="Database connection successful (pooled)",
+            response_time_ms=round(response_time_ms, 2),
+        )
     except Exception as e:
         response_time_ms = (time.time() - start_time) * 1000
         return ComponentHealth(

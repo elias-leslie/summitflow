@@ -73,7 +73,7 @@ class TestUpdateSubtaskPassesGate:
             now,
         )
 
-        result = update_subtask_passes("task-123", "1.1", passes=True)
+        update_subtask_passes("task-123", "1.1", passes=True)
         mock_verify.assert_called_once()
 
     @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
@@ -101,7 +101,7 @@ class TestUpdateSubtaskPassesGate:
             now,
         )
 
-        result = update_subtask_passes("task-123", "1.1", passes=True)
+        update_subtask_passes("task-123", "1.1", passes=True)
         assert mock_verify.called
 
     @patch("app.storage.subtasks._run_linked_verifications_for_subtask")
@@ -128,7 +128,7 @@ class TestUpdateSubtaskPassesGate:
         )
 
         # Should not raise with force=True (param ignored)
-        result = update_subtask_passes("task-123", "1.1", passes=True, force=True)
+        update_subtask_passes("task-123", "1.1", passes=True, force=True)
         # Verification still called regardless of force
         assert mock_verify.called
 
@@ -181,7 +181,7 @@ class TestUpdateSubtaskPassesGate:
             now,
         )
 
-        result = update_subtask_passes("task-123", "1.1", passes=True)
+        update_subtask_passes("task-123", "1.1", passes=True)
         assert mock_verify.called
 
 

@@ -3,6 +3,7 @@
 from datetime import UTC
 
 import pytest
+
 from app.storage import backups
 from app.storage.connection import get_connection
 
@@ -92,7 +93,7 @@ class TestBackupCRUD:
         backups.create_backup_record(cleanup_project)
         backups.update_backup_status(b1["id"], "completed")
 
-        result, total = backups.list_backups(project_id=cleanup_project, status="completed")
+        result, _total = backups.list_backups(project_id=cleanup_project, status="completed")
         assert len(result) == 1
         assert result[0]["id"] == b1["id"]
 

@@ -76,6 +76,9 @@ class TaskUpdate(BaseModel):
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     autonomous: bool | None = None
+    # QA workflow fields (migration 068)
+    qa_status: Literal["pending", "passed", "failed", "skipped"] | None = None
+    qa_issues: list[dict[str, Any]] | None = None
 
 
 class TaskStatusUpdate(BaseModel):

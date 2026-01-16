@@ -1,6 +1,7 @@
 """Tests for magic string detection in FileScanner."""
 
 import pytest
+
 from app.services.explorer.types.files import (
     MAGIC_STRING_PATTERNS,
     FileScanner,

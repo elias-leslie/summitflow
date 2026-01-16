@@ -1,6 +1,7 @@
 """Tests for AST analyzer."""
 
 import pytest
+
 from app.services.explorer.analyzers.ast_analyzer import parse_python_file
 
 

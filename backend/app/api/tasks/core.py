@@ -33,7 +33,11 @@ from ...schemas.tasks import (
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from ...storage.connection import get_connection
-from ...storage.criteria import get_criteria_count_for_task, get_effective_criteria
+from ...storage.criteria import (
+    get_criteria_count_for_task,
+    get_criteria_counts_batch,
+    get_effective_criteria,
+)
 
 logger = get_logger(__name__)
 
@@ -63,8 +67,13 @@ def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
     return task
 
 
-def _task_to_response(task: dict[str, Any]) -> TaskResponse:
-    """Convert task dict to response model."""
+def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -> TaskResponse:
+    """Convert task dict to response model.
+
+    Args:
+        task: Task dict from storage
+        criteria_count: Pre-fetched criteria count (avoids N+1 query in list endpoints)
+    """
     # Handle optional capability context
     capability_context = None
     if task.get("capability") is not None:
@@ -197,7 +206,9 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         # AI agent reliability fields
         objective=task.get("objective"),
         acceptance_criteria=task_criteria_list,
-        criteria_count=get_criteria_count_for_task(task["id"]),
+        criteria_count=criteria_count
+        if criteria_count is not None
+        else get_criteria_count_for_task(task["id"]),
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
         # Pipeline v2 fields
@@ -283,8 +294,12 @@ async def list_tasks(
             blockers = dep_store.get_blocking_tasks(task["id"])
             task["blockers"] = blockers
 
+    # Batch fetch criteria counts to avoid N+1 queries
+    task_ids = [t["id"] for t in tasks]
+    criteria_counts = get_criteria_counts_batch(task_ids)
+
     return TaskListResponse(
-        tasks=[_task_to_response(t) for t in tasks],
+        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
         total=len(tasks),  # TODO: Add proper total count
     )
 
@@ -300,8 +315,13 @@ async def list_ready_tasks(
     ordered by priority then creation date.
     """
     tasks = task_store.list_ready_tasks(project_id, limit=limit)
+
+    # Batch fetch criteria counts to avoid N+1 queries
+    task_ids = [t["id"] for t in tasks]
+    criteria_counts = get_criteria_counts_batch(task_ids)
+
     return TaskListResponse(
-        tasks=[_task_to_response(t) for t in tasks],
+        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
         total=len(tasks),
     )
 
@@ -316,8 +336,13 @@ async def list_blocked_tasks(
     Returns pending tasks that have unresolved blocking dependencies.
     """
     tasks = task_store.list_blocked_tasks(project_id, limit=limit)
+
+    # Batch fetch criteria counts to avoid N+1 queries
+    task_ids = [t["id"] for t in tasks]
+    criteria_counts = get_criteria_counts_batch(task_ids)
+
     return TaskListResponse(
-        tasks=[_task_to_response(t) for t in tasks],
+        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
         total=len(tasks),
     )
 

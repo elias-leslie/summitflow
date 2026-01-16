@@ -1,6 +1,7 @@
 """Tests for the criteria storage module."""
 
 import pytest
+
 from app.storage import criteria
 from app.storage.connection import get_connection
 

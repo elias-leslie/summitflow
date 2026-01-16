@@ -1,6 +1,7 @@
 """Tests for Explorer base scanner service."""
 
 import pytest
+
 from app.services.explorer import (
     BaseScanner,
     ExplorerEntryCreate,

@@ -4,12 +4,15 @@
 # Enforces consistent dev tooling, testing, and quality gates across all projects
 # Works for any project - auto-detects project from PWD/git root
 #
-# Usage:
-#   ./scripts/dev-standards.sh              # Dashboard of all projects (default)
-#   ./scripts/dev-standards.sh --check      # Full quality gate (lint, types, tests)
-#   ./scripts/dev-standards.sh --fix        # Auto-fix + install deps + pre-commit install
-#   ./scripts/dev-standards.sh --fix-all    # Fix all managed projects
-#   ./scripts/dev-standards.sh --rebuild-venv  # Nuclear option: delete and recreate venv
+# Usage (via ~/bin/dt symlink):
+#   dt                    # Dashboard of all projects (default)
+#   dt --check            # Full quality gate (lint, types, tests)
+#   dt --fix              # Auto-fix + install deps + pre-commit install
+#   dt --fix-all          # Fix all managed projects
+#   dt --rebuild-venv     # Nuclear option: delete and recreate venv
+#   dt pytest             # Run pytest with TOON output
+#   dt ruff               # Run ruff with TOON output
+#   dt mypy               # Run mypy with TOON output
 #
 
 set -o pipefail
@@ -18,7 +21,9 @@ set -o pipefail
 # SETUP
 # =============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to find the real script location (enables ~/bin/dt symlink)
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 source "$SCRIPT_DIR/lib/dev-standards-config.sh"
 
 # Colors
@@ -221,24 +226,32 @@ run_lint() {
         fi
     fi
 
-    local app_dir="$backend/app"
-    [[ ! -d "$app_dir" ]] && app_dir="$backend"
+    # Lint all of backend/ (app + tests)
+    local lint_dir="$backend"
+
+    # ALWAYS auto-fix safe issues first (import sorting, formatting)
+    # This eliminates the fix vs check distinction for safe fixes
+    "$ruff_bin" check "$lint_dir" --fix --quiet 2>/dev/null || true
+    "$ruff_bin" format "$lint_dir" --quiet 2>/dev/null || true
+
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/ruff-details.1.txt"
 
     if [[ "$fix_mode" == "fix" ]]; then
-        "$ruff_bin" check "$app_dir" --fix 2>&1 >/dev/null || true
-        "$ruff_bin" format "$app_dir" 2>&1 >/dev/null || true
+        rm -f "$details_file"
         echo "FIXED:ruff=$ruff_src"
     else
-        # Use concise format for reliable one-line-per-violation counting
-        # Check exit code first - if 0, no violations
+        # Check for remaining unfixable violations
         local output retval=0
-        output=$("$ruff_bin" check "$app_dir" --output-format=concise 2>&1) || retval=$?
+        output=$("$ruff_bin" check "$lint_dir" --output-format=concise 2>&1) || retval=$?
         if [[ $retval -eq 0 ]]; then
+            rm -f "$details_file"
             echo "OK:violations=0"
         else
             local violations
             violations=$(echo "$output" | wc -l) || violations=0
-            echo "FAIL:violations=$violations"
+            echo "$output" > "$details_file"
+            echo "FAIL:violations=$violations|details:$details_file"
             return 1
         fi
     fi
@@ -258,6 +271,9 @@ run_types() {
         return 1
     fi
 
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/mypy-details.1.txt"
+
     local app_dir="$backend/app"
     [[ ! -d "$app_dir" ]] && app_dir="$backend"
 
@@ -267,9 +283,11 @@ run_types() {
     output=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1) || true
     errors=$(echo "$output" | grep -c "error:") || errors=0
     if [[ "$errors" -eq 0 ]]; then
+        rm -f "$details_file"
         echo "OK:errors=0"
     else
-        echo "FAIL:errors=$errors"
+        echo "$output" > "$details_file"
+        echo "FAIL:errors=$errors|details:$details_file"
         return 1
     fi
 }
@@ -288,38 +306,21 @@ run_tests() {
         return 1
     fi
 
+    ensure_output_dir
+    local details_file="$OUTPUT_DIR/pytest-details.1.txt"
+
     cd "$backend"
     # Use pytest exit code, not text matching (avoids "6 failed, 677 passed" false positive)
     local output retval=0
-    output=$("$pytest_bin" --tb=no -q 2>&1) || retval=$?
+    output=$("$pytest_bin" --tb=short -q 2>&1) || retval=$?
     local summary=$(echo "$output" | tail -1)
 
     if [[ $retval -eq 0 ]]; then
+        rm -f "$details_file"
         echo "OK:$summary"
     else
-        echo "FAIL:$summary"
-        return 1
-    fi
-}
-
-run_hooks() {
-    local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
-
-    echo "HOOKS:$project_name"
-
-    local precommit_bin="${venv}/bin/pre-commit"
-    if [[ ! -x "$precommit_bin" ]]; then
-        echo "ERROR:precommit_not_found"
-        return 1
-    fi
-
-    cd "$project_dir"
-    if "$precommit_bin" run --all-files >/dev/null 2>&1; then
-        echo "OK:all_passed"
-    else
-        echo "FAIL:hook_errors"
+        echo "$output" > "$details_file"
+        echo "FAIL:$summary|details:$details_file"
         return 1
     fi
 }

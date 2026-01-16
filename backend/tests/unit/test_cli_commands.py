@@ -10,11 +10,12 @@ import json
 import tempfile
 
 import pytest
+from typer.testing import CliRunner
+
 from app.storage import tasks as task_store
 from cli.commands.step import app as step_app
 from cli.commands.subtask import app as subtask_app
 from cli.commands.tasks import app as tasks_app
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

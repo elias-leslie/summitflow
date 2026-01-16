@@ -1430,16 +1430,6 @@ def import_plan(
         "complexity": complexity,
     }
 
-    # Spirit data for task_spirit table
-    spirit_data: dict[str, Any] = {
-        "objective": plan["objective"],
-        "spirit_anti": plan.get("spirit_anti"),
-        "decisions": plan.get("decisions"),
-        "constraints": plan.get("constraints"),
-        "done_when": plan.get("done_when"),
-        "context": plan.get("context"),
-    }
-
     # Build subtasks with step-level specs (no longer using subtask-level details)
     subtasks = []
     for st in plan.get("subtasks", []):

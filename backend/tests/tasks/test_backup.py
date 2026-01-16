@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from app.storage import backups as backup_store
 from app.storage.connection import get_connection
 from app.tasks.backup import (

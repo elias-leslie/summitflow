@@ -26,8 +26,9 @@ from typing import Any
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.constants import DEFAULT_GEMINI_MODEL
 from app.services.agents.gemini import GeminiClient
+
+from app.constants import DEFAULT_GEMINI_MODEL
 from app.storage.subtasks import bulk_create_subtasks
 from app.storage.tasks import get_task, update_task
 

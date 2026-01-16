@@ -119,19 +119,19 @@ class TestPreflightValidation:
 
     def test_preflight_valid_fail(self):
         """Command that fails with exit 1-125 is valid_fail (TDD red state)."""
-        status, exit_code, output = verification.run_preflight("exit 1")
+        status, exit_code, _output = verification.run_preflight("exit 1")
         assert status == "valid_fail"
         assert exit_code == 1
 
     def test_preflight_invalid_pass(self):
         """Command that passes (exit 0) is invalid_pass - bad for TDD."""
-        status, exit_code, output = verification.run_preflight("exit 0")
+        status, exit_code, _output = verification.run_preflight("exit 0")
         assert status == "invalid_pass"
         assert exit_code == 0
 
     def test_preflight_invalid_crash_command_not_found(self):
         """Command not found (exit 127) is invalid_crash."""
-        status, exit_code, output = verification.run_preflight(
+        status, exit_code, _output = verification.run_preflight(
             "nonexistent_command_that_should_not_exist_xyz123"
         )
         assert status == "invalid_crash"
@@ -139,14 +139,14 @@ class TestPreflightValidation:
 
     def test_preflight_invalid_crash_syntax_error(self):
         """Syntax error in command is invalid_crash (caught by bash -n)."""
-        status, exit_code, output = verification.run_preflight("if then else fi")
+        status, _exit_code, output = verification.run_preflight("if then else fi")
         assert status == "invalid_crash"
         assert "syntax error" in output.lower()
 
     def test_preflight_invalid_crash_not_executable(self):
         """Not-executable file is invalid_crash (exit 126)."""
         # Use a command that tries to execute a non-executable
-        status, exit_code, output = verification.run_preflight("/dev/null")
+        status, exit_code, _output = verification.run_preflight("/dev/null")
         assert status == "invalid_crash"
         assert exit_code == 126  # permission denied / not executable
 
@@ -713,7 +713,7 @@ class TestTaskStatusComputation:
 
     def test_no_status_change_when_all_worker(self, conn, test_task):
         """No status change suggested when all criteria at WORKER."""
-        crit = verification.create_task_criterion(
+        verification.create_task_criterion(
             conn,
             test_task,
             "Worker level criterion",

@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from app.api.ws_execution import (
     ConnectionManager,
     Message,

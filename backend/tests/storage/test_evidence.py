@@ -1,6 +1,7 @@
 """Tests for the evidence storage module."""
 
 import pytest
+
 from app.storage import evidence
 from app.storage.connection import get_connection
 

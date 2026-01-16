@@ -206,6 +206,13 @@ def init_schema() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(task_type)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)")
+        # Composite indexes for common query patterns (PERF-002, PERF-004)
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON tasks(project_id, created_at DESC)"
+        )
 
         # ============================================================
         # Task Dependencies - Dependency tracking between tasks
