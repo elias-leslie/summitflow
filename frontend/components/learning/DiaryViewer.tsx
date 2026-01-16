@@ -101,7 +101,7 @@ export function DiaryViewer({
       }
 
       const response = await fetch(
-        `/api/projects/${projectId}/diary?${params}`
+        `/api/projects/${projectId}/diary?${params}`,
       );
 
       if (!response.ok) {
@@ -152,9 +152,10 @@ export function DiaryViewer({
         className={clsx(
           "cursor-pointer transition-colors",
           isUnprocessed && "border-amber-500/30 bg-amber-500/5",
-          isExpanded && "ring-1 ring-primary"
+          isExpanded && "ring-1 ring-primary",
         )}
         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+        data-testid={`diary-entry-${entry.id}`}
       >
         <CardHeader className="py-3 px-4">
           <div className="flex items-start justify-between gap-2">
@@ -308,7 +309,10 @@ export function DiaryViewer({
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">Diary Entries</span>
             {unprocessedCount > 0 && (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-500">
+              <Badge
+                variant="outline"
+                className="bg-amber-500/10 text-amber-500"
+              >
                 {unprocessedCount} pending reflection
               </Badge>
             )}
@@ -343,9 +347,7 @@ export function DiaryViewer({
         </div>
       ) : (
         <ScrollArea className="pr-4" style={{ maxHeight }}>
-          <div className="space-y-2">
-            {entries.map(renderEntry)}
-          </div>
+          <div className="space-y-2">{entries.map(renderEntry)}</div>
         </ScrollArea>
       )}
     </div>

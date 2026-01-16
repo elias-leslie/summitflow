@@ -64,7 +64,10 @@ function formatDate(dateStr: string): string {
 }
 
 // Calculate dynamic time window based on scan timestamps
-function calculateTimeWindow(scans: { started_at: string }[]): { start: number; end: number } {
+function calculateTimeWindow(scans: { started_at: string }[]): {
+  start: number;
+  end: number;
+} {
   const now = Date.now();
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MIN_WINDOW = DAY_MS;
@@ -84,15 +87,21 @@ function calculateTimeWindow(scans: { started_at: string }[]): { start: number; 
     const center = (windowStart + windowEnd) / 2;
     windowStart = center - MIN_WINDOW / 2;
     windowEnd = Math.min(center + MIN_WINDOW / 2, now);
-    if (windowEnd - windowStart < MIN_WINDOW) windowStart = windowEnd - MIN_WINDOW;
+    if (windowEnd - windowStart < MIN_WINDOW)
+      windowStart = windowEnd - MIN_WINDOW;
   }
 
-  if (windowEnd - windowStart > MAX_WINDOW) windowStart = windowEnd - MAX_WINDOW;
+  if (windowEnd - windowStart > MAX_WINDOW)
+    windowStart = windowEnd - MAX_WINDOW;
 
   return { start: windowStart, end: windowEnd };
 }
 
-function getTimePosition(timestamp: number, start: number, end: number): number {
+function getTimePosition(
+  timestamp: number,
+  start: number,
+  end: number,
+): number {
   const size = end - start;
   if (size <= 0) return 50;
   return Math.max(0, Math.min(100, ((timestamp - start) / size) * 100));
@@ -112,19 +121,25 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
     if (!scans || scans.length === 0 || !timeWindow) return null;
 
     const sorted = [...scans].sort(
-      (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+      (a, b) =>
+        new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
     );
 
     return sorted.map((scan, idx, arr): ProcessedScan => {
-      const curr = typeof scan.metrics?.complexity === "number" ? scan.metrics.complexity : null;
-      const prev = idx > 0 && typeof arr[idx - 1].metrics?.complexity === "number"
-        ? (arr[idx - 1].metrics.complexity as number)
-        : null;
+      const curr =
+        typeof scan.metrics?.complexity === "number"
+          ? scan.metrics.complexity
+          : null;
+      const prev =
+        idx > 0 && typeof arr[idx - 1].metrics?.complexity === "number"
+          ? (arr[idx - 1].metrics.complexity as number)
+          : null;
 
       let delta = "—";
       if (curr !== null && prev !== null) {
         const diff = curr - prev;
-        delta = diff > 0 ? `+${diff.toFixed(0)}` : diff < 0 ? diff.toFixed(0) : "±0";
+        delta =
+          diff > 0 ? `+${diff.toFixed(0)}` : diff < 0 ? diff.toFixed(0) : "±0";
       }
 
       return {
@@ -134,12 +149,17 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
         metrics: scan.metrics,
         complexity: curr,
         delta,
-        xPosition: getTimePosition(new Date(scan.started_at).getTime(), timeWindow.start, timeWindow.end),
+        xPosition: getTimePosition(
+          new Date(scan.started_at).getTime(),
+          timeWindow.start,
+          timeWindow.end,
+        ),
       };
     });
   }, [scans, timeWindow]);
 
-  const hasComplexityData = chartData?.some((d) => d.complexity !== null) ?? false;
+  const hasComplexityData =
+    chartData?.some((d) => d.complexity !== null) ?? false;
 
   // Build SVG paths for trend line
   const { linePath, areaPath } = useMemo(() => {
@@ -155,7 +175,10 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
     const maxY = Math.max(...points.map((p) => p.y)) * 1.05;
     const range = maxY - minY || 1;
 
-    const scaled = points.map((p) => ({ x: p.x, y: 100 - ((p.y - minY) / range) * 100 }));
+    const scaled = points.map((p) => ({
+      x: p.x,
+      y: 100 - ((p.y - minY) / range) * 100,
+    }));
 
     let line = `M ${scaled[0].x} ${scaled[0].y}`;
     let area = `M ${scaled[0].x} 100 L ${scaled[0].x} ${scaled[0].y}`;
@@ -181,7 +204,9 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
   if (isError || !chartData || chartData.length === 0) {
     return (
       <div className={cn("h-12 flex items-center justify-center", className)}>
-        <span className="text-[10px] font-mono text-slate-600">No scan activity</span>
+        <span className="text-[10px] font-mono text-slate-600">
+          No scan activity
+        </span>
       </div>
     );
   }
@@ -189,7 +214,10 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
   const hovered = hoveredIndex !== null ? chartData[hoveredIndex] : null;
 
   return (
-    <div className={cn("h-12 relative", className)}>
+    <div
+      className={cn("h-12 relative", className)}
+      data-testid="scan-trend-line"
+    >
       {/* Trend line SVG */}
       {hasComplexityData && linePath && (
         <svg
@@ -219,7 +247,10 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
 
       {/* Baseline when no complexity data */}
       {!hasComplexityData && (
-        <div className="absolute left-0 right-0 h-px bg-slate-700/50" style={{ top: "50%" }} />
+        <div
+          className="absolute left-0 right-0 h-px bg-slate-700/50"
+          style={{ top: "50%" }}
+        />
       )}
 
       {/* Event markers */}
@@ -239,16 +270,21 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
               <div
                 className={cn(
                   "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200",
-                  isHovered ? "w-3 h-3 opacity-40" : "w-2 h-2 opacity-0"
+                  isHovered ? "w-3 h-3 opacity-40" : "w-2 h-2 opacity-0",
                 )}
                 style={{ backgroundColor: color, filter: "blur(3px)" }}
               />
               <div
                 className={cn(
                   "relative rounded-full cursor-pointer transition-all duration-150",
-                  isHovered ? "w-2 h-2" : "w-1.5 h-1.5"
+                  isHovered ? "w-2 h-2" : "w-1.5 h-1.5",
                 )}
-                style={{ backgroundColor: color, boxShadow: isHovered ? `0 0 8px ${color}` : `0 0 4px ${color}50` }}
+                style={{
+                  backgroundColor: color,
+                  boxShadow: isHovered
+                    ? `0 0 8px ${color}`
+                    : `0 0 4px ${color}50`,
+                }}
               />
             </div>
           );
@@ -268,24 +304,36 @@ export function ScanTrendLine({ projectId, className }: ScanTrendLineProps) {
         >
           <div
             className="bg-slate-900/95 backdrop-blur-sm border rounded px-2 py-1.5 shadow-xl whitespace-nowrap"
-            style={{ borderColor: `${getTriggerColor(hovered.triggered_by)}40` }}
+            style={{
+              borderColor: `${getTriggerColor(hovered.triggered_by)}40`,
+            }}
           >
             <div className="flex items-center gap-1.5 mb-0.5">
               <div
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: getTriggerColor(hovered.triggered_by), boxShadow: `0 0 4px ${getTriggerColor(hovered.triggered_by)}` }}
+                style={{
+                  backgroundColor: getTriggerColor(hovered.triggered_by),
+                  boxShadow: `0 0 4px ${getTriggerColor(hovered.triggered_by)}`,
+                }}
               />
-              <span className="text-[10px] font-mono text-slate-200">{getTriggerLabel(hovered.triggered_by)}</span>
+              <span className="text-[10px] font-mono text-slate-200">
+                {getTriggerLabel(hovered.triggered_by)}
+              </span>
             </div>
-            <div className="text-[9px] font-mono text-slate-500">{formatDate(hovered.started_at)}</div>
+            <div className="text-[9px] font-mono text-slate-500">
+              {formatDate(hovered.started_at)}
+            </div>
             {hovered.complexity !== null && (
               <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-slate-700/50 text-[9px] font-mono">
-                <span className="text-slate-400">{hovered.complexity.toFixed(0)}</span>
+                <span className="text-slate-400">
+                  {hovered.complexity.toFixed(0)}
+                </span>
                 <span
                   className={cn(
                     hovered.delta.startsWith("+") && "text-rose-400",
                     hovered.delta.startsWith("-") && "text-emerald-400",
-                    (hovered.delta === "±0" || hovered.delta === "—") && "text-slate-500"
+                    (hovered.delta === "±0" || hovered.delta === "—") &&
+                      "text-slate-500",
                   )}
                 >
                   {hovered.delta}

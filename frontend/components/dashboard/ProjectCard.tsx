@@ -40,7 +40,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const { stats } = project;
 
   // Handle stat click - navigate to project with appropriate tab/filter
-  const handleStatClick = (e: React.MouseEvent, type: "features" | "tasks" | "bugs" | "blocked") => {
+  const handleStatClick = (
+    e: React.MouseEvent,
+    type: "features" | "tasks" | "bugs" | "blocked",
+  ) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -54,7 +57,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         break;
       case "bugs":
         // Show active bugs only (matches dashboard count)
-        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=bug`);
+        router.push(
+          `/projects/${project.id}?tab=tasks&status=active&taskType=bug`,
+        );
         break;
       case "blocked":
         // Show blocked tasks (have incomplete dependencies)
@@ -68,7 +73,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
       href={`/projects/${project.id}`}
       className={clsx(
         "card-elevated p-5 group transition-all duration-300",
-        "hover:border-phosphor-500/50 hover:translate-y-[-2px]"
+        "hover:border-phosphor-500/50 hover:translate-y-[-2px]",
       )}
       onMouseEnter={() => setShowHealth(true)}
     >
@@ -117,11 +122,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 "w-3 h-3 rounded-full",
                 health.healthy
                   ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
-                  : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                  : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]",
               )}
+              data-testid="project-health-indicator"
             />
           ) : (
-            <div className="w-3 h-3 rounded-full bg-slate-600" />
+            <div
+              className="w-3 h-3 rounded-full bg-slate-600"
+              data-testid="project-health-indicator"
+            />
           )}
         </div>
       </div>
@@ -137,7 +146,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 "flex items-center gap-1 text-xs transition-colors",
                 stats.features > 0
                   ? "text-blue-400 hover:text-blue-300"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-slate-500 hover:text-slate-400",
               )}
               title="View features"
             >
@@ -152,7 +161,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 "flex items-center gap-1 text-xs transition-colors",
                 stats.tasks > 0
                   ? "text-purple-400 hover:text-purple-300"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-slate-500 hover:text-slate-400",
               )}
               title="View tasks"
             >
@@ -167,7 +176,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 "flex items-center gap-1 text-xs transition-colors",
                 stats.bugs > 0
                   ? "text-amber-400 hover:text-amber-300"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-slate-500 hover:text-slate-400",
               )}
               title="View bugs"
             >
@@ -182,7 +191,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 "flex items-center gap-1 text-xs transition-colors",
                 stats.blocked > 0
                   ? "text-rose-400 hover:text-rose-300"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-slate-500 hover:text-slate-400",
               )}
               title="View blocked"
             >

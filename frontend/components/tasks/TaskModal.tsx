@@ -54,6 +54,7 @@ interface CollapsibleSectionProps {
   onToggle: () => void;
   children: React.ReactNode;
   className?: string;
+  testId?: string;
 }
 
 function CollapsibleSection({
@@ -62,12 +63,14 @@ function CollapsibleSection({
   onToggle,
   children,
   className = "",
+  testId,
 }: CollapsibleSectionProps) {
   return (
     <div className={className}>
       <button
         onClick={onToggle}
         className="flex items-center gap-2 w-full text-left text-sm font-medium text-slate-400 hover:text-slate-300 transition-colors py-1"
+        data-testid={testId}
       >
         {isOpen ? (
           <ChevronDown className="h-4 w-4" />
@@ -470,7 +473,10 @@ export function TaskModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        data-testid="task-modal"
+      >
         {/* Close button */}
         <DialogClose onClose={() => onOpenChange(false)} />
 
@@ -697,6 +703,7 @@ export function TaskModal({
                 title="Description"
                 isOpen={descriptionOpen}
                 onToggle={() => setDescriptionOpen(!descriptionOpen)}
+                testId="description-toggle"
               >
                 {isEditing ? (
                   <Textarea
@@ -801,6 +808,7 @@ export function TaskModal({
                   title={`Subtasks (${subtasks.filter((s) => s.passes).length}/${subtasks.length})`}
                   isOpen={subtasksOpen}
                   onToggle={() => setSubtasksOpen(!subtasksOpen)}
+                  testId="subtasks-toggle"
                 >
                   <SubtasksSection
                     projectId={projectId}
@@ -814,6 +822,7 @@ export function TaskModal({
                   title="Subtasks"
                   isOpen={subtasksOpen}
                   onToggle={() => setSubtasksOpen(!subtasksOpen)}
+                  testId="subtasks-toggle"
                 >
                   <p className="text-sm text-slate-500 italic">
                     No subtasks defined. Run /plan_it to add subtasks.
@@ -827,6 +836,7 @@ export function TaskModal({
                   title="Execution Timeline"
                   isOpen={timelineOpen}
                   onToggle={() => setTimelineOpen(!timelineOpen)}
+                  testId="timeline-toggle"
                 >
                   <ExecutionTimeline
                     taskId={task.id}

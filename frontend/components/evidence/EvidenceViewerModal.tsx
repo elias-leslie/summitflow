@@ -139,7 +139,10 @@ export function EvidenceViewerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent
+        className="max-w-5xl max-h-[90vh] flex flex-col"
+        data-testid="evidence-viewer-modal"
+      >
         <DialogHeader className="flex-none border-b border-slate-800 pb-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">

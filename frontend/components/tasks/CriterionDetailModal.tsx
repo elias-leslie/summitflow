@@ -79,7 +79,10 @@ export function CriterionDetailModal({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg mx-4 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl">
+      <div
+        className="relative w-full max-w-lg mx-4 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl"
+        data-testid="criterion-detail-modal"
+      >
         {/* Header */}
         <div className="flex items-start justify-between p-4 border-b border-slate-700">
           <div className="flex items-center gap-3">

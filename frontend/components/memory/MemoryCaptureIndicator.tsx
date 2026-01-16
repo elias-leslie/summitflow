@@ -1,8 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { clsx } from 'clsx';
-import { useObservationStream, type ConnectionStatus } from '@/lib/hooks/useObservationStream';
+import { useState } from "react";
+import { clsx } from "clsx";
+import {
+  useObservationStream,
+  type ConnectionStatus,
+} from "@/lib/hooks/useObservationStream";
 
 interface MemoryCaptureIndicatorProps {
   projectId: string;
@@ -20,24 +23,27 @@ export function MemoryCaptureIndicator({
   const { status } = useObservationStream({ projectId });
   const [showTooltip, setShowTooltip] = useState(false);
 
-  const statusConfig: Record<ConnectionStatus, { color: string; shadow: string; pulse: boolean; text: string }> = {
+  const statusConfig: Record<
+    ConnectionStatus,
+    { color: string; shadow: string; pulse: boolean; text: string }
+  > = {
     connected: {
-      color: 'bg-emerald-400',
-      shadow: 'shadow-[0_0_6px_rgba(52,211,153,0.6)]',
+      color: "bg-emerald-400",
+      shadow: "shadow-[0_0_6px_rgba(52,211,153,0.6)]",
       pulse: true,
-      text: 'Memory capture active',
+      text: "Memory capture active",
     },
     reconnecting: {
-      color: 'bg-amber-400',
-      shadow: 'shadow-[0_0_6px_rgba(251,191,36,0.6)]',
+      color: "bg-amber-400",
+      shadow: "shadow-[0_0_6px_rgba(251,191,36,0.6)]",
       pulse: false,
-      text: 'Reconnecting...',
+      text: "Reconnecting...",
     },
     disconnected: {
-      color: 'bg-rose-400',
-      shadow: 'shadow-[0_0_6px_rgba(251,113,133,0.6)]',
+      color: "bg-rose-400",
+      shadow: "shadow-[0_0_6px_rgba(251,113,133,0.6)]",
       pulse: false,
-      text: 'Memory capture disconnected',
+      text: "Memory capture disconnected",
     },
   };
 
@@ -45,17 +51,18 @@ export function MemoryCaptureIndicator({
 
   return (
     <div
-      className={clsx('relative', className)}
+      className={clsx("relative", className)}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
+      data-testid="memory-capture-indicator"
     >
       {/* Status dot */}
       <span
         className={clsx(
-          'w-2 h-2 rounded-full block',
+          "w-2 h-2 rounded-full block",
           config.color,
           config.shadow,
-          config.pulse && 'animate-pulse'
+          config.pulse && "animate-pulse",
         )}
       />
 

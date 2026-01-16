@@ -71,6 +71,7 @@ export function CriteriaProgress({
         onClick={handleClick}
         className={`inline-flex items-center gap-1.5 group ${expandable ? "cursor-pointer" : "cursor-default"}`}
         title={expandable ? "Click to expand" : tooltipContent}
+        data-testid="criteria-expand"
       >
         {/* Dots */}
         <div className="flex items-center gap-0.5">

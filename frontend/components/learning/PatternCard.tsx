@@ -125,7 +125,7 @@ export function PatternCard({
 
   const handleAction = async (
     action: string,
-    handler?: (id: string) => Promise<void>
+    handler?: (id: string) => Promise<void>,
   ) => {
     if (!handler) return;
     setLoading(action);
@@ -146,7 +146,10 @@ export function PatternCard({
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className={clsx("gap-1", actionConfig.color)}>
+            <Badge
+              variant="outline"
+              className={clsx("gap-1", actionConfig.color)}
+            >
               <ActionIcon className="h-3 w-3" />
               {actionConfig.label}
             </Badge>
@@ -160,8 +163,8 @@ export function PatternCard({
                   confidencePercent >= 90
                     ? "bg-emerald-500/10 text-emerald-500"
                     : confidencePercent >= 70
-                    ? "bg-amber-500/10 text-amber-500"
-                    : "bg-gray-500/10 text-gray-500"
+                      ? "bg-amber-500/10 text-amber-500"
+                      : "bg-gray-500/10 text-gray-500",
                 )}
               >
                 {confidencePercent}% confidence
@@ -182,6 +185,7 @@ export function PatternCard({
             size="sm"
             onClick={() => setExpanded(!expanded)}
             className="shrink-0"
+            data-testid="pattern-card-expand"
           >
             {expanded ? (
               <ChevronUp className="h-4 w-4" />
@@ -215,21 +219,22 @@ export function PatternCard({
             )}
 
             {/* Source info */}
-            {pattern.source_diary_ids && pattern.source_diary_ids.length > 0 && (
-              <div>
-                <h4 className="text-xs font-medium text-muted-foreground mb-1">
-                  Source Entries
-                </h4>
-                <div className="flex gap-1 flex-wrap">
-                  {pattern.source_diary_ids.map((id) => (
-                    <Badge key={id} variant="secondary" className="text-xs">
-                      <FileCode className="h-3 w-3 mr-1" />
-                      {id.slice(0, 8)}...
-                    </Badge>
-                  ))}
+            {pattern.source_diary_ids &&
+              pattern.source_diary_ids.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-1">
+                    Source Entries
+                  </h4>
+                  <div className="flex gap-1 flex-wrap">
+                    {pattern.source_diary_ids.map((id) => (
+                      <Badge key={id} variant="secondary" className="text-xs">
+                        <FileCode className="h-3 w-3 mr-1" />
+                        {id.slice(0, 8)}...
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Target pattern for update/remove */}
             {pattern.target_pattern_id && (
@@ -251,7 +256,9 @@ export function PatternCard({
                   <span>Last used: {formatDate(pattern.last_used_at)}</span>
                 )}
                 {pattern.applied_to_rules_at && (
-                  <span>Applied: {formatDate(pattern.applied_to_rules_at)}</span>
+                  <span>
+                    Applied: {formatDate(pattern.applied_to_rules_at)}
+                  </span>
                 )}
               </div>
             )}

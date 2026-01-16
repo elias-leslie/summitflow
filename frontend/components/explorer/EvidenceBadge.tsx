@@ -31,7 +31,7 @@ const DAYS_STALE = 30;
 
 function getEvidenceFreshness(
   evidenceCount: number,
-  lastEvidenceAt: string | null
+  lastEvidenceAt: string | null,
 ): EvidenceFreshness {
   if (evidenceCount === 0 || !lastEvidenceAt) {
     return "missing";
@@ -40,7 +40,7 @@ function getEvidenceFreshness(
   const lastDate = new Date(lastEvidenceAt);
   const now = new Date();
   const daysSince = Math.floor(
-    (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+    (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
   );
 
   if (daysSince < DAYS_FRESH) {
@@ -111,8 +111,9 @@ export function EvidenceBadge({
             className={cn(
               "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs",
               config.bgClass,
-              className
+              className,
             )}
+            data-testid="evidence-badge"
           >
             <Camera className={cn("w-3 h-3", config.iconClass)} />
             {evidenceCount > 0 && (

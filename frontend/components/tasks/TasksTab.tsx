@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bug,
@@ -327,19 +327,41 @@ function TaskRow({
 
 export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
   const [filters, setFilters] = useState<TaskFilterValues>(() => {
     const loaded = loadFilters();
     return { ...loaded, ...initialFilters };
   });
   const searchParams = useSearchParams();
   const urlTaskId = searchParams.get("task");
+  const urlModal = searchParams.get("modal");
 
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [modalTaskId, setModalTaskId] = useState<string | null>(urlTaskId);
   const [modalOpen, setModalOpen] = useState(!!urlTaskId);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(urlModal === "create-task");
+
+  // Helper to update URL params
+  const updateUrlParams = useCallback(
+    (params: Record<string, string | null>) => {
+      const newParams = new URLSearchParams(searchParams.toString());
+      Object.entries(params).forEach(([key, value]) => {
+        if (value === null) {
+          newParams.delete(key);
+        } else {
+          newParams.set(key, value);
+        }
+      });
+      const query = newParams.toString();
+      router.replace(`${pathname}${query ? `?${query}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname, searchParams],
+  );
 
   // Handle URL task param changes
   useEffect(() => {
@@ -348,6 +370,15 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
       setModalOpen(true);
     }
   }, [urlTaskId]);
+
+  // Handle URL modal param changes
+  useEffect(() => {
+    if (urlModal === "create-task") {
+      setShowCreate(true);
+    }
+    // Note: task-review requires a task object, so it's typically opened
+    // via the enrichment flow rather than direct URL access
+  }, [urlModal]);
 
   // Enrichment flow state
   const [enrichingTask, setEnrichingTask] = useState<Task | null>(null);
@@ -566,7 +597,14 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
               className={cn("w-4 h-4", isFetching && "animate-spin")}
             />
           </Button>
-          <Button size="sm" onClick={() => setShowCreate(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setShowCreate(true);
+              updateUrlParams({ modal: "create-task" });
+            }}
+            data-testid="new-task-button"
+          >
             <Plus className="w-4 h-4 mr-1" />
             New Task
           </Button>
@@ -648,6 +686,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                     setModalTaskId(task.id);
                     setSelectedTask(task);
                     setModalOpen(true);
+                    updateUrlParams({ task: task.id });
                   }}
                   onTaskUpdated={handleTaskUpdated}
                   onTaskDeleted={handleTaskDeleted}
@@ -672,7 +711,12 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         taskId={modalTaskId}
         projectId={projectId}
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={(open) => {
+          setModalOpen(open);
+          if (!open) {
+            updateUrlParams({ task: null });
+          }
+        }}
         onTaskUpdate={(task) => {
           setSelectedTask(task);
           handleTaskUpdated(task);
@@ -683,7 +727,10 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
       {/* Simple Create Task Dialog */}
       <SimpleCreateDialog
         open={showCreate}
-        onOpenChange={setShowCreate}
+        onOpenChange={(open) => {
+          setShowCreate(open);
+          updateUrlParams({ modal: open ? "create-task" : null });
+        }}
         projectId={projectId}
         onTaskCreated={handleTaskCreated}
       />

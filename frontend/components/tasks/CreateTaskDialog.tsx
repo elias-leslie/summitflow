@@ -100,7 +100,10 @@ export function CreateTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-full max-w-lg">
+      <DialogContent
+        className="w-full max-w-lg"
+        data-testid="create-task-dialog"
+      >
         <DialogClose onClose={handleClose} />
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
