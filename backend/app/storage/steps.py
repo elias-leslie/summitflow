@@ -2,6 +2,9 @@
 
 This module provides data access for the task_subtask_steps table, which stores
 normalized step data for granular completion tracking within subtasks.
+
+Note: Step completion now triggers automatic verification of linked criteria.
+See update_step_passes for TDD-style verification enforcement.
 """
 
 from __future__ import annotations
@@ -118,19 +121,151 @@ class StepGateError(Exception):
         self.missing_steps = missing_steps or []
 
 
+class StepVerificationError(Exception):
+    """Raised when step completion is blocked by failed verification.
+
+    Attributes:
+        criterion_id: The criterion that failed verification
+        output: The verification command output
+        attempts: Current attempt count
+        escalation_level: Current escalation level (WORKER, SUPERVISOR, HUMAN)
+    """
+
+    def __init__(
+        self,
+        message: str,
+        criterion_id: str,
+        output: str,
+        attempts: int,
+        escalation_level: str,
+    ):
+        super().__init__(message)
+        self.criterion_id = criterion_id
+        self.output = output
+        self.attempts = attempts
+        self.escalation_level = escalation_level
+
+
+def _get_task_id_from_subtask(subtask_id: str) -> str | None:
+    """Extract task_id from subtask by querying the database.
+
+    Args:
+        subtask_id: The subtask ID (e.g., "task-abc123-1.1")
+
+    Returns:
+        The task_id or None if subtask not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT task_id FROM task_subtasks WHERE id = %s",
+            (subtask_id,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def _run_linked_verifications(subtask_id: str) -> dict[str, Any]:
+    """Run verifications for all criteria linked to a subtask.
+
+    Args:
+        subtask_id: The subtask ID
+
+    Returns:
+        Dict with:
+            - passed: bool - True if all verifications passed
+            - results: list of verification results
+            - failed: first failed criterion (if any)
+    """
+    from .criterion_subtask_map import get_criteria_for_subtask
+    from .verification import get_task_criterion, run_verification
+
+    # Get linked criteria
+    criteria = get_criteria_for_subtask(subtask_id)
+    if not criteria:
+        # No linked criteria - step passes without verification
+        return {"passed": True, "results": [], "failed": None}
+
+    # Get task_id from subtask
+    task_id = _get_task_id_from_subtask(subtask_id)
+    if not task_id:
+        logger.warning(f"Could not find task_id for subtask {subtask_id}")
+        return {"passed": True, "results": [], "failed": None}
+
+    results = []
+    with get_connection() as conn:
+        for crit in criteria:
+            criterion_id = crit.get("criterion_id")  # This is the ac-XXX code
+            if not criterion_id:
+                logger.warning(f"Criterion mapping missing criterion_id: {crit}")
+                continue
+
+            # Get full criterion details
+            full_criterion = get_task_criterion(conn, task_id, criterion_id)
+            if not full_criterion:
+                logger.warning(f"Criterion {criterion_id} not found for task {task_id}")
+                continue
+
+            # Skip if no verify_command
+            if not full_criterion.get("verify_command"):
+                logger.debug(f"Criterion {criterion_id} has no verify_command, skipping")
+                results.append(
+                    {
+                        "criterion_id": criterion_id,
+                        "status": "skipped",
+                        "reason": "no verify_command",
+                    }
+                )
+                continue
+
+            # Skip if already verified
+            if full_criterion.get("verified"):
+                logger.debug(f"Criterion {criterion_id} already verified, skipping")
+                results.append(
+                    {
+                        "criterion_id": criterion_id,
+                        "status": "already_verified",
+                    }
+                )
+                continue
+
+            # Run verification
+            result = run_verification(conn, task_id, criterion_id)
+            results.append(result)
+
+            # Check for failure
+            if result.get("status") == "failed":
+                return {
+                    "passed": False,
+                    "results": results,
+                    "failed": result,
+                }
+
+            # Check for escalation to human
+            if result.get("error") and "HUMAN" in str(result.get("error", "")):
+                return {
+                    "passed": False,
+                    "results": results,
+                    "failed": result,
+                }
+
+    return {"passed": True, "results": results, "failed": None}
+
+
 def update_step_passes(
     subtask_id: str,
     step_number: int,
     passes: bool,
     force: bool = False,  # Deprecated: kept for API compatibility, ignored
 ) -> dict[str, Any] | None:
-    """Update step passes status.
+    """Update step passes status with automatic verification.
 
-    When passes is set to True, also sets passed_at timestamp.
-    When passes is set to False, clears passed_at.
+    When passes is set to True:
+    1. Looks up linked criteria via criterion_subtask_map
+    2. For each criterion with verify_command, runs verification
+    3. Only marks step passes=true if all verifications pass
+    4. Raises StepVerificationError on failure with attempt count and output
 
-    Note: Sequential step completion is logged but not enforced as a gate.
-    Verification is now handled by criterion verification.
+    When passes is set to False, clears passed_at without verification.
 
     Args:
         subtask_id: Parent subtask ID
@@ -140,13 +275,85 @@ def update_step_passes(
 
     Returns:
         Updated step dict or None if not found.
+
+    Raises:
+        StepVerificationError: If verification fails (when passes=True)
     """
     _ = force  # Deprecated parameter, ignored
-    passed_at = datetime.now(UTC) if passes else None
+
+    # If marking as failed/incomplete, no verification needed
+    if not passes:
+        passed_at = None
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE task_subtask_steps
+                SET passes = %s, passed_at = %s
+                WHERE subtask_id = %s AND step_number = %s
+                RETURNING {STEP_COLUMNS}
+                """,
+                (passes, passed_at, subtask_id, step_number),
+            )
+            row = cur.fetchone()
+            conn.commit()
+
+        if not row:
+            logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+            return None
+
+        logger.debug("Updated step %d passes=False for subtask %s", step_number, subtask_id)
+        return _row_to_dict(row)
+
+    # passes=True: Run verification for linked criteria
+    verification_result = _run_linked_verifications(subtask_id)
+
+    if not verification_result["passed"]:
+        failed = verification_result["failed"]
+        criterion_id = failed.get("criterion_id", "unknown")
+        output = failed.get("output", "No output")
+        attempts = failed.get("attempts", 0)
+        escalation_level = failed.get("escalation_level", "WORKER")
+
+        # Check if escalated to SUPERVISOR or HUMAN
+        if escalation_level == "HUMAN":
+            message = (
+                f"Criterion {criterion_id} requires human review. "
+                f"Verification failed after {attempts} attempts at SUPERVISOR level. "
+                f"Use 'st criterion override' to manually approve."
+            )
+        elif escalation_level == "SUPERVISOR":
+            message = (
+                f"Criterion {criterion_id} verification failed. "
+                f"Escalated to SUPERVISOR level after 3 worker attempts. "
+                f"Attempt {attempts}/2 at current level.\n"
+                f"Output: {output[:500]}"
+            )
+        else:
+            # WORKER level
+            from .verification import MAX_WORKER_ATTEMPTS
+
+            remaining = MAX_WORKER_ATTEMPTS - attempts
+            message = (
+                f"Criterion {criterion_id} verification failed. "
+                f"Attempt {attempts}/{MAX_WORKER_ATTEMPTS}. "
+                f"{remaining} attempt(s) remaining before escalation.\n"
+                f"Output: {output[:500]}"
+            )
+
+        raise StepVerificationError(
+            message=message,
+            criterion_id=criterion_id,
+            output=output,
+            attempts=attempts,
+            escalation_level=escalation_level,
+        )
+
+    # All verifications passed - mark step as passed
+    passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Log incomplete previous steps for context (no longer enforced as gate)
-        if passes and step_number > 1:
+        # Log incomplete previous steps for context (informational only)
+        if step_number > 1:
             cur.execute(
                 """
                 SELECT step_number FROM task_subtask_steps
@@ -158,8 +365,7 @@ def update_step_passes(
             incomplete = [row[0] for row in cur.fetchall()]
             if incomplete:
                 logger.info(
-                    f"Marking step {step_number} as passed with incomplete previous steps: {incomplete}. "
-                    "Verification is handled by criterion verification."
+                    f"Marking step {step_number} as passed with incomplete previous steps: {incomplete}"
                 )
 
         cur.execute(
@@ -178,7 +384,12 @@ def update_step_passes(
         logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
         return None
 
-    logger.debug("Updated step %d passes=%s for subtask %s", step_number, passes, subtask_id)
+    logger.info(
+        "Step %d verified and passed for subtask %s (verified %d criteria)",
+        step_number,
+        subtask_id,
+        len(verification_result["results"]),
+    )
     return _row_to_dict(row)
 
 

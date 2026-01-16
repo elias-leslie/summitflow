@@ -86,7 +86,11 @@ async def update_task_subtask(
     """
     _verify_task_project(task_id, project_id)
 
-    from ...storage.subtasks import SubtaskGateError, update_subtask_passes
+    from ...storage.subtasks import (
+        SubtaskGateError,
+        SubtaskVerificationError,
+        update_subtask_passes,
+    )
 
     try:
         updated = update_subtask_passes(task_id, subtask_id, request.passes, force=request.force)
@@ -96,6 +100,18 @@ async def update_task_subtask(
             detail={
                 "message": str(e),
                 "incomplete_steps": e.incomplete_steps,
+            },
+        ) from e
+    except SubtaskVerificationError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(e),
+                "criterion_id": e.criterion_id,
+                "output": e.output,
+                "attempts": e.attempts,
+                "escalation_level": e.escalation_level,
+                "verification_failed": True,
             },
         ) from e
 

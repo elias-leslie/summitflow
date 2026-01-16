@@ -386,6 +386,7 @@ def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
     Format: CRITERIA[N]:<verified>/<total>
     <criterion_id> <PASS|____> <criterion>
       verify_by:<test|agent|human> cmd:<verify_command> expect:<expected_output>
+      preflight:<status> verified:<status> attempts:<n> escalation:<level> locked:<bool>
     """
     if not criteria:
         return "CRITERIA[0]:0/0"
@@ -410,6 +411,20 @@ def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
             expect_str = _truncate(expected, 30) if expected else "-"
             lines.append(f"  verify_by:{verify_by} cmd:{cmd_str} expect:{expect_str}")
 
+        # Add verification status fields (from task_acceptance_criteria)
+        preflight = c.get("preflight_status") or "-"
+        ver_status = c.get("verification_status") or "pending"
+        attempts = c.get("verification_attempts") or 0
+        escalation = c.get("escalation_level") or "WORKER"
+        locked = "Y" if c.get("is_locked") else "N"
+
+        # Only show verification line if there's meaningful data
+        if preflight != "-" or attempts > 0 or ver_status != "pending":
+            lines.append(
+                f"  preflight:{preflight} status:{ver_status} "
+                f"attempts:{attempts} escalation:{escalation} locked:{locked}"
+            )
+
     return "\n".join(lines)
 
 
@@ -432,15 +447,41 @@ def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_context_amendments(amendments: list[dict[str, Any]]) -> str:
+    """Format pending amendments for context output.
+
+    Format: AMENDMENTS[N]:pending
+    <amendment_id>|<criterion_id>|<reason>
+    """
+    if not amendments:
+        return ""
+
+    # Filter to only pending amendments
+    pending = [a for a in amendments if a.get("status") == "pending"]
+    if not pending:
+        return ""
+
+    lines = [f"AMENDMENTS[{len(pending)}]:pending"]
+    for a in pending:
+        amend_id = a.get("amendment_id", "?")
+        crit_id = a.get("criterion_id", "?")
+        reason = _truncate(a.get("reason") or "", 50)
+        lines.append(f"  {amend_id}|{crit_id}|{reason}")
+
+    return "\n".join(lines)
+
+
 def output_context(
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
     criteria: list[dict[str, Any]],
     blockers: list[dict[str, Any]] | None = None,
+    amendments: list[dict[str, Any]] | None = None,
 ) -> None:
     """Output full task context in TOON format.
 
-    Combines task header, decisions, subtasks with steps, criteria, and blockers.
+    Combines task header, decisions, subtasks with steps, criteria, blockers,
+    and pending amendments.
     """
     if _compact_output:
         sections = [
@@ -453,6 +494,9 @@ def output_context(
         if blockers:
             sections.append(format_context_blockers(blockers))
 
+        if amendments:
+            sections.append(format_context_amendments(amendments))
+
         print("\n".join(s for s in sections if s))
     else:
         output_json(
@@ -461,5 +505,6 @@ def output_context(
                 "subtasks": subtasks,
                 "criteria": criteria,
                 "blockers": blockers or [],
+                "amendments": amendments or [],
             }
         )

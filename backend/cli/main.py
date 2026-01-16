@@ -126,6 +126,9 @@ app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(worktree.app, name="worktree")
 app.add_typer(criterion.app, name="criterion")
+from .commands import amendment  # noqa: E402 - imported here to register after criterion
+
+app.add_typer(amendment.app, name="amendment")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")

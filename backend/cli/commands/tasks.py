@@ -533,11 +533,18 @@ def context(
                     except APIError:
                         blockers.append({"id": blocker_id, "status": "unknown", "title": "?"})
 
+        # Fetch amendments for this task
+        from app.storage.amendments import list_amendments as list_task_amendments
+        from app.storage.connection import get_connection
+
+        with get_connection() as conn:
+            amendments = list_task_amendments(conn, task_id=task_id)
+
     except APIError as e:
         handle_api_error(e)
         return
 
-    output_context(task, subtasks, criteria, blockers)
+    output_context(task, subtasks, criteria, blockers, amendments)
 
 
 @app.command()

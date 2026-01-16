@@ -6,6 +6,11 @@ Handles:
 - delete_task_criterion
 - batch_create_task_criteria
 - verify_task_criterion_junction
+- criterion_preflight_endpoint
+- criterion_verify_endpoint
+
+Note: This module uses task_acceptance_criteria table (direct task ownership)
+rather than the old acceptance_criteria + task_criteria junction pattern.
 """
 
 from __future__ import annotations
@@ -27,13 +32,6 @@ from ...schemas.tasks import (
 )
 from ...services.criteria_validator import validate_criteria
 from ...storage.connection import get_connection
-from ...storage.criteria import (
-    create_criterion,
-    get_criterion,
-    link_criterion_to_task,
-    unlink_criterion_from_task,
-    update_task_criterion_verification,
-)
 from .core import _verify_task_project
 
 logger = get_logger(__name__)
@@ -87,9 +85,13 @@ async def list_task_criteria(
     project_id: str,
     task_id: str,
 ) -> list[dict[str, Any]]:
-    """List all criteria linked to a task with verification status.
+    """List all criteria for a task with verification status.
 
-    Returns criteria from task_criteria junction with verified/verified_at/verified_by.
+    Uses task_acceptance_criteria table (direct task ownership).
+    Returns criteria with verification state including:
+    - verified, verified_at
+    - preflight_status, is_locked
+    - verification_status, verification_attempts, escalation_level
 
     Args:
         project_id: Project ID
@@ -100,10 +102,10 @@ async def list_task_criteria(
     """
     _verify_task_project(task_id, project_id)
 
-    from ...storage.criteria import get_criteria_for_task
+    from ...storage.verification import get_criteria_for_task_v2
 
     with get_connection() as conn:
-        criteria = get_criteria_for_task(conn, project_id, task_id)
+        criteria = get_criteria_for_task_v2(conn, task_id)
 
     return criteria
 
@@ -117,10 +119,10 @@ async def create_task_criterion(
     task_id: str,
     request: CreateTaskCriterionRequest,
 ) -> dict[str, Any]:
-    """Create a criterion and link it to a task.
+    """Create a criterion directly in task_acceptance_criteria.
 
-    Creates a new entry in acceptance_criteria and links it via task_criteria.
-    These are "standalone" criteria that exist only for this task.
+    Uses task_acceptance_criteria table for direct task ownership.
+    No junction table - criterion belongs directly to task.
 
     Args:
         project_id: Project ID
@@ -132,23 +134,19 @@ async def create_task_criterion(
     """
     _verify_task_project(task_id, project_id)
 
+    from ...storage.verification import create_task_criterion as create_task_criterion_v2
+
     with get_connection() as conn:
-        # Create the criterion
-        criterion = create_criterion(
+        # Create the criterion directly in task_acceptance_criteria
+        criterion = create_task_criterion_v2(
             conn=conn,
-            project_id=project_id,
+            task_id=task_id,
             criterion=request.criterion,
             category=request.category,
-            measurement=request.measurement,
-            threshold=request.threshold,
-            created_by_task_id=task_id,
-            verify_command=request.verify_command,
             verify_by=request.verify_by,
+            verify_command=request.verify_command,
             expected_output=request.expected_output,
         )
-
-        # Link to task
-        link_criterion_to_task(conn, task_id, criterion["id"])
 
         logger.info(
             "task_criterion_created",
@@ -161,12 +159,12 @@ async def create_task_criterion(
         "criterion_id": criterion["criterion_id"],
         "criterion": criterion["criterion"],
         "category": criterion["category"],
-        "measurement": criterion["measurement"],
-        "threshold": criterion["threshold"],
-        "verify_command": criterion["verify_command"],
+        "verify_command": criterion.get("verify_command"),
         "verify_by": criterion["verify_by"],
-        "expected_output": criterion["expected_output"],
+        "expected_output": criterion.get("expected_output"),
         "task_id": task_id,
+        "is_locked": criterion.get("is_locked", False),
+        "preflight_status": criterion.get("preflight_status"),
     }
 
 
@@ -179,10 +177,7 @@ async def delete_task_criterion(
     task_id: str,
     criterion_id: str,
 ) -> dict[str, Any]:
-    """Unlink a criterion from a task.
-
-    Removes the link from task_criteria. If criterion becomes orphaned
-    (no links in task_criteria), it's deleted.
+    """Delete a criterion from task_acceptance_criteria.
 
     Args:
         project_id: Project ID
@@ -194,18 +189,27 @@ async def delete_task_criterion(
     """
     _verify_task_project(task_id, project_id)
 
+    from ...storage.verification import get_task_criterion
+
     with get_connection() as conn:
-        criterion = get_criterion(conn, project_id, criterion_id)
+        criterion = get_task_criterion(conn, task_id, criterion_id)
         if not criterion:
             raise HTTPException(
                 status_code=404,
-                detail=f"Criterion {criterion_id} not found",
+                detail=f"Criterion {criterion_id} not found for task {task_id}",
             )
 
-        removed = unlink_criterion_from_task(conn, task_id, criterion["id"])
+        # Delete directly from task_acceptance_criteria
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM task_acceptance_criteria WHERE task_id = %s AND criterion_id = %s",
+            (task_id, criterion_id),
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
 
     return {
-        "status": "removed" if removed else "not_found",
+        "status": "deleted" if deleted else "not_found",
         "task_id": task_id,
         "criterion_id": criterion_id,
     }
@@ -221,10 +225,10 @@ async def batch_create_task_criteria(
     task_id: str,
     request: BatchTaskCriteriaRequest,
 ) -> BatchTaskCriteriaResponse:
-    """Create multiple criteria and link them to a task in batch.
+    """Create multiple criteria directly in task_acceptance_criteria.
 
+    Uses task_acceptance_criteria table for direct task ownership.
     Handles partial failures: returns both created criteria and errors.
-    Each criterion is created independently, so failures don't rollback successes.
 
     Args:
         project_id: Project ID
@@ -236,28 +240,24 @@ async def batch_create_task_criteria(
     """
     _verify_task_project(task_id, project_id)
 
+    from ...storage.verification import create_task_criterion as create_task_criterion_v2
+
     created: list[dict[str, Any]] = []
     errors: list[BatchCriterionResult] = []
 
     with get_connection() as conn:
         for item in request.items:
             try:
-                # Create the criterion
-                criterion = create_criterion(
+                # Create the criterion directly in task_acceptance_criteria
+                criterion = create_task_criterion_v2(
                     conn=conn,
-                    project_id=project_id,
+                    task_id=task_id,
                     criterion=item.criterion,
                     category=item.category,
-                    measurement=item.measurement,
-                    threshold=item.threshold,
-                    created_by_task_id=task_id,
-                    verify_command=item.verify_command,
                     verify_by=item.verify_by,
+                    verify_command=item.verify_command,
                     expected_output=item.expected_output,
                 )
-
-                # Link to task
-                link_criterion_to_task(conn, task_id, criterion["id"])
 
                 created.append(
                     {
@@ -265,12 +265,12 @@ async def batch_create_task_criteria(
                         "criterion_id": criterion["criterion_id"],
                         "criterion": criterion["criterion"],
                         "category": criterion["category"],
-                        "measurement": criterion["measurement"],
-                        "threshold": criterion["threshold"],
-                        "verify_command": criterion["verify_command"],
+                        "verify_command": criterion.get("verify_command"),
                         "verify_by": criterion["verify_by"],
-                        "expected_output": criterion["expected_output"],
+                        "expected_output": criterion.get("expected_output"),
                         "task_id": task_id,
+                        "is_locked": criterion.get("is_locked", False),
+                        "preflight_status": criterion.get("preflight_status"),
                     }
                 )
 
@@ -301,9 +301,10 @@ async def verify_task_criterion_junction(
     criterion_id: str,
     request: VerifyTaskCriterionRequest,
 ) -> dict[str, Any]:
-    """Update verification status for a task's criterion.
+    """Update verification status in task_acceptance_criteria.
 
-    Updates the verified/verified_at/verified_by fields in task_criteria.
+    Note: This endpoint is deprecated for TDD-style verification.
+    Use POST /criteria/{id}/verify instead which runs verify_command automatically.
 
     Args:
         project_id: Project ID
@@ -316,26 +317,34 @@ async def verify_task_criterion_junction(
     """
     _verify_task_project(task_id, project_id)
 
+    from datetime import UTC, datetime
+
+    from ...storage.verification import get_task_criterion, update_task_criterion
+
     with get_connection() as conn:
-        criterion = get_criterion(conn, project_id, criterion_id)
+        criterion = get_task_criterion(conn, task_id, criterion_id)
         if not criterion:
             raise HTTPException(
                 status_code=404,
-                detail=f"Criterion {criterion_id} not found",
+                detail=f"Criterion {criterion_id} not found for task {task_id}",
             )
 
-        updated = update_task_criterion_verification(
-            conn=conn,
-            task_id=task_id,
-            criterion_db_id=criterion["id"],
-            verified=request.verified,
-            verified_by=request.verified_by,
+        now = datetime.now(UTC)
+        updated = update_task_criterion(
+            conn,
+            task_id,
+            criterion_id,
+            {
+                "verified": request.verified,
+                "verified_at": now if request.verified else None,
+                "verified_by_actual": request.verified_by,
+            },
         )
 
         if not updated:
             raise HTTPException(
                 status_code=404,
-                detail=f"Criterion {criterion_id} not linked to task {task_id}",
+                detail=f"Criterion {criterion_id} not found for task {task_id}",
             )
 
     return {
@@ -344,3 +353,82 @@ async def verify_task_criterion_junction(
         "criterion_id": criterion_id,
         "verified_by": request.verified_by,
     }
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/preflight",
+    response_model=dict[str, Any],
+)
+async def criterion_preflight_endpoint(
+    project_id: str,
+    task_id: str,
+    criterion_id: str,
+) -> dict[str, Any]:
+    """Run TDD-style preflight validation on a criterion's verify_command.
+
+    Preflight checks that verify_command FAILS before work begins (TDD-style).
+    Valid results:
+    - valid_fail: Command fails (exit 1-125) - good for TDD
+    - invalid_pass: Command passes (exit 0) - bad, test already passes
+    - invalid_crash: Command errors (exit 126-127) - bad, syntax error
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        criterion_id: Criterion ID
+
+    Returns:
+        Preflight result with status and output.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.verification import run_preflight_for_criterion
+
+    with get_connection() as conn:
+        result = run_preflight_for_criterion(conn, task_id, criterion_id)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/run-verify",
+    response_model=dict[str, Any],
+)
+async def criterion_run_verify_endpoint(
+    project_id: str,
+    task_id: str,
+    criterion_id: str,
+) -> dict[str, Any]:
+    """Run verification for a criterion (system-mediated).
+
+    This is the TDD-style verification endpoint. It:
+    1. Checks criterion is locked (task must be running)
+    2. Runs verify_command and records result
+    3. Updates verification_status and verification_attempts
+    4. Escalates to SUPERVISOR/HUMAN after max attempts
+
+    Note: Agents should not call this directly - use st step/subtask pass
+    which runs verification automatically for linked criteria.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        criterion_id: Criterion ID
+
+    Returns:
+        Verification result with status, output, and escalation info.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.verification import run_verification
+
+    with get_connection() as conn:
+        result = run_verification(conn, task_id, criterion_id)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result)
+
+    return result
