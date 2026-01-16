@@ -404,14 +404,29 @@ def get_criteria_count_for_task(task_id: str) -> int:
 
     This is a lightweight query for /do_it pre-checks and compact display.
     Does not require project_id since task_id is globally unique.
+
+    Checks task_acceptance_criteria (new model) first, falls back to
+    task_criteria (legacy junction) for unmigrated data.
     """
     with get_connection() as conn, conn.cursor() as cur:
+        # Check new model first
         cur.execute(
-            "SELECT COUNT(*) FROM task_criteria WHERE task_id = %s",
+            "SELECT COUNT(*) FROM task_acceptance_criteria WHERE task_id = %s",
             (task_id,),
         )
         row = cur.fetchone()
-    return row[0] if row else 0
+        count = row[0] if row else 0
+
+        # Fallback to legacy model if new model is empty
+        if count == 0:
+            cur.execute(
+                "SELECT COUNT(*) FROM task_criteria WHERE task_id = %s",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            count = row[0] if row else 0
+
+    return count
 
 
 def update_task_criterion_verification(
@@ -558,12 +573,12 @@ def get_effective_criteria(
     project_id: str,
     task: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Get effective criteria for a task from capability or task junction tables.
+    """Get effective criteria for a task.
 
-    Sources criteria from:
-    1. Task-specific criteria via task_criteria junction (includes verification state)
-    2. Capability criteria (lazy-copied to task_criteria for verification tracking)
-    3. JSONB fallback (for backward compatibility during migration)
+    Sources criteria from (in order):
+    1. task_acceptance_criteria table (new task-scoped model - preferred)
+    2. acceptance_criteria + task_criteria junction (legacy model - fallback)
+    3. JSONB fallback (very old model - deprecated)
 
     Args:
         conn: Database connection
@@ -572,19 +587,30 @@ def get_effective_criteria(
 
     Returns:
         List of criterion dicts with id, criterion_id, criterion, category,
-        measurement, threshold, and optionally verified/verified_at/verified_by
+        and verification state fields.
     """
+    from .verification import get_criteria_for_task_v2
+
     task_id = task.get("id")
     capability_id = task.get("capability_id")
 
-    # Source 1: Task-specific criteria (checked first for verification state)
+    # Source 1: task_acceptance_criteria (new model - preferred)
+    if task_id:
+        criteria = get_criteria_for_task_v2(conn, task_id)
+        if criteria:
+            logger.debug(
+                f"criteria_from_task_acceptance_criteria: task_id={task_id}, count={len(criteria)}"
+            )
+            return criteria
+
+    # Source 2: Legacy junction model (fallback for unmigrated data)
     if task_id:
         criteria = get_criteria_for_task(conn, project_id, task_id)
         if criteria:
-            logger.debug(f"criteria_from_task: task_id={task_id}, count={len(criteria)}")
+            logger.debug(f"criteria_from_legacy_junction: task_id={task_id}, count={len(criteria)}")
             return criteria
 
-    # Source 2: JSONB fallback (bridge until Phase 7 migration)
+    # Source 3: JSONB fallback (very old model - deprecated)
     jsonb_criteria = task.get("acceptance_criteria") or []
     if jsonb_criteria:
         logger.debug(
