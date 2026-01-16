@@ -197,6 +197,10 @@ class SubtaskCreate(BaseModel):
     details: dict[str, Any] | None = Field(
         default=None, description="Rich implementation spec from plan.json (deprecated)"
     )
+    depends_on: list[str] | None = Field(
+        default=None,
+        description="List of subtask IDs this subtask depends on (e.g., ['1.1', '1.2'])",
+    )
 
 
 class SubtaskResponse(BaseModel):
@@ -366,6 +370,17 @@ class TaskResponse(BaseModel):
     subtask_summary: SubtaskSummary | None = None
     # Autonomous execution flag
     autonomous: bool = False
+    # QA workflow fields (migration 068)
+    qa_status: Literal["pending", "passed", "failed", "skipped"] | None = None
+    qa_signoff_at: str | None = None
+    qa_signoff_by: str | None = None
+    qa_issues: list[dict[str, Any]] | None = None
+    # Plan workflow fields (from task_spirit)
+    plan_status: Literal["draft", "pending_review", "approved", "rejected"] | None = None
+    plan_approved_at: str | None = None
+    plan_approved_by: str | None = None
+    # Context for plan.json round-trip (from task_spirit)
+    context: dict[str, Any] | None = None
 
 
 class TaskListResponse(BaseModel):

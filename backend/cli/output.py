@@ -294,7 +294,17 @@ def format_context_task(task: dict[str, Any]) -> str:
     task_type = task.get("task_type", "task")
     complexity = task.get("complexity") or "SIMPLE"
 
+    # Include plan_status and qa_status in header
+    plan_status = task.get("plan_status", "draft")
+    qa_status = task.get("qa_status", "pending")
     lines.append(f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}")
+
+    # Add workflow status line
+    criteria_count = task.get("criteria_count", 0)
+    decisions_count = len(task.get("decisions") or [])
+    lines.append(
+        f"WORKFLOW:plan:{plan_status}|qa:{qa_status}|criteria:{criteria_count}|decisions:{decisions_count}"
+    )
 
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{_truncate(objective, 100)}")

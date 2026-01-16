@@ -218,6 +218,17 @@ def _task_to_response(task: dict[str, Any]) -> TaskResponse:
         subtasks=subtasks_list,
         # Autonomous execution flag
         autonomous=task.get("autonomous", False),
+        # QA workflow fields (migration 068)
+        qa_status=task.get("qa_status", "pending"),
+        qa_signoff_at=task["qa_signoff_at"].isoformat() if task.get("qa_signoff_at") else None,
+        qa_signoff_by=task.get("qa_signoff_by"),
+        qa_issues=task.get("qa_issues"),
+        # Plan workflow fields (from task_spirit if joined)
+        plan_status=task.get("plan_status"),
+        plan_approved_at=task.get("plan_approved_at"),
+        plan_approved_by=task.get("plan_approved_by"),
+        # Context for plan.json round-trip (from task_spirit if joined)
+        context=task.get("context"),
     )
 
 
@@ -405,6 +416,24 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                         for s in item.subtasks
                     ]
                     created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)
+
+                    # Handle subtask dependencies
+                    from ...storage.subtasks import bulk_add_subtask_dependencies
+
+                    dependencies: list[tuple[str, str]] = []
+                    for s in item.subtasks:
+                        if s.depends_on:
+                            for dep in s.depends_on:
+                                dependencies.append((s.subtask_id, dep))
+                    if dependencies:
+                        try:
+                            bulk_add_subtask_dependencies(task["id"], dependencies)
+                        except Exception as dep_err:
+                            logger.warning(  # type: ignore[call-arg]
+                                "Failed to create dependencies for task %s: %s",
+                                task["id"],
+                                dep_err,
+                            )
                 except Exception as e:
                     logger.warning(  # type: ignore[call-arg]
                         "Failed to create subtasks for task %s: %s", task["id"], e

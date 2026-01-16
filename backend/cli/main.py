@@ -129,6 +129,7 @@ app.add_typer(criterion.app, name="criterion")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
+app.add_typer(tasks.qa_app, name="qa")
 
 
 @app.callback()

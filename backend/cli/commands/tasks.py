@@ -1450,3 +1450,104 @@ def import_plan(
                     typer.echo(f"    - {err.get('criterion', '')[:30]}: {err.get('error', '')}")
         except APIError as e:
             typer.echo(f"  Warning: Failed to create criteria: {e.detail}")
+
+
+@app.command()
+def approve(
+    task_id: str,
+) -> None:
+    """Approve a task's plan, allowing execution to start.
+
+    Sets plan_status='approved' in task_spirit table.
+    Tasks must be approved before they can be started (status='running').
+
+    Examples:
+        st approve task-abc123
+    """
+    from ..storage.task_spirit import approve_plan
+
+    try:
+        result = approve_plan(task_id, approved_by="user")
+        if result:
+            typer.echo(f"APPROVED: {task_id} - ready to run")
+        else:
+            output_error(f"Task {task_id} not found in task_spirit table")
+            raise typer.Exit(1)
+    except Exception as e:
+        output_error(f"Failed to approve: {e}")
+        raise typer.Exit(1) from None
+
+
+# QA command group
+qa_app = typer.Typer(help="QA signoff commands")
+app.add_typer(qa_app, name="qa")
+
+
+@qa_app.command("pass")
+def qa_pass(
+    task_id: str,
+) -> None:
+    """Mark QA as passed for a task.
+
+    All acceptance criteria must be verified first.
+    """
+    client = STClient(require_project=False)
+    try:
+        client.update_task(task_id, qa_status="passed")
+        typer.echo(f"QA:PASSED: {task_id}")
+    except APIError as e:
+        # Check for trigger rejection
+        if "unverified criteria" in str(e.detail).lower():
+            output_error(
+                "Cannot pass QA with unverified criteria. Use: st criterion list --task " + task_id
+            )
+        else:
+            handle_api_error(e)
+        raise typer.Exit(1) from None
+
+
+@qa_app.command("fail")
+def qa_fail(
+    task_id: str,
+) -> None:
+    """Mark QA as failed for a task."""
+    client = STClient(require_project=False)
+    try:
+        client.update_task(task_id, qa_status="failed")
+        typer.echo(f"QA:FAILED: {task_id}")
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+
+@qa_app.command("skip")
+def qa_skip(
+    task_id: str,
+    force: Annotated[
+        bool, typer.Option("--force", "-f", help="Force skip for STANDARD/COMPLEX tasks")
+    ] = False,
+) -> None:
+    """Skip QA for a task.
+
+    SIMPLE tasks can skip freely. STANDARD/COMPLEX require --force.
+    """
+    client = STClient(require_project=False)
+
+    # Check complexity
+    if not force:
+        try:
+            task = client.get_task(task_id)
+            complexity = task.get("complexity", "SIMPLE")
+            if complexity in ("STANDARD", "COMPLEX"):
+                output_error(f"Cannot skip QA for {complexity} task without --force")
+                raise typer.Exit(1)
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+    try:
+        client.update_task(task_id, qa_status="skipped")
+        typer.echo(f"QA:SKIPPED: {task_id}")
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None

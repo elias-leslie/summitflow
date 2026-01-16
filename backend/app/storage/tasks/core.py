@@ -13,9 +13,10 @@ from psycopg.rows import TupleRow
 
 from ..connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (39 columns)
+# Column list for all task SELECT/RETURNING queries (44 columns)
 # Order must match _row_to_dict index mapping
 # Note: spec_content and current_criterion_id dropped in migration 038
+# Note: feature_id exists in DB but not used by app (legacy)
 # DEPRECATED: plan_content column kept for backward compatibility, but tasks should use
 # normalized task_subtasks and task_subtask_steps tables instead. See migration 039.
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
@@ -26,7 +27,8 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
     objective, current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
-    spirit_anti, decisions, constraints, done_when, complexity, autonomous"""
+    spirit_anti, decisions, constraints, done_when, complexity, autonomous,
+    qa_status, qa_signoff_at, qa_signoff_by, qa_issues"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -37,9 +39,10 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
     t.objective, t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
-    t.spirit_anti, t.decisions, t.constraints, t.done_when, t.complexity, t.autonomous"""
+    t.spirit_anti, t.decisions, t.constraints, t.done_when, t.complexity, t.autonomous,
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues"""
 
-EXPECTED_TASK_COLUMNS = 40
+EXPECTED_TASK_COLUMNS = 44
 
 
 def _generate_task_id() -> str:
@@ -50,7 +53,7 @@ def _generate_task_id() -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (40 columns):
+    Column order (44 columns):
         id, project_id, capability_id, title, description, status,
         plan_content, progress_log,
         error_message, branch_name, commits, pull_request_url,
@@ -59,7 +62,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
         objective, current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
-        spirit_anti, decisions, constraints, done_when, complexity, autonomous
+        spirit_anti, decisions, constraints, done_when, complexity, autonomous,
+        qa_status, qa_signoff_at, qa_signoff_by, qa_issues
 
     Note: spec_content and current_criterion_id dropped in migration 038
     """
@@ -113,6 +117,11 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "done_when": row[37],
         "complexity": row[38],
         "autonomous": row[39] or False,
+        # QA workflow fields (migration 068)
+        "qa_status": row[40] or "pending",
+        "qa_signoff_at": row[41],
+        "qa_signoff_by": row[42],
+        "qa_issues": row[43] or [],
     }
 
 
@@ -300,6 +309,11 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "done_when",
         "complexity",
         "autonomous",
+        # QA workflow fields
+        "qa_status",
+        "qa_signoff_at",
+        "qa_signoff_by",
+        "qa_issues",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -310,8 +324,8 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     params: list[Any] = []
     # JSONB dict fields
     jsonb_dict_fields = {"plan_content", "review_result", "verification_result"}
-    # JSONB list fields (Pipeline v2)
-    jsonb_list_fields = {"decisions", "constraints", "done_when"}
+    # JSONB list fields (Pipeline v2 + QA)
+    jsonb_list_fields = {"decisions", "constraints", "done_when", "qa_issues"}
     for field, value in fields.items():
         if field in ("commits", "labels") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))

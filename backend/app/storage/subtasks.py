@@ -461,3 +461,105 @@ def get_subtask_summary(task_id: str) -> dict[str, Any]:
         "next_subtask_id": next_subtask_id,
         "progress_percent": progress_percent,
     }
+
+
+# =============================================================================
+# Dependency handling (delegates to subtask_dependencies module)
+# =============================================================================
+
+
+def add_subtask_dependency(
+    task_id: str,
+    subtask_id: str,
+    depends_on_subtask_id: str,
+) -> dict[str, Any] | None:
+    """Add a dependency between two subtasks.
+
+    Args:
+        task_id: The parent task ID
+        subtask_id: The subtask that has the dependency (e.g., "2.1")
+        depends_on_subtask_id: The subtask that must complete first (e.g., "1.1")
+
+    Returns:
+        Created dependency record or None if already exists
+    """
+    from .subtask_dependencies import add_dependency
+
+    # Convert short IDs to table IDs
+    table_id = _generate_subtask_id(task_id, subtask_id)
+    depends_on_table_id = _generate_subtask_id(task_id, depends_on_subtask_id)
+    return add_dependency(table_id, depends_on_table_id)
+
+
+def get_subtask_dependencies(task_id: str, subtask_id: str) -> list[str]:
+    """Get all subtasks that this subtask depends on.
+
+    Args:
+        task_id: The parent task ID
+        subtask_id: The subtask to check
+
+    Returns:
+        List of subtask IDs (short form like "1.1") that must complete first
+    """
+    from .subtask_dependencies import get_dependencies
+
+    table_id = _generate_subtask_id(task_id, subtask_id)
+    dep_table_ids = get_dependencies(table_id)
+    # Extract short subtask IDs from table IDs
+    return [tid.split("-")[-1] for tid in dep_table_ids]
+
+
+def is_subtask_blocked(task_id: str, subtask_id: str) -> bool:
+    """Check if a subtask is blocked by incomplete dependencies.
+
+    Args:
+        task_id: The parent task ID
+        subtask_id: The subtask to check
+
+    Returns:
+        True if any dependency is incomplete
+    """
+    from .subtask_dependencies import is_blocked
+
+    table_id = _generate_subtask_id(task_id, subtask_id)
+    return is_blocked(table_id)
+
+
+def get_blocking_subtasks(task_id: str, subtask_id: str) -> list[dict[str, Any]]:
+    """Get incomplete subtasks blocking this subtask.
+
+    Args:
+        task_id: The parent task ID
+        subtask_id: The subtask to check
+
+    Returns:
+        List of blocking subtask info
+    """
+    from .subtask_dependencies import get_blocking_dependencies
+
+    table_id = _generate_subtask_id(task_id, subtask_id)
+    return get_blocking_dependencies(table_id)
+
+
+def bulk_add_subtask_dependencies(
+    task_id: str,
+    dependencies: list[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    """Add multiple dependencies at once.
+
+    Args:
+        task_id: The parent task ID
+        dependencies: List of (subtask_id, depends_on_subtask_id) tuples
+                     using short IDs like "1.1", "2.1"
+
+    Returns:
+        List of created dependency records
+    """
+    from .subtask_dependencies import bulk_add_dependencies
+
+    # Convert short IDs to table IDs
+    table_id_deps = [
+        (_generate_subtask_id(task_id, s), _generate_subtask_id(task_id, d))
+        for s, d in dependencies
+    ]
+    return bulk_add_dependencies(table_id_deps)
