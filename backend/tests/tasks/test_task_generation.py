@@ -36,8 +36,16 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.task_generation.link_issue_to_task")
     @patch("app.tasks.autonomous.task_generation.bulk_create_subtasks")
     @patch("app.tasks.autonomous.task_generation.bulk_create_steps")
+    @patch("app.tasks.autonomous.task_generation.create_task_spirit")
+    @patch("app.tasks.autonomous.task_generation.approve_plan")
+    @patch("app.tasks.autonomous.task_generation.create_task_criterion")
+    @patch("app.tasks.autonomous.task_generation.get_connection")
     def test_creates_refactor_task_type(
         self,
+        mock_conn: MagicMock,
+        mock_criterion: MagicMock,
+        mock_approve: MagicMock,
+        mock_spirit: MagicMock,
         mock_steps: MagicMock,
         mock_subtasks: MagicMock,
         mock_link: MagicMock,
@@ -61,6 +69,9 @@ class TestGenerateTasksFromScan:
         mock_qa.upsert_issue.return_value = "issue-123"
         mock_store.create_task.return_value = {"id": "task-123"}
         mock_subtasks.return_value = [{"id": "subtask-123"}]
+        # Mock the connection context manager
+        mock_conn.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        mock_conn.return_value.__exit__ = MagicMock(return_value=False)
 
         result = generate_tasks_from_scan("test-project")
 
@@ -70,6 +81,9 @@ class TestGenerateTasksFromScan:
         _, kwargs = call_args
         assert kwargs["task_type"] == "refactor"
         assert result["created_count"] == 1
+        # Verify task_spirit was created
+        mock_spirit.assert_called_once()
+        mock_approve.assert_called_once()
 
     @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.task_generation.task_store")

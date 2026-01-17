@@ -17,7 +17,7 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
 
     Args:
         project_id: Project to check
-        file_path: File path to look for in task descriptions/plan_content
+        file_path: File path to look for in task description or title
 
     Returns:
         True if a pending/running task exists for this file
@@ -30,10 +30,8 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
                 WHERE project_id = %s
                 AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing', 'human_review')
                 AND (
-                    -- Check description contains file path
                     description LIKE %s
-                    -- Or check plan_content affected_files contains path
-                    OR plan_content::text LIKE %s
+                    OR title LIKE %s
                 )
             )
             """,

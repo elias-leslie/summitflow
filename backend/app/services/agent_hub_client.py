@@ -173,9 +173,12 @@ class AgentHubLLMClient(LLMClient):
     def _get_client(self) -> AgentHubClient:
         """Get or create Agent Hub client."""
         if self._client is None:
+            # 10 minute timeout for complex coding tasks
+            # Claude CLI can take 5+ minutes for real code generation
             self._client = AgentHubClient(
                 base_url=self.base_url,
                 api_key=self.api_key,
+                timeout=600.0,
             )
         return self._client
 

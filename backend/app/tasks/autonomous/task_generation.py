@@ -9,9 +9,12 @@ from app.celery_app import celery_app
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
+from app.storage.connection import get_connection
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.steps import bulk_create_steps
 from app.storage.subtasks import bulk_create_subtasks
+from app.storage.task_spirit import approve_plan, create_task_spirit
+from app.storage.verification import create_task_criterion
 
 from .task_filters import is_blocklisted_error
 
@@ -104,6 +107,79 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 link_issue_to_task(issue_id, task_id)
 
                 category = "backend" if file_path.endswith(".py") else "frontend"
+                is_frontend = category == "frontend"
+
+                # Create task_spirit with objective, done_when, and auto-approve
+                objective = (
+                    f"Refactor {file_path} to reduce complexity from {complexity:.1f} "
+                    f"and improve maintainability while preserving all existing behavior."
+                )
+                done_when = [
+                    "All quality gates pass (ruff, mypy, pytest)",
+                    f"File complexity score reduced (current: {complexity:.1f})",
+                    "No regressions - all existing tests pass",
+                ]
+                if is_frontend:
+                    done_when.append("No console errors in browser")
+
+                create_task_spirit(
+                    task_id=task_id,
+                    objective=objective,
+                    spirit_anti="Do NOT change external behavior. Do NOT rename public APIs without updating all callers.",
+                    done_when=done_when,
+                    complexity="SIMPLE",
+                )
+                # Auto-approve plan for SIMPLE auto-generated tasks
+                approve_plan(task_id, approved_by="auto-generated")
+
+                # Create acceptance criteria with verification commands
+                with get_connection() as conn:
+                    # Criterion 1: Ruff lint passes
+                    create_task_criterion(
+                        conn=conn,
+                        task_id=task_id,
+                        criterion="Ruff linting passes with no errors",
+                        category="quality",
+                        verify_by="test",
+                        verify_command="dt ruff",
+                        expected_output="LINT:OK",
+                    )
+
+                    # Criterion 2: Mypy type check passes
+                    create_task_criterion(
+                        conn=conn,
+                        task_id=task_id,
+                        criterion="Mypy type checking passes",
+                        category="quality",
+                        verify_by="test",
+                        verify_command="dt mypy",
+                        expected_output="TYPES:OK",
+                    )
+
+                    # Criterion 3: Pytest passes
+                    create_task_criterion(
+                        conn=conn,
+                        task_id=task_id,
+                        criterion="All tests pass",
+                        category="correctness",
+                        verify_by="test",
+                        verify_command="dt pytest",
+                        expected_output="TEST:OK",
+                    )
+
+                    # Criterion 4: Frontend - browser check (if applicable)
+                    if is_frontend:
+                        create_task_criterion(
+                            conn=conn,
+                            task_id=task_id,
+                            criterion="No console errors in browser",
+                            category="correctness",
+                            verify_by="agent",
+                            verify_command="ba check http://localhost:3001 --no-errors",
+                            expected_output="exit code 0",
+                        )
+
+                    conn.commit()
 
                 # Create subtask via normalized table
                 subtask_data = [
@@ -121,13 +197,15 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                     step_descriptions = [
                         f"Analyze {file_path} for refactoring opportunities",
                         f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
-                        "Run tests to verify no regressions",
+                        "Run dt --check to verify all quality gates pass",
                         "Commit changes with descriptive message",
                     ]
                     bulk_create_steps(subtask_full_id, step_descriptions)
 
                 created += 1
-                logger.info(f"Created task {task_id} linked to issue {issue_id}: {title}")
+                logger.info(
+                    f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}: {title}"
+                )
 
         logger.info(
             f"Task generation complete for {project_id}: "
