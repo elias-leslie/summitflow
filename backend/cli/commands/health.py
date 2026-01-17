@@ -95,10 +95,10 @@ def status() -> None:
         result = client.get(client._url("/quality/health"))
     except APIError as e:
         output_error(f"API error: {e.detail}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         output_error(f"Failed to get health: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if is_compact():
         _format_health_compact(result)
@@ -152,10 +152,10 @@ def results(
         result = client.get(client._url(f"/quality/results?{query}"))
     except APIError as e:
         output_error(f"API error: {e.detail}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         output_error(f"Failed to get results: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if is_compact():
         _format_results_compact(result)
@@ -183,7 +183,9 @@ def sync(
     ] = 0,
     triggered_by: Annotated[
         str,
-        typer.Option("--triggered-by", "-b", help="What triggered the check (commit, manual, ci, agent)"),
+        typer.Option(
+            "--triggered-by", "-b", help="What triggered the check (commit, manual, ci, agent)"
+        ),
     ] = "commit",
 ) -> None:
     """Sync a quality check result from dt output.
@@ -215,17 +217,17 @@ def sync(
             except Exception:
                 detail = result.text
             output_error(f"API error: {detail}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         data = result.json()
     except APIError as e:
         output_error(f"API error: {e.detail}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except typer.Exit:
         raise
     except Exception as e:
         output_error(f"Failed to sync: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if is_compact():
         synced = data.get("synced", False)
