@@ -1,42 +1,50 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import Link from "next/link";
 import {
-  Layers,
-  Zap,
-  CheckCircle2,
   ArrowRight,
-  Workflow,
-  Target,
-  FileCode2,
-  Camera,
-  Terminal,
-  GitBranch,
-  Sparkles,
-  Shield,
   BarChart3,
+  Camera,
+  CheckCircle2,
+  FileCode2,
+  GitBranch,
+  Layers,
+  Shield,
+  Sparkles,
+  Target,
+  Terminal,
   Users,
-} from "lucide-react";
+  Workflow,
+  Zap,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import Link from 'next/link'
+import { useState } from 'react'
 
-type TabId = "overview" | "how-it-works" | "getting-started" | "features";
+type TabId = 'overview' | 'how-it-works' | 'getting-started' | 'features'
 
 interface Tab {
-  id: TabId;
-  label: string;
-  icon: React.ReactNode;
+  id: TabId
+  label: string
+  icon: React.ReactNode
 }
 
 const tabs: Tab[] = [
-  { id: "overview", label: "Overview", icon: <Layers className="w-4 h-4" /> },
-  { id: "how-it-works", label: "How It Works", icon: <Workflow className="w-4 h-4" /> },
-  { id: "getting-started", label: "Getting Started", icon: <Zap className="w-4 h-4" /> },
-  { id: "features", label: "Features", icon: <Sparkles className="w-4 h-4" /> },
-];
+  { id: 'overview', label: 'Overview', icon: <Layers className="w-4 h-4" /> },
+  {
+    id: 'how-it-works',
+    label: 'How It Works',
+    icon: <Workflow className="w-4 h-4" />,
+  },
+  {
+    id: 'getting-started',
+    label: 'Getting Started',
+    icon: <Zap className="w-4 h-4" />,
+  },
+  { id: 'features', label: 'Features', icon: <Sparkles className="w-4 h-4" /> },
+]
 
 export default function AboutPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
 
   return (
     <div className="min-h-full overflow-auto">
@@ -62,8 +70,9 @@ export default function AboutPage() {
               linear-gradient(to right, rgba(255, 0, 102, 0.08) 1px, transparent 1px),
               linear-gradient(to bottom, rgba(255, 0, 102, 0.08) 1px, transparent 1px)
             `,
-            backgroundSize: "48px 48px",
-            maskImage: "linear-gradient(to bottom, black 50%, transparent 100%)",
+            backgroundSize: '48px 48px',
+            maskImage:
+              'linear-gradient(to bottom, black 50%, transparent 100%)',
           }}
         />
 
@@ -78,9 +87,10 @@ export default function AboutPage() {
             <div
               className="w-12 h-12 rounded-2xl flex items-center justify-center"
               style={{
-                background: "linear-gradient(135deg, rgba(255, 102, 0, 0.2) 0%, rgba(255, 0, 102, 0.2) 100%)",
-                border: "1px solid rgba(255, 102, 0, 0.3)",
-                boxShadow: "0 0 30px rgba(255, 102, 0, 0.15)",
+                background:
+                  'linear-gradient(135deg, rgba(255, 102, 0, 0.2) 0%, rgba(255, 0, 102, 0.2) 100%)',
+                border: '1px solid rgba(255, 102, 0, 0.3)',
+                boxShadow: '0 0 30px rgba(255, 102, 0, 0.15)',
               }}
             >
               <Target className="w-6 h-6 text-sunset-orange" />
@@ -97,20 +107,21 @@ export default function AboutPage() {
             transition={{ duration: 0.6, delay: 0.1 }}
             className="display text-5xl md:text-6xl font-bold tracking-tight mb-6"
             style={{
-              background: "linear-gradient(135deg, #ffffff 0%, #94a3b8 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
+              background: 'linear-gradient(135deg, #ffffff 0%, #94a3b8 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
             }}
           >
             Build Software with
             <br />
             <span
               style={{
-                background: "linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
+                background:
+                  'linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
               }}
             >
               Autonomous Intelligence
@@ -124,9 +135,9 @@ export default function AboutPage() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-xl text-slate-400 max-w-2xl leading-relaxed mb-10"
           >
-            SummitFlow orchestrates AI agents to execute development tasks with precision.
-            Define your vision, track progress through features and tasks, and let intelligent
-            automation handle the implementation.
+            SummitFlow orchestrates AI agents to execute development tasks with
+            precision. Define your vision, track progress through features and
+            tasks, and let intelligent automation handle the implementation.
           </motion.p>
 
           {/* Trust indicators */}
@@ -162,9 +173,10 @@ export default function AboutPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`
                   relative px-5 py-4 flex items-center gap-2 text-sm font-medium transition-colors
-                  ${activeTab === tab.id
-                    ? "text-white"
-                    : "text-slate-500 hover:text-slate-300"
+                  ${
+                    activeTab === tab.id
+                      ? 'text-white'
+                      : 'text-slate-500 hover:text-slate-300'
                   }
                 `}
               >
@@ -175,9 +187,10 @@ export default function AboutPage() {
                     layoutId="about-tab-indicator"
                     className="absolute bottom-0 left-0 right-0 h-0.5"
                     style={{
-                      background: "linear-gradient(90deg, #ff6600 0%, #ff0066 100%)",
+                      background:
+                        'linear-gradient(90deg, #ff6600 0%, #ff0066 100%)',
                     }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   />
                 )}
               </button>
@@ -189,10 +202,12 @@ export default function AboutPage() {
       {/* Tab Content */}
       <section className="max-w-6xl mx-auto px-8 py-12">
         <AnimatePresence mode="wait">
-          {activeTab === "overview" && <OverviewTab key="overview" />}
-          {activeTab === "how-it-works" && <HowItWorksTab key="how-it-works" />}
-          {activeTab === "getting-started" && <GettingStartedTab key="getting-started" />}
-          {activeTab === "features" && <FeaturesTab key="features" />}
+          {activeTab === 'overview' && <OverviewTab key="overview" />}
+          {activeTab === 'how-it-works' && <HowItWorksTab key="how-it-works" />}
+          {activeTab === 'getting-started' && (
+            <GettingStartedTab key="getting-started" />
+          )}
+          {activeTab === 'features' && <FeaturesTab key="features" />}
         </AnimatePresence>
       </section>
 
@@ -203,14 +218,15 @@ export default function AboutPage() {
             Ready to transform your development workflow?
           </h2>
           <p className="text-slate-400 mb-8 max-w-lg mx-auto">
-            Get started with SummitFlow today and experience the future of AI-assisted software development.
+            Get started with SummitFlow today and experience the future of
+            AI-assisted software development.
           </p>
           <Link
             href="/"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-white transition-all"
             style={{
-              background: "linear-gradient(135deg, #ff6600 0%, #ff0066 100%)",
-              boxShadow: "0 0 30px rgba(255, 102, 0, 0.3)",
+              background: 'linear-gradient(135deg, #ff6600 0%, #ff0066 100%)',
+              boxShadow: '0 0 30px rgba(255, 102, 0, 0.3)',
             }}
           >
             Go to Dashboard
@@ -219,7 +235,7 @@ export default function AboutPage() {
         </div>
       </section>
     </div>
-  );
+  )
 }
 
 // Tab Components
@@ -239,16 +255,17 @@ function OverviewTab() {
             What is SummitFlow?
           </h2>
           <p className="text-slate-400 leading-relaxed mb-6">
-            SummitFlow is a task-driven development platform that bridges human vision and
-            AI execution. It provides a structured environment where AI agents can autonomously
-            work on well-defined tasks while maintaining full visibility and control for developers.
+            SummitFlow is a task-driven development platform that bridges human
+            vision and AI execution. It provides a structured environment where
+            AI agents can autonomously work on well-defined tasks while
+            maintaining full visibility and control for developers.
           </p>
           <ul className="space-y-3">
             {[
-              "Feature-based project organization",
-              "Hierarchical task management with dependencies",
-              "Evidence capture for verification",
-              "Intelligent code exploration",
+              'Feature-based project organization',
+              'Hierarchical task management with dependencies',
+              'Evidence capture for verification',
+              'Intelligent code exploration',
             ].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-slate-300">
                 <CheckCircle2 className="w-5 h-5 text-phosphor-500 flex-shrink-0" />
@@ -300,36 +317,40 @@ function OverviewTab() {
         <ArchitectureDiagram />
       </div>
     </motion.div>
-  );
+  )
 }
 
 function HowItWorksTab() {
   const steps = [
     {
-      number: "01",
-      title: "Define Your Vision",
-      description: "Start by creating a project and defining features with clear acceptance criteria. This provides the structure AI agents need to work effectively.",
+      number: '01',
+      title: 'Define Your Vision',
+      description:
+        'Start by creating a project and defining features with clear acceptance criteria. This provides the structure AI agents need to work effectively.',
       icon: <Target className="w-5 h-5" />,
     },
     {
-      number: "02",
-      title: "Create Tasks",
-      description: "Break features into tasks with priorities and dependencies. Use labels for complexity and domain to help agents understand the work.",
+      number: '02',
+      title: 'Create Tasks',
+      description:
+        'Break features into tasks with priorities and dependencies. Use labels for complexity and domain to help agents understand the work.',
       icon: <Layers className="w-5 h-5" />,
     },
     {
-      number: "03",
-      title: "AI Execution",
-      description: "AI agents claim tasks, execute implementation, and capture evidence. The integrated terminal provides full visibility into agent actions.",
+      number: '03',
+      title: 'AI Execution',
+      description:
+        'AI agents claim tasks, execute implementation, and capture evidence. The integrated terminal provides full visibility into agent actions.',
       icon: <Terminal className="w-5 h-5" />,
     },
     {
-      number: "04",
-      title: "Review & Verify",
-      description: "Review captured evidence against acceptance criteria. Approve, request changes, or provide feedback to guide further development.",
+      number: '04',
+      title: 'Review & Verify',
+      description:
+        'Review captured evidence against acceptance criteria. Approve, request changes, or provide feedback to guide further development.',
       icon: <CheckCircle2 className="w-5 h-5" />,
     },
-  ];
+  ]
 
   return (
     <motion.div
@@ -345,7 +366,7 @@ function HowItWorksTab() {
         <div
           className="absolute left-8 top-16 bottom-16 w-px hidden md:block"
           style={{
-            background: "linear-gradient(to bottom, #ff6600, #ff0066)",
+            background: 'linear-gradient(to bottom, #ff6600, #ff0066)',
             opacity: 0.3,
           }}
         />
@@ -362,16 +383,18 @@ function HowItWorksTab() {
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 relative z-10"
                 style={{
-                  background: "linear-gradient(135deg, rgba(255, 102, 0, 0.15) 0%, rgba(255, 0, 102, 0.15) 100%)",
-                  border: "1px solid rgba(255, 102, 0, 0.2)",
+                  background:
+                    'linear-gradient(135deg, rgba(255, 102, 0, 0.15) 0%, rgba(255, 0, 102, 0.15) 100%)',
+                  border: '1px solid rgba(255, 102, 0, 0.2)',
                 }}
               >
                 <span
                   className="text-xl font-bold"
                   style={{
-                    background: "linear-gradient(135deg, #ff6600 0%, #ff0066 100%)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
+                    background:
+                      'linear-gradient(135deg, #ff6600 0%, #ff0066 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
                   }}
                 >
                   {step.number}
@@ -380,9 +403,13 @@ function HowItWorksTab() {
               <div className="flex-1 pt-2">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-sunset-orange">{step.icon}</span>
-                  <h3 className="display text-xl font-semibold text-white">{step.title}</h3>
+                  <h3 className="display text-xl font-semibold text-white">
+                    {step.title}
+                  </h3>
                 </div>
-                <p className="text-slate-400 leading-relaxed max-w-xl">{step.description}</p>
+                <p className="text-slate-400 leading-relaxed max-w-xl">
+                  {step.description}
+                </p>
               </div>
             </motion.div>
           ))}
@@ -397,27 +424,27 @@ function HowItWorksTab() {
         <WorkflowVisualization />
       </div>
     </motion.div>
-  );
+  )
 }
 
 function GettingStartedTab() {
   const commands = [
     {
-      title: "Find available work",
-      command: "st ready",
-      description: "List tasks that are ready to be worked on",
+      title: 'Find available work',
+      command: 'st ready',
+      description: 'List tasks that are ready to be worked on',
     },
     {
-      title: "Claim a task",
-      command: "st update <id> --status running",
-      description: "Mark a task as in progress",
+      title: 'Claim a task',
+      command: 'st update <id> --status running',
+      description: 'Mark a task as in progress',
     },
     {
-      title: "Complete a task",
-      command: "st close <id> --reason \"Done\"",
-      description: "Close with a summary of what was done",
+      title: 'Complete a task',
+      command: 'st close <id> --reason "Done"',
+      description: 'Close with a summary of what was done',
     },
-  ];
+  ]
 
   return (
     <motion.div
@@ -434,8 +461,11 @@ function GettingStartedTab() {
             Quick Start
           </h2>
           <p className="text-slate-400 leading-relaxed mb-8">
-            SummitFlow uses a CLI tool called <code className="mono text-phosphor-400 bg-slate-800 px-2 py-0.5 rounded">st</code> for
-            task management. Here are the essential commands to get started.
+            SummitFlow uses a CLI tool called{' '}
+            <code className="mono text-phosphor-400 bg-slate-800 px-2 py-0.5 rounded">
+              st
+            </code>{' '}
+            for task management. Here are the essential commands to get started.
           </p>
 
           <div className="space-y-4">
@@ -448,9 +478,13 @@ function GettingStartedTab() {
                 className="p-4 rounded-lg border border-slate-800 bg-slate-900/50"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-white">{cmd.title}</span>
+                  <span className="text-sm font-medium text-white">
+                    {cmd.title}
+                  </span>
                 </div>
-                <code className="mono text-sm text-phosphor-400 block mb-2">{cmd.command}</code>
+                <code className="mono text-sm text-phosphor-400 block mb-2">
+                  {cmd.command}
+                </code>
                 <p className="text-xs text-slate-500">{cmd.description}</p>
               </motion.div>
             ))}
@@ -472,11 +506,11 @@ function GettingStartedTab() {
         </h2>
         <div className="max-w-2xl mx-auto space-y-4">
           {[
-            { step: "Install and configure services", done: true },
-            { step: "Create your first project", done: true },
-            { step: "Define features with acceptance criteria", done: false },
-            { step: "Break features into tasks", done: false },
-            { step: "Run your first AI agent session", done: false },
+            { step: 'Install and configure services', done: true },
+            { step: 'Create your first project', done: true },
+            { step: 'Define features with acceptance criteria', done: false },
+            { step: 'Break features into tasks', done: false },
+            { step: 'Run your first AI agent session', done: false },
           ].map((item, i) => (
             <motion.div
               key={item.step}
@@ -485,26 +519,30 @@ function GettingStartedTab() {
               transition={{ delay: i * 0.1 }}
               className={`
                 flex items-center gap-4 p-4 rounded-lg border transition-colors
-                ${item.done
-                  ? "border-phosphor-500/30 bg-phosphor-500/5"
-                  : "border-slate-800 bg-slate-900/50"
+                ${
+                  item.done
+                    ? 'border-phosphor-500/30 bg-phosphor-500/5'
+                    : 'border-slate-800 bg-slate-900/50'
                 }
               `}
             >
-              <div className={`
+              <div
+                className={`
                 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0
-                ${item.done
-                  ? "bg-phosphor-500/20 text-phosphor-400"
-                  : "bg-slate-800 text-slate-600"
+                ${
+                  item.done
+                    ? 'bg-phosphor-500/20 text-phosphor-400'
+                    : 'bg-slate-800 text-slate-600'
                 }
-              `}>
+              `}
+              >
                 {item.done ? (
                   <CheckCircle2 className="w-4 h-4" />
                 ) : (
                   <span className="text-xs font-medium">{i + 1}</span>
                 )}
               </div>
-              <span className={item.done ? "text-slate-300" : "text-slate-500"}>
+              <span className={item.done ? 'text-slate-300' : 'text-slate-500'}>
                 {item.step}
               </span>
             </motion.div>
@@ -512,48 +550,54 @@ function GettingStartedTab() {
         </div>
       </div>
     </motion.div>
-  );
+  )
 }
 
 function FeaturesTab() {
   const features = [
     {
       icon: <Layers className="w-6 h-6" />,
-      title: "Feature Management",
-      description: "Organize work into features with acceptance criteria. Track progress as tasks complete and evidence is captured.",
-      color: "orange",
+      title: 'Feature Management',
+      description:
+        'Organize work into features with acceptance criteria. Track progress as tasks complete and evidence is captured.',
+      color: 'orange',
     },
     {
       icon: <CheckCircle2 className="w-6 h-6" />,
-      title: "Task Tracking",
-      description: "Hierarchical tasks with dependencies, priorities, and labels. Full lifecycle management from creation to completion.",
-      color: "pink",
+      title: 'Task Tracking',
+      description:
+        'Hierarchical tasks with dependencies, priorities, and labels. Full lifecycle management from creation to completion.',
+      color: 'pink',
     },
     {
       icon: <FileCode2 className="w-6 h-6" />,
-      title: "Code Explorer",
-      description: "Navigate your codebase with intelligent analysis. View files, database tables, API endpoints, and Celery tasks.",
-      color: "cyan",
+      title: 'Code Explorer',
+      description:
+        'Navigate your codebase with intelligent analysis. View files, database tables, API endpoints, and Celery tasks.',
+      color: 'cyan',
     },
     {
       icon: <Camera className="w-6 h-6" />,
-      title: "Evidence Capture",
-      description: "Screenshot and artifact capture linked to acceptance criteria. Version-controlled evidence for verification.",
-      color: "yellow",
+      title: 'Evidence Capture',
+      description:
+        'Screenshot and artifact capture linked to acceptance criteria. Version-controlled evidence for verification.',
+      color: 'yellow',
     },
     {
       icon: <Terminal className="w-6 h-6" />,
-      title: "Integrated Terminal",
-      description: "Full terminal access with command history. Execute CLI commands, run tests, and interact with your project.",
-      color: "purple",
+      title: 'Integrated Terminal',
+      description:
+        'Full terminal access with command history. Execute CLI commands, run tests, and interact with your project.',
+      color: 'purple',
     },
     {
       icon: <Users className="w-6 h-6" />,
-      title: "Multi-Project Support",
-      description: "Manage multiple projects from a single dashboard. Each project has isolated configuration and task tracking.",
-      color: "green",
+      title: 'Multi-Project Support',
+      description:
+        'Manage multiple projects from a single dashboard. Each project has isolated configuration and task tracking.',
+      color: 'green',
     },
-  ];
+  ]
 
   return (
     <motion.div
@@ -594,25 +638,37 @@ function FeaturesTab() {
         </div>
       </div>
     </motion.div>
-  );
+  )
 }
 
 // Reusable Components
 interface ConceptCardProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  color: "orange" | "pink" | "cyan";
+  icon: React.ReactNode
+  title: string
+  description: string
+  color: 'orange' | 'pink' | 'cyan'
 }
 
 function ConceptCard({ icon, title, description, color }: ConceptCardProps) {
   const colors = {
-    orange: { bg: "rgba(255, 102, 0, 0.1)", border: "rgba(255, 102, 0, 0.2)", text: "#ff6600" },
-    pink: { bg: "rgba(255, 0, 102, 0.1)", border: "rgba(255, 0, 102, 0.2)", text: "#ff0066" },
-    cyan: { bg: "rgba(0, 245, 255, 0.1)", border: "rgba(0, 245, 255, 0.2)", text: "#00f5ff" },
-  };
+    orange: {
+      bg: 'rgba(255, 102, 0, 0.1)',
+      border: 'rgba(255, 102, 0, 0.2)',
+      text: '#ff6600',
+    },
+    pink: {
+      bg: 'rgba(255, 0, 102, 0.1)',
+      border: 'rgba(255, 0, 102, 0.2)',
+      text: '#ff0066',
+    },
+    cyan: {
+      bg: 'rgba(0, 245, 255, 0.1)',
+      border: 'rgba(0, 245, 255, 0.2)',
+      text: '#00f5ff',
+    },
+  }
 
-  const c = colors[color];
+  const c = colors[color]
 
   return (
     <div
@@ -631,32 +687,30 @@ function ConceptCard({ icon, title, description, color }: ConceptCardProps) {
       <h3 className="display text-lg font-semibold text-white mb-2">{title}</h3>
       <p className="text-slate-400 text-sm leading-relaxed">{description}</p>
     </div>
-  );
+  )
 }
 
 interface FeatureCardProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  color: string;
+  icon: React.ReactNode
+  title: string
+  description: string
+  color: string
 }
 
 function FeatureCard({ icon, title, description, color }: FeatureCardProps) {
   const colorMap: Record<string, string> = {
-    orange: "#ff6600",
-    pink: "#ff0066",
-    cyan: "#00f5ff",
-    yellow: "#fff200",
-    purple: "#bf00ff",
-    green: "#00ff88",
-  };
+    orange: '#ff6600',
+    pink: '#ff0066',
+    cyan: '#00f5ff',
+    yellow: '#fff200',
+    purple: '#bf00ff',
+    green: '#00ff88',
+  }
 
-  const c = colorMap[color] || colorMap.orange;
+  const c = colorMap[color] || colorMap.orange
 
   return (
-    <div
-      className="p-6 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 transition-colors group"
-    >
+    <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 transition-colors group">
       <div
         className="w-10 h-10 rounded-lg flex items-center justify-center mb-4 transition-transform group-hover:scale-110"
         style={{
@@ -670,24 +724,28 @@ function FeatureCard({ icon, title, description, color }: FeatureCardProps) {
       <h3 className="display text-lg font-semibold text-white mb-2">{title}</h3>
       <p className="text-slate-400 text-sm leading-relaxed">{description}</p>
     </div>
-  );
+  )
 }
 
 interface ScreenshotPlaceholderProps {
-  label: string;
-  description: string;
-  dark?: boolean;
+  label: string
+  description: string
+  dark?: boolean
 }
 
-function ScreenshotPlaceholder({ label, description, dark }: ScreenshotPlaceholderProps) {
+function ScreenshotPlaceholder({
+  label,
+  description,
+  dark,
+}: ScreenshotPlaceholderProps) {
   return (
     <div
       className="relative rounded-xl overflow-hidden border border-slate-700"
       style={{
-        aspectRatio: "16/10",
+        aspectRatio: '16/10',
         background: dark
-          ? "linear-gradient(135deg, #0a0612 0%, #150d20 100%)"
-          : "linear-gradient(135deg, #1a0a2e 0%, #251538 100%)",
+          ? 'linear-gradient(135deg, #0a0612 0%, #150d20 100%)'
+          : 'linear-gradient(135deg, #1a0a2e 0%, #251538 100%)',
       }}
     >
       {/* Simulated window chrome */}
@@ -706,25 +764,28 @@ function ScreenshotPlaceholder({ label, description, dark }: ScreenshotPlacehold
             linear-gradient(to right, rgba(255, 0, 102, 0.05) 1px, transparent 1px),
             linear-gradient(to bottom, rgba(255, 0, 102, 0.05) 1px, transparent 1px)
           `,
-          backgroundSize: "24px 24px",
+          backgroundSize: '24px 24px',
         }}
       >
         <div className="text-center p-8">
           <div
             className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
             style={{
-              background: "linear-gradient(135deg, rgba(255, 102, 0, 0.1) 0%, rgba(255, 0, 102, 0.1) 100%)",
-              border: "1px solid rgba(255, 102, 0, 0.2)",
+              background:
+                'linear-gradient(135deg, rgba(255, 102, 0, 0.1) 0%, rgba(255, 0, 102, 0.1) 100%)',
+              border: '1px solid rgba(255, 102, 0, 0.2)',
             }}
           >
             <Camera className="w-8 h-8 text-slate-600" />
           </div>
           <p className="text-slate-500 text-sm">{description}</p>
-          <p className="text-slate-600 text-xs mt-2 mono">Screenshot placeholder</p>
+          <p className="text-slate-600 text-xs mt-2 mono">
+            Screenshot placeholder
+          </p>
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function ArchitectureDiagram() {
@@ -744,8 +805,9 @@ function ArchitectureDiagram() {
           <div
             className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-4"
             style={{
-              background: "linear-gradient(135deg, rgba(0, 245, 255, 0.15) 0%, rgba(0, 245, 255, 0.05) 100%)",
-              border: "1px solid rgba(0, 245, 255, 0.3)",
+              background:
+                'linear-gradient(135deg, rgba(0, 245, 255, 0.15) 0%, rgba(0, 245, 255, 0.05) 100%)',
+              border: '1px solid rgba(0, 245, 255, 0.3)',
             }}
           >
             <Layers className="w-10 h-10 text-phosphor-500" />
@@ -759,8 +821,9 @@ function ArchitectureDiagram() {
           <div
             className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-4"
             style={{
-              background: "linear-gradient(135deg, rgba(255, 102, 0, 0.15) 0%, rgba(255, 102, 0, 0.05) 100%)",
-              border: "1px solid rgba(255, 102, 0, 0.3)",
+              background:
+                'linear-gradient(135deg, rgba(255, 102, 0, 0.15) 0%, rgba(255, 102, 0, 0.05) 100%)',
+              border: '1px solid rgba(255, 102, 0, 0.3)',
             }}
           >
             <Zap className="w-10 h-10 text-sunset-orange" />
@@ -774,8 +837,9 @@ function ArchitectureDiagram() {
           <div
             className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-4"
             style={{
-              background: "linear-gradient(135deg, rgba(255, 0, 102, 0.15) 0%, rgba(255, 0, 102, 0.05) 100%)",
-              border: "1px solid rgba(255, 0, 102, 0.3)",
+              background:
+                'linear-gradient(135deg, rgba(255, 0, 102, 0.15) 0%, rgba(255, 0, 102, 0.05) 100%)',
+              border: '1px solid rgba(255, 0, 102, 0.3)',
             }}
           >
             <FileCode2 className="w-10 h-10 text-outrun-500" />
@@ -799,16 +863,16 @@ function ArchitectureDiagram() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function WorkflowVisualization() {
   const states = [
-    { name: "Pending", color: "#64748b" },
-    { name: "Ready", color: "#00f5ff" },
-    { name: "Running", color: "#ff6600" },
-    { name: "Completed", color: "#00ff88" },
-  ];
+    { name: 'Pending', color: '#64748b' },
+    { name: 'Ready', color: '#00f5ff' },
+    { name: 'Running', color: '#ff6600' },
+    { name: 'Completed', color: '#00ff88' },
+  ]
 
   return (
     <div className="flex items-center justify-center gap-4 flex-wrap">
@@ -830,5 +894,5 @@ function WorkflowVisualization() {
         </div>
       ))}
     </div>
-  );
+  )
 }

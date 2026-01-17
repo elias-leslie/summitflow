@@ -1,46 +1,45 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Image from "next/image";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CheckCircle2,
-  XCircle,
   AlertTriangle,
-  Image as ImageIcon,
-  Terminal,
-  Network,
-  FileJson,
-  Loader2,
+  CheckCircle2,
   ExternalLink,
-} from "lucide-react";
-
+  FileJson,
+  Image as ImageIcon,
+  Loader2,
+  Network,
+  Terminal,
+  XCircle,
+} from 'lucide-react'
+import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import {
+  type EvidenceData,
+  type EvidenceResponse,
   fetchEvidence,
   fetchEvidenceData,
-  submitEvidenceReview,
   getScreenshotUrl,
-  type EvidenceResponse,
-  type EvidenceData,
-} from "@/lib/api/evidence";
+  submitEvidenceReview,
+} from '@/lib/api/evidence'
 
 interface EvidenceViewerModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  evidenceId: string;
-  criterionText?: string;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  evidenceId: string
+  criterionText?: string
 }
 
 export function EvidenceViewerModal({
@@ -50,35 +49,35 @@ export function EvidenceViewerModal({
   evidenceId,
   criterionText,
 }: EvidenceViewerModalProps) {
-  const [userNotes, setUserNotes] = useState("");
-  const [activeTab, setActiveTab] = useState("screenshot");
-  const queryClient = useQueryClient();
+  const [userNotes, setUserNotes] = useState('')
+  const [activeTab, setActiveTab] = useState('screenshot')
+  const queryClient = useQueryClient()
 
   // Fetch evidence metadata
   const { data, isLoading, error } = useQuery<EvidenceResponse>({
-    queryKey: ["evidence", projectId, evidenceId],
+    queryKey: ['evidence', projectId, evidenceId],
     queryFn: () => fetchEvidence(projectId, evidenceId, false),
     enabled: open && !!projectId && !!evidenceId,
     staleTime: 0,
     refetchOnMount: true,
     retry: 1,
-  });
+  })
 
   // Fetch evidence.json data
   const { data: evidenceData } = useQuery<EvidenceData>({
-    queryKey: ["evidence-data", projectId, evidenceId],
+    queryKey: ['evidence-data', projectId, evidenceId],
     queryFn: () => fetchEvidenceData(projectId, evidenceId),
     enabled: open && !!projectId && !!evidenceId,
     staleTime: 60000,
-  });
+  })
 
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
-      setUserNotes("");
-      setActiveTab("screenshot");
+      setUserNotes('')
+      setActiveTab('screenshot')
     }
-  }, [open]);
+  }, [open])
 
   // Submit review mutation
   const reviewMutation = useMutation({
@@ -86,43 +85,43 @@ export function EvidenceViewerModal({
       approved,
       notes,
     }: {
-      approved: boolean | null;
-      notes: string;
+      approved: boolean | null
+      notes: string
     }) => {
-      return submitEvidenceReview(projectId, evidenceId, approved, notes);
+      return submitEvidenceReview(projectId, evidenceId, approved, notes)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["evidence", projectId, evidenceId],
-      });
+        queryKey: ['evidence', projectId, evidenceId],
+      })
     },
-  });
+  })
 
-  const evidence = data?.evidence;
+  const evidence = data?.evidence
   const screenshotUrl = data?.screenshotUrl
     ? `/api${data.screenshotUrl}`
-    : getScreenshotUrl(projectId, evidenceId);
+    : getScreenshotUrl(projectId, evidenceId)
 
   // Status badge
   const StatusBadge = () => {
-    if (!evidence) return null;
-    const status = evidence.qualityStatus;
+    if (!evidence) return null
+    const status = evidence.qualityStatus
     switch (status) {
-      case "passed":
+      case 'passed':
         return (
           <Badge variant="phosphor" className="gap-1">
             <CheckCircle2 className="h-3 w-3" />
             Passed
           </Badge>
-        );
-      case "failed":
+        )
+      case 'failed':
         return (
           <Badge variant="rose" className="gap-1">
             <XCircle className="h-3 w-3" />
             Failed
           </Badge>
-        );
-      case "needs_review":
+        )
+      case 'needs_review':
         return (
           <Badge
             variant="outline"
@@ -131,11 +130,11 @@ export function EvidenceViewerModal({
             <AlertTriangle className="h-3 w-3" />
             Needs Review
           </Badge>
-        );
+        )
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary">{status}</Badge>
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,7 +151,7 @@ export function EvidenceViewerModal({
                 </span>
                 <span className="text-slate-400">/</span>
                 <span className="text-slate-300">
-                  {evidence?.evidenceType || "screenshot"}
+                  {evidence?.evidenceType || 'screenshot'}
                 </span>
               </DialogTitle>
               <DialogDescription className="mt-1">
@@ -237,7 +236,7 @@ export function EvidenceViewerModal({
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => window.open(screenshotUrl, "_blank")}
+                          onClick={() => window.open(screenshotUrl, '_blank')}
                         >
                           <ExternalLink className="h-4 w-4 mr-1" />
                           Full Size
@@ -311,7 +310,7 @@ export function EvidenceViewerModal({
         </div>
 
         {/* Review section */}
-        {evidence && evidence.qualityStatus !== "passed" && (
+        {evidence && evidence.qualityStatus !== 'passed' && (
           <div className="flex-none border-t border-slate-800 pt-4 space-y-3">
             <Textarea
               value={userNotes}
@@ -345,5 +344,5 @@ export function EvidenceViewerModal({
         )}
       </DialogContent>
     </Dialog>
-  );
+  )
 }

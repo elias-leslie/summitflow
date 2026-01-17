@@ -1,198 +1,243 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { Brain, ChevronDown, Activity, Clock, FileText, Lightbulb, BookOpen, X, Sparkles, Shield } from 'lucide-react';
-import { clsx } from 'clsx';
-import { AnimatePresence, motion } from 'motion/react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { fetchProjects, type Project } from '@/lib/api';
-import { BulkActionsBar } from './BulkActionsBar';
-import { formatAge, formatTokens } from '@/lib/formatters/memory-formatters';
-import { ObservationRow, type Observation, PatternRow, type Pattern, DiaryRow, type DiaryEntry } from './rows';
-import { SearchBar } from './SearchBar';
-import { FilterPanel, type SearchFilters } from './FilterPanel';
-import { useMemorySearch } from '@/lib/hooks/useMemorySearch';
-import { HealthTab } from './HealthTab';
-import { MetricCard, type MemoryStats } from './MetricsSection';
-import { Pagination, ITEMS_PER_PAGE } from './Pagination';
-import { GlobalExtractionPanel } from './GlobalExtractionPanel';
-import { CleanupAggressivenessPanel } from './CleanupAggressivenessPanel';
-import { ObservationIndexView, ViewModeToggle, useViewMode } from './ObservationIndexView';
-import { ObservationDetailModal } from './ObservationDetailModal';
+import { clsx } from 'clsx'
+import {
+  Activity,
+  BookOpen,
+  Brain,
+  ChevronDown,
+  Clock,
+  FileText,
+  Lightbulb,
+  Shield,
+  Sparkles,
+  X,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useEffect, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { fetchProjects, type Project } from '@/lib/api'
+import { formatAge, formatTokens } from '@/lib/formatters/memory-formatters'
+import { useMemorySearch } from '@/lib/hooks/useMemorySearch'
+import { BulkActionsBar } from './BulkActionsBar'
+import { CleanupAggressivenessPanel } from './CleanupAggressivenessPanel'
+import { FilterPanel, type SearchFilters } from './FilterPanel'
+import { GlobalExtractionPanel } from './GlobalExtractionPanel'
+import { HealthTab } from './HealthTab'
+import { type MemoryStats, MetricCard } from './MetricsSection'
+import { ObservationDetailModal } from './ObservationDetailModal'
+import {
+  ObservationIndexView,
+  useViewMode,
+  ViewModeToggle,
+} from './ObservationIndexView'
+import { ITEMS_PER_PAGE, Pagination } from './Pagination'
+import {
+  type DiaryEntry,
+  DiaryRow,
+  type Observation,
+  ObservationRow,
+  type Pattern,
+  PatternRow,
+} from './rows'
+import { SearchBar } from './SearchBar'
 
 // Main Memory Page Component
 export default function MemoryPage() {
-  const [stats, setStats] = useState<MemoryStats | null>(null);
-  const [observations, setObservations] = useState<Observation[]>([]);
-  const [patterns, setPatterns] = useState<Pattern[]>([]);
-  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('observations');
-  const [loading, setLoading] = useState(true);
-  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const [stats, setStats] = useState<MemoryStats | null>(null)
+  const [observations, setObservations] = useState<Observation[]>([])
+  const [patterns, setPatterns] = useState<Pattern[]>([])
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('observations')
+  const [loading, setLoading] = useState(true)
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
 
   // Pagination state
-  const [observationsPage, setObservationsPage] = useState(1);
-  const [patternsPage, setPatternsPage] = useState(1);
-  const [diaryPage, setDiaryPage] = useState(1);
+  const [observationsPage, setObservationsPage] = useState(1)
+  const [patternsPage, setPatternsPage] = useState(1)
+  const [diaryPage, setDiaryPage] = useState(1)
 
   // Total counts from API
-  const [observationsTotal, setObservationsTotal] = useState(0);
-  const [patternsTotal, setPatternsTotal] = useState(0);
-  const [diaryTotal, setDiaryTotal] = useState(0);
+  const [observationsTotal, setObservationsTotal] = useState(0)
+  const [patternsTotal, setPatternsTotal] = useState(0)
+  const [diaryTotal, setDiaryTotal] = useState(0)
 
   // Search state
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<SearchFilters>({
     type: 'all',
     concepts: [],
     useSemantic: false,
-  });
-  const { results, total: searchTotal, usedSemantic, isLoading: searchLoading, error: searchError, search, clear: clearSearch } = useMemorySearch();
+  })
+  const {
+    results,
+    total: searchTotal,
+    usedSemantic,
+    isLoading: searchLoading,
+    error: searchError,
+    search,
+    clear: clearSearch,
+  } = useMemorySearch()
 
   // Observation view mode (index vs full)
-  const [viewMode, setViewMode] = useViewMode();
-  const [selectedObservation, setSelectedObservation] = useState<Observation | null>(null);
+  const [viewMode, setViewMode] = useViewMode()
+  const [selectedObservation, setSelectedObservation] =
+    useState<Observation | null>(null)
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
+        setLoading(true)
 
         // Fetch stats (filtered by project if selected)
         const statsUrl = selectedProject
           ? `/api/memory/stats?project_id=${selectedProject}`
-          : '/api/memory/stats';
-        const statsRes = await fetch(statsUrl);
+          : '/api/memory/stats'
+        const statsRes = await fetch(statsUrl)
         if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          setStats(statsData);
+          const statsData = await statsRes.json()
+          setStats(statsData)
         }
 
         // Fetch observations (global or filtered) - use offset-based pagination
-        const obsOffset = (observationsPage - 1) * ITEMS_PER_PAGE;
+        const obsOffset = (observationsPage - 1) * ITEMS_PER_PAGE
         const obsUrl = selectedProject
           ? `/api/observations?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${obsOffset}`
-          : `/api/observations?limit=${ITEMS_PER_PAGE}&offset=${obsOffset}`;
-        const obsRes = await fetch(obsUrl);
+          : `/api/observations?limit=${ITEMS_PER_PAGE}&offset=${obsOffset}`
+        const obsRes = await fetch(obsUrl)
         if (obsRes.ok) {
-          const obsData = await obsRes.json();
-          setObservations(obsData.items || []);
-          setObservationsTotal(obsData.total || 0);
+          const obsData = await obsRes.json()
+          setObservations(obsData.items || [])
+          setObservationsTotal(obsData.total || 0)
         }
 
         // Fetch patterns (global or filtered)
-        const patOffset = (patternsPage - 1) * ITEMS_PER_PAGE;
+        const patOffset = (patternsPage - 1) * ITEMS_PER_PAGE
         const patUrl = selectedProject
           ? `/api/patterns?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${patOffset}`
-          : `/api/patterns?limit=${ITEMS_PER_PAGE}&offset=${patOffset}`;
-        const patRes = await fetch(patUrl);
+          : `/api/patterns?limit=${ITEMS_PER_PAGE}&offset=${patOffset}`
+        const patRes = await fetch(patUrl)
         if (patRes.ok) {
-          const patData = await patRes.json();
-          setPatterns(patData.items || []);
-          setPatternsTotal(patData.total || 0);
+          const patData = await patRes.json()
+          setPatterns(patData.items || [])
+          setPatternsTotal(patData.total || 0)
         }
 
         // Fetch diary entries (global or filtered)
-        const diaryOffset = (diaryPage - 1) * ITEMS_PER_PAGE;
+        const diaryOffset = (diaryPage - 1) * ITEMS_PER_PAGE
         const diaryUrl = selectedProject
           ? `/api/diary?project_id=${selectedProject}&limit=${ITEMS_PER_PAGE}&offset=${diaryOffset}`
-          : `/api/diary?limit=${ITEMS_PER_PAGE}&offset=${diaryOffset}`;
-        const diaryRes = await fetch(diaryUrl);
+          : `/api/diary?limit=${ITEMS_PER_PAGE}&offset=${diaryOffset}`
+        const diaryRes = await fetch(diaryUrl)
         if (diaryRes.ok) {
-          const diaryData = await diaryRes.json();
-          setDiaryEntries(diaryData.items || []);
-          setDiaryTotal(diaryData.total || 0);
+          const diaryData = await diaryRes.json()
+          setDiaryEntries(diaryData.items || [])
+          setDiaryTotal(diaryData.total || 0)
         }
 
         // Fetch projects for filter
-        const projectsData = await fetchProjects();
-        setProjects(projectsData);
+        const projectsData = await fetchProjects()
+        setProjects(projectsData)
       } catch (error) {
-        console.error('Failed to fetch memory data:', error);
+        console.error('Failed to fetch memory data:', error)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
+    }
 
-    fetchData();
-  }, [selectedProject, observationsPage, patternsPage, diaryPage]);
+    fetchData()
+  }, [selectedProject, observationsPage, patternsPage, diaryPage])
 
   const handleApprovePattern = async (patternId: string) => {
     try {
       const res = await fetch('/api/patterns/bulk-approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern_ids: [patternId], reason: 'user-approved' }),
-      });
+        body: JSON.stringify({
+          pattern_ids: [patternId],
+          reason: 'user-approved',
+        }),
+      })
       if (res.ok) {
-        setPatterns(patterns.map(p => p.id === patternId ? { ...p, status: 'approved' } : p));
+        setPatterns(
+          patterns.map((p) =>
+            p.id === patternId ? { ...p, status: 'approved' } : p,
+          ),
+        )
       }
     } catch (error) {
-      console.error('Failed to approve pattern:', error);
+      console.error('Failed to approve pattern:', error)
     }
-  };
+  }
 
   const handleRejectPattern = async (patternId: string) => {
     try {
       const res = await fetch('/api/patterns/bulk-reject', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern_ids: [patternId], reason: 'user-rejected' }),
-      });
+        body: JSON.stringify({
+          pattern_ids: [patternId],
+          reason: 'user-rejected',
+        }),
+      })
       if (res.ok) {
-        setPatterns(patterns.map(p => p.id === patternId ? { ...p, status: 'rejected' } : p));
+        setPatterns(
+          patterns.map((p) =>
+            p.id === patternId ? { ...p, status: 'rejected' } : p,
+          ),
+        )
       }
     } catch (error) {
-      console.error('Failed to reject pattern:', error);
+      console.error('Failed to reject pattern:', error)
     }
-  };
+  }
 
-  const pendingPatterns = patterns.filter(p => p.status === 'pending');
+  const pendingPatterns = patterns.filter((p) => p.status === 'pending')
 
   // Reset pagination when project changes
   useEffect(() => {
-    setObservationsPage(1);
-    setPatternsPage(1);
-    setDiaryPage(1);
-  }, [selectedProject]);
+    setObservationsPage(1)
+    setPatternsPage(1)
+    setDiaryPage(1)
+  }, [])
 
   // Handle search
   const handleSearch = async (query: string) => {
     if (!selectedProject) {
       // Search requires a project context
-      return;
+      return
     }
-    setSearchQuery(query);
-    setIsSearching(true);
+    setSearchQuery(query)
+    setIsSearching(true)
     await search({
       q: query,
       project_id: selectedProject,
       type: filters.type,
       concepts: filters.concepts,
       use_semantic: filters.useSemantic,
-    });
-  };
+    })
+  }
 
   // Clear search and return to default view
   const handleClearSearch = () => {
-    setIsSearching(false);
-    setSearchQuery('');
-    clearSearch();
-  };
+    setIsSearching(false)
+    setSearchQuery('')
+    clearSearch()
+  }
 
   // Group search results by entity type
   const searchResultsByType = {
-    observations: results.filter(r => r.entity_type === 'observation'),
-    patterns: results.filter(r => r.entity_type === 'pattern'),
-    diary: results.filter(r => r.entity_type === 'diary'),
-    user_prompts: results.filter(r => r.entity_type === 'user_prompt'),
-  };
+    observations: results.filter((r) => r.entity_type === 'observation'),
+    patterns: results.filter((r) => r.entity_type === 'pattern'),
+    diary: results.filter((r) => r.entity_type === 'diary'),
+    user_prompts: results.filter((r) => r.entity_type === 'user_prompt'),
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 p-8">
@@ -201,7 +246,9 @@ export default function MemoryPage() {
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <Brain className="w-7 h-7 text-outrun-500" />
-            <h1 className="text-[28px] font-semibold text-slate-100 tracking-tight">Memory</h1>
+            <h1 className="text-[28px] font-semibold text-slate-100 tracking-tight">
+              Memory
+            </h1>
           </div>
 
           {/* Project Filter Dropdown */}
@@ -212,7 +259,10 @@ export default function MemoryPage() {
             >
               <span className="text-sm text-slate-400">Project:</span>
               <span className="text-sm font-medium text-slate-200">
-                {selectedProject ? projects.find(p => p.id === selectedProject)?.name || selectedProject : 'All Projects'}
+                {selectedProject
+                  ? projects.find((p) => p.id === selectedProject)?.name ||
+                    selectedProject
+                  : 'All Projects'}
               </span>
               <ChevronDown className="w-4 h-4 text-slate-500" />
             </button>
@@ -226,10 +276,15 @@ export default function MemoryPage() {
                   className="absolute right-0 top-full mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden"
                 >
                   <button
-                    onClick={() => { setSelectedProject(null); setProjectDropdownOpen(false); }}
+                    onClick={() => {
+                      setSelectedProject(null)
+                      setProjectDropdownOpen(false)
+                    }}
                     className={clsx(
                       'w-full px-4 py-2.5 text-left text-sm hover:bg-slate-700/50 transition-colors',
-                      !selectedProject ? 'text-outrun-400 bg-outrun-500/10' : 'text-slate-300'
+                      !selectedProject
+                        ? 'text-outrun-400 bg-outrun-500/10'
+                        : 'text-slate-300',
                     )}
                   >
                     All Projects
@@ -237,10 +292,15 @@ export default function MemoryPage() {
                   {projects.map((project) => (
                     <button
                       key={project.id}
-                      onClick={() => { setSelectedProject(project.id); setProjectDropdownOpen(false); }}
+                      onClick={() => {
+                        setSelectedProject(project.id)
+                        setProjectDropdownOpen(false)
+                      }}
                       className={clsx(
                         'w-full px-4 py-2.5 text-left text-sm hover:bg-slate-700/50 transition-colors',
-                        selectedProject === project.id ? 'text-outrun-400 bg-outrun-500/10' : 'text-slate-300'
+                        selectedProject === project.id
+                          ? 'text-outrun-400 bg-outrun-500/10'
+                          : 'text-slate-300',
                       )}
                     >
                       {project.name}
@@ -264,7 +324,11 @@ export default function MemoryPage() {
             <SearchBar
               onSearch={handleSearch}
               isLoading={searchLoading}
-              placeholder={selectedProject ? 'Search observations, patterns, diary...' : 'Select a project to search'}
+              placeholder={
+                selectedProject
+                  ? 'Search observations, patterns, diary...'
+                  : 'Select a project to search'
+              }
             />
             <button
               onClick={() => setShowFilters(!showFilters)}
@@ -272,7 +336,7 @@ export default function MemoryPage() {
                 'px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 showFilters
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:border-slate-600'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:border-slate-600',
               )}
             >
               Filters
@@ -306,7 +370,11 @@ export default function MemoryPage() {
                   </span>
                 )}
                 <span className="text-sm text-slate-300">
-                  Showing <span className="font-medium text-blue-400">{searchTotal}</span> results for &quot;{searchQuery}&quot;
+                  Showing{' '}
+                  <span className="font-medium text-blue-400">
+                    {searchTotal}
+                  </span>{' '}
+                  results for &quot;{searchQuery}&quot;
                 </span>
               </div>
               <button
@@ -332,18 +400,24 @@ export default function MemoryPage() {
           <MetricCard
             label="Queue Depth"
             value={stats?.queue_depth ?? '-'}
-            subtitle={stats ? `${stats.queue_pending} pending extraction` : undefined}
+            subtitle={
+              stats ? `${stats.queue_pending} pending extraction` : undefined
+            }
             accent="amber"
           />
           <MetricCard
             label="Observations"
             value={stats?.observations_today ?? '-'}
-            subtitle={stats ? `${stats.observation_success_rate}% extraction success` : undefined}
+            subtitle={
+              stats
+                ? `${stats.observation_success_rate}% extraction success`
+                : undefined
+            }
             accent="green"
           />
           <MetricCard
             label="Token Spend"
-            value={stats ? formatTokens(stats.token_spend_24h) ?? '-' : '-'}
+            value={stats ? (formatTokens(stats.token_spend_24h) ?? '-') : '-'}
             subtitle="24h total"
             accent="blue"
           />
@@ -362,59 +436,81 @@ export default function MemoryPage() {
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="w-4 h-4 text-slate-400" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Lifecycle Status</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                Lifecycle Status
+              </h2>
             </div>
             <div className="grid grid-cols-5 gap-3">
               <MetricCard
                 label="Failed Queue"
                 value={stats.lifecycle.failed_queue_count}
                 subtitle="Items failed"
-                accent={stats.lifecycle.failed_queue_count > 0 ? 'amber' : 'green'}
+                accent={
+                  stats.lifecycle.failed_queue_count > 0 ? 'amber' : 'green'
+                }
               />
               <MetricCard
                 label="Stuck Items"
                 value={stats.lifecycle.stuck_queue_count}
                 subtitle="> 1 hour processing"
-                accent={stats.lifecycle.stuck_queue_count > 0 ? 'amber' : 'green'}
+                accent={
+                  stats.lifecycle.stuck_queue_count > 0 ? 'amber' : 'green'
+                }
               />
               <MetricCard
                 label="Unreflected"
                 value={stats.lifecycle.unreflected_diary_count}
                 subtitle="Diary entries"
-                accent={stats.lifecycle.unreflected_diary_count > 5 ? 'amber' : 'green'}
+                accent={
+                  stats.lifecycle.unreflected_diary_count > 5
+                    ? 'amber'
+                    : 'green'
+                }
               />
               <MetricCard
                 label="Stale Patterns"
                 value={stats.lifecycle.stale_patterns_count}
                 subtitle="30+ days unused"
-                accent={stats.lifecycle.stale_patterns_count > 3 ? 'amber' : 'green'}
+                accent={
+                  stats.lifecycle.stale_patterns_count > 3 ? 'amber' : 'green'
+                }
               />
               <MetricCard
                 label="Oldest Pending"
                 value={formatAge(stats.lifecycle.oldest_pending_age_minutes)}
                 subtitle="Queue age"
-                accent={stats.lifecycle.oldest_pending_age_minutes && stats.lifecycle.oldest_pending_age_minutes > 30 ? 'amber' : 'green'}
+                accent={
+                  stats.lifecycle.oldest_pending_age_minutes &&
+                  stats.lifecycle.oldest_pending_age_minutes > 30
+                    ? 'amber'
+                    : 'green'
+                }
               />
             </div>
             {/* Pattern status badges */}
-            {Object.keys(stats.lifecycle.pattern_status_breakdown).length > 0 && (
+            {Object.keys(stats.lifecycle.pattern_status_breakdown).length >
+              0 && (
               <div className="flex items-center gap-2 mt-3">
                 <span className="text-xs text-slate-500">Patterns:</span>
-                {Object.entries(stats.lifecycle.pattern_status_breakdown).map(([status, count]) => (
-                  <Badge
-                    key={status}
-                    variant="secondary"
-                    className={clsx(
-                      'text-xs',
-                      status === 'pending' && 'bg-amber-500/15 text-amber-400',
-                      status === 'approved' && 'bg-blue-500/15 text-blue-400',
-                      status === 'applied' && 'bg-emerald-500/15 text-emerald-400',
-                      status === 'rejected' && 'bg-rose-500/15 text-rose-400'
-                    )}
-                  >
-                    {status}: {count}
-                  </Badge>
-                ))}
+                {Object.entries(stats.lifecycle.pattern_status_breakdown).map(
+                  ([status, count]) => (
+                    <Badge
+                      key={status}
+                      variant="secondary"
+                      className={clsx(
+                        'text-xs',
+                        status === 'pending' &&
+                          'bg-amber-500/15 text-amber-400',
+                        status === 'approved' && 'bg-blue-500/15 text-blue-400',
+                        status === 'applied' &&
+                          'bg-emerald-500/15 text-emerald-400',
+                        status === 'rejected' && 'bg-rose-500/15 text-rose-400',
+                      )}
+                    >
+                      {status}: {count}
+                    </Badge>
+                  ),
+                )}
               </div>
             )}
           </div>
@@ -426,30 +522,46 @@ export default function MemoryPage() {
             <TabsTrigger value="observations" className="gap-2">
               <FileText className="w-4 h-4" />
               Observations
-              <span className={clsx(
-                'text-[11px] font-semibold px-2 py-0.5 rounded-full',
-                activeTab === 'observations' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
-              )}>
-                {isSearching ? searchResultsByType.observations.length : observationsTotal}
+              <span
+                className={clsx(
+                  'text-[11px] font-semibold px-2 py-0.5 rounded-full',
+                  activeTab === 'observations'
+                    ? 'bg-outrun-500/15 text-outrun-400'
+                    : 'bg-slate-700/50 text-slate-500',
+                )}
+              >
+                {isSearching
+                  ? searchResultsByType.observations.length
+                  : observationsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="patterns" className="gap-2">
               <Lightbulb className="w-4 h-4" />
               Patterns
-              <span className={clsx(
-                'text-[11px] font-semibold px-2 py-0.5 rounded-full',
-                activeTab === 'patterns' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
-              )}>
-                {isSearching ? searchResultsByType.patterns.length : patternsTotal}
+              <span
+                className={clsx(
+                  'text-[11px] font-semibold px-2 py-0.5 rounded-full',
+                  activeTab === 'patterns'
+                    ? 'bg-outrun-500/15 text-outrun-400'
+                    : 'bg-slate-700/50 text-slate-500',
+                )}
+              >
+                {isSearching
+                  ? searchResultsByType.patterns.length
+                  : patternsTotal}
               </span>
             </TabsTrigger>
             <TabsTrigger value="diary" className="gap-2">
               <BookOpen className="w-4 h-4" />
               Diary
-              <span className={clsx(
-                'text-[11px] font-semibold px-2 py-0.5 rounded-full',
-                activeTab === 'diary' ? 'bg-outrun-500/15 text-outrun-400' : 'bg-slate-700/50 text-slate-500'
-              )}>
+              <span
+                className={clsx(
+                  'text-[11px] font-semibold px-2 py-0.5 rounded-full',
+                  activeTab === 'diary'
+                    ? 'bg-outrun-500/15 text-outrun-400'
+                    : 'bg-slate-700/50 text-slate-500',
+                )}
+              >
                 {isSearching ? searchResultsByType.diary.length : diaryTotal}
               </span>
             </TabsTrigger>
@@ -472,8 +584,12 @@ export default function MemoryPage() {
               searchResultsByType.observations.length === 0 ? (
                 <div className="text-center py-16 text-slate-500">
                   <FileText className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching observations</h3>
-                  <p className="text-sm">Try different search terms or filters</p>
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">
+                    No matching observations
+                  </h3>
+                  <p className="text-sm">
+                    Try different search terms or filters
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -484,16 +600,24 @@ export default function MemoryPage() {
                         id: result.id,
                         project_id: (result.data.project_id as string) || '',
                         session_id: (result.data.session_id as string) || '',
-                        agent_type: (result.data.agent_type as string) || 'unknown',
-                        observation_type: (result.data.observation_type as string) || 'pattern',
+                        agent_type:
+                          (result.data.agent_type as string) || 'unknown',
+                        observation_type:
+                          (result.data.observation_type as string) || 'pattern',
                         title: result.title || 'Untitled',
                         concepts: (result.data.concepts as string[]) || [],
                         subtitle: result.summary || undefined,
-                        narrative: (result.data.narrative as string) || undefined,
-                        facts: (result.data.facts as Record<string, unknown>) || undefined,
-                        files_modified: (result.data.files_modified as string[]) || undefined,
-                        discovery_tokens: (result.data.discovery_tokens as number) || 0,
-                        created_at: result.created_at || new Date().toISOString(),
+                        narrative:
+                          (result.data.narrative as string) || undefined,
+                        facts:
+                          (result.data.facts as Record<string, unknown>) ||
+                          undefined,
+                        files_modified:
+                          (result.data.files_modified as string[]) || undefined,
+                        discovery_tokens:
+                          (result.data.discovery_tokens as number) || 0,
+                        created_at:
+                          result.created_at || new Date().toISOString(),
                       }}
                     />
                   ))}
@@ -507,8 +631,12 @@ export default function MemoryPage() {
             ) : observationsTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <FileText className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                <h3 className="text-lg font-medium text-slate-400 mb-2">No observations yet</h3>
-                <p className="text-sm">Observations will appear here as agents work</p>
+                <h3 className="text-lg font-medium text-slate-400 mb-2">
+                  No observations yet
+                </h3>
+                <p className="text-sm">
+                  Observations will appear here as agents work
+                </p>
               </div>
             ) : (
               <div>
@@ -540,8 +668,12 @@ export default function MemoryPage() {
               searchResultsByType.patterns.length === 0 ? (
                 <div className="text-center py-16 text-slate-500">
                   <Lightbulb className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching patterns</h3>
-                  <p className="text-sm">Try different search terms or filters</p>
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">
+                    No matching patterns
+                  </h3>
+                  <p className="text-sm">
+                    Try different search terms or filters
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -551,14 +683,16 @@ export default function MemoryPage() {
                       pattern={{
                         id: result.id,
                         project_id: (result.data.project_id as string) || '',
-                        pattern_type: (result.data.pattern_type as string) || 'learned',
+                        pattern_type:
+                          (result.data.pattern_type as string) || 'learned',
                         title: result.title || 'Untitled',
                         content: (result.data.content as string) || '',
                         rationale: result.summary || undefined,
                         action: (result.data.action as string) || 'add',
                         status: (result.data.status as string) || 'pending',
                         confidence: (result.data.confidence as number) || 0,
-                        created_at: result.created_at || new Date().toISOString(),
+                        created_at:
+                          result.created_at || new Date().toISOString(),
                       }}
                       onApprove={handleApprovePattern}
                       onReject={handleRejectPattern}
@@ -574,8 +708,12 @@ export default function MemoryPage() {
             ) : patternsTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <Lightbulb className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                <h3 className="text-lg font-medium text-slate-400 mb-2">No pending patterns</h3>
-                <p className="text-sm">Patterns will appear here for review after reflection</p>
+                <h3 className="text-lg font-medium text-slate-400 mb-2">
+                  No pending patterns
+                </h3>
+                <p className="text-sm">
+                  Patterns will appear here for review after reflection
+                </p>
               </div>
             ) : (
               <div>
@@ -586,15 +724,22 @@ export default function MemoryPage() {
                       const res = await fetch('/api/patterns/bulk-approve', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pattern_ids: patternIds, reason: 'bulk-approved' }),
-                      });
+                        body: JSON.stringify({
+                          pattern_ids: patternIds,
+                          reason: 'bulk-approved',
+                        }),
+                      })
                       if (res.ok) {
-                        setPatterns(patterns.map(p =>
-                          patternIds.includes(p.id) ? { ...p, status: 'approved' } : p
-                        ));
+                        setPatterns(
+                          patterns.map((p) =>
+                            patternIds.includes(p.id)
+                              ? { ...p, status: 'approved' }
+                              : p,
+                          ),
+                        )
                       }
                     } catch (error) {
-                      console.error('Failed to bulk approve patterns:', error);
+                      console.error('Failed to bulk approve patterns:', error)
                     }
                   }}
                 />
@@ -624,8 +769,12 @@ export default function MemoryPage() {
               searchResultsByType.diary.length === 0 ? (
                 <div className="text-center py-16 text-slate-500">
                   <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                  <h3 className="text-lg font-medium text-slate-400 mb-2">No matching diary entries</h3>
-                  <p className="text-sm">Try different search terms or filters</p>
+                  <h3 className="text-lg font-medium text-slate-400 mb-2">
+                    No matching diary entries
+                  </h3>
+                  <p className="text-sm">
+                    Try different search terms or filters
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -637,17 +786,35 @@ export default function MemoryPage() {
                         project_id: (result.data.project_id as string) || '',
                         session_id: (result.data.session_id as string) || '',
                         task_id: (result.data.task_id as string | null) || null,
-                        agent_type: (result.data.agent_type as string) || 'unknown',
-                        duration_seconds: (result.data.duration_seconds as number | null) || null,
-                        tokens_used: (result.data.tokens_used as number | null) || null,
-                        discovery_tokens: (result.data.discovery_tokens as number | null) || null,
-                        outcome: ((result.data.outcome as string) || 'neutral') as 'success' | 'failure' | 'partial' | 'neutral',
-                        observation_type: (result.data.observation_type as string | null) || null,
+                        agent_type:
+                          (result.data.agent_type as string) || 'unknown',
+                        duration_seconds:
+                          (result.data.duration_seconds as number | null) ||
+                          null,
+                        tokens_used:
+                          (result.data.tokens_used as number | null) || null,
+                        discovery_tokens:
+                          (result.data.discovery_tokens as number | null) ||
+                          null,
+                        outcome: ((result.data.outcome as string) ||
+                          'neutral') as
+                          | 'success'
+                          | 'failure'
+                          | 'partial'
+                          | 'neutral',
+                        observation_type:
+                          (result.data.observation_type as string | null) ||
+                          null,
                         concepts: (result.data.concepts as string[]) || [],
-                        what_worked: (result.data.what_worked as string[] | null) || null,
-                        what_failed: (result.data.what_failed as string[] | null) || null,
-                        user_corrections: (result.data.user_corrections as string[] | null) || null,
-                        created_at: result.created_at || new Date().toISOString(),
+                        what_worked:
+                          (result.data.what_worked as string[] | null) || null,
+                        what_failed:
+                          (result.data.what_failed as string[] | null) || null,
+                        user_corrections:
+                          (result.data.user_corrections as string[] | null) ||
+                          null,
+                        created_at:
+                          result.created_at || new Date().toISOString(),
                       }}
                     />
                   ))}
@@ -661,7 +828,9 @@ export default function MemoryPage() {
             ) : diaryTotal === 0 ? (
               <div className="text-center py-16 text-slate-500">
                 <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                <h3 className="text-lg font-medium text-slate-400 mb-2">No diary entries yet</h3>
+                <h3 className="text-lg font-medium text-slate-400 mb-2">
+                  No diary entries yet
+                </h3>
                 <p className="text-sm">Session summaries will appear here</p>
               </div>
             ) : (
@@ -687,8 +856,12 @@ export default function MemoryPage() {
             ) : (
               <div className="text-center py-16 text-slate-500">
                 <Shield className="w-10 h-10 mx-auto mb-4 opacity-30" />
-                <h3 className="text-lg font-medium text-slate-400 mb-2">Select a project</h3>
-                <p className="text-sm">Choose a project from the dropdown to view health status</p>
+                <h3 className="text-lg font-medium text-slate-400 mb-2">
+                  Select a project
+                </h3>
+                <p className="text-sm">
+                  Choose a project from the dropdown to view health status
+                </p>
               </div>
             )}
           </TabsContent>
@@ -701,5 +874,5 @@ export default function MemoryPage() {
         onClose={() => setSelectedObservation(null)}
       />
     </div>
-  );
+  )
 }

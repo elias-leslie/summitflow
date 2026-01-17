@@ -4,117 +4,117 @@
  * Handles project CRUD operations, health checks, and agent configuration.
  */
 
-import { fetchWithErrorHandling } from "./utils";
+import { fetchWithErrorHandling } from './utils'
 
 export interface Project {
-  id: string;
-  name: string;
-  base_url: string;
-  health_endpoint: string;
-  created_at: string;
-  health_status?: string;
-  root_path?: string;
+  id: string
+  name: string
+  base_url: string
+  health_endpoint: string
+  created_at: string
+  health_status?: string
+  root_path?: string
 }
 
 export interface ProjectStats {
-  features: number;
-  tasks: number;
-  bugs: number;
-  blocked: number;
+  features: number
+  tasks: number
+  bugs: number
+  blocked: number
 }
 
 export interface ProjectWithStats {
-  id: string;
-  name: string;
-  base_url: string;
-  health_endpoint: string;
-  root_path?: string;
-  logo_url?: string;
-  created_at: string;
-  health_status?: string;
-  stats: ProjectStats;
+  id: string
+  name: string
+  base_url: string
+  health_endpoint: string
+  root_path?: string
+  logo_url?: string
+  created_at: string
+  health_status?: string
+  stats: ProjectStats
 }
 
 export interface ProjectsWithStatsResponse {
-  projects: ProjectWithStats[];
-  total: number;
+  projects: ProjectWithStats[]
+  total: number
 }
 
 export interface ProjectHealth {
-  project_id: string;
-  healthy: boolean;
-  status_code?: number;
-  response_time_ms?: number;
-  error?: string;
-  checked_at: string;
+  project_id: string
+  healthy: boolean
+  status_code?: number
+  response_time_ms?: number
+  error?: string
+  checked_at: string
 }
 
 export interface ProjectAgentConfig {
-  claude_enabled: boolean;
-  gemini_enabled: boolean;
-  default_agent: string;
-  claude_model: string;
-  gemini_model: string;
-  memory_enabled: boolean;
-  observations_enabled: boolean;
-  diary_enabled: boolean;
-  patterns_enabled: boolean;
-  checkpoints_enabled: boolean;
-  context_injection_enabled: boolean;
-  component_source: string;
+  claude_enabled: boolean
+  gemini_enabled: boolean
+  default_agent: string
+  claude_model: string
+  gemini_model: string
+  memory_enabled: boolean
+  observations_enabled: boolean
+  diary_enabled: boolean
+  patterns_enabled: boolean
+  checkpoints_enabled: boolean
+  context_injection_enabled: boolean
+  component_source: string
   // Extraction throttle
-  extraction_enabled: boolean;
-  extraction_rpm_limit: number;
+  extraction_enabled: boolean
+  extraction_rpm_limit: number
 }
 
 export interface ProjectAgentConfigUpdate {
-  claude_enabled?: boolean;
-  gemini_enabled?: boolean;
-  default_agent?: string;
-  claude_model?: string;
-  gemini_model?: string;
-  memory_enabled?: boolean;
-  observations_enabled?: boolean;
-  diary_enabled?: boolean;
-  patterns_enabled?: boolean;
-  checkpoints_enabled?: boolean;
-  context_injection_enabled?: boolean;
-  component_source?: string;
+  claude_enabled?: boolean
+  gemini_enabled?: boolean
+  default_agent?: string
+  claude_model?: string
+  gemini_model?: string
+  memory_enabled?: boolean
+  observations_enabled?: boolean
+  diary_enabled?: boolean
+  patterns_enabled?: boolean
+  checkpoints_enabled?: boolean
+  context_injection_enabled?: boolean
+  component_source?: string
   // Extraction throttle
-  extraction_enabled?: boolean;
-  extraction_rpm_limit?: number;
+  extraction_enabled?: boolean
+  extraction_rpm_limit?: number
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  return fetchWithErrorHandling("/api/projects", {
-    errorMessage: "Failed to fetch projects",
-  });
+  return fetchWithErrorHandling('/api/projects', {
+    errorMessage: 'Failed to fetch projects',
+  })
 }
 
 export async function fetchProjectsWithStats(): Promise<ProjectsWithStatsResponse> {
-  return fetchWithErrorHandling("/api/projects/with-stats", {
-    errorMessage: "Failed to fetch projects with stats",
-  });
+  return fetchWithErrorHandling('/api/projects/with-stats', {
+    errorMessage: 'Failed to fetch projects with stats',
+  })
 }
 
 export async function fetchProject(id: string): Promise<Project> {
   return fetchWithErrorHandling(`/api/projects/${id}`, {
-    errorMessage: "Failed to fetch project",
-  });
+    errorMessage: 'Failed to fetch project',
+  })
 }
 
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/health`, {
-    errorMessage: "Failed to check project health",
-  });
+    errorMessage: 'Failed to check project health',
+  })
 }
 
 export async function getAgentConfig(
   projectId: string,
 ): Promise<ProjectAgentConfig> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
-    errorMessage: "Failed to fetch agent config",
-  });
+    errorMessage: 'Failed to fetch agent config',
+  })
 }
 
 export async function updateAgentConfig(
@@ -122,26 +122,26 @@ export async function updateAgentConfig(
   config: ProjectAgentConfigUpdate,
 ): Promise<ProjectAgentConfig> {
   const res = await fetch(`/api/projects/${projectId}/agents`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
-  });
-  if (!res.ok) throw new Error("Failed to update agent config");
-  return res.json();
+  })
+  if (!res.ok) throw new Error('Failed to update agent config')
+  return res.json()
 }
 
 export async function createProject(project: {
-  id: string;
-  name: string;
-  base_url: string;
-  health_endpoint?: string;
+  id: string
+  name: string
+  base_url: string
+  health_endpoint?: string
 }): Promise<Project> {
-  return fetchWithErrorHandling("/api/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  return fetchWithErrorHandling('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(project),
-    errorMessage: "Failed to create project",
-  });
+    errorMessage: 'Failed to create project',
+  })
 }
 
 // ============================================================================
@@ -149,12 +149,12 @@ export async function createProject(project: {
 // ============================================================================
 
 export interface AutomationSettings {
-  schedule_preset: "nightly" | "weekly" | "monthly";
-  cron_expression: string;
-  daily_budget_usd: number;
-  primary_agent: "claude" | "gemini";
-  secondary_agent: "claude" | "gemini";
-  enabled: boolean;
+  schedule_preset: 'nightly' | 'weekly' | 'monthly'
+  cron_expression: string
+  daily_budget_usd: number
+  primary_agent: 'claude' | 'gemini'
+  secondary_agent: 'claude' | 'gemini'
+  enabled: boolean
 }
 
 export async function getAutomationSettings(
@@ -163,9 +163,9 @@ export async function getAutomationSettings(
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/settings/automation`,
     {
-      errorMessage: "Failed to fetch automation settings",
+      errorMessage: 'Failed to fetch automation settings',
     },
-  );
+  )
 }
 
 export async function updateAutomationSettings(
@@ -173,16 +173,16 @@ export async function updateAutomationSettings(
   settings: Partial<AutomationSettings>,
 ): Promise<AutomationSettings> {
   // Fetch current settings first to merge
-  const current = await getAutomationSettings(projectId);
-  const merged = { ...current, ...settings };
+  const current = await getAutomationSettings(projectId)
+  const merged = { ...current, ...settings }
 
   const res = await fetch(`/api/projects/${projectId}/settings/automation`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(merged),
-  });
-  if (!res.ok) throw new Error("Failed to update automation settings");
-  return res.json();
+  })
+  if (!res.ok) throw new Error('Failed to update automation settings')
+  return res.json()
 }
 
 // ============================================================================
@@ -190,27 +190,27 @@ export async function updateAutomationSettings(
 // ============================================================================
 
 export interface ExecuteNowResponse {
-  status: string;
-  task_id: string;
-  project_id: string;
-  message: string;
+  status: string
+  task_id: string
+  project_id: string
+  message: string
 }
 
 export async function executeIdeasNow(
   projectId: string,
 ): Promise<ExecuteNowResponse> {
   const res = await fetch(`/api/projects/${projectId}/ideas/execute-now`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
   if (!res.ok) {
     if (res.status === 429) {
-      const data = await res.json();
-      throw new Error(data.detail || "Too many requests");
+      const data = await res.json()
+      throw new Error(data.detail || 'Too many requests')
     }
-    throw new Error("Failed to execute ideas");
+    throw new Error('Failed to execute ideas')
   }
-  return res.json();
+  return res.json()
 }
 
 // ============================================================================
@@ -218,23 +218,23 @@ export async function executeIdeasNow(
 // ============================================================================
 
 export interface AutonomousExecutionSettings {
-  enabled: boolean;
-  frequency_minutes: number;
-  auto_merge_tiers: number[];
-  task_types: string[];
-  start_hour: number;
-  end_hour: number;
-  max_concurrent: number;
+  enabled: boolean
+  frequency_minutes: number
+  auto_merge_tiers: number[]
+  task_types: string[]
+  start_hour: number
+  end_hour: number
+  max_concurrent: number
 }
 
 export interface AutonomousExecutionSettingsUpdate {
-  enabled?: boolean;
-  frequency_minutes?: number;
-  auto_merge_tiers?: number[];
-  task_types?: string[];
-  start_hour?: number;
-  end_hour?: number;
-  max_concurrent?: number;
+  enabled?: boolean
+  frequency_minutes?: number
+  auto_merge_tiers?: number[]
+  task_types?: string[]
+  start_hour?: number
+  end_hour?: number
+  max_concurrent?: number
 }
 
 export async function getAutonomousSettings(
@@ -243,9 +243,9 @@ export async function getAutonomousSettings(
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/autonomous/settings`,
     {
-      errorMessage: "Failed to fetch autonomous settings",
+      errorMessage: 'Failed to fetch autonomous settings',
     },
-  );
+  )
 }
 
 export async function updateAutonomousSettings(
@@ -253,10 +253,10 @@ export async function updateAutonomousSettings(
   settings: AutonomousExecutionSettingsUpdate,
 ): Promise<AutonomousExecutionSettings> {
   const res = await fetch(`/api/projects/${projectId}/autonomous/settings`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
-  });
-  if (!res.ok) throw new Error("Failed to update autonomous settings");
-  return res.json();
+  })
+  if (!res.ok) throw new Error('Failed to update autonomous settings')
+  return res.json()
 }

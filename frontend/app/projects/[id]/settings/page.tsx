@@ -1,89 +1,85 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { clsx } from 'clsx'
 import {
   ArrowLeft,
-  Settings2,
-  Loader2,
   Layers,
-  Zap,
   Lightbulb,
-} from "lucide-react";
-import Link from "next/link";
-import { clsx } from "clsx";
-import {
-  fetchProject,
-  getAgentConfig,
-  updateAgentConfig,
-} from "@/lib/api";
-import { AgentConfigPanel } from "@/components/settings/AgentConfigPanel";
-import { AutonomousSettingsPanel } from "@/components/settings/AutonomousSettings";
-import { AutomationSettingsPanel } from "@/components/settings/AutomationSettingsPanel";
+  Loader2,
+  Settings2,
+  Zap,
+} from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { useState } from 'react'
+import { AgentConfigPanel } from '@/components/settings/AgentConfigPanel'
+import { AutomationSettingsPanel } from '@/components/settings/AutomationSettingsPanel'
+import { AutonomousSettingsPanel } from '@/components/settings/AutonomousSettings'
+import { fetchProject, getAgentConfig, updateAgentConfig } from '@/lib/api'
 
 const COMPONENT_SOURCE_OPTIONS = [
   {
-    value: "manual",
-    label: "Manual",
-    description: "Create components manually in the UI",
+    value: 'manual',
+    label: 'Manual',
+    description: 'Create components manually in the UI',
   },
   {
-    value: "pages",
-    label: "Pages",
-    description: "Suggest components from ungrouped pages",
+    value: 'pages',
+    label: 'Pages',
+    description: 'Suggest components from ungrouped pages',
   },
   {
-    value: "endpoints",
-    label: "Endpoints",
-    description: "Suggest components from API endpoint groups",
+    value: 'endpoints',
+    label: 'Endpoints',
+    description: 'Suggest components from API endpoint groups',
   },
   {
-    value: "directories",
-    label: "Directories",
-    description: "Suggest components from directory structure",
+    value: 'directories',
+    label: 'Directories',
+    description: 'Suggest components from directory structure',
   },
-] as const;
+] as const
 
-type SettingsTab = "general" | "automation" | "execution";
+type SettingsTab = 'general' | 'automation' | 'execution'
 
 export default function ProjectSettingsPage() {
-  const params = useParams();
-  const projectId = params.id as string;
-  const queryClient = useQueryClient();
+  const params = useParams()
+  const projectId = params.id as string
+  const queryClient = useQueryClient()
 
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const [savingComponentSource, setSavingComponentSource] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [savingComponentSource, setSavingComponentSource] = useState(false)
 
   const { data: project, isLoading: projectLoading } = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: ['project', projectId],
     queryFn: () => fetchProject(projectId),
-  });
+  })
 
   const { data: agentConfig, isLoading: configLoading } = useQuery({
-    queryKey: ["agent-config", projectId],
+    queryKey: ['agent-config', projectId],
     queryFn: () => getAgentConfig(projectId),
-  });
+  })
 
-  const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
-  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [defaultAgent, setDefaultAgent] = useState<string | null>(null)
+  const [defaultModel, setDefaultModel] = useState<string | null>(null)
 
   const handleComponentSourceChange = async (source: string) => {
-    setSavingComponentSource(true);
+    setSavingComponentSource(true)
     try {
-      await updateAgentConfig(projectId, { component_source: source });
-      queryClient.invalidateQueries({ queryKey: ["agent-config", projectId] });
+      await updateAgentConfig(projectId, { component_source: source })
+      queryClient.invalidateQueries({ queryKey: ['agent-config', projectId] })
     } finally {
-      setSavingComponentSource(false);
+      setSavingComponentSource(false)
     }
-  };
+  }
 
   if (projectLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
       </div>
-    );
+    )
   }
 
   if (!project) {
@@ -94,7 +90,7 @@ export default function ProjectSettingsPage() {
           Back to dashboard
         </Link>
       </div>
-    );
+    )
   }
 
   return (
@@ -119,36 +115,36 @@ export default function ProjectSettingsPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b border-slate-700">
           <button
-            onClick={() => setActiveTab("general")}
+            onClick={() => setActiveTab('general')}
             className={clsx(
-              "px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2",
-              activeTab === "general"
-                ? "text-phosphor-400 border-b-2 border-phosphor-400"
-                : "text-slate-400 hover:text-slate-200",
+              'px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeTab === 'general'
+                ? 'text-phosphor-400 border-b-2 border-phosphor-400'
+                : 'text-slate-400 hover:text-slate-200',
             )}
           >
             <Settings2 className="w-4 h-4" />
             General
           </button>
           <button
-            onClick={() => setActiveTab("automation")}
+            onClick={() => setActiveTab('automation')}
             className={clsx(
-              "px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2",
-              activeTab === "automation"
-                ? "text-phosphor-400 border-b-2 border-phosphor-400"
-                : "text-slate-400 hover:text-slate-200",
+              'px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeTab === 'automation'
+                ? 'text-phosphor-400 border-b-2 border-phosphor-400'
+                : 'text-slate-400 hover:text-slate-200',
             )}
           >
             <Lightbulb className="w-4 h-4" />
             Automation
           </button>
           <button
-            onClick={() => setActiveTab("execution")}
+            onClick={() => setActiveTab('execution')}
             className={clsx(
-              "px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2",
-              activeTab === "execution"
-                ? "text-phosphor-400 border-b-2 border-phosphor-400"
-                : "text-slate-400 hover:text-slate-200",
+              'px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2',
+              activeTab === 'execution'
+                ? 'text-phosphor-400 border-b-2 border-phosphor-400'
+                : 'text-slate-400 hover:text-slate-200',
             )}
           >
             <Zap className="w-4 h-4" />
@@ -158,7 +154,7 @@ export default function ProjectSettingsPage() {
       </header>
 
       <section className="animate-fade-in">
-        {activeTab === "general" && (
+        {activeTab === 'general' && (
           <div className="max-w-xl space-y-6">
             <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
               <h3 className="text-sm font-medium text-slate-200 mb-2 flex items-center gap-2">
@@ -178,10 +174,10 @@ export default function ProjectSettingsPage() {
                     <label
                       key={option.value}
                       className={clsx(
-                        "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
+                        'flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors',
                         agentConfig?.component_source === option.value
-                          ? "border-phosphor-500 bg-phosphor-500/10"
-                          : "border-slate-600 hover:border-slate-500 bg-slate-800/50",
+                          ? 'border-phosphor-500 bg-phosphor-500/10'
+                          : 'border-slate-600 hover:border-slate-500 bg-slate-800/50',
                       )}
                     >
                       <input
@@ -234,18 +230,18 @@ export default function ProjectSettingsPage() {
           </div>
         )}
 
-        {activeTab === "automation" && (
+        {activeTab === 'automation' && (
           <div className="max-w-xl">
             <AutomationSettingsPanel projectId={projectId} />
           </div>
         )}
 
-        {activeTab === "execution" && (
+        {activeTab === 'execution' && (
           <div className="max-w-xl">
             <AutonomousSettingsPanel projectId={projectId} />
           </div>
         )}
       </section>
     </main>
-  );
+  )
 }

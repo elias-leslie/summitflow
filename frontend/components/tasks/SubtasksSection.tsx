@@ -1,121 +1,121 @@
-"use client";
+'use client'
 
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
+  Braces,
+  Check,
+  CheckCircle2,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
-  CheckCircle2,
   Circle,
-  FileCode,
-  Loader2,
-  Square,
-  CheckSquare,
   Copy,
-  Check,
-  Braces,
-  FileText,
-  FilePlus,
-  FileMinus,
+  FileCode,
   FileEdit,
-  MessageSquareQuote,
+  FileMinus,
+  FilePlus,
+  FileText,
   Globe,
-} from "lucide-react";
-import type { Subtask, Step } from "@/lib/api/tasks";
-import { getSteps, updateStep } from "@/lib/api/tasks";
-import { PHASE_CONFIG } from "@/lib/utils/task-status";
+  Loader2,
+  MessageSquareQuote,
+  Square,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Step, Subtask } from '@/lib/api/tasks'
+import { getSteps, updateStep } from '@/lib/api/tasks'
+import { PHASE_CONFIG } from '@/lib/utils/task-status'
 
 interface SubtasksSectionProps {
-  projectId: string;
-  taskId: string;
-  subtasks: Subtask[];
-  onTogglePass: (subtaskId: string, passes: boolean) => Promise<void>;
-  isLoading?: boolean;
-  activeSubtaskId?: string;
-  activeStepNumber?: number;
+  projectId: string
+  taskId: string
+  subtasks: Subtask[]
+  onTogglePass: (subtaskId: string, passes: boolean) => Promise<void>
+  isLoading?: boolean
+  activeSubtaskId?: string
+  activeStepNumber?: number
 }
 
 function groupByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
   return subtasks.reduce(
     (acc, subtask) => {
-      const phase = subtask.phase || "other";
-      if (!acc[phase]) acc[phase] = [];
-      acc[phase].push(subtask);
-      return acc;
+      const phase = subtask.phase || 'other'
+      if (!acc[phase]) acc[phase] = []
+      acc[phase].push(subtask)
+      return acc
     },
     {} as Record<string, Subtask[]>,
-  );
+  )
 }
 
 interface StepItemProps {
-  step: Step;
-  index: number;
-  isOptimisticallyUpdated: boolean;
-  onToggle: (stepNumber: number, passes: boolean) => void;
-  isUpdating: boolean;
-  isActive?: boolean;
+  step: Step
+  index: number
+  isOptimisticallyUpdated: boolean
+  onToggle: (stepNumber: number, passes: boolean) => void
+  isUpdating: boolean
+  isActive?: boolean
 }
 
 // =============================================================================
 // Type Detection for Step Specs
 // =============================================================================
 
-type SpecType = "api" | "prompt" | "file" | "generic";
+type SpecType = 'api' | 'prompt' | 'file' | 'generic'
 
 interface SpecRecord {
-  [key: string]: unknown;
+  [key: string]: unknown
 }
 
 /** Check if a value looks like a file path */
 function looksLikeFilePath(value: unknown): boolean {
-  if (typeof value !== "string") return false;
+  if (typeof value !== 'string') return false
   // Starts with ~, /, ./, or has file extension
-  return /^[~./]|^[A-Za-z]:[/\\]|\.\w+$/.test(value);
+  return /^[~./]|^[A-Za-z]:[/\\]|\.\w+$/.test(value)
 }
 
 /** Detect spec type from keys and values */
 function detectSpecType(spec: SpecRecord): SpecType {
-  const keys = Object.keys(spec).map((k) => k.toLowerCase());
+  const keys = Object.keys(spec).map((k) => k.toLowerCase())
 
   // File spec: has file-specific keys OR path that looks like a file path
   if (
     keys.some((k) =>
       [
-        "file",
-        "filepath",
-        "file_path",
-        "filename",
-        "operation",
-        "create",
-        "modify",
-        "delete",
+        'file',
+        'filepath',
+        'file_path',
+        'filename',
+        'operation',
+        'create',
+        'modify',
+        'delete',
       ].includes(k),
     ) ||
-    (keys.includes("path") && looksLikeFilePath(spec.path || spec.Path))
+    (keys.includes('path') && looksLikeFilePath(spec.path || spec.Path))
   ) {
-    return "file";
+    return 'file'
   }
 
   // API spec: has endpoint, method, url, or api-related keys
   // Note: "path" alone is ambiguous, so require method or endpoint for API
   if (
-    keys.some((k) => ["endpoint", "method", "url", "api", "route"].includes(k))
+    keys.some((k) => ['endpoint', 'method', 'url', 'api', 'route'].includes(k))
   ) {
-    return "api";
+    return 'api'
   }
 
   // Prompt spec: has prompt, template, or message-related keys
   if (
     keys.some((k) =>
-      ["prompt", "template", "message", "system", "user", "assistant"].includes(
+      ['prompt', 'template', 'message', 'system', 'user', 'assistant'].includes(
         k,
       ),
     )
   ) {
-    return "prompt";
+    return 'prompt'
   }
 
-  return "generic";
+  return 'generic'
 }
 
 // =============================================================================
@@ -125,15 +125,15 @@ function detectSpecType(spec: SpecRecord): SpecType {
 /** Method badge for API specs */
 function MethodBadge({ method }: { method: string }) {
   const colors: Record<string, string> = {
-    GET: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    POST: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    PUT: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    PATCH: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    DELETE: "bg-red-500/20 text-red-400 border-red-500/30",
-  };
+    GET: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    POST: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    PUT: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    PATCH: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    DELETE: 'bg-red-500/20 text-red-400 border-red-500/30',
+  }
   const colorClass =
     colors[method.toUpperCase()] ||
-    "bg-slate-500/20 text-slate-400 border-slate-500/30";
+    'bg-slate-500/20 text-slate-400 border-slate-500/30'
 
   return (
     <span
@@ -141,27 +141,27 @@ function MethodBadge({ method }: { method: string }) {
     >
       {method.toUpperCase()}
     </span>
-  );
+  )
 }
 
 /** API spec renderer with method badge and endpoint */
 function ApiSpecRenderer({ spec }: { spec: SpecRecord }) {
   const method =
-    (spec.method as string) || (spec.http_method as string) || "GET";
+    (spec.method as string) || (spec.http_method as string) || 'GET'
   const endpoint =
     (spec.endpoint as string) ||
     (spec.path as string) ||
     (spec.url as string) ||
     (spec.route as string) ||
-    "";
+    ''
 
   // Extract other fields for additional info
   const otherFields = Object.entries(spec).filter(
     ([key]) =>
-      !["method", "http_method", "endpoint", "path", "url", "route"].includes(
+      !['method', 'http_method', 'endpoint', 'path', 'url', 'route'].includes(
         key.toLowerCase(),
       ),
-  );
+  )
 
   return (
     <div className="space-y-2">
@@ -169,7 +169,7 @@ function ApiSpecRenderer({ spec }: { spec: SpecRecord }) {
         <Globe className="w-3.5 h-3.5 text-blue-400" />
         <MethodBadge method={method} />
         <code className="text-xs text-slate-200 bg-slate-800/60 px-2 py-0.5 rounded">
-          {endpoint || "(no endpoint)"}
+          {endpoint || '(no endpoint)'}
         </code>
       </div>
       {otherFields.length > 0 && (
@@ -178,7 +178,7 @@ function ApiSpecRenderer({ spec }: { spec: SpecRecord }) {
             <div key={key} className="flex gap-2 text-2xs">
               <span className="text-slate-500 font-mono">{key}:</span>
               <span className="text-amber-300/80">
-                {typeof value === "string"
+                {typeof value === 'string'
                   ? value
                   : JSON.stringify(value, null, 2)}
               </span>
@@ -187,13 +187,13 @@ function ApiSpecRenderer({ spec }: { spec: SpecRecord }) {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** Highlight template variables in text ({{var}} or {var} patterns) */
 function HighlightTemplateVars({ text }: { text: string }) {
   // Match both {{var}} and {var} patterns
-  const parts = text.split(/(\{\{?\w+\}?\})/g);
+  const parts = text.split(/(\{\{?\w+\}?\})/g)
 
   return (
     <>
@@ -203,31 +203,31 @@ function HighlightTemplateVars({ text }: { text: string }) {
             <span key={i} className="text-purple-400 font-semibold">
               {part}
             </span>
-          );
+          )
         }
-        return <span key={i}>{part}</span>;
+        return <span key={i}>{part}</span>
       })}
     </>
-  );
+  )
 }
 
 /** Prompt spec renderer with quoted text and variable highlighting */
 function PromptSpecRenderer({ spec }: { spec: SpecRecord }) {
   const promptFields = [
-    "prompt",
-    "template",
-    "message",
-    "system",
-    "user",
-    "assistant",
-  ];
+    'prompt',
+    'template',
+    'message',
+    'system',
+    'user',
+    'assistant',
+  ]
   const mainPrompt = promptFields
     .map((f) => spec[f])
-    .find((v) => typeof v === "string") as string | undefined;
+    .find((v) => typeof v === 'string') as string | undefined
 
   const otherFields = Object.entries(spec).filter(
     ([key]) => !promptFields.includes(key.toLowerCase()),
-  );
+  )
 
   return (
     <div className="space-y-2">
@@ -249,7 +249,7 @@ function PromptSpecRenderer({ spec }: { spec: SpecRecord }) {
             <div key={key} className="flex gap-2 text-2xs">
               <span className="text-slate-500 font-mono">{key}:</span>
               <span className="text-amber-300/80">
-                {typeof value === "string" ? (
+                {typeof value === 'string' ? (
                   <HighlightTemplateVars text={value} />
                 ) : (
                   JSON.stringify(value)
@@ -260,51 +260,51 @@ function PromptSpecRenderer({ spec }: { spec: SpecRecord }) {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** Operation badge for file specs */
 function OperationBadge({ operation }: { operation: string }) {
-  const op = operation.toLowerCase();
+  const op = operation.toLowerCase()
   const config: Record<
     string,
     { icon: typeof FileText; color: string; label: string }
   > = {
     create: {
       icon: FilePlus,
-      color: "bg-emerald-500/20 text-emerald-400",
-      label: "CREATE",
+      color: 'bg-emerald-500/20 text-emerald-400',
+      label: 'CREATE',
     },
     modify: {
       icon: FileEdit,
-      color: "bg-amber-500/20 text-amber-400",
-      label: "MODIFY",
+      color: 'bg-amber-500/20 text-amber-400',
+      label: 'MODIFY',
     },
     update: {
       icon: FileEdit,
-      color: "bg-amber-500/20 text-amber-400",
-      label: "UPDATE",
+      color: 'bg-amber-500/20 text-amber-400',
+      label: 'UPDATE',
     },
     delete: {
       icon: FileMinus,
-      color: "bg-red-500/20 text-red-400",
-      label: "DELETE",
+      color: 'bg-red-500/20 text-red-400',
+      label: 'DELETE',
     },
     read: {
       icon: FileText,
-      color: "bg-blue-500/20 text-blue-400",
-      label: "READ",
+      color: 'bg-blue-500/20 text-blue-400',
+      label: 'READ',
     },
-  };
+  }
   const {
     icon: Icon,
     color,
     label,
   } = config[op] || {
     icon: FileText,
-    color: "bg-slate-500/20 text-slate-400",
+    color: 'bg-slate-500/20 text-slate-400',
     label: op.toUpperCase(),
-  };
+  }
 
   return (
     <span
@@ -313,7 +313,7 @@ function OperationBadge({ operation }: { operation: string }) {
       <Icon className="w-3 h-3" />
       {label}
     </span>
-  );
+  )
 }
 
 /** File spec renderer with clickable path and operation badge */
@@ -324,33 +324,33 @@ function FileSpecRenderer({ spec }: { spec: SpecRecord }) {
     (spec.file_path as string) ||
     (spec.path as string) ||
     (spec.filename as string) ||
-    "";
+    ''
   const operation =
     (spec.operation as string) ||
     (spec.action as string) ||
     (spec.create
-      ? "create"
+      ? 'create'
       : spec.modify
-        ? "modify"
+        ? 'modify'
         : spec.delete
-          ? "delete"
-          : "");
+          ? 'delete'
+          : '')
 
   const otherFields = Object.entries(spec).filter(
     ([key]) =>
       ![
-        "file",
-        "filepath",
-        "file_path",
-        "path",
-        "filename",
-        "operation",
-        "action",
-        "create",
-        "modify",
-        "delete",
+        'file',
+        'filepath',
+        'file_path',
+        'path',
+        'filename',
+        'operation',
+        'action',
+        'create',
+        'modify',
+        'delete',
       ].includes(key.toLowerCase()),
-  );
+  )
 
   return (
     <div className="space-y-2">
@@ -358,7 +358,7 @@ function FileSpecRenderer({ spec }: { spec: SpecRecord }) {
         <FileText className="w-3.5 h-3.5 text-orange-400" />
         {operation && <OperationBadge operation={operation} />}
         <code className="text-xs text-slate-200 bg-slate-800/60 px-2 py-0.5 rounded font-mono truncate max-w-xs">
-          {filePath || "(no file path)"}
+          {filePath || '(no file path)'}
         </code>
       </div>
       {otherFields.length > 0 && (
@@ -367,22 +367,22 @@ function FileSpecRenderer({ spec }: { spec: SpecRecord }) {
             <div key={key} className="flex gap-2 text-2xs">
               <span className="text-slate-500 font-mono">{key}:</span>
               <span className="text-amber-300/80">
-                {typeof value === "string" ? value : JSON.stringify(value)}
+                {typeof value === 'string' ? value : JSON.stringify(value)}
               </span>
             </div>
           ))}
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /** Generic spec renderer as key-value table */
 function GenericSpecRenderer({ spec }: { spec: SpecRecord }) {
-  const entries = Object.entries(spec);
+  const entries = Object.entries(spec)
 
   if (entries.length === 0) {
-    return <span className="text-2xs text-slate-500">(empty spec)</span>;
+    return <span className="text-2xs text-slate-500">(empty spec)</span>
   }
 
   return (
@@ -393,27 +393,27 @@ function GenericSpecRenderer({ spec }: { spec: SpecRecord }) {
             {key}:
           </span>
           <span className="text-2xs text-amber-300/80 break-all">
-            {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+            {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
           </span>
         </div>
       ))}
     </div>
-  );
+  )
 }
 
 /** Main spec renderer that delegates to type-specific renderer */
 function SpecRenderer({ spec }: { spec: SpecRecord }) {
-  const specType = detectSpecType(spec);
+  const specType = detectSpecType(spec)
 
   switch (specType) {
-    case "api":
-      return <ApiSpecRenderer spec={spec} />;
-    case "prompt":
-      return <PromptSpecRenderer spec={spec} />;
-    case "file":
-      return <FileSpecRenderer spec={spec} />;
+    case 'api':
+      return <ApiSpecRenderer spec={spec} />
+    case 'prompt':
+      return <PromptSpecRenderer spec={spec} />
+    case 'file':
+      return <FileSpecRenderer spec={spec} />
     default:
-      return <GenericSpecRenderer spec={spec} />;
+      return <GenericSpecRenderer spec={spec} />
   }
 }
 
@@ -426,31 +426,31 @@ function StepItem({
   isActive = false,
 }: StepItemProps) {
   // Auto-expand spec for active step
-  const [isSpecExpanded, setIsSpecExpanded] = useState(isActive);
-  const [copied, setCopied] = useState(false);
-  const passes = isOptimisticallyUpdated ? !step.passes : step.passes;
-  const hasSpec = step.spec && Object.keys(step.spec).length > 0;
+  const [isSpecExpanded, setIsSpecExpanded] = useState(isActive)
+  const [copied, setCopied] = useState(false)
+  const passes = isOptimisticallyUpdated ? !step.passes : step.passes
+  const hasSpec = step.spec && Object.keys(step.spec).length > 0
 
   // Expand spec when step becomes active
   useEffect(() => {
     if (isActive && hasSpec) {
-      setIsSpecExpanded(true);
+      setIsSpecExpanded(true)
     }
-  }, [isActive, hasSpec]);
+  }, [isActive, hasSpec])
 
   const handleCopy = useCallback(async () => {
-    if (!step.spec) return;
-    await navigator.clipboard.writeText(JSON.stringify(step.spec, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [step.spec]);
+    if (!step.spec) return
+    await navigator.clipboard.writeText(JSON.stringify(step.spec, null, 2))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [step.spec])
 
   return (
     <motion.li
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.03 }}
-      className={`group relative ${isActive ? "z-10" : ""}`}
+      className={`group relative ${isActive ? 'z-10' : ''}`}
     >
       {/* Active step indicator - animated border */}
       {isActive && (
@@ -467,7 +467,7 @@ function StepItem({
           onClick={() => onToggle(step.step_number, !passes)}
           disabled={isUpdating}
           className="mt-0.5 flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded"
-          aria-label={passes ? "Mark step incomplete" : "Mark step complete"}
+          aria-label={passes ? 'Mark step incomplete' : 'Mark step complete'}
         >
           {isUpdating ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
@@ -475,7 +475,7 @@ function StepItem({
             <motion.div
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
             >
               <CheckSquare className="w-3.5 h-3.5 text-phosphor-400" />
             </motion.div>
@@ -491,10 +491,10 @@ function StepItem({
             <span
               className={`text-xs transition-all duration-200 ${
                 passes
-                  ? "text-slate-600 line-through decoration-slate-700"
+                  ? 'text-slate-600 line-through decoration-slate-700'
                   : isActive
-                    ? "text-slate-200 font-medium"
-                    : "text-slate-400"
+                    ? 'text-slate-200 font-medium'
+                    : 'text-slate-400'
               }`}
             >
               {step.description}
@@ -515,10 +515,10 @@ function StepItem({
                 data-testid={`spec-btn-${step.step_number}`}
                 className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150 ${
                   isSpecExpanded
-                    ? "bg-blue-500/15 text-blue-400"
-                    : "bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400"
+                    ? 'bg-blue-500/15 text-blue-400'
+                    : 'bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400'
                 }`}
-                aria-label={isSpecExpanded ? "Hide spec" : "Show spec"}
+                aria-label={isSpecExpanded ? 'Hide spec' : 'Show spec'}
               >
                 <Braces className="w-3 h-3" />
                 <span className="text-2xs font-medium">spec</span>
@@ -534,7 +534,7 @@ function StepItem({
             {isSpecExpanded && hasSpec && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
+                animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.15 }}
                 className="overflow-hidden"
@@ -545,8 +545,8 @@ function StepItem({
                     onClick={handleCopy}
                     className={`absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10 ${
                       copied
-                        ? "bg-phosphor-500/20 text-phosphor-400"
-                        : "bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200"
+                        ? 'bg-phosphor-500/20 text-phosphor-400'
+                        : 'bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200'
                     }`}
                     aria-label="Copy spec"
                   >
@@ -569,14 +569,14 @@ function StepItem({
         </div>
       </div>
     </motion.li>
-  );
+  )
 }
 
 interface StepsListProps {
-  projectId: string;
-  taskId: string;
-  subtask: Subtask;
-  activeStepNumber?: number;
+  projectId: string
+  taskId: string
+  subtask: Subtask
+  activeStepNumber?: number
 }
 
 function StepsList({
@@ -585,54 +585,50 @@ function StepsList({
   subtask,
   activeStepNumber,
 }: StepsListProps) {
-  const [steps, setSteps] = useState<Step[]>(subtask.steps_from_table || []);
-  const [isLoading, setIsLoading] = useState(!subtask.steps_from_table?.length);
-  const [updatingSteps, setUpdatingSteps] = useState<Set<number>>(new Set());
+  const [steps, setSteps] = useState<Step[]>(subtask.steps_from_table || [])
+  const [isLoading, setIsLoading] = useState(!subtask.steps_from_table?.length)
+  const [updatingSteps, setUpdatingSteps] = useState<Set<number>>(new Set())
   const [optimisticUpdates, setOptimisticUpdates] = useState<Set<number>>(
     new Set(),
-  );
+  )
 
   // Fetch steps if not already loaded
   const fetchStepsIfNeeded = useCallback(async () => {
     if (subtask.steps_from_table?.length) {
-      setSteps(subtask.steps_from_table);
-      setIsLoading(false);
-      return;
+      setSteps(subtask.steps_from_table)
+      setIsLoading(false)
+      return
     }
 
     // If no table steps, check if we have legacy steps
     if (!subtask.steps?.length) {
-      setIsLoading(false);
-      return;
+      setIsLoading(false)
+      return
     }
 
     try {
-      setIsLoading(true);
-      const fetchedSteps = await getSteps(
-        projectId,
-        taskId,
-        subtask.subtask_id,
-      );
-      setSteps(fetchedSteps);
+      setIsLoading(true)
+      const fetchedSteps = await getSteps(projectId, taskId, subtask.subtask_id)
+      setSteps(fetchedSteps)
     } catch (error) {
-      console.error("Failed to fetch steps:", error);
+      console.error('Failed to fetch steps:', error)
       // Fallback: convert legacy steps to display format
-      setSteps([]);
+      setSteps([])
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  }, [projectId, taskId, subtask]);
+  }, [projectId, taskId, subtask])
 
   // Fetch on mount
   useEffect(() => {
-    fetchStepsIfNeeded();
-  }, [fetchStepsIfNeeded]);
+    fetchStepsIfNeeded()
+  }, [fetchStepsIfNeeded])
 
   const handleToggleStep = useCallback(
     async (stepNumber: number, passes: boolean) => {
       // Optimistic update
-      setOptimisticUpdates((prev) => new Set(prev).add(stepNumber));
-      setUpdatingSteps((prev) => new Set(prev).add(stepNumber));
+      setOptimisticUpdates((prev) => new Set(prev).add(stepNumber))
+      setUpdatingSteps((prev) => new Set(prev).add(stepNumber))
 
       try {
         const updated = await updateStep(
@@ -641,43 +637,43 @@ function StepsList({
           subtask.subtask_id,
           stepNumber,
           passes,
-        );
+        )
         // Update local state with server response
         setSteps((prev) =>
           prev.map((s) => (s.step_number === stepNumber ? updated : s)),
-        );
+        )
         // Clear optimistic update on success
         setOptimisticUpdates((prev) => {
-          const next = new Set(prev);
-          next.delete(stepNumber);
-          return next;
-        });
+          const next = new Set(prev)
+          next.delete(stepNumber)
+          return next
+        })
       } catch (error) {
-        console.error("Failed to update step:", error);
+        console.error('Failed to update step:', error)
         // Revert optimistic update on failure
         setOptimisticUpdates((prev) => {
-          const next = new Set(prev);
-          next.delete(stepNumber);
-          return next;
-        });
+          const next = new Set(prev)
+          next.delete(stepNumber)
+          return next
+        })
       } finally {
         setUpdatingSteps((prev) => {
-          const next = new Set(prev);
-          next.delete(stepNumber);
-          return next;
-        });
+          const next = new Set(prev)
+          next.delete(stepNumber)
+          return next
+        })
       }
     },
     [projectId, taskId, subtask.subtask_id],
-  );
+  )
 
   // Calculate completion with optimistic updates
   const completedCount = useMemo(() => {
     return steps.filter((s) => {
-      const isOptimistic = optimisticUpdates.has(s.step_number);
-      return isOptimistic ? !s.passes : s.passes;
-    }).length;
-  }, [steps, optimisticUpdates]);
+      const isOptimistic = optimisticUpdates.has(s.step_number)
+      return isOptimistic ? !s.passes : s.passes
+    }).length
+  }, [steps, optimisticUpdates])
 
   // If no steps in table, show legacy steps as read-only
   if (steps.length === 0 && subtask.steps?.length) {
@@ -695,7 +691,7 @@ function StepsList({
           </li>
         ))}
       </ul>
-    );
+    )
   }
 
   if (isLoading) {
@@ -704,7 +700,7 @@ function StepsList({
         <Loader2 className="w-3 h-3 animate-spin text-slate-600" />
         <span className="text-2xs text-slate-600">Loading steps...</span>
       </div>
-    );
+    )
   }
 
   if (steps.length === 0) {
@@ -712,7 +708,7 @@ function StepsList({
       <div className="pl-11 pr-4 pb-3">
         <span className="text-2xs text-slate-600">No steps defined</span>
       </div>
-    );
+    )
   }
 
   return (
@@ -724,7 +720,7 @@ function StepsList({
             className="h-full bg-gradient-to-r from-phosphor-500/60 to-phosphor-400"
             initial={{ width: 0 }}
             animate={{ width: `${(completedCount / steps.length) * 100}%` }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
           />
         </div>
         <span className="text-2xs font-mono text-slate-500 tabular-nums">
@@ -747,7 +743,7 @@ function StepsList({
         ))}
       </ul>
     </div>
-  );
+  )
 }
 
 export function SubtasksSection({
@@ -759,51 +755,51 @@ export function SubtasksSection({
   activeSubtaskId,
   activeStepNumber,
 }: SubtasksSectionProps) {
-  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set())
   const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(
     new Set(),
-  );
-  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+  )
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set())
 
-  const groupedSubtasks = useMemo(() => groupByPhase(subtasks), [subtasks]);
-  const phases = Object.keys(groupedSubtasks);
+  const groupedSubtasks = useMemo(() => groupByPhase(subtasks), [subtasks])
+  const phases = Object.keys(groupedSubtasks)
 
   const togglePhase = (phase: string) => {
     setExpandedPhases((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(phase)) {
-        next.delete(phase);
+        next.delete(phase)
       } else {
-        next.add(phase);
+        next.add(phase)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
   const toggleSubtask = (subtaskId: string) => {
     setExpandedSubtasks((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(subtaskId)) {
-        next.delete(subtaskId);
+        next.delete(subtaskId)
       } else {
-        next.add(subtaskId);
+        next.add(subtaskId)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
   const handleTogglePass = async (subtask: Subtask) => {
-    setUpdatingIds((prev) => new Set(prev).add(subtask.id));
+    setUpdatingIds((prev) => new Set(prev).add(subtask.id))
     try {
-      await onTogglePass(subtask.subtask_id, !subtask.passes);
+      await onTogglePass(subtask.subtask_id, !subtask.passes)
     } finally {
       setUpdatingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(subtask.id);
-        return next;
-      });
+        const next = new Set(prev)
+        next.delete(subtask.id)
+        return next
+      })
     }
-  };
+  }
 
   // Get step count for a subtask (from table or legacy)
   const getStepInfo = (subtask: Subtask) => {
@@ -811,17 +807,17 @@ export function SubtasksSection({
       return {
         total: subtask.step_summary.total,
         completed: subtask.step_summary.completed,
-      };
+      }
     }
     if (subtask.steps_from_table?.length) {
-      const completed = subtask.steps_from_table.filter((s) => s.passes).length;
-      return { total: subtask.steps_from_table.length, completed };
+      const completed = subtask.steps_from_table.filter((s) => s.passes).length
+      return { total: subtask.steps_from_table.length, completed }
     }
     if (subtask.steps?.length) {
-      return { total: subtask.steps.length, completed: 0 };
+      return { total: subtask.steps.length, completed: 0 }
     }
-    return null;
-  };
+    return null
+  }
 
   if (subtasks.length === 0) {
     return (
@@ -836,10 +832,10 @@ export function SubtasksSection({
           <p className="text-sm text-slate-500">No subtasks defined</p>
         </div>
       </section>
-    );
+    )
   }
 
-  const totalComplete = subtasks.filter((s) => s.passes).length;
+  const totalComplete = subtasks.filter((s) => s.passes).length
 
   return (
     <section>
@@ -858,11 +854,11 @@ export function SubtasksSection({
 
       <div className="space-y-1 rounded-lg border border-slate-800 overflow-hidden">
         {phases.map((phase) => {
-          const phaseSubtasks = groupedSubtasks[phase];
-          const isExpanded = expandedPhases.has(phase);
-          const config = PHASE_CONFIG[phase] || PHASE_CONFIG.other;
-          const PhaseIcon = config.icon;
-          const completedCount = phaseSubtasks.filter((s) => s.passes).length;
+          const phaseSubtasks = groupedSubtasks[phase]
+          const isExpanded = expandedPhases.has(phase)
+          const config = PHASE_CONFIG[phase] || PHASE_CONFIG.other
+          const PhaseIcon = config.icon
+          const completedCount = phaseSubtasks.filter((s) => s.passes).length
 
           return (
             <div key={phase}>
@@ -886,8 +882,8 @@ export function SubtasksSection({
                 <span
                   className={`text-xs font-mono ${
                     completedCount === phaseSubtasks.length
-                      ? "text-phosphor-400"
-                      : "text-slate-500"
+                      ? 'text-phosphor-400'
+                      : 'text-slate-500'
                   }`}
                 >
                   {completedCount}/{phaseSubtasks.length}
@@ -899,7 +895,7 @@ export function SubtasksSection({
                 {isExpanded && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
+                    animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
@@ -910,9 +906,9 @@ export function SubtasksSection({
                         .map((subtask) => {
                           const isSubtaskExpanded = expandedSubtasks.has(
                             subtask.id,
-                          );
-                          const isUpdating = updatingIds.has(subtask.id);
-                          const stepInfo = getStepInfo(subtask);
+                          )
+                          const isUpdating = updatingIds.has(subtask.id)
+                          const stepInfo = getStepInfo(subtask)
 
                           return (
                             <div key={subtask.id} className="bg-slate-900/50">
@@ -942,8 +938,8 @@ export function SubtasksSection({
                                     <span
                                       className={`text-sm ${
                                         subtask.passes
-                                          ? "text-slate-500 line-through"
-                                          : "text-slate-200"
+                                          ? 'text-slate-500 line-through'
+                                          : 'text-slate-200'
                                       }`}
                                     >
                                       {subtask.description}
@@ -958,14 +954,14 @@ export function SubtasksSection({
                                       className="mt-1 flex items-center gap-2 text-2xs text-slate-500 hover:text-slate-400 transition-colors group"
                                     >
                                       <span>
-                                        {isSubtaskExpanded ? "Hide" : "Show"}{" "}
+                                        {isSubtaskExpanded ? 'Hide' : 'Show'}{' '}
                                         steps
                                       </span>
                                       <span
                                         className={`font-mono px-1.5 py-0.5 rounded ${
                                           stepInfo.completed === stepInfo.total
-                                            ? "bg-phosphor-500/10 text-phosphor-400"
-                                            : "bg-slate-800 text-slate-500"
+                                            ? 'bg-phosphor-500/10 text-phosphor-400'
+                                            : 'bg-slate-800 text-slate-500'
                                         }`}
                                       >
                                         {stepInfo.completed}/{stepInfo.total}
@@ -982,7 +978,7 @@ export function SubtasksSection({
                                   stepInfo.total > 0 && (
                                     <motion.div
                                       initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
                                       exit={{ height: 0, opacity: 0 }}
                                       className="overflow-hidden"
                                     >
@@ -1000,16 +996,16 @@ export function SubtasksSection({
                                   )}
                               </AnimatePresence>
                             </div>
-                          );
+                          )
                         })}
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
-          );
+          )
         })}
       </div>
     </section>
-  );
+  )
 }

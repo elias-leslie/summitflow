@@ -7,16 +7,16 @@
  * Skips undefined/null values.
  */
 export function buildQueryString(
-  params: Record<string, string | number | boolean | undefined | null>
+  params: Record<string, string | number | boolean | undefined | null>,
 ): string {
-  const searchParams = new URLSearchParams();
+  const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null) {
-      searchParams.append(key, String(value));
+      searchParams.append(key, String(value))
     }
   }
-  const str = searchParams.toString();
-  return str ? `?${str}` : "";
+  const str = searchParams.toString()
+  return str ? `?${str}` : ''
 }
 
 /**
@@ -26,18 +26,18 @@ export function buildQueryString(
 export async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = 30000
+  timeoutMs: number = 30000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     return await fetch(url, {
       ...options,
       signal: controller.signal,
-    });
+    })
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timeoutId)
   }
 }
 
@@ -45,7 +45,7 @@ export async function fetchWithTimeout(
  * Get API base URL - empty for relative URLs with Next.js rewrite proxy.
  */
 export function getApiBase(): string {
-  return "";
+  return ''
 }
 
 /**
@@ -54,13 +54,13 @@ export function getApiBase(): string {
  */
 export async function throwFromResponse(
   res: Response,
-  defaultMessage: string
+  defaultMessage: string,
 ): Promise<never> {
   try {
-    const error = await res.json();
-    throw new Error(error.detail || defaultMessage);
+    const error = await res.json()
+    throw new Error(error.detail || defaultMessage)
   } catch {
-    throw new Error(defaultMessage);
+    throw new Error(defaultMessage)
   }
 }
 
@@ -70,14 +70,14 @@ export async function throwFromResponse(
  */
 export async function fetchWithErrorHandling<T>(
   url: string,
-  options: RequestInit & { errorMessage?: string } = {}
+  options: RequestInit & { errorMessage?: string } = {},
 ): Promise<T> {
-  const { errorMessage = "Request failed", ...fetchOptions } = options;
-  const res = await fetch(url, fetchOptions);
+  const { errorMessage = 'Request failed', ...fetchOptions } = options
+  const res = await fetch(url, fetchOptions)
   if (!res.ok) {
-    await throwFromResponse(res, errorMessage);
+    await throwFromResponse(res, errorMessage)
   }
-  return res.json();
+  return res.json()
 }
 
 /**
@@ -86,12 +86,16 @@ export async function fetchWithErrorHandling<T>(
  */
 export async function fetchJsonWithTimeout<T>(
   url: string,
-  options: RequestInit & { errorMessage?: string; timeoutMs?: number } = {}
+  options: RequestInit & { errorMessage?: string; timeoutMs?: number } = {},
 ): Promise<T> {
-  const { errorMessage = "Request failed", timeoutMs = 30000, ...fetchOptions } = options;
-  const res = await fetchWithTimeout(url, fetchOptions, timeoutMs);
+  const {
+    errorMessage = 'Request failed',
+    timeoutMs = 30000,
+    ...fetchOptions
+  } = options
+  const res = await fetchWithTimeout(url, fetchOptions, timeoutMs)
   if (!res.ok) {
-    await throwFromResponse(res, errorMessage);
+    await throwFromResponse(res, errorMessage)
   }
-  return res.json();
+  return res.json()
 }

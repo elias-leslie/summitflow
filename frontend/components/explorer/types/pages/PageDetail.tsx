@@ -4,30 +4,30 @@
  * Shows route info, health, performance, console errors, and design compliance.
  */
 
-import { cn } from "@/lib/utils";
-import { ImageIcon } from "lucide-react";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { ImageIcon } from 'lucide-react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { cn } from '@/lib/utils'
 
 interface PageDetailProps {
-  entry: ExplorerEntry;
+  entry: ExplorerEntry
 }
 
 const formatDate = (dateStr: string | undefined | null) => {
-  if (!dateStr) return "-";
-  return new Date(dateStr).toLocaleString();
-};
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleString()
+}
 
 const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-};
+  if (ms === undefined || ms === null) return '-'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
 
 export function PageDetail({ entry }: PageDetailProps) {
-  const meta = entry.metadata;
-  const consoleErrors = meta.console_errors ?? 0;
-  const consoleWarnings = meta.console_warnings ?? 0;
-  const routeParams = meta.route_params ?? [];
+  const meta = entry.metadata
+  const consoleErrors = meta.console_errors ?? 0
+  const consoleWarnings = meta.console_warnings ?? 0
+  const routeParams = meta.route_params ?? []
 
   return (
     <div className="space-y-4">
@@ -86,17 +86,17 @@ export function PageDetail({ entry }: PageDetailProps) {
           </span>
           <p
             className={cn(
-              "font-mono text-sm mt-1",
+              'font-mono text-sm mt-1',
               meta.http_status !== undefined &&
                 meta.http_status >= 200 &&
                 meta.http_status < 400
-                ? "text-emerald-400"
+                ? 'text-emerald-400'
                 : meta.http_status !== undefined && meta.http_status >= 400
-                  ? "text-red-400"
-                  : "text-slate-200",
+                  ? 'text-red-400'
+                  : 'text-slate-200',
             )}
           >
-            {meta.http_status ?? "-"}
+            {meta.http_status ?? '-'}
           </p>
         </div>
         <div>
@@ -105,11 +105,11 @@ export function PageDetail({ entry }: PageDetailProps) {
           </span>
           <p
             className={cn(
-              "font-mono text-sm mt-1",
+              'font-mono text-sm mt-1',
               meta.response_time_ms !== undefined &&
                 meta.response_time_ms > 1000
-                ? "text-amber-400"
-                : "text-slate-200",
+                ? 'text-amber-400'
+                : 'text-slate-200',
             )}
           >
             {formatDuration(meta.response_time_ms)}
@@ -123,7 +123,7 @@ export function PageDetail({ entry }: PageDetailProps) {
           {consoleErrors > 0 && (
             <div className="px-3 py-2 rounded bg-red-500/10 border border-red-500/20">
               <span className="text-xs text-red-400 font-medium">
-                {consoleErrors} Console Error{consoleErrors > 1 ? "s" : ""}
+                {consoleErrors} Console Error{consoleErrors > 1 ? 's' : ''}
               </span>
             </div>
           )}
@@ -131,7 +131,7 @@ export function PageDetail({ entry }: PageDetailProps) {
             <div className="px-3 py-2 rounded bg-amber-500/10 border border-amber-500/20">
               <span className="text-xs text-amber-400 font-medium">
                 {consoleWarnings} Console Warning
-                {consoleWarnings > 1 ? "s" : ""}
+                {consoleWarnings > 1 ? 's' : ''}
               </span>
             </div>
           )}
@@ -161,7 +161,7 @@ export function PageDetail({ entry }: PageDetailProps) {
               <ImageIcon className="w-4 h-4 text-pink-400" />
               <span className="text-xs text-pink-400 font-medium">
                 {entry.evidenceCount} Screenshot
-                {entry.evidenceCount > 1 ? "s" : ""}
+                {entry.evidenceCount > 1 ? 's' : ''}
               </span>
             </div>
             {entry.lastEvidenceAt && (
@@ -173,5 +173,5 @@ export function PageDetail({ entry }: PageDetailProps) {
         </div>
       )}
     </div>
-  );
+  )
 }

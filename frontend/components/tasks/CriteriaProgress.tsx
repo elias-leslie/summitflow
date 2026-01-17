@@ -1,17 +1,17 @@
-"use client";
+'use client'
 
-import { useMemo, useState } from "react";
-import { CheckCircle2, XCircle } from "lucide-react";
-import type { TaskAcceptanceCriterion } from "@/lib/api/tasks";
-import { CriterionDetailModal } from "./CriterionDetailModal";
+import { CheckCircle2, XCircle } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import type { TaskAcceptanceCriterion } from '@/lib/api/tasks'
+import { CriterionDetailModal } from './CriterionDetailModal'
 
 interface CriteriaProgressProps {
-  criteria: TaskAcceptanceCriterion[];
-  maxVisible?: number;
+  criteria: TaskAcceptanceCriterion[]
+  maxVisible?: number
   /** If true, clicking shows expanded list. Default false for table rows. */
-  expandable?: boolean;
+  expandable?: boolean
   /** Callback when user verifies a criterion via modal. */
-  onVerify?: (criterionId: string, verifiedBy: "human") => Promise<void>;
+  onVerify?: (criterionId: string, verifiedBy: 'human') => Promise<void>
 }
 
 export function CriteriaProgress({
@@ -20,57 +20,57 @@ export function CriteriaProgress({
   expandable = false,
   onVerify,
 }: CriteriaProgressProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false)
   const [selectedCriterion, setSelectedCriterion] =
-    useState<TaskAcceptanceCriterion | null>(null);
+    useState<TaskAcceptanceCriterion | null>(null)
 
   const { verified, total, displayCriteria, hiddenCount } = useMemo(() => {
     const sorted = [...criteria].sort((a, b) => {
-      if (a.verified && !b.verified) return -1;
-      if (!a.verified && b.verified) return 1;
-      return 0;
-    });
+      if (a.verified && !b.verified) return -1
+      if (!a.verified && b.verified) return 1
+      return 0
+    })
 
     return {
       verified: criteria.filter((c) => c.verified).length,
       total: criteria.length,
       displayCriteria: sorted.slice(0, maxVisible),
       hiddenCount: Math.max(0, sorted.length - maxVisible),
-    };
-  }, [criteria, maxVisible]);
+    }
+  }, [criteria, maxVisible])
 
   if (total === 0) {
-    return <span className="text-2xs text-slate-600">—</span>;
+    return <span className="text-2xs text-slate-600">—</span>
   }
 
   const tooltipContent = criteria
     .map(
       (c, i) =>
-        `${c.verified ? "✓" : "○"} ${i + 1}. ${c.criterion.slice(0, 40)}${c.criterion.length > 40 ? "..." : ""}`,
+        `${c.verified ? '✓' : '○'} ${i + 1}. ${c.criterion.slice(0, 40)}${c.criterion.length > 40 ? '...' : ''}`,
     )
-    .join("\n");
+    .join('\n')
 
   const handleClick = (e: React.MouseEvent) => {
     if (expandable) {
-      e.stopPropagation();
-      setIsExpanded(!isExpanded);
+      e.stopPropagation()
+      setIsExpanded(!isExpanded)
     }
-  };
+  }
 
   const handleCriterionClick = (
     e: React.MouseEvent,
     criterion: TaskAcceptanceCriterion,
   ) => {
-    e.stopPropagation();
-    setSelectedCriterion(criterion);
-  };
+    e.stopPropagation()
+    setSelectedCriterion(criterion)
+  }
 
   return (
     <div className="relative">
       <div
         onClick={handleClick}
-        className={`inline-flex items-center gap-1.5 group ${expandable ? "cursor-pointer" : "cursor-default"}`}
-        title={expandable ? "Click to expand" : tooltipContent}
+        className={`inline-flex items-center gap-1.5 group ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
+        title={expandable ? 'Click to expand' : tooltipContent}
         data-testid="criteria-expand"
       >
         {/* Dots */}
@@ -80,8 +80,8 @@ export function CriteriaProgress({
               key={criterion.id || index}
               className={`w-2 h-2 rounded-full transition-all duration-200 ${
                 criterion.verified
-                  ? "bg-phosphor-400 shadow-sm shadow-phosphor-400/30"
-                  : "bg-slate-700 group-hover:bg-slate-600"
+                  ? 'bg-phosphor-400 shadow-sm shadow-phosphor-400/30'
+                  : 'bg-slate-700 group-hover:bg-slate-600'
               }`}
             />
           ))}
@@ -96,10 +96,10 @@ export function CriteriaProgress({
         <span
           className={`text-2xs font-mono transition-colors ${
             verified === total
-              ? "text-phosphor-400"
+              ? 'text-phosphor-400'
               : verified > 0
-                ? "text-slate-400"
-                : "text-slate-600"
+                ? 'text-slate-400'
+                : 'text-slate-600'
           }`}
         >
           {verified}/{total}
@@ -131,13 +131,13 @@ export function CriteriaProgress({
                   {c.verify_by && (
                     <span
                       className={`text-2xs px-1.5 py-0.5 rounded ${
-                        c.verify_by === "test"
-                          ? "bg-blue-900/50 text-blue-400"
-                          : c.verify_by === "opus"
-                            ? "bg-purple-900/50 text-purple-400"
-                            : c.verify_by === "human"
-                              ? "bg-amber-900/50 text-amber-400"
-                              : "bg-slate-700 text-slate-400"
+                        c.verify_by === 'test'
+                          ? 'bg-blue-900/50 text-blue-400'
+                          : c.verify_by === 'opus'
+                            ? 'bg-purple-900/50 text-purple-400'
+                            : c.verify_by === 'human'
+                              ? 'bg-amber-900/50 text-amber-400'
+                              : 'bg-slate-700 text-slate-400'
                       }`}
                     >
                       {c.verify_by}
@@ -163,5 +163,5 @@ export function CriteriaProgress({
         />
       )}
     </div>
-  );
+  )
 }

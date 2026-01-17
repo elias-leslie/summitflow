@@ -10,52 +10,52 @@
  * type-specific content based on the active type.
  */
 
-"use client";
+'use client'
 
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
-import { Folder, Database, Globe, FileText, Zap } from "lucide-react";
-import { TypeNavigator } from "./TypeNavigator";
-import { SummaryBar, ScanningOverlay } from "./SummaryBar";
-import { CodeHealthPanel } from "./CodeHealthPanel";
-import { DesignStandardsPanel } from "./DesignStandardsPanel";
+import { useQueryClient } from '@tanstack/react-query'
+import { Database, FileText, Folder, Globe, Zap } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchExplorerEntries,
-  triggerExplorerScan,
   fetchScanStatus,
   type ScanStatusResponse,
-} from "@/lib/api/explorer";
-import { scanHistoryKeys } from "@/lib/hooks/useScanHistory";
-import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
+  triggerExplorerScan,
+} from '@/lib/api/explorer'
+import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
+import { cn } from '@/lib/utils'
+import { CodeHealthPanel } from './CodeHealthPanel'
+import { DesignStandardsPanel } from './DesignStandardsPanel'
+import { ScanningOverlay, SummaryBar } from './SummaryBar'
+import { TypeNavigator } from './TypeNavigator'
+import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
 
 interface ExplorerShellProps {
-  projectId: string;
-  initialType?: ExplorerType;
-  className?: string;
-  children?: (props: ExplorerChildProps) => React.ReactNode;
-  onTypeChange?: (type: ExplorerType) => void;
+  projectId: string
+  initialType?: ExplorerType
+  className?: string
+  children?: (props: ExplorerChildProps) => React.ReactNode
+  onTypeChange?: (type: ExplorerType) => void
 }
 
 export interface ExplorerChildProps {
-  type: ExplorerType;
-  filter: HealthStatus | "all";
-  sortField: string;
-  sortDir: "asc" | "desc";
-  expandedIds: Set<string>;
-  onSort: (field: string) => void;
-  onToggleExpand: (id: string) => void;
-  onCollapseAll: () => void;
+  type: ExplorerType
+  filter: HealthStatus | 'all'
+  sortField: string
+  sortDir: 'asc' | 'desc'
+  expandedIds: Set<string>
+  onSort: (field: string) => void
+  onToggleExpand: (id: string) => void
+  onCollapseAll: () => void
 }
 
 // Map UI type to API entry type
 const uiTypeToApiType: Record<ExplorerType, string> = {
-  files: "file",
-  database: "table",
-  celery: "task",
-  api: "endpoint",
-  pages: "page",
-};
+  files: 'file',
+  database: 'table',
+  celery: 'task',
+  api: 'endpoint',
+  pages: 'page',
+}
 
 const typeIcons: Record<ExplorerType, React.ReactNode> = {
   files: <Folder className="w-5 h-5" />,
@@ -63,35 +63,35 @@ const typeIcons: Record<ExplorerType, React.ReactNode> = {
   celery: <Zap className="w-5 h-5" />,
   api: <Globe className="w-5 h-5" />,
   pages: <FileText className="w-5 h-5" />,
-};
+}
 
 const typeTitles: Record<ExplorerType, string> = {
-  files: "Files Explorer",
-  database: "Database Tables",
-  celery: "Celery Tasks",
-  api: "API Endpoints",
-  pages: "Frontend Pages",
-};
+  files: 'Files Explorer',
+  database: 'Database Tables',
+  celery: 'Celery Tasks',
+  api: 'API Endpoints',
+  pages: 'Frontend Pages',
+}
 
 export function ExplorerShell({
   projectId,
-  initialType = "files",
+  initialType = 'files',
   className,
   children,
   onTypeChange: onTypeChangeProp,
 }: ExplorerShellProps) {
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient()
 
   // Explorer state
-  const [activeType, setActiveType] = useState<ExplorerType>(initialType);
-  const [activeFilter, setActiveFilter] = useState<HealthStatus | "all">("all");
-  const [sortField, setSortField] = useState("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [isScanning, setIsScanning] = useState(false);
+  const [activeType, setActiveType] = useState<ExplorerType>(initialType)
+  const [activeFilter, setActiveFilter] = useState<HealthStatus | 'all'>('all')
+  const [sortField, setSortField] = useState('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(
     null,
-  );
+  )
 
   // Stats state - fetched from API
   const [statsData, setStatsData] = useState<
@@ -102,18 +102,18 @@ export function ExplorerShell({
     celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
-  });
+  })
 
   // Fetch stats for all types on mount and when scanning completes
   useEffect(() => {
     const fetchAllStats = async () => {
       const types: ExplorerType[] = [
-        "files",
-        "database",
-        "celery",
-        "api",
-        "pages",
-      ];
+        'files',
+        'database',
+        'celery',
+        'api',
+        'pages',
+      ]
       // Start with empty stats object to avoid dependency on statsData
       const newStats: Record<ExplorerType, ExplorerStats> = {
         files: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
@@ -121,137 +121,137 @@ export function ExplorerShell({
         celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
-      };
+      }
 
       for (const type of types) {
         try {
-          const apiType = uiTypeToApiType[type];
+          const apiType = uiTypeToApiType[type]
           const response = await fetchExplorerEntries(projectId, {
-            type: apiType as "file" | "table" | "task" | "endpoint" | "page",
+            type: apiType as 'file' | 'table' | 'task' | 'endpoint' | 'page',
             limit: 1, // Just need stats, not entries
-          });
+          })
 
           // Map API health statuses to UI stats
-          const byHealth = response.stats?.byHealth || {};
+          const byHealth = response.stats?.byHealth || {}
           newStats[type] = {
             total: response.total || 0,
             fresh: (byHealth.healthy || 0) as number,
             stale: (byHealth.warning || 0) as number,
             orphan: (byHealth.error || 0) as number,
             lastScan: response.stats?.lastScanned || null,
-          };
+          }
         } catch (err) {
-          console.error(`Failed to fetch stats for ${type}:`, err);
+          console.error(`Failed to fetch stats for ${type}:`, err)
         }
       }
 
-      setStatsData(newStats);
-    };
+      setStatsData(newStats)
+    }
 
-    fetchAllStats();
+    fetchAllStats()
     // NOTE: statsData intentionally omitted - including it would cause infinite loop
     // We construct newStats fresh each time instead of spreading statsData
-  }, [projectId, isScanning]); // Re-fetch when scanning completes
+  }, [projectId]) // Re-fetch when scanning completes
 
   // Handlers
   const handleTypeChange = useCallback(
     (type: ExplorerType) => {
-      setActiveType(type);
-      setActiveFilter("all"); // Reset filter on type change
-      setExpandedIds(new Set()); // Reset expansion on type change
-      setSortField("name");
-      setSortDir("asc");
-      onTypeChangeProp?.(type); // Notify parent of type change
+      setActiveType(type)
+      setActiveFilter('all') // Reset filter on type change
+      setExpandedIds(new Set()) // Reset expansion on type change
+      setSortField('name')
+      setSortDir('asc')
+      onTypeChangeProp?.(type) // Notify parent of type change
     },
     [onTypeChangeProp],
-  );
+  )
 
-  const handleFilterChange = useCallback((filter: HealthStatus | "all") => {
-    setActiveFilter(filter);
-  }, []);
+  const handleFilterChange = useCallback((filter: HealthStatus | 'all') => {
+    setActiveFilter(filter)
+  }, [])
 
   const handleSort = useCallback(
     (field: string) => {
       if (sortField === field) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
       } else {
-        setSortField(field);
-        setSortDir("asc");
+        setSortField(field)
+        setSortDir('asc')
       }
     },
     [sortField],
-  );
+  )
 
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(id)) {
-        next.delete(id);
+        next.delete(id)
       } else {
-        next.add(id);
+        next.add(id)
       }
-      return next;
-    });
-  }, []);
+      return next
+    })
+  }, [])
 
   const handleCollapseAll = useCallback(() => {
-    setExpandedIds(new Set());
-  }, []);
+    setExpandedIds(new Set())
+  }, [])
 
   const handleScan = useCallback(async () => {
-    setIsScanning(true);
-    setScanProgress(null);
+    setIsScanning(true)
+    setScanProgress(null)
 
     try {
-      const apiType = uiTypeToApiType[activeType];
+      const apiType = uiTypeToApiType[activeType]
       await triggerExplorerScan(
         projectId,
-        apiType as "file" | "table" | "task" | "endpoint" | "page",
-      );
+        apiType as 'file' | 'table' | 'task' | 'endpoint' | 'page',
+      )
 
       // Poll for completion every 500ms
       const pollInterval = setInterval(async () => {
         try {
-          const status = await fetchScanStatus(projectId);
-          setScanProgress(status);
+          const status = await fetchScanStatus(projectId)
+          setScanProgress(status)
 
-          if (status.status === "completed" || status.status === "failed") {
-            clearInterval(pollInterval);
-            setIsScanning(false);
-            setScanProgress(null);
+          if (status.status === 'completed' || status.status === 'failed') {
+            clearInterval(pollInterval)
+            setIsScanning(false)
+            setScanProgress(null)
 
             // Invalidate scan history cache so ScanTrendLine updates
-            queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all });
+            queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
 
-            if (status.status === "failed" && status.error) {
-              console.error("Scan completed with error:", status.error);
+            if (status.status === 'failed' && status.error) {
+              console.error('Scan completed with error:', status.error)
             }
           }
         } catch (pollErr) {
-          console.error("Poll failed:", pollErr);
-          clearInterval(pollInterval);
-          setIsScanning(false);
-          setScanProgress(null);
+          console.error('Poll failed:', pollErr)
+          clearInterval(pollInterval)
+          setIsScanning(false)
+          setScanProgress(null)
         }
-      }, 500);
+      }, 500)
 
       // Safety timeout after 60 seconds
       setTimeout(() => {
-        clearInterval(pollInterval);
+        clearInterval(pollInterval)
         if (isScanning) {
-          setIsScanning(false);
-          setScanProgress(null);
+          setIsScanning(false)
+          setScanProgress(null)
         }
-      }, 60000);
+      }, 60000)
     } catch (err) {
-      console.error("Scan failed:", err);
-      setIsScanning(false);
-      setScanProgress(null);
+      console.error('Scan failed:', err)
+      setIsScanning(false)
+      setScanProgress(null)
     }
-  }, [projectId, activeType, isScanning, queryClient]);
+  }, [projectId, activeType, isScanning, queryClient])
 
   // Current stats
-  const stats = statsData[activeType];
+  const stats = statsData[activeType]
   const counts = useMemo(
     () => ({
       files: statsData.files.total,
@@ -261,7 +261,7 @@ export function ExplorerShell({
       pages: statsData.pages.total,
     }),
     [statsData],
-  );
+  )
 
   // Props for child render function
   const childProps: ExplorerChildProps = {
@@ -273,13 +273,13 @@ export function ExplorerShell({
     onSort: handleSort,
     onToggleExpand: handleToggleExpand,
     onCollapseAll: handleCollapseAll,
-  };
+  }
 
   return (
     <div
       className={cn(
-        "flex h-full overflow-hidden rounded-lg",
-        "bg-slate-850 border border-slate-700/50",
+        'flex h-full overflow-hidden rounded-lg',
+        'bg-slate-850 border border-slate-700/50',
         className,
       )}
     >
@@ -300,8 +300,8 @@ export function ExplorerShell({
         {/* Header */}
         <div
           className={cn(
-            "flex items-center gap-3 px-4 py-3",
-            "border-b border-slate-700/50",
+            'flex items-center gap-3 px-4 py-3',
+            'border-b border-slate-700/50',
           )}
         >
           <span className="text-slate-400">{typeIcons[activeType]}</span>
@@ -321,10 +321,10 @@ export function ExplorerShell({
         />
 
         {/* Code Health Panel - only shown for files view */}
-        {activeType === "files" && <CodeHealthPanel projectId={projectId} />}
+        {activeType === 'files' && <CodeHealthPanel projectId={projectId} />}
 
         {/* Design Standards Panel - shown for pages view */}
-        {activeType === "pages" && (
+        {activeType === 'pages' && (
           <DesignStandardsPanel projectId={projectId} />
         )}
 
@@ -338,7 +338,7 @@ export function ExplorerShell({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 /**
@@ -353,7 +353,7 @@ function ExplorerPlaceholder({ type }: { type: ExplorerType }) {
         Connect data source to display items
       </p>
     </div>
-  );
+  )
 }
 
 /**
@@ -365,16 +365,16 @@ export function ExplorerHeader({
   actions,
   className,
 }: {
-  type: ExplorerType;
-  title?: string;
-  actions?: React.ReactNode;
-  className?: string;
+  type: ExplorerType
+  title?: string
+  actions?: React.ReactNode
+  className?: string
 }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-4 px-4 py-3",
-        "border-b border-slate-700/50",
+        'flex items-center justify-between gap-4 px-4 py-3',
+        'border-b border-slate-700/50',
         className,
       )}
     >
@@ -386,5 +386,5 @@ export function ExplorerHeader({
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
-  );
+  )
 }

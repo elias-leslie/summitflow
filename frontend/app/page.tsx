@@ -1,44 +1,44 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query'
 import {
-  FolderKanban,
   Activity,
   AlertCircle,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
+  Archive,
   Brain,
   Camera,
-  Archive,
-  Info,
-  Terminal,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
-} from "lucide-react";
-import Link from "next/link";
-import { fetchProjectsWithStats, type ProjectWithStats } from "@/lib/api";
-import { ProjectCard, ActivityFeed } from "@/components/dashboard";
+  FolderKanban,
+  Info,
+  Plus,
+  Terminal,
+} from 'lucide-react'
+import Link from 'next/link'
+import { useState } from 'react'
+import { ActivityFeed, ProjectCard } from '@/components/dashboard'
+import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
-const PROJECTS_PER_PAGE = 9;
+const PROJECTS_PER_PAGE = 9
 
 export default function DashboardPage() {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(0)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["projects-with-stats"],
+    queryKey: ['projects-with-stats'],
     queryFn: fetchProjectsWithStats,
-  });
+  })
 
-  const projects = data?.projects ?? [];
-  const totalProjects = projects.length;
-  const totalPages = Math.ceil(totalProjects / PROJECTS_PER_PAGE);
-  const startIndex = page * PROJECTS_PER_PAGE;
-  const endIndex = startIndex + PROJECTS_PER_PAGE;
-  const visibleProjects = projects.slice(startIndex, endIndex);
+  const projects = data?.projects ?? []
+  const totalProjects = projects.length
+  const totalPages = Math.ceil(totalProjects / PROJECTS_PER_PAGE)
+  const startIndex = page * PROJECTS_PER_PAGE
+  const endIndex = startIndex + PROJECTS_PER_PAGE
+  const visibleProjects = projects.slice(startIndex, endIndex)
 
-  const handlePrevPage = () => setPage((p) => Math.max(0, p - 1));
-  const handleNextPage = () => setPage((p) => Math.min(totalPages - 1, p + 1));
+  const handlePrevPage = () => setPage((p) => Math.max(0, p - 1))
+  const handleNextPage = () => setPage((p) => Math.min(totalPages - 1, p + 1))
 
   return (
     <div className="p-6 space-y-8">
@@ -122,7 +122,7 @@ export default function DashboardPage() {
       </section>
 
       {/* All Projects Section */}
-      <section className="animate-in" style={{ animationDelay: "0.05s" }}>
+      <section className="animate-in" style={{ animationDelay: '0.05s' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="display font-semibold text-lg text-white flex items-center gap-2">
             <FolderKanban className="w-5 h-5 text-phosphor-500" />
@@ -168,7 +168,7 @@ export default function DashboardPage() {
       </section>
 
       {/* Recent Activity Section */}
-      <section className="animate-fade-in" style={{ animationDelay: "0.15s" }}>
+      <section className="animate-fade-in" style={{ animationDelay: '0.15s' }}>
         <h2 className="display font-semibold text-lg text-white flex items-center gap-2 mb-4">
           <Activity className="w-5 h-5 text-phosphor-500" />
           Recent Activity
@@ -176,13 +176,13 @@ export default function DashboardPage() {
         <ActivityFeed />
       </section>
     </div>
-  );
+  )
 }
 
 interface ProjectsGridProps {
-  projects: ProjectWithStats[];
-  isLoading: boolean;
-  error: Error | null;
+  projects: ProjectWithStats[]
+  isLoading: boolean
+  error: Error | null
 }
 
 function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
@@ -194,7 +194,7 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
           Loading projects...
         </div>
       </div>
-    );
+    )
   }
 
   if (error) {
@@ -204,7 +204,7 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
         <p className="text-slate-400">Failed to load projects</p>
         <p className="text-xs text-rose-400 mono mt-1">{String(error)}</p>
       </div>
-    );
+    )
   }
 
   if (!projects.length) {
@@ -223,7 +223,7 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
           Add Project
         </Link>
       </div>
-    );
+    )
   }
 
   return (
@@ -232,5 +232,5 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
         <ProjectCard key={project.id} project={project} />
       ))}
     </div>
-  );
+  )
 }

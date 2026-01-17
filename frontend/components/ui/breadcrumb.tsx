@@ -1,22 +1,22 @@
-"use client";
+'use client'
 
-import Link from "next/link";
-import { ChevronRight, Home } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ChevronRight, Home } from 'lucide-react'
+import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface BreadcrumbItem {
-  label: string;
-  href?: string;
-  icon?: React.ReactNode;
+  label: string
+  href?: string
+  icon?: React.ReactNode
 }
 
 interface BreadcrumbProps {
-  items: BreadcrumbItem[];
-  className?: string;
+  items: BreadcrumbItem[]
+  className?: string
 }
 
 // ============================================================================
@@ -24,13 +24,16 @@ interface BreadcrumbProps {
 // ============================================================================
 
 export function Breadcrumb({ items, className }: BreadcrumbProps) {
-  if (items.length === 0) return null;
+  if (items.length === 0) return null
 
   return (
-    <nav className={cn("flex items-center text-sm", className)} aria-label="Breadcrumb">
+    <nav
+      className={cn('flex items-center text-sm', className)}
+      aria-label="Breadcrumb"
+    >
       <ol className="flex items-center gap-1">
         {items.map((item, index) => {
-          const isLast = index === items.length - 1;
+          const isLast = index === items.length - 1
 
           return (
             <li key={index} className="flex items-center gap-1">
@@ -51,8 +54,8 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
               ) : (
                 <span
                   className={cn(
-                    "flex items-center gap-1.5",
-                    isLast ? "text-phosphor-400 font-medium" : "text-slate-400"
+                    'flex items-center gap-1.5',
+                    isLast ? 'text-phosphor-400 font-medium' : 'text-slate-400',
                   )}
                 >
                   {item.icon}
@@ -60,11 +63,11 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
                 </span>
               )}
             </li>
-          );
+          )
         })}
       </ol>
     </nav>
-  );
+  )
 }
 
 // ============================================================================
@@ -72,11 +75,11 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
 // ============================================================================
 
 interface ProjectBreadcrumbProps {
-  projectId: string;
-  projectName?: string;
-  goalCode?: string | null;
-  featureName?: string | null;
-  className?: string;
+  projectId: string
+  projectName?: string
+  goalCode?: string | null
+  featureName?: string | null
+  className?: string
 }
 
 export function ProjectBreadcrumb({
@@ -92,20 +95,20 @@ export function ProjectBreadcrumb({
       href: `/projects/${projectId}`,
       icon: <Home className="h-3.5 w-3.5" />,
     },
-  ];
+  ]
 
   if (goalCode) {
     items.push({
       label: goalCode,
       href: `/projects/${projectId}/kanban?goal=${goalCode}`,
-    });
+    })
   }
 
   if (featureName) {
     items.push({
       label: featureName,
-    });
+    })
   }
 
-  return <Breadcrumb items={items} className={className} />;
+  return <Breadcrumb items={items} className={className} />
 }

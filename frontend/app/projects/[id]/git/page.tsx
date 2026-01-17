@@ -1,34 +1,34 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  GitBranch,
-  RefreshCw,
   AlertTriangle,
-  CheckCircle2,
-  ArrowUp,
   ArrowDown,
+  ArrowUp,
+  CheckCircle2,
   FileEdit,
-  Loader2,
+  GitBranch,
   HardDrive,
+  Loader2,
+  RefreshCw,
   Zap,
-} from "lucide-react";
-import Link from "next/link";
+} from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { useState } from 'react'
 import {
   fetchProjectGitStatus,
-  syncRepositories,
   fetchWorktrees,
   type RepoStatus,
   type SyncResult,
-} from "@/lib/api";
+  syncRepositories,
+} from '@/lib/api'
 
 export default function GitDashboardPage() {
-  const params = useParams();
-  const projectId = params.id as string;
-  const queryClient = useQueryClient();
-  const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null);
+  const params = useParams()
+  const projectId = params.id as string
+  const queryClient = useQueryClient()
+  const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null)
 
   const {
     data: gitStatus,
@@ -36,81 +36,81 @@ export default function GitDashboardPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["git-status", projectId],
+    queryKey: ['git-status', projectId],
     queryFn: () => fetchProjectGitStatus(projectId),
     refetchInterval: 30000,
-  });
+  })
 
   const { data: worktreesData } = useQuery({
-    queryKey: ["worktrees", projectId],
+    queryKey: ['worktrees', projectId],
     queryFn: () => fetchWorktrees(projectId),
-  });
+  })
 
   const syncMutation = useMutation({
     mutationFn: syncRepositories,
     onSuccess: (data) => {
-      setSyncResults(data.results);
-      queryClient.invalidateQueries({ queryKey: ["git-status", projectId] });
-      setTimeout(() => setSyncResults(null), 5000);
+      setSyncResults(data.results)
+      queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
+      setTimeout(() => setSyncResults(null), 5000)
     },
-  });
+  })
 
   const handleSync = () => {
-    setSyncResults(null);
-    syncMutation.mutate();
-  };
+    setSyncResults(null)
+    syncMutation.mutate()
+  }
 
-  const getStateColor = (state: RepoStatus["state"]) => {
+  const getStateColor = (state: RepoStatus['state']) => {
     switch (state) {
-      case "clean":
-        return "phosphor";
-      case "dirty":
-        return "outrun";
-      case "behind":
-        return "amber";
-      case "ahead":
-        return "sunset";
+      case 'clean':
+        return 'phosphor'
+      case 'dirty':
+        return 'outrun'
+      case 'behind':
+        return 'amber'
+      case 'ahead':
+        return 'sunset'
       default:
-        return "slate";
+        return 'slate'
     }
-  };
+  }
 
-  const getStateIcon = (state: RepoStatus["state"]) => {
+  const getStateIcon = (state: RepoStatus['state']) => {
     switch (state) {
-      case "clean":
-        return <CheckCircle2 className="w-4 h-4" />;
-      case "dirty":
-        return <FileEdit className="w-4 h-4" />;
-      case "behind":
-        return <ArrowDown className="w-4 h-4" />;
-      case "ahead":
-        return <ArrowUp className="w-4 h-4" />;
+      case 'clean':
+        return <CheckCircle2 className="w-4 h-4" />
+      case 'dirty':
+        return <FileEdit className="w-4 h-4" />
+      case 'behind':
+        return <ArrowDown className="w-4 h-4" />
+      case 'ahead':
+        return <ArrowUp className="w-4 h-4" />
       default:
-        return null;
+        return null
     }
-  };
+  }
 
-  const getStateLabel = (state: RepoStatus["state"]) => {
+  const getStateLabel = (state: RepoStatus['state']) => {
     switch (state) {
-      case "clean":
-        return "Synced";
-      case "dirty":
-        return "Modified";
-      case "behind":
-        return "Behind";
-      case "ahead":
-        return "Ahead";
+      case 'clean':
+        return 'Synced'
+      case 'dirty':
+        return 'Modified'
+      case 'behind':
+        return 'Behind'
+      case 'ahead':
+        return 'Ahead'
       default:
-        return state;
+        return state
     }
-  };
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
         <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
       </div>
-    );
+    )
   }
 
   if (error) {
@@ -129,13 +129,13 @@ export default function GitDashboardPage() {
           </button>
         </div>
       </div>
-    );
+    )
   }
 
-  const repos = gitStatus?.repositories ?? [];
-  const worktrees = worktreesData?.worktrees ?? [];
-  const cleanCount = repos.filter((r) => r.state === "clean").length;
-  const dirtyCount = repos.filter((r) => r.state === "dirty").length;
+  const repos = gitStatus?.repositories ?? []
+  const worktrees = worktreesData?.worktrees ?? []
+  const cleanCount = repos.filter((r) => r.state === 'clean').length
+  const dirtyCount = repos.filter((r) => r.state === 'dirty').length
 
   return (
     <div className="p-6 space-y-8">
@@ -171,7 +171,7 @@ export default function GitDashboardPage() {
             ) : (
               <RefreshCw className="w-5 h-5" />
             )}
-            <span>{syncMutation.isPending ? "Syncing..." : "Sync All"}</span>
+            <span>{syncMutation.isPending ? 'Syncing...' : 'Sync All'}</span>
 
             {/* Glow ring when syncing */}
             {syncMutation.isPending && (
@@ -220,17 +220,17 @@ export default function GitDashboardPage() {
                   </span>
                   <span
                     className={
-                      result.status === "updated"
-                        ? "text-phosphor-500"
-                        : result.status === "skipped"
-                          ? "text-amber-400"
-                          : result.status === "failed"
-                            ? "text-rose-400"
-                            : "text-slate-400"
+                      result.status === 'updated'
+                        ? 'text-phosphor-500'
+                        : result.status === 'skipped'
+                          ? 'text-amber-400'
+                          : result.status === 'failed'
+                            ? 'text-rose-400'
+                            : 'text-slate-400'
                     }
                   >
-                    {result.status === "up_to_date"
-                      ? "Up to date"
+                    {result.status === 'up_to_date'
+                      ? 'Up to date'
                       : result.status}
                   </span>
                 </div>
@@ -244,25 +244,25 @@ export default function GitDashboardPage() {
       <section>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {repos.map((repo) => {
-            const stateColor = getStateColor(repo.state);
+            const stateColor = getStateColor(repo.state)
 
             return (
               <div
                 key={repo.path}
                 className={`
                   relative group card p-5 transition-all duration-300
-                  hover:shadow-${stateColor === "phosphor" ? "[0_0_25px_rgba(0,245,255,0.15)]" : stateColor === "outrun" ? "[0_0_25px_rgba(255,0,102,0.15)]" : "[0_0_25px_rgba(255,102,0,0.15)]"}
+                  hover:shadow-${stateColor === 'phosphor' ? '[0_0_25px_rgba(0,245,255,0.15)]' : stateColor === 'outrun' ? '[0_0_25px_rgba(255,0,102,0.15)]' : '[0_0_25px_rgba(255,102,0,0.15)]'}
                   border-l-2 border-l-${stateColor}-500
                 `}
                 style={{
                   borderLeftColor:
-                    stateColor === "phosphor"
-                      ? "#00f5ff"
-                      : stateColor === "outrun"
-                        ? "#ff0066"
-                        : stateColor === "amber"
-                          ? "#fbbf24"
-                          : "#ff6600",
+                    stateColor === 'phosphor'
+                      ? '#00f5ff'
+                      : stateColor === 'outrun'
+                        ? '#ff0066'
+                        : stateColor === 'amber'
+                          ? '#fbbf24'
+                          : '#ff6600',
                 }}
               >
                 {/* Glow orb */}
@@ -270,13 +270,13 @@ export default function GitDashboardPage() {
                   className="absolute top-4 right-4 w-8 h-8 rounded-full opacity-20 blur-lg transition-opacity group-hover:opacity-40"
                   style={{
                     backgroundColor:
-                      stateColor === "phosphor"
-                        ? "#00f5ff"
-                        : stateColor === "outrun"
-                          ? "#ff0066"
-                          : stateColor === "amber"
-                            ? "#fbbf24"
-                            : "#ff6600",
+                      stateColor === 'phosphor'
+                        ? '#00f5ff'
+                        : stateColor === 'outrun'
+                          ? '#ff0066'
+                          : stateColor === 'amber'
+                            ? '#fbbf24'
+                            : '#ff6600',
                   }}
                 />
 
@@ -294,13 +294,13 @@ export default function GitDashboardPage() {
                     className={`
                       flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
                       ${
-                        stateColor === "phosphor"
-                          ? "bg-phosphor-500/10 text-phosphor-400"
-                          : stateColor === "outrun"
-                            ? "bg-outrun-500/10 text-outrun-400"
-                            : stateColor === "amber"
-                              ? "bg-amber-500/10 text-amber-400"
-                              : "bg-sunset-orange/10 text-sunset-orange"
+                        stateColor === 'phosphor'
+                          ? 'bg-phosphor-500/10 text-phosphor-400'
+                          : stateColor === 'outrun'
+                            ? 'bg-outrun-500/10 text-outrun-400'
+                            : stateColor === 'amber'
+                              ? 'bg-amber-500/10 text-amber-400'
+                              : 'bg-sunset-orange/10 text-sunset-orange'
                       }
                     `}
                   >
@@ -321,7 +321,7 @@ export default function GitDashboardPage() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="text-center p-2 rounded bg-slate-800/50">
                     <div
-                      className={`text-lg font-bold ${repo.uncommitted > 0 ? "text-outrun-400" : "text-slate-500"}`}
+                      className={`text-lg font-bold ${repo.uncommitted > 0 ? 'text-outrun-400' : 'text-slate-500'}`}
                     >
                       {repo.uncommitted}
                     </div>
@@ -331,7 +331,7 @@ export default function GitDashboardPage() {
                   </div>
                   <div className="text-center p-2 rounded bg-slate-800/50">
                     <div
-                      className={`text-lg font-bold ${repo.ahead > 0 ? "text-sunset-orange" : "text-slate-500"}`}
+                      className={`text-lg font-bold ${repo.ahead > 0 ? 'text-sunset-orange' : 'text-slate-500'}`}
                     >
                       {repo.ahead}
                     </div>
@@ -341,7 +341,7 @@ export default function GitDashboardPage() {
                   </div>
                   <div className="text-center p-2 rounded bg-slate-800/50">
                     <div
-                      className={`text-lg font-bold ${repo.behind > 0 ? "text-amber-400" : "text-slate-500"}`}
+                      className={`text-lg font-bold ${repo.behind > 0 ? 'text-amber-400' : 'text-slate-500'}`}
                     >
                       {repo.behind}
                     </div>
@@ -351,7 +351,7 @@ export default function GitDashboardPage() {
                   </div>
                 </div>
               </div>
-            );
+            )
           })}
         </div>
       </section>
@@ -393,7 +393,7 @@ export default function GitDashboardPage() {
                   </div>
                   <div className="text-xs text-slate-500">
                     <span className="text-emerald-400">+{wt.additions}</span>
-                    {" / "}
+                    {' / '}
                     <span className="text-rose-400">-{wt.deletions}</span>
                   </div>
                 </div>
@@ -423,5 +423,5 @@ export default function GitDashboardPage() {
         </section>
       )}
     </div>
-  );
+  )
 }

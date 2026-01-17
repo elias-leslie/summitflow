@@ -5,181 +5,228 @@
  * Shows all component states with mock data.
  */
 
-"use client";
+'use client'
 
-import { useMemo } from "react";
+import { Clock, Database, Hash, Layers } from 'lucide-react'
+import { useMemo } from 'react'
 import {
-  ExplorerShell,
+  ColumnValue,
   DataList,
   DataRow,
-  ColumnValue,
-  StatusIndicator,
+  type ExplorerColumn,
+  ExplorerShell,
   type ExplorerType,
   type HealthStatus,
-  type ExplorerColumn,
-} from "@/components/explorer";
-import { Database, Hash, Clock, Layers } from "lucide-react";
+  StatusIndicator,
+} from '@/components/explorer'
 
 // Mock data types
 interface MockTable {
-  id: string;
-  name: string;
-  healthStatus: HealthStatus;
-  rowCount: number;
-  columnCount: number;
-  daysSinceUpdate: number | null;
-  category: string;
-  columns: string[];
+  id: string
+  name: string
+  healthStatus: HealthStatus
+  rowCount: number
+  columnCount: number
+  daysSinceUpdate: number | null
+  category: string
+  columns: string[]
 }
 
 interface MockTask {
-  id: string;
-  name: string;
-  healthStatus: HealthStatus;
-  schedule: string;
-  lastRun: string | null;
-  successRate: number;
-  avgDuration: string;
+  id: string
+  name: string
+  healthStatus: HealthStatus
+  schedule: string
+  lastRun: string | null
+  successRate: number
+  avgDuration: string
 }
 
 // Generate mock database tables
 const mockTables: MockTable[] = [
   {
-    id: "1",
-    name: "users",
-    healthStatus: "fresh",
+    id: '1',
+    name: 'users',
+    healthStatus: 'fresh',
     rowCount: 2345678,
     columnCount: 12,
     daysSinceUpdate: 0,
-    category: "core",
-    columns: ["id", "email", "name", "created_at", "updated_at", "password_hash", "role", "avatar_url", "settings", "last_login_at", "verified", "deleted_at"],
+    category: 'core',
+    columns: [
+      'id',
+      'email',
+      'name',
+      'created_at',
+      'updated_at',
+      'password_hash',
+      'role',
+      'avatar_url',
+      'settings',
+      'last_login_at',
+      'verified',
+      'deleted_at',
+    ],
   },
   {
-    id: "2",
-    name: "orders",
-    healthStatus: "fresh",
+    id: '2',
+    name: 'orders',
+    healthStatus: 'fresh',
     rowCount: 890234,
     columnCount: 18,
     daysSinceUpdate: 0,
-    category: "transactions",
-    columns: ["id", "user_id", "total", "status", "created_at", "updated_at"],
+    category: 'transactions',
+    columns: ['id', 'user_id', 'total', 'status', 'created_at', 'updated_at'],
   },
   {
-    id: "3",
-    name: "sessions",
-    healthStatus: "stale",
+    id: '3',
+    name: 'sessions',
+    healthStatus: 'stale',
     rowCount: 45678,
     columnCount: 8,
     daysSinceUpdate: 14,
-    category: "auth",
-    columns: ["id", "user_id", "token", "expires_at", "created_at", "ip_address", "user_agent", "revoked"],
+    category: 'auth',
+    columns: [
+      'id',
+      'user_id',
+      'token',
+      'expires_at',
+      'created_at',
+      'ip_address',
+      'user_agent',
+      'revoked',
+    ],
   },
   {
-    id: "4",
-    name: "audit_logs",
-    healthStatus: "fresh",
+    id: '4',
+    name: 'audit_logs',
+    healthStatus: 'fresh',
     rowCount: 12890456,
     columnCount: 10,
     daysSinceUpdate: 0,
-    category: "system",
-    columns: ["id", "actor_id", "action", "resource_type", "resource_id", "metadata", "ip_address", "created_at"],
+    category: 'system',
+    columns: [
+      'id',
+      'actor_id',
+      'action',
+      'resource_type',
+      'resource_id',
+      'metadata',
+      'ip_address',
+      'created_at',
+    ],
   },
   {
-    id: "5",
-    name: "legacy_cache",
-    healthStatus: "orphan",
+    id: '5',
+    name: 'legacy_cache',
+    healthStatus: 'orphan',
     rowCount: 0,
     columnCount: 5,
     daysSinceUpdate: 180,
-    category: "deprecated",
-    columns: ["key", "value", "expires_at", "created_at", "updated_at"],
+    category: 'deprecated',
+    columns: ['key', 'value', 'expires_at', 'created_at', 'updated_at'],
   },
   {
-    id: "6",
-    name: "notifications",
-    healthStatus: "stale",
+    id: '6',
+    name: 'notifications',
+    healthStatus: 'stale',
     rowCount: 567890,
     columnCount: 9,
     daysSinceUpdate: 7,
-    category: "messaging",
-    columns: ["id", "user_id", "type", "title", "body", "read_at", "created_at"],
+    category: 'messaging',
+    columns: [
+      'id',
+      'user_id',
+      'type',
+      'title',
+      'body',
+      'read_at',
+      'created_at',
+    ],
   },
   {
-    id: "7",
-    name: "products",
-    healthStatus: "fresh",
+    id: '7',
+    name: 'products',
+    healthStatus: 'fresh',
     rowCount: 12345,
     columnCount: 15,
     daysSinceUpdate: 1,
-    category: "catalog",
-    columns: ["id", "sku", "name", "description", "price", "stock", "category_id"],
+    category: 'catalog',
+    columns: [
+      'id',
+      'sku',
+      'name',
+      'description',
+      'price',
+      'stock',
+      'category_id',
+    ],
   },
   {
-    id: "8",
-    name: "old_metrics",
-    healthStatus: "orphan",
+    id: '8',
+    name: 'old_metrics',
+    healthStatus: 'orphan',
     rowCount: 234,
     columnCount: 4,
     daysSinceUpdate: 365,
-    category: "deprecated",
-    columns: ["id", "name", "value", "recorded_at"],
+    category: 'deprecated',
+    columns: ['id', 'name', 'value', 'recorded_at'],
   },
-];
+]
 
 // Generate mock celery tasks
 const mockTasks: MockTask[] = [
   {
-    id: "1",
-    name: "process_payments",
-    healthStatus: "fresh",
-    schedule: "every 5m",
+    id: '1',
+    name: 'process_payments',
+    healthStatus: 'fresh',
+    schedule: 'every 5m',
     lastRun: new Date(Date.now() - 3 * 60000).toISOString(),
     successRate: 99.8,
-    avgDuration: "1.2s",
+    avgDuration: '1.2s',
   },
   {
-    id: "2",
-    name: "send_notifications",
-    healthStatus: "fresh",
-    schedule: "every 1m",
+    id: '2',
+    name: 'send_notifications',
+    healthStatus: 'fresh',
+    schedule: 'every 1m',
     lastRun: new Date(Date.now() - 45000).toISOString(),
     successRate: 98.5,
-    avgDuration: "0.3s",
+    avgDuration: '0.3s',
   },
   {
-    id: "3",
-    name: "sync_inventory",
-    healthStatus: "stale",
-    schedule: "every 15m",
+    id: '3',
+    name: 'sync_inventory',
+    healthStatus: 'stale',
+    schedule: 'every 15m',
     lastRun: new Date(Date.now() - 2 * 60 * 60000).toISOString(),
     successRate: 87.2,
-    avgDuration: "45s",
+    avgDuration: '45s',
   },
   {
-    id: "4",
-    name: "cleanup_sessions",
-    healthStatus: "fresh",
-    schedule: "daily 3am",
+    id: '4',
+    name: 'cleanup_sessions',
+    healthStatus: 'fresh',
+    schedule: 'daily 3am',
     lastRun: new Date(Date.now() - 8 * 60 * 60000).toISOString(),
     successRate: 100,
-    avgDuration: "2.1s",
+    avgDuration: '2.1s',
   },
   {
-    id: "5",
-    name: "legacy_report_gen",
-    healthStatus: "orphan",
-    schedule: "manual",
+    id: '5',
+    name: 'legacy_report_gen',
+    healthStatus: 'orphan',
+    schedule: 'manual',
     lastRun: null,
     successRate: 0,
-    avgDuration: "—",
+    avgDuration: '—',
   },
-];
+]
 
 // Column definitions
 const tableColumns: ExplorerColumn<MockTable>[] = [
   {
-    key: "name",
-    label: "Table",
+    key: 'name',
+    label: 'Table',
     render: (item) => (
       <div className="flex items-center gap-2">
         <Database className="w-4 h-4 text-cyan-400" />
@@ -189,85 +236,101 @@ const tableColumns: ExplorerColumn<MockTable>[] = [
     ),
   },
   {
-    key: "rowCount",
-    label: "Rows",
-    width: "100px",
-    align: "right",
+    key: 'rowCount',
+    label: 'Rows',
+    width: '100px',
+    align: 'right',
     render: (item) => (
-      <ColumnValue mono muted={item.rowCount === 0} highlight={item.rowCount > 1000000}>
+      <ColumnValue
+        mono
+        muted={item.rowCount === 0}
+        highlight={item.rowCount > 1000000}
+      >
         {formatNumber(item.rowCount)}
       </ColumnValue>
     ),
   },
   {
-    key: "columnCount",
-    label: "Cols",
-    width: "60px",
-    align: "right",
-    render: (item) => <ColumnValue mono muted>{item.columnCount}</ColumnValue>,
+    key: 'columnCount',
+    label: 'Cols',
+    width: '60px',
+    align: 'right',
+    render: (item) => (
+      <ColumnValue mono muted>
+        {item.columnCount}
+      </ColumnValue>
+    ),
   },
   {
-    key: "daysSinceUpdate",
-    label: "Updated",
-    width: "100px",
-    align: "right",
+    key: 'daysSinceUpdate',
+    label: 'Updated',
+    width: '100px',
+    align: 'right',
     render: (item) => (
       <ColumnValue muted={item.daysSinceUpdate === null}>
         {item.daysSinceUpdate === null
-          ? "—"
+          ? '—'
           : item.daysSinceUpdate === 0
-            ? "today"
+            ? 'today'
             : `${item.daysSinceUpdate}d ago`}
       </ColumnValue>
     ),
   },
-];
+]
 
 const taskColumns: ExplorerColumn<MockTask>[] = [
   {
-    key: "name",
-    label: "Task",
+    key: 'name',
+    label: 'Task',
     render: (item) => (
       <span className="font-mono text-sm text-slate-200">{item.name}</span>
     ),
   },
   {
-    key: "schedule",
-    label: "Schedule",
-    width: "120px",
+    key: 'schedule',
+    label: 'Schedule',
+    width: '120px',
     render: (item) => (
-      <ColumnValue muted className="text-xs">{item.schedule}</ColumnValue>
+      <ColumnValue muted className="text-xs">
+        {item.schedule}
+      </ColumnValue>
     ),
   },
   {
-    key: "successRate",
-    label: "Success",
-    width: "80px",
-    align: "right",
+    key: 'successRate',
+    label: 'Success',
+    width: '80px',
+    align: 'right',
     render: (item) => (
       <ColumnValue
         mono
         highlight={item.successRate >= 99}
         muted={item.successRate === 0}
-        className={item.successRate < 90 && item.successRate > 0 ? "text-amber-400" : ""}
+        className={
+          item.successRate < 90 && item.successRate > 0 ? 'text-amber-400' : ''
+        }
       >
-        {item.successRate > 0 ? `${item.successRate}%` : "—"}
+        {item.successRate > 0 ? `${item.successRate}%` : '—'}
       </ColumnValue>
     ),
   },
   {
-    key: "avgDuration",
-    label: "Avg Time",
-    width: "80px",
-    align: "right",
-    render: (item) => <ColumnValue mono muted>{item.avgDuration}</ColumnValue>,
+    key: 'avgDuration',
+    label: 'Avg Time',
+    width: '80px',
+    align: 'right',
+    render: (item) => (
+      <ColumnValue mono muted>
+        {item.avgDuration}
+      </ColumnValue>
+    ),
   },
-];
+]
 
 function formatNumber(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toString();
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+  return n.toString()
 }
 
 export default function ExplorerDemoPage() {
@@ -322,7 +385,7 @@ export default function ExplorerDemoPage() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function ExplorerContent({
@@ -334,26 +397,26 @@ function ExplorerContent({
   onSort,
   onToggleExpand,
 }: {
-  type: ExplorerType;
-  filter: HealthStatus | "all";
-  sortField: string;
-  sortDir: "asc" | "desc";
-  expandedIds: Set<string>;
-  onSort: (field: string) => void;
-  onToggleExpand: (id: string) => void;
+  type: ExplorerType
+  filter: HealthStatus | 'all'
+  sortField: string
+  sortDir: 'asc' | 'desc'
+  expandedIds: Set<string>
+  onSort: (field: string) => void
+  onToggleExpand: (id: string) => void
 }) {
   // Filter data based on active filter
   const filteredTables = useMemo(() => {
-    if (filter === "all") return mockTables;
-    return mockTables.filter((t) => t.healthStatus === filter);
-  }, [filter]);
+    if (filter === 'all') return mockTables
+    return mockTables.filter((t) => t.healthStatus === filter)
+  }, [filter])
 
   const filteredTasks = useMemo(() => {
-    if (filter === "all") return mockTasks;
-    return mockTasks.filter((t) => t.healthStatus === filter);
-  }, [filter]);
+    if (filter === 'all') return mockTasks
+    return mockTasks.filter((t) => t.healthStatus === filter)
+  }, [filter])
 
-  if (type === "database") {
+  if (type === 'database') {
     return (
       <DataList
         items={filteredTables}
@@ -390,10 +453,10 @@ function ExplorerContent({
           />
         )}
       />
-    );
+    )
   }
 
-  if (type === "celery") {
+  if (type === 'celery') {
     return (
       <DataList
         items={filteredTasks}
@@ -429,7 +492,7 @@ function ExplorerContent({
           />
         )}
       />
-    );
+    )
   }
 
   // Placeholder for other types
@@ -437,7 +500,7 @@ function ExplorerContent({
     <div className="flex items-center justify-center h-full text-slate-500">
       <p>{type} explorer coming soon...</p>
     </div>
-  );
+  )
 }
 
 function TableDetail({ table }: { table: MockTable }) {
@@ -445,9 +508,21 @@ function TableDetail({ table }: { table: MockTable }) {
     <div className="space-y-4">
       {/* Overview */}
       <div className="grid grid-cols-4 gap-4">
-        <MetricCard icon={<Hash />} label="Rows" value={formatNumber(table.rowCount)} />
-        <MetricCard icon={<Layers />} label="Columns" value={String(table.columnCount)} />
-        <MetricCard icon={<Clock />} label="Age" value={table.daysSinceUpdate ? `${table.daysSinceUpdate}d` : "—"} />
+        <MetricCard
+          icon={<Hash />}
+          label="Rows"
+          value={formatNumber(table.rowCount)}
+        />
+        <MetricCard
+          icon={<Layers />}
+          label="Columns"
+          value={String(table.columnCount)}
+        />
+        <MetricCard
+          icon={<Clock />}
+          label="Age"
+          value={table.daysSinceUpdate ? `${table.daysSinceUpdate}d` : '—'}
+        />
         <MetricCard label="Category" value={table.category} />
       </div>
 
@@ -468,7 +543,7 @@ function TableDetail({ table }: { table: MockTable }) {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function TaskDetail({ task }: { task: MockTask }) {
@@ -476,15 +551,20 @@ function TaskDetail({ task }: { task: MockTask }) {
     <div className="space-y-4">
       <div className="grid grid-cols-4 gap-4">
         <MetricCard label="Schedule" value={task.schedule} />
-        <MetricCard label="Success Rate" value={task.successRate > 0 ? `${task.successRate}%` : "N/A"} />
+        <MetricCard
+          label="Success Rate"
+          value={task.successRate > 0 ? `${task.successRate}%` : 'N/A'}
+        />
         <MetricCard label="Avg Duration" value={task.avgDuration} />
         <MetricCard
           label="Last Run"
-          value={task.lastRun ? new Date(task.lastRun).toLocaleString() : "Never"}
+          value={
+            task.lastRun ? new Date(task.lastRun).toLocaleString() : 'Never'
+          }
         />
       </div>
     </div>
-  );
+  )
 }
 
 function MetricCard({
@@ -492,9 +572,9 @@ function MetricCard({
   label,
   value,
 }: {
-  icon?: React.ReactNode;
-  label: string;
-  value: string;
+  icon?: React.ReactNode
+  label: string
+  value: string
 }) {
   return (
     <div className="bg-slate-800/50 rounded-lg px-3 py-2">
@@ -504,20 +584,20 @@ function MetricCard({
       </div>
       <div className="text-sm font-medium text-slate-200">{value}</div>
     </div>
-  );
+  )
 }
 
 function ComponentShowcase({
   title,
   children,
 }: {
-  title: string;
-  children: React.ReactNode;
+  title: string
+  children: React.ReactNode
 }) {
   return (
     <div className="card p-4">
       <h3 className="text-sm font-medium text-slate-400 mb-4">{title}</h3>
       {children}
     </div>
-  );
+  )
 }

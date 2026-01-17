@@ -1,20 +1,28 @@
-"use client";
+'use client'
 
-import { useState, useRef, useEffect } from "react";
-import { X, AlertCircle, Send, Bot, User, RefreshCw, Loader2 } from "lucide-react";
-import { clsx } from "clsx";
-import { type Notification, type Task, fetchTask, startTask } from "@/lib/api";
+import { clsx } from 'clsx'
+import {
+  AlertCircle,
+  Bot,
+  Loader2,
+  RefreshCw,
+  Send,
+  User,
+  X,
+} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { fetchTask, type Notification, startTask, type Task } from '@/lib/api'
 
 interface NotificationDetailModalProps {
-  notification: Notification | null;
-  projectId: string;
-  onClose: () => void;
+  notification: Notification | null
+  projectId: string
+  onClose: () => void
 }
 
 interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
 }
 
 export function NotificationDetailModal({
@@ -22,111 +30,113 @@ export function NotificationDetailModal({
   projectId,
   onClose,
 }: NotificationDetailModalProps) {
-  const [taskDetails, setTaskDetails] = useState<Task | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [taskDetails, setTaskDetails] = useState<Task | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [userInput, setUserInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Fetch task details when notification changes
   useEffect(() => {
     if (notification?.task_id) {
-      setLoading(true);
+      setLoading(true)
       fetchTask(projectId, notification.task_id)
         .then(setTaskDetails)
         .catch(() => setTaskDetails(null))
-        .finally(() => setLoading(false));
+        .finally(() => setLoading(false))
     } else {
-      setTaskDetails(null);
+      setTaskDetails(null)
     }
     // Reset chat when notification changes
-    setChatMessages([]);
-  }, [notification, projectId]);
+    setChatMessages([])
+  }, [notification, projectId])
 
   // Auto-scroll chat
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
   // Add initial assistant message when task details load
   useEffect(() => {
     if (taskDetails && notification) {
-      const errorMsg = taskDetails.error_message || notification.message;
+      const errorMsg = taskDetails.error_message || notification.message
       setChatMessages([
         {
-          role: "assistant",
+          role: 'assistant',
           content: `I encountered an error while executing this task:\n\n"${errorMsg}"\n\nHow would you like me to proceed? I can:\n- **Retry** the failed criterion\n- **Skip** this criterion and continue\n- **Modify** the approach\n\nOr tell me what you'd like me to try differently.`,
           timestamp: new Date(),
         },
-      ]);
+      ])
     }
-  }, [taskDetails, notification]);
+  }, [taskDetails, notification])
 
-  if (!notification) return null;
+  if (!notification) return null
 
   const handleSendMessage = async () => {
-    if (!userInput.trim() || sending) return;
+    if (!userInput.trim() || sending) return
 
     const userMessage: ChatMessage = {
-      role: "user",
+      role: 'user',
       content: userInput,
       timestamp: new Date(),
-    };
+    }
 
-    setChatMessages((prev) => [...prev, userMessage]);
-    setUserInput("");
-    setSending(true);
+    setChatMessages((prev) => [...prev, userMessage])
+    setUserInput('')
+    setSending(true)
 
     // Simulate AI response (in a real implementation, this would call an API)
     setTimeout(() => {
       const assistantMessage: ChatMessage = {
-        role: "assistant",
+        role: 'assistant',
         content: `I understand. Let me analyze your request:\n\n"${userMessage.content}"\n\nTo implement this change, I would need to modify the execution approach. Would you like me to:\n\n1. **Retry with modifications** - Apply your suggestion and retry\n2. **Create a new plan** - Generate a new implementation plan\n3. **Escalate** - Mark this for manual review\n\nPlease let me know which option you prefer.`,
         timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, assistantMessage]);
-      setSending(false);
-    }, 1500);
-  };
+      }
+      setChatMessages((prev) => [...prev, assistantMessage])
+      setSending(false)
+    }, 1500)
+  }
 
   const handleRetry = async () => {
-    if (!notification.task_id || retrying) return;
-    setRetrying(true);
+    if (!notification.task_id || retrying) return
+    setRetrying(true)
 
     try {
       await startTask(projectId, notification.task_id, {
-        agent_type: "gemini",
-      });
+        agent_type: 'gemini',
+      })
       setChatMessages((prev) => [
         ...prev,
         {
-          role: "assistant",
-          content: "Task has been restarted. You can close this dialog and monitor progress in the task view.",
+          role: 'assistant',
+          content:
+            'Task has been restarted. You can close this dialog and monitor progress in the task view.',
           timestamp: new Date(),
         },
-      ]);
+      ])
     } catch {
       setChatMessages((prev) => [
         ...prev,
         {
-          role: "assistant",
-          content: "Failed to restart the task. Please try again or check the task status.",
+          role: 'assistant',
+          content:
+            'Failed to restart the task. Please try again or check the task status.',
           timestamp: new Date(),
         },
-      ]);
+      ])
     } finally {
-      setRetrying(false);
+      setRetrying(false)
     }
-  };
+  }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
     }
-  };
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -136,9 +146,11 @@ export function NotificationDetailModal({
           <div className="flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-rose-400" />
             <div>
-              <h2 className="text-sm font-medium text-slate-200">{notification.title}</h2>
+              <h2 className="text-sm font-medium text-slate-200">
+                {notification.title}
+              </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {notification.task_id || "No linked task"}
+                {notification.task_id || 'No linked task'}
               </p>
             </div>
           </div>
@@ -157,7 +169,11 @@ export function NotificationDetailModal({
                 )}
               </button>
             )}
-            <button onClick={onClose} className="btn-ghost p-2 rounded-lg" title="Close">
+            <button
+              onClick={onClose}
+              className="btn-ghost p-2 rounded-lg"
+              title="Close"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -176,13 +192,13 @@ export function NotificationDetailModal({
                 <div>
                   <span className="text-slate-500">Task:</span>
                   <span className="ml-2 text-slate-300">
-                    {taskDetails.title || "Unknown"}
+                    {taskDetails.title || 'Unknown'}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-500">Status:</span>
                   <span className="ml-2 text-rose-400">
-                    {taskDetails.status || "unknown"}
+                    {taskDetails.status || 'unknown'}
                   </span>
                 </div>
                 {taskDetails.error_message && (
@@ -195,12 +211,14 @@ export function NotificationDetailModal({
                 )}
                 {taskDetails.progress_log && (
                   <div>
-                    <span className="text-slate-500 block mb-1">Recent Log:</span>
+                    <span className="text-slate-500 block mb-1">
+                      Recent Log:
+                    </span>
                     <pre className="p-2 bg-slate-800/50 border border-slate-700 rounded text-xs text-slate-400 overflow-auto max-h-24">
-                      {(taskDetails.progress_log || "")
-                        .split("\n")
+                      {(taskDetails.progress_log || '')
+                        .split('\n')
                         .slice(-5)
-                        .join("\n")}
+                        .join('\n')}
                     </pre>
                   </div>
                 )}
@@ -221,17 +239,19 @@ export function NotificationDetailModal({
                 <div
                   key={index}
                   className={clsx(
-                    "flex gap-3",
-                    msg.role === "user" ? "flex-row-reverse" : ""
+                    'flex gap-3',
+                    msg.role === 'user' ? 'flex-row-reverse' : '',
                   )}
                 >
                   <div
                     className={clsx(
-                      "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-                      msg.role === "user" ? "bg-phosphor-500/20" : "bg-slate-700"
+                      'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                      msg.role === 'user'
+                        ? 'bg-phosphor-500/20'
+                        : 'bg-slate-700',
                     )}
                   >
-                    {msg.role === "user" ? (
+                    {msg.role === 'user' ? (
                       <User className="w-4 h-4 text-phosphor-400" />
                     ) : (
                       <Bot className="w-4 h-4 text-slate-400" />
@@ -239,10 +259,10 @@ export function NotificationDetailModal({
                   </div>
                   <div
                     className={clsx(
-                      "max-w-[80%] p-3 rounded-lg text-sm",
-                      msg.role === "user"
-                        ? "bg-phosphor-500/20 text-slate-200"
-                        : "bg-slate-800 text-slate-300"
+                      'max-w-[80%] p-3 rounded-lg text-sm',
+                      msg.role === 'user'
+                        ? 'bg-phosphor-500/20 text-slate-200'
+                        : 'bg-slate-800 text-slate-300',
                     )}
                   >
                     <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -280,10 +300,10 @@ export function NotificationDetailModal({
                   onClick={handleSendMessage}
                   disabled={!userInput.trim() || sending}
                   className={clsx(
-                    "p-3 rounded-lg transition-colors",
+                    'p-3 rounded-lg transition-colors',
                     userInput.trim() && !sending
-                      ? "bg-phosphor-500 text-white hover:bg-phosphor-600"
-                      : "bg-slate-700 text-slate-500 cursor-not-allowed"
+                      ? 'bg-phosphor-500 text-white hover:bg-phosphor-600'
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed',
                   )}
                 >
                   <Send className="w-4 h-4" />
@@ -297,5 +317,5 @@ export function NotificationDetailModal({
         </div>
       </div>
     </div>
-  );
+  )
 }

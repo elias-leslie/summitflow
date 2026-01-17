@@ -1,93 +1,97 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { clsx } from "clsx";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { ScrollArea } from "../ui/scroll-area";
+import { clsx } from 'clsx'
+import {
+  AlertCircle,
+  Brain,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Database,
+  FileCode,
+  Filter,
+  Loader2,
+  RefreshCw,
+  Tag,
+  X,
+} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { estimateTokens, formatTime } from '@/lib/formatters/memory-formatters'
+import {
+  CONCEPT_COLORS,
+  CONCEPT_TYPES,
+  type ConceptType,
+  OBSERVATION_TYPE_COLORS,
+  OBSERVATION_TYPES,
+  type ObservationType,
+} from '@/lib/formatters/observation-colors'
+import { useContextPanel } from '@/lib/hooks/useContextPanel'
+import { useObservationFilter } from '@/lib/hooks/useObservationFilter'
+import {
+  type Observation as BaseObservation,
+  useObservationStream,
+} from '@/lib/hooks/useObservationStream'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import { Progress } from '../ui/progress'
+import { ScrollArea } from '../ui/scroll-area'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../ui/select";
-import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
-import { Progress } from "../ui/progress";
-import {
-  Brain,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
-  Clock,
-  Tag,
-  FileCode,
-  AlertCircle,
-  Filter,
-  X,
-  Database,
-  Loader2,
-} from "lucide-react";
-import { formatTime, estimateTokens } from "@/lib/formatters/memory-formatters";
-import {
-  type ObservationType,
-  type ConceptType,
-  OBSERVATION_TYPE_COLORS,
-  CONCEPT_COLORS,
-  OBSERVATION_TYPES,
-  CONCEPT_TYPES,
-} from "@/lib/formatters/observation-colors";
-import { ContextItemCard } from "./ContextItemCard";
-import { ConnectionStatusBadge } from "./ConnectionStatusBadge";
-import { useObservationStream, type Observation as BaseObservation } from "@/lib/hooks/useObservationStream";
-import { useObservationFilter } from "@/lib/hooks/useObservationFilter";
-import { useContextPanel } from "@/lib/hooks/useContextPanel";
+} from '../ui/select'
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
+import { ConnectionStatusBadge } from './ConnectionStatusBadge'
+import { ContextItemCard } from './ContextItemCard'
 
-interface Observation extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
-  observation_type: ObservationType;
-  concepts: ConceptType[];
+interface Observation
+  extends Omit<BaseObservation, 'observation_type' | 'concepts'> {
+  observation_type: ObservationType
+  concepts: ConceptType[]
 }
 
 interface MemoryStreamPanelProps {
-  projectId: string;
-  sessionId?: string;
-  className?: string;
+  projectId: string
+  sessionId?: string
+  className?: string
 }
 
 // Token limit for display (configurable)
-const TOKEN_LIMIT = 8000;
+const TOKEN_LIMIT = 8000
 
 export function MemoryStreamPanel({
   projectId,
   sessionId,
   className,
 }: MemoryStreamPanelProps) {
-  const [observations, setObservations] = useState<Observation[]>([]);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [observations, setObservations] = useState<Observation[]>([])
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Use shared SSE hook
   const handleObservation = useCallback((obs: BaseObservation) => {
-    const observation = obs as Observation;
+    const observation = obs as Observation
     setObservations((prev) => {
       // Avoid duplicates
       if (prev.some((o) => o.id === observation.id)) {
-        return prev;
+        return prev
       }
       // Add to front (newest first)
-      return [observation, ...prev].slice(0, 100); // Keep max 100
-    });
-  }, []);
+      return [observation, ...prev].slice(0, 100) // Keep max 100
+    })
+  }, [])
 
   const { status } = useObservationStream({
     projectId,
     sessionId,
     onObservation: handleObservation,
-  });
+  })
 
-  const connected = status === 'connected';
-  const reconnecting = status === 'reconnecting';
+  const connected = status === 'connected'
+  const reconnecting = status === 'reconnecting'
 
   // Filtering state
   const {
@@ -99,10 +103,10 @@ export function MemoryStreamPanel({
     toggleConceptFilter,
     clearFilters,
     hasActiveFilters,
-  } = useObservationFilter();
+  } = useObservationFilter()
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"stream" | "context">("stream");
+  const [activeTab, setActiveTab] = useState<'stream' | 'context'>('stream')
 
   // Context panel state
   const {
@@ -114,65 +118,65 @@ export function MemoryStreamPanel({
     expandingIds,
     loadContextIndex,
     expandContextItem,
-  } = useContextPanel({ projectId, sessionId, activeTab });
+  } = useContextPanel({ projectId, sessionId, activeTab })
 
   // Load initial observations
   useEffect(() => {
     const loadInitial = async () => {
       try {
-        const params = new URLSearchParams({ limit: "50" });
+        const params = new URLSearchParams({ limit: '50' })
         if (sessionId) {
-          params.set("session_id", sessionId);
+          params.set('session_id', sessionId)
         }
 
         const response = await fetch(
-          `/api/projects/${projectId}/observations?${params}`
-        );
+          `/api/projects/${projectId}/observations?${params}`,
+        )
         if (response.ok) {
-          const data = await response.json();
-          setObservations(data);
+          const data = await response.json()
+          setObservations(data)
         }
       } catch (err) {
-        console.error("Failed to load observations:", err);
+        console.error('Failed to load observations:', err)
       }
-    };
+    }
 
-    loadInitial();
-  }, [projectId, sessionId]);
+    loadInitial()
+  }, [projectId, sessionId])
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(id)) {
-        next.delete(id);
+        next.delete(id)
       } else {
-        next.add(id);
+        next.add(id)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
   // Filter observations
   const filteredObservations = observations.filter((obs) => {
     // Type filter
-    if (typeFilter !== "all" && obs.observation_type !== typeFilter) {
-      return false;
+    if (typeFilter !== 'all' && obs.observation_type !== typeFilter) {
+      return false
     }
 
     // Concept filter (if any concept filters selected, at least one must match)
     if (conceptFilters.size > 0) {
-      const obsConcepts = obs.concepts || [];
-      const hasMatchingConcept = obsConcepts.some((c) => conceptFilters.has(c));
+      const obsConcepts = obs.concepts || []
+      const hasMatchingConcept = obsConcepts.some((c) => conceptFilters.has(c))
       if (!hasMatchingConcept) {
-        return false;
+        return false
       }
     }
 
-    return true;
-  });
+    return true
+  })
 
   return (
-    <div className={clsx("flex flex-col h-full", className)}>
+    <div className={clsx('flex flex-col h-full', className)}>
       {/* Header with tabs */}
       <div className="border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center justify-between p-3 pb-0">
@@ -181,31 +185,31 @@ export function MemoryStreamPanel({
             <span className="text-sm font-medium">Memory</span>
           </div>
           <div className="flex items-center gap-2">
-            {activeTab === "stream" && (
+            {activeTab === 'stream' && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowFilters(!showFilters)}
                 className={clsx(
-                  "h-7 w-7 p-0",
-                  hasActiveFilters && "text-purple-500"
+                  'h-7 w-7 p-0',
+                  hasActiveFilters && 'text-purple-500',
                 )}
               >
                 <Filter className="h-3.5 w-3.5" />
               </Button>
             )}
-            {activeTab === "stream" && (
+            {activeTab === 'stream' && (
               <ConnectionStatusBadge
                 status={
                   connected
-                    ? "connected"
+                    ? 'connected'
                     : reconnecting
-                      ? "reconnecting"
-                      : "disconnected"
+                      ? 'reconnecting'
+                      : 'disconnected'
                 }
               />
             )}
-            {activeTab === "context" && (
+            {activeTab === 'context' && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -213,19 +217,31 @@ export function MemoryStreamPanel({
                 disabled={contextLoading}
                 className="h-7 w-7 p-0"
               >
-                <RefreshCw className={clsx("h-3.5 w-3.5", contextLoading && "animate-spin")} />
+                <RefreshCw
+                  className={clsx(
+                    'h-3.5 w-3.5',
+                    contextLoading && 'animate-spin',
+                  )}
+                />
               </Button>
             )}
           </div>
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "stream" | "context")} className="px-3">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'stream' | 'context')}
+          className="px-3"
+        >
           <TabsList className="w-full grid grid-cols-2 h-8">
             <TabsTrigger value="stream" className="text-xs">
               Stream
               {hasActiveFilters && (
-                <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1">
+                <Badge
+                  variant="secondary"
+                  className="ml-1 text-[10px] h-4 px-1"
+                >
                   {filteredObservations.length}
                 </Badge>
               )}
@@ -233,7 +249,10 @@ export function MemoryStreamPanel({
             <TabsTrigger value="context" className="text-xs">
               Context
               {contextIndex && (
-                <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1">
+                <Badge
+                  variant="secondary"
+                  className="ml-1 text-[10px] h-4 px-1"
+                >
                   {contextIndex.item_count}
                 </Badge>
               )}
@@ -243,13 +262,15 @@ export function MemoryStreamPanel({
       </div>
 
       {/* Stream tab filters */}
-      {activeTab === "stream" && showFilters && (
+      {activeTab === 'stream' && showFilters && (
         <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 w-12">Type:</span>
             <Select
               value={typeFilter}
-              onValueChange={(value) => setTypeFilter(value as ObservationType | "all")}
+              onValueChange={(value) =>
+                setTypeFilter(value as ObservationType | 'all')
+              }
             >
               <SelectTrigger className="h-7 text-xs w-32">
                 <SelectValue placeholder="All types" />
@@ -269,22 +290,22 @@ export function MemoryStreamPanel({
             <span className="text-xs text-slate-500">Concepts:</span>
             <div className="flex flex-wrap gap-1">
               {CONCEPT_TYPES.map((concept) => {
-                const isActive = conceptFilters.has(concept);
+                const isActive = conceptFilters.has(concept)
                 return (
                   <Badge
                     key={concept}
                     variant="outline"
                     className={clsx(
-                      "text-xs cursor-pointer transition-colors",
+                      'text-xs cursor-pointer transition-colors',
                       isActive
                         ? CONCEPT_COLORS[concept]
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700',
                     )}
                     onClick={() => toggleConceptFilter(concept)}
                   >
                     {concept}
                   </Badge>
-                );
+                )
               })}
             </div>
           </div>
@@ -304,7 +325,7 @@ export function MemoryStreamPanel({
       )}
 
       {/* Stream tab content */}
-      {activeTab === "stream" && (
+      {activeTab === 'stream' && (
         <ScrollArea ref={scrollAreaRef} className="flex-1 p-3">
           {observations.length === 0 ? (
             <div className="text-center py-8 text-slate-500 text-sm">
@@ -336,7 +357,7 @@ export function MemoryStreamPanel({
       )}
 
       {/* Context tab content */}
-      {activeTab === "context" && (
+      {activeTab === 'context' && (
         <ScrollArea className="flex-1 p-3">
           {contextLoading ? (
             <div className="text-center py-8 text-slate-500 text-sm">
@@ -360,7 +381,9 @@ export function MemoryStreamPanel({
             <div className="text-center py-8 text-slate-500 text-sm">
               <Database className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>No context available</p>
-              <p className="text-xs mt-1">Context will appear after tool executions</p>
+              <p className="text-xs mt-1">
+                Context will appear after tool executions
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -370,7 +393,8 @@ export function MemoryStreamPanel({
                   <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
                     <span>Token Usage</span>
                     <span>
-                      {contextIndex.index_tokens.toLocaleString()} / {TOKEN_LIMIT.toLocaleString()}
+                      {contextIndex.index_tokens.toLocaleString()} /{' '}
+                      {TOKEN_LIMIT.toLocaleString()}
                     </span>
                   </div>
                   <Progress
@@ -379,8 +403,12 @@ export function MemoryStreamPanel({
                   />
                   <div className="flex justify-between text-[10px] text-slate-400 mt-1">
                     <span>Index: {contextIndex.index_tokens} tokens</span>
-                    <span>Full: {contextIndex.full_tokens.toLocaleString()}</span>
-                    <span>{Math.round(contextIndex.reduction_pct)}% reduction</span>
+                    <span>
+                      Full: {contextIndex.full_tokens.toLocaleString()}
+                    </span>
+                    <span>
+                      {Math.round(contextIndex.reduction_pct)}% reduction
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -410,16 +438,16 @@ export function MemoryStreamPanel({
         </ScrollArea>
       )}
     </div>
-  );
+  )
 }
 
 // Individual observation card
 interface ObservationCardProps {
-  observation: Observation;
-  expanded: boolean;
-  onToggle: () => void;
-  formatTime: (date: string) => string;
-  estimateTokens: (text: string | null | undefined) => number;
+  observation: Observation
+  expanded: boolean
+  onToggle: () => void
+  formatTime: (date: string) => string
+  estimateTokens: (text: string | null | undefined) => number
 }
 
 function ObservationCard({
@@ -431,20 +459,20 @@ function ObservationCard({
 }: ObservationCardProps) {
   const typeColor =
     OBSERVATION_TYPE_COLORS[observation.observation_type] ||
-    "bg-slate-500/10 text-slate-500";
+    'bg-slate-500/10 text-slate-500'
 
   const totalTokens =
     (observation.discovery_tokens ?? 0) ||
     estimateTokens(observation.narrative) +
       estimateTokens(observation.title) +
-      estimateTokens(observation.subtitle);
+      estimateTokens(observation.subtitle)
 
   return (
     <Card className="overflow-hidden">
       <CardHeader className="p-3 pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className={clsx("text-xs", typeColor)}>
+            <Badge variant="outline" className={clsx('text-xs', typeColor)}>
               {observation.observation_type}
             </Badge>
             <span className="text-xs text-slate-500">
@@ -472,7 +500,9 @@ function ObservationCard({
           {observation.title}
         </CardTitle>
         {observation.subtitle && (
-          <p className="text-xs text-slate-500 mt-0.5">{observation.subtitle}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {observation.subtitle}
+          </p>
         )}
       </CardHeader>
 
@@ -485,8 +515,8 @@ function ObservationCard({
                 key={concept}
                 variant="outline"
                 className={clsx(
-                  "text-xs",
-                  CONCEPT_COLORS[concept] || "bg-slate-500/10 text-slate-500"
+                  'text-xs',
+                  CONCEPT_COLORS[concept] || 'bg-slate-500/10 text-slate-500',
                 )}
               >
                 <Tag className="h-2.5 w-2.5 mr-1" />
@@ -529,21 +559,26 @@ function ObservationCard({
             )}
 
             {/* Files modified */}
-            {observation.files_modified && observation.files_modified.length > 0 && (
-              <div>
-                <h4 className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
-                  <FileCode className="h-3 w-3" />
-                  Files Modified
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {observation.files_modified.map((file, i) => (
-                    <Badge key={i} variant="outline" className="text-xs font-mono">
-                      {file.split("/").pop()}
-                    </Badge>
-                  ))}
+            {observation.files_modified &&
+              observation.files_modified.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                    <FileCode className="h-3 w-3" />
+                    Files Modified
+                  </h4>
+                  <div className="flex flex-wrap gap-1">
+                    {observation.files_modified.map((file, i) => (
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className="text-xs font-mono"
+                      >
+                        {file.split('/').pop()}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Tool info */}
             <div className="text-xs text-slate-400">
@@ -553,5 +588,5 @@ function ObservationCard({
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

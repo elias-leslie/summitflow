@@ -1,158 +1,156 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback } from "react";
-import { clsx } from "clsx";
-import { Badge } from "../ui/badge";
-import { Card, CardContent, CardHeader } from "../ui/card";
-import { ScrollArea } from "../ui/scroll-area";
+import { clsx } from 'clsx'
+import {
+  AlertCircle,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Cpu,
+  FileCode,
+  MinusCircle,
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Badge } from '../ui/badge'
+import { Card, CardContent, CardHeader } from '../ui/card'
+import { ScrollArea } from '../ui/scroll-area'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../ui/select";
-import {
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  MinusCircle,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  Cpu,
-  FileCode,
-  Sparkles,
-} from "lucide-react";
+} from '../ui/select'
 
 interface DiaryViewerProps {
-  projectId: string;
-  className?: string;
-  maxHeight?: string;
-  showFilters?: boolean;
+  projectId: string
+  className?: string
+  maxHeight?: string
+  showFilters?: boolean
 }
 
 interface DiaryEntry {
-  id: string;
-  project_id: string;
-  session_id: string;
-  task_id: string | null;
-  agent_type: string;
-  duration_seconds: number | null;
-  tokens_used: number | null;
-  discovery_tokens: number | null;
-  outcome: "success" | "failure" | "partial" | "neutral";
-  observation_type: string | null;
-  concepts: string[];
-  what_worked: string[] | null;
-  what_failed: string[] | null;
-  user_corrections: string[] | null;
-  patterns_used: string[] | null;
-  reflected_at: string | null;
-  reflection_notes: string | null;
-  patterns_generated: string[] | null;
-  created_at: string;
+  id: string
+  project_id: string
+  session_id: string
+  task_id: string | null
+  agent_type: string
+  duration_seconds: number | null
+  tokens_used: number | null
+  discovery_tokens: number | null
+  outcome: 'success' | 'failure' | 'partial' | 'neutral'
+  observation_type: string | null
+  concepts: string[]
+  what_worked: string[] | null
+  what_failed: string[] | null
+  user_corrections: string[] | null
+  patterns_used: string[] | null
+  reflected_at: string | null
+  reflection_notes: string | null
+  patterns_generated: string[] | null
+  created_at: string
 }
 
 const OUTCOME_CONFIG = {
   success: {
     icon: CheckCircle,
-    color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-    label: "Success",
+    color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+    label: 'Success',
   },
   failure: {
     icon: XCircle,
-    color: "bg-red-500/10 text-red-500 border-red-500/20",
-    label: "Failed",
+    color: 'bg-red-500/10 text-red-500 border-red-500/20',
+    label: 'Failed',
   },
   partial: {
     icon: AlertCircle,
-    color: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-    label: "Partial",
+    color: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+    label: 'Partial',
   },
   neutral: {
     icon: MinusCircle,
-    color: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-    label: "Neutral",
+    color: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+    label: 'Neutral',
   },
-};
+}
 
 export function DiaryViewer({
   projectId,
   className,
-  maxHeight = "500px",
+  maxHeight = '500px',
   showFilters = true,
 }: DiaryViewerProps) {
-  const [entries, setEntries] = useState<DiaryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [outcomeFilter, setOutcomeFilter] = useState<string>("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [unprocessedCount, setUnprocessedCount] = useState(0);
+  const [entries, setEntries] = useState<DiaryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [outcomeFilter, setOutcomeFilter] = useState<string>('all')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [unprocessedCount, setUnprocessedCount] = useState(0)
 
   const fetchEntries = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
 
     try {
-      const params = new URLSearchParams({ limit: "50" });
-      if (outcomeFilter !== "all") {
-        params.set("outcome", outcomeFilter);
+      const params = new URLSearchParams({ limit: '50' })
+      if (outcomeFilter !== 'all') {
+        params.set('outcome', outcomeFilter)
       }
 
-      const response = await fetch(
-        `/api/projects/${projectId}/diary?${params}`,
-      );
+      const response = await fetch(`/api/projects/${projectId}/diary?${params}`)
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch diary entries: ${response.status}`);
+        throw new Error(`Failed to fetch diary entries: ${response.status}`)
       }
 
-      const data = await response.json();
-      setEntries(data.entries || []);
-      setUnprocessedCount(data.unprocessed_count || 0);
+      const data = await response.json()
+      setEntries(data.entries || [])
+      setUnprocessedCount(data.unprocessed_count || 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load entries");
+      setError(err instanceof Error ? err.message : 'Failed to load entries')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [projectId, outcomeFilter]);
+  }, [projectId, outcomeFilter])
 
   useEffect(() => {
-    fetchEntries();
-  }, [fetchEntries]);
+    fetchEntries()
+  }, [fetchEntries])
 
   const formatDuration = (seconds: number | null) => {
-    if (!seconds) return null;
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  };
+    if (!seconds) return null
+    if (seconds < 60) return `${seconds}s`
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}m ${secs}s`
+  }
 
   const formatTokens = (tokens: number | null) => {
-    if (!tokens) return null;
-    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
-    return tokens.toString();
-  };
+    if (!tokens) return null
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
+    return tokens.toString()
+  }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString();
-  };
+    return new Date(dateStr).toLocaleString()
+  }
 
   const renderEntry = (entry: DiaryEntry) => {
-    const config = OUTCOME_CONFIG[entry.outcome];
-    const Icon = config.icon;
-    const isExpanded = expandedId === entry.id;
-    const isUnprocessed = !entry.reflected_at;
+    const config = OUTCOME_CONFIG[entry.outcome]
+    const Icon = config.icon
+    const isExpanded = expandedId === entry.id
+    const isUnprocessed = !entry.reflected_at
 
     return (
       <Card
         key={entry.id}
         className={clsx(
-          "cursor-pointer transition-colors",
-          isUnprocessed && "border-amber-500/30 bg-amber-500/5",
-          isExpanded && "ring-1 ring-primary",
+          'cursor-pointer transition-colors',
+          isUnprocessed && 'border-amber-500/30 bg-amber-500/5',
+          isExpanded && 'ring-1 ring-primary',
         )}
         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
         data-testid={`diary-entry-${entry.id}`}
@@ -160,7 +158,7 @@ export function DiaryViewer({
         <CardHeader className="py-3 px-4">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className={clsx("gap-1", config.color)}>
+              <Badge variant="outline" className={clsx('gap-1', config.color)}>
                 <Icon className="h-3 w-3" />
                 {config.label}
               </Badge>
@@ -298,8 +296,8 @@ export function DiaryViewer({
           </CardContent>
         )}
       </Card>
-    );
-  };
+    )
+  }
 
   return (
     <div className={className}>
@@ -351,5 +349,5 @@ export function DiaryViewer({
         </ScrollArea>
       )}
     </div>
-  );
+  )
 }

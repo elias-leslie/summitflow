@@ -1,11 +1,11 @@
-"use client";
+'use client'
 
-import { useMemo } from "react";
-import type { Subtask } from "@/lib/api/tasks";
+import { useMemo } from 'react'
+import type { Subtask } from '@/lib/api/tasks'
 
 interface SubtaskProgressProps {
-  subtasks: Subtask[];
-  maxVisible?: number;
+  subtasks: Subtask[]
+  maxVisible?: number
 }
 
 export function SubtaskProgress({
@@ -14,8 +14,10 @@ export function SubtaskProgress({
 }: SubtaskProgressProps) {
   const { completed, total, displaySubtasks, hiddenCount, nextIncomplete } =
     useMemo(() => {
-      const sorted = [...subtasks].sort((a, b) => a.display_order - b.display_order);
-      const nextInc = sorted.find((s) => !s.passes);
+      const sorted = [...subtasks].sort(
+        (a, b) => a.display_order - b.display_order,
+      )
+      const nextInc = sorted.find((s) => !s.passes)
 
       return {
         completed: subtasks.filter((s) => s.passes).length,
@@ -23,16 +25,16 @@ export function SubtaskProgress({
         displaySubtasks: sorted.slice(0, maxVisible),
         hiddenCount: Math.max(0, sorted.length - maxVisible),
         nextIncomplete: nextInc,
-      };
-    }, [subtasks, maxVisible]);
+      }
+    }, [subtasks, maxVisible])
 
   if (total === 0) {
-    return <span className="text-2xs text-slate-600">—</span>;
+    return <span className="text-2xs text-slate-600">—</span>
   }
 
   const tooltipContent = nextIncomplete
-    ? `Next: ${nextIncomplete.subtask_id} - ${nextIncomplete.description.slice(0, 50)}${nextIncomplete.description.length > 50 ? "..." : ""}`
-    : "All subtasks complete!";
+    ? `Next: ${nextIncomplete.subtask_id} - ${nextIncomplete.description.slice(0, 50)}${nextIncomplete.description.length > 50 ? '...' : ''}`
+    : 'All subtasks complete!'
 
   return (
     <div
@@ -46,8 +48,8 @@ export function SubtaskProgress({
             key={subtask.id || index}
             className={`w-1.5 h-1.5 rounded-[1px] transition-all duration-200 ${
               subtask.passes
-                ? "bg-emerald-400 shadow-sm shadow-emerald-400/30"
-                : "bg-slate-700 group-hover:bg-slate-600"
+                ? 'bg-emerald-400 shadow-sm shadow-emerald-400/30'
+                : 'bg-slate-700 group-hover:bg-slate-600'
             }`}
           />
         ))}
@@ -60,14 +62,14 @@ export function SubtaskProgress({
       <span
         className={`text-2xs font-mono transition-colors ${
           completed === total
-            ? "text-emerald-400"
+            ? 'text-emerald-400'
             : completed > 0
-              ? "text-slate-400"
-              : "text-slate-600"
+              ? 'text-slate-400'
+              : 'text-slate-600'
         }`}
       >
         {completed}/{total}
       </span>
     </div>
-  );
+  )
 }

@@ -1,22 +1,22 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { ChevronDown, Check, X } from 'lucide-react';
-import { clsx } from 'clsx';
-import { AnimatePresence, motion } from 'motion/react';
+import { clsx } from 'clsx'
+import { Check, ChevronDown, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useState } from 'react'
 
 export interface Pattern {
-  id: string;
-  project_id: string;
-  pattern_type: string;
-  title: string;
-  content: string;
-  rationale?: string;
-  action: string;
-  status: string;
-  confidence: number;
-  created_at: string;
-  reflected_by?: string;
+  id: string
+  project_id: string
+  pattern_type: string
+  title: string
+  content: string
+  rationale?: string
+  action: string
+  status: string
+  confidence: number
+  created_at: string
+  reflected_by?: string
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -24,26 +24,33 @@ const ACTION_COLORS: Record<string, string> = {
   update: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   remove: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
   merge: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-};
+}
 
 export function PatternRow({
   pattern,
   onApprove,
-  onReject
+  onReject,
 }: {
-  pattern: Pattern;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  pattern: Pattern
+  onApprove: (id: string) => void
+  onReject: (id: string) => void
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false)
 
-  const confidenceColor = pattern.confidence >= 0.85 ? 'text-emerald-400' : pattern.confidence >= 0.7 ? 'text-amber-400' : 'text-slate-400';
+  const confidenceColor =
+    pattern.confidence >= 0.85
+      ? 'text-emerald-400'
+      : pattern.confidence >= 0.7
+        ? 'text-amber-400'
+        : 'text-slate-400'
 
   return (
     <div
       className={clsx(
         'bg-slate-800/50 border rounded-xl overflow-hidden transition-all duration-200',
-        expanded ? 'border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.15)]' : 'border-slate-700/50 hover:border-slate-600'
+        expanded
+          ? 'border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.15)]'
+          : 'border-slate-700/50 hover:border-slate-600',
       )}
     >
       <div className="flex items-center gap-3 px-5 py-4">
@@ -51,15 +58,29 @@ export function PatternRow({
           className="flex-1 flex items-center gap-3 cursor-pointer"
           onClick={() => setExpanded(!expanded)}
         >
-          <span className={clsx('text-[10px] font-bold uppercase px-2.5 py-1 rounded border', ACTION_COLORS[pattern.action] || ACTION_COLORS.add)}>
+          <span
+            className={clsx(
+              'text-[10px] font-bold uppercase px-2.5 py-1 rounded border',
+              ACTION_COLORS[pattern.action] || ACTION_COLORS.add,
+            )}
+          >
             {pattern.action}
           </span>
-          <span className={clsx('text-[13px] font-semibold font-mono px-2.5 py-1 rounded bg-slate-700/50', confidenceColor)}>
+          <span
+            className={clsx(
+              'text-[13px] font-semibold font-mono px-2.5 py-1 rounded bg-slate-700/50',
+              confidenceColor,
+            )}
+          >
             {Math.round(pattern.confidence * 100)}%
           </span>
           <div className="flex-1">
-            <div className="text-sm font-medium text-slate-200">{pattern.title}</div>
-            <div className="text-[13px] text-slate-500 truncate">{pattern.content}</div>
+            <div className="text-sm font-medium text-slate-200">
+              {pattern.title}
+            </div>
+            <div className="text-[13px] text-slate-500 truncate">
+              {pattern.content}
+            </div>
           </div>
         </div>
         {pattern.status === 'pending' && (
@@ -81,7 +102,7 @@ export function PatternRow({
         <ChevronDown
           className={clsx(
             'w-5 h-5 text-slate-500 transition-transform duration-200 cursor-pointer',
-            expanded && 'rotate-180'
+            expanded && 'rotate-180',
           )}
           onClick={() => setExpanded(!expanded)}
         />
@@ -100,11 +121,13 @@ export function PatternRow({
               <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
                 Rationale
               </div>
-              <p className="text-sm text-slate-300 leading-relaxed">{pattern.rationale}</p>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                {pattern.rationale}
+              </p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
-  );
+  )
 }

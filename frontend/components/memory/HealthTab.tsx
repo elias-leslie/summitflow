@@ -1,5 +1,6 @@
-'use client';
+'use client'
 
+import { clsx } from 'clsx'
 import {
   Activity,
   AlertTriangle,
@@ -13,19 +14,18 @@ import {
   Shield,
   TrendingDown,
   XCircle,
-} from 'lucide-react';
-import { clsx } from 'clsx';
-import { Badge } from '@/components/ui/badge';
+} from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import {
-  useMemoryHealth,
-  useRunHealthCheck,
+  type ArchivedRule,
+  type DocConflict,
   type HealthReport,
   type RuleAdherence,
   type StaleRule,
-  type ArchivedRule,
   type SyncSuggestion,
-  type DocConflict,
-} from '@/lib/hooks/useMemoryHealth';
+  useMemoryHealth,
+  useRunHealthCheck,
+} from '@/lib/hooks/useMemoryHealth'
 
 // Status indicator component
 function StatusIndicator({ status }: { status: HealthReport['status'] }) {
@@ -62,19 +62,26 @@ function StatusIndicator({ status }: { status: HealthReport['status'] }) {
       glow: 'shadow-[0_0_12px_rgba(251,113,133,0.3)]',
       label: 'Unhealthy',
     },
-  };
+  }
 
-  const { icon: Icon, color, bg, border, glow, label } = config[status];
+  const { icon: Icon, color, bg, border, glow, label } = config[status]
 
   return (
-    <div className={clsx('flex items-center gap-3 px-4 py-3 rounded-xl border', bg, border, glow)}>
+    <div
+      className={clsx(
+        'flex items-center gap-3 px-4 py-3 rounded-xl border',
+        bg,
+        border,
+        glow,
+      )}
+    >
       <Icon className={clsx('w-6 h-6', color)} />
       <div>
         <div className={clsx('text-lg font-semibold', color)}>{label}</div>
         <div className="text-xs text-slate-500">Memory System Status</div>
       </div>
     </div>
-  );
+  )
 }
 
 // Metric card for stats
@@ -84,10 +91,10 @@ function StatCard({
   subtitle,
   trend,
 }: {
-  label: string;
-  value: string | number;
-  subtitle?: string;
-  trend?: 'up' | 'down' | 'neutral';
+  label: string
+  value: string | number
+  subtitle?: string
+  trend?: 'up' | 'down' | 'neutral'
 }) {
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
@@ -98,9 +105,11 @@ function StatCard({
         <span className="text-2xl font-bold text-slate-200">{value}</span>
         {trend === 'down' && <TrendingDown className="w-4 h-4 text-rose-400" />}
       </div>
-      {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
+      {subtitle && (
+        <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
+      )}
     </div>
-  );
+  )
 }
 
 // Adherence progress bar component
@@ -108,29 +117,32 @@ function AdherenceProgressBar({
   label,
   stats,
 }: {
-  label: string;
-  stats: { followed: number; violated: number; rate: number };
+  label: string
+  stats: { followed: number; violated: number; rate: number }
 }) {
-  const rate = stats.rate * 100;
-  const total = stats.followed + stats.violated;
+  const rate = stats.rate * 100
+  const total = stats.followed + stats.violated
 
   // Color coding: green >80%, yellow 50-80%, red <50%
   const getBarColor = (pct: number) => {
-    if (pct >= 80) return 'bg-emerald-500';
-    if (pct >= 50) return 'bg-amber-500';
-    return 'bg-rose-500';
-  };
+    if (pct >= 80) return 'bg-emerald-500'
+    if (pct >= 50) return 'bg-amber-500'
+    return 'bg-rose-500'
+  }
 
   const getTextColor = (pct: number) => {
-    if (pct >= 80) return 'text-emerald-400';
-    if (pct >= 50) return 'text-amber-400';
-    return 'text-rose-400';
-  };
+    if (pct >= 80) return 'text-emerald-400'
+    if (pct >= 50) return 'text-amber-400'
+    return 'text-rose-400'
+  }
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-400 font-medium truncate max-w-[200px]" title={label}>
+        <span
+          className="text-slate-400 font-medium truncate max-w-[200px]"
+          title={label}
+        >
           {label.replace('.md', '')}
         </span>
         <div className="flex items-center gap-2">
@@ -144,12 +156,15 @@ function AdherenceProgressBar({
       </div>
       <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
         <div
-          className={clsx('h-full rounded-full transition-all', getBarColor(rate))}
+          className={clsx(
+            'h-full rounded-full transition-all',
+            getBarColor(rate),
+          )}
           style={{ width: `${rate}%` }}
         />
       </div>
     </div>
-  );
+  )
 }
 
 // Stale Rules section component
@@ -157,19 +172,19 @@ function StaleRulesSection({
   staleRules,
   archivedRules,
 }: {
-  staleRules: StaleRule[];
-  archivedRules: ArchivedRule[];
+  staleRules: StaleRule[]
+  archivedRules: ArchivedRule[]
 }) {
   if (staleRules.length === 0 && archivedRules.length === 0) {
-    return null;
+    return null
   }
 
   const formatDays = (days: number | null) => {
-    if (days === null) return 'Never';
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    return `${days} days ago`;
-  };
+    if (days === null) return 'Never'
+    if (days === 0) return 'Today'
+    if (days === 1) return 'Yesterday'
+    return `${days} days ago`
+  }
 
   return (
     <div className="space-y-4">
@@ -179,7 +194,10 @@ function StaleRulesSection({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-400" />
             Stale Rules
-            <Badge variant="secondary" className="ml-auto bg-amber-500/15 text-amber-400 border-amber-500/30">
+            <Badge
+              variant="secondary"
+              className="ml-auto bg-amber-500/15 text-amber-400 border-amber-500/30"
+            >
               {staleRules.length} detected
             </Badge>
           </h3>
@@ -190,7 +208,9 @@ function StaleRulesSection({
                 className="px-4 py-3 bg-amber-500/5 border border-amber-500/20 rounded-lg"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-200">{rule.rule_file}</span>
+                  <span className="text-sm font-medium text-slate-200">
+                    {rule.rule_file}
+                  </span>
                   <Badge
                     variant="secondary"
                     className={clsx(
@@ -198,8 +218,8 @@ function StaleRulesSection({
                       rule.staleness_score >= 0.7
                         ? 'bg-rose-500/15 text-rose-400'
                         : rule.staleness_score >= 0.5
-                        ? 'bg-amber-500/15 text-amber-400'
-                        : 'bg-slate-700 text-slate-400'
+                          ? 'bg-amber-500/15 text-amber-400'
+                          : 'bg-slate-700 text-slate-400',
                     )}
                   >
                     {(rule.staleness_score * 100).toFixed(0)}% stale
@@ -208,9 +228,13 @@ function StaleRulesSection({
                 <p className="text-xs text-slate-500 mt-1">{rule.reason}</p>
                 <div className="flex gap-4 mt-2 text-xs text-slate-600">
                   <span>Modified: {formatDays(rule.last_modified_days)}</span>
-                  <span>Referenced: {formatDays(rule.last_referenced_days)}</span>
+                  <span>
+                    Referenced: {formatDays(rule.last_referenced_days)}
+                  </span>
                   {rule.adherence_rate !== null && (
-                    <span>Adherence: {(rule.adherence_rate * 100).toFixed(0)}%</span>
+                    <span>
+                      Adherence: {(rule.adherence_rate * 100).toFixed(0)}%
+                    </span>
                   )}
                 </div>
               </div>
@@ -225,7 +249,10 @@ function StaleRulesSection({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
             <Archive className="w-4 h-4 text-blue-400" />
             Auto-Archived Rules
-            <Badge variant="secondary" className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30">
+            <Badge
+              variant="secondary"
+              className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30"
+            >
               {archivedRules.length} archived
             </Badge>
           </h3>
@@ -236,7 +263,9 @@ function StaleRulesSection({
                 className="px-4 py-3 bg-blue-500/5 border border-blue-500/20 rounded-lg"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-200">{rule.rule_file}</span>
+                  <span className="text-sm font-medium text-slate-200">
+                    {rule.rule_file}
+                  </span>
                   <span className="text-xs text-slate-500">
                     {new Date(rule.archived_at).toLocaleDateString()}
                   </span>
@@ -244,7 +273,10 @@ function StaleRulesSection({
                 <p className="text-xs text-slate-500 mt-1">
                   Reason: {rule.archive_reason}
                 </p>
-                <p className="text-xs text-slate-600 mt-1 font-mono truncate" title={rule.archive_path}>
+                <p
+                  className="text-xs text-slate-600 mt-1 font-mono truncate"
+                  title={rule.archive_path}
+                >
                   {rule.archive_path.split('/').slice(-2).join('/')}
                 </p>
               </div>
@@ -253,13 +285,13 @@ function StaleRulesSection({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // Rule Adherence section component
 function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
-  const { by_rule, overall_rate, total_observations } = adherence;
-  const rules = Object.entries(by_rule);
+  const { by_rule, overall_rate, total_observations } = adherence
+  const rules = Object.entries(by_rule)
 
   if (total_observations === 0) {
     return (
@@ -275,11 +307,11 @@ function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
           </p>
         </div>
       </div>
-    );
+    )
   }
 
   // Sort rules by adherence rate (lowest first for attention)
-  const sortedRules = rules.sort(([, a], [, b]) => a.rate - b.rate);
+  const sortedRules = rules.sort(([, a], [, b]) => a.rate - b.rate)
 
   return (
     <div>
@@ -293,8 +325,8 @@ function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
             overall_rate >= 0.8
               ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
               : overall_rate >= 0.5
-              ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-              : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                : 'bg-rose-500/15 text-rose-400 border-rose-500/30',
           )}
         >
           Overall: {(overall_rate * 100).toFixed(0)}%
@@ -305,11 +337,12 @@ function RuleAdherenceSection({ adherence }: { adherence: RuleAdherence }) {
           <AdherenceProgressBar key={ruleName} label={ruleName} stats={stats} />
         ))}
         <div className="pt-2 mt-2 border-t border-slate-700/50 text-xs text-slate-500">
-          Based on {total_observations} observation{total_observations !== 1 ? 's' : ''}
+          Based on {total_observations} observation
+          {total_observations !== 1 ? 's' : ''}
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 // Sync Suggestions section component
@@ -317,11 +350,11 @@ function SyncSuggestionsSection({
   syncSuggestions,
   docConflicts,
 }: {
-  syncSuggestions: SyncSuggestion[];
-  docConflicts: DocConflict[];
+  syncSuggestions: SyncSuggestion[]
+  docConflicts: DocConflict[]
 }) {
   if (syncSuggestions.length === 0 && docConflicts.length === 0) {
-    return null;
+    return null
   }
 
   return (
@@ -332,7 +365,10 @@ function SyncSuggestionsSection({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-400" />
             Doc Conflicts
-            <Badge variant="secondary" className="ml-auto bg-rose-500/15 text-rose-400 border-rose-500/30">
+            <Badge
+              variant="secondary"
+              className="ml-auto bg-rose-500/15 text-rose-400 border-rose-500/30"
+            >
               {docConflicts.length} detected
             </Badge>
           </h3>
@@ -345,8 +381,8 @@ function SyncSuggestionsSection({
                   conflict.severity === 'high'
                     ? 'bg-rose-500/5 border-rose-500/20'
                     : conflict.severity === 'medium'
-                    ? 'bg-amber-500/5 border-amber-500/20'
-                    : 'bg-slate-800/50 border-slate-700/50'
+                      ? 'bg-amber-500/5 border-amber-500/20'
+                      : 'bg-slate-800/50 border-slate-700/50',
                 )}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -354,9 +390,12 @@ function SyncSuggestionsSection({
                     variant="secondary"
                     className={clsx(
                       'text-[10px] uppercase',
-                      conflict.severity === 'high' && 'bg-rose-500/20 text-rose-400',
-                      conflict.severity === 'medium' && 'bg-amber-500/20 text-amber-400',
-                      conflict.severity === 'low' && 'bg-slate-700 text-slate-400'
+                      conflict.severity === 'high' &&
+                        'bg-rose-500/20 text-rose-400',
+                      conflict.severity === 'medium' &&
+                        'bg-amber-500/20 text-amber-400',
+                      conflict.severity === 'low' &&
+                        'bg-slate-700 text-slate-400',
                     )}
                   >
                     {conflict.conflict_type.replace('_', ' ')}
@@ -364,15 +403,23 @@ function SyncSuggestionsSection({
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <FileText className="w-4 h-4 text-blue-400" />
-                  <span className="text-slate-300">{conflict.doc_section.doc_file}</span>
+                  <span className="text-slate-300">
+                    {conflict.doc_section.doc_file}
+                  </span>
                   <span className="text-slate-600">→</span>
-                  <span className="text-slate-400">{conflict.doc_section.section_title}</span>
+                  <span className="text-slate-400">
+                    {conflict.doc_section.section_title}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm mt-1">
                   <Link2 className="w-4 h-4 text-purple-400" />
-                  <span className="text-slate-400">Pattern: {conflict.pattern.title}</span>
+                  <span className="text-slate-400">
+                    Pattern: {conflict.pattern.title}
+                  </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-2">{conflict.explanation}</p>
+                <p className="text-xs text-slate-500 mt-2">
+                  {conflict.explanation}
+                </p>
               </div>
             ))}
           </div>
@@ -385,7 +432,10 @@ function SyncSuggestionsSection({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
             <ArrowRight className="w-4 h-4 text-blue-400" />
             Sync Suggestions
-            <Badge variant="secondary" className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30">
+            <Badge
+              variant="secondary"
+              className="ml-auto bg-blue-500/15 text-blue-400 border-blue-500/30"
+            >
               {syncSuggestions.length} available
             </Badge>
           </h3>
@@ -400,9 +450,12 @@ function SyncSuggestionsSection({
                     variant="secondary"
                     className={clsx(
                       'text-[10px] uppercase',
-                      suggestion.action === 'add_to_claude_md' && 'bg-emerald-500/20 text-emerald-400',
-                      suggestion.action === 'create_pattern' && 'bg-purple-500/20 text-purple-400',
-                      suggestion.action === 'consolidate' && 'bg-amber-500/20 text-amber-400'
+                      suggestion.action === 'add_to_claude_md' &&
+                        'bg-emerald-500/20 text-emerald-400',
+                      suggestion.action === 'create_pattern' &&
+                        'bg-purple-500/20 text-purple-400',
+                      suggestion.action === 'consolidate' &&
+                        'bg-amber-500/20 text-amber-400',
                     )}
                   >
                     {suggestion.action.replace(/_/g, ' ')}
@@ -418,30 +471,42 @@ function SyncSuggestionsSection({
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-slate-300">{suggestion.suggestion}</p>
+                <p className="text-sm text-slate-300">
+                  {suggestion.suggestion}
+                </p>
               </div>
             ))}
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // Main HealthTab component
 export function HealthTab({ projectId }: { projectId: string }) {
   // Use hooks for data fetching
-  const { health: fetchedHealth, isLoading: loading, error: fetchError, refresh } = useMemoryHealth(projectId);
-  const { run: runCheck, isRunning: running, error: runError, result: checkResult } = useRunHealthCheck(projectId);
+  const {
+    health: fetchedHealth,
+    isLoading: loading,
+    error: fetchError,
+    refresh,
+  } = useMemoryHealth(projectId)
+  const {
+    run: runCheck,
+    isRunning: running,
+    error: runError,
+    result: checkResult,
+  } = useRunHealthCheck(projectId)
 
   // Use check result if available, otherwise use fetched health
-  const health = checkResult || fetchedHealth;
-  const error = runError || fetchError;
+  const health = checkResult || fetchedHealth
+  const error = runError || fetchError
 
   // Run health check and update state
   const runHealthCheck = async () => {
-    await runCheck();
-  };
+    await runCheck()
+  }
 
   if (loading) {
     return (
@@ -449,14 +514,16 @@ export function HealthTab({ projectId }: { projectId: string }) {
         <Activity className="w-5 h-5 animate-spin mr-2" />
         Loading health data...
       </div>
-    );
+    )
   }
 
   if (error) {
     return (
       <div className="text-center py-16">
         <XCircle className="w-10 h-10 mx-auto mb-4 text-rose-400 opacity-50" />
-        <h3 className="text-lg font-medium text-slate-400 mb-2">Error loading health data</h3>
+        <h3 className="text-lg font-medium text-slate-400 mb-2">
+          Error loading health data
+        </h3>
         <p className="text-sm text-rose-400">{error}</p>
         <button
           onClick={refresh}
@@ -465,15 +532,15 @@ export function HealthTab({ projectId }: { projectId: string }) {
           Retry
         </button>
       </div>
-    );
+    )
   }
 
-  if (!health) return null;
+  if (!health) return null
 
-  const { metrics, warnings, corrections } = health;
-  const filterStats = metrics.filter_stats;
-  const obsDistribution = metrics.observation_distribution;
-  const patternStatus = metrics.pattern_status;
+  const { metrics, warnings, corrections } = health
+  const filterStats = metrics.filter_stats
+  const obsDistribution = metrics.observation_distribution
+  const patternStatus = metrics.pattern_status
 
   return (
     <div className="space-y-6">
@@ -487,7 +554,7 @@ export function HealthTab({ projectId }: { projectId: string }) {
             'flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors',
             running
               ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              : 'bg-outrun-500/20 text-outrun-400 hover:bg-outrun-500/30 border border-outrun-500/30'
+              : 'bg-outrun-500/20 text-outrun-400 hover:bg-outrun-500/30 border border-outrun-500/30',
           )}
         >
           <RefreshCw className={clsx('w-4 h-4', running && 'animate-spin')} />
@@ -540,7 +607,8 @@ export function HealthTab({ projectId }: { projectId: string }) {
                   variant="secondary"
                   className="bg-slate-800 text-slate-300 border border-slate-700"
                 >
-                  {reason.replace('skip_', '').replace('_', ' ')}: {count.toLocaleString()}
+                  {reason.replace('skip_', '').replace('_', ' ')}:{' '}
+                  {count.toLocaleString()}
                 </Badge>
               ))}
           </div>
@@ -565,10 +633,10 @@ export function HealthTab({ projectId }: { projectId: string }) {
                     type === 'operational'
                       ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
                       : type === 'error'
-                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                      : type === 'architecture'
-                      ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
-                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                        ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                        : type === 'architecture'
+                          ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                          : 'bg-slate-800 text-slate-300 border-slate-700',
                   )}
                 >
                   {type}: {count.toLocaleString()}
@@ -591,10 +659,14 @@ export function HealthTab({ projectId }: { projectId: string }) {
                 variant="secondary"
                 className={clsx(
                   'border',
-                  status === 'pending' && 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-                  status === 'approved' && 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-                  status === 'applied' && 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-                  status === 'rejected' && 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                  status === 'pending' &&
+                    'bg-amber-500/15 text-amber-400 border-amber-500/30',
+                  status === 'approved' &&
+                    'bg-blue-500/15 text-blue-400 border-blue-500/30',
+                  status === 'applied' &&
+                    'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+                  status === 'rejected' &&
+                    'bg-rose-500/15 text-rose-400 border-rose-500/30',
                 )}
               >
                 {status}: {count}
@@ -637,8 +709,8 @@ export function HealthTab({ projectId }: { projectId: string }) {
                   warning.severity === 'high'
                     ? 'bg-rose-500/10 border-rose-500/30'
                     : warning.severity === 'medium'
-                    ? 'bg-amber-500/10 border-amber-500/30'
-                    : 'bg-slate-800/50 border-slate-700/50'
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-slate-800/50 border-slate-700/50',
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -646,14 +718,19 @@ export function HealthTab({ projectId }: { projectId: string }) {
                     variant="secondary"
                     className={clsx(
                       'text-[10px] uppercase',
-                      warning.severity === 'high' && 'bg-rose-500/20 text-rose-400',
-                      warning.severity === 'medium' && 'bg-amber-500/20 text-amber-400',
-                      warning.severity === 'low' && 'bg-slate-700 text-slate-400'
+                      warning.severity === 'high' &&
+                        'bg-rose-500/20 text-rose-400',
+                      warning.severity === 'medium' &&
+                        'bg-amber-500/20 text-amber-400',
+                      warning.severity === 'low' &&
+                        'bg-slate-700 text-slate-400',
                     )}
                   >
                     {warning.severity}
                   </Badge>
-                  <span className="text-xs text-slate-500 font-mono">{warning.type}</span>
+                  <span className="text-xs text-slate-500 font-mono">
+                    {warning.type}
+                  </span>
                 </div>
                 <p className="text-sm text-slate-300 mt-1">{warning.message}</p>
               </div>
@@ -677,12 +754,16 @@ export function HealthTab({ projectId }: { projectId: string }) {
               >
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-blue-400 font-mono">{correction.type}</span>
+                  <span className="text-xs text-blue-400 font-mono">
+                    {correction.type}
+                  </span>
                   <span className="text-xs text-slate-500 ml-auto">
                     {new Date(correction.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
-                <p className="text-sm text-slate-300 mt-1">{correction.description}</p>
+                <p className="text-sm text-slate-300 mt-1">
+                  {correction.description}
+                </p>
               </div>
             ))}
           </div>
@@ -702,14 +783,18 @@ export function HealthTab({ projectId }: { projectId: string }) {
                 className="px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-slate-500 font-mono">{rec.type}</span>
+                  <span className="text-xs text-slate-500 font-mono">
+                    {rec.type}
+                  </span>
                   <Badge
                     variant="secondary"
                     className={clsx(
                       'text-[10px] uppercase',
-                      rec.confidence === 'high' && 'bg-emerald-500/20 text-emerald-400',
-                      rec.confidence === 'medium' && 'bg-amber-500/20 text-amber-400',
-                      rec.confidence === 'low' && 'bg-slate-700 text-slate-400'
+                      rec.confidence === 'high' &&
+                        'bg-emerald-500/20 text-emerald-400',
+                      rec.confidence === 'medium' &&
+                        'bg-amber-500/20 text-amber-400',
+                      rec.confidence === 'low' && 'bg-slate-700 text-slate-400',
                     )}
                   >
                     {rec.confidence}
@@ -718,11 +803,13 @@ export function HealthTab({ projectId }: { projectId: string }) {
                 <p className="text-sm text-slate-300">{rec.reason}</p>
                 <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                   <span>
-                    Current: <span className="text-slate-400">{rec.current}</span>
+                    Current:{' '}
+                    <span className="text-slate-400">{rec.current}</span>
                   </span>
                   <span>→</span>
                   <span>
-                    Recommended: <span className="text-blue-400">{rec.recommended}</span>
+                    Recommended:{' '}
+                    <span className="text-blue-400">{rec.recommended}</span>
                   </span>
                 </div>
               </div>
@@ -736,5 +823,5 @@ export function HealthTab({ projectId }: { projectId: string }) {
         Last updated: {new Date(health.timestamp).toLocaleString()}
       </div>
     </div>
-  );
+  )
 }

@@ -1,99 +1,99 @@
-"use client";
+'use client'
 
-import { useState, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { AnimatePresence, motion } from "motion/react";
-import Image from "next/image";
+import { useMutation } from '@tanstack/react-query'
 import {
-  X,
   AlertCircle,
-  CheckCircle2,
-  Loader2,
   Bot,
-  Terminal,
-  Network,
-  Gauge,
-  FileCode,
-  Plus,
-  Edit3,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
-} from "lucide-react";
-import { toast } from "sonner";
+  Edit3,
+  FileCode,
+  Gauge,
+  Loader2,
+  Network,
+  Plus,
+  Terminal,
+  X,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import Image from 'next/image'
+import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 interface Issue {
-  id: string;
-  severity: "critical" | "high" | "medium" | "low";
-  category: string;
-  title: string;
-  description: string;
-  evidence: string;
+  id: string
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  category: string
+  title: string
+  description: string
+  evidence: string
   proposed_fix?: {
-    feature_name: string;
-    description: string;
-    acceptance_criteria: string[];
-  };
+    feature_name: string
+    description: string
+    acceptance_criteria: string[]
+  }
 }
 
 interface AgentAnalysis {
-  issues: Issue[];
+  issues: Issue[]
   overall: {
-    score: number;
-    status: string;
-    summary: string;
-  };
-  raw_analysis?: string;
+    score: number
+    status: string
+    summary: string
+  }
+  raw_analysis?: string
 }
 
 interface AgentReviewResponse {
-  success: boolean;
-  agent: string;
-  model: string;
-  analysis: AgentAnalysis;
-  quality_status: string;
-  confidence: number;
+  success: boolean
+  agent: string
+  model: string
+  analysis: AgentAnalysis
+  quality_status: string
+  confidence: number
 }
 
 interface EvidenceReviewDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  evidenceId: string;
-  screenshotUrl: string;
-  capabilityId: string;
-  criterionId: string;
-  onFeaturesCreated?: (features: Array<{ id: string; name: string }>) => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  evidenceId: string
+  screenshotUrl: string
+  capabilityId: string
+  criterionId: string
+  onFeaturesCreated?: (features: Array<{ id: string; name: string }>) => void
 }
 
 async function requestAgentReview(
   projectId: string,
   evidenceId: string,
-  agent: "claude" | "gemini"
+  agent: 'claude' | 'gemini',
 ): Promise<AgentReviewResponse> {
   const res = await fetch(
     `/api/projects/${projectId}/evidence/${evidenceId}/agent-review`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent }),
-    }
-  );
+    },
+  )
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || "Agent review failed");
+    const error = await res.json()
+    throw new Error(error.detail || 'Agent review failed')
   }
-  return res.json();
+  return res.json()
 }
 
 export function EvidenceReviewDialog({
@@ -106,95 +106,105 @@ export function EvidenceReviewDialog({
   criterionId,
   onFeaturesCreated,
 }: EvidenceReviewDialogProps) {
-  const [selectedAgent, setSelectedAgent] = useState<"claude" | "gemini">("gemini");
-  const [analysis, setAnalysis] = useState<AgentAnalysis | null>(null);
-  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
-  const [editingFeature, setEditingFeature] = useState<string | null>(null);
-  const [editedFeatures, setEditedFeatures] = useState<Record<string, Issue["proposed_fix"]>>({});
+  const [selectedAgent, setSelectedAgent] = useState<'claude' | 'gemini'>(
+    'gemini',
+  )
+  const [analysis, setAnalysis] = useState<AgentAnalysis | null>(null)
+  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set())
+  const [editingFeature, setEditingFeature] = useState<string | null>(null)
+  const [editedFeatures, setEditedFeatures] = useState<
+    Record<string, Issue['proposed_fix']>
+  >({})
 
   // Agent review mutation
   const reviewMutation = useMutation({
     mutationFn: () => requestAgentReview(projectId, evidenceId, selectedAgent),
     onSuccess: (data) => {
-      setAnalysis(data.analysis);
+      setAnalysis(data.analysis)
       // Expand all issues by default
-      setExpandedIssues(new Set(data.analysis.issues.map((i) => i.id)));
+      setExpandedIssues(new Set(data.analysis.issues.map((i) => i.id)))
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Review failed");
+      toast.error(error instanceof Error ? error.message : 'Review failed')
     },
-  });
+  })
 
   const toggleIssue = useCallback((issueId: string) => {
     setExpandedIssues((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(issueId)) {
-        next.delete(issueId);
+        next.delete(issueId)
       } else {
-        next.add(issueId);
+        next.add(issueId)
       }
-      return next;
-    });
-  }, []);
+      return next
+    })
+  }, [])
 
   const handleEditFeature = useCallback((issueId: string) => {
-    setEditingFeature(issueId);
-  }, []);
+    setEditingFeature(issueId)
+  }, [])
 
-  const handleSaveFeature = useCallback((issueId: string, feature: Issue["proposed_fix"]) => {
-    if (feature) {
-      setEditedFeatures((prev) => ({ ...prev, [issueId]: feature }));
-    }
-    setEditingFeature(null);
-  }, []);
+  const handleSaveFeature = useCallback(
+    (issueId: string, feature: Issue['proposed_fix']) => {
+      if (feature) {
+        setEditedFeatures((prev) => ({ ...prev, [issueId]: feature }))
+      }
+      setEditingFeature(null)
+    },
+    [],
+  )
 
-  const handleAcceptFeature = useCallback(async (issue: Issue) => {
-    const feature = editedFeatures[issue.id] || issue.proposed_fix;
-    if (!feature) {
-      toast.error("No feature to accept");
-      return;
-    }
+  const handleAcceptFeature = useCallback(
+    async (issue: Issue) => {
+      const feature = editedFeatures[issue.id] || issue.proposed_fix
+      if (!feature) {
+        toast.error('No feature to accept')
+        return
+      }
 
-    // TODO: Call API to create feature
-    toast.success(`Created feature: ${feature.feature_name}`);
-    onFeaturesCreated?.([{ id: `FEAT-NEW`, name: feature.feature_name }]);
-  }, [editedFeatures, onFeaturesCreated]);
+      // TODO: Call API to create feature
+      toast.success(`Created feature: ${feature.feature_name}`)
+      onFeaturesCreated?.([{ id: `FEAT-NEW`, name: feature.feature_name }])
+    },
+    [editedFeatures, onFeaturesCreated],
+  )
 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
-      case "critical":
-        return <Badge variant="rose">Critical</Badge>;
-      case "high":
-        return <Badge variant="amber">High</Badge>;
-      case "medium":
-        return <Badge variant="default">Medium</Badge>;
-      case "low":
-        return <Badge variant="phosphor">Low</Badge>;
+      case 'critical':
+        return <Badge variant="rose">Critical</Badge>
+      case 'high':
+        return <Badge variant="amber">High</Badge>
+      case 'medium':
+        return <Badge variant="default">Medium</Badge>
+      case 'low':
+        return <Badge variant="phosphor">Low</Badge>
       default:
-        return <Badge>{severity}</Badge>;
+        return <Badge>{severity}</Badge>
     }
-  };
+  }
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
-      case "error":
-        return <AlertCircle className="h-4 w-4 text-rose-400" />;
-      case "performance":
-        return <Gauge className="h-4 w-4 text-amber-400" />;
-      case "ux":
-        return <FileCode className="h-4 w-4 text-blue-400" />;
-      case "accessibility":
-        return <Terminal className="h-4 w-4 text-purple-400" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-rose-400" />
+      case 'performance':
+        return <Gauge className="h-4 w-4 text-amber-400" />
+      case 'ux':
+        return <FileCode className="h-4 w-4 text-blue-400" />
+      case 'accessibility':
+        return <Terminal className="h-4 w-4 text-purple-400" />
       default:
-        return <Network className="h-4 w-4 text-slate-400" />;
+        return <Network className="h-4 w-4 text-slate-400" />
     }
-  };
+  }
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-phosphor-400";
-    if (score >= 50) return "text-amber-400";
-    return "text-rose-400";
-  };
+    if (score >= 80) return 'text-phosphor-400'
+    if (score >= 50) return 'text-amber-400'
+    return 'text-rose-400'
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -221,7 +231,9 @@ export function EvidenceReviewDialog({
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Left: Screenshot preview */}
           <div className="w-1/3 border-r border-slate-700 p-4 overflow-auto bg-slate-900/50">
-            <h3 className="text-sm font-medium text-slate-300 mb-3">Captured Evidence</h3>
+            <h3 className="text-sm font-medium text-slate-300 mb-3">
+              Captured Evidence
+            </h3>
             <div className="rounded border border-slate-700 overflow-hidden mb-4 relative">
               <Image
                 src={screenshotUrl}
@@ -254,22 +266,22 @@ export function EvidenceReviewDialog({
                   Request Agent Analysis
                 </h3>
                 <p className="text-sm text-slate-400 text-center max-w-md mb-6">
-                  An AI agent will analyze the captured evidence to identify issues,
-                  potential bugs, and propose features to fix them.
+                  An AI agent will analyze the captured evidence to identify
+                  issues, potential bugs, and propose features to fix them.
                 </p>
 
                 <div className="flex items-center gap-3 mb-6">
                   <Button
-                    variant={selectedAgent === "gemini" ? "primary" : "outline"}
+                    variant={selectedAgent === 'gemini' ? 'primary' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedAgent("gemini")}
+                    onClick={() => setSelectedAgent('gemini')}
                   >
                     Gemini (Fast)
                   </Button>
                   <Button
-                    variant={selectedAgent === "claude" ? "primary" : "outline"}
+                    variant={selectedAgent === 'claude' ? 'primary' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedAgent("claude")}
+                    onClick={() => setSelectedAgent('claude')}
                   >
                     Claude (Detailed)
                   </Button>
@@ -289,7 +301,8 @@ export function EvidenceReviewDialog({
                   ) : (
                     <>
                       <Bot className="h-4 w-4" />
-                      Analyze with {selectedAgent === "gemini" ? "Gemini" : "Claude"}
+                      Analyze with{' '}
+                      {selectedAgent === 'gemini' ? 'Gemini' : 'Claude'}
                     </>
                   )}
                 </Button>
@@ -299,18 +312,20 @@ export function EvidenceReviewDialog({
               <div className="flex-1 overflow-auto p-4">
                 {/* Overall score */}
                 <div className="flex items-center gap-4 mb-6 p-4 rounded-lg bg-slate-800/50 border border-slate-700">
-                  <div className={`text-4xl font-bold mono ${getScoreColor(analysis.overall.score)}`}>
+                  <div
+                    className={`text-4xl font-bold mono ${getScoreColor(analysis.overall.score)}`}
+                  >
                     {analysis.overall.score}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge
                         variant={
-                          analysis.overall.status === "good"
-                            ? "phosphor"
-                            : analysis.overall.status === "acceptable"
-                            ? "amber"
-                            : "rose"
+                          analysis.overall.status === 'good'
+                            ? 'phosphor'
+                            : analysis.overall.status === 'acceptable'
+                              ? 'amber'
+                              : 'rose'
                         }
                       >
                         {analysis.overall.status}
@@ -319,7 +334,9 @@ export function EvidenceReviewDialog({
                         {analysis.issues.length} issue(s) found
                       </span>
                     </div>
-                    <p className="text-sm text-slate-300">{analysis.overall.summary}</p>
+                    <p className="text-sm text-slate-300">
+                      {analysis.overall.summary}
+                    </p>
                   </div>
                 </div>
 
@@ -336,9 +353,10 @@ export function EvidenceReviewDialog({
                 ) : (
                   <div className="space-y-3">
                     {analysis.issues.map((issue) => {
-                      const isExpanded = expandedIssues.has(issue.id);
-                      const isEditing = editingFeature === issue.id;
-                      const currentFeature = editedFeatures[issue.id] || issue.proposed_fix;
+                      const isExpanded = expandedIssues.has(issue.id)
+                      const isEditing = editingFeature === issue.id
+                      const currentFeature =
+                        editedFeatures[issue.id] || issue.proposed_fix
 
                       return (
                         <div
@@ -367,7 +385,7 @@ export function EvidenceReviewDialog({
                             {isExpanded && (
                               <motion.div
                                 initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
+                                animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
                                 className="border-t border-slate-700/50"
                               >
@@ -376,7 +394,9 @@ export function EvidenceReviewDialog({
                                     <h4 className="text-xs text-slate-500 uppercase mb-1">
                                       Description
                                     </h4>
-                                    <p className="text-sm text-slate-300">{issue.description}</p>
+                                    <p className="text-sm text-slate-300">
+                                      {issue.description}
+                                    </p>
                                   </div>
 
                                   <div>
@@ -398,7 +418,9 @@ export function EvidenceReviewDialog({
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          onClick={() => handleEditFeature(issue.id)}
+                                          onClick={() =>
+                                            handleEditFeature(issue.id)
+                                          }
                                           className="h-6 px-2"
                                         >
                                           <Edit3 className="h-3 w-3 mr-1" />
@@ -413,13 +435,16 @@ export function EvidenceReviewDialog({
                                               Feature Name
                                             </label>
                                             <Input
-                                              value={currentFeature.feature_name}
+                                              value={
+                                                currentFeature.feature_name
+                                              }
                                               onChange={(e) =>
                                                 setEditedFeatures((prev) => ({
                                                   ...prev,
                                                   [issue.id]: {
                                                     ...currentFeature,
-                                                    feature_name: e.target.value,
+                                                    feature_name:
+                                                      e.target.value,
                                                   },
                                                 }))
                                               }
@@ -448,7 +473,9 @@ export function EvidenceReviewDialog({
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              onClick={() => setEditingFeature(null)}
+                                              onClick={() =>
+                                                setEditingFeature(null)
+                                              }
                                             >
                                               Cancel
                                             </Button>
@@ -456,7 +483,10 @@ export function EvidenceReviewDialog({
                                               variant="primary"
                                               size="sm"
                                               onClick={() =>
-                                                handleSaveFeature(issue.id, currentFeature)
+                                                handleSaveFeature(
+                                                  issue.id,
+                                                  currentFeature,
+                                                )
                                               }
                                             >
                                               Save
@@ -471,11 +501,16 @@ export function EvidenceReviewDialog({
                                           <p className="text-sm text-slate-400 mb-2">
                                             {currentFeature.description}
                                           </p>
-                                          {currentFeature.acceptance_criteria.length > 0 && (
+                                          {currentFeature.acceptance_criteria
+                                            .length > 0 && (
                                             <div className="text-xs">
-                                              <span className="text-slate-500">Criteria: </span>
+                                              <span className="text-slate-500">
+                                                Criteria:{' '}
+                                              </span>
                                               <span className="text-slate-400">
-                                                {currentFeature.acceptance_criteria.join(", ")}
+                                                {currentFeature.acceptance_criteria.join(
+                                                  ', ',
+                                                )}
                                               </span>
                                             </div>
                                           )}
@@ -490,7 +525,9 @@ export function EvidenceReviewDialog({
                                       <Button
                                         variant="primary"
                                         size="sm"
-                                        onClick={() => handleAcceptFeature(issue)}
+                                        onClick={() =>
+                                          handleAcceptFeature(issue)
+                                        }
                                         className="gap-1.5"
                                       >
                                         <Plus className="h-4 w-4" />
@@ -503,7 +540,7 @@ export function EvidenceReviewDialog({
                             )}
                           </AnimatePresence>
                         </div>
-                      );
+                      )
                     })}
                   </div>
                 )}
@@ -511,7 +548,9 @@ export function EvidenceReviewDialog({
                 {/* Raw analysis fallback */}
                 {analysis.raw_analysis && (
                   <div className="mt-6 p-4 rounded border border-slate-700 bg-slate-900">
-                    <h4 className="text-xs text-slate-500 uppercase mb-2">Raw Analysis</h4>
+                    <h4 className="text-xs text-slate-500 uppercase mb-2">
+                      Raw Analysis
+                    </h4>
                     <pre className="text-xs text-slate-400 whitespace-pre-wrap font-mono">
                       {analysis.raw_analysis}
                     </pre>
@@ -526,21 +565,26 @@ export function EvidenceReviewDialog({
         {analysis && (
           <div className="border-t border-slate-700 px-5 py-3 bg-slate-900/80 flex justify-between items-center">
             <div className="text-xs text-slate-500">
-              Reviewed by {reviewMutation.data?.agent} ({reviewMutation.data?.model})
+              Reviewed by {reviewMutation.data?.agent} (
+              {reviewMutation.data?.model})
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setAnalysis(null);
-                  setExpandedIssues(new Set());
-                  setEditedFeatures({});
+                  setAnalysis(null)
+                  setExpandedIssues(new Set())
+                  setEditedFeatures({})
                 }}
               >
                 Re-analyze
               </Button>
-              <Button variant="primary" size="sm" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+              >
                 Done
               </Button>
             </div>
@@ -548,5 +592,5 @@ export function EvidenceReviewDialog({
         )}
       </DialogContent>
     </Dialog>
-  );
+  )
 }

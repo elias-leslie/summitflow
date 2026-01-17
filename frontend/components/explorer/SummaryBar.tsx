@@ -5,44 +5,44 @@
  * Clicking any metric acts as a quick filter.
  */
 
-"use client";
+'use client'
 
-import { cn } from "@/lib/utils";
-import { RefreshCw, Clock, Loader2 } from "lucide-react";
-import { StatusIndicator } from "./StatusIndicator";
-import type { ExplorerType, HealthStatus, ExplorerStats } from "./types";
+import { Clock, Loader2, RefreshCw } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { StatusIndicator } from './StatusIndicator'
+import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
 
 interface SummaryBarProps {
-  type: ExplorerType;
-  stats: ExplorerStats;
-  activeFilter: HealthStatus | "all";
-  onFilterChange: (filter: HealthStatus | "all") => void;
-  onScan: () => void;
-  isScanning?: boolean;
-  className?: string;
+  type: ExplorerType
+  stats: ExplorerStats
+  activeFilter: HealthStatus | 'all'
+  onFilterChange: (filter: HealthStatus | 'all') => void
+  onScan: () => void
+  isScanning?: boolean
+  className?: string
 }
 
 const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
-  files: { singular: "file", plural: "files" },
-  database: { singular: "table", plural: "tables" },
-  celery: { singular: "task", plural: "tasks" },
-  api: { singular: "endpoint", plural: "endpoints" },
-  pages: { singular: "page", plural: "pages" },
-};
+  files: { singular: 'file', plural: 'files' },
+  database: { singular: 'table', plural: 'tables' },
+  celery: { singular: 'task', plural: 'tasks' },
+  api: { singular: 'endpoint', plural: 'endpoints' },
+  pages: { singular: 'page', plural: 'pages' },
+}
 
 function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return "never";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
+  if (!dateStr) return 'never'
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${diffDays}d ago`;
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${diffDays}d ago`
 }
 
 export function SummaryBar({
@@ -54,27 +54,27 @@ export function SummaryBar({
   isScanning = false,
   className,
 }: SummaryBarProps) {
-  const labels = typeLabels[type];
+  const labels = typeLabels[type]
 
   const metrics: {
-    key: HealthStatus | "all";
-    value: number;
-    label: string;
-    status?: HealthStatus;
+    key: HealthStatus | 'all'
+    value: number
+    label: string
+    status?: HealthStatus
   }[] = [
-    { key: "all", value: stats.total, label: labels.plural },
-    { key: "fresh", value: stats.fresh, label: "fresh", status: "fresh" },
-    { key: "stale", value: stats.stale, label: "stale", status: "stale" },
-    { key: "orphan", value: stats.orphan, label: "orphaned", status: "orphan" },
-  ];
+    { key: 'all', value: stats.total, label: labels.plural },
+    { key: 'fresh', value: stats.fresh, label: 'fresh', status: 'fresh' },
+    { key: 'stale', value: stats.stale, label: 'stale', status: 'stale' },
+    { key: 'orphan', value: stats.orphan, label: 'orphaned', status: 'orphan' },
+  ]
 
   return (
     <div
       className={cn(
-        "flex items-center gap-1 px-4 py-2",
-        "bg-slate-900/30 border-b border-slate-700/50",
-        "text-sm",
-        className
+        'flex items-center gap-1 px-4 py-2',
+        'bg-slate-900/30 border-b border-slate-700/50',
+        'text-sm',
+        className,
       )}
     >
       {/* Metrics */}
@@ -84,9 +84,10 @@ export function SummaryBar({
             key={metric.key}
             onClick={() => onFilterChange(metric.key)}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 rounded-md transition-all duration-150",
-              "hover:bg-slate-800/50",
-              activeFilter === metric.key && "bg-slate-800 ring-1 ring-slate-600"
+              'flex items-center gap-1.5 px-2 py-1 rounded-md transition-all duration-150',
+              'hover:bg-slate-800/50',
+              activeFilter === metric.key &&
+                'bg-slate-800 ring-1 ring-slate-600',
             )}
           >
             {metric.status && (
@@ -94,11 +95,11 @@ export function SummaryBar({
             )}
             <span
               className={cn(
-                "font-mono font-semibold tabular-nums",
-                metric.status === "fresh" && "text-phosphor-400",
-                metric.status === "stale" && "text-amber-400",
-                metric.status === "orphan" && "text-rose-400",
-                !metric.status && "text-slate-200"
+                'font-mono font-semibold tabular-nums',
+                metric.status === 'fresh' && 'text-phosphor-400',
+                metric.status === 'stale' && 'text-amber-400',
+                metric.status === 'orphan' && 'text-rose-400',
+                !metric.status && 'text-slate-200',
               )}
             >
               {metric.value.toLocaleString()}
@@ -122,11 +123,11 @@ export function SummaryBar({
         onClick={onScan}
         disabled={isScanning}
         className={cn(
-          "flex items-center gap-2 px-3 py-1.5 rounded-md",
-          "text-xs font-medium transition-all duration-200",
-          "border border-slate-600 hover:border-phosphor-500/50",
-          "hover:bg-phosphor-500/10 hover:text-phosphor-400",
-          isScanning && "opacity-60 cursor-not-allowed"
+          'flex items-center gap-2 px-3 py-1.5 rounded-md',
+          'text-xs font-medium transition-all duration-200',
+          'border border-slate-600 hover:border-phosphor-500/50',
+          'hover:bg-phosphor-500/10 hover:text-phosphor-400',
+          isScanning && 'opacity-60 cursor-not-allowed',
         )}
       >
         {isScanning ? (
@@ -142,17 +143,17 @@ export function SummaryBar({
         )}
       </button>
     </div>
-  );
+  )
 }
 
 interface ScanningOverlayProps {
-  className?: string;
+  className?: string
   progress?: {
-    current_type: string | null;
-    types_completed: number;
-    types_total: number;
-    progress_pct: number;
-  } | null;
+    current_type: string | null
+    types_completed: number
+    types_total: number
+    progress_pct: number
+  } | null
 }
 
 /**
@@ -160,12 +161,7 @@ interface ScanningOverlayProps {
  */
 export function ScanningOverlay({ className, progress }: ScanningOverlayProps) {
   return (
-    <div
-      className={cn(
-        "absolute inset-x-0 top-0 z-10",
-        className
-      )}
-    >
+    <div className={cn('absolute inset-x-0 top-0 z-10', className)}>
       {/* Progress bar */}
       <div className="h-1 bg-slate-800/50 overflow-hidden">
         {progress && progress.progress_pct > 0 ? (
@@ -176,20 +172,21 @@ export function ScanningOverlay({ className, progress }: ScanningOverlayProps) {
         ) : (
           <div
             className={cn(
-              "h-full w-1/3",
-              "bg-gradient-to-r from-transparent via-phosphor-500/60 to-transparent",
-              "animate-[scan-sweep_1.5s_ease-in-out_infinite]"
+              'h-full w-1/3',
+              'bg-gradient-to-r from-transparent via-phosphor-500/60 to-transparent',
+              'animate-[scan-sweep_1.5s_ease-in-out_infinite]',
             )}
           />
         )}
       </div>
 
       {/* Progress text */}
-      {progress && progress.current_type && (
+      {progress?.current_type && (
         <div className="absolute top-2 left-4 text-xs text-slate-400 bg-slate-900/90 px-2 py-1 rounded">
-          Scanning {progress.current_type}... ({progress.types_completed}/{progress.types_total})
+          Scanning {progress.current_type}... ({progress.types_completed}/
+          {progress.types_total})
         </div>
       )}
     </div>
-  );
+  )
 }

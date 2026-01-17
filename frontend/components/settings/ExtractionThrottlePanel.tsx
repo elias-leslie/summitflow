@@ -1,25 +1,25 @@
-"use client";
+'use client'
 
-import { clsx } from "clsx";
-import { Zap, AlertTriangle, Infinity, Loader2 } from "lucide-react";
+import { clsx } from 'clsx'
+import { AlertTriangle, Infinity, Loader2, Zap } from 'lucide-react'
 
 interface ExtractionThrottlePanelProps {
-  enabled: boolean;
-  rpmLimit: number;
-  onEnabledChange: (enabled: boolean) => void;
-  onRpmChange: (rpm: number) => void;
-  disabled?: boolean;
-  saving?: boolean;
+  enabled: boolean
+  rpmLimit: number
+  onEnabledChange: (enabled: boolean) => void
+  onRpmChange: (rpm: number) => void
+  disabled?: boolean
+  saving?: boolean
 }
 
 const RPM_STOPS = [
-  { value: 0, label: "Off", description: "Disabled" },
-  { value: 5, label: "Minimal", description: "5/min" },
-  { value: 10, label: "Low", description: "10/min" },
-  { value: 15, label: "Medium", description: "15/min" },
-  { value: 30, label: "High", description: "30/min" },
-  { value: 60, label: "Unlimited", description: "60/min" },
-] as const;
+  { value: 0, label: 'Off', description: 'Disabled' },
+  { value: 5, label: 'Minimal', description: '5/min' },
+  { value: 10, label: 'Low', description: '10/min' },
+  { value: 15, label: 'Medium', description: '15/min' },
+  { value: 30, label: 'High', description: '30/min' },
+  { value: 60, label: 'Unlimited', description: '60/min' },
+] as const
 
 export function ExtractionThrottlePanel({
   enabled,
@@ -29,29 +29,29 @@ export function ExtractionThrottlePanel({
   disabled = false,
   saving = false,
 }: ExtractionThrottlePanelProps) {
-  const effectiveRpm = enabled ? rpmLimit : 0;
-  const isOff = effectiveRpm === 0;
-  const isUnlimited = effectiveRpm >= 60;
+  const effectiveRpm = enabled ? rpmLimit : 0
+  const isOff = effectiveRpm === 0
+  const isUnlimited = effectiveRpm >= 60
 
   const handleStopClick = (value: number) => {
-    if (disabled || saving) return;
+    if (disabled || saving) return
 
     if (value === 0) {
-      onEnabledChange(false);
+      onEnabledChange(false)
     } else {
-      if (!enabled) onEnabledChange(true);
-      onRpmChange(value);
+      if (!enabled) onEnabledChange(true)
+      onRpmChange(value)
     }
-  };
+  }
 
   return (
     <div
       className={clsx(
-        "p-6 rounded-lg border transition-colors",
+        'p-6 rounded-lg border transition-colors',
         isOff
-          ? "bg-red-950/20 border-red-900/50"
-          : "bg-slate-800/50 border-slate-700",
-        disabled && "opacity-50 pointer-events-none",
+          ? 'bg-red-950/20 border-red-900/50'
+          : 'bg-slate-800/50 border-slate-700',
+        disabled && 'opacity-50 pointer-events-none',
       )}
     >
       {/* Header */}
@@ -59,12 +59,12 @@ export function ExtractionThrottlePanel({
         <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
           <Zap
             className={clsx(
-              "w-4 h-4 transition-colors",
+              'w-4 h-4 transition-colors',
               isOff
-                ? "text-red-400"
+                ? 'text-red-400'
                 : isUnlimited
-                  ? "text-phosphor-400"
-                  : "text-amber-400",
+                  ? 'text-phosphor-400'
+                  : 'text-amber-400',
             )}
           />
           AI Extraction Rate
@@ -76,12 +76,12 @@ export function ExtractionThrottlePanel({
         {/* Current Value Badge */}
         <div
           className={clsx(
-            "px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors",
+            'px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors',
             isOff
-              ? "bg-red-900/50 text-red-300"
+              ? 'bg-red-900/50 text-red-300'
               : isUnlimited
-                ? "bg-phosphor-900/50 text-phosphor-300"
-                : "bg-amber-900/40 text-amber-300",
+                ? 'bg-phosphor-900/50 text-phosphor-300'
+                : 'bg-amber-900/40 text-amber-300',
           )}
         >
           {isOff ? (
@@ -116,12 +116,12 @@ export function ExtractionThrottlePanel({
         {/* Progress fill */}
         <div
           className={clsx(
-            "absolute top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-200",
+            'absolute top-1/2 -translate-y-1/2 h-1 rounded-full transition-all duration-200',
             isOff
-              ? "bg-red-500/50"
+              ? 'bg-red-500/50'
               : isUnlimited
-                ? "bg-phosphor-500/50"
-                : "bg-amber-500/50",
+                ? 'bg-phosphor-500/50'
+                : 'bg-amber-500/50',
           )}
           style={{
             left: 0,
@@ -132,8 +132,8 @@ export function ExtractionThrottlePanel({
         {/* Stops */}
         <div className="relative flex justify-between">
           {RPM_STOPS.map((stop, idx) => {
-            const isActive = stop.value === effectiveRpm;
-            const isPast = stop.value < effectiveRpm;
+            const isActive = stop.value === effectiveRpm
+            const isPast = stop.value < effectiveRpm
 
             return (
               <button
@@ -141,40 +141,40 @@ export function ExtractionThrottlePanel({
                 onClick={() => handleStopClick(stop.value)}
                 disabled={disabled || saving}
                 className={clsx(
-                  "group flex flex-col items-center focus:outline-none",
-                  "transition-all duration-150",
-                  idx === 0 && "items-start",
-                  idx === RPM_STOPS.length - 1 && "items-end",
+                  'group flex flex-col items-center focus:outline-none',
+                  'transition-all duration-150',
+                  idx === 0 && 'items-start',
+                  idx === RPM_STOPS.length - 1 && 'items-end',
                 )}
               >
                 {/* Dot */}
                 <div
                   className={clsx(
-                    "w-4 h-4 rounded-full border-2 transition-all duration-150",
-                    "group-hover:scale-110",
+                    'w-4 h-4 rounded-full border-2 transition-all duration-150',
+                    'group-hover:scale-110',
                     isActive
                       ? stop.value === 0
-                        ? "bg-red-500 border-red-400 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                        ? 'bg-red-500 border-red-400 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
                         : stop.value === 60
-                          ? "bg-phosphor-500 border-phosphor-400 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
-                          : "bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                          ? 'bg-phosphor-500 border-phosphor-400 shadow-[0_0_8px_rgba(34,197,94,0.5)]'
+                          : 'bg-amber-500 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
                       : isPast
-                        ? "bg-slate-600 border-slate-500"
-                        : "bg-slate-800 border-slate-600 group-hover:border-slate-500",
+                        ? 'bg-slate-600 border-slate-500'
+                        : 'bg-slate-800 border-slate-600 group-hover:border-slate-500',
                   )}
                 />
 
                 {/* Label */}
                 <span
                   className={clsx(
-                    "mt-2 text-[10px] font-medium transition-colors",
+                    'mt-2 text-[10px] font-medium transition-colors',
                     isActive
                       ? stop.value === 0
-                        ? "text-red-400"
+                        ? 'text-red-400'
                         : stop.value === 60
-                          ? "text-phosphor-400"
-                          : "text-amber-400"
-                      : "text-slate-500 group-hover:text-slate-400",
+                          ? 'text-phosphor-400'
+                          : 'text-amber-400'
+                      : 'text-slate-500 group-hover:text-slate-400',
                   )}
                 >
                   {stop.label}
@@ -183,16 +183,16 @@ export function ExtractionThrottlePanel({
                 {/* Value (shown on hover/active) */}
                 <span
                   className={clsx(
-                    "text-[9px] transition-opacity",
+                    'text-[9px] transition-opacity',
                     isActive
-                      ? "opacity-100 text-slate-400"
-                      : "opacity-0 group-hover:opacity-100 text-slate-500",
+                      ? 'opacity-100 text-slate-400'
+                      : 'opacity-0 group-hover:opacity-100 text-slate-500',
                   )}
                 >
                   {stop.description}
                 </span>
               </button>
-            );
+            )
           })}
         </div>
       </div>
@@ -208,5 +208,5 @@ export function ExtractionThrottlePanel({
         </div>
       )}
     </div>
-  );
+  )
 }

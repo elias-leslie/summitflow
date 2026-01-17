@@ -1,14 +1,14 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Target, Pencil, Check, X, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, Check, Pencil, Target, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface ObjectiveSectionProps {
-  objective: string | null | undefined;
-  onEdit?: (text: string) => void;
-  readOnly?: boolean;
+  objective: string | null | undefined
+  onEdit?: (text: string) => void
+  readOnly?: boolean
 }
 
 export function ObjectiveSection({
@@ -16,20 +16,20 @@ export function ObjectiveSection({
   onEdit,
   readOnly = false,
 }: ObjectiveSectionProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(objective || "");
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(objective || '')
 
   const handleSave = () => {
     if (onEdit && editValue.trim()) {
-      onEdit(editValue.trim());
+      onEdit(editValue.trim())
     }
-    setIsEditing(false);
-  };
+    setIsEditing(false)
+  }
 
   const handleCancel = () => {
-    setEditValue(objective || "");
-    setIsEditing(false);
-  };
+    setEditValue(objective || '')
+    setIsEditing(false)
+  }
 
   return (
     <section>
@@ -66,7 +66,6 @@ export function ObjectiveSection({
                 text-sm text-white placeholder:text-slate-500 resize-none
                 focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500"
               rows={3}
-              autoFocus
             />
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={handleCancel}>
@@ -111,5 +110,5 @@ export function ObjectiveSection({
         )}
       </AnimatePresence>
     </section>
-  );
+  )
 }

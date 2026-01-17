@@ -1,121 +1,127 @@
-"use client";
+'use client'
 
-import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
+import { Check, ChevronDown, LayoutGrid } from 'lucide-react'
 import {
-  ChevronDown,
-  Check,
-  LayoutGrid,
-} from "lucide-react";
-import clsx from "clsx";
-import { useState, useEffect, useRef } from "react";
-import { fetchProjects } from "@/lib/api";
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { fetchProjects } from '@/lib/api'
 
 interface ProjectSelectorProps {
-  onProjectChange?: (projectId: string | null) => void;
+  onProjectChange?: (projectId: string | null) => void
 }
 
 export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
-  const pathname = usePathname();
-  const params = useParams();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname()
+  const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  )
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Fetch projects
   const { data: projects } = useQuery({
-    queryKey: ["projects"],
+    queryKey: ['projects'],
     queryFn: fetchProjects,
-  });
+  })
 
   // Detect project from URL - clear selection when not on a project page
   useEffect(() => {
-    const urlProjectId = params.id as string | undefined;
+    const urlProjectId = params.id as string | undefined
     if (urlProjectId) {
-      setSelectedProjectId(urlProjectId);
-      localStorage.setItem("summitflow_selected_project", urlProjectId);
-    } else if (pathname === "/") {
+      setSelectedProjectId(urlProjectId)
+      localStorage.setItem('summitflow_selected_project', urlProjectId)
+    } else if (pathname === '/') {
       // On dashboard - clear selection
-      setSelectedProjectId(null);
-      localStorage.removeItem("summitflow_selected_project");
+      setSelectedProjectId(null)
+      localStorage.removeItem('summitflow_selected_project')
     }
-  }, [params.id, pathname]);
+  }, [params.id, pathname])
 
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false)
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
-  const selectedProject = projects?.find(p => p.id === selectedProjectId);
+  const selectedProject = projects?.find((p) => p.id === selectedProjectId)
 
   const handleSelectProject = (projectId: string | null) => {
-    setSelectedProjectId(projectId);
+    setSelectedProjectId(projectId)
     if (projectId) {
-      localStorage.setItem("summitflow_selected_project", projectId);
+      localStorage.setItem('summitflow_selected_project', projectId)
       // Navigate to project page if not already there
       if (!pathname.startsWith(`/projects/${projectId}`)) {
         // Preserve current tab and sub-context when switching projects
-        const currentTab = searchParams.get("tab");
-        const currentType = searchParams.get("type"); // Explorer type context
+        const currentTab = searchParams.get('tab')
+        const currentType = searchParams.get('type') // Explorer type context
 
-        let targetUrl = `/projects/${projectId}`;
+        let targetUrl = `/projects/${projectId}`
         if (currentTab) {
-          targetUrl += `?tab=${currentTab}`;
+          targetUrl += `?tab=${currentTab}`
           // Preserve explorer type if on explorer tab
-          if (currentTab === "explorer" && currentType) {
-            targetUrl += `&type=${currentType}`;
+          if (currentTab === 'explorer' && currentType) {
+            targetUrl += `&type=${currentType}`
           }
         }
-        router.push(targetUrl);
+        router.push(targetUrl)
       }
     } else {
-      localStorage.removeItem("summitflow_selected_project");
+      localStorage.removeItem('summitflow_selected_project')
     }
-    setIsDropdownOpen(false);
-    onProjectChange?.(projectId);
-  };
+    setIsDropdownOpen(false)
+    onProjectChange?.(projectId)
+  }
 
   const handleViewDashboard = () => {
-    setIsDropdownOpen(false);
-    router.push("/");
-  };
+    setIsDropdownOpen(false)
+    router.push('/')
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
         className={clsx(
-          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all cursor-pointer",
-          "bg-slate-800 border border-slate-700 hover:border-slate-500 hover:bg-slate-750",
-          selectedProject ? "text-white" : "text-slate-400"
+          'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all cursor-pointer',
+          'bg-slate-800 border border-slate-700 hover:border-slate-500 hover:bg-slate-750',
+          selectedProject ? 'text-white' : 'text-slate-400',
         )}
       >
         {/* Health dot */}
         <div
           className={clsx(
-            "w-2 h-2 rounded-full flex-shrink-0",
-            selectedProject?.health_status === "healthy"
-              ? "bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]"
+            'w-2 h-2 rounded-full flex-shrink-0',
+            selectedProject?.health_status === 'healthy'
+              ? 'bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]'
               : selectedProject
-                ? "bg-slate-500"
-                : "bg-slate-600"
+                ? 'bg-slate-500'
+                : 'bg-slate-600',
           )}
         />
         <span className="truncate max-w-[140px]">
-          {selectedProject ? selectedProject.name : "Select project..."}
+          {selectedProject ? selectedProject.name : 'Select project...'}
         </span>
         <ChevronDown
           className={clsx(
-            "w-4 h-4 flex-shrink-0 text-slate-500 transition-transform duration-200",
-            isDropdownOpen && "rotate-180"
+            'w-4 h-4 flex-shrink-0 text-slate-500 transition-transform duration-200',
+            isDropdownOpen && 'rotate-180',
           )}
         />
       </button>
@@ -144,19 +150,19 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
                   key={project.id}
                   onClick={() => handleSelectProject(project.id)}
                   className={clsx(
-                    "w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors cursor-pointer",
+                    'w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors cursor-pointer',
                     selectedProjectId === project.id
-                      ? "bg-outrun-500/15 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      ? 'bg-outrun-500/15 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white',
                   )}
                 >
                   <div className="flex items-center gap-2 truncate">
                     <div
                       className={clsx(
-                        "w-2 h-2 rounded-full flex-shrink-0",
-                        project.health_status === "healthy"
-                          ? "bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]"
-                          : "bg-slate-500"
+                        'w-2 h-2 rounded-full flex-shrink-0',
+                        project.health_status === 'healthy'
+                          ? 'bg-outrun-500 shadow-[0_0_6px_rgba(255,0,102,0.5)]'
+                          : 'bg-slate-500',
                       )}
                     />
                     <span className="truncate">{project.name}</span>
@@ -171,24 +177,26 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // Export hook for getting current project ID
 export function useSelectedProject() {
-  const params = useParams();
-  const pathname = usePathname();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const params = useParams()
+  const pathname = usePathname()
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  )
 
   useEffect(() => {
-    const urlProjectId = params.id as string | undefined;
+    const urlProjectId = params.id as string | undefined
     if (urlProjectId) {
-      setSelectedProjectId(urlProjectId);
-    } else if (pathname === "/") {
+      setSelectedProjectId(urlProjectId)
+    } else if (pathname === '/') {
       // On dashboard - no project selected
-      setSelectedProjectId(null);
+      setSelectedProjectId(null)
     }
-  }, [params.id, pathname]);
+  }, [params.id, pathname])
 
-  return selectedProjectId;
+  return selectedProjectId
 }

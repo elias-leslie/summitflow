@@ -1,44 +1,44 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Image from "next/image";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
   Loader2,
-  Sparkles,
-  CheckCircle2,
-  XCircle,
   RotateCcw,
-} from "lucide-react";
-import { toast } from "sonner";
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
+import Image from 'next/image'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/dialog'
 import {
   fetchMockupComparison,
-  updateMockupStatus,
   getScreenshotUrl,
   type MockupStatus,
-} from "@/lib/api/evidence";
+  updateMockupStatus,
+} from '@/lib/api/evidence'
+import { cn } from '@/lib/utils'
 
 interface MockupComparisonDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  entryId: number;
-  entryPath?: string;
-  onStatusChange?: () => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  entryId: number
+  entryPath?: string
+  onStatusChange?: () => void
 }
 
 const statusConfig: Record<
@@ -46,26 +46,26 @@ const statusConfig: Record<
   { label: string; color: string; icon: typeof CheckCircle2 }
 > = {
   generated: {
-    label: "Generated",
-    color: "bg-slate-500/20 text-slate-400",
+    label: 'Generated',
+    color: 'bg-slate-500/20 text-slate-400',
     icon: Sparkles,
   },
   pending_approval: {
-    label: "Pending Approval",
-    color: "bg-amber-500/20 text-amber-400",
+    label: 'Pending Approval',
+    color: 'bg-amber-500/20 text-amber-400',
     icon: Eye,
   },
   approved: {
-    label: "Approved",
-    color: "bg-green-500/20 text-green-400",
+    label: 'Approved',
+    color: 'bg-green-500/20 text-green-400',
     icon: CheckCircle2,
   },
   rejected: {
-    label: "Rejected",
-    color: "bg-red-500/20 text-red-400",
+    label: 'Rejected',
+    color: 'bg-red-500/20 text-red-400',
     icon: XCircle,
   },
-};
+}
 
 export function MockupComparisonDialog({
   open,
@@ -75,56 +75,54 @@ export function MockupComparisonDialog({
   entryPath,
   onStatusChange,
 }: MockupComparisonDialogProps) {
-  const queryClient = useQueryClient();
-  const [showDiff, setShowDiff] = useState(false);
-  const [viewMode, setViewMode] = useState<"side-by-side" | "slider">(
-    "side-by-side",
-  );
-  const [sliderPos, setSliderPos] = useState(50);
+  const queryClient = useQueryClient()
+  const [showDiff, setShowDiff] = useState(false)
+  const [viewMode, setViewMode] = useState<'side-by-side' | 'slider'>(
+    'side-by-side',
+  )
+  const [sliderPos, setSliderPos] = useState(50)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["mockup-comparison", projectId, entryId],
+    queryKey: ['mockup-comparison', projectId, entryId],
     queryFn: () => fetchMockupComparison(projectId, entryId),
     enabled: open,
-  });
+  })
 
   const statusMutation = useMutation({
     mutationFn: ({
       evidenceId,
       status,
     }: {
-      evidenceId: string;
-      status: MockupStatus;
+      evidenceId: string
+      status: MockupStatus
     }) => updateMockupStatus(projectId, evidenceId, status),
     onSuccess: (_, { status }) => {
-      toast.success(
-        `Mockup ${status === "approved" ? "approved" : "rejected"}`,
-      );
+      toast.success(`Mockup ${status === 'approved' ? 'approved' : 'rejected'}`)
       queryClient.invalidateQueries({
-        queryKey: ["mockup-comparison", projectId, entryId],
-      });
+        queryKey: ['mockup-comparison', projectId, entryId],
+      })
       queryClient.invalidateQueries({
-        queryKey: ["entry-mockups", projectId, entryId],
-      });
-      onStatusChange?.();
+        queryKey: ['entry-mockups', projectId, entryId],
+      })
+      onStatusChange?.()
     },
     onError: (error: Error) => {
-      toast.error(error.message);
+      toast.error(error.message)
     },
-  });
+  })
 
-  const mockup = data?.mockup;
-  const actual = data?.actualScreenshot;
+  const mockup = data?.mockup
+  const actual = data?.actualScreenshot
 
   const mockupUrl = mockup
     ? getScreenshotUrl(projectId, mockup.evidenceId)
-    : null;
+    : null
   const actualUrl = actual
     ? getScreenshotUrl(projectId, actual.evidenceId)
-    : null;
+    : null
 
-  const currentStatus = mockup?.mockupStatus;
-  const StatusIcon = currentStatus ? statusConfig[currentStatus]?.icon : null;
+  const currentStatus = mockup?.mockupStatus
+  const StatusIcon = currentStatus ? statusConfig[currentStatus]?.icon : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,7 +134,7 @@ export function MockupComparisonDialog({
             {currentStatus && (
               <Badge
                 variant="outline"
-                className={cn("ml-2", statusConfig[currentStatus]?.color)}
+                className={cn('ml-2', statusConfig[currentStatus]?.color)}
               >
                 {StatusIcon && <StatusIcon className="w-3 h-3 mr-1" />}
                 {statusConfig[currentStatus]?.label}
@@ -146,7 +144,7 @@ export function MockupComparisonDialog({
           <DialogDescription>
             {entryPath ? (
               <>
-                Comparing mockup (target) vs actual screenshot for{" "}
+                Comparing mockup (target) vs actual screenshot for{' '}
                 <code className="text-phosphor-400">{entryPath}</code>
               </>
             ) : (
@@ -171,23 +169,23 @@ export function MockupComparisonDialog({
             {/* View Controls */}
             <div className="flex items-center justify-end gap-2">
               <button
-                onClick={() => setViewMode("side-by-side")}
+                onClick={() => setViewMode('side-by-side')}
                 className={cn(
-                  "px-2 py-1 text-xs rounded",
-                  viewMode === "side-by-side"
-                    ? "bg-phosphor-500/20 text-phosphor-400"
-                    : "text-slate-400 hover:text-white",
+                  'px-2 py-1 text-xs rounded',
+                  viewMode === 'side-by-side'
+                    ? 'bg-phosphor-500/20 text-phosphor-400'
+                    : 'text-slate-400 hover:text-white',
                 )}
               >
                 Side by Side
               </button>
               <button
-                onClick={() => setViewMode("slider")}
+                onClick={() => setViewMode('slider')}
                 className={cn(
-                  "px-2 py-1 text-xs rounded",
-                  viewMode === "slider"
-                    ? "bg-phosphor-500/20 text-phosphor-400"
-                    : "text-slate-400 hover:text-white",
+                  'px-2 py-1 text-xs rounded',
+                  viewMode === 'slider'
+                    ? 'bg-phosphor-500/20 text-phosphor-400'
+                    : 'text-slate-400 hover:text-white',
                 )}
               >
                 Slider
@@ -195,10 +193,10 @@ export function MockupComparisonDialog({
               <button
                 onClick={() => setShowDiff(!showDiff)}
                 className={cn(
-                  "px-2 py-1 text-xs rounded flex items-center gap-1",
+                  'px-2 py-1 text-xs rounded flex items-center gap-1',
                   showDiff
-                    ? "bg-amber-500/20 text-amber-400"
-                    : "text-slate-400 hover:text-white",
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : 'text-slate-400 hover:text-white',
                 )}
               >
                 {showDiff ? (
@@ -211,7 +209,7 @@ export function MockupComparisonDialog({
             </div>
 
             {/* Comparison View */}
-            {viewMode === "side-by-side" ? (
+            {viewMode === 'side-by-side' ? (
               <div className="grid grid-cols-2 gap-2">
                 {/* Actual Screenshot */}
                 <div className="rounded-lg border border-slate-700 overflow-hidden">
@@ -249,8 +247,8 @@ export function MockupComparisonDialog({
                         alt="Mockup"
                         fill
                         className={cn(
-                          "object-contain",
-                          showDiff && "mix-blend-difference",
+                          'object-contain',
+                          showDiff && 'mix-blend-difference',
                         )}
                         unoptimized
                       />
@@ -326,7 +324,7 @@ export function MockupComparisonDialog({
                     {mockup.evidenceId}
                   </div>
                   <div className="text-xs text-slate-500">
-                    Version {mockup.version} · Captured{" "}
+                    Version {mockup.version} · Captured{' '}
                     {new Date(mockup.capturedAt).toLocaleDateString()}
                   </div>
                 </div>
@@ -337,7 +335,7 @@ export function MockupComparisonDialog({
                       {actual.evidenceId}
                     </div>
                     <div className="text-xs text-slate-500">
-                      Version {actual.version} · Captured{" "}
+                      Version {actual.version} · Captured{' '}
                       {new Date(actual.capturedAt).toLocaleDateString()}
                     </div>
                   </div>
@@ -352,14 +350,14 @@ export function MockupComparisonDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          {mockup && currentStatus !== "approved" && (
+          {mockup && currentStatus !== 'approved' && (
             <>
               <Button
                 variant="outline"
                 onClick={() =>
                   statusMutation.mutate({
                     evidenceId: mockup.evidenceId,
-                    status: "rejected",
+                    status: 'rejected',
                   })
                 }
                 disabled={statusMutation.isPending}
@@ -376,7 +374,7 @@ export function MockupComparisonDialog({
                 onClick={() =>
                   statusMutation.mutate({
                     evidenceId: mockup.evidenceId,
-                    status: "approved",
+                    status: 'approved',
                   })
                 }
                 disabled={statusMutation.isPending}
@@ -391,13 +389,13 @@ export function MockupComparisonDialog({
               </Button>
             </>
           )}
-          {mockup && currentStatus === "rejected" && (
+          {mockup && currentStatus === 'rejected' && (
             <Button
               variant="outline"
               onClick={() =>
                 statusMutation.mutate({
                   evidenceId: mockup.evidenceId,
-                  status: "pending_approval",
+                  status: 'pending_approval',
                 })
               }
               disabled={statusMutation.isPending}
@@ -410,5 +408,5 @@ export function MockupComparisonDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

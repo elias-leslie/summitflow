@@ -7,39 +7,39 @@
  * - React Query caching with staleTime/refetchInterval
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query'
 import {
-  fetchScanHistory,
   fetchScanComparison,
-  type ScanHistoryResponse,
+  fetchScanHistory,
   type ScanComparison,
-} from "@/lib/api/explorer";
+  type ScanHistoryResponse,
+} from '@/lib/api/explorer'
 
 // Query key factories for consistent cache management
 export const scanHistoryKeys = {
-  all: ["scan-history"] as const,
+  all: ['scan-history'] as const,
   history: (projectId: string, days: number, scanType?: string) =>
-    [...scanHistoryKeys.all, projectId, days, scanType ?? "all"] as const,
+    [...scanHistoryKeys.all, projectId, days, scanType ?? 'all'] as const,
   comparison: (projectId: string, before: number, after: number) =>
-    [...scanHistoryKeys.all, "comparison", projectId, before, after] as const,
-};
+    [...scanHistoryKeys.all, 'comparison', projectId, before, after] as const,
+}
 
 interface UseScanHistoryOptions {
-  projectId: string;
-  days?: number;
-  scanType?: string;
-  enabled?: boolean;
+  projectId: string
+  days?: number
+  scanType?: string
+  enabled?: boolean
 }
 
 interface UseScanHistoryReturn {
-  data: ScanHistoryResponse | undefined;
-  scans: ScanHistoryResponse["scans"];
-  sparklineData: ScanHistoryResponse["sparkline_data"] | undefined;
-  summary: ScanHistoryResponse["summary"] | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-  refetch: () => void;
+  data: ScanHistoryResponse | undefined
+  scans: ScanHistoryResponse['scans']
+  sparklineData: ScanHistoryResponse['sparkline_data'] | undefined
+  summary: ScanHistoryResponse['summary'] | undefined
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
+  refetch: () => void
 }
 
 /**
@@ -63,7 +63,7 @@ export function useScanHistory({
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchInterval: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
-  });
+  })
 
   return {
     data: query.data,
@@ -74,21 +74,21 @@ export function useScanHistory({
     isError: query.isError,
     error: query.error,
     refetch: () => query.refetch(),
-  };
+  }
 }
 
 interface UseScanComparisonOptions {
-  projectId: string;
-  before: number;
-  after: number;
-  enabled?: boolean;
+  projectId: string
+  before: number
+  after: number
+  enabled?: boolean
 }
 
 interface UseScanComparisonReturn {
-  data: ScanComparison | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
+  data: ScanComparison | undefined
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
 }
 
 /**
@@ -111,12 +111,12 @@ export function useScanComparison({
     enabled: enabled && !!projectId && before > 0 && after > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes - comparisons don't change
     gcTime: 30 * 60 * 1000, // 30 minutes
-  });
+  })
 
   return {
     data: query.data,
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
-  };
+  }
 }

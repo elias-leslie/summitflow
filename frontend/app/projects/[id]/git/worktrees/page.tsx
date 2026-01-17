@@ -1,61 +1,61 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  GitBranch,
-  Trash2,
   AlertTriangle,
-  Loader2,
-  HardDrive,
   ArrowLeft,
-  FileCode2,
-  Plus,
-  Minus,
-  ExternalLink,
-  Eye,
-  GitMerge,
-  Upload,
-  GitPullRequest,
-  Sparkles,
-  X,
   Check,
   Clock,
-} from "lucide-react";
-import Link from "next/link";
+  ExternalLink,
+  Eye,
+  FileCode2,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  HardDrive,
+  Loader2,
+  Minus,
+  Plus,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { useState } from 'react'
 import {
-  fetchWorktrees,
+  type CleanupResponse,
+  cleanupWorktrees,
+  createPullRequest,
   deleteWorktree,
   fetchWorktreeDiff,
+  fetchWorktrees,
   mergeWorktree,
   pushWorktree,
-  createPullRequest,
-  cleanupWorktrees,
   type WorktreeInfo,
-  type CleanupResponse,
-} from "@/lib/api";
+} from '@/lib/api'
 
-type ModalType = "diff" | "merge" | "pr" | "cleanup" | null;
+type ModalType = 'diff' | 'merge' | 'pr' | 'cleanup' | null
 
 export default function WorktreesPage() {
-  const params = useParams();
-  const projectId = params.id as string;
-  const queryClient = useQueryClient();
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const params = useParams()
+  const projectId = params.id as string
+  const queryClient = useQueryClient()
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [activeModal, setActiveModal] = useState<ModalType>(null)
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeInfo | null>(
     null,
-  );
+  )
   const [toast, setToast] = useState<{
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
+    message: string
+    type: 'success' | 'error'
+  } | null>(null)
 
-  const showToast = (message: string, type: "success" | "error") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const {
     data: worktreesData,
@@ -63,38 +63,38 @@ export default function WorktreesPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["worktrees", projectId],
+    queryKey: ['worktrees', projectId],
     queryFn: () => fetchWorktrees(projectId),
     refetchInterval: 30000,
-  });
+  })
 
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => deleteWorktree(projectId, taskId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["worktrees", projectId] });
-      setDeleteTarget(null);
-      showToast("Worktree deleted", "success");
+      queryClient.invalidateQueries({ queryKey: ['worktrees', projectId] })
+      setDeleteTarget(null)
+      showToast('Worktree deleted', 'success')
     },
-    onError: () => showToast("Failed to delete worktree", "error"),
-  });
+    onError: () => showToast('Failed to delete worktree', 'error'),
+  })
 
   const mergeMutation = useMutation({
     mutationFn: (taskId: string) => mergeWorktree(projectId, taskId, true),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["worktrees", projectId] });
-      setActiveModal(null);
-      showToast("Merged to main successfully", "success");
+      queryClient.invalidateQueries({ queryKey: ['worktrees', projectId] })
+      setActiveModal(null)
+      showToast('Merged to main successfully', 'success')
     },
-    onError: () => showToast("Merge failed - check for conflicts", "error"),
-  });
+    onError: () => showToast('Merge failed - check for conflicts', 'error'),
+  })
 
   const pushMutation = useMutation({
     mutationFn: (taskId: string) => pushWorktree(projectId, taskId),
     onSuccess: (data) => {
-      showToast(`Pushed ${data.branch} to origin`, "success");
+      showToast(`Pushed ${data.branch} to origin`, 'success')
     },
-    onError: () => showToast("Push failed", "error"),
-  });
+    onError: () => showToast('Push failed', 'error'),
+  })
 
   const prMutation = useMutation({
     mutationFn: ({
@@ -102,38 +102,38 @@ export default function WorktreesPage() {
       title,
       body,
     }: {
-      taskId: string;
-      title: string;
-      body: string;
+      taskId: string
+      title: string
+      body: string
     }) => createPullRequest(taskId, { title, body }),
     onSuccess: (data) => {
-      setActiveModal(null);
-      showToast("Pull request created", "success");
-      window.open(data.pr_url, "_blank");
+      setActiveModal(null)
+      showToast('Pull request created', 'success')
+      window.open(data.pr_url, '_blank')
     },
-    onError: () => showToast("Failed to create PR", "error"),
-  });
+    onError: () => showToast('Failed to create PR', 'error'),
+  })
 
   const handleDelete = (taskId: string) => {
     if (deleteTarget === taskId) {
-      deleteMutation.mutate(taskId);
+      deleteMutation.mutate(taskId)
     } else {
-      setDeleteTarget(taskId);
-      setTimeout(() => setDeleteTarget(null), 3000);
+      setDeleteTarget(taskId)
+      setTimeout(() => setDeleteTarget(null), 3000)
     }
-  };
+  }
 
   const openModal = (modal: ModalType, worktree?: WorktreeInfo) => {
-    setActiveModal(modal);
-    if (worktree) setSelectedWorktree(worktree);
-  };
+    setActiveModal(modal)
+    if (worktree) setSelectedWorktree(worktree)
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
         <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
       </div>
-    );
+    )
   }
 
   if (error) {
@@ -152,10 +152,10 @@ export default function WorktreesPage() {
           </button>
         </div>
       </div>
-    );
+    )
   }
 
-  const worktrees = worktreesData?.worktrees ?? [];
+  const worktrees = worktreesData?.worktrees ?? []
 
   return (
     <div className="p-6 space-y-6">
@@ -163,12 +163,12 @@ export default function WorktreesPage() {
       {toast && (
         <div
           className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 ${
-            toast.type === "success"
-              ? "bg-emerald-500/20 border border-emerald-500/50 text-emerald-400"
-              : "bg-rose-500/20 border border-rose-500/50 text-rose-400"
+            toast.type === 'success'
+              ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400'
+              : 'bg-rose-500/20 border border-rose-500/50 text-rose-400'
           }`}
         >
-          {toast.type === "success" ? (
+          {toast.type === 'success' ? (
             <Check className="w-4 h-4" />
           ) : (
             <AlertTriangle className="w-4 h-4" />
@@ -204,7 +204,7 @@ export default function WorktreesPage() {
           </div>
           {worktrees.length > 0 && (
             <button
-              onClick={() => openModal("cleanup")}
+              onClick={() => openModal('cleanup')}
               className="btn-secondary flex items-center gap-2"
             >
               <Sparkles className="w-4 h-4" />
@@ -227,10 +227,10 @@ export default function WorktreesPage() {
               isDeleting={
                 deleteMutation.isPending && deleteTarget === wt.task_id
               }
-              onViewDiff={() => openModal("diff", wt)}
-              onMerge={() => openModal("merge", wt)}
+              onViewDiff={() => openModal('diff', wt)}
+              onMerge={() => openModal('merge', wt)}
               onPush={() => pushMutation.mutate(wt.task_id)}
-              onCreatePR={() => openModal("pr", wt)}
+              onCreatePR={() => openModal('pr', wt)}
               isPushing={pushMutation.isPending}
             />
           ))}
@@ -242,7 +242,7 @@ export default function WorktreesPage() {
             No Active Worktrees
           </h3>
           <p className="text-slate-400 max-w-md mx-auto">
-            Worktrees are created when agents claim tasks using{" "}
+            Worktrees are created when agents claim tasks using{' '}
             <code className="mono text-xs bg-slate-800 px-1.5 py-0.5 rounded">
               st claim --agent
             </code>
@@ -251,7 +251,7 @@ export default function WorktreesPage() {
       )}
 
       {/* Modals */}
-      {activeModal === "diff" && selectedWorktree && (
+      {activeModal === 'diff' && selectedWorktree && (
         <DiffModal
           projectId={projectId}
           worktree={selectedWorktree}
@@ -259,7 +259,7 @@ export default function WorktreesPage() {
         />
       )}
 
-      {activeModal === "merge" && selectedWorktree && (
+      {activeModal === 'merge' && selectedWorktree && (
         <MergeModal
           worktree={selectedWorktree}
           onClose={() => setActiveModal(null)}
@@ -268,7 +268,7 @@ export default function WorktreesPage() {
         />
       )}
 
-      {activeModal === "pr" && selectedWorktree && (
+      {activeModal === 'pr' && selectedWorktree && (
         <PRModal
           worktree={selectedWorktree}
           onClose={() => setActiveModal(null)}
@@ -283,33 +283,33 @@ export default function WorktreesPage() {
         />
       )}
 
-      {activeModal === "cleanup" && (
+      {activeModal === 'cleanup' && (
         <CleanupModal
           projectId={projectId}
           onClose={() => setActiveModal(null)}
           onSuccess={() => {
             queryClient.invalidateQueries({
-              queryKey: ["worktrees", projectId],
-            });
-            showToast("Cleanup complete", "success");
+              queryKey: ['worktrees', projectId],
+            })
+            showToast('Cleanup complete', 'success')
           }}
         />
       )}
     </div>
-  );
+  )
 }
 
 interface WorktreeCardProps {
-  worktree: WorktreeInfo;
-  projectId: string;
-  deleteTarget: string | null;
-  onDelete: (taskId: string) => void;
-  isDeleting: boolean;
-  onViewDiff: () => void;
-  onMerge: () => void;
-  onPush: () => void;
-  onCreatePR: () => void;
-  isPushing: boolean;
+  worktree: WorktreeInfo
+  projectId: string
+  deleteTarget: string | null
+  onDelete: (taskId: string) => void
+  isDeleting: boolean
+  onViewDiff: () => void
+  onMerge: () => void
+  onPush: () => void
+  onCreatePR: () => void
+  isPushing: boolean
 }
 
 function WorktreeCard({
@@ -324,7 +324,7 @@ function WorktreeCard({
   onCreatePR,
   isPushing,
 }: WorktreeCardProps) {
-  const isConfirming = deleteTarget === worktree.task_id;
+  const isConfirming = deleteTarget === worktree.task_id
 
   return (
     <div className="card p-5 group hover:border-outrun-500/30 transition-colors">
@@ -437,12 +437,12 @@ function WorktreeCard({
               p-2 rounded transition-all
               ${
                 isConfirming
-                  ? "bg-rose-500/20 text-rose-400 ring-1 ring-rose-500/50"
-                  : "text-slate-500 hover:text-rose-400 hover:bg-slate-800"
+                  ? 'bg-rose-500/20 text-rose-400 ring-1 ring-rose-500/50'
+                  : 'text-slate-500 hover:text-rose-400 hover:bg-slate-800'
               }
               disabled:opacity-50
             `}
-            title={isConfirming ? "Click again to confirm" : "Delete worktree"}
+            title={isConfirming ? 'Click again to confirm' : 'Delete worktree'}
           >
             {isDeleting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -461,7 +461,7 @@ function WorktreeCard({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 function DiffModal({
@@ -469,14 +469,14 @@ function DiffModal({
   worktree,
   onClose,
 }: {
-  projectId: string;
-  worktree: WorktreeInfo;
-  onClose: () => void;
+  projectId: string
+  worktree: WorktreeInfo
+  onClose: () => void
 }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["worktree-diff", projectId, worktree.task_id],
+    queryKey: ['worktree-diff', projectId, worktree.task_id],
     queryFn: () => fetchWorktreeDiff(projectId, worktree.task_id),
-  });
+  })
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -529,11 +529,11 @@ function DiffModal({
                   >
                     <span
                       className={`mono text-xs font-medium w-4 ${
-                        file.status === "A"
-                          ? "text-emerald-400"
-                          : file.status === "D"
-                            ? "text-rose-400"
-                            : "text-amber-400"
+                        file.status === 'A'
+                          ? 'text-emerald-400'
+                          : file.status === 'D'
+                            ? 'text-rose-400'
+                            : 'text-amber-400'
                       }`}
                     >
                       {file.status}
@@ -553,7 +553,7 @@ function DiffModal({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function MergeModal({
@@ -562,10 +562,10 @@ function MergeModal({
   onConfirm,
   isPending,
 }: {
-  worktree: WorktreeInfo;
-  onClose: () => void;
-  onConfirm: () => void;
-  isPending: boolean;
+  worktree: WorktreeInfo
+  onClose: () => void
+  onConfirm: () => void
+  isPending: boolean
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -578,8 +578,8 @@ function MergeModal({
             Merge to Main?
           </h3>
           <p className="text-slate-400 text-center text-sm mb-6">
-            This will merge{" "}
-            <span className="mono text-phosphor-400">{worktree.branch}</span>{" "}
+            This will merge{' '}
+            <span className="mono text-phosphor-400">{worktree.branch}</span>{' '}
             into main and delete the worktree.
           </p>
 
@@ -618,7 +618,7 @@ function MergeModal({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function PRModal({
@@ -627,15 +627,15 @@ function PRModal({
   onConfirm,
   isPending,
 }: {
-  worktree: WorktreeInfo;
-  onClose: () => void;
-  onConfirm: (title: string, body: string) => void;
-  isPending: boolean;
+  worktree: WorktreeInfo
+  onClose: () => void
+  onConfirm: (title: string, body: string) => void
+  isPending: boolean
 }) {
-  const [title, setTitle] = useState(`feat: ${worktree.task_id}`);
+  const [title, setTitle] = useState(`feat: ${worktree.task_id}`)
   const [body, setBody] = useState(
     `## Summary\nImplemented ${worktree.task_id}\n\n## Changes\n- ${worktree.files_changed} files changed\n- +${worktree.additions} / -${worktree.deletions}`,
-  );
+  )
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -699,7 +699,7 @@ function PRModal({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function CleanupModal({
@@ -707,25 +707,25 @@ function CleanupModal({
   onClose,
   onSuccess,
 }: {
-  projectId: string;
-  onClose: () => void;
-  onSuccess: () => void;
+  projectId: string
+  onClose: () => void
+  onSuccess: () => void
 }) {
-  const [maxAgeDays, setMaxAgeDays] = useState(30);
-  const [previewData, setPreviewData] = useState<CleanupResponse | null>(null);
+  const [maxAgeDays, setMaxAgeDays] = useState(30)
+  const [previewData, setPreviewData] = useState<CleanupResponse | null>(null)
 
   const previewMutation = useMutation({
     mutationFn: () => cleanupWorktrees(projectId, maxAgeDays, true),
     onSuccess: setPreviewData,
-  });
+  })
 
   const cleanupMutation = useMutation({
     mutationFn: () => cleanupWorktrees(projectId, maxAgeDays, false),
     onSuccess: () => {
-      onSuccess();
-      onClose();
+      onSuccess()
+      onClose()
     },
-  });
+  })
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -751,7 +751,9 @@ function CleanupModal({
               <input
                 type="number"
                 value={maxAgeDays}
-                onChange={(e) => setMaxAgeDays(parseInt(e.target.value) || 30)}
+                onChange={(e) =>
+                  setMaxAgeDays(parseInt(e.target.value, 10) || 30)
+                }
                 min={1}
                 max={365}
                 className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-outrun-500"
@@ -765,7 +767,7 @@ function CleanupModal({
                 {previewMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  "Preview"
+                  'Preview'
                 )}
               </button>
             </div>
@@ -825,5 +827,5 @@ function CleanupModal({
         </div>
       </div>
     </div>
-  );
+  )
 }

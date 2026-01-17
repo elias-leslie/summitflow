@@ -1,50 +1,50 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { motion } from "motion/react";
 import {
-  StopCircle,
-  Send,
   Bot,
-  Loader2,
-  Wifi,
-  WifiOff,
   ChevronDown,
   ChevronUp,
-} from "lucide-react";
-import { ScrollArea } from "../ui/scroll-area";
-import { Progress } from "../ui/progress";
-import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
+  Loader2,
+  Send,
+  StopCircle,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
+import { motion } from 'motion/react'
+import { useState } from 'react'
+import { Badge } from '../ui/badge'
+import { Input } from '../ui/input'
+import { Progress } from '../ui/progress'
+import { ScrollArea } from '../ui/scroll-area'
 
 export interface ExecutionLog {
-  id: string;
-  timestamp: string;
-  level: "info" | "warn" | "error" | "success";
-  message: string;
+  id: string
+  timestamp: string
+  level: 'info' | 'warn' | 'error' | 'success'
+  message: string
 }
 
 export interface ExecutionState {
-  status: "idle" | "running" | "paused" | "stopped";
-  progress: number;
-  currentModel: string;
-  currentStep?: string;
-  logs: ExecutionLog[];
+  status: 'idle' | 'running' | 'paused' | 'stopped'
+  progress: number
+  currentModel: string
+  currentStep?: string
+  logs: ExecutionLog[]
 }
 
 interface ExecutionPanelProps {
-  execution: ExecutionState;
-  connected: boolean;
-  onStop: () => void;
-  onSendMessage: (message: string) => void;
+  execution: ExecutionState
+  connected: boolean
+  onStop: () => void
+  onSendMessage: (message: string) => void
 }
 
-const logLevelStyles: Record<ExecutionLog["level"], string> = {
-  info: "text-slate-400",
-  warn: "text-amber-400",
-  error: "text-red-400",
-  success: "text-phosphor-400",
-};
+const logLevelStyles: Record<ExecutionLog['level'], string> = {
+  info: 'text-slate-400',
+  warn: 'text-amber-400',
+  error: 'text-red-400',
+  success: 'text-phosphor-400',
+}
 
 export function ExecutionPanel({
   execution,
@@ -52,29 +52,29 @@ export function ExecutionPanel({
   onStop,
   onSendMessage,
 }: ExecutionPanelProps) {
-  const [chatInput, setChatInput] = useState("");
-  const [showLogs, setShowLogs] = useState(true);
+  const [chatInput, setChatInput] = useState('')
+  const [showLogs, setShowLogs] = useState(true)
 
   const handleSend = () => {
     if (chatInput.trim()) {
-      onSendMessage(chatInput.trim());
-      setChatInput("");
+      onSendMessage(chatInput.trim())
+      setChatInput('')
     }
-  };
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
     }
-  };
+  }
 
   return (
     <motion.div
       initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
+      animate={{ height: 'auto', opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
-      transition={{ duration: 0.2, ease: "easeInOut" }}
+      transition={{ duration: 0.2, ease: 'easeInOut' }}
       className="overflow-hidden"
     >
       <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-3">
@@ -97,7 +97,7 @@ export function ExecutionPanel({
             {/* Current Model */}
             <Badge variant="violet" className="gap-1">
               <Bot className="w-3 h-3" />
-              {execution.currentModel || "Flash"}
+              {execution.currentModel || 'Flash'}
             </Badge>
           </div>
 
@@ -166,13 +166,13 @@ export function ExecutionPanel({
             onKeyDown={handleKeyDown}
             placeholder="Send direction to agent..."
             className="h-8 text-xs"
-            disabled={!connected || execution.status !== "running"}
+            disabled={!connected || execution.status !== 'running'}
           />
 
           <button
             onClick={handleSend}
             disabled={
-              !chatInput.trim() || !connected || execution.status !== "running"
+              !chatInput.trim() || !connected || execution.status !== 'running'
             }
             className="p-2 rounded-md bg-phosphor-500/20 text-phosphor-400 hover:bg-phosphor-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title="Send message"
@@ -182,7 +182,7 @@ export function ExecutionPanel({
 
           <button
             onClick={onStop}
-            disabled={execution.status !== "running"}
+            disabled={execution.status !== 'running'}
             className="p-2 rounded-md bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title="Stop execution"
           >
@@ -191,5 +191,5 @@ export function ExecutionPanel({
         </div>
       </div>
     </motion.div>
-  );
+  )
 }

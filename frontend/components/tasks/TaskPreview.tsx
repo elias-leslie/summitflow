@@ -1,40 +1,40 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Target,
-  ListChecks,
   FileCode,
+  ListChecks,
   Tag,
-  AlertTriangle,
-} from "lucide-react";
-import type { Task, TaskAcceptanceCriterion, Subtask } from "@/lib/api/tasks";
+  Target,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useState } from 'react'
+import type { Subtask, Task, TaskAcceptanceCriterion } from '@/lib/api/tasks'
 import {
-  PHASE_ICONS,
-  PHASE_COLORS,
   CATEGORY_COLORS,
   getPriorityConfig,
-} from "@/lib/utils/task-status";
+  PHASE_COLORS,
+  PHASE_ICONS,
+} from '@/lib/utils/task-status'
 
 interface TaskPreviewProps {
-  task: Task;
-  subtasks?: Subtask[];
-  highlightChanges?: boolean;
+  task: Task
+  subtasks?: Subtask[]
+  highlightChanges?: boolean
 }
 
 function groupSubtasksByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
   return subtasks.reduce(
     (acc, subtask) => {
-      const phase = subtask.phase || "other";
-      if (!acc[phase]) acc[phase] = [];
-      acc[phase].push(subtask);
-      return acc;
+      const phase = subtask.phase || 'other'
+      if (!acc[phase]) acc[phase] = []
+      acc[phase].push(subtask)
+      return acc
     },
     {} as Record<string, Subtask[]>,
-  );
+  )
 }
 
 export function TaskPreview({
@@ -42,23 +42,23 @@ export function TaskPreview({
   subtasks = [],
   highlightChanges = false,
 }: TaskPreviewProps) {
-  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
-  const groupedSubtasks = groupSubtasksByPhase(subtasks);
-  const phases = Object.keys(groupedSubtasks);
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set())
+  const groupedSubtasks = groupSubtasksByPhase(subtasks)
+  const phases = Object.keys(groupedSubtasks)
 
   const togglePhase = (phase: string) => {
     setExpandedPhases((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(phase)) {
-        next.delete(phase);
+        next.delete(phase)
       } else {
-        next.add(phase);
+        next.add(phase)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
-  const priorityInfo = getPriorityConfig(task.priority);
+  const priorityInfo = getPriorityConfig(task.priority)
 
   return (
     <div className="space-y-5">
@@ -153,7 +153,7 @@ export function TaskPreview({
                       <div className="flex items-center gap-2 mt-1">
                         {criterion.category && (
                           <span
-                            className={`px-1.5 py-0.5 text-2xs rounded border ${CATEGORY_COLORS[criterion.category] || "text-slate-400 bg-slate-800"}`}
+                            className={`px-1.5 py-0.5 text-2xs rounded border ${CATEGORY_COLORS[criterion.category] || 'text-slate-400 bg-slate-800'}`}
                           >
                             {criterion.category}
                           </span>
@@ -185,14 +185,14 @@ export function TaskPreview({
           </div>
           <div className="space-y-1">
             {phases.map((phase) => {
-              const phaseSubtasks = groupedSubtasks[phase];
-              const isExpanded = expandedPhases.has(phase);
-              const PhaseIcon = PHASE_ICONS[phase] || FileCode;
+              const phaseSubtasks = groupedSubtasks[phase]
+              const isExpanded = expandedPhases.has(phase)
+              const PhaseIcon = PHASE_ICONS[phase] || FileCode
               const phaseColor =
-                PHASE_COLORS[phase] || "text-slate-400 bg-slate-800";
+                PHASE_COLORS[phase] || 'text-slate-400 bg-slate-800'
               const completedCount = phaseSubtasks.filter(
                 (s) => s.passes,
-              ).length;
+              ).length
 
               return (
                 <div key={phase} className="rounded-lg overflow-hidden">
@@ -220,7 +220,7 @@ export function TaskPreview({
                     {isExpanded && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
+                        animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         className="overflow-hidden"
@@ -235,7 +235,7 @@ export function TaskPreview({
                                 {subtask.subtask_id}
                               </span>
                               <span
-                                className={`text-sm ${subtask.passes ? "text-slate-500 line-through" : "text-slate-300"}`}
+                                className={`text-sm ${subtask.passes ? 'text-slate-500 line-through' : 'text-slate-300'}`}
                               >
                                 {subtask.description}
                               </span>
@@ -246,11 +246,11 @@ export function TaskPreview({
                     )}
                   </AnimatePresence>
                 </div>
-              );
+              )
             })}
           </div>
         </section>
       )}
     </div>
-  );
+  )
 }

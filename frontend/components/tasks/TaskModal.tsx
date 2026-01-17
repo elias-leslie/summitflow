@@ -1,63 +1,62 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import {
-  CheckCircle2,
-  Edit2,
-  Save,
-  X,
-  Play,
-  Loader2,
-  FastForward,
-  Package,
-  Bug,
-  CheckSquare,
-  RefreshCw,
   AlertTriangle,
   ArrowDownCircle,
-  Link2,
-  ExternalLink,
-  Square,
-  Clock,
   Bot,
+  Bug,
+  CheckCircle2,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
-} from "lucide-react";
-
-import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
-import { SubtasksSection } from "@/components/tasks/SubtasksSection";
-import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
+  Clock,
+  Edit2,
+  ExternalLink,
+  FastForward,
+  Link2,
+  Loader2,
+  Package,
+  Play,
+  RefreshCw,
+  Save,
+  Square,
+  X,
+} from 'lucide-react'
+import Link from 'next/link'
+import { useCallback, useEffect, useState } from 'react'
+import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
+import { ExecutionBadges } from '@/components/tasks/ExecutionBadges'
+import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
+import { ObjectiveSection } from '@/components/tasks/ObjectiveSection'
+import { SubtasksSection } from '@/components/tasks/SubtasksSection'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
+  executeTask,
   fetchTask,
   getSubtasksWithSteps,
-  updateTask,
-  updateTaskStatus,
-  updateSubtask,
-  executeTask,
-  type Task,
   type Subtask,
+  type Task,
   type TaskStatus,
   type TaskType,
-} from "@/lib/api/tasks";
-import { ExecutionTimeline } from "@/components/tasks/ExecutionTimeline";
-import { ExecutionBadges } from "@/components/tasks/ExecutionBadges";
+  updateSubtask,
+  updateTask,
+  updateTaskStatus,
+} from '@/lib/api/tasks'
 
 // ============================================================================
 // Collapsible Section Component
 // ============================================================================
 
 interface CollapsibleSectionProps {
-  title: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  className?: string;
-  testId?: string;
+  title: string
+  isOpen: boolean
+  onToggle: () => void
+  children: React.ReactNode
+  className?: string
+  testId?: string
 }
 
 function CollapsibleSection({
@@ -65,7 +64,7 @@ function CollapsibleSection({
   isOpen,
   onToggle,
   children,
-  className = "",
+  className = '',
   testId,
 }: CollapsibleSectionProps) {
   return (
@@ -84,7 +83,7 @@ function CollapsibleSection({
       </button>
       {isOpen && <div className="mt-2">{children}</div>}
     </div>
-  );
+  )
 }
 
 // ============================================================================
@@ -92,13 +91,13 @@ function CollapsibleSection({
 // ============================================================================
 
 interface TaskModalProps {
-  taskId: string | null;
-  projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onTaskUpdate?: (task: Task) => void;
+  taskId: string | null
+  projectId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onTaskUpdate?: (task: Task) => void
   /** Initial task data to avoid refetch if available */
-  initialTask?: Task | null;
+  initialTask?: Task | null
 }
 
 // ============================================================================
@@ -110,31 +109,31 @@ const priorityColors: Record<
   { bg: string; text: string; border: string }
 > = {
   0: {
-    bg: "bg-rose-500/30",
-    text: "text-rose-300",
-    border: "border-rose-500/40",
+    bg: 'bg-rose-500/30',
+    text: 'text-rose-300',
+    border: 'border-rose-500/40',
   },
   1: {
-    bg: "bg-orange-500/20",
-    text: "text-orange-400",
-    border: "border-orange-500/30",
+    bg: 'bg-orange-500/20',
+    text: 'text-orange-400',
+    border: 'border-orange-500/30',
   },
   2: {
-    bg: "bg-amber-500/20",
-    text: "text-amber-400",
-    border: "border-amber-500/30",
+    bg: 'bg-amber-500/20',
+    text: 'text-amber-400',
+    border: 'border-amber-500/30',
   },
   3: {
-    bg: "bg-blue-500/20",
-    text: "text-blue-400",
-    border: "border-blue-500/30",
+    bg: 'bg-blue-500/20',
+    text: 'text-blue-400',
+    border: 'border-blue-500/30',
   },
   4: {
-    bg: "bg-slate-500/20",
-    text: "text-slate-400",
-    border: "border-slate-500/30",
+    bg: 'bg-slate-500/20',
+    text: 'text-slate-400',
+    border: 'border-slate-500/30',
   },
-};
+}
 
 // ============================================================================
 // Task Type Configuration
@@ -146,35 +145,35 @@ const taskTypeConfig: Record<
 > = {
   feature: {
     icon: <Package className="h-4 w-4" />,
-    label: "Feature",
-    className: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    label: 'Feature',
+    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   },
   bug: {
     icon: <Bug className="h-4 w-4" />,
-    label: "Bug",
-    className: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: 'Bug',
+    className: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   task: {
     icon: <CheckSquare className="h-4 w-4" />,
-    label: "Task",
-    className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    label: 'Task',
+    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   },
   refactor: {
     icon: <RefreshCw className="h-4 w-4" />,
-    label: "Refactor",
-    className: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    label: 'Refactor',
+    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   },
   debt: {
     icon: <AlertTriangle className="h-4 w-4" />,
-    label: "Tech Debt",
-    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    label: 'Tech Debt',
+    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   },
   regression: {
     icon: <ArrowDownCircle className="h-4 w-4" />,
-    label: "Regression",
-    className: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    label: 'Regression',
+    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   },
-};
+}
 
 // ============================================================================
 // Status Configuration
@@ -185,50 +184,50 @@ const statusConfig: Record<
   { label: string; className: string; icon?: React.ReactNode }
 > = {
   pending: {
-    label: "Pending",
-    className: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    label: 'Pending',
+    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
   },
   running: {
-    label: "Running",
-    className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    label: 'Running',
+    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
   },
   paused: {
-    label: "Paused",
-    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    label: 'Paused',
+    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     icon: <Clock className="h-3 w-3" />,
   },
   blocked: {
-    label: "Blocked",
-    className: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: 'Blocked',
+    className: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   pr_created: {
-    label: "PR Created",
-    className: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    label: 'PR Created',
+    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   },
   ai_reviewing: {
-    label: "AI Reviewing",
-    className: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    label: 'AI Reviewing',
+    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
   },
   human_review: {
-    label: "Human Review",
-    className: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    label: 'Human Review',
+    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   },
   completed: {
-    label: "Completed",
-    className: "bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30",
+    label: 'Completed',
+    className: 'bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30',
     icon: <CheckCircle2 className="h-3 w-3" />,
   },
   failed: {
-    label: "Failed",
-    className: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: 'Failed',
+    className: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   cancelled: {
-    label: "Cancelled",
-    className: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    label: 'Cancelled',
+    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
   },
-};
+}
 
 // ============================================================================
 // Task Modal Component
@@ -243,251 +242,251 @@ export function TaskModal({
   initialTask,
 }: TaskModalProps) {
   // Task data state
-  const [task, setTask] = useState<Task | null>(initialTask || null);
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [task, setTask] = useState<Task | null>(initialTask || null)
+  const [subtasks, setSubtasks] = useState<Subtask[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Edit state
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   // Execution state
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
-  const [executionError, setExecutionError] = useState<string | null>(null);
-  const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false)
+  const [isStopping, setIsStopping] = useState(false)
+  const [executionError, setExecutionError] = useState<string | null>(null)
+  const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false)
 
   // Collapsible section state (all collapsed by default)
-  const [descriptionOpen, setDescriptionOpen] = useState(false);
-  const [subtasksOpen, setSubtasksOpen] = useState(false);
-  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false)
+  const [subtasksOpen, setSubtasksOpen] = useState(false)
+  const [timelineOpen, setTimelineOpen] = useState(false)
 
   // Fetch task when modal opens
   useEffect(() => {
     if (open && taskId) {
       // Use initial task if available and matches ID
       if (initialTask && initialTask.id === taskId) {
-        setTask(initialTask);
-        setIsLoading(false);
+        setTask(initialTask)
+        setIsLoading(false)
       } else {
-        setIsLoading(true);
-        setError(null);
+        setIsLoading(true)
+        setError(null)
         fetchTask(projectId, taskId)
           .then((data) => {
-            setTask(data);
+            setTask(data)
           })
           .catch((err) => {
-            console.error("Failed to fetch task:", err);
-            setError("Failed to load task details");
+            console.error('Failed to fetch task:', err)
+            setError('Failed to load task details')
           })
           .finally(() => {
-            setIsLoading(false);
-          });
+            setIsLoading(false)
+          })
       }
     }
-  }, [open, taskId, projectId, initialTask]);
+  }, [open, taskId, projectId, initialTask])
 
   // Fetch subtasks when task is loaded
   useEffect(() => {
     if (open && task) {
-      setIsLoadingSubtasks(true);
+      setIsLoadingSubtasks(true)
       getSubtasksWithSteps(projectId, task.id)
         .then((response) => {
-          setSubtasks(response.subtasks);
+          setSubtasks(response.subtasks)
         })
         .catch((err) => {
-          console.error("Failed to fetch subtasks:", err);
-          setSubtasks([]);
+          console.error('Failed to fetch subtasks:', err)
+          setSubtasks([])
         })
         .finally(() => {
-          setIsLoadingSubtasks(false);
-        });
+          setIsLoadingSubtasks(false)
+        })
     }
-  }, [open, task, projectId]);
+  }, [open, task, projectId])
 
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
-      setIsEditing(false);
-      setEditTitle("");
-      setEditDescription("");
-      setError(null);
+      setIsEditing(false)
+      setEditTitle('')
+      setEditDescription('')
+      setError(null)
       // Reset collapsible sections to collapsed
-      setDescriptionOpen(false);
-      setSubtasksOpen(false);
-      setTimelineOpen(false);
+      setDescriptionOpen(false)
+      setSubtasksOpen(false)
+      setTimelineOpen(false)
     }
-  }, [open]);
+  }, [open])
 
   // Edit handlers
   const handleEditStart = useCallback(() => {
-    if (!task) return;
-    setEditTitle(task.title);
-    setEditDescription(task.description || "");
-    setIsEditing(true);
-  }, [task]);
+    if (!task) return
+    setEditTitle(task.title)
+    setEditDescription(task.description || '')
+    setIsEditing(true)
+  }, [task])
 
   const handleEditCancel = useCallback(() => {
-    setIsEditing(false);
-    setEditTitle("");
-    setEditDescription("");
-  }, []);
+    setIsEditing(false)
+    setEditTitle('')
+    setEditDescription('')
+  }, [])
 
   const handleEditSave = useCallback(async () => {
-    if (!task) return;
+    if (!task) return
     try {
       const updated = await updateTask(projectId, task.id, {
         title: editTitle,
         description: editDescription,
-      });
-      setTask(updated);
-      onTaskUpdate?.(updated);
-      setIsEditing(false);
+      })
+      setTask(updated)
+      onTaskUpdate?.(updated)
+      setIsEditing(false)
     } catch (err) {
-      console.error("Failed to update task:", err);
+      console.error('Failed to update task:', err)
     }
-  }, [task, projectId, editTitle, editDescription, onTaskUpdate]);
+  }, [task, projectId, editTitle, editDescription, onTaskUpdate])
 
   // Status change handlers
   const handleStatusChange = useCallback(
     async (newStatus: TaskStatus) => {
-      if (!task) return;
+      if (!task) return
       try {
-        const updated = await updateTaskStatus(projectId, task.id, newStatus);
-        setTask(updated);
-        onTaskUpdate?.(updated);
+        const updated = await updateTaskStatus(projectId, task.id, newStatus)
+        setTask(updated)
+        onTaskUpdate?.(updated)
       } catch (err) {
-        console.error("Failed to update status:", err);
+        console.error('Failed to update status:', err)
       }
     },
     [task, projectId, onTaskUpdate],
-  );
+  )
 
   // Subtask toggle handler
   const handleSubtaskToggle = useCallback(
     async (subtaskId: string, passes: boolean) => {
-      if (!task) return;
+      if (!task) return
       try {
         const updated = await updateSubtask(
           projectId,
           task.id,
           subtaskId,
           passes,
-        );
+        )
         setSubtasks((prev) =>
           prev.map((s) =>
             s.subtask_id === subtaskId ? { ...s, ...updated } : s,
           ),
-        );
+        )
       } catch (err) {
-        console.error("Failed to update subtask:", err);
-        throw err;
+        console.error('Failed to update subtask:', err)
+        throw err
       }
     },
     [task, projectId],
-  );
+  )
 
   // Start execution handler
   const handleStartExecution = useCallback(async () => {
-    if (!task) return;
-    setIsExecuting(true);
-    setExecutionError(null);
+    if (!task) return
+    setIsExecuting(true)
+    setExecutionError(null)
     try {
-      await executeTask(projectId, task.id);
+      await executeTask(projectId, task.id)
       // Refetch task to get updated status
-      const updated = await fetchTask(projectId, task.id);
-      setTask(updated);
-      onTaskUpdate?.(updated);
+      const updated = await fetchTask(projectId, task.id)
+      setTask(updated)
+      onTaskUpdate?.(updated)
     } catch (err) {
-      console.error("Failed to start execution:", err);
+      console.error('Failed to start execution:', err)
       setExecutionError(
-        err instanceof Error ? err.message : "Failed to start execution",
-      );
+        err instanceof Error ? err.message : 'Failed to start execution',
+      )
     } finally {
-      setIsExecuting(false);
+      setIsExecuting(false)
     }
-  }, [task, projectId, onTaskUpdate]);
+  }, [task, projectId, onTaskUpdate])
 
   // Stop execution handler (sends signal via WebSocket)
   const handleStopExecution = useCallback(async () => {
-    if (!task) return;
-    setIsStopping(true);
+    if (!task) return
+    setIsStopping(true)
     // Send stop signal - the WebSocket connection in ExecutionTimeline will handle this
     // For now, we just update the status to paused
     try {
-      const updated = await updateTaskStatus(projectId, task.id, "paused");
-      setTask(updated);
-      onTaskUpdate?.(updated);
+      const updated = await updateTaskStatus(projectId, task.id, 'paused')
+      setTask(updated)
+      onTaskUpdate?.(updated)
     } catch (err) {
-      console.error("Failed to stop execution:", err);
+      console.error('Failed to stop execution:', err)
     } finally {
-      setIsStopping(false);
+      setIsStopping(false)
     }
-  }, [task, projectId, onTaskUpdate]);
+  }, [task, projectId, onTaskUpdate])
 
   // Objective edit handler
   const handleObjectiveEdit = useCallback(
     async (newObjective: string) => {
-      if (!task) return;
+      if (!task) return
       // Note: Would need a separate API for objective
-      onTaskUpdate?.({ ...task, objective: newObjective });
+      onTaskUpdate?.({ ...task, objective: newObjective })
     },
     [task, onTaskUpdate],
-  );
+  )
 
   // Toggle autonomous flag
   const handleToggleAutonomous = useCallback(async () => {
-    if (!task) return;
-    setIsTogglingAutonomous(true);
+    if (!task) return
+    setIsTogglingAutonomous(true)
     try {
       const updated = await updateTask(projectId, task.id, {
         autonomous: !task.autonomous,
-      });
-      setTask(updated);
-      onTaskUpdate?.(updated);
+      })
+      setTask(updated)
+      onTaskUpdate?.(updated)
     } catch (err) {
-      console.error("Failed to toggle autonomous:", err);
+      console.error('Failed to toggle autonomous:', err)
     } finally {
-      setIsTogglingAutonomous(false);
+      setIsTogglingAutonomous(false)
     }
-  }, [task, projectId, onTaskUpdate]);
+  }, [task, projectId, onTaskUpdate])
 
   // Don't render if no task ID
-  if (!taskId) return null;
+  if (!taskId) return null
 
   // Get config values
   const typeConfig = task
     ? taskTypeConfig[task.task_type] || taskTypeConfig.task
-    : taskTypeConfig.task;
+    : taskTypeConfig.task
   const colors = task
     ? priorityColors[task.priority] || priorityColors[2]
-    : priorityColors[2];
+    : priorityColors[2]
   const status = task
     ? statusConfig[task.status] || statusConfig.pending
-    : statusConfig.pending;
+    : statusConfig.pending
 
   // Capability context
-  const capability = task?.capability;
-  const hasCriteria = capability && capability.criteria_total > 0;
+  const capability = task?.capability
+  const hasCriteria = capability && capability.criteria_total > 0
   const allPassed =
-    hasCriteria && capability.criteria_passed === capability.criteria_total;
+    hasCriteria && capability.criteria_passed === capability.criteria_total
   const progressPct = hasCriteria
     ? (capability.criteria_passed / capability.criteria_total) * 100
-    : 0;
+    : 0
 
   // Status checks for action buttons
-  const isRunning = task?.status === "running";
-  const isPaused = task?.status === "paused";
-  const isCompleted = task?.status === "completed";
-  const isPending = task?.status === "pending";
-  const isHumanReview = task?.status === "human_review";
-  const isAiReviewing = task?.status === "ai_reviewing";
+  const isRunning = task?.status === 'running'
+  const isPaused = task?.status === 'paused'
+  const isCompleted = task?.status === 'completed'
+  const isPending = task?.status === 'pending'
+  const isHumanReview = task?.status === 'human_review'
+  const isAiReviewing = task?.status === 'ai_reviewing'
 
   // Show timeline when task is in an active execution state
-  const showTimeline = isRunning || isPaused || isAiReviewing;
+  const showTimeline = isRunning || isPaused || isAiReviewing
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -578,7 +577,7 @@ export function TaskModal({
                     ) : (
                       <Play className="h-4 w-4" />
                     )}
-                    {isExecuting ? "Starting..." : "Start Execution"}
+                    {isExecuting ? 'Starting...' : 'Start Execution'}
                   </Button>
                 )}
                 {isPaused && (
@@ -593,7 +592,7 @@ export function TaskModal({
                     ) : (
                       <FastForward className="h-4 w-4" />
                     )}
-                    {isExecuting ? "Resuming..." : "Continue"}
+                    {isExecuting ? 'Resuming...' : 'Continue'}
                   </Button>
                 )}
                 {isRunning && (
@@ -613,7 +612,7 @@ export function TaskModal({
                       disabled={isStopping}
                     >
                       <Square className="h-4 w-4" />
-                      {isStopping ? "Stopping at next checkpoint..." : "Stop"}
+                      {isStopping ? 'Stopping at next checkpoint...' : 'Stop'}
                     </Button>
                   </>
                 )}
@@ -622,7 +621,7 @@ export function TaskModal({
                     <Button
                       variant="outline"
                       className="gap-2 border-phosphor-500/30 text-phosphor-400 hover:bg-phosphor-500/10"
-                      onClick={() => handleStatusChange("running")}
+                      onClick={() => handleStatusChange('running')}
                     >
                       <CheckCircle2 className="h-4 w-4" />
                       Approve
@@ -630,7 +629,7 @@ export function TaskModal({
                     <Button
                       variant="outline"
                       className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                      onClick={() => handleStatusChange("pending")}
+                      onClick={() => handleStatusChange('pending')}
                     >
                       <Edit2 className="h-4 w-4" />
                       Request Changes
@@ -662,15 +661,15 @@ export function TaskModal({
                   variant="outline"
                   className={`gap-2 ${
                     task.autonomous
-                      ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
-                      : "border-slate-600 text-slate-400"
+                      ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
+                      : 'border-slate-600 text-slate-400'
                   }`}
                   onClick={handleToggleAutonomous}
                   disabled={isTogglingAutonomous || isRunning}
                   title={
                     task.autonomous
-                      ? "Autonomous execution enabled - task will be picked up by auto-exec when enabled"
-                      : "Click to enable autonomous execution for this task"
+                      ? 'Autonomous execution enabled - task will be picked up by auto-exec when enabled'
+                      : 'Click to enable autonomous execution for this task'
                   }
                 >
                   {isTogglingAutonomous ? (
@@ -678,7 +677,7 @@ export function TaskModal({
                   ) : (
                     <Bot className="h-4 w-4" />
                   )}
-                  {task.autonomous ? "Autonomous" : "Manual"}
+                  {task.autonomous ? 'Autonomous' : 'Manual'}
                 </Button>
                 <div className="ml-auto flex items-center gap-2">
                   {isEditing ? (
@@ -777,7 +776,7 @@ export function TaskModal({
                             Criteria
                           </span>
                           <span
-                            className={`text-xs mono font-medium ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}
+                            className={`text-xs mono font-medium ${allPassed ? 'text-phosphor-400' : 'text-slate-400'}`}
                           >
                             {capability.criteria_passed}/
                             {capability.criteria_total}
@@ -785,7 +784,7 @@ export function TaskModal({
                         </div>
                         <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-300 ${allPassed ? "bg-phosphor-500" : "bg-blue-500"}`}
+                            className={`h-full transition-all duration-300 ${allPassed ? 'bg-phosphor-500' : 'bg-blue-500'}`}
                             style={{ width: `${progressPct}%` }}
                           />
                         </div>
@@ -811,7 +810,7 @@ export function TaskModal({
                     <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                       {capability
                         ? `From: ${capability.capability_id}`
-                        : "Task-specific"}
+                        : 'Task-specific'}
                     </span>
                   </div>
                 )}
@@ -902,7 +901,7 @@ export function TaskModal({
                 )}
                 {task.completed_at && (
                   <p>
-                    Completed:{" "}
+                    Completed:{' '}
                     {new Date(task.completed_at).toLocaleDateString()}
                   </p>
                 )}
@@ -912,5 +911,5 @@ export function TaskModal({
         )}
       </DialogContent>
     </Dialog>
-  );
+  )
 }

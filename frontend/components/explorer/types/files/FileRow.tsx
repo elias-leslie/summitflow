@@ -4,68 +4,67 @@
  * Renders file/directory name with icon, LOC, size, complexity badge, and modified date.
  */
 
-import { Folder, File } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ColumnValue } from "../../DataList";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { File, Folder } from 'lucide-react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { cn } from '@/lib/utils'
+import { ColumnValue } from '../../DataList'
 
 interface FileRowProps {
-  entry: ExplorerEntry;
+  entry: ExplorerEntry
 }
 
 // Helpers
-const formatNumber = (n: number | undefined | null) =>
-  (n ?? 0).toLocaleString();
+const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
 
 const formatBytes = (bytes: number | undefined | null) => {
-  const b = bytes ?? 0;
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-};
+  const b = bytes ?? 0
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const formatTimeAgo = (dateStr: string | null) => {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-  return `${Math.floor(diffDays / 30)}mo ago`;
-};
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays}d ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
+  return `${Math.floor(diffDays / 30)}mo ago`
+}
 
 // Health badge component - triage dot indicator for refactor priority
 function HealthBadge({ priority }: { priority: string | undefined }) {
   // Only show badge for high or medium priority
-  if (!priority || priority === "low" || priority === "none") return null;
+  if (!priority || priority === 'low' || priority === 'none') return null
 
-  const isHigh = priority === "high";
+  const isHigh = priority === 'high'
 
   return (
     <span
       className={cn(
-        "w-2 h-2 rounded-full shrink-0",
-        isHigh ? "bg-red-500" : "bg-amber-500",
+        'w-2 h-2 rounded-full shrink-0',
+        isHigh ? 'bg-red-500' : 'bg-amber-500',
       )}
       title={
         isHigh
-          ? "Critical - needs refactoring"
-          : "Warning - consider refactoring"
+          ? 'Critical - needs refactoring'
+          : 'Warning - consider refactoring'
       }
     />
-  );
+  )
 }
 
 // Comment density indicator - shows when >15% (excessive commenting)
 function CommentDensityBadge({
   density,
 }: {
-  density: number | undefined | null;
+  density: number | undefined | null
 }) {
-  if (density === undefined || density === null || density <= 15) return null;
+  if (density === undefined || density === null || density <= 15) return null
 
   return (
     <span
@@ -74,20 +73,20 @@ function CommentDensityBadge({
     >
       {density.toFixed(0)}%
     </span>
-  );
+  )
 }
 
 export function FileRow({ entry }: FileRowProps) {
-  const isDir = entry.metadata.is_directory;
+  const isDir = entry.metadata.is_directory
   const loc = isDir
     ? (entry.metadata.lines_of_code ?? 0)
-    : (entry.metadata.lines_of_code ?? 0);
-  const size = entry.metadata.size_bytes ?? 0;
-  const bloatLevel = entry.metadata.bloat_level;
+    : (entry.metadata.lines_of_code ?? 0)
+  const size = entry.metadata.size_bytes ?? 0
+  const bloatLevel = entry.metadata.bloat_level
   const refactorPriority = entry.metadata.refactor_priority as
     | string
-    | undefined;
-  const commentDensity = entry.metadata.comment_density as number | undefined;
+    | undefined
+  const commentDensity = entry.metadata.comment_density as number | undefined
 
   return (
     <>
@@ -103,10 +102,10 @@ export function FileRow({ entry }: FileRowProps) {
       {/* Name with complexity badge */}
       <ColumnValue
         className={cn(
-          "flex-1 truncate flex items-center gap-2",
-          isDir && "font-medium text-slate-200",
-          bloatLevel === "critical" && "text-red-400",
-          bloatLevel === "warning" && "text-amber-400",
+          'flex-1 truncate flex items-center gap-2',
+          isDir && 'font-medium text-slate-200',
+          bloatLevel === 'critical' && 'text-red-400',
+          bloatLevel === 'warning' && 'text-amber-400',
         )}
       >
         <span className="truncate">{entry.name}</span>
@@ -116,12 +115,12 @@ export function FileRow({ entry }: FileRowProps) {
 
       {/* LOC */}
       <ColumnValue width="80px" align="right" mono muted={loc === 0}>
-        {loc > 0 ? formatNumber(loc) : "-"}
+        {loc > 0 ? formatNumber(loc) : '-'}
       </ColumnValue>
 
       {/* Size */}
       <ColumnValue width="80px" align="right" mono muted={size === 0}>
-        {size > 0 ? formatBytes(size) : "-"}
+        {size > 0 ? formatBytes(size) : '-'}
       </ColumnValue>
 
       {/* Modified */}
@@ -129,5 +128,5 @@ export function FileRow({ entry }: FileRowProps) {
         {formatTimeAgo(entry.lastScannedAt)}
       </ColumnValue>
     </>
-  );
+  )
 }

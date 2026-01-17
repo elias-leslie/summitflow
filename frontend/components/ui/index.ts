@@ -1,12 +1,39 @@
-export { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "./dialog";
-export { Button } from "./button";
-export { Badge, SuccessBadge, WarningBadge, ErrorBadge } from "./badge";
-export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
-export { Textarea } from "./textarea";
-export { Input } from "./input";
-export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./select";
-export { Checkbox } from "./checkbox";
-export { Skeleton } from "./skeleton";
-export { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell, TableCaption } from "./table";
-export { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./tooltip";
-export { Progress } from "./progress";
+export { Badge, ErrorBadge, SuccessBadge, WarningBadge } from './badge'
+export { Button } from './button'
+export { Checkbox } from './checkbox'
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './dialog'
+export { Input } from './input'
+export { Progress } from './progress'
+export {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './select'
+export { Skeleton } from './skeleton'
+export {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './table'
+export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs'
+export { Textarea } from './textarea'
+export {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './tooltip'

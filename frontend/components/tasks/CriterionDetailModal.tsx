@@ -1,36 +1,36 @@
-"use client";
+'use client'
 
-import { useState } from "react";
 import {
-  X,
+  AlertCircle,
   CheckCircle2,
   Clock,
-  Terminal,
-  AlertCircle,
   Loader2,
-} from "lucide-react";
-import type { TaskAcceptanceCriterion } from "@/lib/api/tasks";
+  Terminal,
+  X,
+} from 'lucide-react'
+import { useState } from 'react'
+import type { TaskAcceptanceCriterion } from '@/lib/api/tasks'
 
 interface CriterionDetailModalProps {
-  criterion: TaskAcceptanceCriterion;
-  isOpen: boolean;
-  onClose: () => void;
-  onVerify?: (criterionId: string, verifiedBy: "human") => Promise<void>;
+  criterion: TaskAcceptanceCriterion
+  isOpen: boolean
+  onClose: () => void
+  onVerify?: (criterionId: string, verifiedBy: 'human') => Promise<void>
 }
 
 const categoryColors: Record<string, { bg: string; text: string }> = {
-  correctness: { bg: "bg-blue-900/40", text: "text-blue-400" },
-  performance: { bg: "bg-purple-900/40", text: "text-purple-400" },
-  security: { bg: "bg-red-900/40", text: "text-red-400" },
-  quality: { bg: "bg-emerald-900/40", text: "text-emerald-400" },
-};
+  correctness: { bg: 'bg-blue-900/40', text: 'text-blue-400' },
+  performance: { bg: 'bg-purple-900/40', text: 'text-purple-400' },
+  security: { bg: 'bg-red-900/40', text: 'text-red-400' },
+  quality: { bg: 'bg-emerald-900/40', text: 'text-emerald-400' },
+}
 
 const verifyByColors: Record<string, { bg: string; text: string }> = {
-  test: { bg: "bg-blue-900/40", text: "text-blue-400" },
-  opus: { bg: "bg-purple-900/40", text: "text-purple-400" },
-  human: { bg: "bg-amber-900/40", text: "text-amber-400" },
-  agent: { bg: "bg-slate-700", text: "text-slate-400" },
-};
+  test: { bg: 'bg-blue-900/40', text: 'text-blue-400' },
+  opus: { bg: 'bg-purple-900/40', text: 'text-purple-400' },
+  human: { bg: 'bg-amber-900/40', text: 'text-amber-400' },
+  agent: { bg: 'bg-slate-700', text: 'text-slate-400' },
+}
 
 export function CriterionDetailModal({
   criterion,
@@ -38,37 +38,37 @@ export function CriterionDetailModal({
   onClose,
   onVerify,
 }: CriterionDetailModalProps) {
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false)
 
-  if (!isOpen) return null;
+  if (!isOpen) return null
 
-  const criterionId = criterion.criterion_id || criterion.id;
-  const category = criterion.category || "correctness";
-  const verifyBy = criterion.verify_by || "test";
+  const criterionId = criterion.criterion_id || criterion.id
+  const category = criterion.category || 'correctness'
+  const verifyBy = criterion.verify_by || 'test'
   const canVerify =
-    onVerify && !criterion.verified && verifyBy === "human" && criterionId;
+    onVerify && !criterion.verified && verifyBy === 'human' && criterionId
 
   const handleVerify = async () => {
-    if (!onVerify || !criterionId) return;
-    setIsVerifying(true);
+    if (!onVerify || !criterionId) return
+    setIsVerifying(true)
     try {
-      await onVerify(criterionId, "human");
-      onClose();
+      await onVerify(criterionId, 'human')
+      onClose()
     } finally {
-      setIsVerifying(false);
+      setIsVerifying(false)
     }
-  };
+  }
 
   const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return "";
-    return new Date(dateStr).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+    if (!dateStr) return ''
+    return new Date(dateStr).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -93,10 +93,10 @@ export function CriterionDetailModal({
             )}
             <div>
               <div className="text-xs text-slate-500 font-mono uppercase tracking-wider">
-                {criterionId || "Criterion"}
+                {criterionId || 'Criterion'}
               </div>
               <span
-                className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${categoryColors[category]?.bg || "bg-slate-700"} ${categoryColors[category]?.text || "text-slate-400"}`}
+                className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${categoryColors[category]?.bg || 'bg-slate-700'} ${categoryColors[category]?.text || 'text-slate-400'}`}
               >
                 {category}
               </span>
@@ -161,7 +161,7 @@ export function CriterionDetailModal({
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500">Verify via</span>
               <span
-                className={`text-xs px-2 py-0.5 rounded ${verifyByColors[verifyBy]?.bg || "bg-slate-700"} ${verifyByColors[verifyBy]?.text || "text-slate-400"}`}
+                className={`text-xs px-2 py-0.5 rounded ${verifyByColors[verifyBy]?.bg || 'bg-slate-700'} ${verifyByColors[verifyBy]?.text || 'text-slate-400'}`}
               >
                 {verifyBy}
               </span>
@@ -172,7 +172,7 @@ export function CriterionDetailModal({
                 Verified {formatDate(criterion.verified_at)}
                 {criterion.verified_by_who && (
                   <span className="text-slate-400">
-                    {" "}
+                    {' '}
                     by {criterion.verified_by_who}
                   </span>
                 )}
@@ -203,5 +203,5 @@ export function CriterionDetailModal({
         )}
       </div>
     </div>
-  );
+  )
 }

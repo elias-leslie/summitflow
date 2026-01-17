@@ -1,21 +1,21 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
-  Loader2,
-  MessageSquare,
   AlertCircle,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Zap,
-  CheckCircle2,
-  XCircle,
+  Loader2,
+  MessageSquare,
   RefreshCw,
   Send,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+  XCircle,
+  Zap,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // ============================================================================
 // Types
@@ -23,28 +23,28 @@ import { Input } from "@/components/ui/input";
 
 interface TimelineMessage {
   type:
-    | "log"
-    | "progress"
-    | "model_change"
-    | "chat_message"
-    | "error"
-    | "connected";
-  task_id: string;
-  data: Record<string, unknown>;
-  timestamp: string;
-  sequence: number;
+    | 'log'
+    | 'progress'
+    | 'model_change'
+    | 'chat_message'
+    | 'error'
+    | 'connected'
+  task_id: string
+  data: Record<string, unknown>
+  timestamp: string
+  sequence: number
 }
 
 interface ExecutionTimelineProps {
-  taskId: string;
+  taskId: string
   /** Whether to auto-connect on mount */
-  autoConnect?: boolean;
+  autoConnect?: boolean
   /** Show chat input at bottom */
-  showChatInput?: boolean;
+  showChatInput?: boolean
   /** Whether chat input is enabled (task must be executing) */
-  chatEnabled?: boolean;
+  chatEnabled?: boolean
   /** Optional class name */
-  className?: string;
+  className?: string
 }
 
 // ============================================================================
@@ -53,10 +53,10 @@ interface ExecutionTimelineProps {
 
 function getWebSocketUrl(taskId: string, fromSequence?: number): string {
   // Use the API base URL but replace http with ws
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-  const wsBase = apiBase.replace(/^http/, "ws");
-  const url = `${wsBase}/ws/execution/${taskId}`;
-  return fromSequence ? `${url}?from_sequence=${fromSequence}` : url;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+  const wsBase = apiBase.replace(/^http/, 'ws')
+  const url = `${wsBase}/ws/execution/${taskId}`
+  return fromSequence ? `${url}?from_sequence=${fromSequence}` : url
 }
 
 // ============================================================================
@@ -64,24 +64,24 @@ function getWebSocketUrl(taskId: string, fromSequence?: number): string {
 // ============================================================================
 
 function TimelineEvent({ message }: { message: TimelineMessage }) {
-  const time = new Date(message.timestamp).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 
   // Log message
-  if (message.type === "log") {
-    const level = message.data.level as string;
-    const text = message.data.message as string;
-    const source = message.data.source as string;
+  if (message.type === 'log') {
+    const level = message.data.level as string
+    const text = message.data.message as string
+    const source = message.data.source as string
 
     const levelColors: Record<string, string> = {
-      debug: "text-slate-500",
-      info: "text-slate-400",
-      warning: "text-amber-400",
-      error: "text-red-400",
-    };
+      debug: 'text-slate-500',
+      info: 'text-slate-400',
+      warning: 'text-amber-400',
+      error: 'text-red-400',
+    }
 
     return (
       <div className="flex gap-3 py-1.5 px-3 hover:bg-slate-800/30">
@@ -89,33 +89,33 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
           {time}
         </span>
         <span
-          className={`text-2xs mono shrink-0 w-12 ${levelColors[level] || "text-slate-400"}`}
+          className={`text-2xs mono shrink-0 w-12 ${levelColors[level] || 'text-slate-400'}`}
         >
           {level.toUpperCase()}
         </span>
         <span className="text-sm text-slate-300 break-words">{text}</span>
-        {source && source !== "orchestrator" && (
+        {source && source !== 'orchestrator' && (
           <span className="text-2xs text-slate-600 ml-auto shrink-0">
             [{source}]
           </span>
         )}
       </div>
-    );
+    )
   }
 
   // Progress update
-  if (message.type === "progress") {
-    const subtaskId = message.data.subtask_id as string | null;
-    const step = message.data.step as number | null;
-    const status = message.data.status as string;
-    const completed = message.data.completed_subtasks as number | null;
-    const total = message.data.total_subtasks as number | null;
+  if (message.type === 'progress') {
+    const subtaskId = message.data.subtask_id as string | null
+    const step = message.data.step as number | null
+    const status = message.data.status as string
+    const completed = message.data.completed_subtasks as number | null
+    const total = message.data.total_subtasks as number | null
 
     const statusIcons: Record<string, React.ReactNode> = {
       in_progress: <Loader2 className="h-3 w-3 animate-spin text-blue-400" />,
       completed: <CheckCircle2 className="h-3 w-3 text-phosphor-400" />,
       failed: <XCircle className="h-3 w-3 text-red-400" />,
-    };
+    }
 
     return (
       <div className="flex items-center gap-3 py-1.5 px-3 bg-slate-800/20">
@@ -126,12 +126,12 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
         <span className="text-sm text-slate-300">
           {subtaskId && (
             <>
-              <span className="text-slate-500">Subtask</span>{" "}
+              <span className="text-slate-500">Subtask</span>{' '}
               <span className="mono text-phosphor-400">{subtaskId}</span>
               {step !== null && (
                 <>
-                  {" "}
-                  <span className="text-slate-500">step</span>{" "}
+                  {' '}
+                  <span className="text-slate-500">step</span>{' '}
                   <span className="mono">{step}</span>
                 </>
               )}
@@ -144,13 +144,13 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
           )}
         </span>
       </div>
-    );
+    )
   }
 
   // Model change
-  if (message.type === "model_change") {
-    const model = message.data.model as string;
-    const reason = message.data.reason as string;
+  if (message.type === 'model_change') {
+    const model = message.data.model as string
+    const reason = message.data.reason as string
 
     return (
       <div className="flex items-center gap-3 py-1.5 px-3 bg-purple-950/20 border-l-2 border-purple-500">
@@ -165,14 +165,14 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
           )}
         </span>
       </div>
-    );
+    )
   }
 
   // Chat message
-  if (message.type === "chat_message") {
-    const text = message.data.message as string;
-    const sender = message.data.sender as string | undefined;
-    const isUser = sender === "user" || !sender;
+  if (message.type === 'chat_message') {
+    const text = message.data.message as string
+    const sender = message.data.sender as string | undefined
+    const isUser = sender === 'user' || !sender
 
     return (
       <div className="flex gap-3 py-2 px-3 bg-blue-950/20 border-l-2 border-blue-500">
@@ -182,18 +182,18 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
         <MessageSquare className="h-3 w-3 text-blue-400 mt-0.5" />
         <div className="flex-1">
           <span className="text-xs font-medium text-blue-400">
-            {isUser ? "You:" : "Agent:"}
+            {isUser ? 'You:' : 'Agent:'}
           </span>
           <p className="text-sm text-slate-300 mt-0.5">{text}</p>
         </div>
       </div>
-    );
+    )
   }
 
   // Error
-  if (message.type === "error") {
-    const error = message.data.error as string;
-    const recoverable = message.data.recoverable as boolean;
+  if (message.type === 'error') {
+    const error = message.data.error as string
+    const recoverable = message.data.recoverable as boolean
 
     return (
       <div className="flex items-center gap-3 py-2 px-3 bg-red-950/20 border-l-2 border-red-500">
@@ -208,20 +208,20 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
           </span>
         )}
       </div>
-    );
+    )
   }
 
   // Connected
-  if (message.type === "connected") {
+  if (message.type === 'connected') {
     return (
       <div className="flex items-center gap-3 py-1 px-3 text-xs text-slate-600">
         <span className="mono shrink-0 w-16">{time}</span>
         <span>Connected to execution stream</span>
       </div>
-    );
+    )
   }
 
-  return null;
+  return null
 }
 
 // ============================================================================
@@ -233,118 +233,113 @@ export function ExecutionTimeline({
   autoConnect = true,
   showChatInput = false,
   chatEnabled = false,
-  className = "",
+  className = '',
 }: ExecutionTimelineProps) {
-  const [messages, setMessages] = useState<TimelineMessage[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showPrevious, setShowPrevious] = useState(false);
-  const [chatInput, setChatInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [messages, setMessages] = useState<TimelineMessage[]>([])
+  const [isConnected, setIsConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showPrevious, setShowPrevious] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [isSending, setIsSending] = useState(false)
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const lastSequenceRef = useRef<number>(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptRef = useRef<number>(0);
-  const maxReconnectDelay = 30000; // Cap at 30 seconds
+  const wsRef = useRef<WebSocket | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const lastSequenceRef = useRef<number>(0)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectAttemptRef = useRef<number>(0)
+  const maxReconnectDelay = 30000 // Cap at 30 seconds
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, []);
+  }, [])
 
   // Connect to WebSocket
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
 
     try {
-      const ws = new WebSocket(
-        getWebSocketUrl(taskId, lastSequenceRef.current),
-      );
+      const ws = new WebSocket(getWebSocketUrl(taskId, lastSequenceRef.current))
 
       ws.onopen = () => {
-        setIsConnected(true);
-        setError(null);
-        reconnectAttemptRef.current = 0; // Reset on successful connection
-      };
+        setIsConnected(true)
+        setError(null)
+        reconnectAttemptRef.current = 0 // Reset on successful connection
+      }
 
       ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as TimelineMessage;
+          const message = JSON.parse(event.data) as TimelineMessage
           lastSequenceRef.current = Math.max(
             lastSequenceRef.current,
             message.sequence,
-          );
-          setMessages((prev) => [...prev, message]);
+          )
+          setMessages((prev) => [...prev, message])
           // Auto-scroll after DOM update
-          setTimeout(scrollToBottom, 10);
+          setTimeout(scrollToBottom, 10)
         } catch (err) {
-          console.error("Failed to parse message:", err);
+          console.error('Failed to parse message:', err)
         }
-      };
+      }
 
       ws.onerror = () => {
-        setError("Connection error");
-        setIsConnected(false);
-      };
+        setError('Connection error')
+        setIsConnected(false)
+      }
 
       ws.onclose = () => {
-        setIsConnected(false);
+        setIsConnected(false)
         // Auto-reconnect with exponential backoff
         if (autoConnect) {
-          const attempt = reconnectAttemptRef.current;
-          const delay = Math.min(
-            1000 * Math.pow(2, attempt),
-            maxReconnectDelay,
-          );
-          reconnectAttemptRef.current = attempt + 1;
-          reconnectTimeoutRef.current = setTimeout(connect, delay);
+          const attempt = reconnectAttemptRef.current
+          const delay = Math.min(1000 * 2 ** attempt, maxReconnectDelay)
+          reconnectAttemptRef.current = attempt + 1
+          reconnectTimeoutRef.current = setTimeout(connect, delay)
         }
-      };
+      }
 
-      wsRef.current = ws;
+      wsRef.current = ws
     } catch (err) {
-      console.error("Failed to connect:", err);
-      setError("Failed to connect to execution stream");
+      console.error('Failed to connect:', err)
+      setError('Failed to connect to execution stream')
     }
-  }, [taskId, autoConnect, scrollToBottom]);
+  }, [taskId, autoConnect, scrollToBottom])
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
     }
     if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+      wsRef.current.close()
+      wsRef.current = null
     }
-  }, []);
+  }, [])
 
   // Connect on mount if autoConnect is true
   useEffect(() => {
     if (autoConnect) {
-      connect();
+      connect()
     }
     return () => {
-      disconnect();
-    };
-  }, [autoConnect, connect, disconnect]);
+      disconnect()
+    }
+  }, [autoConnect, connect, disconnect])
 
   // Send chat message
   const sendChatMessage = useCallback((text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
-          type: "chat_message",
-          data: { message: text, sender: "user" },
+          type: 'chat_message',
+          data: { message: text, sender: 'user' },
         }),
-      );
+      )
     }
-  }, []);
+  }, [])
 
   // Expose methods via ref if needed
   // We'll add this later when integrating with TaskModal
@@ -393,7 +388,7 @@ export function ExecutionTimeline({
         {showPrevious && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
+            animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="border-b border-slate-800 bg-slate-900/50 overflow-hidden"
           >
@@ -445,12 +440,12 @@ export function ExecutionTimeline({
         <div className="border-t border-slate-700 px-3 py-2">
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              if (!chatInput.trim() || !chatEnabled || isSending) return;
-              setIsSending(true);
-              sendChatMessage(chatInput.trim());
-              setChatInput("");
-              setIsSending(false);
+              e.preventDefault()
+              if (!chatInput.trim() || !chatEnabled || isSending) return
+              setIsSending(true)
+              sendChatMessage(chatInput.trim())
+              setChatInput('')
+              setIsSending(false)
             }}
             className="flex items-center gap-2"
           >
@@ -459,8 +454,8 @@ export function ExecutionTimeline({
               onChange={(e) => setChatInput(e.target.value)}
               placeholder={
                 chatEnabled
-                  ? "Send direction to agent..."
-                  : "Chat disabled (not executing)"
+                  ? 'Send direction to agent...'
+                  : 'Chat disabled (not executing)'
               }
               disabled={!chatEnabled}
               className="flex-1 h-8 text-sm"
@@ -478,9 +473,9 @@ export function ExecutionTimeline({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // Export helper types and methods for external use
-export type { TimelineMessage };
-export { getWebSocketUrl };
+export type { TimelineMessage }
+export { getWebSocketUrl }

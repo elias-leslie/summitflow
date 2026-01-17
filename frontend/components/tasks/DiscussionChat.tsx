@@ -1,16 +1,16 @@
-"use client";
+'use client'
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Send, Bot, User, Loader2, AlertCircle, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { discussTask, type DiscussionMessage, type Task } from "@/lib/api/tasks";
+import { AlertCircle, Bot, Loader2, RefreshCw, Send, User } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { type DiscussionMessage, discussTask, type Task } from '@/lib/api/tasks'
 
 interface DiscussionChatProps {
-  projectId: string;
-  taskId: string;
-  initialHistory?: DiscussionMessage[];
-  onTaskUpdated?: (task: Task) => void;
+  projectId: string
+  taskId: string
+  initialHistory?: DiscussionMessage[]
+  onTaskUpdated?: (task: Task) => void
 }
 
 export function DiscussionChat({
@@ -19,73 +19,73 @@ export function DiscussionChat({
   initialHistory = [],
   onTaskUpdated,
 }: DiscussionChatProps) {
-  const [messages, setMessages] = useState<DiscussionMessage[]>(initialHistory);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [messages, setMessages] = useState<DiscussionMessage[]>(initialHistory)
+  const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    scrollToBottom()
+  }, [scrollToBottom])
 
   const handleSend = async () => {
-    const trimmedInput = input.trim();
-    if (!trimmedInput || isLoading) return;
+    const trimmedInput = input.trim()
+    if (!trimmedInput || isLoading) return
 
     const userMessage: DiscussionMessage = {
-      role: "user",
+      role: 'user',
       content: trimmedInput,
       timestamp: new Date().toISOString(),
-    };
+    }
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-    setError(null);
+    setMessages((prev) => [...prev, userMessage])
+    setInput('')
+    setIsLoading(true)
+    setError(null)
 
     try {
-      const response = await discussTask(projectId, taskId, trimmedInput);
+      const response = await discussTask(projectId, taskId, trimmedInput)
 
       // Add agent response
       const agentMessage: DiscussionMessage = {
-        role: "assistant",
+        role: 'assistant',
         content: response.response,
         timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, agentMessage]);
+      }
+      setMessages((prev) => [...prev, agentMessage])
 
       // If task was updated, notify parent
       if (response.updated_task && onTaskUpdated) {
-        onTaskUpdated(response.updated_task);
+        onTaskUpdated(response.updated_task)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message");
+      setError(err instanceof Error ? err.message : 'Failed to send message')
       // Remove the user message on error
-      setMessages((prev) => prev.slice(0, -1));
-      setInput(trimmedInput); // Restore input
+      setMessages((prev) => prev.slice(0, -1))
+      setInput(trimmedInput) // Restore input
     } finally {
-      setIsLoading(false);
-      inputRef.current?.focus();
+      setIsLoading(false)
+      inputRef.current?.focus()
     }
-  };
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
     }
-  };
+  }
 
   const handleRetry = () => {
-    setError(null);
-    handleSend();
-  };
+    setError(null)
+    handleSend()
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -113,17 +113,17 @@ export function DiscussionChat({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
+              className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
             >
               {/* Avatar */}
               <div
                 className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.role === "user"
-                    ? "bg-phosphor-500/20"
-                    : "bg-slate-800"
+                  message.role === 'user'
+                    ? 'bg-phosphor-500/20'
+                    : 'bg-slate-800'
                 }`}
               >
-                {message.role === "user" ? (
+                {message.role === 'user' ? (
                   <User className="w-3.5 h-3.5 text-phosphor-400" />
                 ) : (
                   <Bot className="w-3.5 h-3.5 text-slate-400" />
@@ -133,9 +133,9 @@ export function DiscussionChat({
               {/* Message Bubble */}
               <div
                 className={`max-w-[85%] rounded-lg px-3 py-2 ${
-                  message.role === "user"
-                    ? "bg-phosphor-600/20 text-phosphor-100"
-                    : "bg-slate-800 text-slate-200"
+                  message.role === 'user'
+                    ? 'bg-phosphor-600/20 text-phosphor-100'
+                    : 'bg-slate-800 text-slate-200'
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">
@@ -189,7 +189,7 @@ export function DiscussionChat({
         {error && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
+            animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             className="px-4"
           >
@@ -222,7 +222,7 @@ export function DiscussionChat({
               text-sm text-white placeholder:text-slate-500 resize-none
               focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500
               disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            style={{ minHeight: "40px", maxHeight: "120px" }}
+            style={{ minHeight: '40px', maxHeight: '120px' }}
           />
           <Button
             variant="primary"
@@ -243,5 +243,5 @@ export function DiscussionChat({
         </p>
       </div>
     </div>
-  );
+  )
 }

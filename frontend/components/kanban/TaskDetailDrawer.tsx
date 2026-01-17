@@ -1,55 +1,54 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
 import {
-  CheckCircle2,
-  Edit2,
-  Save,
-  X,
-  Play,
-  Loader2,
-  FastForward,
-  Package,
-  Bug,
-  CheckSquare,
-  RefreshCw,
   AlertTriangle,
   ArrowDownCircle,
-  Link2,
+  Bug,
+  CheckCircle2,
+  CheckSquare,
+  Edit2,
   ExternalLink,
-} from "lucide-react";
-
+  FastForward,
+  Link2,
+  Loader2,
+  Package,
+  Play,
+  RefreshCw,
+  Save,
+  X,
+} from 'lucide-react'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import {
+  type Checkpoint,
+  CheckpointViewer,
+} from '@/components/tasks/CheckpointViewer'
+import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
+import { ObjectiveSection } from '@/components/tasks/ObjectiveSection'
+import { SubtasksSection } from '@/components/tasks/SubtasksSection'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Sheet,
+  SheetBody,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetBody,
-  SheetClose,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  CheckpointViewer,
-  type Checkpoint,
-} from "@/components/tasks/CheckpointViewer";
-import { ObjectiveSection } from "@/components/tasks/ObjectiveSection";
-import { SubtasksSection } from "@/components/tasks/SubtasksSection";
-import { CriteriaProgress } from "@/components/tasks/CriteriaProgress";
-import { getSubtasksWithSteps, type Subtask } from "@/lib/api/tasks";
-import type { Task, TaskType, TaskStatus } from "@/lib/api";
+} from '@/components/ui/sheet'
+import { Textarea } from '@/components/ui/textarea'
+import type { Task, TaskStatus, TaskType } from '@/lib/api'
+import { getSubtasksWithSteps, type Subtask } from '@/lib/api/tasks'
 
 interface TaskDetailDrawerProps {
-  task: Task | null;
-  projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onStatusChange?: (taskId: string, status: TaskStatus) => void;
-  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => void;
+  task: Task | null
+  projectId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onStatusChange?: (taskId: string, status: TaskStatus) => void
+  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => void
   /** Checkpoint for this task's session, if available */
-  checkpoint?: Checkpoint | null;
+  checkpoint?: Checkpoint | null
 }
 
 // ============================================================================
@@ -61,31 +60,31 @@ const priorityColors: Record<
   { bg: string; text: string; border: string }
 > = {
   0: {
-    bg: "bg-rose-500/30",
-    text: "text-rose-300",
-    border: "border-rose-500/40",
+    bg: 'bg-rose-500/30',
+    text: 'text-rose-300',
+    border: 'border-rose-500/40',
   },
   1: {
-    bg: "bg-orange-500/20",
-    text: "text-orange-400",
-    border: "border-orange-500/30",
+    bg: 'bg-orange-500/20',
+    text: 'text-orange-400',
+    border: 'border-orange-500/30',
   },
   2: {
-    bg: "bg-amber-500/20",
-    text: "text-amber-400",
-    border: "border-amber-500/30",
+    bg: 'bg-amber-500/20',
+    text: 'text-amber-400',
+    border: 'border-amber-500/30',
   },
   3: {
-    bg: "bg-blue-500/20",
-    text: "text-blue-400",
-    border: "border-blue-500/30",
+    bg: 'bg-blue-500/20',
+    text: 'text-blue-400',
+    border: 'border-blue-500/30',
   },
   4: {
-    bg: "bg-slate-500/20",
-    text: "text-slate-400",
-    border: "border-slate-500/30",
+    bg: 'bg-slate-500/20',
+    text: 'text-slate-400',
+    border: 'border-slate-500/30',
   },
-};
+}
 
 // ============================================================================
 // Task Type Configuration
@@ -97,35 +96,35 @@ const taskTypeConfig: Record<
 > = {
   feature: {
     icon: <Package className="h-4 w-4" />,
-    label: "Feature",
-    className: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    label: 'Feature',
+    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   },
   bug: {
     icon: <Bug className="h-4 w-4" />,
-    label: "Bug",
-    className: "bg-red-500/20 text-red-400 border-red-500/30",
+    label: 'Bug',
+    className: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   task: {
     icon: <CheckSquare className="h-4 w-4" />,
-    label: "Task",
-    className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    label: 'Task',
+    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   },
   refactor: {
     icon: <RefreshCw className="h-4 w-4" />,
-    label: "Refactor",
-    className: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    label: 'Refactor',
+    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   },
   debt: {
     icon: <AlertTriangle className="h-4 w-4" />,
-    label: "Tech Debt",
-    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    label: 'Tech Debt',
+    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   },
   regression: {
     icon: <ArrowDownCircle className="h-4 w-4" />,
-    label: "Regression",
-    className: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    label: 'Regression',
+    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   },
-};
+}
 
 // ============================================================================
 // Task Detail Drawer
@@ -140,76 +139,76 @@ export function TaskDetailDrawer({
   onTaskUpdate,
   checkpoint,
 }: TaskDetailDrawerProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false);
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [subtasks, setSubtasks] = useState<Subtask[]>([])
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false)
 
   // Fetch subtasks when drawer opens
   useEffect(() => {
     if (open && task) {
-      setIsLoadingSubtasks(true);
+      setIsLoadingSubtasks(true)
       getSubtasksWithSteps(projectId, task.id)
         .then((response) => {
-          setSubtasks(response.subtasks);
+          setSubtasks(response.subtasks)
         })
         .catch((err) => {
-          console.error("Failed to fetch subtasks:", err);
-          setSubtasks([]);
+          console.error('Failed to fetch subtasks:', err)
+          setSubtasks([])
         })
         .finally(() => {
-          setIsLoadingSubtasks(false);
-        });
+          setIsLoadingSubtasks(false)
+        })
     }
-  }, [open, task, projectId]);
+  }, [open, task, projectId])
 
-  if (!task) return null;
+  if (!task) return null
 
-  const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task;
-  const colors = priorityColors[task.priority] || priorityColors[2];
+  const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task
+  const colors = priorityColors[task.priority] || priorityColors[2]
 
   // Capability context
-  const capability = task.capability;
-  const hasCriteria = capability && capability.criteria_total > 0;
+  const capability = task.capability
+  const hasCriteria = capability && capability.criteria_total > 0
   const allPassed =
-    hasCriteria && capability.criteria_passed === capability.criteria_total;
+    hasCriteria && capability.criteria_passed === capability.criteria_total
   const progressPct = hasCriteria
     ? (capability.criteria_passed / capability.criteria_total) * 100
-    : 0;
+    : 0
 
   // Status checks
-  const isRunning = task.status === "running";
-  const isPaused = task.status === "paused";
-  const isCompleted = task.status === "completed";
+  const isRunning = task.status === 'running'
+  const isPaused = task.status === 'paused'
+  const isCompleted = task.status === 'completed'
 
   const handleEditStart = () => {
-    setEditTitle(task.title);
-    setEditDescription(task.description || "");
-    setIsEditing(true);
-  };
+    setEditTitle(task.title)
+    setEditDescription(task.description || '')
+    setIsEditing(true)
+  }
 
   const handleEditCancel = () => {
-    setIsEditing(false);
-    setEditTitle("");
-    setEditDescription("");
-  };
+    setIsEditing(false)
+    setEditTitle('')
+    setEditDescription('')
+  }
 
   const handleEditSave = () => {
     onTaskUpdate?.(task.id, {
       title: editTitle,
       description: editDescription,
-    });
-    setIsEditing(false);
-  };
+    })
+    setIsEditing(false)
+  }
 
   const handleStart = () => {
-    onStatusChange?.(task.id, "running");
-  };
+    onStatusChange?.(task.id, 'running')
+  }
 
   const handleComplete = () => {
-    onStatusChange?.(task.id, "completed");
-  };
+    onStatusChange?.(task.id, 'completed')
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -364,14 +363,14 @@ export function TaskDetailDrawer({
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs text-slate-500">Criteria</span>
                       <span
-                        className={`text-xs mono font-medium ${allPassed ? "text-phosphor-400" : "text-slate-400"}`}
+                        className={`text-xs mono font-medium ${allPassed ? 'text-phosphor-400' : 'text-slate-400'}`}
                       >
                         {capability.criteria_passed}/{capability.criteria_total}
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
                       <div
-                        className={`h-full transition-all duration-300 ${allPassed ? "bg-phosphor-500" : "bg-blue-500"}`}
+                        className={`h-full transition-all duration-300 ${allPassed ? 'bg-phosphor-500' : 'bg-blue-500'}`}
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
@@ -386,7 +385,7 @@ export function TaskDetailDrawer({
             objective={task.objective}
             onEdit={async (newObjective) => {
               // For now, just log - a proper API would be needed
-              console.log("Edit objective:", newObjective);
+              console.log('Edit objective:', newObjective)
             }}
           />
 
@@ -406,7 +405,7 @@ export function TaskDetailDrawer({
               <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                 {capability
                   ? `From: ${capability.capability_id}`
-                  : "Task-specific"}
+                  : 'Task-specific'}
               </span>
             </div>
           )}
@@ -427,7 +426,7 @@ export function TaskDetailDrawer({
                   prev.map((s) =>
                     s.subtask_id === subtaskId ? { ...s, passes } : s,
                   ),
-                );
+                )
                 // Would call API here
               }}
             />
@@ -459,9 +458,9 @@ export function TaskDetailDrawer({
               onResume={(prompt) => {
                 // Could navigate to a resume page or open a dialog
                 console.log(
-                  "Resume prompt copied:",
-                  prompt.substring(0, 100) + "...",
-                );
+                  'Resume prompt copied:',
+                  `${prompt.substring(0, 100)}...`,
+                )
               }}
             />
           )}
@@ -486,5 +485,5 @@ export function TaskDetailDrawer({
         </SheetBody>
       </SheetContent>
     </Sheet>
-  );
+  )
 }

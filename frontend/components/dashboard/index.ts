@@ -1,2 +1,2 @@
-export { ProjectCard } from "./ProjectCard";
-export { ActivityFeed } from "./ActivityFeed";
+export { ActivityFeed } from './ActivityFeed'
+export { ProjectCard } from './ProjectCard'

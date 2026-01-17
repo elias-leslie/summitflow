@@ -1,79 +1,79 @@
-"use client";
+'use client'
 
-import Link from "next/link";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { Clock, Target, ListTodo, Bug, AlertCircle } from "lucide-react";
-import { fetchProjectHealth, type ProjectWithStats } from "@/lib/api";
-import { useState } from "react";
-import clsx from "clsx";
+import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
+import { AlertCircle, Bug, Clock, ListTodo, Target } from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { fetchProjectHealth, type ProjectWithStats } from '@/lib/api'
 
 interface ProjectCardProps {
-  project: ProjectWithStats;
+  project: ProjectWithStats
 }
 
 export function ProjectCard({ project }: ProjectCardProps) {
-  const router = useRouter();
-  const [showHealth, setShowHealth] = useState(false);
+  const router = useRouter()
+  const [showHealth, setShowHealth] = useState(false)
 
   const { data: health, isLoading: healthLoading } = useQuery({
-    queryKey: ["project-health", project.id],
+    queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
     enabled: showHealth,
     refetchInterval: showHealth ? 30000 : false,
-  });
+  })
 
   // Generate gradient based on first letter (used as fallback if no logo)
   const gradients: Record<string, { from: string; to: string }> = {
-    S: { from: "#00c853", to: "#009624" },
-    P: { from: "#3b82f6", to: "#2563eb" },
-    A: { from: "#8b5cf6", to: "#6d28d9" },
-    C: { from: "#f59e0b", to: "#d97706" },
-    B: { from: "#ec4899", to: "#be185d" },
-    D: { from: "#06b6d4", to: "#0891b2" },
-    default: { from: "#64748b", to: "#475569" },
-  };
-  const firstLetter = project.name.charAt(0).toUpperCase();
-  const gradient = gradients[firstLetter] ?? gradients.default;
+    S: { from: '#00c853', to: '#009624' },
+    P: { from: '#3b82f6', to: '#2563eb' },
+    A: { from: '#8b5cf6', to: '#6d28d9' },
+    C: { from: '#f59e0b', to: '#d97706' },
+    B: { from: '#ec4899', to: '#be185d' },
+    D: { from: '#06b6d4', to: '#0891b2' },
+    default: { from: '#64748b', to: '#475569' },
+  }
+  const firstLetter = project.name.charAt(0).toUpperCase()
+  const gradient = gradients[firstLetter] ?? gradients.default
 
-  const { stats } = project;
+  const { stats } = project
 
   // Handle stat click - navigate to project with appropriate tab/filter
   const handleStatClick = (
     e: React.MouseEvent,
-    type: "features" | "tasks" | "bugs" | "blocked",
+    type: 'features' | 'tasks' | 'bugs' | 'blocked',
   ) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault()
+    e.stopPropagation()
 
     switch (type) {
-      case "features":
-        router.push(`/projects/${project.id}?tab=features`);
-        break;
-      case "tasks":
+      case 'features':
+        router.push(`/projects/${project.id}?tab=features`)
+        break
+      case 'tasks':
         // Show active non-bug tasks (matches dashboard count)
-        router.push(`/projects/${project.id}?tab=tasks&status=active`);
-        break;
-      case "bugs":
+        router.push(`/projects/${project.id}?tab=tasks&status=active`)
+        break
+      case 'bugs':
         // Show active bugs only (matches dashboard count)
         router.push(
           `/projects/${project.id}?tab=tasks&status=active&taskType=bug`,
-        );
-        break;
-      case "blocked":
+        )
+        break
+      case 'blocked':
         // Show blocked tasks (have incomplete dependencies)
-        router.push(`/projects/${project.id}?tab=tasks&status=blocked`);
-        break;
+        router.push(`/projects/${project.id}?tab=tasks&status=blocked`)
+        break
     }
-  };
+  }
 
   return (
     <Link
       href={`/projects/${project.id}`}
       className={clsx(
-        "card-elevated p-5 group transition-all duration-300",
-        "hover:border-phosphor-500/50 hover:translate-y-[-2px]",
+        'card-elevated p-5 group transition-all duration-300',
+        'hover:border-phosphor-500/50 hover:translate-y-[-2px]',
       )}
       onMouseEnter={() => setShowHealth(true)}
     >
@@ -119,10 +119,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
           ) : health ? (
             <div
               className={clsx(
-                "w-3 h-3 rounded-full",
+                'w-3 h-3 rounded-full',
                 health.healthy
-                  ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
-                  : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]",
+                  ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+                  : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]',
               )}
               data-testid="project-health-indicator"
             />
@@ -141,12 +141,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <div className="flex items-center gap-3">
             {/* Features */}
             <button
-              onClick={(e) => handleStatClick(e, "features")}
+              onClick={(e) => handleStatClick(e, 'features')}
               className={clsx(
-                "flex items-center gap-1 text-xs transition-colors",
+                'flex items-center gap-1 text-xs transition-colors',
                 stats.features > 0
-                  ? "text-blue-400 hover:text-blue-300"
-                  : "text-slate-500 hover:text-slate-400",
+                  ? 'text-blue-400 hover:text-blue-300'
+                  : 'text-slate-500 hover:text-slate-400',
               )}
               title="View features"
             >
@@ -156,12 +156,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
             {/* Tasks */}
             <button
-              onClick={(e) => handleStatClick(e, "tasks")}
+              onClick={(e) => handleStatClick(e, 'tasks')}
               className={clsx(
-                "flex items-center gap-1 text-xs transition-colors",
+                'flex items-center gap-1 text-xs transition-colors',
                 stats.tasks > 0
-                  ? "text-purple-400 hover:text-purple-300"
-                  : "text-slate-500 hover:text-slate-400",
+                  ? 'text-purple-400 hover:text-purple-300'
+                  : 'text-slate-500 hover:text-slate-400',
               )}
               title="View tasks"
             >
@@ -171,12 +171,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
             {/* Bugs */}
             <button
-              onClick={(e) => handleStatClick(e, "bugs")}
+              onClick={(e) => handleStatClick(e, 'bugs')}
               className={clsx(
-                "flex items-center gap-1 text-xs transition-colors",
+                'flex items-center gap-1 text-xs transition-colors',
                 stats.bugs > 0
-                  ? "text-amber-400 hover:text-amber-300"
-                  : "text-slate-500 hover:text-slate-400",
+                  ? 'text-amber-400 hover:text-amber-300'
+                  : 'text-slate-500 hover:text-slate-400',
               )}
               title="View bugs"
             >
@@ -186,12 +186,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
             {/* Blocked */}
             <button
-              onClick={(e) => handleStatClick(e, "blocked")}
+              onClick={(e) => handleStatClick(e, 'blocked')}
               className={clsx(
-                "flex items-center gap-1 text-xs transition-colors",
+                'flex items-center gap-1 text-xs transition-colors',
                 stats.blocked > 0
-                  ? "text-rose-400 hover:text-rose-300"
-                  : "text-slate-500 hover:text-slate-400",
+                  ? 'text-rose-400 hover:text-rose-300'
+                  : 'text-slate-500 hover:text-slate-400',
               )}
               title="View blocked"
             >
@@ -207,5 +207,5 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
     </Link>
-  );
+  )
 }

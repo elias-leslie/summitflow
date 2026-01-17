@@ -2,13 +2,12 @@
  * API module index - re-exports all API functions and types
  */
 
-// Utilities
-export * from "./utils";
-
 // Domain modules
-export * from "./evidence";
-export * from "./extraction";
-export * from "./tasks";
-export * from "./notifications";
-export * from "./git";
-export * from "./projects";
+export * from './evidence'
+export * from './extraction'
+export * from './git'
+export * from './notifications'
+export * from './projects'
+export * from './tasks'
+// Utilities
+export * from './utils'

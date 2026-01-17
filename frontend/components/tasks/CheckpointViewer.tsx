@@ -1,46 +1,46 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { clsx } from "clsx";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { ScrollArea } from "../ui/scroll-area";
+import { clsx } from 'clsx'
 import {
   CheckCircle,
+  ChevronDown,
+  ChevronUp,
   Circle,
   Clock,
   Copy,
-  ChevronDown,
-  ChevronUp,
   FileCode,
   HelpCircle,
   MessageSquare,
-} from "lucide-react";
+} from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import { ScrollArea } from '../ui/scroll-area'
 
 interface CheckpointViewerProps {
-  checkpoint: Checkpoint;
-  className?: string;
-  onResume?: (resumePrompt: string) => void;
+  checkpoint: Checkpoint
+  className?: string
+  onResume?: (resumePrompt: string) => void
 }
 
 interface Checkpoint {
-  id: string;
-  project_id: string;
-  session_id: string;
-  agent_type: string;
-  current_action: string | null;
-  question: string | null;
-  options: Array<{ label: string; description?: string }> | null;
-  recommendation: string | null;
-  completed_steps: string[] | null;
-  remaining_steps: string[] | null;
-  files_modified: string[] | null;
-  decisions_made: Array<{ decision: string; rationale?: string }> | null;
-  conversation_summary: string | null;
-  context_snapshot: Record<string, unknown> | null;
-  tokens_used: number | null;
-  created_at: string | null;
+  id: string
+  project_id: string
+  session_id: string
+  agent_type: string
+  current_action: string | null
+  question: string | null
+  options: Array<{ label: string; description?: string }> | null
+  recommendation: string | null
+  completed_steps: string[] | null
+  remaining_steps: string[] | null
+  files_modified: string[] | null
+  decisions_made: Array<{ decision: string; rationale?: string }> | null
+  conversation_summary: string | null
+  context_snapshot: Record<string, unknown> | null
+  tokens_used: number | null
+  created_at: string | null
 }
 
 export function CheckpointViewer({
@@ -48,55 +48,56 @@ export function CheckpointViewer({
   className,
   onResume,
 }: CheckpointViewerProps) {
-  const [showSummary, setShowSummary] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [resumePrompt, setResumePrompt] = useState<string | null>(null);
-  const [loadingPrompt, setLoadingPrompt] = useState(false);
+  const [showSummary, setShowSummary] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [resumePrompt, setResumePrompt] = useState<string | null>(null)
+  const [loadingPrompt, setLoadingPrompt] = useState(false)
 
-  const completedSteps = checkpoint.completed_steps || [];
-  const remainingSteps = checkpoint.remaining_steps || [];
-  const totalSteps = completedSteps.length + remainingSteps.length;
-  const progress = totalSteps > 0 ? (completedSteps.length / totalSteps) * 100 : 0;
+  const completedSteps = checkpoint.completed_steps || []
+  const remainingSteps = checkpoint.remaining_steps || []
+  const totalSteps = completedSteps.length + remainingSteps.length
+  const progress =
+    totalSteps > 0 ? (completedSteps.length / totalSteps) * 100 : 0
 
   const fetchResumePrompt = async () => {
-    if (resumePrompt) return; // Already fetched
+    if (resumePrompt) return // Already fetched
 
-    setLoadingPrompt(true);
+    setLoadingPrompt(true)
     try {
       const response = await fetch(
         `/api/projects/${checkpoint.project_id}/checkpoints/${checkpoint.id}/resume`,
-        { method: "POST" }
-      );
+        { method: 'POST' },
+      )
       if (response.ok) {
-        const data = await response.json();
-        setResumePrompt(data.resume_prompt);
+        const data = await response.json()
+        setResumePrompt(data.resume_prompt)
       }
     } catch (error) {
-      console.error("Failed to fetch resume prompt:", error);
+      console.error('Failed to fetch resume prompt:', error)
     } finally {
-      setLoadingPrompt(false);
+      setLoadingPrompt(false)
     }
-  };
+  }
 
   const handleCopyPrompt = async () => {
     if (!resumePrompt) {
-      await fetchResumePrompt();
+      await fetchResumePrompt()
     }
     if (resumePrompt) {
-      await navigator.clipboard.writeText(resumePrompt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      onResume?.(resumePrompt);
+      await navigator.clipboard.writeText(resumePrompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+      onResume?.(resumePrompt)
     }
-  };
+  }
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "Unknown";
-    return new Date(dateStr).toLocaleString();
-  };
+    if (!dateStr) return 'Unknown'
+    return new Date(dateStr).toLocaleString()
+  }
 
   return (
-    <Card className={clsx("overflow-hidden", className)}>
+    <Card className={clsx('overflow-hidden', className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -135,7 +136,10 @@ export function CheckpointViewer({
               <div className="space-y-1 mt-2">
                 <div className="text-xs text-slate-500">Options:</div>
                 {checkpoint.options.map((opt, i) => (
-                  <div key={i} className="text-sm pl-2 text-slate-600 dark:text-slate-400">
+                  <div
+                    key={i}
+                    className="text-sm pl-2 text-slate-600 dark:text-slate-400"
+                  >
                     {i + 1}. {opt.label}
                   </div>
                 ))}
@@ -154,7 +158,9 @@ export function CheckpointViewer({
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-slate-500">
               <span>Progress</span>
-              <span>{completedSteps.length}/{totalSteps} steps</span>
+              <span>
+                {completedSteps.length}/{totalSteps} steps
+              </span>
             </div>
             <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
               <div
@@ -167,12 +173,19 @@ export function CheckpointViewer({
             <div className="space-y-2 mt-3">
               {completedSteps.length > 0 && (
                 <div className="space-y-1">
-                  <div className="text-xs font-medium text-slate-500">Completed</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    Completed
+                  </div>
                   <ScrollArea className="max-h-24">
                     {completedSteps.slice(0, 10).map((step, i) => (
-                      <div key={i} className="flex items-start gap-1.5 text-xs py-0.5">
+                      <div
+                        key={i}
+                        className="flex items-start gap-1.5 text-xs py-0.5"
+                      >
                         <CheckCircle className="h-3 w-3 text-phosphor-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-slate-600 dark:text-slate-400">{step}</span>
+                        <span className="text-slate-600 dark:text-slate-400">
+                          {step}
+                        </span>
                       </div>
                     ))}
                     {completedSteps.length > 10 && (
@@ -186,10 +199,15 @@ export function CheckpointViewer({
 
               {remainingSteps.length > 0 && (
                 <div className="space-y-1">
-                  <div className="text-xs font-medium text-slate-500">Remaining</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    Remaining
+                  </div>
                   <ScrollArea className="max-h-24">
                     {remainingSteps.slice(0, 10).map((step, i) => (
-                      <div key={i} className="flex items-start gap-1.5 text-xs py-0.5">
+                      <div
+                        key={i}
+                        className="flex items-start gap-1.5 text-xs py-0.5"
+                      >
                         <Circle className="h-3 w-3 text-slate-400 mt-0.5 flex-shrink-0" />
                         <span className="text-slate-500">{step}</span>
                       </div>
@@ -216,7 +234,7 @@ export function CheckpointViewer({
             <div className="flex flex-wrap gap-1">
               {checkpoint.files_modified.slice(0, 5).map((file, i) => (
                 <Badge key={i} variant="outline" className="text-xs font-mono">
-                  {file.split("/").pop()}
+                  {file.split('/').pop()}
                 </Badge>
               ))}
               {checkpoint.files_modified.length > 5 && (
@@ -268,7 +286,7 @@ export function CheckpointViewer({
           className="w-full"
         >
           {loadingPrompt ? (
-            "Loading..."
+            'Loading...'
           ) : copied ? (
             <>
               <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
@@ -283,7 +301,7 @@ export function CheckpointViewer({
         </Button>
       </CardContent>
     </Card>
-  );
+  )
 }
 
-export type { Checkpoint };
+export type { Checkpoint }

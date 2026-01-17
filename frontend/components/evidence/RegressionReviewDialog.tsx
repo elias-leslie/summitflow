@@ -1,68 +1,68 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Image from "next/image";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
+  Bug,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
-  AlertTriangle,
-  CheckCircle2,
-  Bug,
-  Terminal,
   Loader2,
-} from "lucide-react";
-import { toast } from "sonner";
+  Terminal,
+} from 'lucide-react'
+import Image from 'next/image'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 // ============================================================================
 // Types
 // ============================================================================
 
 interface Regression {
-  id: number;
-  evidence_id: number;
-  baseline_evidence_id: number | null;
-  regression_type: string;
-  pixel_diff_pct: number | null;
-  console_errors_added: number;
-  severity: string;
-  status: string;
-  linked_task_id: string | null;
-  created_at: string;
+  id: number
+  evidence_id: number
+  baseline_evidence_id: number | null
+  regression_type: string
+  pixel_diff_pct: number | null
+  console_errors_added: number
+  severity: string
+  status: string
+  linked_task_id: string | null
+  created_at: string
 }
 
 interface EvidenceDetail {
-  id: number;
-  capability_id: string;
-  criterion_id: string;
-  version: number;
-  project_id: string;
-  captured_at: string;
+  id: number
+  capability_id: string
+  criterion_id: string
+  version: number
+  project_id: string
+  captured_at: string
   metadata?: {
     console?: {
-      errors?: Array<{ text: string; source?: string }>;
-    };
-  };
+      errors?: Array<{ text: string; source?: string }>
+    }
+  }
 }
 
 interface RegressionReviewDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  regression: Regression;
-  onReviewed?: () => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  regression: Regression
+  onReviewed?: () => void
 }
 
 // ============================================================================
@@ -76,33 +76,33 @@ async function fetchEvidenceById(
   try {
     const res = await fetch(
       `/api/projects/${projectId}/evidence/by-id/${evidenceId}`,
-    );
-    if (!res.ok) return null;
-    return res.json();
+    )
+    if (!res.ok) return null
+    return res.json()
   } catch {
-    return null;
+    return null
   }
 }
 
 async function reviewRegression(
   projectId: string,
   regressionId: number,
-  verdict: "accept_change" | "confirm_regression",
+  verdict: 'accept_change' | 'confirm_regression',
   notes?: string,
 ): Promise<{ success: boolean }> {
   const res = await fetch(
     `/api/projects/${projectId}/evidence/regressions/${regressionId}/review`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ verdict, notes }),
     },
-  );
+  )
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Review failed" }));
-    throw new Error(error.detail || "Review failed");
+    const error = await res.json().catch(() => ({ detail: 'Review failed' }))
+    throw new Error(error.detail || 'Review failed')
   }
-  return res.json();
+  return res.json()
 }
 
 // ============================================================================
@@ -116,66 +116,66 @@ export function RegressionReviewDialog({
   regression,
   onReviewed,
 }: RegressionReviewDialogProps) {
-  const queryClient = useQueryClient();
-  const [showDiff, setShowDiff] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [viewMode, setViewMode] = useState<"side-by-side" | "slider">(
-    "side-by-side",
-  );
-  const [sliderPos, setSliderPos] = useState(50);
+  const queryClient = useQueryClient()
+  const [showDiff, setShowDiff] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [viewMode, setViewMode] = useState<'side-by-side' | 'slider'>(
+    'side-by-side',
+  )
+  const [sliderPos, setSliderPos] = useState(50)
 
   // Fetch evidence details
   const { data: currentEvidence, isLoading: loadingCurrent } = useQuery({
-    queryKey: ["evidence-detail", projectId, regression.evidence_id],
+    queryKey: ['evidence-detail', projectId, regression.evidence_id],
     queryFn: () => fetchEvidenceById(projectId, regression.evidence_id),
     enabled: open,
-  });
+  })
 
   const { data: baselineEvidence, isLoading: loadingBaseline } = useQuery({
-    queryKey: ["evidence-detail", projectId, regression.baseline_evidence_id],
+    queryKey: ['evidence-detail', projectId, regression.baseline_evidence_id],
     queryFn: () =>
       regression.baseline_evidence_id
         ? fetchEvidenceById(projectId, regression.baseline_evidence_id)
         : Promise.resolve(null),
     enabled: open && !!regression.baseline_evidence_id,
-  });
+  })
 
   const reviewMutation = useMutation({
-    mutationFn: (verdict: "accept_change" | "confirm_regression") =>
+    mutationFn: (verdict: 'accept_change' | 'confirm_regression') =>
       reviewRegression(projectId, regression.id, verdict, notes || undefined),
     onSuccess: (_, verdict) => {
       toast.success(
-        verdict === "accept_change"
-          ? "Change accepted - baseline updated"
-          : "Regression confirmed - bug task will be created",
-      );
-      queryClient.invalidateQueries({ queryKey: ["regressions", projectId] });
-      onReviewed?.();
-      onOpenChange(false);
+        verdict === 'accept_change'
+          ? 'Change accepted - baseline updated'
+          : 'Regression confirmed - bug task will be created',
+      )
+      queryClient.invalidateQueries({ queryKey: ['regressions', projectId] })
+      onReviewed?.()
+      onOpenChange(false)
     },
     onError: (error: Error) => {
-      toast.error(error.message);
+      toast.error(error.message)
     },
-  });
+  })
 
-  const isLoading = loadingCurrent || loadingBaseline;
-  const hasBaseline = !!regression.baseline_evidence_id && !!baselineEvidence;
+  const isLoading = loadingCurrent || loadingBaseline
+  const hasBaseline = !!regression.baseline_evidence_id && !!baselineEvidence
 
   // Build screenshot URLs
   const currentScreenshotUrl = currentEvidence
     ? `/api/projects/${projectId}/evidence/${currentEvidence.capability_id}/${currentEvidence.criterion_id}/screenshot?version=${currentEvidence.version}`
-    : null;
+    : null
   const baselineScreenshotUrl =
     hasBaseline && baselineEvidence
       ? `/api/projects/${projectId}/evidence/${baselineEvidence.capability_id}/${baselineEvidence.criterion_id}/screenshot?version=${baselineEvidence.version}`
-      : null;
+      : null
 
   // Extract console errors
-  const currentErrors = currentEvidence?.metadata?.console?.errors ?? [];
-  const baselineErrors = baselineEvidence?.metadata?.console?.errors ?? [];
+  const currentErrors = currentEvidence?.metadata?.console?.errors ?? []
+  const baselineErrors = baselineEvidence?.metadata?.console?.errors ?? []
   const newErrors = currentErrors.filter(
     (e) => !baselineErrors.some((b) => b.text === e.text),
-  );
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -189,12 +189,12 @@ export function RegressionReviewDialog({
             </span>
           </DialogTitle>
           <DialogDescription>
-            {regression.regression_type === "visual" ? (
+            {regression.regression_type === 'visual' ? (
               <>
                 Visual difference detected (
                 {regression.pixel_diff_pct?.toFixed(2)}% change)
               </>
-            ) : regression.regression_type === "console_errors" ? (
+            ) : regression.regression_type === 'console_errors' ? (
               <>
                 +{regression.console_errors_added} new console errors detected
               </>
@@ -221,23 +221,23 @@ export function RegressionReviewDialog({
                     {hasBaseline && (
                       <>
                         <button
-                          onClick={() => setViewMode("side-by-side")}
+                          onClick={() => setViewMode('side-by-side')}
                           className={cn(
-                            "px-2 py-1 text-xs rounded",
-                            viewMode === "side-by-side"
-                              ? "bg-phosphor-500/20 text-phosphor-400"
-                              : "text-slate-400 hover:text-white",
+                            'px-2 py-1 text-xs rounded',
+                            viewMode === 'side-by-side'
+                              ? 'bg-phosphor-500/20 text-phosphor-400'
+                              : 'text-slate-400 hover:text-white',
                           )}
                         >
                           Side by Side
                         </button>
                         <button
-                          onClick={() => setViewMode("slider")}
+                          onClick={() => setViewMode('slider')}
                           className={cn(
-                            "px-2 py-1 text-xs rounded",
-                            viewMode === "slider"
-                              ? "bg-phosphor-500/20 text-phosphor-400"
-                              : "text-slate-400 hover:text-white",
+                            'px-2 py-1 text-xs rounded',
+                            viewMode === 'slider'
+                              ? 'bg-phosphor-500/20 text-phosphor-400'
+                              : 'text-slate-400 hover:text-white',
                           )}
                         >
                           Slider
@@ -247,10 +247,10 @@ export function RegressionReviewDialog({
                     <button
                       onClick={() => setShowDiff(!showDiff)}
                       className={cn(
-                        "px-2 py-1 text-xs rounded flex items-center gap-1",
+                        'px-2 py-1 text-xs rounded flex items-center gap-1',
                         showDiff
-                          ? "bg-amber-500/20 text-amber-400"
-                          : "text-slate-400 hover:text-white",
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'text-slate-400 hover:text-white',
                       )}
                     >
                       {showDiff ? (
@@ -278,7 +278,7 @@ export function RegressionReviewDialog({
                       />
                     </div>
                   </div>
-                ) : viewMode === "side-by-side" ? (
+                ) : viewMode === 'side-by-side' ? (
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-lg border border-slate-700 overflow-hidden">
                       <div className="text-xs text-slate-400 px-3 py-1 bg-slate-800/50 flex items-center gap-1">
@@ -308,8 +308,8 @@ export function RegressionReviewDialog({
                           alt="Current screenshot"
                           fill
                           className={cn(
-                            "object-contain",
-                            showDiff && "mix-blend-difference",
+                            'object-contain',
+                            showDiff && 'mix-blend-difference',
                           )}
                           unoptimized
                         />
@@ -414,7 +414,7 @@ export function RegressionReviewDialog({
           </Button>
           <Button
             variant="outline"
-            onClick={() => reviewMutation.mutate("accept_change")}
+            onClick={() => reviewMutation.mutate('accept_change')}
             disabled={reviewMutation.isPending}
             className="border-green-700 text-green-400 hover:bg-green-500/10"
           >
@@ -427,7 +427,7 @@ export function RegressionReviewDialog({
           </Button>
           <Button
             variant="destructive"
-            onClick={() => reviewMutation.mutate("confirm_regression")}
+            onClick={() => reviewMutation.mutate('confirm_regression')}
             disabled={reviewMutation.isPending}
           >
             {reviewMutation.isPending ? (
@@ -440,5 +440,5 @@ export function RegressionReviewDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

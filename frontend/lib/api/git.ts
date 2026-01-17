@@ -2,53 +2,53 @@
  * Git management API functions.
  */
 
-import { fetchWithErrorHandling, getApiBase } from "./utils";
+import { fetchWithErrorHandling, getApiBase } from './utils'
 
 export interface RepoStatus {
-  path: string;
-  name: string;
-  branch: string;
-  uncommitted: number;
-  ahead: number;
-  behind: number;
-  state: "clean" | "dirty" | "behind" | "ahead";
+  path: string
+  name: string
+  branch: string
+  uncommitted: number
+  ahead: number
+  behind: number
+  state: 'clean' | 'dirty' | 'behind' | 'ahead'
 }
 
 export interface GitStatusResponse {
-  repositories: RepoStatus[];
-  total: number;
+  repositories: RepoStatus[]
+  total: number
 }
 
 export interface SyncResult {
-  path: string;
-  name: string;
-  branch: string;
-  status: "up_to_date" | "updated" | "skipped" | "failed";
-  reason?: string;
-  error?: string;
+  path: string
+  name: string
+  branch: string
+  status: 'up_to_date' | 'updated' | 'skipped' | 'failed'
+  reason?: string
+  error?: string
 }
 
 export interface GitSyncResponse {
-  results: SyncResult[];
-  success: number;
-  failed: number;
-  skipped: number;
+  results: SyncResult[]
+  success: number
+  failed: number
+  skipped: number
 }
 
 export interface WorktreeInfo {
-  task_id: string;
-  project_id: string;
-  branch: string;
-  path: string;
-  commit_count: number;
-  files_changed: number;
-  additions: number;
-  deletions: number;
+  task_id: string
+  project_id: string
+  branch: string
+  path: string
+  commit_count: number
+  files_changed: number
+  additions: number
+  deletions: number
 }
 
 export interface WorktreesResponse {
-  worktrees: WorktreeInfo[];
-  total: number;
+  worktrees: WorktreeInfo[]
+  total: number
 }
 
 /**
@@ -57,8 +57,8 @@ export interface WorktreesResponse {
 export async function fetchGitStatus(): Promise<GitStatusResponse> {
   return fetchWithErrorHandling<GitStatusResponse>(
     `${getApiBase()}/api/git/status`,
-    { errorMessage: "Failed to fetch git status" },
-  );
+    { errorMessage: 'Failed to fetch git status' },
+  )
 }
 
 /**
@@ -69,8 +69,8 @@ export async function fetchProjectGitStatus(
 ): Promise<GitStatusResponse> {
   return fetchWithErrorHandling<GitStatusResponse>(
     `${getApiBase()}/api/projects/${projectId}/git/status`,
-    { errorMessage: "Failed to fetch project git status" },
-  );
+    { errorMessage: 'Failed to fetch project git status' },
+  )
 }
 
 /**
@@ -80,10 +80,10 @@ export async function syncRepositories(): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
     `${getApiBase()}/api/git/sync`,
     {
-      method: "POST",
-      errorMessage: "Failed to sync repositories",
+      method: 'POST',
+      errorMessage: 'Failed to sync repositories',
     },
-  );
+  )
 }
 
 /**
@@ -94,8 +94,8 @@ export async function fetchWorktrees(
 ): Promise<WorktreesResponse> {
   return fetchWithErrorHandling<WorktreesResponse>(
     `${getApiBase()}/api/projects/${projectId}/worktrees`,
-    { errorMessage: "Failed to fetch worktrees" },
-  );
+    { errorMessage: 'Failed to fetch worktrees' },
+  )
 }
 
 /**
@@ -108,19 +108,19 @@ export async function deleteWorktree(
   await fetchWithErrorHandling<{ success: boolean }>(
     `${getApiBase()}/api/projects/${projectId}/worktrees/${taskId}`,
     {
-      method: "DELETE",
-      errorMessage: "Failed to delete worktree",
+      method: 'DELETE',
+      errorMessage: 'Failed to delete worktree',
     },
-  );
+  )
 }
 
 export interface WorktreeDiffResponse {
-  task_id: string;
-  files: Array<{ status: string; path: string }>;
-  diff: string;
-  commit_count: number;
-  additions: number;
-  deletions: number;
+  task_id: string
+  files: Array<{ status: string; path: string }>
+  diff: string
+  commit_count: number
+  additions: number
+  deletions: number
 }
 
 /**
@@ -132,14 +132,14 @@ export async function fetchWorktreeDiff(
 ): Promise<WorktreeDiffResponse> {
   return fetchWithErrorHandling<WorktreeDiffResponse>(
     `${getApiBase()}/api/projects/${projectId}/worktrees/${taskId}/diff`,
-    { errorMessage: "Failed to fetch worktree diff" },
-  );
+    { errorMessage: 'Failed to fetch worktree diff' },
+  )
 }
 
 export interface MergeResponse {
-  success: boolean;
-  message: string;
-  task_id: string;
+  success: boolean
+  message: string
+  task_id: string
 }
 
 /**
@@ -153,19 +153,19 @@ export async function mergeWorktree(
   return fetchWithErrorHandling<MergeResponse>(
     `${getApiBase()}/api/projects/${projectId}/worktrees/${taskId}/merge`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ delete_after: deleteAfter }),
-      errorMessage: "Failed to merge worktree",
+      errorMessage: 'Failed to merge worktree',
     },
-  );
+  )
 }
 
 export interface PushResponse {
-  success: boolean;
-  message: string;
-  task_id: string;
-  branch: string;
+  success: boolean
+  message: string
+  task_id: string
+  branch: string
 }
 
 /**
@@ -178,21 +178,21 @@ export async function pushWorktree(
   return fetchWithErrorHandling<PushResponse>(
     `${getApiBase()}/api/projects/${projectId}/worktrees/${taskId}/push`,
     {
-      method: "POST",
-      errorMessage: "Failed to push worktree",
+      method: 'POST',
+      errorMessage: 'Failed to push worktree',
     },
-  );
+  )
 }
 
 export interface PRCreateRequest {
-  title?: string;
-  body?: string;
+  title?: string
+  body?: string
 }
 
 export interface PRCreateResponse {
-  pr_url: string;
-  branch_name: string;
-  task_id: string;
+  pr_url: string
+  branch_name: string
+  task_id: string
 }
 
 /**
@@ -205,30 +205,30 @@ export async function createPullRequest(
   return fetchWithErrorHandling<PRCreateResponse>(
     `${getApiBase()}/api/tasks/${taskId}/pr`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request ?? {}),
-      errorMessage: "Failed to create pull request",
+      errorMessage: 'Failed to create pull request',
     },
-  );
+  )
 }
 
 export interface CleanupResponse {
   removed: Array<{
-    project_id: string;
-    task_id: string;
-    path: string;
-    age_days: number;
-    last_modified: string;
-  }>;
+    project_id: string
+    task_id: string
+    path: string
+    age_days: number
+    last_modified: string
+  }>
   would_remove: Array<{
-    project_id: string;
-    task_id: string;
-    path: string;
-    age_days: number;
-    last_modified: string;
-  }>;
-  dry_run: boolean;
+    project_id: string
+    task_id: string
+    path: string
+    age_days: number
+    last_modified: string
+  }>
+  dry_run: boolean
 }
 
 /**
@@ -242,10 +242,10 @@ export async function cleanupWorktrees(
   return fetchWithErrorHandling<CleanupResponse>(
     `${getApiBase()}/api/projects/${projectId}/worktrees/cleanup`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ max_age_days: maxAgeDays, dry_run: dryRun }),
-      errorMessage: "Failed to cleanup worktrees",
+      errorMessage: 'Failed to cleanup worktrees',
     },
-  );
+  )
 }

@@ -1,50 +1,49 @@
-"use client";
+'use client'
 
-import { useState, useMemo, useRef } from "react";
-import { useParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
 import {
+  AlertCircle,
   Brain,
-  Wrench,
+  Check,
+  ChevronRight,
+  Download,
   FileCode,
   FlaskConical,
   RefreshCw,
-  ChevronRight,
   Sparkles,
-  Download,
   Upload,
+  Wrench,
   X,
-  Check,
-  AlertCircle,
-} from "lucide-react";
-import clsx from "clsx";
-
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { PromptEditor } from "@/components/prompts/PromptEditor";
+} from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { useMemo, useRef, useState } from 'react'
+import { PromptEditor } from '@/components/prompts/PromptEditor'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
-  fetchPrompts,
   exportPrompts,
+  fetchPrompts,
   importPrompts,
   type Prompt,
   type PromptCategory,
   type PromptUpdate,
-} from "@/lib/api";
+} from '@/lib/api'
 
 interface TabConfig {
-  id: PromptCategory;
-  label: string;
-  icon: React.ElementType;
-  color: string;
+  id: PromptCategory
+  label: string
+  icon: React.ElementType
+  color: string
 }
 
 const tabs: TabConfig[] = [
-  { id: "spec", label: "Spec Pipeline", icon: FileCode, color: "emerald" },
-  { id: "recovery", label: "Recovery", icon: Wrench, color: "orange" },
-  { id: "qa", label: "QA", icon: FlaskConical, color: "cyan" },
-  { id: "extraction", label: "Extraction", icon: Brain, color: "purple" },
-];
+  { id: 'spec', label: 'Spec Pipeline', icon: FileCode, color: 'emerald' },
+  { id: 'recovery', label: 'Recovery', icon: Wrench, color: 'orange' },
+  { id: 'qa', label: 'QA', icon: FlaskConical, color: 'cyan' },
+  { id: 'extraction', label: 'Extraction', icon: Brain, color: 'purple' },
+]
 
 function PromptsPageSkeleton() {
   return (
@@ -60,30 +59,30 @@ function PromptsPageSkeleton() {
         ))}
       </div>
     </div>
-  );
+  )
 }
 
 function PromptCard({
   prompt,
   onClick,
 }: {
-  prompt: Prompt;
-  onClick: () => void;
+  prompt: Prompt
+  onClick: () => void
 }) {
   const formatPromptType = (type: string) => {
     return type
-      .split("_")
+      .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
+      .join(' ')
+  }
 
   return (
     <button
       onClick={onClick}
       className={clsx(
-        "w-full text-left p-4 rounded-lg border transition-all duration-200",
-        "bg-slate-900/50 border-slate-700",
-        "hover:border-slate-500 hover:bg-slate-800/50"
+        'w-full text-left p-4 rounded-lg border transition-all duration-200',
+        'bg-slate-900/50 border-slate-700',
+        'hover:border-slate-500 hover:bg-slate-800/50',
       )}
     >
       <div className="flex items-start justify-between gap-4">
@@ -93,7 +92,10 @@ function PromptCard({
               {formatPromptType(prompt.prompt_type)}
             </h3>
             {prompt.is_default ? (
-              <Badge variant="outline" className="text-slate-500 border-slate-600 text-xs">
+              <Badge
+                variant="outline"
+                className="text-slate-500 border-slate-600 text-xs"
+              >
                 Default
               </Badge>
             ) : (
@@ -123,88 +125,99 @@ function PromptCard({
         </div>
       </div>
     </button>
-  );
+  )
 }
 
 export default function PromptsPage() {
-  const params = useParams();
-  const projectId = params.id as string;
-  const queryClient = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const params = useParams()
+  const projectId = params.id as string
+  const queryClient = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [activeTab, setActiveTab] = useState<PromptCategory>("spec");
-  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
-  const [importPreview, setImportPreview] = useState<PromptUpdate[] | null>(null);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<PromptCategory>('spec')
+  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null)
+  const [importPreview, setImportPreview] = useState<PromptUpdate[] | null>(
+    null,
+  )
+  const [toast, setToast] = useState<{
+    type: 'success' | 'error'
+    message: string
+  } | null>(null)
 
   const {
     data: prompts = [],
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["prompts", projectId],
+    queryKey: ['prompts', projectId],
     queryFn: () => fetchPrompts(projectId),
-  });
+  })
 
   // Export mutation
   const exportMutation = useMutation({
     mutationFn: () => exportPrompts(projectId),
     onSuccess: (data) => {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `prompts-${projectId}-${new Date().toISOString().split("T")[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast("success", "Prompts exported successfully");
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `prompts-${projectId}-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast('success', 'Prompts exported successfully')
     },
     onError: () => {
-      showToast("error", "Failed to export prompts");
+      showToast('error', 'Failed to export prompts')
     },
-  });
+  })
 
   // Import mutation
   const importMutation = useMutation({
-    mutationFn: (promptsToImport: PromptUpdate[]) => importPrompts(projectId, promptsToImport),
+    mutationFn: (promptsToImport: PromptUpdate[]) =>
+      importPrompts(projectId, promptsToImport),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["prompts", projectId] });
-      setImportPreview(null);
-      showToast("success", `Imported ${result.imported} prompts, updated ${result.updated}`);
+      queryClient.invalidateQueries({ queryKey: ['prompts', projectId] })
+      setImportPreview(null)
+      showToast(
+        'success',
+        `Imported ${result.imported} prompts, updated ${result.updated}`,
+      )
     },
     onError: () => {
-      showToast("error", "Failed to import prompts");
+      showToast('error', 'Failed to import prompts')
     },
-  });
+  })
 
-  const showToast = (type: "success" | "error", message: string) => {
-    setToast({ type, message });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    const reader = new FileReader();
+    const reader = new FileReader()
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        const promptsData = data.prompts || data;
+        const data = JSON.parse(event.target?.result as string)
+        const promptsData = data.prompts || data
         if (Array.isArray(promptsData)) {
-          setImportPreview(promptsData);
+          setImportPreview(promptsData)
         } else {
-          showToast("error", "Invalid file format - expected prompts array");
+          showToast('error', 'Invalid file format - expected prompts array')
         }
       } catch {
-        showToast("error", "Failed to parse JSON file");
+        showToast('error', 'Failed to parse JSON file')
       }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
 
   const groupedPrompts = useMemo(() => {
     const groups: Record<PromptCategory, Prompt[]> = {
@@ -212,24 +225,24 @@ export default function PromptsPage() {
       recovery: [],
       qa: [],
       extraction: [],
-    };
+    }
     for (const prompt of prompts) {
-      const cat = prompt.category as PromptCategory;
+      const cat = prompt.category as PromptCategory
       if (groups[cat]) {
-        groups[cat].push(prompt);
+        groups[cat].push(prompt)
       }
     }
-    return groups;
-  }, [prompts]);
+    return groups
+  }, [prompts])
 
-  const currentPrompts = groupedPrompts[activeTab] || [];
+  const currentPrompts = groupedPrompts[activeTab] || []
 
   if (isLoading) {
     return (
       <div className="h-full overflow-auto p-4">
         <PromptsPageSkeleton />
       </div>
-    );
+    )
   }
 
   return (
@@ -237,19 +250,19 @@ export default function PromptsPage() {
       {/* Category Tabs */}
       <div className="flex items-center gap-2 flex-wrap">
         {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          const count = groupedPrompts[tab.id].length;
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          const count = groupedPrompts[tab.id].length
 
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
                 isActive
                   ? `bg-${tab.color}-500/15 text-${tab.color}-400`
-                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800"
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800',
               )}
               style={
                 isActive
@@ -265,15 +278,15 @@ export default function PromptsPage() {
               {count > 0 && (
                 <span
                   className={clsx(
-                    "px-1.5 py-0.5 rounded text-xs",
-                    isActive ? "bg-white/10" : "bg-slate-700"
+                    'px-1.5 py-0.5 rounded text-xs',
+                    isActive ? 'bg-white/10' : 'bg-slate-700',
                   )}
                 >
                   {count}
                 </span>
               )}
             </button>
-          );
+          )
         })}
 
         <div className="flex-1" />
@@ -318,7 +331,7 @@ export default function PromptsPage() {
       {/* Results count */}
       <div className="text-sm text-slate-500">
         {currentPrompts.length > 0
-          ? `${currentPrompts.length} prompt${currentPrompts.length !== 1 ? "s" : ""} in ${
+          ? `${currentPrompts.length} prompt${currentPrompts.length !== 1 ? 's' : ''} in ${
               tabs.find((t) => t.id === activeTab)?.label
             }`
           : `No prompts in ${tabs.find((t) => t.id === activeTab)?.label}`}
@@ -371,10 +384,13 @@ export default function PromptsPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-white">
-                        {p.prompt_text ? (p as { prompt_type?: string }).prompt_type || `Prompt ${i + 1}` : `Prompt ${i + 1}`}
+                        {p.prompt_text
+                          ? (p as { prompt_type?: string }).prompt_type ||
+                            `Prompt ${i + 1}`
+                          : `Prompt ${i + 1}`}
                       </span>
                       <Badge variant="outline" className="text-xs">
-                        {p.category || "extraction"}
+                        {p.category || 'extraction'}
                       </Badge>
                     </div>
                     <p className="text-xs text-slate-500 mt-1 line-clamp-2">
@@ -408,13 +424,13 @@ export default function PromptsPage() {
       {toast && (
         <div
           className={clsx(
-            "fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg",
-            toast.type === "success"
-              ? "bg-phosphor-500/20 border border-phosphor-500/30 text-phosphor-400"
-              : "bg-rose-500/20 border border-rose-500/30 text-rose-400"
+            'fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg',
+            toast.type === 'success'
+              ? 'bg-phosphor-500/20 border border-phosphor-500/30 text-phosphor-400'
+              : 'bg-rose-500/20 border border-rose-500/30 text-rose-400',
           )}
         >
-          {toast.type === "success" ? (
+          {toast.type === 'success' ? (
             <Check className="w-4 h-4" />
           ) : (
             <AlertCircle className="w-4 h-4" />
@@ -423,5 +439,5 @@ export default function PromptsPage() {
         </div>
       )}
     </div>
-  );
+  )
 }

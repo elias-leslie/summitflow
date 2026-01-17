@@ -1,12 +1,13 @@
-"use client";
+'use client'
 
-import { forwardRef, type InputHTMLAttributes } from "react";
-import { Check } from "lucide-react";
-import { clsx } from "clsx";
+import { clsx } from 'clsx'
+import { Check } from 'lucide-react'
+import { forwardRef, type InputHTMLAttributes } from 'react'
 
-interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "onChange"> {
-  checked?: boolean;
-  onCheckedChange?: (checked: boolean) => void;
+interface CheckboxProps
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
+  checked?: boolean
+  onCheckedChange?: (checked: boolean) => void
 }
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
@@ -19,13 +20,13 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
         disabled={disabled}
         onClick={() => onCheckedChange?.(!checked)}
         className={clsx(
-          "w-4 h-4 rounded border flex items-center justify-center transition-all",
-          "focus:outline-none focus:ring-2 focus:ring-phosphor-500/30 focus:ring-offset-2 focus:ring-offset-slate-900",
+          'w-4 h-4 rounded border flex items-center justify-center transition-all',
+          'focus:outline-none focus:ring-2 focus:ring-phosphor-500/30 focus:ring-offset-2 focus:ring-offset-slate-900',
           checked
-            ? "bg-phosphor-600 border-phosphor-500"
-            : "bg-slate-900 border-slate-600 hover:border-slate-500",
-          disabled && "opacity-50 cursor-not-allowed",
-          className
+            ? 'bg-phosphor-600 border-phosphor-500'
+            : 'bg-slate-900 border-slate-600 hover:border-slate-500',
+          disabled && 'opacity-50 cursor-not-allowed',
+          className,
         )}
       >
         {checked && <Check className="w-3 h-3 text-white" />}
@@ -38,8 +39,8 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           {...props}
         />
       </button>
-    );
-  }
-);
+    )
+  },
+)
 
-Checkbox.displayName = "Checkbox";
+Checkbox.displayName = 'Checkbox'

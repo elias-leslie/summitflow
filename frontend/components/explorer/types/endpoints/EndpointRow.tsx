@@ -4,42 +4,43 @@
  * Renders endpoint path with method badge, status, response time, and evidence.
  */
 
-import { Globe, FileText } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ColumnValue } from "../../DataList";
-import { EvidenceBadge } from "../../EvidenceBadge";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { FileText, Globe } from 'lucide-react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { cn } from '@/lib/utils'
+import { ColumnValue } from '../../DataList'
+import { EvidenceBadge } from '../../EvidenceBadge'
 
 interface EndpointRowProps {
-  entry: ExplorerEntry;
+  entry: ExplorerEntry
 }
 
 // Method colors
 const methodColors: Record<string, string> = {
-  GET: "bg-emerald-500/20 text-emerald-400",
-  POST: "bg-blue-500/20 text-blue-400",
-  PUT: "bg-amber-500/20 text-amber-400",
-  PATCH: "bg-yellow-500/20 text-yellow-400",
-  DELETE: "bg-red-500/20 text-red-400",
-};
+  GET: 'bg-emerald-500/20 text-emerald-400',
+  POST: 'bg-blue-500/20 text-blue-400',
+  PUT: 'bg-amber-500/20 text-amber-400',
+  PATCH: 'bg-yellow-500/20 text-yellow-400',
+  DELETE: 'bg-red-500/20 text-red-400',
+}
 
 // Helpers
 const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-};
+  if (ms === undefined || ms === null) return '-'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
 
 export function EndpointRow({ entry }: EndpointRowProps) {
-  const method = entry.metadata.method ?? "GET";
-  const httpStatus = entry.metadata.http_status;
-  const responseTime = entry.metadata.response_time_ms;
-  const endpointType = entry.metadata.endpoint_type;
-  const consoleErrors = entry.metadata.console_errors ?? 0;
+  const method = entry.metadata.method ?? 'GET'
+  const httpStatus = entry.metadata.http_status
+  const responseTime = entry.metadata.response_time_ms
+  const endpointType = entry.metadata.endpoint_type
+  const consoleErrors = entry.metadata.console_errors ?? 0
 
-  const isPage = endpointType === "page";
-  const isHealthy = httpStatus !== undefined && httpStatus >= 200 && httpStatus < 400;
-  const isError = httpStatus !== undefined && httpStatus >= 400;
+  const isPage = endpointType === 'page'
+  const isHealthy =
+    httpStatus !== undefined && httpStatus >= 200 && httpStatus < 400
+  const isError = httpStatus !== undefined && httpStatus >= 400
 
   return (
     <>
@@ -59,7 +60,7 @@ export function EndpointRow({ entry }: EndpointRowProps) {
         </ColumnValue>
         {consoleErrors > 0 && (
           <span className="px-1.5 py-0.5 rounded text-2xs font-medium bg-red-500/20 text-red-400">
-            {consoleErrors} error{consoleErrors > 1 ? "s" : ""}
+            {consoleErrors} error{consoleErrors > 1 ? 's' : ''}
           </span>
         )}
       </div>
@@ -67,11 +68,11 @@ export function EndpointRow({ entry }: EndpointRowProps) {
       {/* Method badge */}
       <span
         className={cn(
-          "w-[70px] text-center px-2 py-0.5 rounded text-2xs font-bold uppercase",
-          methodColors[method] || "bg-slate-700/50 text-slate-400"
+          'w-[70px] text-center px-2 py-0.5 rounded text-2xs font-bold uppercase',
+          methodColors[method] || 'bg-slate-700/50 text-slate-400',
         )}
       >
-        {isPage ? "PAGE" : method}
+        {isPage ? 'PAGE' : method}
       </span>
 
       {/* Status code */}
@@ -80,12 +81,12 @@ export function EndpointRow({ entry }: EndpointRowProps) {
         align="center"
         mono
         className={cn(
-          isHealthy && "text-emerald-400",
-          isError && "text-red-400",
-          !httpStatus && "text-slate-500"
+          isHealthy && 'text-emerald-400',
+          isError && 'text-red-400',
+          !httpStatus && 'text-slate-500',
         )}
       >
-        {httpStatus ?? "-"}
+        {httpStatus ?? '-'}
       </ColumnValue>
 
       {/* Response time */}
@@ -94,8 +95,8 @@ export function EndpointRow({ entry }: EndpointRowProps) {
         align="right"
         mono
         className={cn(
-          responseTime !== undefined && responseTime > 1000 && "text-amber-400",
-          responseTime !== undefined && responseTime > 3000 && "text-red-400"
+          responseTime !== undefined && responseTime > 1000 && 'text-amber-400',
+          responseTime !== undefined && responseTime > 3000 && 'text-red-400',
         )}
         muted={!responseTime}
       >
@@ -110,5 +111,5 @@ export function EndpointRow({ entry }: EndpointRowProps) {
         />
       </ColumnValue>
     </>
-  );
+  )
 }

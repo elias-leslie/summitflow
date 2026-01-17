@@ -1,29 +1,29 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback } from "react";
-import { motion } from "motion/react";
-import { Loader2 } from "lucide-react";
-import { ObjectiveSection } from "./ObjectiveSection";
-import { SubtasksSection } from "./SubtasksSection";
-import { DescriptionSection } from "./DescriptionSection";
-import { ActionsSection, type TaskAction } from "./ActionsSection";
-import { CriteriaProgress } from "./CriteriaProgress";
-import { EnrichmentStatusBadge } from "./EnrichmentStatusBadge";
+import { Loader2 } from 'lucide-react'
+import { motion } from 'motion/react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   getSubtasksWithSteps,
+  type Subtask,
+  type Task,
+  type TaskStatus,
   updateSubtask,
   updateTask,
   updateTaskStatus,
-  type Task,
-  type Subtask,
-  type TaskStatus,
-} from "@/lib/api/tasks";
+} from '@/lib/api/tasks'
+import { ActionsSection, type TaskAction } from './ActionsSection'
+import { CriteriaProgress } from './CriteriaProgress'
+import { DescriptionSection } from './DescriptionSection'
+import { EnrichmentStatusBadge } from './EnrichmentStatusBadge'
+import { ObjectiveSection } from './ObjectiveSection'
+import { SubtasksSection } from './SubtasksSection'
 
 interface TaskExpandedViewProps {
-  projectId: string;
-  task: Task;
-  onTaskUpdated?: (task: Task) => void;
-  onTaskDeleted?: () => void;
+  projectId: string
+  task: Task
+  onTaskUpdated?: (task: Task) => void
+  onTaskDeleted?: () => void
 }
 
 export function TaskExpandedView({
@@ -32,27 +32,27 @@ export function TaskExpandedView({
   onTaskUpdated,
   onTaskDeleted,
 }: TaskExpandedViewProps) {
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [subtasks, setSubtasks] = useState<Subtask[]>([])
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Fetch subtasks on mount
   useEffect(() => {
-    setIsLoadingSubtasks(true);
-    setError(null);
+    setIsLoadingSubtasks(true)
+    setError(null)
 
     getSubtasksWithSteps(projectId, task.id)
       .then((response) => {
-        setSubtasks(response.subtasks);
+        setSubtasks(response.subtasks)
       })
       .catch((err) => {
-        console.error("Failed to fetch subtasks:", err);
-        setError("Failed to load subtasks");
+        console.error('Failed to fetch subtasks:', err)
+        setError('Failed to load subtasks')
       })
       .finally(() => {
-        setIsLoadingSubtasks(false);
-      });
-  }, [projectId, task.id]);
+        setIsLoadingSubtasks(false)
+      })
+  }, [projectId, task.id])
 
   const handleObjectiveEdit = useCallback(
     async (newObjective: string) => {
@@ -60,18 +60,18 @@ export function TaskExpandedView({
         await updateTask(projectId, task.id, {
           title: task.title,
           description: task.description || undefined,
-        });
+        })
         // Note: objective update would need a separate API endpoint
         // For now, just call onTaskUpdated if provided
         if (onTaskUpdated) {
-          onTaskUpdated({ ...task, objective: newObjective });
+          onTaskUpdated({ ...task, objective: newObjective })
         }
       } catch (err) {
-        console.error("Failed to update objective:", err);
+        console.error('Failed to update objective:', err)
       }
     },
     [projectId, task, onTaskUpdated],
-  );
+  )
 
   const handleSubtaskToggle = useCallback(
     async (subtaskId: string, passes: boolean) => {
@@ -81,59 +81,59 @@ export function TaskExpandedView({
           task.id,
           subtaskId,
           passes,
-        );
+        )
         setSubtasks((prev) =>
           prev.map((s) =>
             s.subtask_id === subtaskId ? { ...s, ...updated } : s,
           ),
-        );
+        )
       } catch (err) {
-        console.error("Failed to update subtask:", err);
-        throw err; // Re-throw so SubtasksSection can handle loading state
+        console.error('Failed to update subtask:', err)
+        throw err // Re-throw so SubtasksSection can handle loading state
       }
     },
     [projectId, task.id],
-  );
+  )
 
   const handleAction = useCallback(
     async (action: TaskAction) => {
       try {
-        let newStatus: TaskStatus | undefined;
+        let newStatus: TaskStatus | undefined
 
         switch (action) {
-          case "execute":
-          case "resume":
-            newStatus = "running";
-            break;
-          case "pause":
-            newStatus = "paused";
-            break;
-          case "complete":
-            newStatus = "completed";
-            break;
-          case "cancel":
-            newStatus = "failed";
-            break;
-          case "delete":
+          case 'execute':
+          case 'resume':
+            newStatus = 'running'
+            break
+          case 'pause':
+            newStatus = 'paused'
+            break
+          case 'complete':
+            newStatus = 'completed'
+            break
+          case 'cancel':
+            newStatus = 'failed'
+            break
+          case 'delete':
             // Handle delete separately - would need a delete API
             if (onTaskDeleted) {
-              onTaskDeleted();
+              onTaskDeleted()
             }
-            return;
+            return
         }
 
         if (newStatus) {
-          const updated = await updateTaskStatus(projectId, task.id, newStatus);
+          const updated = await updateTaskStatus(projectId, task.id, newStatus)
           if (onTaskUpdated) {
-            onTaskUpdated(updated);
+            onTaskUpdated(updated)
           }
         }
       } catch (err) {
-        console.error(`Failed to ${action} task:`, err);
+        console.error(`Failed to ${action} task:`, err)
       }
     },
     [projectId, task.id, onTaskUpdated, onTaskDeleted],
-  );
+  )
 
   return (
     <motion.div
@@ -194,5 +194,5 @@ export function TaskExpandedView({
         <ActionsSection task={task} onAction={handleAction} />
       </div>
     </motion.div>
-  );
+  )
 }

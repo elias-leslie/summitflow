@@ -1,9 +1,9 @@
-"use client";
+'use client'
 
-import { ReactNode } from "react";
+import type { ReactNode } from 'react'
 
 interface AppShellProps {
-  children: ReactNode;
+  children: ReactNode
 }
 
 /**
@@ -11,9 +11,5 @@ interface AppShellProps {
  * Terminal is now a standalone app at terminal.summitflow.dev
  */
 export function AppShell({ children }: AppShellProps) {
-  return (
-    <div className="flex-1 overflow-auto">
-      {children}
-    </div>
-  );
+  return <div className="flex-1 overflow-auto">{children}</div>
 }

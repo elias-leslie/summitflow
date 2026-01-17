@@ -1,20 +1,20 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@agent-hub/passport-client"],
+  transpilePackages: ['@agent-hub/passport-client'],
   async rewrites() {
     return [
       {
-        source: "/api/:path*",
-        destination: "http://localhost:8001/api/:path*",
+        source: '/api/:path*',
+        destination: 'http://localhost:8001/api/:path*',
       },
       {
-        source: "/ws/:path*",
-        destination: "http://localhost:8001/ws/:path*",
+        source: '/ws/:path*',
+        destination: 'http://localhost:8001/ws/:path*',
       },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

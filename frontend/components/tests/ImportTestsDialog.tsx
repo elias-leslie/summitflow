@@ -1,103 +1,107 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Download, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
-
+import { useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogClose,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { importTddTests, type ImportTestsResult } from "@/lib/api";
+} from '@/components/ui/dialog'
+import { type ImportTestsResult, importTddTests } from '@/lib/api'
 
 interface ImportTestsDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
 }
 
-type SourceType = "pytest" | "vitest" | "all";
+type SourceType = 'pytest' | 'vitest' | 'all'
 
 interface SourceOption {
-  id: SourceType;
-  name: string;
-  description: string;
-  color: string;
+  id: SourceType
+  name: string
+  description: string
+  color: string
 }
 
 const SOURCE_OPTIONS: SourceOption[] = [
   {
-    id: "pytest",
-    name: "pytest",
-    description: "Python unit/integration tests",
-    color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    id: 'pytest',
+    name: 'pytest',
+    description: 'Python unit/integration tests',
+    color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   },
   {
-    id: "vitest",
-    name: "vitest",
-    description: "JavaScript/TypeScript tests",
-    color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    id: 'vitest',
+    name: 'vitest',
+    description: 'JavaScript/TypeScript tests',
+    color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   },
-];
+]
 
 export function ImportTestsDialog({
   open,
   onOpenChange,
   projectId,
 }: ImportTestsDialogProps) {
-  const queryClient = useQueryClient();
-  const [selectedSources, setSelectedSources] = useState<Set<SourceType>>(new Set(["pytest", "vitest"]));
-  const [isImporting, setIsImporting] = useState(false);
-  const [result, setResult] = useState<ImportTestsResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient()
+  const [selectedSources, setSelectedSources] = useState<Set<SourceType>>(
+    new Set(['pytest', 'vitest']),
+  )
+  const [isImporting, setIsImporting] = useState(false)
+  const [result, setResult] = useState<ImportTestsResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const toggleSource = (source: SourceType) => {
     setSelectedSources((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(source)) {
-        next.delete(source);
+        next.delete(source)
       } else {
-        next.add(source);
+        next.add(source)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
   const handleImport = async () => {
-    if (selectedSources.size === 0) return;
+    if (selectedSources.size === 0) return
 
-    setIsImporting(true);
-    setError(null);
-    setResult(null);
+    setIsImporting(true)
+    setError(null)
+    setResult(null)
 
     try {
       // If all sources selected, use "all"
-      const sourceType = selectedSources.size === SOURCE_OPTIONS.length ? "all" : Array.from(selectedSources).join(",");
-      const importResult = await importTddTests(projectId, sourceType, true);
-      setResult(importResult);
+      const sourceType =
+        selectedSources.size === SOURCE_OPTIONS.length
+          ? 'all'
+          : Array.from(selectedSources).join(',')
+      const importResult = await importTddTests(projectId, sourceType, true)
+      setResult(importResult)
       // Refresh tests list
-      queryClient.invalidateQueries({ queryKey: ["tdd-tests", projectId] });
+      queryClient.invalidateQueries({ queryKey: ['tdd-tests', projectId] })
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import tests");
+      setError(err instanceof Error ? err.message : 'Failed to import tests')
     } finally {
-      setIsImporting(false);
+      setIsImporting(false)
     }
-  };
+  }
 
   const handleClose = () => {
     if (!isImporting) {
-      setResult(null);
-      setError(null);
-      onOpenChange(false);
+      setResult(null)
+      setError(null)
+      onOpenChange(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -123,8 +127,8 @@ export function ImportTestsDialog({
                     key={source.id}
                     className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                       selectedSources.has(source.id)
-                        ? "border-phosphor-500/50 bg-phosphor-500/5"
-                        : "border-slate-700 bg-slate-800/30 hover:bg-slate-800/50"
+                        ? 'border-phosphor-500/50 bg-phosphor-500/5'
+                        : 'border-slate-700 bg-slate-800/30 hover:bg-slate-800/50'
                     }`}
                     onClick={() => toggleSource(source.id)}
                   >
@@ -134,11 +138,15 @@ export function ImportTestsDialog({
                     />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded border font-medium ${source.color}`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded border font-medium ${source.color}`}
+                        >
                           {source.name}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">{source.description}</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {source.description}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -154,7 +162,12 @@ export function ImportTestsDialog({
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" onClick={handleClose} disabled={isImporting} className="flex-1">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  disabled={isImporting}
+                  className="flex-1"
+                >
                   Cancel
                 </Button>
                 <Button
@@ -183,14 +196,20 @@ export function ImportTestsDialog({
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-phosphor-500/20 mb-4">
                   <CheckCircle2 className="h-6 w-6 text-phosphor-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Import Complete</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Import Complete
+                </h3>
                 <div className="flex justify-center gap-4 text-sm">
                   <div>
-                    <span className="text-2xl font-bold text-phosphor-400 mono">{result.imported_count}</span>
+                    <span className="text-2xl font-bold text-phosphor-400 mono">
+                      {result.imported_count}
+                    </span>
                     <div className="text-slate-500">imported</div>
                   </div>
                   <div>
-                    <span className="text-2xl font-bold text-amber-400 mono">{result.skipped_count}</span>
+                    <span className="text-2xl font-bold text-amber-400 mono">
+                      {result.skipped_count}
+                    </span>
                     <div className="text-slate-500">skipped</div>
                   </div>
                 </div>
@@ -199,7 +218,9 @@ export function ImportTestsDialog({
               {/* Errors */}
               {result.errors.length > 0 && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                  <div className="text-xs font-medium text-amber-400 mb-2">Warnings</div>
+                  <div className="text-xs font-medium text-amber-400 mb-2">
+                    Warnings
+                  </div>
                   <ul className="text-xs text-amber-300 space-y-1">
                     {result.errors.map((err, i) => (
                       <li key={i}>{err}</li>
@@ -219,7 +240,9 @@ export function ImportTestsDialog({
                       <Badge variant="slate" className="text-xs">
                         {test.test_type}
                       </Badge>
-                      <span className="text-slate-300 truncate">{test.name}</span>
+                      <span className="text-slate-300 truncate">
+                        {test.name}
+                      </span>
                     </div>
                   ))}
                   {result.tests.length > 10 && (
@@ -239,5 +262,5 @@ export function ImportTestsDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

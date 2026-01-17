@@ -1,5 +1,5 @@
-export { EvidenceViewerModal } from "./EvidenceViewerModal";
-export { EvidenceCaptureModal } from "./EvidenceCaptureModal";
-export { EvidenceTab } from "./EvidenceTab";
-export { RegressionReviewDialog } from "./RegressionReviewDialog";
-export { MockupComparisonDialog } from "./MockupComparisonDialog";
+export { EvidenceCaptureModal } from './EvidenceCaptureModal'
+export { EvidenceTab } from './EvidenceTab'
+export { EvidenceViewerModal } from './EvidenceViewerModal'
+export { MockupComparisonDialog } from './MockupComparisonDialog'
+export { RegressionReviewDialog } from './RegressionReviewDialog'

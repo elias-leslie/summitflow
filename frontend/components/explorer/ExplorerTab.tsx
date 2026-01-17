@@ -7,27 +7,28 @@
  * - Type renderers (row, detail, columns)
  */
 
-"use client";
+'use client'
 
-import { useCallback } from "react";
-import { ExplorerShell } from "./ExplorerShell";
-import { DataList } from "./DataList";
-import { DataRow } from "./DataRow";
-import { useExplorerData, useExplorerState, useExplorerFilters } from "./hooks";
-import {
-  getTypeConfig,
-  uiTypeToEntryType,
-} from "./types/index";
-import type { ExplorerType, HealthStatus } from "./types";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { useCallback } from 'react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { DataList } from './DataList'
+import { DataRow } from './DataRow'
+import { ExplorerShell } from './ExplorerShell'
+import { useExplorerData, useExplorerFilters, useExplorerState } from './hooks'
+import type { ExplorerType, HealthStatus } from './types'
+import { getTypeConfig, uiTypeToEntryType } from './types/index'
 
 interface ExplorerTabProps {
-  projectId: string;
-  initialType?: ExplorerType;
-  onTypeChange?: (type: ExplorerType) => void;
+  projectId: string
+  initialType?: ExplorerType
+  onTypeChange?: (type: ExplorerType) => void
 }
 
-export function ExplorerTab({ projectId, initialType = "files", onTypeChange }: ExplorerTabProps) {
+export function ExplorerTab({
+  projectId,
+  initialType = 'files',
+  onTypeChange,
+}: ExplorerTabProps) {
   return (
     <ExplorerShell
       projectId={projectId}
@@ -46,16 +47,16 @@ export function ExplorerTab({ projectId, initialType = "files", onTypeChange }: 
         />
       )}
     </ExplorerShell>
-  );
+  )
 }
 
 interface ExplorerContentProps {
-  projectId: string;
-  type: ExplorerType;
-  filter: HealthStatus | "all";
-  sortField: string;
-  sortDir: "asc" | "desc";
-  onSort: (field: string) => void;
+  projectId: string
+  type: ExplorerType
+  filter: HealthStatus | 'all'
+  sortField: string
+  sortDir: 'asc' | 'desc'
+  onSort: (field: string) => void
 }
 
 function ExplorerContent({
@@ -67,16 +68,20 @@ function ExplorerContent({
   onSort,
 }: ExplorerContentProps) {
   // Convert UI type to API entry type
-  const entryType = uiTypeToEntryType[type];
-  const typeConfig = getTypeConfig(type);
+  const entryType = uiTypeToEntryType[type]
+  const typeConfig = getTypeConfig(type)
 
   // Get filter configuration
   const { filters } = useExplorerFilters({
     initialType: entryType,
-    initialHealth: filter === "all" ? "all" : mapHealthStatus(filter),
-    initialSort: sortField as "path" | "name" | "health_status" | "last_scanned_at",
+    initialHealth: filter === 'all' ? 'all' : mapHealthStatus(filter),
+    initialSort: sortField as
+      | 'path'
+      | 'name'
+      | 'health_status'
+      | 'last_scanned_at',
     initialSortDir: sortDir,
-  });
+  })
 
   // Fetch data
   const { entries, isLoading, isError } = useExplorerData({
@@ -84,20 +89,17 @@ function ExplorerContent({
     filters: {
       ...filters,
       type: entryType,
-      health: filter === "all" ? undefined : mapHealthStatus(filter),
-      sort: sortField as "path" | "name" | "health_status" | "last_scanned_at",
+      health: filter === 'all' ? undefined : mapHealthStatus(filter),
+      sort: sortField as 'path' | 'name' | 'health_status' | 'last_scanned_at',
       dir: sortDir,
     },
-  });
+  })
 
   // UI state
-  const {
-    isExpanded,
-    toggleExpand,
-  } = useExplorerState();
+  const { isExpanded, toggleExpand } = useExplorerState()
 
   // Get type-specific components
-  const { RowComponent, DetailComponent, columns } = typeConfig;
+  const { RowComponent, DetailComponent, columns } = typeConfig
 
   // Render a single row
   const renderRow = useCallback(
@@ -112,15 +114,15 @@ function ExplorerContent({
         renderDetail={() => <DetailComponent entry={entry} />}
       />
     ),
-    [RowComponent, DetailComponent, isExpanded, toggleExpand]
-  );
+    [RowComponent, DetailComponent, isExpanded, toggleExpand],
+  )
 
   if (isError) {
     return (
       <div className="flex items-center justify-center h-full text-slate-500">
         <p>Failed to load explorer data</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -134,36 +136,38 @@ function ExplorerContent({
       isLoading={isLoading}
       emptyMessage={`No ${typeConfig.label.toLowerCase()} found`}
     />
-  );
+  )
 }
 
 // Map UI health status to API health status
-function mapHealthStatus(status: HealthStatus): "healthy" | "warning" | "error" | "unknown" {
+function mapHealthStatus(
+  status: HealthStatus,
+): 'healthy' | 'warning' | 'error' | 'unknown' {
   // UI uses: fresh, active, stale, orphan, unknown
   // API uses: healthy, warning, error, unknown
   switch (status) {
-    case "fresh":
-    case "active":
-      return "healthy";
-    case "stale":
-      return "warning";
-    case "orphan":
-      return "error";
+    case 'fresh':
+    case 'active':
+      return 'healthy'
+    case 'stale':
+      return 'warning'
+    case 'orphan':
+      return 'error'
     default:
-      return "unknown";
+      return 'unknown'
   }
 }
 
 // Map API health status to UI health status
 function mapApiHealthToUi(status: string): HealthStatus {
   switch (status) {
-    case "healthy":
-      return "fresh";
-    case "warning":
-      return "stale";
-    case "error":
-      return "orphan";
+    case 'healthy':
+      return 'fresh'
+    case 'warning':
+      return 'stale'
+    case 'error':
+      return 'orphan'
     default:
-      return "unknown";
+      return 'unknown'
   }
 }

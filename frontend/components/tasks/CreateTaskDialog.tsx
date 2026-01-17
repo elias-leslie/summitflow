@@ -1,86 +1,86 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { useQueryClient } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogClose,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { createTask, type TaskType } from "@/lib/api";
+} from '@/components/ui/dialog'
+import { createTask, type TaskType } from '@/lib/api'
 
 interface CreateTaskDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
 }
 
 const PRIORITY_OPTIONS = [
-  { value: 0, label: "P0 - Critical" },
-  { value: 1, label: "P1 - High" },
-  { value: 2, label: "P2 - Medium" },
-  { value: 3, label: "P3 - Low" },
-  { value: 4, label: "P4 - Backlog" },
-];
+  { value: 0, label: 'P0 - Critical' },
+  { value: 1, label: 'P1 - High' },
+  { value: 2, label: 'P2 - Medium' },
+  { value: 3, label: 'P3 - Low' },
+  { value: 4, label: 'P4 - Backlog' },
+]
 
 const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
-  { value: "feature", label: "Feature" },
-  { value: "bug", label: "Bug" },
-  { value: "task", label: "Task" },
-  { value: "refactor", label: "Refactor" },
-  { value: "debt", label: "Tech Debt" },
-  { value: "regression", label: "Regression" },
-];
+  { value: 'feature', label: 'Feature' },
+  { value: 'bug', label: 'Bug' },
+  { value: 'task', label: 'Task' },
+  { value: 'refactor', label: 'Refactor' },
+  { value: 'debt', label: 'Tech Debt' },
+  { value: 'regression', label: 'Regression' },
+]
 
 export function CreateTaskDialog({
   open,
   onOpenChange,
   projectId,
 }: CreateTaskDialogProps) {
-  const queryClient = useQueryClient();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState(2);
-  const [taskType, setTaskType] = useState<TaskType>("task");
-  const [labels, setLabels] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient()
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState(2)
+  const [taskType, setTaskType] = useState<TaskType>('task')
+  const [labels, setLabels] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setPriority(2);
-    setTaskType("task");
-    setLabels("");
-    setError(null);
-  };
+    setTitle('')
+    setDescription('')
+    setPriority(2)
+    setTaskType('task')
+    setLabels('')
+    setError(null)
+  }
 
   const handleClose = () => {
-    resetForm();
-    onOpenChange(false);
-  };
+    resetForm()
+    onOpenChange(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
     if (!title.trim()) {
-      setError("Title is required");
-      return;
+      setError('Title is required')
+      return
     }
 
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
 
     try {
       const labelsArray = labels
-        .split(",")
+        .split(',')
         .map((l) => l.trim())
-        .filter((l) => l);
+        .filter((l) => l)
 
       await createTask(projectId, {
         title: title.trim(),
@@ -88,18 +88,18 @@ export function CreateTaskDialog({
         priority,
         task_type: taskType,
         labels: labelsArray.length > 0 ? labelsArray : undefined,
-      });
+      })
 
       // Invalidate queries to refresh the list
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
 
-      handleClose();
+      handleClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create task");
+      setError(err instanceof Error ? err.message : 'Failed to create task')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -153,7 +153,7 @@ export function CreateTaskDialog({
               </label>
               <select
                 value={priority}
-                onChange={(e) => setPriority(parseInt(e.target.value))}
+                onChange={(e) => setPriority(parseInt(e.target.value, 10))}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white
                   focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500"
               >
@@ -217,12 +217,12 @@ export function CreateTaskDialog({
                   Creating...
                 </>
               ) : (
-                "Create Task"
+                'Create Task'
               )}
             </Button>
           </div>
         </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

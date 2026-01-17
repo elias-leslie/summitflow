@@ -4,31 +4,32 @@
  * Renders page route with params, status, response time, and evidence badge.
  */
 
-import { FileText } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ColumnValue } from "../../DataList";
-import { EvidenceBadge } from "../../EvidenceBadge";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { FileText } from 'lucide-react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { cn } from '@/lib/utils'
+import { ColumnValue } from '../../DataList'
+import { EvidenceBadge } from '../../EvidenceBadge'
 
 interface PageRowProps {
-  entry: ExplorerEntry;
+  entry: ExplorerEntry
 }
 
 // Helpers
 const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-};
+  if (ms === undefined || ms === null) return '-'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
 
 export function PageRow({ entry }: PageRowProps) {
-  const httpStatus = entry.metadata.http_status;
-  const responseTime = entry.metadata.response_time_ms;
-  const routeParams = entry.metadata.route_params ?? [];
-  const consoleErrors = entry.metadata.console_errors ?? 0;
+  const httpStatus = entry.metadata.http_status
+  const responseTime = entry.metadata.response_time_ms
+  const routeParams = entry.metadata.route_params ?? []
+  const consoleErrors = entry.metadata.console_errors ?? 0
 
-  const isHealthy = httpStatus !== undefined && httpStatus >= 200 && httpStatus < 400;
-  const isError = httpStatus !== undefined && httpStatus >= 400;
+  const isHealthy =
+    httpStatus !== undefined && httpStatus >= 200 && httpStatus < 400
+  const isError = httpStatus !== undefined && httpStatus >= 400
 
   return (
     <>
@@ -44,14 +45,16 @@ export function PageRow({ entry }: PageRowProps) {
         </ColumnValue>
         {consoleErrors > 0 && (
           <span className="px-1.5 py-0.5 rounded text-2xs font-medium bg-red-500/20 text-red-400">
-            {consoleErrors} error{consoleErrors > 1 ? "s" : ""}
+            {consoleErrors} error{consoleErrors > 1 ? 's' : ''}
           </span>
         )}
       </div>
 
       {/* Route params */}
       <ColumnValue width="100px" className="text-slate-400 text-xs">
-        {routeParams.length > 0 ? routeParams.map(p => `:${p}`).join(", ") : "-"}
+        {routeParams.length > 0
+          ? routeParams.map((p) => `:${p}`).join(', ')
+          : '-'}
       </ColumnValue>
 
       {/* Status code */}
@@ -60,12 +63,12 @@ export function PageRow({ entry }: PageRowProps) {
         align="center"
         mono
         className={cn(
-          isHealthy && "text-emerald-400",
-          isError && "text-red-400",
-          !httpStatus && "text-slate-500"
+          isHealthy && 'text-emerald-400',
+          isError && 'text-red-400',
+          !httpStatus && 'text-slate-500',
         )}
       >
-        {httpStatus ?? "-"}
+        {httpStatus ?? '-'}
       </ColumnValue>
 
       {/* Response time */}
@@ -74,8 +77,8 @@ export function PageRow({ entry }: PageRowProps) {
         align="right"
         mono
         className={cn(
-          responseTime !== undefined && responseTime > 1000 && "text-amber-400",
-          responseTime !== undefined && responseTime > 3000 && "text-red-400"
+          responseTime !== undefined && responseTime > 1000 && 'text-amber-400',
+          responseTime !== undefined && responseTime > 3000 && 'text-red-400',
         )}
         muted={!responseTime}
       >
@@ -90,5 +93,5 @@ export function PageRow({ entry }: PageRowProps) {
         />
       </ColumnValue>
     </>
-  );
+  )
 }

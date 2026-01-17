@@ -1,101 +1,101 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
-  Check,
-  Loader2,
   AlertCircle,
   Bot,
+  Check,
   FolderSearch,
-  Target,
-  ListChecks,
   Layers,
-  ShieldCheck,
+  ListChecks,
+  Loader2,
   RefreshCw,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { fetchTask, type Task } from "@/lib/api/tasks";
+  ShieldCheck,
+  Target,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { fetchTask, type Task } from '@/lib/api/tasks'
 
 interface EnrichmentProgressProps {
-  projectId: string;
-  task: Task;
-  onComplete: (task: Task) => void;
-  onError: (error: string) => void;
+  projectId: string
+  task: Task
+  onComplete: (task: Task) => void
+  onError: (error: string) => void
 }
 
-type StepStatus = "pending" | "active" | "completed";
+type StepStatus = 'pending' | 'active' | 'completed'
 
 interface ProgressStep {
-  id: string;
-  label: string;
-  completedLabel?: string;
-  icon: React.ElementType;
-  status: StepStatus;
+  id: string
+  label: string
+  completedLabel?: string
+  icon: React.ElementType
+  status: StepStatus
 }
 
 // Simulate enrichment progress based on elapsed time
 // In reality, the backend would provide step-by-step updates
 function estimateSteps(task: Task, elapsedMs: number): ProgressStep[] {
-  const stepDuration = 4000; // Estimate ~4s per step
+  const stepDuration = 4000 // Estimate ~4s per step
 
   const getStatus = (stepIndex: number): StepStatus => {
-    const stepStart = stepIndex * stepDuration;
-    if (elapsedMs >= stepStart + stepDuration) return "completed";
-    if (elapsedMs >= stepStart) return "active";
-    return "pending";
-  };
+    const stepStart = stepIndex * stepDuration
+    if (elapsedMs >= stepStart + stepDuration) return 'completed'
+    if (elapsedMs >= stepStart) return 'active'
+    return 'pending'
+  }
 
   // Extract some info from the task if available
-  const criteriaCount = task.acceptance_criteria?.length ?? 0;
+  const criteriaCount = task.acceptance_criteria?.length ?? 0
 
   return [
     {
-      id: "context",
-      label: "Gathering context from codebase...",
-      completedLabel: "Found relevant files and patterns",
+      id: 'context',
+      label: 'Gathering context from codebase...',
+      completedLabel: 'Found relevant files and patterns',
       icon: FolderSearch,
       status: getStatus(0),
     },
     {
-      id: "analysis",
-      label: "Analyzing codebase patterns...",
-      completedLabel: "Analysis complete",
+      id: 'analysis',
+      label: 'Analyzing codebase patterns...',
+      completedLabel: 'Analysis complete',
       icon: Layers,
       status: getStatus(1),
     },
     {
-      id: "objective",
-      label: "Generating objective...",
-      completedLabel: "Objective defined",
+      id: 'objective',
+      label: 'Generating objective...',
+      completedLabel: 'Objective defined',
       icon: Target,
       status: getStatus(2),
     },
     {
-      id: "criteria",
-      label: "Creating acceptance criteria...",
+      id: 'criteria',
+      label: 'Creating acceptance criteria...',
       completedLabel:
         criteriaCount > 0
           ? `Generated ${criteriaCount} criteria`
-          : "Generating criteria",
+          : 'Generating criteria',
       icon: ListChecks,
       status: getStatus(3),
     },
     {
-      id: "subtasks",
-      label: "Building implementation subtasks...",
-      completedLabel: "Subtasks created",
+      id: 'subtasks',
+      label: 'Building implementation subtasks...',
+      completedLabel: 'Subtasks created',
       icon: ListChecks,
       status: getStatus(4),
     },
     {
-      id: "validation",
-      label: "Cross-validating with Gemini...",
-      completedLabel: "Validation complete",
+      id: 'validation',
+      label: 'Cross-validating with Gemini...',
+      completedLabel: 'Validation complete',
       icon: ShieldCheck,
       status: getStatus(5),
     },
-  ];
+  ]
 }
 
 export function EnrichmentProgress({
@@ -104,70 +104,70 @@ export function EnrichmentProgress({
   onComplete,
   onError,
 }: EnrichmentProgressProps) {
-  const [task, setTask] = useState<Task>(initialTask);
-  const [startTime] = useState(Date.now());
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-  const progressRef = useRef<NodeJS.Timeout | null>(null);
+  const [task, setTask] = useState<Task>(initialTask)
+  const [startTime] = useState(Date.now())
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [isRetrying, setIsRetrying] = useState(false)
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const progressRef = useRef<NodeJS.Timeout | null>(null)
 
-  const steps = estimateSteps(task, elapsedMs);
-  const completedCount = steps.filter((s) => s.status === "completed").length;
+  const steps = estimateSteps(task, elapsedMs)
+  const completedCount = steps.filter((s) => s.status === 'completed').length
 
   // Poll for task updates
   const pollTask = useCallback(async () => {
     try {
-      const updatedTask = await fetchTask(projectId, task.id);
-      setTask(updatedTask);
+      const updatedTask = await fetchTask(projectId, task.id)
+      setTask(updatedTask)
 
-      if (updatedTask.enrichment_status === "review") {
+      if (updatedTask.enrichment_status === 'review') {
         // Enrichment complete
-        onComplete(updatedTask);
-      } else if (updatedTask.enrichment_status === "failed") {
+        onComplete(updatedTask)
+      } else if (updatedTask.enrichment_status === 'failed') {
         // Enrichment failed
-        setError(updatedTask.error_message || "Enrichment failed");
-        onError(updatedTask.error_message || "Enrichment failed");
+        setError(updatedTask.error_message || 'Enrichment failed')
+        onError(updatedTask.error_message || 'Enrichment failed')
       }
     } catch (err) {
       // Don't fail on polling errors, just log
-      console.error("Failed to poll task:", err);
+      console.error('Failed to poll task:', err)
     }
-  }, [projectId, task.id, onComplete, onError]);
+  }, [projectId, task.id, onComplete, onError])
 
   // Start polling on mount
   useEffect(() => {
-    if (task.enrichment_status !== "enriching") return;
+    if (task.enrichment_status !== 'enriching') return
 
-    pollRef.current = setInterval(pollTask, 2000);
+    pollRef.current = setInterval(pollTask, 2000)
 
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [task.enrichment_status, pollTask]);
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [task.enrichment_status, pollTask])
 
   // Progress animation timer
   useEffect(() => {
-    if (task.enrichment_status !== "enriching") return;
+    if (task.enrichment_status !== 'enriching') return
 
     progressRef.current = setInterval(() => {
-      setElapsedMs(Date.now() - startTime);
-    }, 100);
+      setElapsedMs(Date.now() - startTime)
+    }, 100)
 
     return () => {
-      if (progressRef.current) clearInterval(progressRef.current);
-    };
-  }, [task.enrichment_status, startTime]);
+      if (progressRef.current) clearInterval(progressRef.current)
+    }
+  }, [task.enrichment_status, startTime])
 
   const handleRetry = async () => {
-    setIsRetrying(true);
-    setError(null);
+    setIsRetrying(true)
+    setError(null)
     // In a real implementation, you'd call an API to retry enrichment
     // For now, just reset and re-poll
-    setElapsedMs(0);
-    await pollTask();
-    setIsRetrying(false);
-  };
+    setElapsedMs(0)
+    await pollTask()
+    setIsRetrying(false)
+  }
 
   return (
     <div className="relative">
@@ -185,7 +185,7 @@ export function EnrichmentProgress({
             transition={{
               duration: 1.5,
               repeat: Infinity,
-              ease: "easeInOut",
+              ease: 'easeInOut',
             }}
           />
         </div>
@@ -207,7 +207,7 @@ export function EnrichmentProgress({
               key={step.id}
               initial={{ opacity: 0, x: -10 }}
               animate={{
-                opacity: step.status === "pending" ? 0.4 : 1,
+                opacity: step.status === 'pending' ? 0.4 : 1,
                 x: 0,
               }}
               transition={{
@@ -218,23 +218,23 @@ export function EnrichmentProgress({
                 transition-colors duration-300"
               style={{
                 backgroundColor:
-                  step.status === "active"
-                    ? "rgba(59, 130, 246, 0.08)"
-                    : "transparent",
+                  step.status === 'active'
+                    ? 'rgba(59, 130, 246, 0.08)'
+                    : 'transparent',
               }}
             >
               {/* Step Icon */}
               <div className="relative w-5 h-5 flex-shrink-0">
-                {step.status === "completed" ? (
+                {step.status === 'completed' ? (
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 15 }}
                     className="w-5 h-5 rounded-full bg-phosphor-500/20 flex items-center justify-center"
                   >
                     <Check className="w-3 h-3 text-phosphor-400" />
                   </motion.div>
-                ) : step.status === "active" ? (
+                ) : step.status === 'active' ? (
                   <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
                 ) : (
                   <step.icon className="w-5 h-5 text-slate-600" />
@@ -245,14 +245,14 @@ export function EnrichmentProgress({
               <div className="flex-1 min-w-0">
                 <span
                   className={`text-sm font-medium transition-colors duration-300 ${
-                    step.status === "completed"
-                      ? "text-slate-300"
-                      : step.status === "active"
-                        ? "text-white"
-                        : "text-slate-500"
+                    step.status === 'completed'
+                      ? 'text-slate-300'
+                      : step.status === 'active'
+                        ? 'text-white'
+                        : 'text-slate-500'
                   }`}
                 >
-                  {step.status === "completed" && step.completedLabel
+                  {step.status === 'completed' && step.completedLabel
                     ? step.completedLabel
                     : step.label}
                 </span>
@@ -269,7 +269,7 @@ export function EnrichmentProgress({
             className="h-full bg-gradient-to-r from-phosphor-600 to-blue-500 rounded-full"
             initial={{ width: 0 }}
             animate={{ width: `${(completedCount / steps.length) * 100}%` }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
           />
         </div>
         <div className="flex justify-between mt-2">
@@ -328,9 +328,9 @@ export function EnrichmentProgress({
         className="absolute inset-0 -z-10 opacity-30 pointer-events-none rounded-lg"
         style={{
           background:
-            "radial-gradient(ellipse at top, rgba(16, 185, 129, 0.05) 0%, transparent 60%)",
+            'radial-gradient(ellipse at top, rgba(16, 185, 129, 0.05) 0%, transparent 60%)',
         }}
       />
     </div>
-  );
+  )
 }

@@ -1,26 +1,26 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback } from "react";
-import { motion } from "motion/react";
-import { Trash2, Check, Loader2, MessageSquare, FileText } from "lucide-react";
-import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { TaskPreview } from "./TaskPreview";
-import { DiscussionChat } from "./DiscussionChat";
+import { Check, FileText, Loader2, MessageSquare, Trash2 } from 'lucide-react'
+import { motion } from 'motion/react'
+import { useCallback, useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import {
   acceptTask,
   getSubtasks,
-  type Task,
   type Subtask,
-} from "@/lib/api/tasks";
+  type Task,
+} from '@/lib/api/tasks'
+import { DiscussionChat } from './DiscussionChat'
+import { TaskPreview } from './TaskPreview'
 
 interface TaskReviewModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  task: Task;
-  onAccept: (task: Task) => void;
-  onDiscard: () => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  task: Task
+  onAccept: (task: Task) => void
+  onDiscard: () => void
 }
 
 export function TaskReviewModal({
@@ -31,76 +31,76 @@ export function TaskReviewModal({
   onAccept,
   onDiscard,
 }: TaskReviewModalProps) {
-  const [task, setTask] = useState<Task>(initialTask);
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [discussionHistory] = useState<never[]>([]);
-  const [isAccepting, setIsAccepting] = useState(false);
-  const [isDiscarding, setIsDiscarding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"preview" | "chat">("preview");
+  const [task, setTask] = useState<Task>(initialTask)
+  const [subtasks, setSubtasks] = useState<Subtask[]>([])
+  const [discussionHistory] = useState<never[]>([])
+  const [isAccepting, setIsAccepting] = useState(false)
+  const [isDiscarding, setIsDiscarding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'preview' | 'chat'>('preview')
 
   // Fetch subtasks when modal opens
   useEffect(() => {
     if (open && task.id) {
       getSubtasks(projectId, task.id)
         .then((response) => {
-          setSubtasks(response.subtasks);
+          setSubtasks(response.subtasks)
         })
         .catch((err) => {
-          console.error("Failed to fetch subtasks:", err);
-        });
+          console.error('Failed to fetch subtasks:', err)
+        })
     }
-  }, [open, projectId, task.id]);
+  }, [open, projectId, task.id])
 
   // Update task when it changes
   useEffect(() => {
-    setTask(initialTask);
-  }, [initialTask]);
+    setTask(initialTask)
+  }, [initialTask])
 
   const handleTaskUpdated = useCallback(
     (updatedTask: Task) => {
-      setTask(updatedTask);
+      setTask(updatedTask)
       // Refresh subtasks if task was updated
       getSubtasks(projectId, updatedTask.id)
         .then((response) => {
-          setSubtasks(response.subtasks);
+          setSubtasks(response.subtasks)
         })
-        .catch(console.error);
+        .catch(console.error)
     },
     [projectId],
-  );
+  )
 
   const handleAccept = async () => {
-    setIsAccepting(true);
-    setError(null);
+    setIsAccepting(true)
+    setError(null)
 
     try {
-      const acceptedTask = await acceptTask(projectId, task.id);
-      onAccept(acceptedTask);
-      onOpenChange(false);
+      const acceptedTask = await acceptTask(projectId, task.id)
+      onAccept(acceptedTask)
+      onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to accept task");
+      setError(err instanceof Error ? err.message : 'Failed to accept task')
     } finally {
-      setIsAccepting(false);
+      setIsAccepting(false)
     }
-  };
+  }
 
   const handleDiscard = async () => {
-    setIsDiscarding(true);
+    setIsDiscarding(true)
     // In a real implementation, you'd call an API to delete or reset the task
     // For now, just call the callback
     setTimeout(() => {
-      onDiscard();
-      onOpenChange(false);
-      setIsDiscarding(false);
-    }, 300);
-  };
+      onDiscard()
+      onOpenChange(false)
+      setIsDiscarding(false)
+    }, 300)
+  }
 
   const handleClose = () => {
     if (!isAccepting && !isDiscarding) {
-      onOpenChange(false);
+      onOpenChange(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -116,29 +116,29 @@ export function TaskReviewModal({
             Review Task
           </h2>
           <p className="text-xs text-slate-500 mt-1 truncate max-w-lg">
-            {task.title || task.raw_request?.slice(0, 60) + "..."}
+            {task.title || `${task.raw_request?.slice(0, 60)}...`}
           </p>
         </div>
 
         {/* Mobile Tab Switcher */}
         <div className="flex md:hidden border-b border-slate-800">
           <button
-            onClick={() => setActiveTab("preview")}
+            onClick={() => setActiveTab('preview')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === "preview"
-                ? "text-phosphor-400 border-b-2 border-phosphor-500"
-                : "text-slate-500 hover:text-slate-300"
+              activeTab === 'preview'
+                ? 'text-phosphor-400 border-b-2 border-phosphor-500'
+                : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             <FileText className="w-4 h-4" />
             Preview
           </button>
           <button
-            onClick={() => setActiveTab("chat")}
+            onClick={() => setActiveTab('chat')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === "chat"
-                ? "text-phosphor-400 border-b-2 border-phosphor-500"
-                : "text-slate-500 hover:text-slate-300"
+              activeTab === 'chat'
+                ? 'text-phosphor-400 border-b-2 border-phosphor-500'
+                : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             <MessageSquare className="w-4 h-4" />
@@ -150,7 +150,7 @@ export function TaskReviewModal({
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Left Column - Task Preview (hidden on mobile when chat is active) */}
           <motion.div
-            className={`${activeTab === "chat" ? "hidden md:flex" : "flex"} flex-col flex-1 md:flex-[3] md:border-r border-slate-800 overflow-hidden`}
+            className={`${activeTab === 'chat' ? 'hidden md:flex' : 'flex'} flex-col flex-1 md:flex-[3] md:border-r border-slate-800 overflow-hidden`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
@@ -166,7 +166,7 @@ export function TaskReviewModal({
 
           {/* Right Column - Discussion Chat (hidden on mobile when preview is active) */}
           <motion.div
-            className={`${activeTab === "preview" ? "hidden md:flex" : "flex"} flex-col flex-1 md:flex-[2] min-h-0`}
+            className={`${activeTab === 'preview' ? 'hidden md:flex' : 'flex'} flex-col flex-1 md:flex-[2] min-h-0`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2, delay: 0.1 }}
@@ -239,5 +239,5 @@ export function TaskReviewModal({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

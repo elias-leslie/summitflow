@@ -1,20 +1,20 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { CheckCircle, Loader2 } from 'lucide-react';
-import { clsx } from 'clsx';
+import { clsx } from 'clsx'
+import { CheckCircle, Loader2 } from 'lucide-react'
+import { useState } from 'react'
 
 interface Pattern {
-  id: string;
-  confidence: number;
-  status: string;
+  id: string
+  confidence: number
+  status: string
 }
 
 interface BulkActionsBarProps {
-  patterns: Pattern[];
-  onBulkApprove: (patternIds: string[]) => Promise<void>;
-  confidenceThreshold?: number;
-  className?: string;
+  patterns: Pattern[]
+  onBulkApprove: (patternIds: string[]) => Promise<void>
+  confidenceThreshold?: number
+  className?: string
 }
 
 export function BulkActionsBar({
@@ -23,26 +23,26 @@ export function BulkActionsBar({
   confidenceThreshold = 0.85,
   className,
 }: BulkActionsBarProps) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false)
 
   // Get pending patterns that meet the confidence threshold
   const highConfidencePatterns = patterns.filter(
-    (p) => p.status === 'pending' && p.confidence >= confidenceThreshold
-  );
+    (p) => p.status === 'pending' && p.confidence >= confidenceThreshold,
+  )
 
   const handleBulkApprove = async () => {
-    if (highConfidencePatterns.length === 0 || loading) return;
+    if (highConfidencePatterns.length === 0 || loading) return
 
-    setLoading(true);
+    setLoading(true)
     try {
-      await onBulkApprove(highConfidencePatterns.map((p) => p.id));
+      await onBulkApprove(highConfidencePatterns.map((p) => p.id))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   if (highConfidencePatterns.length === 0) {
-    return null;
+    return null
   }
 
   return (
@@ -56,7 +56,7 @@ export function BulkActionsBar({
           'text-emerald-400 transition-all duration-150',
           loading
             ? 'opacity-50 cursor-not-allowed'
-            : 'hover:bg-emerald-500/25 cursor-pointer'
+            : 'hover:bg-emerald-500/25 cursor-pointer',
         )}
       >
         {loading ? (
@@ -67,5 +67,5 @@ export function BulkActionsBar({
         Approve All High-Confidence ({highConfidencePatterns.length})
       </button>
     </div>
-  );
+  )
 }

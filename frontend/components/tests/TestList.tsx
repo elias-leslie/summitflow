@@ -1,44 +1,46 @@
-"use client";
+'use client'
 
-import { useState, useMemo } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
-  XCircle,
-  HelpCircle,
   ChevronDown,
   ChevronRight,
-  Play,
   Clock,
-  AlertTriangle,
+  HelpCircle,
+  Play,
   Timer,
-} from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import type { TddTest } from "@/lib/api";
+  XCircle,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { TddTest } from '@/lib/api'
 
 interface TestListProps {
-  tests: TddTest[];
-  isLoading: boolean;
-  onRunTest: (testId: string) => void;
-  onSelectTest: (test: TddTest) => void;
-  runningTests: Set<string>;
+  tests: TddTest[]
+  isLoading: boolean
+  onRunTest: (testId: string) => void
+  onSelectTest: (test: TddTest) => void
+  runningTests: Set<string>
 }
 
 interface TestGroup {
-  type: string;
-  tests: TddTest[];
-  passCount: number;
-  failCount: number;
-  pendingCount: number;
+  type: string
+  tests: TddTest[]
+  passCount: number
+  failCount: number
+  pendingCount: number
 }
 
 function TestListSkeleton() {
   return (
     <div className="space-y-3">
       {[...Array(4)].map((_, i) => (
-        <div key={i} className="rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+        <div
+          key={i}
+          className="rounded-lg border border-slate-700 bg-slate-900/50 p-4"
+        >
           <div className="flex items-center gap-3 mb-3">
             <Skeleton className="h-5 w-5 rounded" />
             <Skeleton className="h-5 w-24" />
@@ -52,38 +54,38 @@ function TestListSkeleton() {
         </div>
       ))}
     </div>
-  );
+  )
 }
 
 function getResultIcon(result: string | null) {
-  if (result === "passed") {
-    return <CheckCircle2 className="h-4 w-4 text-phosphor-400" />;
+  if (result === 'passed') {
+    return <CheckCircle2 className="h-4 w-4 text-phosphor-400" />
   }
-  if (result === "failed" || result === "error") {
-    return <XCircle className="h-4 w-4 text-rose-400" />;
+  if (result === 'failed' || result === 'error') {
+    return <XCircle className="h-4 w-4 text-rose-400" />
   }
-  if (result === "timeout") {
-    return <Timer className="h-4 w-4 text-amber-400" />;
+  if (result === 'timeout') {
+    return <Timer className="h-4 w-4 text-amber-400" />
   }
-  return <HelpCircle className="h-4 w-4 text-slate-500" />;
+  return <HelpCircle className="h-4 w-4 text-slate-500" />
 }
 
 function getTypeColor(type: string): string {
   const colors: Record<string, string> = {
-    pytest: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    vitest: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    mypy: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    ruff: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    api: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    ui: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  };
-  return colors[type] || "bg-slate-500/20 text-slate-400 border-slate-500/30";
+    pytest: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    vitest: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    mypy: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    ruff: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    api: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    ui: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  }
+  return colors[type] || 'bg-slate-500/20 text-slate-400 border-slate-500/30'
 }
 
 function formatDuration(ms: number | null): string {
-  if (ms === null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  if (ms === null) return '-'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 export function TestList({
@@ -93,56 +95,62 @@ export function TestList({
   onSelectTest,
   runningTests,
 }: TestListProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   // Group tests by type
   const groupedTests = useMemo<TestGroup[]>(() => {
-    const groups: Record<string, TddTest[]> = {};
+    const groups: Record<string, TddTest[]> = {}
 
     for (const test of tests) {
-      const type = test.test_type || "unknown";
+      const type = test.test_type || 'unknown'
       if (!groups[type]) {
-        groups[type] = [];
+        groups[type] = []
       }
-      groups[type].push(test);
+      groups[type].push(test)
     }
 
-    return Object.entries(groups).map(([type, typeTests]) => ({
-      type,
-      tests: typeTests.sort((a, b) => a.name.localeCompare(b.name)),
-      passCount: typeTests.filter((t) => t.last_result === "passed").length,
-      failCount: typeTests.filter((t) => t.last_result === "failed" || t.last_result === "error").length,
-      pendingCount: typeTests.filter((t) => !t.last_result).length,
-    })).sort((a, b) => a.type.localeCompare(b.type));
-  }, [tests]);
+    return Object.entries(groups)
+      .map(([type, typeTests]) => ({
+        type,
+        tests: typeTests.sort((a, b) => a.name.localeCompare(b.name)),
+        passCount: typeTests.filter((t) => t.last_result === 'passed').length,
+        failCount: typeTests.filter(
+          (t) => t.last_result === 'failed' || t.last_result === 'error',
+        ).length,
+        pendingCount: typeTests.filter((t) => !t.last_result).length,
+      }))
+      .sort((a, b) => a.type.localeCompare(b.type))
+  }, [tests])
 
   const toggleGroup = (type: string) => {
     setExpandedGroups((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(type)) {
-        next.delete(type);
+        next.delete(type)
       } else {
-        next.add(type);
+        next.add(type)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
-  if (isLoading) return <TestListSkeleton />;
+  if (isLoading) return <TestListSkeleton />
 
   if (tests.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-8 text-center">
         <AlertTriangle className="mx-auto h-12 w-12 text-slate-600" />
-        <p className="mt-4 text-sm text-slate-500">No tests found. Import tests to get started.</p>
+        <p className="mt-4 text-sm text-slate-500">
+          No tests found. Import tests to get started.
+        </p>
       </div>
-    );
+    )
   }
 
   return (
     <div className="space-y-3">
       {groupedTests.map((group) => {
-        const isExpanded = expandedGroups.has(group.type);
+        const isExpanded = expandedGroups.has(group.type)
 
         return (
           <div
@@ -165,7 +173,7 @@ export function TestList({
                 {group.type}
               </span>
               <span className="text-sm text-slate-300 font-medium">
-                {group.tests.length} test{group.tests.length !== 1 ? "s" : ""}
+                {group.tests.length} test{group.tests.length !== 1 ? 's' : ''}
               </span>
               <div className="flex-1" />
               <div className="flex items-center gap-2 text-xs">
@@ -194,7 +202,7 @@ export function TestList({
             {isExpanded && (
               <div className="border-t border-slate-800">
                 {group.tests.map((test) => {
-                  const isRunning = runningTests.has(test.test_id);
+                  const isRunning = runningTests.has(test.test_id)
 
                   return (
                     <div
@@ -226,8 +234,8 @@ export function TestList({
                         size="sm"
                         className="h-7 px-2"
                         onClick={(e) => {
-                          e.stopPropagation();
-                          onRunTest(test.test_id);
+                          e.stopPropagation()
+                          onRunTest(test.test_id)
                         }}
                         disabled={isRunning}
                       >
@@ -238,13 +246,13 @@ export function TestList({
                         )}
                       </Button>
                     </div>
-                  );
+                  )
                 })}
               </div>
             )}
           </div>
-        );
+        )
       })}
     </div>
-  );
+  )
 }

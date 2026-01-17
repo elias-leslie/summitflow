@@ -5,45 +5,45 @@
  * and an optional detail panel when expanded.
  */
 
-"use client";
+'use client'
 
-import { useCallback } from "react";
-import { cn } from "@/lib/utils";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useCallback } from 'react'
+import { cn } from '@/lib/utils'
 
 // Depth-based padding classes for tree indentation
 // Maps depth to Tailwind classes (depth * 20 + 12 for row, depth * 20 + 24 for detail)
 const depthRowPadding: Record<number, string> = {
-  0: "pl-3", // 12px
-  1: "pl-8", // 32px
-  2: "pl-[52px]",
-  3: "pl-[72px]",
-  4: "pl-[92px]",
-  5: "pl-[112px]",
-};
+  0: 'pl-3', // 12px
+  1: 'pl-8', // 32px
+  2: 'pl-[52px]',
+  3: 'pl-[72px]',
+  4: 'pl-[92px]',
+  5: 'pl-[112px]',
+}
 
 const depthDetailMargin: Record<number, string> = {
-  0: "ml-6", // 24px
-  1: "ml-11", // 44px
-  2: "ml-[64px]",
-  3: "ml-[84px]",
-  4: "ml-[104px]",
-  5: "ml-[124px]",
-};
+  0: 'ml-6', // 24px
+  1: 'ml-11', // 44px
+  2: 'ml-[64px]',
+  3: 'ml-[84px]',
+  4: 'ml-[104px]',
+  5: 'ml-[124px]',
+}
 
-import { StatusBorder } from "./StatusIndicator";
-import type { HealthStatus } from "./types";
+import { StatusBorder } from './StatusIndicator'
+import type { HealthStatus } from './types'
 
 interface DataRowProps {
-  id: string;
-  healthStatus: HealthStatus;
-  isExpanded: boolean;
-  onToggle: (id: string) => void;
-  renderContent: () => React.ReactNode;
-  renderDetail?: () => React.ReactNode;
-  depth?: number;
-  hasChildren?: boolean;
-  className?: string;
+  id: string
+  healthStatus: HealthStatus
+  isExpanded: boolean
+  onToggle: (id: string) => void
+  renderContent: () => React.ReactNode
+  renderDetail?: () => React.ReactNode
+  depth?: number
+  hasChildren?: boolean
+  className?: string
 }
 
 export function DataRow({
@@ -58,21 +58,21 @@ export function DataRow({
   className,
 }: DataRowProps) {
   const handleClick = useCallback(() => {
-    onToggle(id);
-  }, [id, onToggle]);
+    onToggle(id)
+  }, [id, onToggle])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onToggle(id);
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onToggle(id)
       }
     },
-    [id, onToggle]
-  );
+    [id, onToggle],
+  )
 
   return (
-    <div className={cn("group", className)}>
+    <div className={cn('group', className)}>
       {/* Row content */}
       <StatusBorder status={healthStatus}>
         <div
@@ -81,25 +81,25 @@ export function DataRow({
           onClick={handleClick}
           onKeyDown={handleKeyDown}
           className={cn(
-            "flex items-center gap-2 py-2.5",
-            "cursor-pointer select-none",
-            "transition-colors duration-100",
-            "hover:bg-slate-800/40",
-            isExpanded && "bg-slate-800/30",
-            depthRowPadding[Math.min(depth, 5)] || depthRowPadding[0]
+            'flex items-center gap-2 py-2.5',
+            'cursor-pointer select-none',
+            'transition-colors duration-100',
+            'hover:bg-slate-800/40',
+            isExpanded && 'bg-slate-800/30',
+            depthRowPadding[Math.min(depth, 5)] || depthRowPadding[0],
           )}
         >
           {/* Expand/collapse chevron */}
           {hasChildren || renderDetail ? (
             <button
               onClick={(e) => {
-                e.stopPropagation();
-                onToggle(id);
+                e.stopPropagation()
+                onToggle(id)
               }}
               className={cn(
-                "flex-shrink-0 p-0.5 rounded",
-                "text-slate-500 hover:text-slate-300",
-                "hover:bg-slate-700/50 transition-colors"
+                'flex-shrink-0 p-0.5 rounded',
+                'text-slate-500 hover:text-slate-300',
+                'hover:bg-slate-700/50 transition-colors',
               )}
             >
               {isExpanded ? (
@@ -121,17 +121,17 @@ export function DataRow({
       {renderDetail && (
         <div
           className={cn(
-            "grid transition-all duration-200 ease-out",
-            isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            'grid transition-all duration-200 ease-out',
+            isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
           )}
         >
           <div className="overflow-hidden">
             <div
               className={cn(
-                "mr-3 mb-2 p-4 rounded-lg",
-                "bg-slate-900/50 border border-slate-700/50",
-                "animate-in fade-in-0 slide-in-from-top-1 duration-200",
-                depthDetailMargin[Math.min(depth, 5)] || depthDetailMargin[0]
+                'mr-3 mb-2 p-4 rounded-lg',
+                'bg-slate-900/50 border border-slate-700/50',
+                'animate-in fade-in-0 slide-in-from-top-1 duration-200',
+                depthDetailMargin[Math.min(depth, 5)] || depthDetailMargin[0],
               )}
             >
               {renderDetail()}
@@ -140,7 +140,7 @@ export function DataRow({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /**
@@ -167,5 +167,5 @@ export function DataRowSkeleton({ count = 5 }: { count?: number }) {
         </div>
       ))}
     </div>
-  );
+  )
 }

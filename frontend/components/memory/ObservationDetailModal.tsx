@@ -1,15 +1,24 @@
-'use client';
+'use client'
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Check, Loader2, FileText, Clock, Zap, Tag } from 'lucide-react';
-import { clsx } from 'clsx';
-import { AnimatePresence, motion } from 'motion/react';
-import { formatTime } from '@/lib/formatters/memory-formatters';
-import type { Observation } from './rows';
+import { clsx } from 'clsx'
+import {
+  Check,
+  Clock,
+  Copy,
+  FileText,
+  Loader2,
+  Tag,
+  X,
+  Zap,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useEffect, useState } from 'react'
+import { formatTime } from '@/lib/formatters/memory-formatters'
+import type { Observation } from './rows'
 
 interface ObservationDetailModalProps {
-  observation: Observation | null;
-  onClose: () => void;
+  observation: Observation | null
+  onClose: () => void
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -25,66 +34,71 @@ const TYPE_COLORS: Record<string, string> = {
   discovery: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
   change: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   default: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
-};
-
-interface FullObservation {
-  id: string;
-  project_id: string;
-  session_id: string;
-  agent_type: string;
-  observation_type: string;
-  title: string;
-  concepts: string[];
-  subtitle?: string;
-  narrative?: string;
-  facts?: Record<string, unknown>;
-  files_read?: string[];
-  files_modified?: string[];
-  discovery_tokens?: number;
-  created_at: string;
 }
 
-export function ObservationDetailModal({ observation, onClose }: ObservationDetailModalProps) {
-  const [fullData, setFullData] = useState<FullObservation | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+interface FullObservation {
+  id: string
+  project_id: string
+  session_id: string
+  agent_type: string
+  observation_type: string
+  title: string
+  concepts: string[]
+  subtitle?: string
+  narrative?: string
+  facts?: Record<string, unknown>
+  files_read?: string[]
+  files_modified?: string[]
+  discovery_tokens?: number
+  created_at: string
+}
+
+export function ObservationDetailModal({
+  observation,
+  onClose,
+}: ObservationDetailModalProps) {
+  const [fullData, setFullData] = useState<FullObservation | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Fetch full observation data
   useEffect(() => {
     if (!observation) {
-      setFullData(null);
-      return;
+      setFullData(null)
+      return
     }
 
     const fetchFullData = async () => {
-      setLoading(true);
+      setLoading(true)
       try {
-        const res = await fetch(`/api/memory/observations?ids=${observation.id}`);
+        const res = await fetch(
+          `/api/memory/observations?ids=${observation.id}`,
+        )
         if (res.ok) {
-          const data = await res.json();
+          const data = await res.json()
           if (data.observations && data.observations.length > 0) {
-            setFullData(data.observations[0]);
+            setFullData(data.observations[0])
           } else {
             // Fallback to the observation we already have
-            setFullData(observation);
+            setFullData(observation)
           }
         } else {
-          setFullData(observation);
+          setFullData(observation)
         }
       } catch (error) {
-        console.error('Failed to fetch observation details:', error);
-        setFullData(observation);
+        console.error('Failed to fetch observation details:', error)
+        setFullData(observation)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
+    }
 
-    fetchFullData();
-  }, [observation]);
+    fetchFullData()
+  }, [observation])
 
   // Handle copy to clipboard
   const handleCopy = useCallback(async () => {
-    if (!fullData) return;
+    if (!fullData) return
 
     const content = `# ${fullData.title}
 
@@ -93,32 +107,39 @@ Time: ${formatTime(fullData.created_at)}
 
 ${fullData.narrative || ''}
 
-${fullData.facts ? `## Facts\n${Object.entries(fullData.facts).map(([k, v]) => `- ${k}: ${v}`).join('\n')}` : ''}
+${
+  fullData.facts
+    ? `## Facts\n${Object.entries(fullData.facts)
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join('\n')}`
+    : ''
+}
 
 ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modified.join('\n')}` : ''}
-`.trim();
+`.trim()
 
     try {
-      await navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     } catch (error) {
-      console.error('Failed to copy:', error);
+      console.error('Failed to copy:', error)
     }
-  }, [fullData]);
+  }, [fullData])
 
   // Close on escape
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
 
-  if (!observation) return null;
+  if (!observation) return null
 
-  const typeColor = TYPE_COLORS[observation.observation_type] || TYPE_COLORS.default;
+  const typeColor =
+    TYPE_COLORS[observation.observation_type] || TYPE_COLORS.default
 
   return (
     <AnimatePresence>
@@ -145,7 +166,12 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 bg-slate-800/50">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className={clsx('text-[11px] font-semibold uppercase px-2.5 py-1 rounded border shrink-0', typeColor)}>
+                  <span
+                    className={clsx(
+                      'text-[11px] font-semibold uppercase px-2.5 py-1 rounded border shrink-0',
+                      typeColor,
+                    )}
+                  >
                     {observation.observation_type}
                   </span>
                   <h2 className="text-lg font-medium text-slate-100 truncate">
@@ -159,11 +185,15 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
                       'p-2 rounded-lg transition-colors',
                       copied
                         ? 'bg-emerald-500/15 text-emerald-400'
-                        : 'bg-slate-700/50 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                        : 'bg-slate-700/50 text-slate-400 hover:text-slate-200 hover:bg-slate-700',
                     )}
                     title="Copy to clipboard"
                   >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copied ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
                   </button>
                   <button
                     onClick={onClose}
@@ -191,8 +221,8 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
                       </span>
                       {fullData.discovery_tokens && (
                         <span className="flex items-center gap-1.5">
-                          <Zap className="w-4 h-4" />
-                          ~{fullData.discovery_tokens} tokens
+                          <Zap className="w-4 h-4" />~
+                          {fullData.discovery_tokens} tokens
                         </span>
                       )}
                       {fullData.agent_type && (
@@ -222,39 +252,51 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
                     )}
 
                     {/* Facts */}
-                    {fullData.facts && Object.keys(fullData.facts).length > 0 && (
-                      <div>
-                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                          Facts Extracted
-                        </h3>
-                        <ul className="space-y-1.5">
-                          {Object.entries(fullData.facts).map(([key, value]) => (
-                            <li key={key} className="text-sm text-slate-300 pl-4 relative">
-                              <span className="absolute left-0 text-outrun-500">-</span>
-                              <span className="text-slate-500">{key}:</span>{' '}
-                              <span>{String(value)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {fullData.facts &&
+                      Object.keys(fullData.facts).length > 0 && (
+                        <div>
+                          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                            Facts Extracted
+                          </h3>
+                          <ul className="space-y-1.5">
+                            {Object.entries(fullData.facts).map(
+                              ([key, value]) => (
+                                <li
+                                  key={key}
+                                  className="text-sm text-slate-300 pl-4 relative"
+                                >
+                                  <span className="absolute left-0 text-outrun-500">
+                                    -
+                                  </span>
+                                  <span className="text-slate-500">{key}:</span>{' '}
+                                  <span>{String(value)}</span>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      )}
 
                     {/* Files Modified */}
-                    {fullData.files_modified && fullData.files_modified.length > 0 && (
-                      <div>
-                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5" />
-                          Files Modified
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {fullData.files_modified.map((file) => (
-                            <span key={file} className="text-[12px] font-mono px-2.5 py-1 rounded bg-slate-700/50 text-slate-300">
-                              {file}
-                            </span>
-                          ))}
+                    {fullData.files_modified &&
+                      fullData.files_modified.length > 0 && (
+                        <div>
+                          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5" />
+                            Files Modified
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {fullData.files_modified.map((file) => (
+                              <span
+                                key={file}
+                                className="text-[12px] font-mono px-2.5 py-1 rounded bg-slate-700/50 text-slate-300"
+                              >
+                                {file}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Concepts */}
                     {fullData.concepts && fullData.concepts.length > 0 && (
@@ -265,7 +307,10 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
                         </h3>
                         <div className="flex flex-wrap gap-2">
                           {fullData.concepts.map((concept) => (
-                            <span key={concept} className="text-xs px-2.5 py-1 rounded-full bg-outrun-500/10 text-outrun-400 border border-outrun-500/20">
+                            <span
+                              key={concept}
+                              className="text-xs px-2.5 py-1 rounded-full bg-outrun-500/10 text-outrun-400 border border-outrun-500/20"
+                            >
                               {concept}
                             </span>
                           ))}
@@ -292,5 +337,5 @@ ${fullData.files_modified?.length ? `## Files Modified\n${fullData.files_modifie
         </>
       )}
     </AnimatePresence>
-  );
+  )
 }

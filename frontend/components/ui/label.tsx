@@ -1,9 +1,9 @@
-"use client";
+'use client'
 
-import { forwardRef, type LabelHTMLAttributes } from "react";
-import { clsx } from "clsx";
+import { clsx } from 'clsx'
+import { forwardRef, type LabelHTMLAttributes } from 'react'
 
-type LabelProps = LabelHTMLAttributes<HTMLLabelElement>;
+type LabelProps = LabelHTMLAttributes<HTMLLabelElement>
 
 export const Label = forwardRef<HTMLLabelElement, LabelProps>(
   ({ className, ...props }, ref) => {
@@ -11,14 +11,14 @@ export const Label = forwardRef<HTMLLabelElement, LabelProps>(
       <label
         ref={ref}
         className={clsx(
-          "text-sm font-medium text-slate-300",
-          "cursor-pointer",
-          className
+          'text-sm font-medium text-slate-300',
+          'cursor-pointer',
+          className,
         )}
         {...props}
       />
-    );
-  }
-);
+    )
+  },
+)
 
-Label.displayName = "Label";
+Label.displayName = 'Label'

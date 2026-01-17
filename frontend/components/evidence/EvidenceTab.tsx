@@ -1,108 +1,108 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import Image from "next/image";
-import Link from "next/link";
+import { useQuery } from '@tanstack/react-query'
 import {
+  AlertTriangle,
+  Bot,
+  Camera,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Eye,
+  FileQuestion,
   Grid3X3,
+  Layers,
   List,
   Loader2,
   Search,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Clock,
-  Camera,
-  FileQuestion,
-  Bot,
-  TestTube,
-  ChevronRight,
-  X,
   Sparkles,
-  Eye,
-  Layers,
+  TestTube,
   Video,
-} from "lucide-react";
-import { EvidenceViewerModal } from "./EvidenceViewerModal";
-import { MockupComparisonDialog } from "./MockupComparisonDialog";
-import { fetchExplorerEntryById } from "@/lib/api/explorer";
+  X,
+  XCircle,
+} from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { useState } from 'react'
+import { fetchExplorerEntryById } from '@/lib/api/explorer'
+import { EvidenceViewerModal } from './EvidenceViewerModal'
+import { MockupComparisonDialog } from './MockupComparisonDialog'
 
 interface EvidenceTabProps {
-  projectId: string;
+  projectId: string
   /** Filter by explorer entry ID */
-  entryId?: number;
+  entryId?: number
   /** Callback to clear entry filter */
-  onClearEntryFilter?: () => void;
+  onClearEntryFilter?: () => void
 }
 
 interface Evidence {
-  id: number;
-  evidenceId: string;
-  taskId: string | null;
-  explorerEntryId: number | null;
-  evidenceType: string;
-  version: number;
-  isCurrent: boolean;
-  capturedAt: string;
-  qualityStatus: string;
-  confidence: number | null;
-  userApproved: boolean | null;
-  userNotes: string | null;
-  fileSizeBytes: number | null;
-  screenshotUrl: string;
-  criterionDbId: number | null;
-  testRunId: number | null;
-  autoCaptured: boolean;
-  criterionText: string | null;
-  linkedEvidenceId: number | null;
-  mockupStatus: string | null;
-  environment: string | null;
-  viewportName: string | null;
+  id: number
+  evidenceId: string
+  taskId: string | null
+  explorerEntryId: number | null
+  evidenceType: string
+  version: number
+  isCurrent: boolean
+  capturedAt: string
+  qualityStatus: string
+  confidence: number | null
+  userApproved: boolean | null
+  userNotes: string | null
+  fileSizeBytes: number | null
+  screenshotUrl: string
+  criterionDbId: number | null
+  testRunId: number | null
+  autoCaptured: boolean
+  criterionText: string | null
+  linkedEvidenceId: number | null
+  mockupStatus: string | null
+  environment: string | null
+  viewportName: string | null
 }
 
 interface EvidenceSummary {
-  total_current: number;
-  by_status: Record<string, number>;
-  auto_captured_count: number;
-  with_user_notes: number;
-  total_storage_bytes: number;
+  total_current: number
+  by_status: Record<string, number>
+  auto_captured_count: number
+  with_user_notes: number
+  total_storage_bytes: number
 }
 
-type ViewMode = "grid" | "list";
+type ViewMode = 'grid' | 'list'
 
 export function EvidenceTab({
   projectId,
   entryId,
   onClearEntryFilter,
 }: EvidenceTabProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(0);
-  const pageSize = 50;
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const pageSize = 50
 
   // Modal state
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(
     null,
-  );
-  const [modalOpen, setModalOpen] = useState(false);
+  )
+  const [modalOpen, setModalOpen] = useState(false)
 
   // Mockup comparison dialog state
-  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false)
   const [comparisonEntry, setComparisonEntry] = useState<{
-    id: number;
-    path?: string;
-  } | null>(null);
+    id: number
+    path?: string
+  } | null>(null)
 
   // Fetch entry details when filtering by entry_id
   const { data: entryData } = useQuery({
-    queryKey: ["explorerEntry", projectId, entryId],
+    queryKey: ['explorerEntry', projectId, entryId],
     queryFn: () => fetchExplorerEntryById(projectId, entryId!),
     enabled: !!entryId,
     staleTime: 60000,
-  });
+  })
 
   // Queries
   const {
@@ -111,7 +111,7 @@ export function EvidenceTab({
     refetch: refetchEvidence,
   } = useQuery({
     queryKey: [
-      "evidence",
+      'evidence',
       projectId,
       statusFilter,
       typeFilter,
@@ -123,145 +123,145 @@ export function EvidenceTab({
       const params = new URLSearchParams({
         limit: String(pageSize),
         offset: String(page * pageSize),
-      });
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      if (typeFilter !== "all") params.set("type", typeFilter);
-      if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      if (entryId) params.set("entry_id", String(entryId));
+      })
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (typeFilter !== 'all') params.set('type', typeFilter)
+      if (searchQuery.trim()) params.set('search', searchQuery.trim())
+      if (entryId) params.set('entry_id', String(entryId))
 
       const response = await fetch(
         `/api/projects/${projectId}/evidence?${params}`,
-      );
-      if (!response.ok) throw new Error("Failed to fetch evidence");
+      )
+      if (!response.ok) throw new Error('Failed to fetch evidence')
       return response.json() as Promise<{
-        evidence: Evidence[];
-        total: number;
-        limit: number;
-        offset: number;
-      }>;
+        evidence: Evidence[]
+        total: number
+        limit: number
+        offset: number
+      }>
     },
     refetchInterval: 60000,
-  });
+  })
 
   const { data: summary } = useQuery({
-    queryKey: ["evidence", projectId, "summary"],
+    queryKey: ['evidence', projectId, 'summary'],
     queryFn: async () => {
       const response = await fetch(
         `/api/projects/${projectId}/evidence/summary`,
-      );
-      if (!response.ok) throw new Error("Failed to fetch summary");
-      return response.json() as Promise<EvidenceSummary>;
+      )
+      if (!response.ok) throw new Error('Failed to fetch summary')
+      return response.json() as Promise<EvidenceSummary>
     },
     refetchInterval: 60000,
-  });
+  })
 
   const handleEvidenceClick = (evidence: Evidence) => {
-    setSelectedEvidence(evidence);
-    setModalOpen(true);
-  };
+    setSelectedEvidence(evidence)
+    setModalOpen(true)
+  }
 
   const handleCompare = (evidence: Evidence) => {
     if (evidence.explorerEntryId) {
       setComparisonEntry({
         id: evidence.explorerEntryId,
         path: undefined,
-      });
-      setComparisonOpen(true);
+      })
+      setComparisonOpen(true)
     }
-  };
+  }
 
   // Status badge component
   const StatusBadge = ({ status }: { status: string }) => {
     const base =
-      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium";
+      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium'
     switch (status) {
-      case "passed":
+      case 'passed':
         return (
           <span className={`${base} bg-green-500/20 text-green-400`}>
             <CheckCircle2 className="w-3 h-3" />
             Passed
           </span>
-        );
-      case "failed":
+        )
+      case 'failed':
         return (
           <span className={`${base} bg-red-500/20 text-red-400`}>
             <XCircle className="w-3 h-3" />
             Failed
           </span>
-        );
-      case "needs_review":
+        )
+      case 'needs_review':
         return (
           <span className={`${base} bg-yellow-500/20 text-yellow-400`}>
             <AlertTriangle className="w-3 h-3" />
             Review
           </span>
-        );
-      case "pending":
+        )
+      case 'pending':
         return (
           <span className={`${base} bg-blue-500/20 text-blue-400`}>
             <Clock className="w-3 h-3" />
             Pending
           </span>
-        );
-      case "migrated":
+        )
+      case 'migrated':
         return (
           <span className={`${base} bg-slate-500/20 text-slate-400`}>
             <FileQuestion className="w-3 h-3" />
             Migrated
           </span>
-        );
+        )
       default:
         return (
           <span className={`${base} bg-slate-500/20 text-slate-400`}>
             {status}
           </span>
-        );
+        )
     }
-  };
+  }
 
   // Mockup status badge
   const MockupStatusBadge = ({ status }: { status: string | null }) => {
     const base =
-      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium";
+      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium'
     switch (status) {
-      case "approved":
+      case 'approved':
         return (
           <span className={`${base} bg-green-500/20 text-green-400`}>
             <CheckCircle2 className="w-3 h-3" />
             Approved
           </span>
-        );
-      case "rejected":
+        )
+      case 'rejected':
         return (
           <span className={`${base} bg-red-500/20 text-red-400`}>
             <XCircle className="w-3 h-3" />
             Rejected
           </span>
-        );
-      case "pending_approval":
+        )
+      case 'pending_approval':
         return (
           <span className={`${base} bg-amber-500/20 text-amber-400`}>
             <Eye className="w-3 h-3" />
             Pending
           </span>
-        );
-      case "generated":
+        )
+      case 'generated':
         return (
           <span className={`${base} bg-purple-500/20 text-purple-400`}>
             <Sparkles className="w-3 h-3" />
             Generated
           </span>
-        );
+        )
       default:
-        return null;
+        return null
     }
-  };
+  }
 
   // Type badge (mockup indicator)
   const TypeBadge = ({ type }: { type: string }) => {
     const base =
-      "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium";
-    if (type === "mockup") {
+      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium'
+    if (type === 'mockup') {
       return (
         <span
           className={`${base} bg-pink-500/20 text-pink-400 border border-pink-500/30`}
@@ -269,9 +269,9 @@ export function EvidenceTab({
           <Sparkles className="w-2.5 h-2.5" />
           Mockup
         </span>
-      );
+      )
     }
-    if (type === "video") {
+    if (type === 'video') {
       return (
         <span
           className={`${base} bg-blue-500/20 text-blue-400 border border-blue-500/30`}
@@ -279,24 +279,24 @@ export function EvidenceTab({
           <Video className="w-2.5 h-2.5" />
           Video
         </span>
-      );
+      )
     }
-    return null;
-  };
+    return null
+  }
 
   // Format date relative
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
+    if (diffHours < 1) return 'Just now'
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString()
+  }
 
   return (
     <div className="space-y-4">
@@ -383,22 +383,22 @@ export function EvidenceTab({
         {/* View toggle */}
         <div className="flex rounded-lg overflow-hidden border border-slate-700">
           <button
-            onClick={() => setViewMode("grid")}
+            onClick={() => setViewMode('grid')}
             className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors ${
-              viewMode === "grid"
-                ? "bg-phosphor-500/20 text-phosphor-400"
-                : "text-slate-400 hover:text-white"
+              viewMode === 'grid'
+                ? 'bg-phosphor-500/20 text-phosphor-400'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <Grid3X3 className="w-3.5 h-3.5" />
             Grid
           </button>
           <button
-            onClick={() => setViewMode("list")}
+            onClick={() => setViewMode('list')}
             className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors ${
-              viewMode === "list"
-                ? "bg-phosphor-500/20 text-phosphor-400"
-                : "text-slate-400 hover:text-white"
+              viewMode === 'list'
+                ? 'bg-phosphor-500/20 text-phosphor-400'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <List className="w-3.5 h-3.5" />
@@ -424,8 +424,8 @@ export function EvidenceTab({
         <select
           value={typeFilter}
           onChange={(e) => {
-            setTypeFilter(e.target.value);
-            setPage(0);
+            setTypeFilter(e.target.value)
+            setPage(0)
           }}
           className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-phosphor-500"
         >
@@ -443,8 +443,8 @@ export function EvidenceTab({
             placeholder="Search task/entry..."
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setPage(0);
+              setSearchQuery(e.target.value)
+              setPage(0)
             }}
             className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-phosphor-500"
           />
@@ -469,13 +469,13 @@ export function EvidenceTab({
           <p className="text-slate-400">No evidence found</p>
           <p className="text-xs text-slate-500 mt-1">
             {searchQuery
-              ? "Try adjusting your search"
+              ? 'Try adjusting your search'
               : entryId
-                ? "No evidence has been captured for this entry yet"
-                : "Evidence is captured when verifying tasks"}
+                ? 'No evidence has been captured for this entry yet'
+                : 'Evidence is captured when verifying tasks'}
           </p>
         </div>
-      ) : viewMode === "grid" ? (
+      ) : viewMode === 'grid' ? (
         /* Grid View */
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {evidenceData.evidence.map((evidence) => (
@@ -493,7 +493,7 @@ export function EvidenceTab({
                   className="object-cover object-top group-hover:scale-105 transition-transform"
                   unoptimized
                   onError={(e) => {
-                    e.currentTarget.style.display = "none";
+                    e.currentTarget.style.display = 'none'
                   }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -514,15 +514,15 @@ export function EvidenceTab({
                   <span>v{evidence.version}</span>
                 </div>
                 {/* Mockup status row */}
-                {evidence.evidenceType === "mockup" &&
+                {evidence.evidenceType === 'mockup' &&
                   evidence.mockupStatus && (
                     <div className="flex items-center justify-between">
                       <MockupStatusBadge status={evidence.mockupStatus} />
                       {evidence.explorerEntryId && (
                         <button
                           onClick={(e) => {
-                            e.stopPropagation();
-                            handleCompare(evidence);
+                            e.stopPropagation()
+                            handleCompare(evidence)
                           }}
                           className="flex items-center gap-0.5 px-1.5 py-0.5 text-2xs text-pink-400 hover:bg-pink-500/10 rounded transition-colors"
                           title="Compare with actual"
@@ -665,8 +665,8 @@ export function EvidenceTab({
       {evidenceData && evidenceData.total > pageSize && (
         <div className="flex items-center justify-between pt-2">
           <span className="text-xs text-slate-500">
-            Showing {page * pageSize + 1} -{" "}
-            {Math.min((page + 1) * pageSize, evidenceData.total)} of{" "}
+            Showing {page * pageSize + 1} -{' '}
+            {Math.min((page + 1) * pageSize, evidenceData.total)} of{' '}
             {evidenceData.total}
           </span>
           <div className="flex gap-2">
@@ -711,5 +711,5 @@ export function EvidenceTab({
         />
       )}
     </div>
-  );
+  )
 }

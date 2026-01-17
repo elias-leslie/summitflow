@@ -1,39 +1,39 @@
-"use client";
+'use client'
 
 import {
-  Loader2,
+  AlertCircle,
+  Ban,
   CheckCircle2,
   Clock,
-  AlertCircle,
-  GitPullRequest,
+  DollarSign,
   Eye,
+  GitPullRequest,
+  Loader2,
+  RefreshCw,
   User,
   XCircle,
-  Ban,
   Zap,
-  DollarSign,
-  RefreshCw,
-} from "lucide-react";
+} from 'lucide-react'
 
-import type { Task, TaskStatus } from "@/lib/api/tasks";
+import type { Task, TaskStatus } from '@/lib/api/tasks'
 
 // ============================================================================
 // Types
 // ============================================================================
 
 interface ExecutionBadgesProps {
-  task: Task;
+  task: Task
   /** Show compact badges (smaller, fewer details) */
-  compact?: boolean;
+  compact?: boolean
   /** Optional class name */
-  className?: string;
+  className?: string
 }
 
 interface ExecutionMetadata {
-  model?: string;
-  retryCount?: number;
-  cost?: number;
-  duration?: number;
+  model?: string
+  retryCount?: number
+  cost?: number
+  duration?: number
 }
 
 // ============================================================================
@@ -46,68 +46,68 @@ const statusIcons: Record<
 > = {
   pending: {
     icon: <Clock className="h-3 w-3" />,
-    color: "text-slate-400",
-    bg: "bg-slate-500/20",
+    color: 'text-slate-400',
+    bg: 'bg-slate-500/20',
   },
   running: {
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
-    color: "text-blue-400",
-    bg: "bg-blue-500/20",
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/20',
   },
   paused: {
     icon: <Clock className="h-3 w-3" />,
-    color: "text-amber-400",
-    bg: "bg-amber-500/20",
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/20',
   },
   blocked: {
     icon: <AlertCircle className="h-3 w-3" />,
-    color: "text-red-400",
-    bg: "bg-red-500/20",
+    color: 'text-red-400',
+    bg: 'bg-red-500/20',
   },
   pr_created: {
     icon: <GitPullRequest className="h-3 w-3" />,
-    color: "text-purple-400",
-    bg: "bg-purple-500/20",
+    color: 'text-purple-400',
+    bg: 'bg-purple-500/20',
   },
   ai_reviewing: {
     icon: <Eye className="h-3 w-3 animate-pulse" />,
-    color: "text-cyan-400",
-    bg: "bg-cyan-500/20",
+    color: 'text-cyan-400',
+    bg: 'bg-cyan-500/20',
   },
   human_review: {
     icon: <User className="h-3 w-3" />,
-    color: "text-orange-400",
-    bg: "bg-orange-500/20",
+    color: 'text-orange-400',
+    bg: 'bg-orange-500/20',
   },
   completed: {
     icon: <CheckCircle2 className="h-3 w-3" />,
-    color: "text-phosphor-400",
-    bg: "bg-phosphor-500/20",
+    color: 'text-phosphor-400',
+    bg: 'bg-phosphor-500/20',
   },
   failed: {
     icon: <XCircle className="h-3 w-3" />,
-    color: "text-red-400",
-    bg: "bg-red-500/20",
+    color: 'text-red-400',
+    bg: 'bg-red-500/20',
   },
   cancelled: {
     icon: <Ban className="h-3 w-3" />,
-    color: "text-slate-400",
-    bg: "bg-slate-500/20",
+    color: 'text-slate-400',
+    bg: 'bg-slate-500/20',
   },
-};
+}
 
 // ============================================================================
 // Model name formatting
 // ============================================================================
 
 function formatModelName(model?: string): string | null {
-  if (!model) return null;
+  if (!model) return null
   // Normalize model names for display
-  if (model.includes("haiku") || model.includes("flash")) return "Flash";
-  if (model.includes("sonnet")) return "Sonnet";
-  if (model.includes("opus")) return "Opus";
-  if (model.includes("pro")) return "Pro";
-  return model.split("-").pop() || model;
+  if (model.includes('haiku') || model.includes('flash')) return 'Flash'
+  if (model.includes('sonnet')) return 'Sonnet'
+  if (model.includes('opus')) return 'Opus'
+  if (model.includes('pro')) return 'Pro'
+  return model.split('-').pop() || model
 }
 
 // ============================================================================
@@ -115,9 +115,9 @@ function formatModelName(model?: string): string | null {
 // ============================================================================
 
 function formatCost(cost?: number): string | null {
-  if (cost === undefined || cost === null) return null;
-  if (cost < 0.01) return "<$0.01";
-  return `$${cost.toFixed(2)}`;
+  if (cost === undefined || cost === null) return null
+  if (cost < 0.01) return '<$0.01'
+  return `$${cost.toFixed(2)}`
 }
 
 // ============================================================================
@@ -125,19 +125,19 @@ function formatCost(cost?: number): string | null {
 // ============================================================================
 
 function extractModelFromLog(progressLog?: string | null): string | undefined {
-  if (!progressLog) return undefined;
+  if (!progressLog) return undefined
   // Look for model mentions in progress log
   const modelPatterns = [
     /with\s+(claude-[a-z0-9-]+)/i,
     /with\s+(gemini-[a-z0-9-]+)/i,
     /model[:\s]+([a-z]+-[a-z0-9-]+)/i,
     /(claude-sonnet|claude-opus|claude-haiku|gemini-flash|gemini-pro)/i,
-  ];
+  ]
   for (const pattern of modelPatterns) {
-    const match = progressLog.match(pattern);
-    if (match?.[1]) return match[1];
+    const match = progressLog.match(pattern)
+    if (match?.[1]) return match[1]
   }
-  return undefined;
+  return undefined
 }
 
 // ============================================================================
@@ -147,9 +147,9 @@ function extractModelFromLog(progressLog?: string | null): string | undefined {
 export function ExecutionBadges({
   task,
   compact = false,
-  className = "",
+  className = '',
 }: ExecutionBadgesProps) {
-  const statusConfig = statusIcons[task.status] || statusIcons.pending;
+  const statusConfig = statusIcons[task.status] || statusIcons.pending
 
   // Extract execution metadata from task (if available)
   // Model extracted from progress_log since it's not stored in a dedicated field
@@ -157,10 +157,10 @@ export function ExecutionBadges({
     model: extractModelFromLog(task.progress_log),
     retryCount: task.total_sessions > 1 ? task.total_sessions : undefined,
     cost: task.total_tokens_used ? task.total_tokens_used * 0.00001 : undefined, // Rough estimate
-  };
+  }
 
-  const modelName = formatModelName(metadata.model);
-  const costDisplay = formatCost(metadata.cost);
+  const modelName = formatModelName(metadata.model)
+  const costDisplay = formatCost(metadata.cost)
 
   if (compact) {
     // Compact view: just status icon
@@ -175,7 +175,7 @@ export function ExecutionBadges({
           {statusConfig.icon}
         </span>
       </div>
-    );
+    )
   }
 
   // Full view: status + model + retry + cost
@@ -187,7 +187,7 @@ export function ExecutionBadges({
         title={`Status: ${task.status}`}
       >
         {statusConfig.icon}
-        <span className="capitalize">{task.status.replace("_", " ")}</span>
+        <span className="capitalize">{task.status.replace('_', ' ')}</span>
       </span>
 
       {/* Model badge */}
@@ -223,7 +223,7 @@ export function ExecutionBadges({
         </span>
       )}
     </div>
-  );
+  )
 }
 
 // ============================================================================
@@ -231,15 +231,15 @@ export function ExecutionBadges({
 // ============================================================================
 
 interface StatusIconProps {
-  status: TaskStatus;
-  className?: string;
+  status: TaskStatus
+  className?: string
 }
 
-export function StatusIcon({ status, className = "" }: StatusIconProps) {
-  const config = statusIcons[status] || statusIcons.pending;
+export function StatusIcon({ status, className = '' }: StatusIconProps) {
+  const config = statusIcons[status] || statusIcons.pending
   return (
     <span className={`${config.color} ${className}`} title={status}>
       {config.icon}
     </span>
-  );
+  )
 }

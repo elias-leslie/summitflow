@@ -1,101 +1,101 @@
-"use client";
+'use client'
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import Image from "next/image";
+import { useQuery } from '@tanstack/react-query'
 import {
-  Image as ImageIcon,
-  Calendar,
-  Filter,
-  Search,
-  CheckCircle2,
-  XCircle,
   AlertTriangle,
-  Clock,
+  Calendar,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Loader2,
+  Clock,
   FileJson,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+  Filter,
+  Image as ImageIcon,
+  Loader2,
+  Search,
+  XCircle,
+} from 'lucide-react'
+import Image from 'next/image'
+import { useMemo, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { EvidenceViewerModal } from "./EvidenceViewerModal";
+} from '@/components/ui/select'
+import { EvidenceViewerModal } from './EvidenceViewerModal'
 
 interface EvidenceItem {
-  id: number;
-  evidenceId: string;
-  taskId: string | null;
-  explorerEntryId: number | null;
-  evidenceType: string;
-  version: number;
-  isCurrent: boolean;
-  capturedAt: string;
-  qualityStatus: string;
-  confidence: number | null;
-  userApproved: boolean | null;
-  userNotes: string | null;
-  fileSizeBytes: number | null;
-  screenshotUrl: string;
+  id: number
+  evidenceId: string
+  taskId: string | null
+  explorerEntryId: number | null
+  evidenceType: string
+  version: number
+  isCurrent: boolean
+  capturedAt: string
+  qualityStatus: string
+  confidence: number | null
+  userApproved: boolean | null
+  userNotes: string | null
+  fileSizeBytes: number | null
+  screenshotUrl: string
 }
 
 interface EvidenceListResponse {
-  evidence: EvidenceItem[];
-  total: number;
-  limit: number;
-  offset: number;
+  evidence: EvidenceItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 interface EvidenceGalleryProps {
-  projectId: string;
+  projectId: string
 }
 
 async function fetchEvidenceList(
   projectId: string,
   params: {
-    limit: number;
-    offset: number;
-    taskId?: string;
-    status?: string;
-    search?: string;
+    limit: number
+    offset: number
+    taskId?: string
+    status?: string
+    search?: string
   },
 ): Promise<EvidenceListResponse> {
   const searchParams = new URLSearchParams({
     limit: params.limit.toString(),
     offset: params.offset.toString(),
-  });
-  if (params.taskId) searchParams.set("task_id", params.taskId);
-  if (params.status) searchParams.set("status", params.status);
-  if (params.search) searchParams.set("search", params.search);
+  })
+  if (params.taskId) searchParams.set('task_id', params.taskId)
+  if (params.status) searchParams.set('status', params.status)
+  if (params.search) searchParams.set('search', params.search)
 
   const res = await fetch(
     `/api/projects/${projectId}/evidence?${searchParams.toString()}`,
-  );
-  if (!res.ok) throw new Error("Failed to fetch evidence");
-  return res.json();
+  )
+  if (!res.ok) throw new Error('Failed to fetch evidence')
+  return res.json()
 }
 
 export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
-  const [page, setPage] = useState(0);
-  const [featureFilter, setFeatureFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0)
+  const [featureFilter, setFeatureFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(
     null,
-  );
-  const pageSize = 12;
+  )
+  const pageSize = 12
 
   // Fetch evidence with filters
   const { data, isLoading, error } = useQuery<EvidenceListResponse>({
     queryKey: [
-      "evidence-list",
+      'evidence-list',
       projectId,
       page,
       featureFilter,
@@ -106,22 +106,22 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
       fetchEvidenceList(projectId, {
         limit: pageSize,
         offset: page * pageSize,
-        taskId: featureFilter !== "all" ? featureFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
+        taskId: featureFilter !== 'all' ? featureFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
         search: searchQuery || undefined,
       }),
-  });
+  })
 
   // Get unique task IDs for filter dropdown
   const taskIds = useMemo(() => {
-    if (!data?.evidence) return [];
+    if (!data?.evidence) return []
     const ids = new Set(
       data.evidence.map((e) => e.taskId || `entry-${e.explorerEntryId}`),
-    );
-    return Array.from(ids).sort();
-  }, [data]);
+    )
+    return Array.from(ids).sort()
+  }, [data])
 
-  const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
+  const totalPages = data ? Math.ceil(data.total / pageSize) : 0
 
   const getStatusBadge = (status: string, userApproved: boolean | null) => {
     if (userApproved === true) {
@@ -130,7 +130,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
           <CheckCircle2 className="h-3 w-3" />
           Approved
         </Badge>
-      );
+      )
     }
     if (userApproved === false) {
       return (
@@ -138,56 +138,56 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
           <XCircle className="h-3 w-3" />
           Rejected
         </Badge>
-      );
+      )
     }
     switch (status) {
-      case "passed":
+      case 'passed':
         return (
           <Badge variant="phosphor" className="gap-1">
             <CheckCircle2 className="h-3 w-3" />
             Passed
           </Badge>
-        );
-      case "failed":
+        )
+      case 'failed':
         return (
           <Badge variant="rose" className="gap-1">
             <XCircle className="h-3 w-3" />
             Failed
           </Badge>
-        );
-      case "needs_review":
+        )
+      case 'needs_review':
         return (
           <Badge variant="amber" className="gap-1">
             <AlertTriangle className="h-3 w-3" />
             Needs Review
           </Badge>
-        );
+        )
       default:
         return (
           <Badge variant="default" className="gap-1">
             <Clock className="h-3 w-3" />
             Pending
           </Badge>
-        );
+        )
     }
-  };
+  }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = new Date(dateString)
     return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
 
   const formatFileSize = (bytes: number | null) => {
-    if (!bytes) return "—";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+    if (!bytes) return '—'
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -241,7 +241,7 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
         {/* Stats */}
         {data && (
           <div className="text-sm text-slate-400">
-            {data.total} evidence capture{data.total !== 1 && "s"}
+            {data.total} evidence capture{data.total !== 1 && 's'}
           </div>
         )}
       </div>
@@ -352,5 +352,5 @@ export function EvidenceGallery({ projectId }: EvidenceGalleryProps) {
         />
       )}
     </div>
-  );
+  )
 }

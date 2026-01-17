@@ -1,31 +1,37 @@
-"use client";
+'use client'
 
-import { Badge } from "../ui/badge";
-import { RefreshCw, WifiOff, Zap } from "lucide-react";
+import { RefreshCw, WifiOff, Zap } from 'lucide-react'
+import { Badge } from '../ui/badge'
 
-export type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected'
 
 export interface ConnectionStatusBadgeProps {
-  status: ConnectionStatus;
+  status: ConnectionStatus
 }
 
 export function ConnectionStatusBadge({ status }: ConnectionStatusBadgeProps) {
-  if (status === "connected") {
+  if (status === 'connected') {
     return (
-      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 text-xs">
+      <Badge
+        variant="outline"
+        className="bg-emerald-500/10 text-emerald-500 text-xs"
+      >
         <Zap className="h-3 w-3 mr-1" />
         Live
       </Badge>
-    );
+    )
   }
 
-  if (status === "reconnecting") {
+  if (status === 'reconnecting') {
     return (
-      <Badge variant="outline" className="bg-amber-500/10 text-amber-500 text-xs">
+      <Badge
+        variant="outline"
+        className="bg-amber-500/10 text-amber-500 text-xs"
+      >
         <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
         Reconnecting
       </Badge>
-    );
+    )
   }
 
   return (
@@ -33,5 +39,5 @@ export function ConnectionStatusBadge({ status }: ConnectionStatusBadgeProps) {
       <WifiOff className="h-3 w-3 mr-1" />
       Disconnected
     </Badge>
-  );
+  )
 }

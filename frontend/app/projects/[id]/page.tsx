@@ -1,116 +1,114 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { AlertCircle } from "lucide-react";
-import Link from "next/link";
-import { fetchProject } from "@/lib/api";
-import { TasksTab } from "@/components/tasks/TasksTab";
-import { type TaskFilterValues } from "@/components/tasks/TaskFilters";
-import { EvidenceTab } from "@/components/evidence/EvidenceTab";
-import { ExplorerTab } from "@/components/explorer/ExplorerTab";
-import type { ExplorerType } from "@/components/explorer/types";
-import { TaskKanbanBoard } from "@/components/kanban/TaskKanbanBoard";
-import { TaskModal } from "@/components/tasks/TaskModal";
-import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle } from 'lucide-react'
+import Link from 'next/link'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { EvidenceTab } from '@/components/evidence/EvidenceTab'
+import { ExplorerTab } from '@/components/explorer/ExplorerTab'
+import type { ExplorerType } from '@/components/explorer/types'
+import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
+import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
+import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
+import { TaskModal } from '@/components/tasks/TaskModal'
+import { TasksTab } from '@/components/tasks/TasksTab'
 import {
+  fetchProject,
   fetchTasks,
-  updateTaskStatus,
   type Task,
   type TaskStatus,
-} from "@/lib/api";
-import { useTabPersistence, type TabId } from "@/lib/hooks/useTabPersistence";
+  updateTaskStatus,
+} from '@/lib/api'
+import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
 
 export default function ProjectDetailPage() {
-  const params = useParams();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const projectId = params.id as string;
+  const params = useParams()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const projectId = params.id as string
 
   // Tab persistence hook (handles localStorage and URL sync)
-  const urlTab = searchParams.get("tab") as TabId | null;
-  const urlExplorerType = searchParams.get("type") as ExplorerType | null;
+  const urlTab = searchParams.get('tab') as TabId | null
+  const urlExplorerType = searchParams.get('type') as ExplorerType | null
   const { activeTab, explorerType, setExplorerType } = useTabPersistence({
     projectId,
     urlTab,
     urlExplorerType,
-  });
+  })
 
   // Get task filter params from URL
-  const urlTaskStatus = searchParams.get("status");
-  const urlTaskType = searchParams.get("taskType");
-  const taskInitialFilters: Partial<TaskFilterValues> = {};
+  const urlTaskStatus = searchParams.get('status')
+  const urlTaskType = searchParams.get('taskType')
+  const taskInitialFilters: Partial<TaskFilterValues> = {}
   if (
     urlTaskStatus &&
     [
-      "all",
-      "active",
-      "blocked",
-      "pending",
-      "running",
-      "completed",
-      "failed",
+      'all',
+      'active',
+      'blocked',
+      'pending',
+      'running',
+      'completed',
+      'failed',
     ].includes(urlTaskStatus)
   ) {
-    taskInitialFilters.status = urlTaskStatus as TaskFilterValues["status"];
+    taskInitialFilters.status = urlTaskStatus as TaskFilterValues['status']
   }
-  if (urlTaskType && ["all", "feature", "bug", "task"].includes(urlTaskType)) {
-    taskInitialFilters.type = urlTaskType as TaskFilterValues["type"];
+  if (urlTaskType && ['all', 'feature', 'bug', 'task'].includes(urlTaskType)) {
+    taskInitialFilters.type = urlTaskType as TaskFilterValues['type']
   }
 
   // Get evidence entry_id filter from URL
-  const urlEntryId = searchParams.get("entry_id");
-  const evidenceEntryId = urlEntryId ? parseInt(urlEntryId, 10) : undefined;
+  const urlEntryId = searchParams.get('entry_id')
+  const evidenceEntryId = urlEntryId ? parseInt(urlEntryId, 10) : undefined
 
   // Handler to clear evidence entry filter
   const handleClearEvidenceEntryFilter = () => {
-    router.replace(`/projects/${projectId}?tab=evidence`, { scroll: false });
-  };
+    router.replace(`/projects/${projectId}?tab=evidence`, { scroll: false })
+  }
 
   // Update URL when explorer type changes (without full navigation)
   const handleExplorerTypeChange = (type: ExplorerType) => {
-    setExplorerType(type);
-    const newUrl = `/projects/${projectId}?tab=explorer&type=${type}`;
-    router.replace(newUrl, { scroll: false });
-  };
+    setExplorerType(type)
+    const newUrl = `/projects/${projectId}?tab=explorer&type=${type}`
+    router.replace(newUrl, { scroll: false })
+  }
 
   // Auto-open task from URL query param
-  const urlTaskId = searchParams.get("task");
+  const urlTaskId = searchParams.get('task')
 
   // Kanban state
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
-    urlTaskId,
-  );
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [modalOpen, setModalOpen] = useState(!!urlTaskId);
-  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(urlTaskId)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [modalOpen, setModalOpen] = useState(!!urlTaskId)
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
 
   // Handle URL task param changes
   useEffect(() => {
     if (urlTaskId) {
-      setSelectedTaskId(urlTaskId);
-      setModalOpen(true);
+      setSelectedTaskId(urlTaskId)
+      setModalOpen(true)
     }
-  }, [urlTaskId]);
+  }, [urlTaskId])
 
   const {
     data: project,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: ['project', projectId],
     queryFn: () => fetchProject(projectId),
-  });
+  })
 
   // Tasks for Kanban (fetch with feature context)
   const { data: kanbanTasksData, refetch: refetchKanbanTasks } = useQuery({
-    queryKey: ["tasks-kanban", projectId],
-    queryFn: () => fetchTasks(projectId, { include: "feature", limit: 500 }),
+    queryKey: ['tasks-kanban', projectId],
+    queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
     staleTime: 30000,
-    enabled: activeTab === "kanban",
-  });
-  const kanbanTasks = kanbanTasksData?.tasks ?? [];
+    enabled: activeTab === 'kanban',
+  })
+  const kanbanTasks = kanbanTasksData?.tasks ?? []
 
   // Kanban handlers
   const handleTaskStatusChange = async (
@@ -118,42 +116,42 @@ export default function ProjectDetailPage() {
     newStatus: TaskStatus,
   ) => {
     try {
-      await updateTaskStatus(projectId, taskId, newStatus);
-      refetchKanbanTasks();
+      await updateTaskStatus(projectId, taskId, newStatus)
+      refetchKanbanTasks()
     } catch (err) {
-      console.error("Failed to update task status:", err);
+      console.error('Failed to update task status:', err)
     }
-  };
+  }
 
   const handleTaskClick = (task: Task) => {
-    setSelectedTaskId(task.id);
-    setSelectedTask(task);
-    setModalOpen(true);
-  };
+    setSelectedTaskId(task.id)
+    setSelectedTask(task)
+    setModalOpen(true)
+  }
 
   const handleTaskUpdate = (task: Task) => {
-    setSelectedTask(task);
-    refetchKanbanTasks();
-  };
+    setSelectedTask(task)
+    refetchKanbanTasks()
+  }
 
   const handleNewTask = () => {
-    setCreateTaskDialogOpen(true);
-  };
+    setCreateTaskDialogOpen(true)
+  }
 
   const handleCreateDialogChange = (open: boolean) => {
-    setCreateTaskDialogOpen(open);
+    setCreateTaskDialogOpen(open)
     if (!open) {
       // Refetch tasks when dialog closes (after create)
-      refetchKanbanTasks();
+      refetchKanbanTasks()
     }
-  };
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
       </div>
-    );
+    )
   }
 
   if (error || !project) {
@@ -173,14 +171,14 @@ export default function ProjectDetailPage() {
           </Link>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="h-full flex flex-col">
       {/* Tab Content - Full height, no header redundancy */}
       <section className="flex-1 overflow-hidden">
-        {activeTab === "kanban" && (
+        {activeTab === 'kanban' && (
           <div className="h-full overflow-auto p-4">
             <TaskKanbanBoard
               tasks={kanbanTasks}
@@ -204,7 +202,7 @@ export default function ProjectDetailPage() {
             />
           </div>
         )}
-        {activeTab === "tasks" && (
+        {activeTab === 'tasks' && (
           <div className="h-full overflow-auto p-4">
             <TasksTab
               projectId={projectId}
@@ -212,7 +210,7 @@ export default function ProjectDetailPage() {
             />
           </div>
         )}
-        {activeTab === "evidence" && (
+        {activeTab === 'evidence' && (
           <div className="h-full overflow-auto p-4">
             <EvidenceTab
               projectId={projectId}
@@ -223,7 +221,7 @@ export default function ProjectDetailPage() {
             />
           </div>
         )}
-        {activeTab === "explorer" && (
+        {activeTab === 'explorer' && (
           <div className="h-full overflow-auto p-4">
             <ExplorerTab
               projectId={projectId}
@@ -234,5 +232,5 @@ export default function ProjectDetailPage() {
         )}
       </section>
     </div>
-  );
+  )
 }

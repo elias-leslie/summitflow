@@ -4,33 +4,33 @@
  * Renders table name with icon, row count, column count, and completeness.
  */
 
-import { Database } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ColumnValue } from "../../DataList";
-import type { ExplorerEntry } from "@/lib/api/explorer";
+import { Database } from 'lucide-react'
+import type { ExplorerEntry } from '@/lib/api/explorer'
+import { cn } from '@/lib/utils'
+import { ColumnValue } from '../../DataList'
 
 interface TableRowProps {
-  entry: ExplorerEntry;
+  entry: ExplorerEntry
 }
 
 // Helpers
 const formatNumber = (n: number | undefined | null) => {
-  const num = n ?? 0;
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toLocaleString();
-};
+  const num = n ?? 0
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toLocaleString()
+}
 
 const formatPercent = (pct: number | undefined | null) => {
-  if (pct === undefined || pct === null) return "-";
-  return `${Math.round(pct)}%`;
-};
+  if (pct === undefined || pct === null) return '-'
+  return `${Math.round(pct)}%`
+}
 
 export function TableRow({ entry }: TableRowProps) {
-  const rowCount = entry.metadata.row_count ?? 0;
-  const columnCount = entry.metadata.column_count ?? 0;
-  const completeness = entry.metadata.completeness_pct;
-  const category = entry.metadata.category;
+  const rowCount = entry.metadata.row_count ?? 0
+  const columnCount = entry.metadata.column_count ?? 0
+  const completeness = entry.metadata.completeness_pct
+  const category = entry.metadata.category
 
   return (
     <>
@@ -53,12 +53,12 @@ export function TableRow({ entry }: TableRowProps) {
 
       {/* Row count */}
       <ColumnValue width="100px" align="right" mono muted={rowCount === 0}>
-        {rowCount > 0 ? formatNumber(rowCount) : "-"}
+        {rowCount > 0 ? formatNumber(rowCount) : '-'}
       </ColumnValue>
 
       {/* Column count */}
       <ColumnValue width="80px" align="right" mono muted={columnCount === 0}>
-        {columnCount > 0 ? columnCount : "-"}
+        {columnCount > 0 ? columnCount : '-'}
       </ColumnValue>
 
       {/* Completeness */}
@@ -67,16 +67,14 @@ export function TableRow({ entry }: TableRowProps) {
         align="right"
         mono
         className={cn(
-          completeness !== undefined &&
-            completeness < 50 &&
-            "text-amber-400",
+          completeness !== undefined && completeness < 50 && 'text-amber-400',
           completeness !== undefined &&
             completeness >= 90 &&
-            "text-emerald-400"
+            'text-emerald-400',
         )}
       >
         {formatPercent(completeness)}
       </ColumnValue>
     </>
-  );
+  )
 }

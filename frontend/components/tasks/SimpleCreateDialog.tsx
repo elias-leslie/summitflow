@@ -1,46 +1,46 @@
-"use client";
+'use client'
 
-import { useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Loader2, Send, Zap } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { useQueryClient } from '@tanstack/react-query'
+import { Loader2, Send, Sparkles, Zap } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useCallback, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogClose,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/dialog'
 import {
-  enrichTask,
   cleanupPrompt,
+  enrichTask,
   type Task,
   type TaskType,
-} from "@/lib/api/tasks";
+} from '@/lib/api/tasks'
 
 interface SimpleCreateDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  onTaskCreated?: (task: Task, mode: "queue" | "verify") => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projectId: string
+  onTaskCreated?: (task: Task, mode: 'queue' | 'verify') => void
 }
 
 const PRIORITY_OPTIONS = [
-  { value: "auto", label: "auto" },
-  { value: "0", label: "P0 - Critical" },
-  { value: "1", label: "P1 - High" },
-  { value: "2", label: "P2 - Medium" },
-  { value: "3", label: "P3 - Low" },
-  { value: "4", label: "P4 - Backlog" },
-];
+  { value: 'auto', label: 'auto' },
+  { value: '0', label: 'P0 - Critical' },
+  { value: '1', label: 'P1 - High' },
+  { value: '2', label: 'P2 - Medium' },
+  { value: '3', label: 'P3 - Low' },
+  { value: '4', label: 'P4 - Backlog' },
+]
 
 const TYPE_OPTIONS = [
-  { value: "auto", label: "auto" },
-  { value: "feature", label: "feature" },
-  { value: "bug", label: "bug" },
-  { value: "task", label: "task" },
-];
+  { value: 'auto', label: 'auto' },
+  { value: 'feature', label: 'feature' },
+  { value: 'bug', label: 'bug' },
+  { value: 'task', label: 'task' },
+]
 
 export function SimpleCreateDialog({
   open,
@@ -48,82 +48,84 @@ export function SimpleCreateDialog({
   projectId,
   onTaskCreated,
 }: SimpleCreateDialogProps) {
-  const queryClient = useQueryClient();
-  const [rawRequest, setRawRequest] = useState("");
-  const [priority, setPriority] = useState("auto");
-  const [taskType, setTaskType] = useState("auto");
-  const [isCleaningUp, setIsCleaningUp] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState<"queue" | "verify" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [cleanupChanges, setCleanupChanges] = useState<string[] | null>(null);
+  const queryClient = useQueryClient()
+  const [rawRequest, setRawRequest] = useState('')
+  const [priority, setPriority] = useState('auto')
+  const [taskType, setTaskType] = useState('auto')
+  const [isCleaningUp, setIsCleaningUp] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState<'queue' | 'verify' | null>(
+    null,
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [cleanupChanges, setCleanupChanges] = useState<string[] | null>(null)
 
   const resetForm = useCallback(() => {
-    setRawRequest("");
-    setPriority("auto");
-    setTaskType("auto");
-    setError(null);
-    setCleanupChanges(null);
-  }, []);
+    setRawRequest('')
+    setPriority('auto')
+    setTaskType('auto')
+    setError(null)
+    setCleanupChanges(null)
+  }, [])
 
   const handleClose = useCallback(() => {
     if (!isSubmitting && !isCleaningUp) {
-      resetForm();
-      onOpenChange(false);
+      resetForm()
+      onOpenChange(false)
     }
-  }, [isSubmitting, isCleaningUp, resetForm, onOpenChange]);
+  }, [isSubmitting, isCleaningUp, resetForm, onOpenChange])
 
   const handleCleanup = async () => {
-    if (!rawRequest.trim() || isCleaningUp) return;
+    if (!rawRequest.trim() || isCleaningUp) return
 
-    setIsCleaningUp(true);
-    setError(null);
-    setCleanupChanges(null);
+    setIsCleaningUp(true)
+    setError(null)
+    setCleanupChanges(null)
 
     try {
-      const result = await cleanupPrompt(projectId, rawRequest);
-      setRawRequest(result.cleaned_prompt);
-      setCleanupChanges(result.changes_made);
+      const result = await cleanupPrompt(projectId, rawRequest)
+      setRawRequest(result.cleaned_prompt)
+      setCleanupChanges(result.changes_made)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cleanup prompt");
+      setError(err instanceof Error ? err.message : 'Failed to cleanup prompt')
     } finally {
-      setIsCleaningUp(false);
+      setIsCleaningUp(false)
     }
-  };
+  }
 
-  const handleSubmit = async (mode: "queue" | "verify") => {
+  const handleSubmit = async (mode: 'queue' | 'verify') => {
     if (!rawRequest.trim()) {
-      setError("Please describe what you want to do");
-      return;
+      setError('Please describe what you want to do')
+      return
     }
 
-    setIsSubmitting(mode);
-    setError(null);
+    setIsSubmitting(mode)
+    setError(null)
 
     try {
       const task = await enrichTask(
         projectId,
         {
           raw_request: rawRequest.trim(),
-          priority: priority !== "auto" ? parseInt(priority) : undefined,
-          task_type: taskType !== "auto" ? (taskType as TaskType) : undefined,
+          priority: priority !== 'auto' ? parseInt(priority, 10) : undefined,
+          task_type: taskType !== 'auto' ? (taskType as TaskType) : undefined,
         },
-        mode === "verify" // sync = true for verify now
-      );
+        mode === 'verify', // sync = true for verify now
+      )
 
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
 
       if (onTaskCreated) {
-        onTaskCreated(task, mode);
+        onTaskCreated(task, mode)
       }
 
-      resetForm();
-      onOpenChange(false);
+      resetForm()
+      onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create task");
+      setError(err instanceof Error ? err.message : 'Failed to create task')
     } finally {
-      setIsSubmitting(null);
+      setIsSubmitting(null)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -145,8 +147,8 @@ export function SimpleCreateDialog({
               <textarea
                 value={rawRequest}
                 onChange={(e) => {
-                  setRawRequest(e.target.value);
-                  setCleanupChanges(null);
+                  setRawRequest(e.target.value)
+                  setCleanupChanges(null)
                 }}
                 placeholder="Describe your task in natural language. The AI will structure it into objective, criteria, and subtasks..."
                 rows={5}
@@ -162,7 +164,9 @@ export function SimpleCreateDialog({
               <button
                 type="button"
                 onClick={handleCleanup}
-                disabled={!rawRequest.trim() || isCleaningUp || isSubmitting !== null}
+                disabled={
+                  !rawRequest.trim() || isCleaningUp || isSubmitting !== null
+                }
                 className="absolute bottom-3 right-3 p-1.5 rounded-md
                   text-slate-500 hover:text-amber-400 hover:bg-amber-500/10
                   disabled:opacity-30 disabled:cursor-not-allowed
@@ -182,12 +186,12 @@ export function SimpleCreateDialog({
               {cleanupChanges && cleanupChanges.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
+                  animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
                   className="text-xs text-amber-400/80 pl-1"
                 >
-                  <span className="font-medium">AI refined:</span>{" "}
-                  {cleanupChanges.join(", ")}
+                  <span className="font-medium">AI refined:</span>{' '}
+                  {cleanupChanges.join(', ')}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -208,7 +212,11 @@ export function SimpleCreateDialog({
                   disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {PRIORITY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} className="bg-slate-800">
+                  <option
+                    key={opt.value}
+                    value={opt.value}
+                    className="bg-slate-800"
+                  >
                     {opt.label}
                   </option>
                 ))}
@@ -227,7 +235,11 @@ export function SimpleCreateDialog({
                   disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} className="bg-slate-800">
+                  <option
+                    key={opt.value}
+                    value={opt.value}
+                    className="bg-slate-800"
+                  >
                     {opt.label}
                   </option>
                 ))}
@@ -260,9 +272,9 @@ export function SimpleCreateDialog({
               variant="primary"
               className="flex-1"
               disabled={!rawRequest.trim() || isSubmitting !== null}
-              onClick={() => handleSubmit("queue")}
+              onClick={() => handleSubmit('queue')}
             >
-              {isSubmitting === "queue" ? (
+              {isSubmitting === 'queue' ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Submitting...
@@ -279,9 +291,9 @@ export function SimpleCreateDialog({
               variant="outline"
               className="flex-1"
               disabled={!rawRequest.trim() || isSubmitting !== null}
-              onClick={() => handleSubmit("verify")}
+              onClick={() => handleSubmit('verify')}
             >
-              {isSubmitting === "verify" ? (
+              {isSubmitting === 'verify' ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Verifying...
@@ -296,12 +308,14 @@ export function SimpleCreateDialog({
           </div>
 
           <p className="text-xs text-slate-500 text-center">
-            <span className="text-phosphor-400">Submit to Queue</span> processes in background
-            {" · "}
-            <span className="text-slate-300">Verify Now</span> shows results immediately
+            <span className="text-phosphor-400">Submit to Queue</span> processes
+            in background
+            {' · '}
+            <span className="text-slate-300">Verify Now</span> shows results
+            immediately
           </p>
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

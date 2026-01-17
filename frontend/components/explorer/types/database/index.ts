@@ -2,6 +2,6 @@
  * Database type configuration for explorer
  */
 
-export { tableColumns } from "./TableColumns";
-export { TableRow } from "./TableRow";
-export { TableDetail } from "./TableDetail";
+export { tableColumns } from './TableColumns'
+export { TableDetail } from './TableDetail'
+export { TableRow } from './TableRow'

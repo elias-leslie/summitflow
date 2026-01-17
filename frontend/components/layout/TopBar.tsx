@@ -1,41 +1,41 @@
-"use client";
+'use client'
 
-import Link from "next/link";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useQuery } from '@tanstack/react-query'
 import {
+  AlertTriangle,
+  Archive,
+  ArrowDownCircle,
+  Brain,
+  Bug,
+  CheckSquare,
+  ExternalLink,
+  Package,
+  RefreshCw,
   Search,
   Settings,
-  Brain,
-  Archive,
   Terminal,
-  ExternalLink,
-  Bug,
-  Package,
-  CheckSquare,
-  RefreshCw,
-  AlertTriangle,
-  ArrowDownCircle,
   Zap,
-} from "lucide-react";
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { NotificationBell } from "@/components/notifications";
-import { useSelectedProject } from "./ProjectSelector";
+} from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { NotificationBell } from '@/components/notifications'
 import {
   fetchTasks,
   getAutonomousSettings,
   type Task,
   type TaskType,
-} from "@/lib/api";
+} from '@/lib/api'
+import { useSelectedProject } from './ProjectSelector'
 
-const SUMMITFLOW_PROJECT_ID = "summitflow";
+const SUMMITFLOW_PROJECT_ID = 'summitflow'
 
-const LOGO_WIDE_WIDTH = 200;
-const LOGO_HEIGHT = 56;
-const LOGO_SQUARE_SIZE = 56;
-const LOGO_CONTAINER_WIDTH = 220;
-const LOGO_SHIFT_COLLAPSED = 72;
+const LOGO_WIDE_WIDTH = 200
+const LOGO_HEIGHT = 56
+const LOGO_SQUARE_SIZE = 56
+const LOGO_CONTAINER_WIDTH = 220
+const LOGO_SHIFT_COLLAPSED = 72
 
 const typeIcons: Record<TaskType, React.ReactNode> = {
   feature: <Package className="h-3.5 w-3.5 text-purple-400" />,
@@ -44,75 +44,75 @@ const typeIcons: Record<TaskType, React.ReactNode> = {
   refactor: <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />,
   debt: <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />,
   regression: <ArrowDownCircle className="h-3.5 w-3.5 text-orange-400" />,
-};
+}
 
 export function TopBar() {
-  const router = useRouter();
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selectedProjectId = useSelectedProject();
-  const searchRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter()
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [searchValue, setSearchValue] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const selectedProjectId = useSelectedProject()
+  const searchRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const [isExpanded, setIsExpanded] = useState(false);
-  const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false)
+  const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Fetch tasks for search (only when we have a project selected)
   const { data: tasksData } = useQuery({
-    queryKey: ["tasks", selectedProjectId, "search"],
+    queryKey: ['tasks', selectedProjectId, 'search'],
     queryFn: () => fetchTasks(selectedProjectId!, { limit: 500 }),
     enabled: !!selectedProjectId && searchValue.length > 0,
     staleTime: 30000,
-  });
+  })
 
   // Fetch autonomous settings for indicator
   const { data: autonomousSettings } = useQuery({
-    queryKey: ["autonomous-settings", selectedProjectId],
+    queryKey: ['autonomous-settings', selectedProjectId],
     queryFn: () => getAutonomousSettings(selectedProjectId!),
     enabled: !!selectedProjectId,
     staleTime: 60000, // Check every minute
     refetchInterval: 60000,
-  });
+  })
 
   // Calculate if currently in execution window
   const isInTimeWindow = useMemo(() => {
-    if (!autonomousSettings) return false;
-    const now = new Date();
-    const currentHour = now.getHours();
-    const { start_hour, end_hour } = autonomousSettings;
+    if (!autonomousSettings) return false
+    const now = new Date()
+    const currentHour = now.getHours()
+    const { start_hour, end_hour } = autonomousSettings
     // Handle 24/7 case
-    if (start_hour === 0 && end_hour === 24) return true;
+    if (start_hour === 0 && end_hour === 24) return true
     // Handle same-day window
     if (start_hour < end_hour) {
-      return currentHour >= start_hour && currentHour < end_hour;
+      return currentHour >= start_hour && currentHour < end_hour
     }
     // Handle overnight window
-    return currentHour >= start_hour || currentHour < end_hour;
-  }, [autonomousSettings]);
+    return currentHour >= start_hour || currentHour < end_hour
+  }, [autonomousSettings])
 
   // Determine auto-exec status label
   const autoExecStatus = useMemo(() => {
-    if (!autonomousSettings) return null;
+    if (!autonomousSettings) return null
     if (!autonomousSettings.enabled)
-      return { label: "Off", color: "text-slate-500", bg: "bg-slate-800" };
+      return { label: 'Off', color: 'text-slate-500', bg: 'bg-slate-800' }
     if (!isInTimeWindow)
       return {
-        label: "Paused",
-        color: "text-amber-400",
-        bg: "bg-amber-500/10",
-      };
+        label: 'Paused',
+        color: 'text-amber-400',
+        bg: 'bg-amber-500/10',
+      }
     return {
-      label: "Active",
-      color: "text-phosphor-400",
-      bg: "bg-phosphor-500/10",
-    };
-  }, [autonomousSettings, isInTimeWindow]);
+      label: 'Active',
+      color: 'text-phosphor-400',
+      bg: 'bg-phosphor-500/10',
+    }
+  }, [autonomousSettings, isInTimeWindow])
 
   // Filter tasks based on search value
   const searchResults = useMemo(() => {
-    if (!searchValue.trim() || !tasksData?.tasks) return [];
-    const query = searchValue.toLowerCase();
+    if (!searchValue.trim() || !tasksData?.tasks) return []
+    const query = searchValue.toLowerCase()
     return tasksData.tasks
       .filter(
         (task) =>
@@ -120,70 +120,70 @@ export function TopBar() {
           task.description?.toLowerCase().includes(query) ||
           task.id.toLowerCase().includes(query),
       )
-      .slice(0, 8); // Limit to 8 results
-  }, [searchValue, tasksData]);
+      .slice(0, 8) // Limit to 8 results
+  }, [searchValue, tasksData])
 
   // Reset selected index when results change
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [searchResults]);
+    setSelectedIndex(0)
+  }, [])
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!searchResults.length) return;
+    if (!searchResults.length) return
 
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedIndex((prev) => Math.min(prev + 1, searchResults.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
-    } else if (e.key === "Enter" && searchResults[selectedIndex]) {
-      e.preventDefault();
-      navigateToTask(searchResults[selectedIndex]);
-    } else if (e.key === "Escape") {
-      setSearchValue("");
-      inputRef.current?.blur();
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex((prev) => Math.min(prev + 1, searchResults.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex((prev) => Math.max(prev - 1, 0))
+    } else if (e.key === 'Enter' && searchResults[selectedIndex]) {
+      e.preventDefault()
+      navigateToTask(searchResults[selectedIndex])
+    } else if (e.key === 'Escape') {
+      setSearchValue('')
+      inputRef.current?.blur()
     }
-  };
+  }
 
   const navigateToTask = (task: Task) => {
-    router.push(`/projects/${task.project_id}?task=${task.id}`);
-    setSearchValue("");
-    inputRef.current?.blur();
-  };
+    router.push(`/projects/${task.project_id}?task=${task.id}`)
+    setSearchValue('')
+    inputRef.current?.blur()
+  }
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setIsSearchFocused(false);
+        setIsSearchFocused(false)
       }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (isExpanded) {
       collapseTimeoutRef.current = setTimeout(() => {
-        setIsExpanded(false);
-      }, 3500);
+        setIsExpanded(false)
+      }, 3500)
     }
 
     return () => {
       if (collapseTimeoutRef.current) {
-        clearTimeout(collapseTimeoutRef.current);
+        clearTimeout(collapseTimeoutRef.current)
       }
-    };
-  }, [isExpanded]);
+    }
+  }, [isExpanded])
 
   const handleLogoClick = () => {
-    router.push("/");
+    router.push('/')
     if (!isExpanded) {
-      setIsExpanded(true);
+      setIsExpanded(true)
     }
-  };
+  }
 
   return (
     <>
@@ -201,9 +201,9 @@ export function TopBar() {
           <div
             className="flex items-center"
             style={{
-              justifyContent: isExpanded ? "center" : "flex-start",
-              width: "100%",
-              transition: "justify-content 0.3s ease-out",
+              justifyContent: isExpanded ? 'center' : 'flex-start',
+              width: '100%',
+              transition: 'justify-content 0.3s ease-out',
             }}
           >
             <div
@@ -211,7 +211,7 @@ export function TopBar() {
               style={{
                 width: isExpanded ? LOGO_WIDE_WIDTH : LOGO_SQUARE_SIZE,
                 height: LOGO_HEIGHT,
-                transition: "width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                transition: 'width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
               }}
             >
               <Image
@@ -224,13 +224,13 @@ export function TopBar() {
                   width: LOGO_WIDE_WIDTH,
                   minWidth: LOGO_WIDE_WIDTH,
                   transform: isExpanded
-                    ? "translateX(0)"
+                    ? 'translateX(0)'
                     : `translateX(-${LOGO_SHIFT_COLLAPSED}px)`,
                   transition:
-                    "transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                    'transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
                   filter: isExpanded
-                    ? "drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.2))"
-                    : "drop-shadow(0 0 12px rgba(255,102,0,0.3)) drop-shadow(0 0 24px rgba(255,0,102,0.15))",
+                    ? 'drop-shadow(0 0 20px rgba(255,102,0,0.4)) drop-shadow(0 0 40px rgba(255,0,102,0.2))'
+                    : 'drop-shadow(0 0 12px rgba(255,102,0,0.3)) drop-shadow(0 0 24px rgba(255,0,102,0.15))',
                 }}
                 priority
               />
@@ -242,20 +242,20 @@ export function TopBar() {
                 maxWidth: isExpanded ? 0 : 140,
                 marginLeft: isExpanded ? 0 : 12,
                 transition:
-                  "max-width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                  'max-width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
               }}
             >
               <span
                 className="font-semibold text-xl tracking-tight whitespace-nowrap block"
                 style={{
                   background:
-                    "linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                  transform: isExpanded ? "translateX(-20px)" : "translateX(0)",
+                    'linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  transform: isExpanded ? 'translateX(-20px)' : 'translateX(0)',
                   transition:
-                    "transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                    'transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
                 }}
               >
                 SummitFlow
@@ -267,8 +267,8 @@ export function TopBar() {
             className="absolute inset-0 pointer-events-none rounded-lg opacity-0 group-hover:opacity-100"
             style={{
               boxShadow:
-                "0 0 30px rgba(255,102,0,0.08), 0 0 60px rgba(255,0,102,0.05)",
-              transition: "opacity 0.3s ease-out",
+                '0 0 30px rgba(255,102,0,0.08), 0 0 60px rgba(255,0,102,0.05)',
+              transition: 'opacity 0.3s ease-out',
             }}
           />
         </button>
@@ -280,7 +280,7 @@ export function TopBar() {
         <div className="hidden md:block" ref={searchRef}>
           <div
             className={`relative transition-all duration-300 ${
-              isSearchFocused ? "scale-[1.02]" : ""
+              isSearchFocused ? 'scale-[1.02]' : ''
             }`}
           >
             {!isSearchFocused && !searchValue && (
@@ -293,7 +293,7 @@ export function TopBar() {
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              className={`input ${!isSearchFocused && !searchValue ? "pl-12" : "pl-4"} pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300`}
+              className={`input ${!isSearchFocused && !searchValue ? 'pl-12' : 'pl-4'} pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300`}
               onFocus={() => setIsSearchFocused(true)}
             />
             {/* Search Results Dropdown */}
@@ -304,7 +304,7 @@ export function TopBar() {
                     key={task.id}
                     onClick={() => navigateToTask(task)}
                     className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors ${
-                      index === selectedIndex ? "bg-slate-700/50" : ""
+                      index === selectedIndex ? 'bg-slate-700/50' : ''
                     }`}
                   >
                     {typeIcons[task.task_type] || typeIcons.task}
@@ -318,11 +318,11 @@ export function TopBar() {
                     </div>
                     <span
                       className={`text-xs px-1.5 py-0.5 rounded ${
-                        task.status === "completed"
-                          ? "bg-green-500/20 text-green-400"
-                          : task.status === "running"
-                            ? "bg-blue-500/20 text-blue-400"
-                            : "bg-slate-500/20 text-slate-400"
+                        task.status === 'completed'
+                          ? 'bg-green-500/20 text-green-400'
+                          : task.status === 'running'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'bg-slate-500/20 text-slate-400'
                       }`}
                     >
                       {task.status}
@@ -362,10 +362,10 @@ export function TopBar() {
           {/* Terminal - external */}
           <a
             href={(() => {
-              const params = new URLSearchParams();
-              if (selectedProjectId) params.set("project", selectedProjectId);
-              const query = params.toString();
-              return `https://terminal.summitflow.dev${query ? `?${query}` : ""}`;
+              const params = new URLSearchParams()
+              if (selectedProjectId) params.set('project', selectedProjectId)
+              const query = params.toString()
+              return `https://terminal.summitflow.dev${query ? `?${query}` : ''}`
             })()}
             target="_blank"
             rel="noopener noreferrer"
@@ -409,5 +409,5 @@ export function TopBar() {
       {/* Chrome accent line under header */}
       <div className="chrome-line" />
     </>
-  );
+  )
 }

@@ -1,88 +1,89 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FolderPlus, AlertCircle } from "lucide-react";
-import Link from "next/link";
-import { createProject } from "@/lib/api";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, ArrowLeft, FolderPlus } from 'lucide-react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { createProject } from '@/lib/api'
 
 function generateProjectId(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50)
 }
 
 export default function NewProjectPage() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const router = useRouter()
+  const queryClient = useQueryClient()
 
-  const [name, setName] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [healthEndpoint, setHealthEndpoint] = useState("/api/health");
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [name, setName] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [healthEndpoint, setHealthEndpoint] = useState('/api/health')
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
     mutationFn: createProject,
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      router.push(`/projects/${project.id}`);
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      router.push(`/projects/${project.id}`)
     },
     onError: (error: Error) => {
-      setErrors({ submit: error.message });
+      setErrors({ submit: error.message })
     },
-  });
+  })
 
   const handleNameChange = (value: string) => {
-    setName(value);
+    setName(value)
     if (!projectId || projectId === generateProjectId(name)) {
-      setProjectId(generateProjectId(value));
+      setProjectId(generateProjectId(value))
     }
-  };
+  }
 
   const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: Record<string, string> = {}
 
     if (!name.trim()) {
-      newErrors.name = "Project name is required";
+      newErrors.name = 'Project name is required'
     }
     if (!projectId.trim()) {
-      newErrors.projectId = "Project ID is required";
+      newErrors.projectId = 'Project ID is required'
     } else if (!/^[a-z0-9-]+$/.test(projectId)) {
-      newErrors.projectId = "Project ID must be lowercase alphanumeric with hyphens";
+      newErrors.projectId =
+        'Project ID must be lowercase alphanumeric with hyphens'
     }
     if (!baseUrl.trim()) {
-      newErrors.baseUrl = "Base URL is required";
+      newErrors.baseUrl = 'Base URL is required'
     } else {
       try {
-        new URL(baseUrl);
+        new URL(baseUrl)
       } catch {
-        newErrors.baseUrl = "Invalid URL format";
+        newErrors.baseUrl = 'Invalid URL format'
       }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
+    e.preventDefault()
+    if (!validate()) return
 
     mutation.mutate({
       id: projectId,
       name: name.trim(),
       base_url: baseUrl.trim(),
       health_endpoint: healthEndpoint.trim() || undefined,
-    });
-  };
+    })
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-2xl mx-auto">
@@ -101,8 +102,12 @@ export default function NewProjectPage() {
             <FolderPlus className="w-7 h-7 text-phosphor-400" />
           </div>
           <div>
-            <h1 className="display text-2xl font-semibold text-white">Create Project</h1>
-            <p className="text-sm text-slate-400 mt-1">Register a new project for tracking</p>
+            <h1 className="display text-2xl font-semibold text-white">
+              Create Project
+            </h1>
+            <p className="text-sm text-slate-400 mt-1">
+              Register a new project for tracking
+            </p>
           </div>
         </div>
       </header>
@@ -125,7 +130,7 @@ export default function NewProjectPage() {
             value={name}
             onChange={(e) => handleNameChange(e.target.value)}
             placeholder="My Awesome Project"
-            className={errors.name ? "border-red-500/50" : ""}
+            className={errors.name ? 'border-red-500/50' : ''}
           />
           {errors.name && <p className="text-xs text-red-400">{errors.name}</p>}
         </div>
@@ -138,12 +143,15 @@ export default function NewProjectPage() {
             value={projectId}
             onChange={(e) => setProjectId(e.target.value.toLowerCase())}
             placeholder="my-awesome-project"
-            className={`mono ${errors.projectId ? "border-red-500/50" : ""}`}
+            className={`mono ${errors.projectId ? 'border-red-500/50' : ''}`}
           />
           <p className="text-xs text-slate-500">
-            Auto-generated from name. Must be lowercase alphanumeric with hyphens.
+            Auto-generated from name. Must be lowercase alphanumeric with
+            hyphens.
           </p>
-          {errors.projectId && <p className="text-xs text-red-400">{errors.projectId}</p>}
+          {errors.projectId && (
+            <p className="text-xs text-red-400">{errors.projectId}</p>
+          )}
         </div>
 
         {/* Base URL */}
@@ -155,10 +163,14 @@ export default function NewProjectPage() {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder="https://example.com"
-            className={errors.baseUrl ? "border-red-500/50" : ""}
+            className={errors.baseUrl ? 'border-red-500/50' : ''}
           />
-          <p className="text-xs text-slate-500">The root URL of your application</p>
-          {errors.baseUrl && <p className="text-xs text-red-400">{errors.baseUrl}</p>}
+          <p className="text-xs text-slate-500">
+            The root URL of your application
+          </p>
+          {errors.baseUrl && (
+            <p className="text-xs text-red-400">{errors.baseUrl}</p>
+          )}
         </div>
 
         {/* Health Endpoint */}
@@ -171,7 +183,9 @@ export default function NewProjectPage() {
             placeholder="/api/health"
             className="mono"
           />
-          <p className="text-xs text-slate-500">Endpoint for health checks (optional)</p>
+          <p className="text-xs text-slate-500">
+            Endpoint for health checks (optional)
+          </p>
         </div>
 
         {/* Submit Button */}
@@ -199,5 +213,5 @@ export default function NewProjectPage() {
         </div>
       </form>
     </div>
-  );
+  )
 }

@@ -9,53 +9,55 @@
  * Does NOT handle: UI state (expanded, selected), filters
  */
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchExplorerEntries,
-  fetchExplorerStats,
-  fetchExplorerChildren,
-  triggerExplorerScan,
-  type ExplorerFilters,
-  type ExplorerResponse,
-  type StatsResponse,
   type ExplorerEntry,
   type ExplorerEntryType,
-} from "@/lib/api/explorer";
+  type ExplorerFilters,
+  type ExplorerResponse,
+  fetchExplorerChildren,
+  fetchExplorerEntries,
+  fetchExplorerStats,
+  type StatsResponse,
+  triggerExplorerScan,
+} from '@/lib/api/explorer'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {
-  all: ["explorer"] as const,
-  entries: (projectId: string) => [...explorerKeys.all, "entries", projectId] as const,
+  all: ['explorer'] as const,
+  entries: (projectId: string) =>
+    [...explorerKeys.all, 'entries', projectId] as const,
   entriesFiltered: (projectId: string, filters: ExplorerFilters) =>
     [...explorerKeys.entries(projectId), filters] as const,
-  stats: (projectId: string) => [...explorerKeys.all, "stats", projectId] as const,
+  stats: (projectId: string) =>
+    [...explorerKeys.all, 'stats', projectId] as const,
   children: (projectId: string, type: ExplorerEntryType, path: string) =>
-    [...explorerKeys.all, "children", projectId, type, path] as const,
-};
+    [...explorerKeys.all, 'children', projectId, type, path] as const,
+}
 
 interface UseExplorerDataOptions {
-  projectId: string;
-  filters?: ExplorerFilters;
-  enabled?: boolean;
+  projectId: string
+  filters?: ExplorerFilters
+  enabled?: boolean
 }
 
 interface UseExplorerDataReturn {
   // Entries query
-  entries: ExplorerEntry[];
-  total: number;
-  stats: ExplorerResponse["stats"] | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-  refetch: () => void;
+  entries: ExplorerEntry[]
+  total: number
+  stats: ExplorerResponse['stats'] | undefined
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
+  refetch: () => void
 
   // Stats query (separate for header display)
-  statsData: StatsResponse | undefined;
-  isLoadingStats: boolean;
+  statsData: StatsResponse | undefined
+  isLoadingStats: boolean
 
   // Scan mutation
-  scan: (type?: ExplorerEntryType) => void;
-  isScanning: boolean;
+  scan: (type?: ExplorerEntryType) => void
+  isScanning: boolean
 }
 
 /**
@@ -66,7 +68,7 @@ export function useExplorerData({
   filters = {},
   enabled = true,
 }: UseExplorerDataOptions): UseExplorerDataReturn {
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient()
 
   // Main entries query
   const entriesQuery = useQuery({
@@ -75,7 +77,7 @@ export function useExplorerData({
     enabled: enabled && !!projectId,
     staleTime: 30000, // 30 seconds
     gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
-  });
+  })
 
   // Separate stats query for header (can be shared across filter changes)
   const statsQuery = useQuery({
@@ -84,20 +86,25 @@ export function useExplorerData({
     enabled: enabled && !!projectId,
     staleTime: 60000, // 1 minute
     gcTime: 5 * 60 * 1000,
-  });
+  })
 
   // Scan mutation
   const scanMutation = useMutation({
-    mutationFn: (type?: ExplorerEntryType) => triggerExplorerScan(projectId, type),
+    mutationFn: (type?: ExplorerEntryType) =>
+      triggerExplorerScan(projectId, type),
     onSuccess: () => {
       // Invalidate after scan completes
       // Small delay to let backend process
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: explorerKeys.entries(projectId) });
-        queryClient.invalidateQueries({ queryKey: explorerKeys.stats(projectId) });
-      }, 2000);
+        queryClient.invalidateQueries({
+          queryKey: explorerKeys.entries(projectId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: explorerKeys.stats(projectId),
+        })
+      }, 2000)
     },
-  });
+  })
 
   return {
     // Entries
@@ -116,14 +123,14 @@ export function useExplorerData({
     // Scan
     scan: (type) => scanMutation.mutate(type),
     isScanning: scanMutation.isPending,
-  };
+  }
 }
 
 interface UseExplorerChildrenOptions {
-  projectId: string;
-  type: ExplorerEntryType;
-  parentPath: string;
-  enabled?: boolean;
+  projectId: string
+  type: ExplorerEntryType
+  parentPath: string
+  enabled?: boolean
 }
 
 /**
@@ -141,5 +148,5 @@ export function useExplorerChildren({
     enabled: enabled && !!projectId,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000,
-  });
+  })
 }

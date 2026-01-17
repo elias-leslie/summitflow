@@ -1,36 +1,36 @@
-"use client";
+'use client'
 
-import { clsx } from "clsx";
-import { Badge } from "../ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { clsx } from 'clsx'
+import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import {
-  getContextTypeIcon,
   getContextTypeColor,
-} from "@/lib/formatters/observation-colors";
+  getContextTypeIcon,
+} from '@/lib/formatters/observation-colors'
+import { Badge } from '../ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 
 export interface ContextItem {
-  id: string;
-  type: string;
-  title: string;
-  summary?: string;
-  token_estimate: number;
-  created_at?: string;
+  id: string
+  type: string
+  title: string
+  summary?: string
+  token_estimate: number
+  created_at?: string
 }
 
 export interface ExpandedContent {
-  entity_id: string;
-  type: string;
-  content: Record<string, unknown>;
-  token_count: number;
+  entity_id: string
+  type: string
+  content: Record<string, unknown>
+  token_count: number
 }
 
 export interface ContextItemCardProps {
-  item: ContextItem;
-  isExpanded: boolean;
-  isExpanding: boolean;
-  expandedContent?: ExpandedContent;
-  onExpand: (itemId: string) => void;
+  item: ContextItem
+  isExpanded: boolean
+  isExpanding: boolean
+  expandedContent?: ExpandedContent
+  onExpand: (itemId: string) => void
 }
 
 export function ContextItemCard({
@@ -40,7 +40,7 @@ export function ContextItemCard({
   expandedContent,
   onExpand,
 }: ContextItemCardProps) {
-  const TypeIcon = getContextTypeIcon(item.type);
+  const TypeIcon = getContextTypeIcon(item.type)
 
   return (
     <Card
@@ -52,7 +52,7 @@ export function ContextItemCard({
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className={clsx("text-xs gap-1", getContextTypeColor(item.type))}
+              className={clsx('text-xs gap-1', getContextTypeColor(item.type))}
             >
               <TypeIcon className="h-3.5 w-3.5" />
               {item.type}
@@ -90,5 +90,5 @@ export function ContextItemCard({
         </CardContent>
       )}
     </Card>
-  );
+  )
 }

@@ -1,44 +1,49 @@
-"use client";
+'use client'
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { clsx } from "clsx";
-import { Badge } from "../ui/badge";
-import { ScrollArea } from "../ui/scroll-area";
-import { Button } from "../ui/button";
+import { clsx } from 'clsx'
 import {
   CheckCircle,
-  XCircle,
-  PlayCircle,
-  PauseCircle,
   Clock,
-  Loader2,
-  WifiOff,
-  Play,
-  Pause,
-  RefreshCw,
   FileCode,
-} from "lucide-react";
-import { updateTaskStatus, startTask, TaskStatus, AgentType } from "@/lib/api";
+  Loader2,
+  Pause,
+  PauseCircle,
+  Play,
+  PlayCircle,
+  RefreshCw,
+  WifiOff,
+  XCircle,
+} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type AgentType,
+  startTask,
+  type TaskStatus,
+  updateTaskStatus,
+} from '@/lib/api'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { ScrollArea } from '../ui/scroll-area'
 
 interface FeatureContext {
-  id: string;
-  name: string;
-  description?: string;
+  id: string
+  name: string
+  description?: string
 }
 
 interface TaskLogViewerProps {
-  projectId: string;
-  taskId: string;
-  className?: string;
-  autoScroll?: boolean;
+  projectId: string
+  taskId: string
+  className?: string
+  autoScroll?: boolean
   /** Agent type used to start the task (needed for resume) */
-  agentType?: AgentType;
+  agentType?: AgentType
   /** Model used (optional, for resume) */
-  model?: string;
+  model?: string
   /** Whether delegation was enabled (optional, for resume) */
-  allowDelegation?: boolean;
+  allowDelegation?: boolean
   /** Optional feature context to display above the log */
-  feature?: FeatureContext;
+  feature?: FeatureContext
 }
 
 // SSEEvent interface - defined for future use
@@ -50,171 +55,171 @@ interface TaskLogViewerProps {
 const statusConfig: Record<
   TaskStatus,
   {
-    icon: typeof CheckCircle;
-    variant: "phosphor" | "amber" | "rose" | "slate" | "violet";
+    icon: typeof CheckCircle
+    variant: 'phosphor' | 'amber' | 'rose' | 'slate' | 'violet'
   }
 > = {
-  pending: { icon: Clock, variant: "slate" },
-  running: { icon: PlayCircle, variant: "phosphor" },
-  paused: { icon: PauseCircle, variant: "amber" },
-  blocked: { icon: XCircle, variant: "amber" },
-  pr_created: { icon: CheckCircle, variant: "amber" },
-  ai_reviewing: { icon: PlayCircle, variant: "amber" },
-  human_review: { icon: Clock, variant: "violet" },
-  completed: { icon: CheckCircle, variant: "phosphor" },
-  failed: { icon: XCircle, variant: "rose" },
-  cancelled: { icon: XCircle, variant: "slate" },
-};
+  pending: { icon: Clock, variant: 'slate' },
+  running: { icon: PlayCircle, variant: 'phosphor' },
+  paused: { icon: PauseCircle, variant: 'amber' },
+  blocked: { icon: XCircle, variant: 'amber' },
+  pr_created: { icon: CheckCircle, variant: 'amber' },
+  ai_reviewing: { icon: PlayCircle, variant: 'amber' },
+  human_review: { icon: Clock, variant: 'violet' },
+  completed: { icon: CheckCircle, variant: 'phosphor' },
+  failed: { icon: XCircle, variant: 'rose' },
+  cancelled: { icon: XCircle, variant: 'slate' },
+}
 
 export function TaskLogViewer({
   projectId,
   taskId,
   className,
   autoScroll = true,
-  agentType = "gemini",
+  agentType = 'gemini',
   model,
   allowDelegation,
   feature,
 }: TaskLogViewerProps) {
-  const [log, setLog] = useState<string>("");
-  const [status, setStatus] = useState<TaskStatus>("pending");
-  const [tokensUsed, setTokensUsed] = useState<number>(0);
-  const [connected, setConnected] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [log, setLog] = useState<string>('')
+  const [status, setStatus] = useState<TaskStatus>('pending')
+  const [tokensUsed, setTokensUsed] = useState<number>(0)
+  const [connected, setConnected] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isUpdating, setIsUpdating] = useState<boolean>(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   // Pause the task
   const handlePause = useCallback(async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
+    if (isUpdating) return
+    setIsUpdating(true)
     try {
-      await updateTaskStatus(projectId, taskId, "paused");
-      setStatus("paused");
-      setLog((prev) => prev + "\n[PAUSED] Task paused by user.\n");
+      await updateTaskStatus(projectId, taskId, 'paused')
+      setStatus('paused')
+      setLog((prev) => `${prev}\n[PAUSED] Task paused by user.\n`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to pause task");
+      setError(err instanceof Error ? err.message : 'Failed to pause task')
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(false)
     }
-  }, [projectId, taskId, isUpdating]);
+  }, [projectId, taskId, isUpdating])
 
   // Resume the task (for paused status)
   const handleResume = useCallback(async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
+    if (isUpdating) return
+    setIsUpdating(true)
     try {
       // Resume by starting the task again with the same parameters
       await startTask(projectId, taskId, {
         agent_type: agentType,
         model,
         allow_delegation: allowDelegation,
-      });
-      setStatus("running");
-      setLog((prev) => prev + "\n[RESUMED] Task resumed by user.\n");
+      })
+      setStatus('running')
+      setLog((prev) => `${prev}\n[RESUMED] Task resumed by user.\n`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resume task");
+      setError(err instanceof Error ? err.message : 'Failed to resume task')
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(false)
     }
-  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating]);
+  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating])
 
   // Retry the task (for failed status)
   const handleRetry = useCallback(async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
+    if (isUpdating) return
+    setIsUpdating(true)
     try {
       // First reset status to pending, then start
-      await updateTaskStatus(projectId, taskId, "pending");
+      await updateTaskStatus(projectId, taskId, 'pending')
       await startTask(projectId, taskId, {
         agent_type: agentType,
         model,
         allow_delegation: allowDelegation,
-      });
-      setStatus("running");
-      setError(null);
-      setLog((prev) => prev + "\n[RETRY] Task retried by user.\n");
+      })
+      setStatus('running')
+      setError(null)
+      setLog((prev) => `${prev}\n[RETRY] Task retried by user.\n`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to retry task");
+      setError(err instanceof Error ? err.message : 'Failed to retry task')
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(false)
     }
-  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating]);
+  }, [projectId, taskId, agentType, model, allowDelegation, isUpdating])
 
   // Connect to SSE stream
   useEffect(() => {
-    const url = `/api/projects/${projectId}/tasks/${taskId}/stream`;
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
+    const url = `/api/projects/${projectId}/tasks/${taskId}/stream`
+    const eventSource = new EventSource(url)
+    eventSourceRef.current = eventSource
 
     eventSource.onopen = () => {
-      setConnected(true);
-      setError(null);
-    };
+      setConnected(true)
+      setError(null)
+    }
 
     eventSource.onerror = () => {
-      setConnected(false);
-      setError("Connection lost. Retrying...");
-    };
+      setConnected(false)
+      setError('Connection lost. Retrying...')
+    }
 
     // Handle specific event types
-    eventSource.addEventListener("connected", (event) => {
-      const data = JSON.parse(event.data);
-      setStatus(data.status as TaskStatus);
-      setConnected(true);
-    });
+    eventSource.addEventListener('connected', (event) => {
+      const data = JSON.parse(event.data)
+      setStatus(data.status as TaskStatus)
+      setConnected(true)
+    })
 
-    eventSource.addEventListener("log", (event) => {
-      const data = JSON.parse(event.data);
-      setLog((prev) => prev + data.content);
-    });
+    eventSource.addEventListener('log', (event) => {
+      const data = JSON.parse(event.data)
+      setLog((prev) => prev + data.content)
+    })
 
-    eventSource.addEventListener("status", (event) => {
-      const data = JSON.parse(event.data);
-      setStatus(data.status as TaskStatus);
-      setTokensUsed(data.total_tokens_used || 0);
-    });
+    eventSource.addEventListener('status', (event) => {
+      const data = JSON.parse(event.data)
+      setStatus(data.status as TaskStatus)
+      setTokensUsed(data.total_tokens_used || 0)
+    })
 
-    eventSource.addEventListener("complete", (event) => {
-      const data = JSON.parse(event.data);
-      setStatus(data.status as TaskStatus);
+    eventSource.addEventListener('complete', (event) => {
+      const data = JSON.parse(event.data)
+      setStatus(data.status as TaskStatus)
       if (data.error_message) {
-        setError(data.error_message);
+        setError(data.error_message)
       }
       // Close connection when complete
-      eventSource.close();
-    });
+      eventSource.close()
+    })
 
-    eventSource.addEventListener("error", (event) => {
+    eventSource.addEventListener('error', (event) => {
       try {
-        const data = JSON.parse((event as MessageEvent).data);
-        setError(data.message);
+        const data = JSON.parse((event as MessageEvent).data)
+        setError(data.message)
       } catch {
-        setError("Connection error");
+        setError('Connection error')
       }
-    });
+    })
 
     return () => {
-      eventSource.close();
-      eventSourceRef.current = null;
-    };
-  }, [projectId, taskId]);
+      eventSource.close()
+      eventSourceRef.current = null
+    }
+  }, [projectId, taskId])
 
   // Auto-scroll to bottom
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [log, autoScroll]);
+  }, [autoScroll])
 
-  const StatusIcon = statusConfig[status]?.icon || Clock;
-  const statusVariant = statusConfig[status]?.variant || "slate";
+  const StatusIcon = statusConfig[status]?.icon || Clock
+  const statusVariant = statusConfig[status]?.variant || 'slate'
 
   return (
     <div
       className={clsx(
-        "flex flex-col bg-slate-900 rounded-lg border border-slate-800",
+        'flex flex-col bg-slate-900 rounded-lg border border-slate-800',
         className,
       )}
     >
@@ -246,7 +251,7 @@ export function TaskLogViewer({
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <Badge variant={statusVariant} className="flex items-center gap-1.5">
-            {status === "running" ? (
+            {status === 'running' ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <StatusIcon className="w-3.5 h-3.5" />
@@ -263,7 +268,7 @@ export function TaskLogViewer({
 
         <div className="flex items-center gap-2">
           {/* Pause/Resume buttons */}
-          {status === "running" && (
+          {status === 'running' && (
             <Button
               variant="ghost"
               size="sm"
@@ -279,7 +284,7 @@ export function TaskLogViewer({
               <span className="ml-1.5 text-xs">Pause</span>
             </Button>
           )}
-          {status === "paused" && (
+          {status === 'paused' && (
             <Button
               variant="ghost"
               size="sm"
@@ -295,7 +300,7 @@ export function TaskLogViewer({
               <span className="ml-1.5 text-xs">Resume</span>
             </Button>
           )}
-          {status === "failed" && (
+          {status === 'failed' && (
             <Button
               variant="ghost"
               size="sm"
@@ -348,11 +353,11 @@ export function TaskLogViewer({
       </ScrollArea>
 
       {/* Error Footer */}
-      {error && status !== "completed" && (
+      {error && status !== 'completed' && (
         <div className="px-4 py-2 border-t border-slate-800 bg-rose-950/30">
           <p className="text-xs text-rose-400">{error}</p>
         </div>
       )}
     </div>
-  );
+  )
 }

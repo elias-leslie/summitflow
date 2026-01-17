@@ -1,20 +1,20 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import { Providers } from "./providers";
-import { TopBar } from "@/components/layout/TopBar";
-import { AppShell } from "@/components/layout/AppShell";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { VoiceOverlay } from "@agent-hub/passport-client";
+import type { Metadata } from 'next'
+import './globals.css'
+import { VoiceOverlay } from '@agent-hub/passport-client'
+import { AppShell } from '@/components/layout/AppShell'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { TopBar } from '@/components/layout/TopBar'
+import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: "SummitFlow",
-  description: "AI-assisted software development platform",
-};
+  title: 'SummitFlow',
+  description: 'AI-assisted software development platform',
+}
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
     <html lang="en" className="dark">
@@ -39,5 +39,5 @@ export default function RootLayout({
         </Providers>
       </body>
     </html>
-  );
+  )
 }

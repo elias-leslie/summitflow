@@ -1,13 +1,13 @@
-'use client';
+'use client'
 
-import { useState, KeyboardEvent } from 'react';
-import { Search, Loader2 } from 'lucide-react';
-import { clsx } from 'clsx';
+import { clsx } from 'clsx'
+import { Loader2, Search } from 'lucide-react'
+import { type KeyboardEvent, useState } from 'react'
 
 interface SearchBarProps {
-  onSearch: (query: string) => void;
-  isLoading?: boolean;
-  placeholder?: string;
+  onSearch: (query: string) => void
+  isLoading?: boolean
+  placeholder?: string
 }
 
 export function SearchBar({
@@ -15,19 +15,19 @@ export function SearchBar({
   isLoading = false,
   placeholder = 'Search observations, patterns, diary...',
 }: SearchBarProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState('')
 
   const handleSearch = () => {
     if (query.trim()) {
-      onSearch(query.trim());
+      onSearch(query.trim())
     }
-  };
+  }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      handleSearch();
+      handleSearch()
     }
-  };
+  }
 
   return (
     <div className="flex items-center gap-2 w-full max-w-2xl">
@@ -45,7 +45,7 @@ export function SearchBar({
             'text-slate-200 placeholder-slate-500',
             'focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50',
             'disabled:opacity-50 disabled:cursor-not-allowed',
-            'transition-all duration-200'
+            'transition-all duration-200',
           )}
         />
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -58,7 +58,7 @@ export function SearchBar({
           'bg-blue-600 hover:bg-blue-500 text-white',
           'disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed',
           'transition-colors duration-200',
-          'flex items-center gap-2'
+          'flex items-center gap-2',
         )}
       >
         {isLoading ? (
@@ -69,5 +69,5 @@ export function SearchBar({
         Search
       </button>
     </div>
-  );
+  )
 }

@@ -8,31 +8,31 @@
  * Does NOT handle: Data fetching, filters/sorting
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from 'react'
 
 interface UseExplorerStateOptions {
   /** Initial expanded IDs */
-  initialExpanded?: string[];
+  initialExpanded?: string[]
   /** Initial selected ID */
-  initialSelected?: string | null;
+  initialSelected?: string | null
 }
 
 interface UseExplorerStateReturn {
   // Expansion
-  expandedIds: Set<string>;
-  isExpanded: (id: string) => boolean;
-  toggleExpand: (id: string) => void;
-  expand: (id: string) => void;
-  collapse: (id: string) => void;
-  expandAll: (ids: string[]) => void;
-  collapseAll: () => void;
-  setExpanded: (ids: string[]) => void;
+  expandedIds: Set<string>
+  isExpanded: (id: string) => boolean
+  toggleExpand: (id: string) => void
+  expand: (id: string) => void
+  collapse: (id: string) => void
+  expandAll: (ids: string[]) => void
+  collapseAll: () => void
+  setExpanded: (ids: string[]) => void
 
   // Selection
-  selectedId: string | null;
-  isSelected: (id: string) => boolean;
-  select: (id: string | null) => void;
-  clearSelection: () => void;
+  selectedId: string | null
+  isSelected: (id: string) => boolean
+  select: (id: string | null) => void
+  clearSelection: () => void
 }
 
 /**
@@ -44,71 +44,77 @@ export function useExplorerState({
 }: UseExplorerStateOptions = {}): UseExplorerStateReturn {
   // Expansion state
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(initialExpanded)
-  );
+    () => new Set(initialExpanded),
+  )
 
   // Selection state
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelected)
 
   // Expansion handlers
-  const isExpanded = useCallback((id: string) => expandedIds.has(id), [expandedIds]);
+  const isExpanded = useCallback(
+    (id: string) => expandedIds.has(id),
+    [expandedIds],
+  )
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(id)) {
-        next.delete(id);
+        next.delete(id)
       } else {
-        next.add(id);
+        next.add(id)
       }
-      return next;
-    });
-  }, []);
+      return next
+    })
+  }, [])
 
   const expand = useCallback((id: string) => {
     setExpandedIds((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
+      if (prev.has(id)) return prev
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+  }, [])
 
   const collapse = useCallback((id: string) => {
     setExpandedIds((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
 
   const expandAll = useCallback((ids: string[]) => {
     setExpandedIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }, []);
+      const next = new Set(prev)
+      ids.forEach((id) => next.add(id))
+      return next
+    })
+  }, [])
 
   const collapseAll = useCallback(() => {
-    setExpandedIds(new Set());
-  }, []);
+    setExpandedIds(new Set())
+  }, [])
 
   const setExpanded = useCallback((ids: string[]) => {
-    setExpandedIds(new Set(ids));
-  }, []);
+    setExpandedIds(new Set(ids))
+  }, [])
 
   // Selection handlers
-  const isSelected = useCallback((id: string) => selectedId === id, [selectedId]);
+  const isSelected = useCallback(
+    (id: string) => selectedId === id,
+    [selectedId],
+  )
 
   const select = useCallback((id: string | null) => {
-    setSelectedId(id);
-  }, []);
+    setSelectedId(id)
+  }, [])
 
   const clearSelection = useCallback(() => {
-    setSelectedId(null);
-  }, []);
+    setSelectedId(null)
+  }, [])
 
   return {
     // Expansion
@@ -126,5 +132,5 @@ export function useExplorerState({
     isSelected,
     select,
     clearSelection,
-  };
+  }
 }

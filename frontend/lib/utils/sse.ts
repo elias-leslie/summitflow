@@ -3,8 +3,8 @@
  */
 
 export interface ParsedSSEEvent<T extends string = string> {
-  type: T;
-  data: Record<string, unknown>;
+  type: T
+  data: Record<string, unknown>
 }
 
 /**
@@ -14,27 +14,27 @@ export interface ParsedSSEEvent<T extends string = string> {
  */
 export function parseSSEEvent<T extends string = string>(
   eventBlock: string,
-  defaultType: T
+  defaultType: T,
 ): ParsedSSEEvent<T> | null {
-  if (!eventBlock.trim()) return null;
+  if (!eventBlock.trim()) return null
 
-  const lines = eventBlock.split("\n");
-  let eventType: T = defaultType;
-  let eventData: Record<string, unknown> = {};
+  const lines = eventBlock.split('\n')
+  let eventType: T = defaultType
+  let eventData: Record<string, unknown> = {}
 
   for (const line of lines) {
-    if (line.startsWith("event: ")) {
-      eventType = line.slice(7) as T;
-    } else if (line.startsWith("data: ")) {
+    if (line.startsWith('event: ')) {
+      eventType = line.slice(7) as T
+    } else if (line.startsWith('data: ')) {
       try {
-        eventData = JSON.parse(line.slice(6));
+        eventData = JSON.parse(line.slice(6))
       } catch {
-        console.warn("Failed to parse SSE data:", line);
+        console.warn('Failed to parse SSE data:', line)
       }
     }
   }
 
-  return { type: eventType, data: eventData };
+  return { type: eventType, data: eventData }
 }
 
 /**
@@ -45,17 +45,17 @@ export function parseSSEEvent<T extends string = string>(
  */
 export function* processSSEBuffer<T extends string = string>(
   buffer: string,
-  defaultType: T
+  defaultType: T,
 ): Generator<ParsedSSEEvent<T>, string> {
-  const events = buffer.split("\n\n");
-  const remaining = events.pop() || "";
+  const events = buffer.split('\n\n')
+  const remaining = events.pop() || ''
 
   for (const eventBlock of events) {
-    const parsed = parseSSEEvent<T>(eventBlock, defaultType);
+    const parsed = parseSSEEvent<T>(eventBlock, defaultType)
     if (parsed) {
-      yield parsed;
+      yield parsed
     }
   }
 
-  return remaining;
+  return remaining
 }

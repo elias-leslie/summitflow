@@ -1,90 +1,90 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { clsx } from 'clsx'
 import {
   Calendar,
-  Clock,
   CheckCircle2,
+  Clock,
   Loader2,
   Power,
   PowerOff,
-} from "lucide-react";
-import { clsx } from "clsx";
-import { fetchBackupSchedule, updateBackupSchedule } from "@/lib/api/backups";
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { fetchBackupSchedule, updateBackupSchedule } from '@/lib/api/backups'
 
 interface BackupScheduleConfigProps {
-  projectId: string;
+  projectId: string
 }
 
 const FREQUENCY_OPTIONS = [
-  { value: "daily", label: "Daily", description: "Backup every day" },
-  { value: "weekly", label: "Weekly", description: "Backup once a week" },
-  { value: "monthly", label: "Monthly", description: "Backup once a month" },
-];
+  { value: 'daily', label: 'Daily', description: 'Backup every day' },
+  { value: 'weekly', label: 'Weekly', description: 'Backup once a week' },
+  { value: 'monthly', label: 'Monthly', description: 'Backup once a month' },
+]
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "Never";
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (!dateStr) return 'Never'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient()
 
-  const [enabled, setEnabled] = useState(false);
-  const [frequency, setFrequency] = useState("daily");
-  const [retentionCount, setRetentionCount] = useState(5);
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [enabled, setEnabled] = useState(false)
+  const [frequency, setFrequency] = useState('daily')
+  const [retentionCount, setRetentionCount] = useState(5)
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const { data: schedule, isLoading } = useQuery({
-    queryKey: ["backup-schedule", projectId],
+    queryKey: ['backup-schedule', projectId],
     queryFn: () => fetchBackupSchedule(projectId),
-  });
+  })
 
   // Sync form state when data loads
   useEffect(() => {
     if (schedule) {
-      setEnabled(schedule.enabled);
-      setFrequency(schedule.frequency);
-      setRetentionCount(schedule.retention_count);
+      setEnabled(schedule.enabled)
+      setFrequency(schedule.frequency)
+      setRetentionCount(schedule.retention_count)
     }
-  }, [schedule]);
+  }, [schedule])
 
   const handleSave = async () => {
-    setSaving(true);
-    setSaveSuccess(false);
+    setSaving(true)
+    setSaveSuccess(false)
 
     try {
       await updateBackupSchedule(projectId, {
         enabled,
         frequency,
         retention_count: retentionCount,
-      });
+      })
       queryClient.invalidateQueries({
-        queryKey: ["backup-schedule", projectId],
-      });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2000);
+        queryKey: ['backup-schedule', projectId],
+      })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 2000)
     } catch (err) {
-      console.error("Failed to save schedule:", err);
+      console.error('Failed to save schedule:', err)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
   const hasChanges =
     schedule &&
     (enabled !== schedule.enabled ||
       frequency !== schedule.frequency ||
-      retentionCount !== schedule.retention_count);
+      retentionCount !== schedule.retention_count)
 
   if (isLoading) {
     return (
@@ -93,7 +93,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -121,29 +121,29 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
               </p>
               <p className="text-xs text-slate-400">
                 {enabled
-                  ? "Backups will run automatically"
-                  : "Automatic backups are disabled"}
+                  ? 'Backups will run automatically'
+                  : 'Automatic backups are disabled'}
               </p>
             </div>
           </div>
           <button
             onClick={() => setEnabled(!enabled)}
             className={clsx(
-              "relative w-12 h-6 rounded-full transition-colors",
-              enabled ? "bg-green-500" : "bg-slate-600",
+              'relative w-12 h-6 rounded-full transition-colors',
+              enabled ? 'bg-green-500' : 'bg-slate-600',
             )}
           >
             <span
               className={clsx(
-                "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
-                enabled ? "left-7" : "left-1",
+                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
+                enabled ? 'left-7' : 'left-1',
               )}
             />
           </button>
         </div>
 
         {/* Frequency Selector */}
-        <div className={clsx(!enabled && "opacity-50 pointer-events-none")}>
+        <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label className="block text-sm font-medium text-slate-300 mb-3">
             Backup Frequency
           </label>
@@ -154,10 +154,10 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
                 onClick={() => setFrequency(option.value)}
                 disabled={!enabled}
                 className={clsx(
-                  "p-3 rounded-lg border text-left transition-colors",
+                  'p-3 rounded-lg border text-left transition-colors',
                   frequency === option.value
-                    ? "border-phosphor-500 bg-phosphor-500/10"
-                    : "border-slate-600 bg-slate-700/30 hover:border-slate-500",
+                    ? 'border-phosphor-500 bg-phosphor-500/10'
+                    : 'border-slate-600 bg-slate-700/30 hover:border-slate-500',
                 )}
               >
                 <p className="text-sm font-medium text-slate-200">
@@ -172,7 +172,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
         </div>
 
         {/* Retention Count */}
-        <div className={clsx(!enabled && "opacity-50 pointer-events-none")}>
+        <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label
             htmlFor="retention-count"
             className="block text-sm font-medium text-slate-300 mb-2"
@@ -236,10 +236,10 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
             onClick={handleSave}
             disabled={saving || !hasChanges}
             className={clsx(
-              "flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors",
+              'flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors',
               hasChanges
-                ? "bg-phosphor-600 text-white hover:bg-phosphor-500"
-                : "bg-slate-700 text-slate-400 cursor-not-allowed",
+                ? 'bg-phosphor-600 text-white hover:bg-phosphor-500'
+                : 'bg-slate-700 text-slate-400 cursor-not-allowed',
             )}
           >
             {saving ? (
@@ -248,11 +248,11 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
                 Saving...
               </>
             ) : (
-              "Save Changes"
+              'Save Changes'
             )}
           </button>
         </div>
       </div>
     </div>
-  );
+  )
 }

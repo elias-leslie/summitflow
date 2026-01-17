@@ -1,62 +1,61 @@
-"use client";
+'use client'
 
-import { useState, useMemo } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import dynamic from "next/dynamic";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
 import {
-  X,
-  Save,
-  RotateCcw,
-  Sparkles,
-  Wrench,
   AlertCircle,
   Check,
-} from "lucide-react";
-import clsx from "clsx";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
+  RotateCcw,
+  Save,
+  Sparkles,
+  Wrench,
+  X,
+} from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { useMemo, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
-  updatePrompt,
   deletePrompt,
   type Prompt,
-  type PromptUpdate,
   type PromptCategory,
-} from "@/lib/api";
+  type PromptUpdate,
+  updatePrompt,
+} from '@/lib/api'
 
 // Dynamic import Monaco to avoid SSR issues
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
   loading: () => <Skeleton className="h-[300px] w-full" />,
-});
+})
 
 interface PromptEditorProps {
-  prompt: Prompt;
-  projectId: string;
-  defaultPrompt?: Prompt;
-  onClose: () => void;
+  prompt: Prompt
+  projectId: string
+  defaultPrompt?: Prompt
+  onClose: () => void
 }
 
 const AVAILABLE_TOOLS = [
-  "read_file",
-  "write_file",
-  "glob",
-  "grep",
-  "bash",
-  "edit",
-];
+  'read_file',
+  'write_file',
+  'glob',
+  'grep',
+  'bash',
+  'edit',
+]
 
-const CATEGORIES: PromptCategory[] = ["spec", "recovery", "qa", "extraction"];
+const CATEGORIES: PromptCategory[] = ['spec', 'recovery', 'qa', 'extraction']
 
 export function PromptEditor({
   prompt,
@@ -64,17 +63,17 @@ export function PromptEditor({
   defaultPrompt,
   onClose,
 }: PromptEditorProps) {
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient()
 
-  const [promptText, setPromptText] = useState(prompt.prompt_text);
-  const [category, setCategory] = useState<PromptCategory>(prompt.category);
-  const [thinkingBudget, setThinkingBudget] = useState(prompt.thinking_budget);
+  const [promptText, setPromptText] = useState(prompt.prompt_text)
+  const [category, setCategory] = useState<PromptCategory>(prompt.category)
+  const [thinkingBudget, setThinkingBudget] = useState(prompt.thinking_budget)
   const [toolsEnabled, setToolsEnabled] = useState<string[]>(
-    prompt.tools_enabled
-  );
-  const [primaryAgent, setPrimaryAgent] = useState(prompt.primary_agent);
-  const [primaryModel, setPrimaryModel] = useState(prompt.primary_model);
-  const [showDiff, setShowDiff] = useState(false);
+    prompt.tools_enabled,
+  )
+  const [primaryAgent, setPrimaryAgent] = useState(prompt.primary_agent)
+  const [primaryModel, setPrimaryModel] = useState(prompt.primary_model)
+  const [showDiff, setShowDiff] = useState(false)
 
   const hasChanges = useMemo(() => {
     return (
@@ -84,7 +83,7 @@ export function PromptEditor({
       JSON.stringify(toolsEnabled) !== JSON.stringify(prompt.tools_enabled) ||
       primaryAgent !== prompt.primary_agent ||
       primaryModel !== prompt.primary_model
-    );
+    )
   }, [
     promptText,
     category,
@@ -93,18 +92,25 @@ export function PromptEditor({
     primaryAgent,
     primaryModel,
     prompt,
-  ]);
+  ])
 
   const isModifiedFromDefault = useMemo(() => {
-    if (!defaultPrompt) return !prompt.is_default;
+    if (!defaultPrompt) return !prompt.is_default
     return (
       promptText !== defaultPrompt.prompt_text ||
       category !== defaultPrompt.category ||
       thinkingBudget !== defaultPrompt.thinking_budget ||
       JSON.stringify(toolsEnabled) !==
         JSON.stringify(defaultPrompt.tools_enabled)
-    );
-  }, [promptText, category, thinkingBudget, toolsEnabled, defaultPrompt, prompt]);
+    )
+  }, [
+    promptText,
+    category,
+    thinkingBudget,
+    toolsEnabled,
+    defaultPrompt,
+    prompt,
+  ])
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -115,37 +121,37 @@ export function PromptEditor({
         tools_enabled: toolsEnabled,
         primary_agent: primaryAgent,
         primary_model: primaryModel,
-      };
-      return updatePrompt(projectId, prompt.prompt_type, update);
+      }
+      return updatePrompt(projectId, prompt.prompt_type, update)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prompts", projectId] });
-      onClose();
+      queryClient.invalidateQueries({ queryKey: ['prompts', projectId] })
+      onClose()
     },
-  });
+  })
 
   const resetMutation = useMutation({
     mutationFn: async () => {
-      return deletePrompt(projectId, prompt.prompt_type);
+      return deletePrompt(projectId, prompt.prompt_type)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prompts", projectId] });
-      onClose();
+      queryClient.invalidateQueries({ queryKey: ['prompts', projectId] })
+      onClose()
     },
-  });
+  })
 
   const toggleTool = (tool: string) => {
     setToolsEnabled((prev) =>
-      prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool]
-    );
-  };
+      prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool],
+    )
+  }
 
   const formatPromptType = (type: string) => {
     return type
-      .split("_")
+      .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
+      .join(' ')
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
@@ -217,7 +223,7 @@ export function PromptEditor({
                   type="number"
                   value={thinkingBudget}
                   onChange={(e) =>
-                    setThinkingBudget(parseInt(e.target.value) || 0)
+                    setThinkingBudget(parseInt(e.target.value, 10) || 0)
                   }
                   className="pl-9"
                   min={0}
@@ -263,10 +269,10 @@ export function PromptEditor({
                   key={tool}
                   onClick={() => toggleTool(tool)}
                   className={clsx(
-                    "px-3 py-1.5 rounded text-sm font-medium transition-all",
+                    'px-3 py-1.5 rounded text-sm font-medium transition-all',
                     toolsEnabled.includes(tool)
-                      ? "bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30"
-                      : "bg-slate-800 text-slate-500 border border-slate-700 hover:border-slate-500"
+                      ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                      : 'bg-slate-800 text-slate-500 border border-slate-700 hover:border-slate-500',
                   )}
                 >
                   {tool}
@@ -286,7 +292,7 @@ export function PromptEditor({
                   onClick={() => setShowDiff(!showDiff)}
                   className="text-xs text-slate-400 hover:text-white"
                 >
-                  {showDiff ? "Hide" : "Show"} diff from default
+                  {showDiff ? 'Hide' : 'Show'} diff from default
                 </button>
               )}
             </div>
@@ -305,8 +311,8 @@ export function PromptEditor({
                         readOnly: true,
                         minimap: { enabled: false },
                         fontSize: 12,
-                        lineNumbers: "off",
-                        wordWrap: "on",
+                        lineNumbers: 'off',
+                        wordWrap: 'on',
                         scrollBeyondLastLine: false,
                         padding: { top: 12, bottom: 12 },
                       }}
@@ -320,13 +326,13 @@ export function PromptEditor({
                       height="300px"
                       defaultLanguage="markdown"
                       value={promptText}
-                      onChange={(value) => setPromptText(value || "")}
+                      onChange={(value) => setPromptText(value || '')}
                       theme="vs-dark"
                       options={{
                         minimap: { enabled: false },
                         fontSize: 12,
-                        lineNumbers: "off",
-                        wordWrap: "on",
+                        lineNumbers: 'off',
+                        wordWrap: 'on',
                         scrollBeyondLastLine: false,
                         padding: { top: 12, bottom: 12 },
                       }}
@@ -340,13 +346,13 @@ export function PromptEditor({
                   height="300px"
                   defaultLanguage="markdown"
                   value={promptText}
-                  onChange={(value) => setPromptText(value || "")}
+                  onChange={(value) => setPromptText(value || '')}
                   theme="vs-dark"
                   options={{
                     minimap: { enabled: false },
                     fontSize: 13,
-                    lineNumbers: "off",
-                    wordWrap: "on",
+                    lineNumbers: 'off',
+                    wordWrap: 'on',
                     scrollBeyondLastLine: false,
                     padding: { top: 12, bottom: 12 },
                   }}
@@ -404,5 +410,5 @@ export function PromptEditor({
         )}
       </div>
     </div>
-  );
+  )
 }

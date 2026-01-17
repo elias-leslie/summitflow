@@ -1,80 +1,79 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Play,
+  AlertTriangle,
   CheckCircle2,
-  XCircle,
-  HelpCircle,
-  Clock,
-  Timer,
-  Terminal,
   ChevronDown,
   ChevronRight,
-  AlertTriangle,
+  Clock,
+  HelpCircle,
   Image,
-} from "lucide-react";
-
+  Play,
+  Terminal,
+  Timer,
+  XCircle,
+} from 'lucide-react'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Sheet,
+  SheetBody,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetClose,
-  SheetBody,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from '@/components/ui/sheet'
 import {
   fetchTddTest,
   runTddTest,
   type TddTest,
   type TddTestWithHistory,
-} from "@/lib/api";
+} from '@/lib/api'
 
 interface TestDetailDrawerProps {
-  test: TddTest | null;
-  projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  test: TddTest | null
+  projectId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-function getResultIcon(result: string | null, size: "sm" | "md" = "sm") {
-  const sizeClass = size === "sm" ? "h-4 w-4" : "h-5 w-5";
-  if (result === "passed") {
-    return <CheckCircle2 className={`${sizeClass} text-phosphor-400`} />;
+function getResultIcon(result: string | null, size: 'sm' | 'md' = 'sm') {
+  const sizeClass = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'
+  if (result === 'passed') {
+    return <CheckCircle2 className={`${sizeClass} text-phosphor-400`} />
   }
-  if (result === "failed" || result === "error") {
-    return <XCircle className={`${sizeClass} text-rose-400`} />;
+  if (result === 'failed' || result === 'error') {
+    return <XCircle className={`${sizeClass} text-rose-400`} />
   }
-  if (result === "timeout") {
-    return <Timer className={`${sizeClass} text-amber-400`} />;
+  if (result === 'timeout') {
+    return <Timer className={`${sizeClass} text-amber-400`} />
   }
-  return <HelpCircle className={`${sizeClass} text-slate-500`} />;
+  return <HelpCircle className={`${sizeClass} text-slate-500`} />
 }
 
 function getTypeColor(type: string): string {
   const colors: Record<string, string> = {
-    pytest: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    vitest: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    mypy: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    ruff: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    api: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    ui: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  };
-  return colors[type] || "bg-slate-500/20 text-slate-400 border-slate-500/30";
+    pytest: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    vitest: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    mypy: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    ruff: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    api: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    ui: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  }
+  return colors[type] || 'bg-slate-500/20 text-slate-400 border-slate-500/30'
 }
 
 function formatDuration(ms: number | null): string {
-  if (ms === null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
+  if (ms === null) return '-'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  return new Date(dateStr).toLocaleString();
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleString()
 }
 
 export function TestDetailDrawer({
@@ -83,45 +82,45 @@ export function TestDetailDrawer({
   open,
   onOpenChange,
 }: TestDetailDrawerProps) {
-  const queryClient = useQueryClient();
-  const [isRunning, setIsRunning] = useState(false);
-  const [expandedRuns, setExpandedRuns] = useState<Set<number>>(new Set());
+  const queryClient = useQueryClient()
+  const [isRunning, setIsRunning] = useState(false)
+  const [expandedRuns, setExpandedRuns] = useState<Set<number>>(new Set())
 
   // Fetch full test details with history
   const { data: testDetails } = useQuery<TddTestWithHistory>({
-    queryKey: ["tdd-test", projectId, test?.test_id],
+    queryKey: ['tdd-test', projectId, test?.test_id],
     queryFn: () => fetchTddTest(projectId, test!.test_id),
     enabled: open && !!test,
-  });
+  })
 
   const handleRunTest = async () => {
-    if (!test) return;
-    setIsRunning(true);
+    if (!test) return
+    setIsRunning(true)
     try {
-      await runTddTest(projectId, test.test_id);
+      await runTddTest(projectId, test.test_id)
       // Refresh test details and list
       queryClient.invalidateQueries({
-        queryKey: ["tdd-test", projectId, test.test_id],
-      });
-      queryClient.invalidateQueries({ queryKey: ["tdd-tests", projectId] });
+        queryKey: ['tdd-test', projectId, test.test_id],
+      })
+      queryClient.invalidateQueries({ queryKey: ['tdd-tests', projectId] })
     } finally {
-      setIsRunning(false);
+      setIsRunning(false)
     }
-  };
+  }
 
   const toggleRun = (runId: number) => {
     setExpandedRuns((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(runId)) {
-        next.delete(runId);
+        next.delete(runId)
       } else {
-        next.add(runId);
+        next.add(runId)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
-  const details = testDetails || test;
+  const details = testDetails || test
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -129,9 +128,9 @@ export function TestDetailDrawer({
         <SheetHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              {details && getResultIcon(details.last_result, "md")}
+              {details && getResultIcon(details.last_result, 'md')}
               <span
-                className={`text-xs px-2 py-0.5 rounded border font-medium ${getTypeColor(details?.test_type || "")}`}
+                className={`text-xs px-2 py-0.5 rounded border font-medium ${getTypeColor(details?.test_type || '')}`}
               >
                 {details?.test_type}
               </span>
@@ -196,7 +195,7 @@ export function TestDetailDrawer({
           )}
 
           {/* UI Test Config (for browser-automation tests) */}
-          {details?.test_type === "ui" &&
+          {details?.test_type === 'ui' &&
             details?.config &&
             Object.keys(details.config).length > 0 && (
               <div>
@@ -238,7 +237,7 @@ export function TestDetailDrawer({
                           {
                             (details.config as { assertions: unknown[] })
                               .assertions.length
-                          }{" "}
+                          }{' '}
                           checks
                         </span>
                       </div>
@@ -285,12 +284,12 @@ export function TestDetailDrawer({
                     {getResultIcon(details.last_result)}
                     <span
                       className={
-                        details.last_result === "passed"
-                          ? "text-phosphor-400"
-                          : "text-rose-400"
+                        details.last_result === 'passed'
+                          ? 'text-phosphor-400'
+                          : 'text-rose-400'
                       }
                     >
-                      {details.last_result || "Not run"}
+                      {details.last_result || 'Not run'}
                     </span>
                   </span>
                 </div>
@@ -307,7 +306,7 @@ export function TestDetailDrawer({
               </h3>
               <ScrollArea className="h-40">
                 <pre className="rounded-lg bg-slate-800 p-3 text-xs text-slate-300 whitespace-pre-wrap">
-                  {details?.last_error || details?.last_output || "No output"}
+                  {details?.last_error || details?.last_output || 'No output'}
                 </pre>
               </ScrollArea>
             </div>
@@ -321,7 +320,7 @@ export function TestDetailDrawer({
               </h3>
               <div className="space-y-1">
                 {testDetails.run_history.map((run) => {
-                  const isExpanded = expandedRuns.has(run.id);
+                  const isExpanded = expandedRuns.has(run.id)
                   return (
                     <div
                       key={run.id}
@@ -372,7 +371,7 @@ export function TestDetailDrawer({
                         </div>
                       )}
                     </div>
-                  );
+                  )
                 })}
               </div>
             </div>
@@ -380,5 +379,5 @@ export function TestDetailDrawer({
         </SheetBody>
       </SheetContent>
     </Sheet>
-  );
+  )
 }

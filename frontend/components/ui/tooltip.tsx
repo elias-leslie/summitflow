@@ -1,52 +1,50 @@
-"use client";
+'use client'
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { clsx } from "clsx";
+import { clsx } from 'clsx'
+import { createContext, type ReactNode, useContext, useState } from 'react'
 
 interface TooltipContextValue {
-  open: boolean;
-  setOpen: (open: boolean) => void;
+  open: boolean
+  setOpen: (open: boolean) => void
 }
 
-const TooltipContext = createContext<TooltipContextValue | null>(null);
+const TooltipContext = createContext<TooltipContextValue | null>(null)
 
 function useTooltip() {
-  const ctx = useContext(TooltipContext);
-  if (!ctx) throw new Error("Tooltip components must be used within Tooltip");
-  return ctx;
+  const ctx = useContext(TooltipContext)
+  if (!ctx) throw new Error('Tooltip components must be used within Tooltip')
+  return ctx
 }
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return <>{children}</>
 }
 
 interface TooltipProps {
-  children: ReactNode;
-  delayDuration?: number;
+  children: ReactNode
+  delayDuration?: number
 }
 
 export function Tooltip({ children }: TooltipProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false)
 
   return (
     <TooltipContext.Provider value={{ open, setOpen }}>
-      <div className="relative inline-flex">
-        {children}
-      </div>
+      <div className="relative inline-flex">{children}</div>
     </TooltipContext.Provider>
-  );
+  )
 }
 
 interface TooltipTriggerProps {
-  children: ReactNode;
-  asChild?: boolean;
+  children: ReactNode
+  asChild?: boolean
 }
 
 export function TooltipTrigger({ children, asChild }: TooltipTriggerProps) {
-  const { setOpen } = useTooltip();
+  const { setOpen } = useTooltip()
 
-  const handleMouseEnter = () => setOpen(true);
-  const handleMouseLeave = () => setOpen(false);
+  const handleMouseEnter = () => setOpen(true)
+  const handleMouseLeave = () => setOpen(false)
 
   if (asChild) {
     // Clone children and add event handlers
@@ -59,7 +57,7 @@ export function TooltipTrigger({ children, asChild }: TooltipTriggerProps) {
       >
         {children}
       </span>
-    );
+    )
   }
 
   return (
@@ -71,40 +69,44 @@ export function TooltipTrigger({ children, asChild }: TooltipTriggerProps) {
     >
       {children}
     </span>
-  );
+  )
 }
 
 interface TooltipContentProps {
-  children: ReactNode;
-  className?: string;
-  side?: "top" | "bottom" | "left" | "right";
-  sideOffset?: number;
+  children: ReactNode
+  className?: string
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  sideOffset?: number
 }
 
-export function TooltipContent({ children, className, side = "top" }: TooltipContentProps) {
-  const { open } = useTooltip();
+export function TooltipContent({
+  children,
+  className,
+  side = 'top',
+}: TooltipContentProps) {
+  const { open } = useTooltip()
 
-  if (!open) return null;
+  if (!open) return null
 
   const sideClasses = {
-    top: "bottom-full left-1/2 -translate-x-1/2 mb-2",
-    bottom: "top-full left-1/2 -translate-x-1/2 mt-2",
-    left: "right-full top-1/2 -translate-y-1/2 mr-2",
-    right: "left-full top-1/2 -translate-y-1/2 ml-2",
-  };
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
+    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
+    right: 'left-full top-1/2 -translate-y-1/2 ml-2',
+  }
 
   return (
     <div
       role="tooltip"
       className={clsx(
-        "absolute z-50 px-2 py-1.5 text-xs rounded bg-slate-950 border border-slate-700",
-        "text-slate-200 shadow-lg shadow-black/30",
-        "animate-fade-in whitespace-nowrap",
+        'absolute z-50 px-2 py-1.5 text-xs rounded bg-slate-950 border border-slate-700',
+        'text-slate-200 shadow-lg shadow-black/30',
+        'animate-fade-in whitespace-nowrap',
         sideClasses[side],
-        className
+        className,
       )}
     >
       {children}
     </div>
-  );
+  )
 }

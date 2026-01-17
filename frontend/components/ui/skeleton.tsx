@@ -1,18 +1,13 @@
-"use client";
+'use client'
 
-import { clsx } from "clsx";
+import { clsx } from 'clsx'
 
 interface SkeletonProps {
-  className?: string;
+  className?: string
 }
 
 export function Skeleton({ className }: SkeletonProps) {
   return (
-    <div
-      className={clsx(
-        "animate-pulse rounded bg-slate-800",
-        className
-      )}
-    />
-  );
+    <div className={clsx('animate-pulse rounded bg-slate-800', className)} />
+  )
 }

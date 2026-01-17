@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { useState } from "react";
+import { clsx } from 'clsx'
 import {
   AlertTriangle,
   ArrowRight,
@@ -10,42 +10,42 @@ import {
   Loader2,
   RotateCcw,
   XCircle,
-} from "lucide-react";
-import { clsx } from "clsx";
-import { restoreBackup, type Backup } from "@/lib/api/backups";
+} from 'lucide-react'
+import { useState } from 'react'
+import { type Backup, restoreBackup } from '@/lib/api/backups'
 
-type RestoreStep = "preview" | "confirm" | "restoring" | "success" | "error";
+type RestoreStep = 'preview' | 'confirm' | 'restoring' | 'success' | 'error'
 
 interface RestoreConfirmationProps {
-  backup: Backup;
-  projectId: string;
-  projectName: string;
-  onClose: () => void;
-  onSuccess?: () => void;
+  backup: Backup
+  projectId: string
+  projectName: string
+  onClose: () => void
+  onSuccess?: () => void
 }
 
 function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return "-";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let size = bytes;
+  if (bytes === null || bytes === 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let size = bytes
   while (size >= 1024 && i < units.length - 1) {
-    size /= 1024;
-    i++;
+    size /= 1024
+    i++
   }
-  return `${size.toFixed(1)} ${units[i]}`;
+  return `${size.toFixed(1)} ${units[i]}`
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function RestoreConfirmation({
@@ -55,29 +55,29 @@ export function RestoreConfirmation({
   onClose,
   onSuccess,
 }: RestoreConfirmationProps) {
-  const [step, setStep] = useState<RestoreStep>("preview");
-  const [confirmText, setConfirmText] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [step, setStep] = useState<RestoreStep>('preview')
+  const [confirmText, setConfirmText] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const isConfirmValid = confirmText === projectName;
+  const isConfirmValid = confirmText === projectName
 
   const handleRestore = async () => {
-    setStep("restoring");
-    setErrorMessage(null);
+    setStep('restoring')
+    setErrorMessage(null)
 
     try {
-      await restoreBackup(projectId, backup.id);
-      setStep("success");
-      onSuccess?.();
+      await restoreBackup(projectId, backup.id)
+      setStep('success')
+      onSuccess?.()
     } catch (err) {
-      setStep("error");
+      setStep('error')
       setErrorMessage(
         err instanceof Error
           ? err.message
-          : "Restore failed. Please try again.",
-      );
+          : 'Restore failed. Please try again.',
+      )
     }
-  };
+  }
 
   // Step indicators
   const StepIndicator = ({
@@ -86,34 +86,34 @@ export function RestoreConfirmation({
     active,
     completed,
   }: {
-    stepNum: number;
-    label: string;
-    active: boolean;
-    completed: boolean;
+    stepNum: number
+    label: string
+    active: boolean
+    completed: boolean
   }) => (
     <div className="flex items-center gap-2">
       <div
         className={clsx(
-          "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
+          'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
           completed
-            ? "bg-green-500 text-white"
+            ? 'bg-green-500 text-white'
             : active
-              ? "bg-phosphor-500 text-white"
-              : "bg-slate-700 text-slate-400",
+              ? 'bg-phosphor-500 text-white'
+              : 'bg-slate-700 text-slate-400',
         )}
       >
         {completed ? <CheckCircle2 className="w-4 h-4" /> : stepNum}
       </div>
       <span
         className={clsx(
-          "text-sm",
-          active ? "text-slate-200" : "text-slate-500",
+          'text-sm',
+          active ? 'text-slate-200' : 'text-slate-500',
         )}
       >
         {label}
       </span>
     </div>
-  );
+  )
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -135,19 +135,19 @@ export function RestoreConfirmation({
           </div>
 
           {/* Progress Steps */}
-          {(step === "preview" || step === "confirm") && (
+          {(step === 'preview' || step === 'confirm') && (
             <div className="flex items-center gap-4 mt-4">
               <StepIndicator
                 stepNum={1}
                 label="Preview"
-                active={step === "preview"}
-                completed={step === "confirm"}
+                active={step === 'preview'}
+                completed={step === 'confirm'}
               />
               <ArrowRight className="w-4 h-4 text-slate-600" />
               <StepIndicator
                 stepNum={2}
                 label="Confirm"
-                active={step === "confirm"}
+                active={step === 'confirm'}
                 completed={false}
               />
             </div>
@@ -157,7 +157,7 @@ export function RestoreConfirmation({
         {/* Content */}
         <div className="p-6">
           {/* Step 1: Preview */}
-          {step === "preview" && (
+          {step === 'preview' && (
             <div className="space-y-4">
               <div className="p-4 bg-slate-700/50 rounded-lg space-y-3">
                 <h3 className="text-sm font-medium text-slate-300 mb-3">
@@ -219,7 +219,7 @@ export function RestoreConfirmation({
           )}
 
           {/* Step 2: Confirm with project name */}
-          {step === "confirm" && (
+          {step === 'confirm' && (
             <div className="space-y-4">
               <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <p className="text-sm text-red-300">
@@ -246,14 +246,13 @@ export function RestoreConfirmation({
                   onChange={(e) => setConfirmText(e.target.value)}
                   placeholder={projectName}
                   className={clsx(
-                    "w-full px-3 py-2 bg-slate-700 border rounded-md text-slate-200",
-                    "placeholder-slate-500 focus:outline-none focus:ring-2",
+                    'w-full px-3 py-2 bg-slate-700 border rounded-md text-slate-200',
+                    'placeholder-slate-500 focus:outline-none focus:ring-2',
                     isConfirmValid
-                      ? "border-green-500 focus:ring-green-500"
-                      : "border-slate-600 focus:ring-phosphor-500",
+                      ? 'border-green-500 focus:ring-green-500'
+                      : 'border-slate-600 focus:ring-phosphor-500',
                   )}
                   autoComplete="off"
-                  autoFocus
                 />
                 {confirmText && !isConfirmValid && (
                   <p className="mt-1 text-xs text-red-400">
@@ -265,7 +264,7 @@ export function RestoreConfirmation({
           )}
 
           {/* Restoring state */}
-          {step === "restoring" && (
+          {step === 'restoring' && (
             <div className="py-8 text-center">
               <Loader2 className="w-12 h-12 text-phosphor-400 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-medium text-slate-200 mb-2">
@@ -280,7 +279,7 @@ export function RestoreConfirmation({
           )}
 
           {/* Success state */}
-          {step === "success" && (
+          {step === 'success' && (
             <div className="py-8 text-center">
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8 text-green-400" />
@@ -297,7 +296,7 @@ export function RestoreConfirmation({
           )}
 
           {/* Error state */}
-          {step === "error" && (
+          {step === 'error' && (
             <div className="py-8 text-center">
               <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <XCircle className="w-8 h-8 text-red-400" />
@@ -312,7 +311,7 @@ export function RestoreConfirmation({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-700 flex justify-between">
-          {step === "preview" && (
+          {step === 'preview' && (
             <>
               <button
                 onClick={onClose}
@@ -321,7 +320,7 @@ export function RestoreConfirmation({
                 Cancel
               </button>
               <button
-                onClick={() => setStep("confirm")}
+                onClick={() => setStep('confirm')}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600 text-white
                            hover:bg-yellow-500 rounded-md transition-colors font-medium"
               >
@@ -331,12 +330,12 @@ export function RestoreConfirmation({
             </>
           )}
 
-          {step === "confirm" && (
+          {step === 'confirm' && (
             <>
               <button
                 onClick={() => {
-                  setStep("preview");
-                  setConfirmText("");
+                  setStep('preview')
+                  setConfirmText('')
                 }}
                 className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
               >
@@ -346,10 +345,10 @@ export function RestoreConfirmation({
                 onClick={handleRestore}
                 disabled={!isConfirmValid}
                 className={clsx(
-                  "flex items-center gap-2 px-4 py-2 text-sm rounded-md transition-colors font-medium",
+                  'flex items-center gap-2 px-4 py-2 text-sm rounded-md transition-colors font-medium',
                   isConfirmValid
-                    ? "bg-red-600 text-white hover:bg-red-500"
-                    : "bg-slate-700 text-slate-500 cursor-not-allowed",
+                    ? 'bg-red-600 text-white hover:bg-red-500'
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed',
                 )}
               >
                 <RotateCcw className="w-4 h-4" />
@@ -358,13 +357,13 @@ export function RestoreConfirmation({
             </>
           )}
 
-          {step === "restoring" && (
+          {step === 'restoring' && (
             <div className="w-full text-center">
               <span className="text-sm text-slate-500">Please wait...</span>
             </div>
           )}
 
-          {(step === "success" || step === "error") && (
+          {(step === 'success' || step === 'error') && (
             <div className="w-full flex justify-end">
               <button
                 onClick={onClose}
@@ -378,5 +377,5 @@ export function RestoreConfirmation({
         </div>
       </div>
     </div>
-  );
+  )
 }

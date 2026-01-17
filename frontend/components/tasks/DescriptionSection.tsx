@@ -1,34 +1,34 @@
-"use client";
+'use client'
 
-import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useMemo, useState } from 'react'
 
 interface DescriptionSectionProps {
-  description: string | null | undefined;
-  collapsedLength?: number;
+  description: string | null | undefined
+  collapsedLength?: number
 }
 
 export function DescriptionSection({
   description,
   collapsedLength = 200,
 }: DescriptionSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false)
 
   const { shouldCollapse, displayText } = useMemo(() => {
     if (!description) {
-      return { shouldCollapse: false, displayText: "" };
+      return { shouldCollapse: false, displayText: '' }
     }
-    const shouldCollapse = description.length > collapsedLength;
+    const shouldCollapse = description.length > collapsedLength
     const displayText =
       shouldCollapse && !isExpanded
-        ? description.slice(0, collapsedLength).trim() + "..."
-        : description;
-    return { shouldCollapse, displayText };
-  }, [description, collapsedLength, isExpanded]);
+        ? `${description.slice(0, collapsedLength).trim()}...`
+        : description
+    return { shouldCollapse, displayText }
+  }, [description, collapsedLength, isExpanded])
 
   if (!description) {
-    return null;
+    return null
   }
 
   return (
@@ -43,7 +43,7 @@ export function DescriptionSection({
       <div className="relative">
         <AnimatePresence mode="wait">
           <motion.div
-            key={isExpanded ? "expanded" : "collapsed"}
+            key={isExpanded ? 'expanded' : 'collapsed'}
             initial={{ opacity: 0.8 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.15 }}
@@ -76,5 +76,5 @@ export function DescriptionSection({
         </AnimatePresence>
       </div>
     </section>
-  );
+  )
 }
