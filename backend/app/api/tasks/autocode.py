@@ -149,19 +149,46 @@ def start_autocode(
             detail=f"Task {task_id} has no done_when criteria. Cannot run autocode without acceptance criteria.",
         )
 
-    # 3.5 Check quality gate status - block if failing
+    # 3.5 Check quality gate status - auto-fix and block if failing
     with get_connection() as conn:
         health = qcr_store.get_project_health_summary(conn, project_id)
-    if not health["overall_pass"] and health["total_unfixed"] > 0:
-        failing_checks = [
-            f"{ct}: {info['unfixed_count']} unfixed"
-            for ct, info in health["checks"].items()
-            if info.get("unfixed_count", 0) > 0
-        ]
-        raise HTTPException(
-            status_code=400,
-            detail=f"Quality gate failing. Fix errors before autocode: {', '.join(failing_checks)}",
-        )
+        if not health["overall_pass"] and health["total_unfixed"] > 0:
+            # Auto-trigger fix agent
+            from ..services.quality_gate import fix_unfixed_errors
+            from ..services.quality_gate.test_fix_agent import fix_failing_tests
+
+            logger.info(
+                "quality_gate_auto_fix_triggered",
+                project_id=project_id,
+                unfixed_count=health["total_unfixed"],
+            )
+
+            # Try to fix lint/type errors first
+            lint_results = fix_unfixed_errors(conn, project_id, limit=20)
+            # Then test failures
+            test_results = fix_failing_tests(conn, project_id, limit=5)
+            conn.commit()
+
+            total_fixed = lint_results["fixed"] + test_results["fixed"]
+            total_escalated = lint_results["escalated"] + test_results["escalated"]
+
+            # Re-check health after fix attempt
+            health = qcr_store.get_project_health_summary(conn, project_id)
+
+            if not health["overall_pass"] and health["total_unfixed"] > 0:
+                failing_checks = [
+                    f"{ct}: {info['unfixed_count']} unfixed"
+                    for ct, info in health["checks"].items()
+                    if info.get("unfixed_count", 0) > 0
+                ]
+                detail = f"Quality gate failing after auto-fix (fixed {total_fixed}, escalated {total_escalated}). Remaining: {', '.join(failing_checks)}"
+                raise HTTPException(status_code=400, detail=detail)
+
+            logger.info(
+                "quality_gate_auto_fix_success",
+                project_id=project_id,
+                fixed=total_fixed,
+            )
 
     # 4. Find first incomplete subtask
     incomplete_subtask = _get_first_incomplete_subtask(task_id)
