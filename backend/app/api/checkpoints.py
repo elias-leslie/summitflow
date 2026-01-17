@@ -10,7 +10,7 @@ This module provides REST API endpoints for the checkpoint system:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -78,7 +78,7 @@ async def list_checkpoints(
     Returns checkpoints sorted by created_at descending (newest first).
     """
     service = CheckpointService(project_id=project_id)
-    return service.list_checkpoints(limit=limit, offset=offset)
+    return cast(list[dict[str, Any]], service.list_checkpoints(limit=limit, offset=offset))
 
 
 @router.get("/{project_id}/checkpoints/session/{session_id}")
@@ -96,7 +96,7 @@ async def get_checkpoint_by_session(
     if not checkpoint:
         raise HTTPException(status_code=404, detail="No checkpoint found for session")
 
-    return checkpoint
+    return cast(dict[str, Any], checkpoint)
 
 
 @router.get("/{project_id}/checkpoints/{checkpoint_id}")
@@ -111,7 +111,7 @@ async def get_checkpoint(
     if not checkpoint:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
 
-    return checkpoint
+    return cast(dict[str, Any], checkpoint)
 
 
 @router.post("/{project_id}/checkpoints", response_model=CheckpointResponse)
