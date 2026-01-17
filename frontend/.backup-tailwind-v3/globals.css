@@ -1,134 +1,9 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Fira+Code:wght@400;500&family=Source+Code+Pro:wght@400;500&family=Roboto+Mono:wght@400;500&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "@xterm/xterm/css/xterm.css";
 
-@import "tailwindcss";
-
-@theme {
-  /* Outrun palette - deep darks with neon accents */
-  --color-slate-950: #0a0612;
-  --color-slate-900: #0f0a18;
-  --color-slate-850: #150d20;
-  --color-slate-800: #1a0a2e;
-  --color-slate-750: #251538;
-  --color-slate-700: #2d1d42;
-
-  /* Primary accent - hot pink/magenta (grid lines from logo) */
-  --color-outrun-50: #fff0f6;
-  --color-outrun-100: #ffe0ed;
-  --color-outrun-200: #ffc2db;
-  --color-outrun-300: #ff8fbd;
-  --color-outrun-400: #ff5c9d;
-  --color-outrun-500: #ff0066;
-  --color-outrun-600: #e6005c;
-  --color-outrun-700: #cc0052;
-  --color-outrun-800: #a30042;
-  --color-outrun-900: #800033;
-
-  /* Sunset gradient colors */
-  --color-sunset-yellow: #fff200;
-  --color-sunset-orange: #ff6600;
-  --color-sunset-pink: #ff0066;
-
-  /* Keep some utility colors */
-  --color-amber-400: #fbbf24;
-  --color-amber-500: #f59e0b;
-
-  --color-rose-400: #fb7185;
-  --color-rose-500: #f43f5e;
-
-  /* Cyan accent for contrast */
-  --color-neon-cyan: #00f5ff;
-  --color-neon-purple: #bf00ff;
-
-  /* Phosphor - neon cyan accent scale */
-  --color-phosphor-400: #33f7ff;
-  --color-phosphor-500: #00f5ff;
-  --color-phosphor-600: #00d4dd;
-  --color-phosphor-700: #00b3bb;
-
-  /* Semantic priority colors */
-  --color-priority-critical: #ff0066;
-  --color-priority-high: #ff6600;
-  --color-priority-medium: #f59e0b;
-  --color-priority-low: #64748b;
-
-  /* Semantic status colors */
-  --color-status-success: #00f5ff;
-  --color-status-warning: #f59e0b;
-  --color-status-error: #f43f5e;
-  --color-status-info: #3b82f6;
-
-  /* Fonts */
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", system-ui, sans-serif;
-
-  /* Font sizes */
-  --text-2xs: 0.625rem;
-  --text-2xs--line-height: 0.875rem;
-
-  /* Custom spacing */
-  --spacing-indent-1: 0.5rem;
-  --spacing-indent-2: 1rem;
-  --spacing-indent-3: 1.5rem;
-  --spacing-indent-4: 2rem;
-  --spacing-indent-5: 2.5rem;
-
-  /* Animations */
-  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-scan: scan 8s linear infinite;
-  --animate-glow: glow 2s ease-in-out infinite alternate;
-  --animate-fade-in: fadeIn 0.5s ease-out;
-  --animate-slide-up: slideUp 0.5s ease-out;
-  --animate-grid-scroll: gridScroll 20s linear infinite;
-  --animate-shimmer: shimmer 2s ease-in-out infinite;
-
-  /* Background images */
-  --bg-grid-pattern: linear-gradient(to right, rgba(255, 0, 102, 0.15) 1px, transparent 1px),
-                     linear-gradient(to bottom, rgba(255, 0, 102, 0.15) 1px, transparent 1px);
-  --bg-scanline: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
-  --bg-sunset-gradient: linear-gradient(180deg, #fff200 0%, #ff6600 50%, #ff0066 100%);
-
-  /* Background sizes */
-  --bg-grid: 24px 24px;
-
-  /* Box shadows */
-  --shadow-outrun: 0 0 20px rgba(255, 0, 102, 0.3), 0 0 40px rgba(255, 0, 102, 0.1);
-  --shadow-outrun-sm: 0 0 10px rgba(255, 0, 102, 0.25);
-  --shadow-outrun-lg: 0 0 30px rgba(255, 0, 102, 0.4), 0 0 60px rgba(255, 0, 102, 0.2);
-  --shadow-sunset: 0 0 20px rgba(255, 102, 0, 0.3), 0 0 40px rgba(255, 0, 102, 0.2);
-}
-
-/* Keyframes */
-@keyframes scan {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-@keyframes glow {
-  0% { opacity: 0.5; }
-  100% { opacity: 1; }
-}
-
-@keyframes fadeIn {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes slideUp {
-  0% { opacity: 0; transform: translateY(10px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes gridScroll {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(32px); }
-}
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   /* Outrun color system */
@@ -244,12 +119,7 @@ body::before {
 }
 
 .card-elevated {
-  @apply bg-slate-850 border border-slate-700 rounded-lg;
-  background: linear-gradient(
-    135deg,
-    rgba(21, 13, 32, 0.9) 0%,
-    rgba(15, 10, 24, 0.95) 100%
-  );
+  @apply card;
   box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.4),
     0 2px 4px -2px rgba(0, 0, 0, 0.3),
@@ -263,9 +133,7 @@ body::before {
 }
 
 .btn-primary {
-  @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
-  @apply bg-outrun-600 text-white;
+  @apply btn bg-outrun-600 text-white;
   @apply hover:bg-outrun-500 hover:shadow-lg;
   box-shadow: 0 0 20px rgba(255, 0, 102, 0.25);
 }
@@ -275,16 +143,12 @@ body::before {
 }
 
 .btn-secondary {
-  @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
-  @apply bg-slate-750 text-slate-200 border border-slate-600;
+  @apply btn bg-slate-750 text-slate-200 border border-slate-600;
   @apply hover:bg-slate-700 hover:border-outrun-500/30;
 }
 
 .btn-ghost {
-  @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
-  @apply text-slate-400;
+  @apply btn text-slate-400;
   @apply hover:text-outrun-400 hover:bg-slate-800/50;
 }
 
@@ -313,23 +177,19 @@ body::before {
 }
 
 .badge-outrun {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-outrun-500/10 text-outrun-400 border border-outrun-500/30;
+  @apply badge bg-outrun-500/10 text-outrun-400 border border-outrun-500/30;
 }
 
 .badge-amber {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-amber-500/10 text-amber-400 border border-amber-500/30;
+  @apply badge bg-amber-500/10 text-amber-400 border border-amber-500/30;
 }
 
 .badge-rose {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-rose-500/10 text-rose-400 border border-rose-500/30;
+  @apply badge bg-rose-500/10 text-rose-400 border border-rose-500/30;
 }
 
 .badge-slate {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-slate-700/50 text-slate-400 border border-slate-600;
+  @apply badge bg-slate-700/50 text-slate-400 border border-slate-600;
 }
 
 /* Sunset gradient text */
