@@ -13,6 +13,9 @@ import {
   Package,
   Bug,
   CheckSquare,
+  RefreshCw,
+  AlertTriangle,
+  ArrowDownCircle,
   Link2,
   ExternalLink,
 } from "lucide-react";
@@ -106,6 +109,21 @@ const taskTypeConfig: Record<
     icon: <CheckSquare className="h-4 w-4" />,
     label: "Task",
     className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  },
+  refactor: {
+    icon: <RefreshCw className="h-4 w-4" />,
+    label: "Refactor",
+    className: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  },
+  debt: {
+    icon: <AlertTriangle className="h-4 w-4" />,
+    label: "Tech Debt",
+    className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  },
+  regression: {
+    icon: <ArrowDownCircle className="h-4 w-4" />,
+    label: "Regression",
+    className: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   },
 };
 

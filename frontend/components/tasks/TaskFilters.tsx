@@ -32,6 +32,9 @@ const TYPE_OPTIONS = [
   { value: "feature", label: "Features" },
   { value: "bug", label: "Bugs" },
   { value: "task", label: "Tasks" },
+  { value: "refactor", label: "Refactors" },
+  { value: "debt", label: "Tech Debt" },
+  { value: "regression", label: "Regressions" },
 ];
 
 const PRIORITY_OPTIONS = [

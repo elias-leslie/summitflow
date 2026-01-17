@@ -19,7 +19,13 @@ export type TaskStatus =
   | "completed"
   | "failed"
   | "cancelled";
-export type TaskType = "feature" | "bug" | "task";
+export type TaskType =
+  | "feature"
+  | "bug"
+  | "task"
+  | "refactor"
+  | "debt"
+  | "regression";
 export type AgentType = "claude" | "gemini";
 
 export interface TaskAcceptanceCriterion {

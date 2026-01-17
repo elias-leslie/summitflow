@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
   AlertCircle,
+  AlertTriangle,
+  ArrowDownCircle,
   GitPullRequest,
   Bot,
   Eye,
@@ -112,6 +114,21 @@ const typeConfig: Record<
     icon: <CheckSquare className="h-3.5 w-3.5" />,
     label: "Task",
     className: "text-blue-400",
+  },
+  refactor: {
+    icon: <RefreshCw className="h-3.5 w-3.5" />,
+    label: "Refactor",
+    className: "text-cyan-400",
+  },
+  debt: {
+    icon: <AlertTriangle className="h-3.5 w-3.5" />,
+    label: "Tech Debt",
+    className: "text-amber-400",
+  },
+  regression: {
+    icon: <ArrowDownCircle className="h-3.5 w-3.5" />,
+    label: "Regression",
+    className: "text-orange-400",
   },
 };
 

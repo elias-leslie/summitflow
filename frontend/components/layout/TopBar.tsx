@@ -13,6 +13,9 @@ import {
   Bug,
   Package,
   CheckSquare,
+  RefreshCw,
+  AlertTriangle,
+  ArrowDownCircle,
   Zap,
 } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -38,6 +41,9 @@ const typeIcons: Record<TaskType, React.ReactNode> = {
   feature: <Package className="h-3.5 w-3.5 text-purple-400" />,
   bug: <Bug className="h-3.5 w-3.5 text-rose-400" />,
   task: <CheckSquare className="h-3.5 w-3.5 text-blue-400" />,
+  refactor: <RefreshCw className="h-3.5 w-3.5 text-cyan-400" />,
+  debt: <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />,
+  regression: <ArrowDownCircle className="h-3.5 w-3.5 text-orange-400" />,
 };
 
 export function TopBar() {

@@ -1,8 +1,11 @@
 """SummitFlow Tasks CLI entry point."""
 
+import atexit
 from typing import Annotated
 
 import typer
+
+from app.storage.connection import close_pool
 
 from .commands import (
     autonomous,
@@ -20,6 +23,9 @@ from .commands import (
 )
 from .config import set_project_override
 from .output import set_compact_output, set_human_output, set_progress_only
+
+# Ensure connection pool is closed on exit to avoid thread cleanup warnings
+atexit.register(close_pool)
 
 # Complete CLI reference - everything needed to use st in one place
 # Format: TOON-style, optimized for Claude consumption

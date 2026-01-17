@@ -9,6 +9,9 @@ import {
   Package,
   Bug,
   CheckSquare,
+  RefreshCw,
+  AlertTriangle,
+  ArrowDownCircle,
   Loader2,
   Pause,
   Check,
@@ -103,6 +106,18 @@ const taskTypeConfig: Record<
   task: {
     icon: <CheckSquare className="h-3.5 w-3.5" />,
     className: "text-blue-400",
+  },
+  refactor: {
+    icon: <RefreshCw className="h-3.5 w-3.5" />,
+    className: "text-cyan-400",
+  },
+  debt: {
+    icon: <AlertTriangle className="h-3.5 w-3.5" />,
+    className: "text-amber-400",
+  },
+  regression: {
+    icon: <ArrowDownCircle className="h-3.5 w-3.5" />,
+    className: "text-orange-400",
   },
 };
 

@@ -32,6 +32,9 @@ const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
   { value: "feature", label: "Feature" },
   { value: "bug", label: "Bug" },
   { value: "task", label: "Task" },
+  { value: "refactor", label: "Refactor" },
+  { value: "debt", label: "Tech Debt" },
+  { value: "regression", label: "Regression" },
 ];
 
 export function CreateTaskDialog({
