@@ -9,7 +9,7 @@
 # CANONICAL VERSIONS - Update here, all projects follow
 # =============================================================================
 
-export CANONICAL_RUFF="0.14.10"
+export CANONICAL_RUFF="0.14.13"
 export CANONICAL_MYPY="1.19.1"
 export CANONICAL_PYTEST="9.0.2"
 export CANONICAL_PRECOMMIT="4.5.1"
