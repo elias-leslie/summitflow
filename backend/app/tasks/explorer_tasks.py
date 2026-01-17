@@ -321,10 +321,8 @@ def _error_issue_still_exists(
 ) -> bool:
     """Check if an error issue still exists.
 
-    Error issues are resolved when:
-    1. The source observation was marked as resolved
-    2. No recent error observations match the same title
-    3. The affected files no longer have type/lint errors
+    Memory system removed - this function now returns True (issue still exists)
+    as a safe default. Error resolution tracking moved to quality gate system.
 
     Args:
         project_id: Project ID
@@ -332,39 +330,11 @@ def _error_issue_still_exists(
         issue_metadata: Parsed metadata from issue
 
     Returns:
-        True if error still exists, False if resolved
+        True if error still exists (safe default without memory system)
     """
-    from ..storage.memory import query_observations
-
-    error_title = issue.get("title", "")
-    if not error_title:
-        return True  # Can't verify without title
-
-    # Check if any recent error observations match this title
-    # If no recent errors, the issue is resolved
-    recent_errors = query_observations(
-        project_id=project_id,
-        observation_type="error",
-        min_confidence=0.7,
-        days=3,  # Look back 3 days for recent occurrences
-        limit=50,
-    )
-
-    # Check if any observation matches this error title
-    for obs in recent_errors:
-        obs_title = obs.get("title", "")
-        # Fuzzy match: if titles are substantially similar, error still exists
-        if error_title.lower() in obs_title.lower() or obs_title.lower() in error_title.lower():
-            return True
-
-    # No recent matching errors - issue is resolved
-    logger.info(
-        "error_issue_resolved",
-        issue_id=issue.get("id"),
-        title=error_title[:60],
-        reason="no_recent_matching_errors",
-    )
-    return False
+    # Memory system removed - return True as safe default
+    # Error tracking now handled by quality gate system (quality_check_results table)
+    return True
 
 
 @shared_task(name="summitflow.check_resolved_issues")  # type: ignore[untyped-decorator]

@@ -12,8 +12,6 @@ from typing import Any
 
 from ..constants import DEFAULT_GEMINI_MODEL
 from ..storage.explorer_entries import get_entries
-from ..storage.memory import list_observations
-from ..storage.memory_patterns import list_patterns
 from ..storage.projects import get_project_root_path
 
 logger = logging.getLogger(__name__)
@@ -124,46 +122,20 @@ def gather_docs_context(project_id: str) -> str:
 
 
 def gather_memory_context(project_id: str, limit: int = 10) -> str:
-    """Gather recent observations and patterns from memory.
+    """Gather context from memory system.
+
+    Memory system has been moved to Agent Hub with Graphiti knowledge graph.
+    This function returns empty string for backward compatibility.
 
     Args:
         project_id: Project ID
-        limit: Maximum number of items to include
+        limit: Maximum number of items to include (unused)
 
     Returns:
-        Memory context as string.
+        Empty string - memory now handled by Agent Hub.
     """
-    result_parts: list[str] = []
-
-    # Get recent observations
-    try:
-        observations = list_observations(project_id=project_id, limit=limit)
-        if observations:
-            obs_lines = ["## Recent Observations\n"]
-            for obs in observations:
-                category = obs.get("category", "unknown")
-                summary = obs.get("summary", "No summary")
-                obs_lines.append(f"- [{category}] {summary}")
-            result_parts.append("\n".join(obs_lines))
-    except Exception as e:
-        logger.warning("Failed to get observations for %s: %s", project_id, e)
-
-    # Get approved patterns
-    try:
-        patterns = list_patterns(project_id=project_id, limit=limit)
-        if patterns:
-            pattern_lines = ["## Learned Patterns\n"]
-            for pattern in patterns:
-                if pattern.get("status") in ("approved", "auto_approved"):
-                    guidance = pattern.get("guidance", "No guidance")
-                    pattern_lines.append(f"- {guidance}")
-            if len(pattern_lines) > 1:
-                result_parts.append("\n".join(pattern_lines))
-    except Exception as e:
-        logger.warning("Failed to get patterns for %s: %s", project_id, e)
-
-    combined = "\n\n".join(result_parts)
-    return _truncate_to_tokens(combined, MAX_MEMORY_TOKENS)
+    # Memory system removed - functionality moved to Agent Hub with Graphiti
+    return ""
 
 
 def gather_explorer_context(project_id: str, query: str) -> str:

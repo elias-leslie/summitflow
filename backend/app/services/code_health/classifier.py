@@ -163,51 +163,11 @@ class CodeHealthClassifier:
     ) -> None:
         """Store classification decision as an observation for learning.
 
-        Args:
-            finding: The finding that was classified
-            result: The classification result
+        Memory system removed - this is now a no-op.
+        Memory functionality moved to Agent Hub with Graphiti.
         """
-        if not self.enable_memory or not self.project_id:
-            return
-
-        try:
-            from ...storage.memory import create_observation
-
-            title = f"Code health: {finding.category} → {result.verdict.value}"
-            narrative = (
-                f"Classified {finding.category} in {finding.file_path} "
-                f"as {result.verdict.value}. {result.reason}"
-            )
-
-            create_observation(
-                project_id=self.project_id,
-                session_id=f"code-health-{self._session_id}",
-                agent_type="code-health-agent",
-                observation_type="code_health",
-                title=title,
-                narrative=narrative,
-                concepts=["code_health", finding.category, result.verdict.value],
-                priority="low",
-                confidence=result.confidence,
-                files_modified=[finding.file_path],
-                facts={
-                    "category": finding.category,
-                    "pattern": finding.pattern,
-                    "verdict": result.verdict.value,
-                    "reason": result.reason,
-                    "suggested_action": result.suggested_action,
-                },
-                extracted_by="code-health-classifier",
-            )
-
-            logger.debug(
-                "Stored code health observation: %s -> %s",
-                finding.category,
-                result.verdict.value,
-            )
-
-        except Exception as e:
-            logger.warning("Failed to store classification observation: %s", e)
+        # Memory system removed - no-op
+        pass
 
     def _query_memory_for_similar(
         self,
@@ -215,65 +175,11 @@ class CodeHealthClassifier:
     ) -> ClassificationResult | None:
         """Query memory for similar past classification decisions.
 
-        Args:
-            finding: The finding to look up
-
-        Returns:
-            ClassificationResult if a high-confidence match found, None otherwise
+        Memory system removed - always returns None.
+        Memory functionality moved to Agent Hub with Graphiti.
         """
-        if not self.enable_memory or not self.project_id:
-            return None
-
-        try:
-            from ...storage.memory import search_observations_fts
-
-            # Search for similar past decisions
-            query = f"{finding.category} {finding.file_path}"
-            results = search_observations_fts(
-                project_id=self.project_id,
-                query=query,
-                limit=5,
-                query_types=["code_health"],
-            )
-
-            # Look for high-confidence match
-            for obs in results:
-                if obs.get("observation_type") != "code_health":
-                    continue
-
-                confidence = obs.get("confidence", 0)
-                facts = obs.get("facts") or {}
-
-                # Check if same category and high confidence
-                if (
-                    facts.get("category") == finding.category
-                    and confidence >= MEMORY_REUSE_CONFIDENCE_THRESHOLD
-                ):
-                    verdict_str = facts.get("verdict", "needs_refactor")
-                    try:
-                        verdict = ClassificationVerdict(verdict_str)
-                    except ValueError:
-                        continue
-
-                    logger.info(
-                        "Memory reuse: %s -> %s (confidence: %.2f)",
-                        finding.category,
-                        verdict.value,
-                        confidence,
-                    )
-
-                    return ClassificationResult(
-                        verdict=verdict,
-                        confidence=confidence,
-                        reason=f"[From memory] {facts.get('reason', 'Previous decision')}",
-                        suggested_action=facts.get("suggested_action"),
-                    )
-
-            return None
-
-        except Exception as e:
-            logger.warning("Failed to query memory for similar decisions: %s", e)
-            return None
+        # Memory system removed - always returns None
+        return None
 
     def classify(self, finding: Finding) -> ClassificationResult:
         """Classify a code health finding.

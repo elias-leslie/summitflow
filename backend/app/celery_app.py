@@ -64,45 +64,6 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24,  # Every 24 hours
         "kwargs": {"max_age_days": 7, "max_files": 20},
     },
-    # Memory lifecycle cleanup tasks
-    "cleanup-failed-queue-items": {
-        "task": "summitflow.cleanup_failed_queue_items",
-        "schedule": 60 * 60 * 24,  # Daily (every 24 hours)
-        "kwargs": {"max_age_days": 14},
-    },
-    "cleanup-old-checkpoints": {
-        "task": "summitflow.cleanup_old_checkpoints",
-        "schedule": 60 * 60 * 24 * 7,  # Weekly (every 7 days)
-        "kwargs": {"max_age_days": 30},
-    },
-    "reset-stuck-queue-items": {
-        "task": "summitflow.reset_stuck_queue_items",
-        "schedule": 60 * 60,  # Hourly
-        "kwargs": {"threshold_minutes": 60},
-    },
-    # Reflection processing - catch unreflected diary entries
-    "process-pending-reflections": {
-        "task": "summitflow.process_pending_reflections",
-        "schedule": 60 * 60 * 2,  # Every 2 hours
-    },
-    # Embedding processing - generate embeddings for observations and prompts
-    "process-pending-embeddings": {
-        "task": "summitflow.process_pending_embeddings",
-        "schedule": 60 * 5,  # Every 5 minutes
-    },
-    # Memory health check - auto-apply patterns and detect issues
-    # Note: Task iterates all projects if project_id not specified
-    "run-memory-health-check": {
-        "task": "summitflow.run_memory_health_check",
-        "schedule": 60 * 60 * 6,  # Every 6 hours
-    },
-    # Weekly deep review - comprehensive instruction surface analysis
-    "run-weekly-deep-review": {
-        "task": "summitflow.run_weekly_deep_review",
-        "schedule": 60 * 60 * 24 * 7,  # Weekly (every 7 days)
-        # Runs Sundays at 2am via crontab below would be ideal,
-        # but simple interval works for now
-    },
     # Autonomous execution - reset expired task claims
     "reset-expired-task-claims": {
         "task": "summitflow.reset_expired_task_claims",
@@ -210,15 +171,11 @@ from app.tasks import (  # noqa: F401, E402
     agent_runner,
     autonomous,
     backup,
-    embedding_processor,
     enrichment,
     evidence_capture,
     evidence_tasks,
     explorer_tasks,
     lifecycle_cleanup,
-    memory_health_task,
-    observation_processor,
     orchestrator_runner,
-    reflection_processor,
 )
 from app.tasks.autonomous import ideas  # noqa: F401, E402
