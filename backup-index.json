@@ -4,6 +4,100 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20260117-104117.tar.gz",
+      "timestamp": "2026-01-17T10:41:55-05:00",
+      "size_bytes": 245631790,
+      "db_size_bytes": 229042619,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2026-01-17T10:41:52-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 428
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 78
+          },
+          "scripts": {
+            "count": 29
+          },
+          ".qna-session": {
+            "count": 1
+          },
+          "tests": {
+            "count": 1
+          },
+          ".summitflow": {
+            "count": 30
+          },
+          "frontend": {
+            "count": 206
+          },
+          ".dev-tools": {
+            "count": 10
+          },
+          ".claude": {
+            "count": 3
+          },
+          "tasks": {
+            "count": 293
+          },
+          "spec": {
+            "count": 1
+          },
+          "data": {
+            "count": 4
+          },
+          "mockups": {
+            "count": 7
+          },
+          "services": {
+            "count": 520
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          "package.json": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          },
+          ".index.yaml": {
+            "count": 1
+          }
+        },
+        "total_files": 1660,
+        "checksum": "sha256:a768dc57bb9beed621c06f480ad26e43cb7a9cf3050861fb80464adc9f9dca5c"
+      }
+    },
+    {
       "name": "summitflow-20260117-101100.tar.gz",
       "timestamp": "2026-01-17T10:11:38-05:00",
       "size_bytes": 245626144,
@@ -13133,5 +13227,5 @@
       }
     }
   ],
-  "last_updated": "2026-01-17T10:11:38-05:00"
+  "last_updated": "2026-01-17T10:41:55-05:00"
 }
