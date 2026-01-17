@@ -7,6 +7,7 @@ with the orchestrator for auto-triggering fixes.
 from .fix_agent import (
     MAX_FIX_ATTEMPTS,
     FixResult,
+    escalate_to_human,
     fix_lint_type_error,
     fix_unfixed_errors,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "MAX_FIX_ATTEMPTS",
     "FixResult",
     "TestFixResult",
+    "escalate_to_human",
     "fix_failing_tests",
     "fix_lint_type_error",
     "fix_test_failure",

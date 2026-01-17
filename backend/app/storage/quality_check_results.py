@@ -66,7 +66,7 @@ def create_check_result(
             RETURNING id, project_id, check_type, check_name, status, error_count,
                       warning_count, error_message, file_path, line_number, column_number,
                       run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
-                      fixed_at, fixed_by, created_at, updated_at
+                      fixed_at, fixed_by, created_at, updated_at, escalation_task_id
             """,
             (
                 project_id,
@@ -100,7 +100,7 @@ def get_check_result(conn: psycopg.Connection, result_id: int) -> dict[str, Any]
             SELECT id, project_id, check_type, check_name, status, error_count,
                    warning_count, error_message, file_path, line_number, column_number,
                    run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
-                   fixed_at, fixed_by, created_at, updated_at
+                   fixed_at, fixed_by, created_at, updated_at, escalation_task_id
             FROM quality_check_results
             WHERE id = %s
             """,
@@ -158,7 +158,7 @@ def list_check_results(
             SELECT id, project_id, check_type, check_name, status, error_count,
                    warning_count, error_message, file_path, line_number, column_number,
                    run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
-                   fixed_at, fixed_by, created_at, updated_at
+                   fixed_at, fixed_by, created_at, updated_at, escalation_task_id
             FROM quality_check_results
             WHERE {where_clause}
             ORDER BY created_at DESC
@@ -230,7 +230,7 @@ def record_fix_attempt(
             RETURNING id, project_id, check_type, check_name, status, error_count,
                       warning_count, error_message, file_path, line_number, column_number,
                       run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
-                      fixed_at, fixed_by, created_at, updated_at
+                      fixed_at, fixed_by, created_at, updated_at, escalation_task_id
             """,
             (result_id,),
         )
@@ -264,7 +264,7 @@ def mark_fixed(
             RETURNING id, project_id, check_type, check_name, status, error_count,
                       warning_count, error_message, file_path, line_number, column_number,
                       run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
-                      fixed_at, fixed_by, created_at, updated_at
+                      fixed_at, fixed_by, created_at, updated_at, escalation_task_id
             """,
             (fixed_by, result_id),
         )
@@ -337,6 +337,90 @@ def get_project_health_summary(
         return summary
 
 
+def auto_close_resolved(
+    conn: psycopg.Connection,
+    project_id: str,
+    check_type: CheckType,
+) -> tuple[int, list[str]]:
+    """Auto-close unfixed issues when a check passes.
+
+    When a quality check passes, any previously unfixed errors for that
+    check type are considered resolved (e.g., the code was fixed externally).
+
+    Args:
+        conn: Database connection
+        project_id: Project ID
+        check_type: Check type that passed
+
+    Returns:
+        Tuple of (count of results marked as fixed, list of escalation task IDs to close)
+    """
+    with conn.cursor() as cur:
+        # First get any escalation tasks that should be closed
+        cur.execute(
+            """
+            SELECT DISTINCT escalation_task_id
+            FROM quality_check_results
+            WHERE project_id = %s
+              AND check_type = %s
+              AND status = 'fail'
+              AND fixed_at IS NULL
+              AND escalation_task_id IS NOT NULL
+            """,
+            (project_id, check_type),
+        )
+        task_ids = [row[0] for row in cur.fetchall()]
+
+        # Mark results as fixed
+        cur.execute(
+            """
+            UPDATE quality_check_results
+            SET fixed_at = NOW(),
+                fixed_by = 'auto_close_resolved',
+                updated_at = NOW()
+            WHERE project_id = %s
+              AND check_type = %s
+              AND status = 'fail'
+              AND fixed_at IS NULL
+            """,
+            (project_id, check_type),
+        )
+        return cur.rowcount, task_ids
+
+
+def mark_escalated(
+    conn: psycopg.Connection,
+    result_id: int,
+    task_id: str,
+) -> dict[str, Any] | None:
+    """Mark a check result as escalated to a blocking task.
+
+    Args:
+        conn: Database connection
+        result_id: Check result ID
+        task_id: ID of the blocking task created for manual review
+
+    Returns:
+        Updated check result dict
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE quality_check_results
+            SET escalation_task_id = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, project_id, check_type, check_name, status, error_count,
+                      warning_count, error_message, file_path, line_number, column_number,
+                      run_duration_ms, git_sha, triggered_by, fix_attempted, fix_attempts,
+                      fixed_at, fixed_by, created_at, updated_at, escalation_task_id, escalation_task_id
+            """,
+            (task_id, result_id),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(row) if row else None
+
+
 def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert a database row to a dict."""
     return {
@@ -360,4 +444,5 @@ def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
         "fixed_by": row[17],
         "created_at": row[18],
         "updated_at": row[19],
+        "escalation_task_id": row[20] if len(row) > 20 else None,
     }

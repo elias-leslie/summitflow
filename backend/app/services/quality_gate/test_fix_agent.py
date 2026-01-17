@@ -17,6 +17,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
+from .fix_agent import escalate_to_human
 
 logger = get_logger(__name__)
 
@@ -274,6 +275,8 @@ def fix_test_failure(
     attempts = check_result.get("fix_attempts", 0)
     if attempts >= MAX_FIX_ATTEMPTS:
         logger.info("max_attempts_reached", result_id=result_id, attempts=attempts)
+        # Create blocking task for manual review
+        escalate_to_human(conn, result_id)
         return "escalated"
 
     # Get project path
@@ -359,6 +362,8 @@ def fix_test_failure(
         # Check if we should escalate
         updated = qcr_store.get_check_result(conn, result_id)
         if updated and updated.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
+            # Create blocking task for manual review
+            escalate_to_human(conn, result_id)
             return "escalated"
         return "failed"
 

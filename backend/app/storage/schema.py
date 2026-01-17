@@ -599,6 +599,11 @@ def init_schema() -> None:
             ("updated_at TIMESTAMPTZ DEFAULT NOW()", "tasks"),
             ("updated_at TIMESTAMPTZ DEFAULT NOW()", "task_subtasks"),
             ("updated_at TIMESTAMPTZ DEFAULT NOW()", "acceptance_criteria"),
+            # escalation tracking for quality check results (migration 080)
+            (
+                "escalation_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
+                "quality_check_results",
+            ),
         ]:
             try:
                 # Note: table and column names come from controlled internal list, not user input
@@ -617,6 +622,12 @@ def init_schema() -> None:
         # Create indexes for columns added via ALTER TABLE
         with contextlib.suppress(psycopg.errors.UndefinedColumn):
             cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id)")
+        with contextlib.suppress(psycopg.errors.UndefinedColumn):
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_qcr_escalation_task_id
+                ON quality_check_results(escalation_task_id)
+                WHERE escalation_task_id IS NOT NULL
+            """)
 
         conn.commit()
 

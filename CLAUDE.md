@@ -16,6 +16,7 @@ Fight entropy. Leave the codebase better than you found it. Patterns you establi
 |--------|-----|
 | Find work | `st ready` |
 | Execute | `/do_it <task-id>` |
+| Quality check | `dt --check` or `st health` |
 | Commit | `/commit_it` (NEVER direct git) |
 | Restart | `bash ~/summitflow/scripts/restart.sh` |
 
@@ -25,6 +26,8 @@ Fight entropy. Leave the codebase better than you found it. Patterns you establi
 2. **NEVER say "done"** without restart + verify
 3. **Backend changes need UI** - complete the vertical slice
 4. **Track bugs immediately** - `st bug "Fix: X"`
+5. **Use `dt` for all quality checks** - `dt --check`, `dt ruff`, `dt pytest` (see `dev-tools-exclusive.md`)
+6. **Check `st health`** - quality gate must pass before autonomous execution
 
 ## URLs
 
@@ -35,4 +38,4 @@ Fight entropy. Leave the codebase better than you found it. Patterns you establi
 
 ---
 
-**Version**: 5.1.0
+**Version**: 5.2.0

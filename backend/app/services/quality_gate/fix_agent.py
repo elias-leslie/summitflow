@@ -19,6 +19,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import AgentType, get_agent
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
+from ...storage.tasks.core import create_task
 
 logger = get_logger(__name__)
 
@@ -45,6 +46,110 @@ def get_escalation_level(attempts: int) -> str:
         return "SUPERVISOR"
     else:
         return "HUMAN"
+
+
+def escalate_to_human(
+    conn: psycopg.Connection[Any],
+    result_id: int,
+) -> str | None:
+    """Create a blocking bug task for manual review of an unfixable error.
+
+    Called when fix attempts exceed MAX_FIX_ATTEMPTS (3 worker + 2 supervisor).
+    Creates a P1 bug task linked to the check result.
+
+    Args:
+        conn: Database connection
+        result_id: ID of the quality_check_result to escalate
+
+    Returns:
+        Created task ID, or None if escalation failed
+    """
+    check_result = qcr_store.get_check_result(conn, result_id)
+    if not check_result:
+        logger.error("check_result_not_found_for_escalation", result_id=result_id)
+        return None
+
+    # Skip if already escalated
+    existing_task_id = check_result.get("escalation_task_id")
+    if existing_task_id:
+        logger.info(
+            "already_escalated",
+            result_id=result_id,
+            task_id=existing_task_id,
+        )
+        return str(existing_task_id)
+
+    check_type = check_result["check_type"]
+    file_path = check_result.get("file_path", "unknown")
+    line_number = check_result.get("line_number")
+    error_message = check_result.get("error_message", "")[:200]  # Truncate for title
+    check_name = check_result.get("check_name", "")
+
+    # Build task title
+    location = f"{file_path}:{line_number}" if line_number else file_path
+    if check_name:
+        title = f"Fix: {check_type} {check_name} in {location}"
+    else:
+        title = f"Fix: {check_type} error in {location}"
+
+    # Build description with context
+    description_parts = [
+        f"**Auto-fix failed after {MAX_FIX_ATTEMPTS} attempts.**",
+        "",
+        f"**Check type:** {check_type}",
+        f"**File:** {file_path}",
+    ]
+    if line_number:
+        description_parts.append(f"**Line:** {line_number}")
+    if check_name:
+        description_parts.append(f"**Rule/Check:** {check_name}")
+    description_parts.extend(
+        [
+            "",
+            "**Error message:**",
+            "```",
+            error_message,
+            "```",
+            "",
+            f"**Quality check result ID:** {result_id}",
+            "",
+            "This error could not be fixed automatically by the 3-2-1 escalation pipeline:",
+            "- 3 attempts with GEMINI_FLASH (worker level)",
+            "- 2 attempts with CLAUDE_SONNET (supervisor level)",
+            "",
+            "Manual investigation required.",
+        ]
+    )
+    description = "\n".join(description_parts)
+
+    try:
+        task = create_task(
+            project_id=check_result["project_id"],
+            title=title,
+            description=description,
+            priority=1,  # P1 - high priority
+            task_type="bug",
+            complexity="STANDARD",
+        )
+        task_id: str = task["id"]
+
+        # Link the check result to the task
+        qcr_store.mark_escalated(conn, result_id, task_id)
+        conn.commit()
+
+        logger.info(
+            "escalated_to_task",
+            result_id=result_id,
+            task_id=task_id,
+            check_type=check_type,
+            file_path=file_path,
+        )
+
+        return task_id
+
+    except Exception as e:
+        logger.error("escalation_failed", result_id=result_id, error=str(e))
+        return None
 
 
 def _read_file_content(file_path: Path, context_lines: int = 10) -> str | None:
@@ -284,6 +389,8 @@ def fix_lint_type_error(
             result_id=result_id,
             attempts=attempts,
         )
+        # Create blocking task for manual review
+        escalate_to_human(conn, result_id)
         return "escalated_human"
 
     # Get project path
@@ -375,6 +482,8 @@ IMPORTANT: Previous attempts failed. Consider:
         # Check if we should escalate
         updated = qcr_store.get_check_result(conn, result_id)
         if updated and updated.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
+            # Create blocking task for manual review
+            escalate_to_human(conn, result_id)
             return "escalated_human"
         elif level == "WORKER" and updated and updated.get("fix_attempts", 0) >= WORKER_ATTEMPTS:
             return "escalated_supervisor"

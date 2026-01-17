@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from ..storage import quality_check_results as qcr_store
 from ..storage.connection import get_connection
+from ..storage.tasks.core import update_task
 
 router = APIRouter()
 
@@ -47,6 +48,7 @@ class CheckResultResponse(BaseModel):
     fixed_by: str | None
     created_at: datetime
     updated_at: datetime
+    escalation_task_id: str | None = None
 
 
 class CheckResultListResponse(BaseModel):
@@ -132,6 +134,7 @@ def _result_to_response(result: dict[str, Any]) -> CheckResultResponse:
         fixed_by=result["fixed_by"],
         created_at=result["created_at"],
         updated_at=result["updated_at"],
+        escalation_task_id=result.get("escalation_task_id"),
     )
 
 
@@ -237,6 +240,8 @@ async def sync_results(
 
     created_count = 0
 
+    auto_closed_count = 0
+
     with get_connection() as conn:
         if request.status == "pass" or not request.errors:
             # Single pass/error record
@@ -252,6 +257,15 @@ async def sync_results(
                 triggered_by=request.triggered_by,
             )
             created_count = 1
+
+            # Auto-close any unfixed errors for this check type
+            if request.status == "pass":
+                auto_closed_count, task_ids = qcr_store.auto_close_resolved(
+                    conn, project_id, request.check_type
+                )
+                # Close any linked escalation tasks
+                for task_id in task_ids:
+                    update_task(task_id, status="completed")
         else:
             # Create record for each error
             for error in request.errors:
@@ -279,6 +293,7 @@ async def sync_results(
         "check_type": request.check_type,
         "status": request.status,
         "created_count": created_count,
+        "auto_closed_count": auto_closed_count,
     }
 
 

@@ -49,6 +49,16 @@ export interface ProjectHealth {
   checked_at: string
 }
 
+export interface QualityGateHealth {
+  project_id: string
+  overall_pass: boolean
+  total_unfixed: number
+  checks: Record<
+    string,
+    { status: string; error_count: number; warning_count: number; unfixed_count: number }
+  >
+}
+
 export interface ProjectAgentConfig {
   claude_enabled: boolean
   gemini_enabled: boolean
@@ -106,6 +116,12 @@ export async function fetchProject(id: string): Promise<Project> {
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/health`, {
     errorMessage: 'Failed to check project health',
+  })
+}
+
+export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth> {
+  return fetchWithErrorHandling(`/api/projects/${id}/quality/health`, {
+    errorMessage: 'Failed to fetch quality gate health',
   })
 }
 

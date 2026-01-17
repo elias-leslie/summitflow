@@ -7,7 +7,11 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { fetchProjectHealth, type ProjectWithStats } from '@/lib/api'
+import {
+  fetchProjectHealth,
+  fetchQualityGateHealth,
+  type ProjectWithStats,
+} from '@/lib/api'
 
 interface ProjectCardProps {
   project: ProjectWithStats
@@ -20,6 +24,13 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
+    enabled: showHealth,
+    refetchInterval: showHealth ? 30000 : false,
+  })
+
+  const { data: qualityGate, isLoading: qualityLoading } = useQuery({
+    queryKey: ['quality-gate-health', project.id],
+    queryFn: () => fetchQualityGateHealth(project.id),
     enabled: showHealth,
     refetchInterval: showHealth ? 30000 : false,
   })
@@ -114,6 +125,32 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
         {/* Health status with glow */}
         <div className="flex items-center gap-2">
+          {/* Quality gate indicator */}
+          {qualityLoading ? (
+            <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
+          ) : qualityGate ? (
+            <div
+              className={clsx(
+                'w-3 h-3 rounded-full',
+                qualityGate.overall_pass
+                  ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]'
+                  : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]',
+              )}
+              title={
+                qualityGate.overall_pass
+                  ? 'Quality gate passing'
+                  : `Quality gate: ${qualityGate.total_unfixed} unfixed issues`
+              }
+              data-testid="quality-gate-indicator"
+            />
+          ) : (
+            <div
+              className="w-3 h-3 rounded-full bg-slate-700"
+              data-testid="quality-gate-indicator"
+            />
+          )}
+
+          {/* Service health indicator */}
           {healthLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-phosphor-500 rounded-full animate-spin" />
           ) : health ? (
@@ -124,6 +161,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
                   : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]',
               )}
+              title={health.healthy ? 'Service healthy' : `Service error: ${health.error}`}
               data-testid="project-health-indicator"
             />
           ) : (
