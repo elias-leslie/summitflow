@@ -11,7 +11,7 @@ echo "Clearing Next.js cache..."
 rm -rf .next/cache
 
 echo "Building..."
-npm run build --silent
+pnpm build --silent
 
 echo "Restarting service..."
 systemctl --user restart summitflow-frontend
