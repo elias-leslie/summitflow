@@ -28,6 +28,7 @@ from .api import (
     patterns,
     projects,
     prompts,
+    quality_gate,
     refactor_sessions,
     schemas,
     tasks,
@@ -107,6 +108,7 @@ app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
+app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
 
 from .api import ideas, ws_execution  # noqa: E402
 

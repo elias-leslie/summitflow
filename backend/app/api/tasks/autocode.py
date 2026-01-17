@@ -19,7 +19,9 @@ from ...services.agent_hub import (
     ExecutionState,
     TaskContext,
 )
+from ...storage import quality_check_results as qcr_store
 from ...storage import tasks as task_store
+from ...storage.connection import get_connection
 from ...storage.subtasks import get_subtasks_for_task
 
 logger = get_logger(__name__)
@@ -145,6 +147,20 @@ def start_autocode(
         raise HTTPException(
             status_code=400,
             detail=f"Task {task_id} has no done_when criteria. Cannot run autocode without acceptance criteria.",
+        )
+
+    # 3.5 Check quality gate status - block if failing
+    with get_connection() as conn:
+        health = qcr_store.get_project_health_summary(conn, project_id)
+    if not health["overall_pass"] and health["total_unfixed"] > 0:
+        failing_checks = [
+            f"{ct}: {info['unfixed_count']} unfixed"
+            for ct, info in health["checks"].items()
+            if info.get("unfixed_count", 0) > 0
+        ]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Quality gate failing. Fix errors before autocode: {', '.join(failing_checks)}",
         )
 
     # 4. Find first incomplete subtask

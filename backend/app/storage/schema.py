@@ -196,7 +196,8 @@ def init_schema() -> None:
                     enriched_by TEXT,
                     enriched_at TIMESTAMPTZ,
                     -- Autonomous execution mode
-                    autonomous BOOLEAN DEFAULT FALSE
+                    autonomous BOOLEAN DEFAULT FALSE,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
                 """
         )
@@ -285,6 +286,7 @@ def init_schema() -> None:
                     measurement VARCHAR(20) DEFAULT 'test',
                     threshold TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
                     created_by_task_id TEXT,
                     UNIQUE (project_id, criterion_id)
                 )
@@ -593,6 +595,10 @@ def init_schema() -> None:
             ("details JSONB", "task_subtasks"),
             # Step-level specs - implementation details per step, populated from plan.json (migration 062)
             ("spec JSONB", "task_subtask_steps"),
+            # updated_at columns for tracking modifications (migration 077)
+            ("updated_at TIMESTAMPTZ DEFAULT NOW()", "tasks"),
+            ("updated_at TIMESTAMPTZ DEFAULT NOW()", "task_subtasks"),
+            ("updated_at TIMESTAMPTZ DEFAULT NOW()", "acceptance_criteria"),
         ]:
             try:
                 # Note: table and column names come from controlled internal list, not user input

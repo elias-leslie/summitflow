@@ -51,7 +51,7 @@ TARGET="all"
 # Check for subcommands (first positional argument)
 # All TOOL_DEFS keys are valid subcommands
 case "${1:-}" in
-    pytest|ruff|mypy|eslint|tsc) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
+    pytest|ruff|mypy|biome|tsc) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
 esac
 
 # Parse remaining flags
@@ -336,7 +336,7 @@ quick_check() {
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
-        run_tool_toon eslint || ((errors++))
+        run_tool_toon biome || ((errors++))
         run_tool_toon tsc || ((errors++))
     fi
 
@@ -349,7 +349,7 @@ quick_check() {
     return $errors
 }
 
-# Frontend-only check: skip Python tools, run only eslint and tsc
+# Frontend-only check: skip Python tools, run only biome and tsc
 # Useful for pure frontend projects (e.g., monkey-fight)
 frontend_only_check() {
     local project_dir="$1"
@@ -364,7 +364,7 @@ frontend_only_check() {
         return 1
     fi
 
-    run_tool_toon eslint || ((errors++))
+    run_tool_toon biome || ((errors++))
     run_tool_toon tsc || ((errors++))
 
     if [[ $errors -eq 0 ]]; then
@@ -388,7 +388,7 @@ full_check() {
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
-        run_tool_toon eslint || ((errors++))
+        run_tool_toon biome || ((errors++))
         run_tool_toon tsc || ((errors++))
     fi
 
@@ -540,15 +540,18 @@ declare -A TOOL_DEFS
 TOOL_DEFS[ruff]='LINT|ruff|check --output-format=concise|wc_l|backend|1|1'
 TOOL_DEFS[mypy]='TYPES|mypy|--ignore-missing-imports|grep_error|backend|0|1'
 TOOL_DEFS[pytest]='TEST|pytest|--tb=short -q|pytest_parse|backend|0|0'
-TOOL_DEFS[eslint]='ESLINT|npx|eslint .|grep_warn_error|frontend|1|0'
+TOOL_DEFS[biome]='BIOME|npx|biome lint . --max-diagnostics=100|biome_parse|frontend|1|0'
 TOOL_DEFS[tsc]='TSC|npx|tsc --noEmit|grep_error_ts|frontend|1|0'
 
-# Check if project has frontend (eslint.config.* or package.json in frontend/)
+# Check if project has frontend (biome.json, eslint.config.*, or package.json in frontend/)
 has_frontend() {
     local project_dir="${1:-$PROJECT_DIR}"
     local frontend_dir="$project_dir/frontend"
-    # Check for frontend/ with eslint config or package.json
+    # Check for frontend/ with biome, eslint config, or package.json
     if [[ -d "$frontend_dir" ]]; then
+        if [[ -f "$frontend_dir/biome.json" ]]; then
+            return 0
+        fi
         if ls "$frontend_dir"/eslint.config.* 2>/dev/null | head -1 >/dev/null; then
             return 0
         fi
@@ -556,7 +559,10 @@ has_frontend() {
             return 0
         fi
     fi
-    # Check root for frontend-only projects (eslint config OR package.json with no backend/)
+    # Check root for frontend-only projects (biome, eslint config, OR package.json with no backend/)
+    if [[ -f "$project_dir/biome.json" ]]; then
+        return 0
+    fi
     if ls "$project_dir"/eslint.config.* 2>/dev/null | head -1 >/dev/null; then
         return 0
     fi
@@ -615,6 +621,12 @@ count_issues() {
             # ESLint style: count lines with "warning" or "error"
             local count
             count=$(echo "$output" | grep -cE '\s+(warning|error)\s+' ) || count=0
+            echo "$count"
+            ;;
+        biome_parse)
+            # Biome output: count lines with lint/ prefix (rule violations)
+            local count
+            count=$(echo "$output" | grep -c "lint/") || count=0
             echo "$count"
             ;;
         pytest_parse)
@@ -716,14 +728,14 @@ show_help() {
     echo "  pytest           Run pytest with TOON output (<100 bytes on pass)"
     echo "  ruff             Run ruff with TOON output (<50 bytes on clean)"
     echo "  mypy             Run mypy with TOON output (<50 bytes on clean)"
-    echo "  eslint           Run eslint with TOON output (frontend)"
+    echo "  biome            Run biome lint with TOON output (frontend)"
     echo "  tsc              Run tsc with TOON output (frontend)"
     echo ""
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"
     echo "  --check, -c      Quality gate: lint, types, tests + frontend (current project)"
     echo "  --quick, -q      Fast check: lint, types + frontend (for commits)"
-    echo "  --frontend-only  Frontend only: eslint + tsc (skip Python tools)"
+    echo "  --frontend-only  Frontend only: biome + tsc (skip Python tools)"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
     echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"
