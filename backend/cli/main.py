@@ -13,6 +13,7 @@ from .commands import (
     criterion,
     deps,
     git,
+    health,
     projects,
     sessions,
     step,
@@ -113,6 +114,12 @@ SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status
 
+HEALTH (quality gate):
+  health                                   # show quality gate summary (default)
+  health status                            # same as above
+  health results [--type T] [--status S] [--unfixed] [--limit N]
+  health sync <type> <status> [--errors N] [--warnings N] [--triggered-by commit|manual|ci|agent]
+
 EXAMPLES:
   st ready                                 # find work (compact by default)
   st update task-abc --status running      # claim
@@ -152,6 +159,7 @@ app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(tasks.qa_app, name="qa")
+app.add_typer(health.app, name="health")
 
 
 @app.callback()

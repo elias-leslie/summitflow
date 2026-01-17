@@ -112,6 +112,23 @@ strip_ansi() {
     sed 's/\x1b\[[0-9;]*m//g' | sed 's/\x1b\[K//g'
 }
 
+# Sync quality check result to SummitFlow (non-blocking, silent on failure)
+# Args: check_type status error_count [triggered_by]
+sync_quality_result() {
+    local check_type="$1"
+    local status="$2"
+    local error_count="${3:-0}"
+    local triggered_by="${4:-commit}"
+
+    # Only sync if st CLI is available and we're in a SummitFlow-managed project
+    if ! command -v st &>/dev/null; then
+        return 0
+    fi
+
+    # Silently sync - don't let failures affect the main command
+    st health sync "$check_type" "$status" --errors "$error_count" --triggered-by "$triggered_by" >/dev/null 2>&1 || true
+}
+
 # Get installed version of a package
 get_installed_version() {
     local venv="$1"
@@ -710,11 +727,15 @@ run_tool_toon() {
         # Clear stale details file on success (don't rotate passes)
         rm -f "$details_file"
         echo "$label:OK:$count"
+        # Sync pass result to quality gate
+        sync_quality_result "$tool_name" "pass" 0
     else
         # Rotate previous failures before writing new one
         rotate_details "$details_file"
         echo "$output" | strip_ansi > "$details_file"
         echo "$label:FAIL:$count|details:$details_file"
+        # Sync fail result to quality gate
+        sync_quality_result "$tool_name" "fail" "$count"
         return 1
     fi
 }
