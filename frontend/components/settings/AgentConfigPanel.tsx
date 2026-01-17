@@ -3,6 +3,10 @@
 import { clsx } from 'clsx'
 import { Bot, Settings2, Sparkles } from 'lucide-react'
 import {
+  CLAUDE_MODEL_OPTIONS,
+  GEMINI_MODEL_OPTIONS,
+} from '../../lib/constants/models'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -32,19 +36,6 @@ const AGENTS = [
   { id: 'gemini', label: 'Gemini', icon: Bot },
 ]
 
-const CLAUDE_MODELS = [
-  { id: 'default', label: 'Default (Claude Sonnet 4.5)' },
-  { id: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
-  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-]
-
-const GEMINI_MODELS = [
-  { id: 'default', label: 'Default (Gemini 3 Flash)' },
-  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
-]
-
 export function AgentConfigPanel({
   agentOverride,
   modelOverride,
@@ -55,7 +46,8 @@ export function AgentConfigPanel({
   className,
 }: AgentConfigPanelProps) {
   const selectedAgent = agentOverride || 'default'
-  const models = selectedAgent === 'claude' ? CLAUDE_MODELS : GEMINI_MODELS
+  const models =
+    selectedAgent === 'claude' ? CLAUDE_MODEL_OPTIONS : GEMINI_MODEL_OPTIONS
   const selectedModel = modelOverride || 'default'
 
   const handleAgentChange = (value: string) => {

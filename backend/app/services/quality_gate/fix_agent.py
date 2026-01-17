@@ -473,7 +473,7 @@ IMPORTANT: Previous attempts failed. Consider:
 
     # Verify the fix worked
     if _verify_fix(project_path, check_type, file_rel_path):
-        fixed_by = "gemini-flash" if level == "WORKER" else "claude-sonnet"
+        fixed_by = GEMINI_FLASH if level == "WORKER" else CLAUDE_SONNET
         qcr_store.mark_fixed(conn, result_id, fixed_by=fixed_by)
         logger.info("fix_successful", result_id=result_id, check_type=check_type, model=fixed_by)
         return "fixed"

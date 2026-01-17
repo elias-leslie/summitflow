@@ -354,7 +354,7 @@ def apply_enrichment_to_task(
         priority=enriched.priority,
         labels=enriched.labels,
         enrichment_status="review",
-        enriched_by="claude-opus-4.5",
+        enriched_by=CLAUDE_OPUS_FULL,
         enriched_at=datetime.now(UTC),
     )
 

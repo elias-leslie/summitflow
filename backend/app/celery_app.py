@@ -175,7 +175,6 @@ from app.tasks import (  # noqa: F401, E402
     evidence_capture,
     evidence_tasks,
     explorer_tasks,
-    lifecycle_cleanup,
     orchestrator_runner,
 )
 from app.tasks.autonomous import ideas  # noqa: F401, E402
