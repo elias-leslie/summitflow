@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import { clsx } from 'clsx'
 import {
   ArrowDown,
@@ -318,7 +319,7 @@ export function EvidenceCaptureModal({
       const base64 = await captureScreenshotBase64()
 
       const response = await fetch(
-        `/api/projects/${projectId}/evidence/debug-capture`,
+        buildApiUrl(`/api/projects/${projectId}/evidence/debug-capture`),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -375,7 +376,7 @@ export function EvidenceCaptureModal({
 
         // Send to viewport-capture endpoint (creates DB entry for feature)
         const response = await fetch(
-          `/api/projects/${projectId}/evidence/viewport-capture`,
+          buildApiUrl(`/api/projects/${projectId}/evidence/viewport-capture`),
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -543,7 +544,7 @@ export function EvidenceCaptureModal({
       }
       try {
         const response = await fetch(
-          `/api/projects/${projectId}/features/quick`,
+          buildApiUrl(`/api/projects/${projectId}/features/quick`),
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

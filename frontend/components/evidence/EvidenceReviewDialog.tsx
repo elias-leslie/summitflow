@@ -1,6 +1,7 @@
 'use client'
 
 import { useMutation } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   AlertCircle,
   Bot,
@@ -82,7 +83,7 @@ async function requestAgentReview(
   agent: 'claude' | 'gemini',
 ): Promise<AgentReviewResponse> {
   const res = await fetch(
-    `/api/projects/${projectId}/evidence/${evidenceId}/agent-review`,
+    buildApiUrl(`/api/projects/${projectId}/evidence/${evidenceId}/agent-review`),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   AlertTriangle,
   Bug,
@@ -75,7 +76,7 @@ async function fetchEvidenceById(
 ): Promise<EvidenceDetail | null> {
   try {
     const res = await fetch(
-      `/api/projects/${projectId}/evidence/by-id/${evidenceId}`,
+      buildApiUrl(`/api/projects/${projectId}/evidence/by-id/${evidenceId}`),
     )
     if (!res.ok) return null
     return res.json()
@@ -91,7 +92,7 @@ async function reviewRegression(
   notes?: string,
 ): Promise<{ success: boolean }> {
   const res = await fetch(
-    `/api/projects/${projectId}/evidence/regressions/${regressionId}/review`,
+    buildApiUrl(`/api/projects/${projectId}/evidence/regressions/${regressionId}/review`),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

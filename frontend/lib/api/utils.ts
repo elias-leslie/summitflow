@@ -2,6 +2,8 @@
  * Shared API utilities - DRY helpers for common fetch patterns.
  */
 
+import { getApiBaseUrl } from '../api-config'
+
 /**
  * Build query string from optional params object.
  * Skips undefined/null values.
@@ -42,10 +44,11 @@ export async function fetchWithTimeout(
 }
 
 /**
- * Get API base URL - empty for relative URLs with Next.js rewrite proxy.
+ * Get API base URL for backend calls.
+ * Delegates to api-config.ts for proper hostname detection.
  */
 export function getApiBase(): string {
-  return ''
+  return getApiBaseUrl()
 }
 
 /**

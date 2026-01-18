@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   AlertTriangle,
   Bot,
@@ -130,7 +131,7 @@ export function EvidenceTab({
       if (entryId) params.set('entry_id', String(entryId))
 
       const response = await fetch(
-        `/api/projects/${projectId}/evidence?${params}`,
+        buildApiUrl(`/api/projects/${projectId}/evidence?${params}`),
       )
       if (!response.ok) throw new Error('Failed to fetch evidence')
       return response.json() as Promise<{
@@ -147,7 +148,7 @@ export function EvidenceTab({
     queryKey: ['evidence', projectId, 'summary'],
     queryFn: async () => {
       const response = await fetch(
-        `/api/projects/${projectId}/evidence/summary`,
+        buildApiUrl(`/api/projects/${projectId}/evidence/summary`),
       )
       if (!response.ok) throw new Error('Failed to fetch summary')
       return response.json() as Promise<EvidenceSummary>

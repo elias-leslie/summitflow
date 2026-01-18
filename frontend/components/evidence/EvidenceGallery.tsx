@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   AlertTriangle,
   Calendar,
@@ -76,7 +77,7 @@ async function fetchEvidenceList(
   if (params.search) searchParams.set('search', params.search)
 
   const res = await fetch(
-    `/api/projects/${projectId}/evidence?${searchParams.toString()}`,
+    buildApiUrl(`/api/projects/${projectId}/evidence?${searchParams.toString()}`),
   )
   if (!res.ok) throw new Error('Failed to fetch evidence')
   return res.json()

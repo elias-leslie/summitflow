@@ -1,6 +1,7 @@
 'use client'
 
 import { clsx } from 'clsx'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   CheckCircle,
   ChevronDown,
@@ -65,7 +66,7 @@ export function CheckpointViewer({
     setLoadingPrompt(true)
     try {
       const response = await fetch(
-        `/api/projects/${checkpoint.project_id}/checkpoints/${checkpoint.id}/resume`,
+        buildApiUrl(`/api/projects/${checkpoint.project_id}/checkpoints/${checkpoint.id}/resume`),
         { method: 'POST' },
       )
       if (response.ok) {

@@ -12,6 +12,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { buildApiUrl } from '@/lib/api-config'
 import {
   Activity,
   AlertCircle,
@@ -69,7 +70,7 @@ async function fetchRefactorTargets(
 ): Promise<RefactorTargetsResponse> {
   const params = new URLSearchParams({ code_only: String(codeOnly) })
   const res = await fetch(
-    `/api/projects/${projectId}/explorer/refactor-targets?${params}`,
+    buildApiUrl(`/api/projects/${projectId}/explorer/refactor-targets?${params}`),
   )
   if (!res.ok) {
     throw new Error('Failed to fetch refactor targets')
