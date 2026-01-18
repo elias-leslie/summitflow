@@ -71,6 +71,9 @@ app.add_middleware(
         "https://dev.summitflow.dev",
         "http://localhost:4001",
         "https://test1.summitflow.dev",
+        # Agent Hub cross-origin requests
+        "http://localhost:3003",
+        "https://agent.summitflow.dev",
     ],
     allow_credentials=True,
     allow_methods=["*"],
