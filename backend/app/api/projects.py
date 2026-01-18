@@ -398,14 +398,6 @@ class AgentConfigResponse(BaseModel):
     claude_model: str
     gemini_model: str
 
-    # Memory system controls
-    memory_enabled: bool = True
-    observations_enabled: bool = True
-    diary_enabled: bool = True
-    patterns_enabled: bool = True
-    checkpoints_enabled: bool = True
-    context_injection_enabled: bool = True
-
     # Component management
     component_source: str = "manual"
 
@@ -414,10 +406,6 @@ class AgentConfigResponse(BaseModel):
     autonomous_start_hour: int = 0
     autonomous_end_hour: int = 24
     autonomous_max_concurrent: int = 1
-
-    # Extraction throttle
-    extraction_enabled: bool = True
-    extraction_rpm_limit: int = 10
 
 
 class AgentConfigUpdate(BaseModel):
@@ -429,23 +417,11 @@ class AgentConfigUpdate(BaseModel):
     claude_model: str | None = None
     gemini_model: str | None = None
 
-    # Memory system controls
-    memory_enabled: bool | None = None
-    observations_enabled: bool | None = None
-    diary_enabled: bool | None = None
-    patterns_enabled: bool | None = None
-    checkpoints_enabled: bool | None = None
-    context_injection_enabled: bool | None = None
-
     # Component management
     component_source: str | None = None
 
     # Autonomous execution
     autonomous_enabled: bool | None = None
-
-    # Extraction throttle
-    extraction_enabled: bool | None = None
-    extraction_rpm_limit: int | None = None
 
 
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
@@ -497,20 +473,6 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
             )
         config_update["gemini_model"] = update.gemini_model
 
-    # Memory system controls - all are simple boolean flags
-    if update.memory_enabled is not None:
-        config_update["memory_enabled"] = update.memory_enabled
-    if update.observations_enabled is not None:
-        config_update["observations_enabled"] = update.observations_enabled
-    if update.diary_enabled is not None:
-        config_update["diary_enabled"] = update.diary_enabled
-    if update.patterns_enabled is not None:
-        config_update["patterns_enabled"] = update.patterns_enabled
-    if update.checkpoints_enabled is not None:
-        config_update["checkpoints_enabled"] = update.checkpoints_enabled
-    if update.context_injection_enabled is not None:
-        config_update["context_injection_enabled"] = update.context_injection_enabled
-
     # Component management
     if update.component_source is not None:
         valid_sources = ("pages", "endpoints", "directories", "manual")
@@ -524,18 +486,6 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
     # Autonomous execution
     if update.autonomous_enabled is not None:
         config_update["autonomous_enabled"] = update.autonomous_enabled
-
-    # Extraction throttle
-    if update.extraction_enabled is not None:
-        config_update["extraction_enabled"] = update.extraction_enabled
-    if update.extraction_rpm_limit is not None:
-        valid_rpm = (0, 5, 10, 15, 30, 60)
-        if update.extraction_rpm_limit not in valid_rpm:
-            raise HTTPException(
-                status_code=400,
-                detail=f"extraction_rpm_limit must be one of: {valid_rpm}",
-            )
-        config_update["extraction_rpm_limit"] = update.extraction_rpm_limit
 
     if not config_update:
         raise HTTPException(status_code=400, detail="No fields to update")

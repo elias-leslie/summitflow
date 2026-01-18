@@ -5,15 +5,12 @@ import {
   AlertTriangle,
   Archive,
   ArrowDownCircle,
-  Brain,
   Bug,
   CheckSquare,
-  ExternalLink,
   Package,
   RefreshCw,
   Search,
   Settings,
-  Terminal,
   Zap,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -341,15 +338,6 @@ export function TopBar() {
 
         {/* Right side actions - global features + settings */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Memory */}
-          <Link
-            href="/memory"
-            className="p-2.5 rounded-lg text-slate-400 hover:bg-purple-500/10 hover:text-purple-400 transition-all duration-200"
-            title="Memory"
-          >
-            <Brain className="w-5 h-5" />
-          </Link>
-
           {/* Backups */}
           <Link
             href="/backups"
@@ -358,23 +346,6 @@ export function TopBar() {
           >
             <Archive className="w-5 h-5" />
           </Link>
-
-          {/* Terminal - external */}
-          <a
-            href={(() => {
-              const params = new URLSearchParams()
-              if (selectedProjectId) params.set('project', selectedProjectId)
-              const query = params.toString()
-              return `https://terminal.summitflow.dev${query ? `?${query}` : ''}`
-            })()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2.5 rounded-lg text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all duration-200 flex items-center gap-0.5"
-            title="Terminal"
-          >
-            <Terminal className="w-5 h-5" />
-            <ExternalLink className="w-3 h-3" />
-          </a>
 
           {/* Auto-exec Status Indicator */}
           {autoExecStatus && selectedProjectId && (

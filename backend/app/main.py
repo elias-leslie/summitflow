@@ -13,12 +13,10 @@ from .api import (
     autonomous,
     backups,
     celery_endpoints,
-    context,
     design_standards,
     evidence,
     explorer,
     git,
-    hooks,
     implementation,
     notifications,
     projects,
@@ -85,8 +83,6 @@ app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
-app.include_router(context.router, prefix="/api/projects", tags=["context"])
-app.include_router(hooks.router, prefix="/api", tags=["hooks"])
 app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(prompts.router, prefix="/api", tags=["prompts"])

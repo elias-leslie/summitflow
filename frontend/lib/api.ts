@@ -4,7 +4,6 @@
 // Re-export domain modules
 export * from './api/backups'
 export * from './api/evidence'
-export * from './api/extraction'
 export * from './api/git'
 export * from './api/notifications'
 export * from './api/projects'

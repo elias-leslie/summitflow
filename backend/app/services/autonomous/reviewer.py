@@ -19,7 +19,6 @@ from typing import Any, Literal
 from ...constants import CLAUDE_OPUS
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
-from ...services.context_helpers import filter_rules_by_files
 from ...services.git_service import capture_diff, get_diff_stats, revert_to
 from ...storage import tasks as task_store
 
@@ -267,14 +266,8 @@ def opus_review(
             "reviewed_at": datetime.now(UTC).isoformat(),
         }
 
-    # Get relevant rules based on affected files
-    plan_content = task.get("plan_content") or {}
-    affected_files = plan_content.get("context", {}).get("affected_files", [])
-    if not affected_files:
-        # Try to extract from diff
-        affected_files = _extract_files_from_diff(diff)
-
-    rules = filter_rules_by_files(affected_files)
+    # Rules consolidated into CLAUDE.md - no longer filter by files
+    rules: list[str] = []
 
     # Build and execute review prompt
     prompt = _build_review_prompt(diff, diff_stats, task, rules)

@@ -22,14 +22,6 @@ class AgentConfig(TypedDict, total=False):
     claude_model: str  # "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"
     gemini_model: str  # "gemini-3-flash-preview", "gemini-3-pro-preview"
 
-    # Memory system controls
-    memory_enabled: bool  # Master switch - disables all memory when false
-    observations_enabled: bool  # Tool observation capture
-    diary_enabled: bool  # Session diary entries
-    patterns_enabled: bool  # Pattern detection
-    checkpoints_enabled: bool  # Session checkpoints
-    context_injection_enabled: bool  # Auto-inject context at session start
-
     # Component management
     component_source: str  # "pages", "endpoints", "directories", or "manual"
 
@@ -39,10 +31,6 @@ class AgentConfig(TypedDict, total=False):
     autonomous_end_hour: int  # Hour (0-23) when autonomous execution must stop
     autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
 
-    # Extraction throttle controls
-    extraction_enabled: bool  # Master kill switch for AI extraction
-    extraction_rpm_limit: int  # Requests per minute limit (0=disabled, 60=unlimited)
-
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
@@ -50,13 +38,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "default_agent": "gemini",
     "claude_model": DEFAULT_CLAUDE_MODEL,
     "gemini_model": DEFAULT_GEMINI_MODEL,
-    # Memory defaults - all enabled for backward compatibility
-    "memory_enabled": True,
-    "observations_enabled": True,
-    "diary_enabled": True,
-    "patterns_enabled": True,
-    "checkpoints_enabled": True,
-    "context_injection_enabled": True,
     # Component management
     "component_source": "manual",
     # Autonomous execution - disabled by default (opt-in)
@@ -64,9 +45,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_start_hour": 0,  # Default: 24/7 execution allowed
     "autonomous_end_hour": 24,  # 24 means end of day (midnight)
     "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
-    # Extraction throttle - enabled, default 10 RPM (lean and mean)
-    "extraction_enabled": True,
-    "extraction_rpm_limit": 10,
 }
 
 
@@ -200,68 +178,6 @@ def get_enabled_agents(project_id: str) -> list[str]:
     if config.get("gemini_enabled", True):
         enabled.append("gemini")
     return enabled
-
-
-# Valid memory feature names for is_memory_feature_enabled
-MEMORY_FEATURES = frozenset(
-    ["observations", "diary", "patterns", "checkpoints", "context_injection"]
-)
-
-
-def is_memory_feature_enabled(project_id: str, feature: str) -> bool:
-    """Check if a specific memory feature is enabled for a project.
-
-    Uses master switch pattern: if memory_enabled=false, all features are disabled.
-    Otherwise, checks the feature-specific flag.
-
-    Args:
-        project_id: Project ID
-        feature: One of 'observations', 'diary', 'patterns', 'checkpoints', 'context_injection'
-
-    Returns:
-        True if the feature is enabled, False otherwise
-    """
-    if feature not in MEMORY_FEATURES:
-        logger.warning(f"Unknown memory feature: {feature}")
-        return True  # Default to enabled for unknown features
-
-    config = get_agent_config(project_id)
-
-    # Master switch check
-    if not config.get("memory_enabled", True):
-        return False
-
-    # Feature-specific check
-    feature_key = f"{feature}_enabled"
-    return bool(config.get(feature_key, True))
-
-
-def get_memory_config(project_id: str) -> dict[str, bool]:
-    """Get all memory configuration flags for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        Dict with all memory flags:
-        {
-            'memory_enabled': bool,
-            'observations_enabled': bool,
-            'diary_enabled': bool,
-            'patterns_enabled': bool,
-            'checkpoints_enabled': bool,
-            'context_injection_enabled': bool
-        }
-    """
-    config = get_agent_config(project_id)
-    return {
-        "memory_enabled": config.get("memory_enabled", True),
-        "observations_enabled": config.get("observations_enabled", True),
-        "diary_enabled": config.get("diary_enabled", True),
-        "patterns_enabled": config.get("patterns_enabled", True),
-        "checkpoints_enabled": config.get("checkpoints_enabled", True),
-        "context_injection_enabled": config.get("context_injection_enabled", True),
-    }
 
 
 # Valid component source values
@@ -410,73 +326,3 @@ def update_autonomous_schedule(
         updates["autonomous_max_concurrent"] = max_concurrent
 
     return update_agent_config(project_id, updates)
-
-
-# Valid RPM limit values (slider stops)
-EXTRACTION_RPM_VALUES = (0, 5, 10, 15, 30, 60)
-EXTRACTION_RPM_LABELS = {
-    0: "Off",
-    5: "Minimal",
-    10: "Low",
-    15: "Medium",
-    30: "High",
-    60: "Unlimited",
-}
-
-
-class ExtractionConfig(TypedDict):
-    """Extraction throttle configuration."""
-
-    enabled: bool
-    rpm_limit: int
-    rpm_label: str
-
-
-def get_extraction_config(project_id: str) -> ExtractionConfig:
-    """Get extraction throttle configuration for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        ExtractionConfig with enabled, rpm_limit, and rpm_label
-    """
-    config = get_agent_config(project_id)
-    rpm_limit = config.get("extraction_rpm_limit", 10)
-    return {
-        "enabled": config.get("extraction_enabled", True),
-        "rpm_limit": rpm_limit,
-        "rpm_label": EXTRACTION_RPM_LABELS.get(rpm_limit, f"{rpm_limit} RPM"),
-    }
-
-
-def is_extraction_enabled(project_id: str) -> bool:
-    """Check if extraction is enabled for a project.
-
-    Returns False if extraction_enabled=False OR extraction_rpm_limit=0.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        True if extraction is enabled and rpm_limit > 0
-    """
-    config = get_agent_config(project_id)
-    if not config.get("extraction_enabled", True):
-        return False
-    return config.get("extraction_rpm_limit", 10) > 0
-
-
-def get_extraction_rpm_limit(project_id: str) -> int:
-    """Get the extraction RPM limit for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        RPM limit (0=disabled, 60=unlimited)
-    """
-    config = get_agent_config(project_id)
-    if not config.get("extraction_enabled", True):
-        return 0
-    return config.get("extraction_rpm_limit", 10)

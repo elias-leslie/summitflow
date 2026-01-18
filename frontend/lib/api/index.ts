@@ -4,7 +4,6 @@
 
 // Domain modules
 export * from './evidence'
-export * from './extraction'
 export * from './git'
 export * from './notifications'
 export * from './projects'
