@@ -117,9 +117,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <h3 className="font-medium text-white group-hover:text-phosphor-400 transition-colors">
               {project.name}
             </h3>
-            <p className="text-xs mono text-slate-500 truncate max-w-[160px]">
-              {project.base_url}
-            </p>
           </div>
         </div>
 

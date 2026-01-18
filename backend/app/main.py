@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
+    activity,
     agent_sessions,
     autonomous,
     backups,
@@ -95,6 +96,7 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
+app.include_router(activity.router, prefix="/api", tags=["activity"])
 
 from .api import ideas, ws_execution  # noqa: E402
 

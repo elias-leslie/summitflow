@@ -71,19 +71,6 @@ export default function DashboardPage() {
               <div className="text-xs text-slate-500">DB snapshots</div>
             </div>
           </Link>
-
-          <Link
-            href="/about"
-            className="card p-4 flex items-center gap-3 hover:border-outrun-500/50 hover:bg-outrun-500/5 transition-all group"
-          >
-            <div className="p-2 rounded-lg bg-outrun-500/20 text-outrun-400 group-hover:bg-outrun-500/30 transition-colors">
-              <Info className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">About</div>
-              <div className="text-xs text-slate-500">SummitFlow</div>
-            </div>
-          </Link>
         </div>
       </section>
 

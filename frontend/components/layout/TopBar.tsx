@@ -3,27 +3,20 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  Archive,
   ArrowDownCircle,
   Bug,
   CheckSquare,
+  Info,
   Package,
   RefreshCw,
   Search,
-  Settings,
-  Zap,
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
-import {
-  fetchTasks,
-  getAutonomousSettings,
-  type Task,
-  type TaskType,
-} from '@/lib/api'
+import { fetchTasks, type Task, type TaskType } from '@/lib/api'
 import { useSelectedProject } from './ProjectSelector'
 
 const SUMMITFLOW_PROJECT_ID = 'summitflow'
@@ -62,49 +55,6 @@ export function TopBar() {
     enabled: !!selectedProjectId && searchValue.length > 0,
     staleTime: 30000,
   })
-
-  // Fetch autonomous settings for indicator
-  const { data: autonomousSettings } = useQuery({
-    queryKey: ['autonomous-settings', selectedProjectId],
-    queryFn: () => getAutonomousSettings(selectedProjectId!),
-    enabled: !!selectedProjectId,
-    staleTime: 60000, // Check every minute
-    refetchInterval: 60000,
-  })
-
-  // Calculate if currently in execution window
-  const isInTimeWindow = useMemo(() => {
-    if (!autonomousSettings) return false
-    const now = new Date()
-    const currentHour = now.getHours()
-    const { start_hour, end_hour } = autonomousSettings
-    // Handle 24/7 case
-    if (start_hour === 0 && end_hour === 24) return true
-    // Handle same-day window
-    if (start_hour < end_hour) {
-      return currentHour >= start_hour && currentHour < end_hour
-    }
-    // Handle overnight window
-    return currentHour >= start_hour || currentHour < end_hour
-  }, [autonomousSettings])
-
-  // Determine auto-exec status label
-  const autoExecStatus = useMemo(() => {
-    if (!autonomousSettings) return null
-    if (!autonomousSettings.enabled)
-      return { label: 'Off', color: 'text-slate-500', bg: 'bg-slate-800' }
-    if (!isInTimeWindow)
-      return {
-        label: 'Paused',
-        color: 'text-amber-400',
-        bg: 'bg-amber-500/10',
-      }
-    return {
-      label: 'Active',
-      color: 'text-phosphor-400',
-      bg: 'bg-phosphor-500/10',
-    }
-  }, [autonomousSettings, isInTimeWindow])
 
   // Filter tasks based on search value
   const searchResults = useMemo(() => {
@@ -336,40 +286,16 @@ export function TopBar() {
           </div>
         </div>
 
-        {/* Right side actions - global features + settings */}
+        {/* Right side actions - About + Notifications */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Backups */}
+          {/* About */}
           <Link
-            href="/backups"
-            className="p-2.5 rounded-lg text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400 transition-all duration-200"
-            title="Backups"
-          >
-            <Archive className="w-5 h-5" />
-          </Link>
-
-          {/* Auto-exec Status Indicator */}
-          {autoExecStatus && selectedProjectId && (
-            <Link
-              href={`/projects/${selectedProjectId}/settings`}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs ${autoExecStatus.bg} ${autoExecStatus.color} hover:opacity-80 transition-opacity`}
-              title="Autonomous execution status - click to configure"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Auto-exec:</span>
-              <span className="font-medium">{autoExecStatus.label}</span>
-            </Link>
-          )}
-
-          {/* Divider */}
-          <div className="w-px h-6 bg-slate-700 mx-1" />
-
-          {/* Settings */}
-          <Link
-            href="/settings"
+            href="/about"
+            data-testid="topbar-about"
             className="p-2.5 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
-            title="Settings"
+            title="About SummitFlow"
           >
-            <Settings className="w-5 h-5" />
+            <Info className="w-5 h-5" />
           </Link>
 
           {/* Notifications */}
