@@ -1,4 +1,4 @@
-"""Celery tasks for generating tasks from scans and observations."""
+"""Celery tasks for generating tasks from Explorer scans."""
 
 from __future__ import annotations
 
@@ -223,25 +223,19 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
 
 @celery_app.task(name="summitflow.generate_bug_tasks")  # type: ignore[untyped-decorator]
 def generate_bug_tasks(project_id: str) -> dict[str, Any]:
-    """Generate bug tasks from error observations.
+    """Generate bug tasks from runtime errors.
 
-    DEPRECATED: This task is disabled because auto-generating tasks from error
-    observations was too noisy. Most captured errors are environmental (wrong
-    connection string), transient (build cache), or pre-existing (not new bugs).
-
-    Real bugs should be discovered during actual work and created manually
-    with proper context.
+    DEPRECATED: This task is disabled. Bug tasks are now created via the
+    self-healing system (systemd journal monitor, console error capture).
 
     Args:
         project_id: Project to generate tasks for
 
     Returns:
-        Dict with created_count, errors_scanned, skipped_count
+        Dict with status and reason
     """
-    # Return early - this task is disabled
-    # Memory system removed - observations no longer available
     logger.info(f"generate_bug_tasks disabled for {project_id}")
-    return {"status": "disabled", "reason": "Task deprecated - memory system removed"}
+    return {"status": "disabled", "reason": "Use self-healing system instead"}
 
 
 @celery_app.task(name="summitflow.cleanup_stale_tasks")  # type: ignore[untyped-decorator]
