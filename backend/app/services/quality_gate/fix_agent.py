@@ -4,10 +4,15 @@ Uses 3-2-1 escalation pattern:
 - WORKER (3 attempts): GEMINI_FLASH
 - SUPERVISOR (2 attempts): CLAUDE_SONNET with different strategy
 - HUMAN: Create blocking task for manual review
+
+Integrates with pattern memory to:
+- Retrieve similar successful fixes before attempting
+- Store successful fix patterns for future retrieval
 """
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from pathlib import Path
 from typing import Any, Literal
@@ -17,11 +22,33 @@ import psycopg
 from ...constants import CLAUDE_SONNET, GEMINI_FLASH
 from ...logging_config import get_logger
 from ...services.agent_hub_client import AgentType, get_agent
+from ...services.self_healing import PatternMemoryService, StoredPattern
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
 from ...storage.tasks.core import create_task
 
 logger = get_logger(__name__)
+
+# Global pattern memory service (lazy initialized)
+_pattern_memory: PatternMemoryService | None = None
+
+
+def _get_pattern_memory() -> PatternMemoryService:
+    """Get or create the pattern memory service."""
+    global _pattern_memory
+    if _pattern_memory is None:
+        _pattern_memory = PatternMemoryService()
+    return _pattern_memory
+
+
+def _run_async(coro: Any) -> Any:
+    """Run async code from sync context."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 FixResult = Literal["fixed", "failed", "escalated_supervisor", "escalated_human"]
 
@@ -171,10 +198,140 @@ def _read_file_content(file_path: Path, context_lines: int = 10) -> str | None:
         return None
 
 
+def _get_similar_patterns(
+    check_type: str,
+    error_code: str,
+    error_message: str,
+) -> list[StoredPattern]:
+    """Retrieve similar fix patterns from memory.
+
+    Args:
+        check_type: Type of check (ruff, mypy, etc.)
+        error_code: Error code (F401, etc.)
+        error_message: Error message
+
+    Returns:
+        List of similar patterns, empty if retrieval fails
+    """
+    try:
+        pattern_memory = _get_pattern_memory()
+        patterns: list[StoredPattern] = _run_async(
+            pattern_memory.get_similar_patterns(
+                check_type=check_type,
+                error_code=error_code,
+                error_message=error_message,
+                min_similarity=0.3,
+                limit=3,
+            )
+        )
+        if patterns:
+            logger.info(
+                "patterns_found",
+                count=len(patterns),
+                check_type=check_type,
+                error_code=error_code,
+            )
+        return patterns
+    except Exception as e:
+        logger.warning("pattern_retrieval_failed", error=str(e))
+        return []
+
+
+def _store_successful_pattern(
+    check_type: str,
+    check_name: str,
+    error_message: str,
+    file_path: str | None,
+    original_content: str,
+    fixed_content: str,
+) -> None:
+    """Store a successful fix pattern in memory.
+
+    Called after a fix is verified to work. Stores the pattern
+    for future retrieval when similar errors occur.
+
+    Args:
+        check_type: Type of check (ruff, mypy, etc.)
+        check_name: Error code/rule name
+        error_message: Original error message
+        file_path: File that was fixed
+        original_content: Original file content
+        fixed_content: Fixed file content
+    """
+    try:
+        # Compute a simple diff for storage
+        diff_lines = []
+        orig_lines = original_content.splitlines()
+        fixed_lines = fixed_content.splitlines()
+
+        # Simple line-by-line diff (not a full unified diff)
+        for orig, fixed in zip(orig_lines, fixed_lines, strict=False):
+            if orig != fixed:
+                diff_lines.append(f"- {orig}")
+                diff_lines.append(f"+ {fixed}")
+
+        fix_diff = "\n".join(diff_lines[:20])  # Limit diff size
+
+        pattern_memory = _get_pattern_memory()
+        _run_async(
+            pattern_memory.store_fix_pattern(
+                check_type=check_type,
+                error_code=check_name,
+                error_message=error_message,
+                file_path=file_path,
+                fix_diff=fix_diff,
+                root_cause_summary=f"Fixed {check_type}:{check_name} error",
+            )
+        )
+        logger.info(
+            "pattern_stored",
+            check_type=check_type,
+            check_name=check_name,
+        )
+    except Exception as e:
+        # Pattern storage failure should not fail the fix
+        logger.warning("pattern_storage_failed", error=str(e))
+
+
+def _format_patterns_for_prompt(patterns: list[StoredPattern]) -> str:
+    """Format similar patterns for injection into the fix prompt.
+
+    Args:
+        patterns: List of similar patterns
+
+    Returns:
+        Formatted string for prompt injection
+    """
+    if not patterns:
+        return ""
+
+    lines = [
+        "",
+        "## Previous Successful Fixes for Similar Errors",
+        "",
+    ]
+
+    for i, pattern in enumerate(patterns, 1):
+        lines.append(f"### Fix #{i} (similarity: {pattern.similarity_score:.0%})")
+        lines.append(f"**Root cause:** {pattern.root_cause_summary}")
+        if pattern.fix_diff:
+            lines.append("**Fix applied:**")
+            lines.append("```diff")
+            lines.append(pattern.fix_diff[:500])  # Truncate long diffs
+            lines.append("```")
+        lines.append("")
+
+    lines.append("Consider these previous fixes when determining your approach.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 def _build_fix_prompt(
     check_result: dict[str, Any],
     file_content: str,
     project_path: Path,
+    similar_patterns: list[StoredPattern] | None = None,
 ) -> str:
     """Build prompt for fix agent.
 
@@ -182,6 +339,7 @@ def _build_fix_prompt(
         check_result: Quality check result from DB
         file_content: Content of the file with the error
         project_path: Path to project root
+        similar_patterns: Optional list of similar patterns to include
 
     Returns:
         Prompt string for the LLM
@@ -265,6 +423,12 @@ def _build_fix_prompt(
                 "",
             ]
         )
+
+    # Add similar patterns if available
+    if similar_patterns:
+        pattern_section = _format_patterns_for_prompt(similar_patterns)
+        if pattern_section:
+            lines.append(pattern_section)
 
     lines.extend(
         [
@@ -416,8 +580,13 @@ def fix_lint_type_error(
     # Record attempt
     qcr_store.record_fix_attempt(conn, result_id)
 
+    # Retrieve similar patterns from memory
+    error_message = check_result.get("error_message", "")
+    check_name = check_result.get("check_name", "")
+    similar_patterns = _get_similar_patterns(check_type, check_name, error_message)
+
     # Build prompt - enhanced for SUPERVISOR level
-    prompt = _build_fix_prompt(check_result, file_content, project_path)
+    prompt = _build_fix_prompt(check_result, file_content, project_path, similar_patterns)
     if level == "SUPERVISOR":
         prompt = f"""Previous fix attempts have failed. Try a different approach.
 
@@ -476,6 +645,17 @@ IMPORTANT: Previous attempts failed. Consider:
         fixed_by = GEMINI_FLASH if level == "WORKER" else CLAUDE_SONNET
         qcr_store.mark_fixed(conn, result_id, fixed_by=fixed_by)
         logger.info("fix_successful", result_id=result_id, check_type=check_type, model=fixed_by)
+
+        # Store successful fix pattern for future retrieval
+        _store_successful_pattern(
+            check_type=check_type,
+            check_name=check_name,
+            error_message=error_message,
+            file_path=file_rel_path,
+            original_content=file_content,
+            fixed_content=new_content,
+        )
+
         return "fixed"
     else:
         logger.info("fix_did_not_pass", result_id=result_id)

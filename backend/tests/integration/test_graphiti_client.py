@@ -4,6 +4,8 @@ These tests require Agent Hub to be running at localhost:8003.
 Graphiti operations can be slow (30-120s) due to Neo4j and LLM calls.
 
 Tests create episodes and clean them up afterwards to avoid polluting the graph.
+
+Run with: dt pytest -- -m slow backend/tests/integration/test_graphiti_client.py
 """
 
 from __future__ import annotations
@@ -13,6 +15,9 @@ from collections.abc import AsyncIterator
 import pytest
 
 from app.services.self_healing.graphiti_client import FixPattern, GraphitiClient
+
+# Mark all tests in this module as slow (skipped by default)
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 # Extended timeout for Graphiti operations - LLM entity extraction can take 30-90s
 GRAPHITI_TIMEOUT = 120.0
