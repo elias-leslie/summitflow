@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { getWsUrl } from '@/lib/api-config'
 
 // ============================================================================
 // Types
@@ -52,11 +53,8 @@ interface ExecutionTimelineProps {
 // ============================================================================
 
 function getWebSocketUrl(taskId: string, fromSequence?: number): string {
-  // Use the API base URL but replace http with ws
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
-  const wsBase = apiBase.replace(/^http/, 'ws')
-  const url = `${wsBase}/ws/execution/${taskId}`
-  return fromSequence ? `${url}?from_sequence=${fromSequence}` : url
+  const path = `/ws/execution/${taskId}${fromSequence ? `?from_sequence=${fromSequence}` : ''}`
+  return getWsUrl(path)
 }
 
 // ============================================================================

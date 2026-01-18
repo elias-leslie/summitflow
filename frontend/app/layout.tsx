@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { VoiceOverlay } from '@agent-hub/passport-client'
 import { AppShell } from '@/components/layout/AppShell'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
+import { VoiceOverlayWrapper } from '@/components/VoiceOverlayWrapper'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
@@ -34,7 +34,7 @@ export default function RootLayout({
                 <main className="flex-1 overflow-auto bg-grid">{children}</main>
               </div>
             </AppShell>
-            <VoiceOverlay wsUrl="wss://agentapi.summitflow.dev/api/voice/ws?user_id=summitflow_user&app=summitflow" />
+            <VoiceOverlayWrapper />
           </div>
         </Providers>
       </body>

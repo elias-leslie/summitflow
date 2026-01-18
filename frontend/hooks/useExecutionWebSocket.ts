@@ -5,6 +5,7 @@ import type {
   ExecutionLog,
   ExecutionState,
 } from '@/components/kanban/ExecutionPanel'
+import { getWsUrl } from '@/lib/api-config'
 
 // Message types from backend
 type MessageType =
@@ -69,18 +70,12 @@ export function useExecutionWebSocket({
     setConnecting(true)
 
     // Build WebSocket URL with replay support
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname
-    const port =
-      process.env.NODE_ENV === 'development' ? '8001' : window.location.port
-    let url = `${protocol}//${host}:${port}/ws/execution/${taskId}`
-
-    // Add sequence for replay on reconnection
+    let wsPath = `/ws/execution/${taskId}`
     if (lastSequenceRef.current > 0) {
-      url += `?from_sequence=${lastSequenceRef.current}`
+      wsPath += `?from_sequence=${lastSequenceRef.current}`
     }
 
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(getWsUrl(wsPath))
     wsRef.current = ws
 
     ws.onopen = () => {
