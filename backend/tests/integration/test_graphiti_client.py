@@ -1,23 +1,48 @@
 """Integration tests for Graphiti client.
 
 These tests require Agent Hub to be running at localhost:8003.
-Graphiti operations can be slow (10-60s) due to Neo4j and LLM calls.
+Graphiti operations can be slow (30-120s) due to Neo4j and LLM calls.
+
+Tests create episodes and clean them up afterwards to avoid polluting the graph.
 """
 
 from __future__ import annotations
+
+from collections.abc import AsyncIterator
 
 import pytest
 
 from app.services.self_healing.graphiti_client import FixPattern, GraphitiClient
 
-# Longer timeout for Graphiti operations (LLM + Neo4j can be slow)
-GRAPHITI_TIMEOUT = 60.0
+# Extended timeout for Graphiti operations - LLM entity extraction can take 30-90s
+GRAPHITI_TIMEOUT = 120.0
 
 
 @pytest.fixture
 def client() -> GraphitiClient:
     """Create a Graphiti client for testing with extended timeout."""
     return GraphitiClient(timeout=GRAPHITI_TIMEOUT)
+
+
+@pytest.fixture
+async def cleanup_episodes(client: GraphitiClient) -> AsyncIterator[list[str]]:
+    """Fixture to track and clean up created episodes after test.
+
+    Usage:
+        async def test_something(client, cleanup_episodes):
+            result = await client.store_pattern(...)
+            cleanup_episodes.append(result["episode_uuid"])
+    """
+    episode_ids: list[str] = []
+    yield episode_ids
+
+    # Cleanup all created episodes after test
+    for episode_id in episode_ids:
+        try:
+            await client.delete_episode(episode_id)
+        except Exception:
+            # Ignore cleanup errors - episode may not exist
+            pass
 
 
 @pytest.mark.asyncio
@@ -29,11 +54,13 @@ async def test_health_check(client: GraphitiClient) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)  # Allow up to 2 minutes for Graphiti operations
-async def test_store_pattern(client: GraphitiClient) -> None:
+@pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
+async def test_store_pattern(
+    client: GraphitiClient, cleanup_episodes: list[str]
+) -> None:
     """Test storing a fix pattern.
 
-    This test may be slow (~30-60s) as it involves LLM entity extraction.
+    This test may be slow (~30-90s) as it involves LLM entity extraction.
     """
     pattern = FixPattern(
         error_signature="ruff:F401:unused import",
@@ -46,6 +73,9 @@ async def test_store_pattern(client: GraphitiClient) -> None:
     result = await client.store_pattern(pattern)
     assert result["success"] is True
     assert "episode_uuid" in result
+
+    # Track for cleanup
+    cleanup_episodes.append(result["episode_uuid"])
 
 
 @pytest.mark.asyncio
@@ -61,11 +91,13 @@ async def test_search_patterns(client: GraphitiClient) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)  # Allow up to 2 minutes for Graphiti operations
-async def test_record_gotcha(client: GraphitiClient) -> None:
+@pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
+async def test_record_gotcha(
+    client: GraphitiClient, cleanup_episodes: list[str]
+) -> None:
     """Test recording a gotcha.
 
-    This test may be slow (~30-60s) as it involves LLM entity extraction.
+    This test may be slow (~30-90s) as it involves LLM entity extraction.
     """
     result = await client.record_gotcha(
         gotcha="GraphitiClient requires httpx async",
@@ -76,3 +108,6 @@ async def test_record_gotcha(client: GraphitiClient) -> None:
     )
     assert result["success"] is True
     assert "episode_uuid" in result
+
+    # Track for cleanup
+    cleanup_episodes.append(result["episode_uuid"])

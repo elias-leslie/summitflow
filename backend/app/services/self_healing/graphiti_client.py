@@ -174,6 +174,11 @@ class GraphitiClient:
             logger.debug(f"Found {len(results)} patterns for query: {query[:50]}")
             return results
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
     async def record_gotcha(
         self,
         gotcha: str,
@@ -206,6 +211,24 @@ class GraphitiClient:
             response = await client.post(
                 f"{self.base_url}/api/memory/record-gotcha",
                 json=payload,
+            )
+            response.raise_for_status()
+            return cast(dict[str, Any], response.json())
+
+    async def delete_episode(self, episode_id: str) -> dict[str, Any]:
+        """Delete an episode from memory.
+
+        Used for test cleanup - removes the episode and orphaned entities.
+
+        Args:
+            episode_id: UUID of the episode to delete
+
+        Returns:
+            API response with deletion status
+        """
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.delete(
+                f"{self.base_url}/api/memory/episode/{episode_id}",
             )
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
