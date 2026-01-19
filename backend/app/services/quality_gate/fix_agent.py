@@ -19,9 +19,9 @@ from typing import Any, Literal
 
 import psycopg
 
+from ...constants import CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
 from ...logging_config import get_logger
 from ...services.agent_hub_client import AgentType, get_agent
-from ...services.model_registry import ModelFactory, get_factory
 from ...services.self_healing import PatternMemoryService, StoredPattern
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
@@ -76,34 +76,25 @@ def get_escalation_level(attempts: int) -> str:
         return "HUMAN"
 
 
-def get_supervisor_model(
-    attempts: int, factory: ModelFactory | None = None
-) -> tuple[str, AgentType]:
+def get_supervisor_model(attempts: int) -> tuple[str, AgentType]:
     """Get model for SUPERVISOR level based on attempt number.
 
-    SUPERVISOR uses dual-model approach per d13 decision:
+    SUPERVISOR uses dual-model approach:
     - Attempt 4 (first SUPERVISOR): Claude Sonnet
     - Attempt 5 (second SUPERVISOR): Gemini Pro
 
-    Now uses ModelFactory for centralized model selection.
-
     Args:
         attempts: Number of fix attempts made (0-indexed before this attempt)
-        factory: Optional ModelFactory instance
 
     Returns:
         Tuple of (model_id, provider)
     """
-    if factory is None:
-        factory = get_factory()
-
     # Attempt 4 = first supervisor attempt (index 3)
     supervisor_attempt = attempts - WORKER_ATTEMPTS + 1
-    selection = factory.get_model_for_escalation(
-        level="SUPERVISOR",
-        attempt=supervisor_attempt,
-    )
-    return selection.model_id, selection.provider
+    if supervisor_attempt == 1:
+        return CLAUDE_SONNET, "claude"
+    else:
+        return GEMINI_PRO, "gemini"
 
 
 def escalate_to_human(
@@ -698,15 +689,14 @@ IMPORTANT: Previous attempts failed. Consider:
 - Verify the fix actually addresses the root cause
 """
 
-    # Select model based on escalation level using ModelFactory
-    factory = get_factory()
+    # Select model based on escalation level
     provider: AgentType
+    model: str
     if level == "WORKER":
-        selection = factory.get_model_for_escalation(level="WORKER", attempt=attempts + 1)
-        model = selection.model_id
-        provider = selection.provider
+        model = GEMINI_FLASH
+        provider = "gemini"
     else:  # SUPERVISOR - dual model approach
-        model, provider = get_supervisor_model(attempts, factory=factory)
+        model, provider = get_supervisor_model(attempts)
 
     logger.info(
         "fix_attempt",

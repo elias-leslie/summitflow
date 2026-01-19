@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.constants import CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
-from app.services.model_registry import ModelFactory, ModelRegistry
 from app.services.quality_gate.fix_agent import (
     MAX_FIX_ATTEMPTS,
     SUPERVISOR_ATTEMPTS,
@@ -344,62 +343,40 @@ class TestEscalationConstants:
 
 
 class TestDualModelSupervisor:
-    """Tests for dual-model SUPERVISOR escalation (d13 decision)."""
+    """Tests for dual-model SUPERVISOR escalation."""
 
-    @pytest.fixture
-    def factory(self) -> ModelFactory:
-        """Create a fresh factory for each test."""
-        return ModelFactory(registry=ModelRegistry())
-
-    def test_supervisor_first_attempt_uses_sonnet(self, factory: ModelFactory) -> None:
+    def test_supervisor_first_attempt_uses_sonnet(self) -> None:
         """First SUPERVISOR attempt (attempt 4) uses Claude Sonnet."""
-        model, provider = get_supervisor_model(WORKER_ATTEMPTS, factory=factory)  # attempts=3
+        model, provider = get_supervisor_model(WORKER_ATTEMPTS)  # attempts=3
         assert model == CLAUDE_SONNET
         assert provider == "claude"
 
-    def test_supervisor_second_attempt_uses_gemini_pro(self, factory: ModelFactory) -> None:
+    def test_supervisor_second_attempt_uses_gemini_pro(self) -> None:
         """Second SUPERVISOR attempt (attempt 5) uses Gemini Pro."""
-        model, provider = get_supervisor_model(WORKER_ATTEMPTS + 1, factory=factory)  # attempts=4
+        model, provider = get_supervisor_model(WORKER_ATTEMPTS + 1)  # attempts=4
         assert model == GEMINI_PRO
         assert provider == "gemini"
 
-    def test_supervisor_uses_gemini_pro_not_flash(self, factory: ModelFactory) -> None:
+    def test_supervisor_uses_gemini_pro_not_flash(self) -> None:
         """SUPERVISOR uses Pro (reasoning) not Flash."""
-        model, _ = get_supervisor_model(WORKER_ATTEMPTS + 1, factory=factory)
+        model, _ = get_supervisor_model(WORKER_ATTEMPTS + 1)
         assert model == GEMINI_PRO
         assert model != GEMINI_FLASH
 
-    def test_both_supervisor_attempts_complete_before_human(self, factory: ModelFactory) -> None:
+    def test_both_supervisor_attempts_complete_before_human(self) -> None:
         """Both SUPERVISOR models must be tried before HUMAN escalation."""
         # Attempt 3 (index 3) is first SUPERVISOR
         assert get_escalation_level(3) == "SUPERVISOR"
-        model1, _provider1 = get_supervisor_model(3, factory=factory)
+        model1, _provider1 = get_supervisor_model(3)
         assert model1 == CLAUDE_SONNET
 
         # Attempt 4 (index 4) is second SUPERVISOR
         assert get_escalation_level(4) == "SUPERVISOR"
-        model2, _provider2 = get_supervisor_model(4, factory=factory)
+        model2, _provider2 = get_supervisor_model(4)
         assert model2 == GEMINI_PRO
 
         # Attempt 5 (index 5) escalates to HUMAN
         assert get_escalation_level(5) == "HUMAN"
-
-    def test_escalation_uses_model_factory(self, factory: ModelFactory) -> None:
-        """Verify escalation properly uses ModelFactory for model selection."""
-        # WORKER uses factory
-        worker_selection = factory.get_model_for_escalation(level="WORKER", attempt=1)
-        assert worker_selection.model_id == GEMINI_FLASH
-        assert worker_selection.provider == "gemini"
-
-        # SUPERVISOR attempt 1 uses factory
-        sup1_selection = factory.get_model_for_escalation(level="SUPERVISOR", attempt=1)
-        assert sup1_selection.model_id == CLAUDE_SONNET
-        assert sup1_selection.provider == "claude"
-
-        # SUPERVISOR attempt 2 uses factory
-        sup2_selection = factory.get_model_for_escalation(level="SUPERVISOR", attempt=2)
-        assert sup2_selection.model_id == GEMINI_PRO
-        assert sup2_selection.provider == "gemini"
 
 
 class TestAttemptHistoryFormatting:
