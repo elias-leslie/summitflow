@@ -13,6 +13,7 @@ import {
   Filter,
   Folder,
   Globe,
+  Package,
   Search,
   Zap,
 } from 'lucide-react'
@@ -73,6 +74,13 @@ const typeConfig: Record<
     activeClass: 'bg-pink-500/20 border-pink-500/50 text-pink-300',
     glowClass: 'shadow-[0_0_12px_rgba(236,72,153,0.4)]',
   },
+  dependencies: {
+    icon: Package,
+    label: 'Dependencies',
+    color: 'text-indigo-400',
+    activeClass: 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300',
+    glowClass: 'shadow-[0_0_12px_rgba(99,102,241,0.4)]',
+  },
 }
 
 const filterConfig: Record<
@@ -95,7 +103,7 @@ export function TypeNavigator({
   counts,
   className,
 }: TypeNavigatorProps) {
-  const types: ExplorerType[] = ['files', 'database', 'celery', 'api', 'pages']
+  const types: ExplorerType[] = ['files', 'database', 'celery', 'api', 'pages', 'dependencies']
   const filters: (HealthStatus | 'all')[] = ['all', 'fresh', 'stale', 'orphan']
 
   return (

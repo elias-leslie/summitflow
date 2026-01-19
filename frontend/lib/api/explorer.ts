@@ -9,7 +9,7 @@
 // Types - Aligned with backend API contract (docs/explorer-architecture.md)
 // ============================================================================
 
-export type ExplorerEntryType = 'file' | 'table' | 'task' | 'endpoint' | 'page'
+export type ExplorerEntryType = 'file' | 'table' | 'task' | 'endpoint' | 'page' | 'dependency'
 export type ExplorerHealthStatus = 'healthy' | 'warning' | 'error' | 'unknown'
 
 export interface ExplorerEntryMetadata {
@@ -69,6 +69,22 @@ export interface ExplorerEntryMetadata {
 
   // Page metadata
   route_params?: string[]
+
+  // Dependency metadata
+  package_type?: 'python' | 'nodejs'
+  constraint?: string
+  locked_version?: string
+  latest_version?: string
+  is_outdated?: boolean
+  is_workspace_ref?: boolean
+  is_dev_dependency?: boolean
+  vulnerabilities?: {
+    critical: number
+    high: number
+    medium: number
+    low: number
+  }
+  audit_advisories?: string[]
 
   // Generic extension
   [key: string]: unknown

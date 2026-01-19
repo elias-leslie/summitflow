@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 type TabId = 'kanban' | 'tasks' | 'evidence' | 'explorer'
-type ExplorerType = 'files' | 'database' | 'celery' | 'api' | 'pages'
+type ExplorerType = 'files' | 'database' | 'celery' | 'api' | 'pages' | 'dependencies'
 
 const VALID_TABS: TabId[] = ['kanban', 'tasks', 'evidence', 'explorer']
 const VALID_EXPLORER_TYPES: ExplorerType[] = [
@@ -10,6 +10,7 @@ const VALID_EXPLORER_TYPES: ExplorerType[] = [
   'celery',
   'api',
   'pages',
+  'dependencies',
 ]
 
 const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`

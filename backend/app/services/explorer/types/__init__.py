@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 # Import scanners
 from .database import DatabaseScanner
+from .dependencies import DependencyScanner
 from .endpoints import EndpointScanner
 from .files import FileScanner
 from .pages import PageScanner
@@ -35,6 +36,7 @@ SCANNERS: dict[str, type[BaseScanner]] = {
     "task": TaskScanner,
     "endpoint": EndpointScanner,
     "page": PageScanner,
+    "dependency": DependencyScanner,
 }
 
 

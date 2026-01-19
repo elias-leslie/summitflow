@@ -13,7 +13,7 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { Database, FileText, Folder, Globe, Zap } from 'lucide-react'
+import { Database, FileText, Folder, Globe, Package, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchExplorerEntries,
@@ -55,6 +55,7 @@ const uiTypeToApiType: Record<ExplorerType, string> = {
   celery: 'task',
   api: 'endpoint',
   pages: 'page',
+  dependencies: 'dependency',
 }
 
 const typeIcons: Record<ExplorerType, React.ReactNode> = {
@@ -63,6 +64,7 @@ const typeIcons: Record<ExplorerType, React.ReactNode> = {
   celery: <Zap className="w-5 h-5" />,
   api: <Globe className="w-5 h-5" />,
   pages: <FileText className="w-5 h-5" />,
+  dependencies: <Package className="w-5 h-5" />,
 }
 
 const typeTitles: Record<ExplorerType, string> = {
@@ -71,6 +73,7 @@ const typeTitles: Record<ExplorerType, string> = {
   celery: 'Celery Tasks',
   api: 'API Endpoints',
   pages: 'Frontend Pages',
+  dependencies: 'Dependencies',
 }
 
 export function ExplorerShell({
@@ -102,6 +105,7 @@ export function ExplorerShell({
     celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    dependencies: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
   })
 
   // Fetch stats for all types on mount and when scanning completes
@@ -113,6 +117,7 @@ export function ExplorerShell({
         'celery',
         'api',
         'pages',
+        'dependencies',
       ]
       // Start with empty stats object to avoid dependency on statsData
       const newStats: Record<ExplorerType, ExplorerStats> = {
@@ -121,6 +126,7 @@ export function ExplorerShell({
         celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        dependencies: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
       }
 
       for (const type of types) {
@@ -259,6 +265,7 @@ export function ExplorerShell({
       celery: statsData.celery.total,
       api: statsData.api.total,
       pages: statsData.pages.total,
+      dependencies: statsData.dependencies.total,
     }),
     [statsData],
   )

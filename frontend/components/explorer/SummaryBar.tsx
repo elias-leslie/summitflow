@@ -28,6 +28,7 @@ const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
   celery: { singular: 'task', plural: 'tasks' },
   api: { singular: 'endpoint', plural: 'endpoints' },
   pages: { singular: 'page', plural: 'pages' },
+  dependencies: { singular: 'dependency', plural: 'dependencies' },
 }
 
 function formatTimeAgo(dateStr: string | null): string {
