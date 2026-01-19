@@ -140,6 +140,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 5,  # Every 5 minutes
         "kwargs": {"project_id": "summitflow"},
     },
+    # Self-healing - orchestrate automated fix triggering
+    "orchestrate-self-healing": {
+        "task": "summitflow.orchestrate_self_healing",
+        "schedule": 60 * 15,  # Every 15 minutes
+        "kwargs": {"max_errors": 20},
+    },
 }
 
 

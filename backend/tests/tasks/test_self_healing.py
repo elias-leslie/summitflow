@@ -304,3 +304,103 @@ class TestProcessJournalErrors:
         results = process_journal_errors("summitflow")
 
         assert results["errors"] == 1
+
+
+class TestOrchestrateTask:
+    """Tests for the orchestrate_self_healing Celery task."""
+
+    @patch("app.tasks.self_healing.get_connection")
+    def test_orchestrate_disabled_returns_early(
+        self,
+        mock_conn: MagicMock,
+    ) -> None:
+        """When disabled, task returns early without processing."""
+        from app.tasks.self_healing import orchestrate_self_healing
+
+        result = orchestrate_self_healing(enabled=False)
+
+        assert result["enabled"] is False
+        assert result["skipped"] is True
+        mock_conn.assert_not_called()
+
+    @patch("app.tasks.self_healing.get_connection")
+    @patch("app.services.self_healing.orchestrator.SelfHealingOrchestrator")
+    def test_orchestrate_no_errors_to_fix(
+        self,
+        mock_orch_cls: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """When no errors, task returns without processing."""
+        from app.tasks.self_healing import orchestrate_self_healing
+
+        mock_orch = MagicMock()
+        mock_orch.get_health_summary.return_value = {
+            "should_run": False,
+            "total_unfixed": 0,
+            "projects_needing_fixes": 0,
+        }
+        mock_orch_cls.return_value = mock_orch
+
+        result = orchestrate_self_healing()
+
+        assert result["enabled"] is True
+        assert result["projects_processed"] == 0
+        assert "No unfixed errors" in result.get("message", "")
+        mock_orch.poll_and_fix.assert_not_called()
+
+    @patch("app.tasks.self_healing.get_connection")
+    @patch("app.services.self_healing.orchestrator.SelfHealingOrchestrator")
+    def test_orchestrate_processes_errors(
+        self,
+        mock_orch_cls: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Task processes errors when they exist."""
+        from app.tasks.self_healing import orchestrate_self_healing
+
+        mock_orch = MagicMock()
+        mock_orch.get_health_summary.return_value = {
+            "should_run": True,
+            "total_unfixed": 5,
+            "projects_needing_fixes": 1,
+        }
+        mock_orch.poll_and_fix.return_value = {
+            "projects_processed": 1,
+            "total_fixed": 3,
+            "total_failed": 1,
+            "total_escalated": 1,
+            "by_check_type": {"ruff": {"fixed": 3, "failed": 1, "escalated": 1}},
+            "by_project": {"summitflow": {"fixed": 3, "failed": 1, "escalated": 1}},
+        }
+        mock_orch_cls.return_value = mock_orch
+
+        result = orchestrate_self_healing(max_errors=10)
+
+        assert result["enabled"] is True
+        assert result["projects_processed"] == 1
+        assert result["total_fixed"] == 3
+        assert result["total_failed"] == 1
+        assert result["total_escalated"] == 1
+        mock_orch.poll_and_fix.assert_called_once()
+        mock_orch_cls.assert_called_once()
+
+    @patch("app.tasks.self_healing.get_connection")
+    @patch("app.services.self_healing.orchestrator.SelfHealingOrchestrator")
+    def test_orchestrate_handles_exception(
+        self,
+        mock_orch_cls: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Exceptions are handled gracefully."""
+        from app.tasks.self_healing import orchestrate_self_healing
+
+        mock_orch = MagicMock()
+        mock_orch.get_health_summary.side_effect = Exception("DB connection failed")
+        mock_orch_cls.return_value = mock_orch
+
+        result = orchestrate_self_healing()
+
+        assert result["enabled"] is True
+        assert "error" in result
+        assert "DB connection failed" in result["error"]
+        assert result["projects_processed"] == 0

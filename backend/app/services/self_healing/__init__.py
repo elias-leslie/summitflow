@@ -8,6 +8,7 @@ from .monitor import (
     create_error_task,
     process_journal_errors,
 )
+from .orchestrator import SelfHealingOrchestrator, poll_and_fix_all
 from .pattern_memory import PatternMemoryService, StoredPattern, compute_error_signature
 
 __all__ = [
@@ -16,10 +17,12 @@ __all__ = [
     "JournalError",
     "PatternMemoryService",
     "SearchResult",
+    "SelfHealingOrchestrator",
     "StoredPattern",
     "SystemdMonitor",
     "compute_error_hash",
     "compute_error_signature",
     "create_error_task",
+    "poll_and_fix_all",
     "process_journal_errors",
 ]
