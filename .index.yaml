@@ -1,6 +1,6 @@
 project: summitflow
-generated_at: 2026-01-19 16:04 UTC
-total_files: 1253
+generated_at: 2026-01-19 23:05 UTC
+total_files: 1247
 folders:
   (root): 24 files - config, docs, services, tests - (claude, dev-tools, gitignore,
     html, json)
@@ -9,16 +9,16 @@ folders:
   .qna-session: 1 files - (json)
   .summitflow: 33 files - config, docs, models, services - (bak, md)
   assets: 2 files - (html)
-  backend: 414 files - api, config, docs, models, services, storage, tests - (0, env,
+  backend: 415 files - api, config, docs, models, services, storage, tests - (0, env,
     ini, json, md)
-  docs: 77 files - docs, tests - (json, md)
-  frontend: 219 files - api, components, config, docs, models, storage, tests - (backup-tailwind-v3,
+  docs: 62 files - docs, tests - (json, md)
+  frontend: 222 files - api, components, config, docs, models, storage, tests - (backup-tailwind-v3,
     css, js, json, md)
   mockups: 7 files - (html)
   project_review: 11 files - docs - (json, md, txt)
   scripts: 32 files - config, services, tests - (conf, py, service, sh)
   services: 10 files - config, docs, services - (claude, js, json, md)
   spec: 2 files - tests - (json)
-  tasks: 408 files - components, config, docs, models, services, storage, tests -
+  tasks: 413 files - components, config, docs, models, services, storage, tests -
     (backup, bak, gitkeep, json, md)
   tests: 2 files - tests - (py)

@@ -1,6 +1,9 @@
 """Page scanner for Explorer.
 
-Scans Next.js frontend pages, producing entries for explorer_entries table.
+Scans frontend pages, producing entries for explorer_entries table.
+Supports:
+- Next.js app router (page.tsx files in app/ or src/app/)
+- Simple SPAs (index.html at project root)
 
 Metadata schema (per architecture doc):
 {
@@ -30,7 +33,10 @@ logger = get_logger(__name__)
 
 
 class PageScanner(BaseScanner):
-    """Scans Next.js pages for explorer entries."""
+    """Scans frontend pages for explorer entries.
+
+    Supports Next.js app router and simple SPA projects.
+    """
 
     entry_type = "page"
 
@@ -40,7 +46,7 @@ class PageScanner(BaseScanner):
         self.frontend_dir: str = "frontend"
 
     def scan(self) -> list[ExplorerEntryCreate]:
-        """Scan Next.js pages and return page entries."""
+        """Scan frontend pages and return page entries."""
         # Get project config
         project_config = get_project_config(self.project_id)
         if not project_config:
@@ -65,19 +71,27 @@ class PageScanner(BaseScanner):
 
         logger.info(f"Page scan started for {self.project_id}")
 
-        entries = self._scan_frontend_pages()
+        # Try Next.js app router first
+        entries = self._scan_nextjs_pages()
+
+        # Fall back to simple SPA detection if no Next.js pages found
+        if not entries:
+            entries = self._scan_spa_pages()
 
         logger.info(f"Page scan found {len(entries)} pages")
         return entries
 
-    def _scan_frontend_pages(self) -> list[ExplorerEntryCreate]:
+    def _scan_nextjs_pages(self) -> list[ExplorerEntryCreate]:
         """Scan Next.js app router for frontend pages."""
         entries: list[ExplorerEntryCreate] = []
 
         if not self.root_path:
             return entries
 
+        # Try standard location first, then src subdirectory (common in some Next.js projects)
         app_dir = self.root_path / self.frontend_dir / "app"
+        if not app_dir.exists():
+            app_dir = self.root_path / self.frontend_dir / "src" / "app"
         if not app_dir.exists():
             return entries
 
@@ -136,6 +150,40 @@ class PageScanner(BaseScanner):
                 )
             except Exception as e:
                 logger.warning(f"Failed to scan page {page_file}: {e}")
+
+        return entries
+
+    def _scan_spa_pages(self) -> list[ExplorerEntryCreate]:
+        """Scan for simple SPA projects with index.html at root."""
+        entries: list[ExplorerEntryCreate] = []
+
+        if not self.root_path:
+            return entries
+
+        # Check for index.html at project root (simple SPA like games, static sites)
+        index_file = self.root_path / "index.html"
+        if index_file.exists():
+            entries.append(
+                ExplorerEntryCreate(
+                    path="/",
+                    name="home",
+                    health_status="unknown",
+                    metadata={
+                        "method": "GET",
+                        "port": 3001,
+                        "source_file": "index.html",
+                        "route_params": [],
+                        "http_status": None,
+                        "response_time_ms": None,
+                        "console_errors": None,
+                        "console_warnings": None,
+                        "last_health_check": None,
+                        "level": 1,
+                        "parent_path": None,
+                        "spa": True,
+                    },
+                )
+            )
 
         return entries
 
