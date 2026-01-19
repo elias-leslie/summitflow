@@ -8,6 +8,7 @@
 'use client'
 
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { StatusIndicator } from './StatusIndicator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
@@ -56,6 +57,12 @@ export function SummaryBar({
   className,
 }: SummaryBarProps) {
   const labels = typeLabels[type]
+
+  // Client-only time ago to avoid hydration mismatch
+  const [timeAgo, setTimeAgo] = useState<string>('...')
+  useEffect(() => {
+    setTimeAgo(formatTimeAgo(stats.lastScan))
+  }, [stats.lastScan])
 
   const metrics: {
     key: HealthStatus | 'all'
@@ -116,7 +123,7 @@ export function SummaryBar({
       {/* Last scan time */}
       <div className="flex items-center gap-1.5 text-slate-500 text-xs mr-3">
         <Clock className="w-3 h-3" />
-        <span>Scanned {formatTimeAgo(stats.lastScan)}</span>
+        <span>Scanned {timeAgo}</span>
       </div>
 
       {/* Scan button */}

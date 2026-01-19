@@ -146,6 +146,9 @@ export function DataRow({
 /**
  * DataRowSkeleton - Loading placeholder
  */
+// Deterministic widths to avoid hydration mismatch (no Math.random())
+const SKELETON_WIDTHS = [180, 220, 160, 200, 190]
+
 export function DataRowSkeleton({ count = 5 }: { count?: number }) {
   return (
     <div className="space-y-1 p-2">
@@ -159,7 +162,7 @@ export function DataRowSkeleton({ count = 5 }: { count?: number }) {
           <div className="w-4 h-4 rounded bg-slate-800" />
           <div
             className="h-4 rounded bg-slate-800"
-            style={{ width: `${150 + Math.random() * 100}px` }}
+            style={{ width: `${SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]}px` }}
           />
           <div className="flex-1" />
           <div className="w-16 h-4 rounded bg-slate-800" />

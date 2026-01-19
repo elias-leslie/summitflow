@@ -276,17 +276,23 @@ function AutoExecStatus({ isCollapsed }: AutoExecStatusProps) {
     refetchInterval: 60000,
   })
 
-  // Calculate if currently in execution window
-  const isInTimeWindow = useMemo(() => {
-    if (!autonomousSettings) return false
+  // Calculate if currently in execution window (client-side only to avoid hydration mismatch)
+  const [isInTimeWindow, setIsInTimeWindow] = useState(false)
+  useEffect(() => {
+    if (!autonomousSettings) {
+      setIsInTimeWindow(false)
+      return
+    }
     const now = new Date()
     const currentHour = now.getHours()
     const { start_hour, end_hour } = autonomousSettings
-    if (start_hour === 0 && end_hour === 24) return true
-    if (start_hour < end_hour) {
-      return currentHour >= start_hour && currentHour < end_hour
+    if (start_hour === 0 && end_hour === 24) {
+      setIsInTimeWindow(true)
+    } else if (start_hour < end_hour) {
+      setIsInTimeWindow(currentHour >= start_hour && currentHour < end_hour)
+    } else {
+      setIsInTimeWindow(currentHour >= start_hour || currentHour < end_hour)
     }
-    return currentHour >= start_hour || currentHour < end_hour
   }, [autonomousSettings])
 
   const status = useMemo(() => {

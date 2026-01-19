@@ -30,11 +30,11 @@ router = APIRouter()
 
 def _validate_entry_type(entry_type: str) -> None:
     """Validate entry type parameter."""
-    valid_types = {"file", "table", "task", "endpoint", "page"}
+    valid_types = {"file", "table", "task", "endpoint", "page", "dependency"}
     if entry_type not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid entry type: {entry_type}. Must be one of: {', '.join(valid_types)}",
+            detail=f"Invalid entry type: {entry_type}. Must be one of: {', '.join(sorted(valid_types))}",
         )
 
 
