@@ -60,9 +60,7 @@ async def test_health_check(client: GraphitiClient) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
-async def test_store_pattern(
-    client: GraphitiClient, cleanup_episodes: list[str]
-) -> None:
+async def test_store_pattern(client: GraphitiClient, cleanup_episodes: list[str]) -> None:
     """Test storing a fix pattern.
 
     This test may be slow (~30-90s) as it involves LLM entity extraction.
@@ -97,9 +95,7 @@ async def test_search_patterns(client: GraphitiClient) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
-async def test_record_gotcha(
-    client: GraphitiClient, cleanup_episodes: list[str]
-) -> None:
+async def test_record_gotcha(client: GraphitiClient, cleanup_episodes: list[str]) -> None:
     """Test recording a gotcha.
 
     This test may be slow (~30-90s) as it involves LLM entity extraction.

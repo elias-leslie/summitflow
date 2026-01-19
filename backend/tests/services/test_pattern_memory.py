@@ -148,9 +148,7 @@ class TestPatternMemoryService:
         assert call_args[1]["context"] == "mypy: When fixing type errors"
         assert call_args[1]["scope"] == "project"
 
-    def test_parse_search_result_valid(
-        self, service: PatternMemoryService
-    ) -> None:
+    def test_parse_search_result_valid(self, service: PatternMemoryService) -> None:
         """Test parsing a valid search result."""
         result = SearchResult(
             pattern="Fix for ruff:F401:abc123: Removed unused import os",
@@ -167,9 +165,7 @@ class TestPatternMemoryService:
         assert parsed.similarity_score == 0.9
         assert "import os" in parsed.fix_diff
 
-    def test_parse_search_result_malformed(
-        self, service: PatternMemoryService
-    ) -> None:
+    def test_parse_search_result_malformed(self, service: PatternMemoryService) -> None:
         """Test parsing handles malformed results gracefully."""
         result = SearchResult(
             pattern="Some random text without expected format",

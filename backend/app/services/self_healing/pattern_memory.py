@@ -114,8 +114,7 @@ class PatternMemoryService:
 
         result = await self.client.store_pattern(pattern, scope="project")
         logger.info(
-            f"Stored fix pattern for {check_type}:{error_code} "
-            f"(signature: {error_signature[:8]})"
+            f"Stored fix pattern for {check_type}:{error_code} (signature: {error_signature[:8]})"
         )
         return result
 
@@ -160,9 +159,7 @@ class PatternMemoryService:
             if pattern:
                 patterns.append(pattern)
 
-        logger.debug(
-            f"Found {len(patterns)} similar patterns for {check_type}:{error_code}"
-        )
+        logger.debug(f"Found {len(patterns)} similar patterns for {check_type}:{error_code}")
         return patterns
 
     def _parse_search_result(self, result: SearchResult) -> StoredPattern | None:

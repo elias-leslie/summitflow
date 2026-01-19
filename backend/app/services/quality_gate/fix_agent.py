@@ -50,6 +50,7 @@ def _run_async(coro: Any) -> Any:
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
 
+
 FixResult = Literal["fixed", "failed", "escalated_supervisor", "escalated_human"]
 
 # 3-2-1 escalation thresholds

@@ -134,6 +134,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24,  # Daily
         "kwargs": {"max_age_days": 30},
     },
+    # Self-healing - monitor systemd for runtime errors
+    "monitor-systemd-errors": {
+        "task": "summitflow.monitor_systemd_errors",
+        "schedule": 60 * 5,  # Every 5 minutes
+        "kwargs": {"project_id": "summitflow"},
+    },
 }
 
 
@@ -176,5 +182,6 @@ from app.tasks import (  # noqa: F401, E402
     evidence_tasks,
     explorer_tasks,
     orchestrator_runner,
+    self_healing,
 )
 from app.tasks.autonomous import ideas  # noqa: F401, E402
