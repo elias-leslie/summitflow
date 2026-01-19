@@ -21,7 +21,6 @@ from .api import (
     implementation,
     notifications,
     projects,
-    prompts,
     quality_gate,
     refactor_sessions,
     schemas,
@@ -89,7 +88,6 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
-app.include_router(prompts.router, prefix="/api", tags=["prompts"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
