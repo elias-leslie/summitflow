@@ -25,6 +25,13 @@ export const dependencyColumns: ExplorerColumn<ExplorerEntry>[] = [
     render: () => null,
   },
   {
+    key: 'source_files',
+    label: 'Sources',
+    width: '60px',
+    align: 'center',
+    render: () => null,
+  },
+  {
     key: 'vulnerabilities',
     label: 'Security',
     width: '90px',

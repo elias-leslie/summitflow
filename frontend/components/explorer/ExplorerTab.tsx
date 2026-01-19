@@ -14,7 +14,7 @@ import type { ExplorerEntry } from '@/lib/api/explorer'
 import { DataList } from './DataList'
 import { DataRow } from './DataRow'
 import { ExplorerShell } from './ExplorerShell'
-import { useExplorerData, useExplorerFilters, useExplorerState } from './hooks'
+import { useDedupedDependencies, useExplorerData, useExplorerFilters, useExplorerState } from './hooks'
 import type { ExplorerType, HealthStatus } from './types'
 import { getTypeConfig, uiTypeToEntryType } from './types/index'
 
@@ -84,7 +84,7 @@ function ExplorerContent({
   })
 
   // Fetch data
-  const { entries, isLoading, isError } = useExplorerData({
+  const { entries: rawEntries, isLoading, isError } = useExplorerData({
     projectId,
     filters: {
       ...filters,
@@ -94,6 +94,13 @@ function ExplorerContent({
       dir: sortDir,
     },
   })
+
+  // Deduplicate dependencies by package name
+  const dedupedDependencies = useDedupedDependencies(
+    type === 'dependencies' ? rawEntries : [],
+  )
+  // Use deduplicated entries for dependencies, raw entries for other types
+  const entries = type === 'dependencies' ? dedupedDependencies : rawEntries
 
   // UI state
   const { isExpanded, toggleExpand } = useExplorerState()

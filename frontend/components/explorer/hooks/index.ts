@@ -1,10 +1,11 @@
 /**
  * Explorer Hooks - Public exports
  *
- * Three hooks with clear separation of concerns:
+ * Four hooks with clear separation of concerns:
  * - useExplorerData: Data fetching with react-query
  * - useExplorerState: UI state (expanded, selected)
  * - useExplorerFilters: Filter/sort state
+ * - useDedupedDependencies: Dependency deduplication by package name
  */
 
 export {
@@ -14,3 +15,7 @@ export {
 } from './useExplorerData'
 export { useExplorerFilters } from './useExplorerFilters'
 export { useExplorerState } from './useExplorerState'
+export {
+  useDedupedDependencies,
+  type DedupedDependency,
+} from './useDedupedDependencies'

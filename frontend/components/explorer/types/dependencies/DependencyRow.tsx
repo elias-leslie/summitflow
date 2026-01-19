@@ -2,10 +2,10 @@
  * DependencyRow - Row content renderer for package dependencies
  *
  * Displays package name, version, type badge (Python/Node.js),
- * vulnerability indicators, and outdated status.
+ * vulnerability indicators, outdated status, and source file count.
  */
 
-import { AlertTriangle, CheckCircle, Package, Shield, ShieldAlert, ShieldX } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Files, Package, Shield, ShieldAlert, ShieldX } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
@@ -69,6 +69,9 @@ export function DependencyRow({ entry }: DependencyRowProps) {
   const isWorkspaceRef = meta.is_workspace_ref as boolean
   const isDevDep = meta.is_dev_dependency as boolean
   const vulns = meta.vulnerabilities as { critical?: number; high?: number; medium?: number; low?: number } | undefined
+  // Support both deduplicated (source_files) and raw (source_file) entries
+  const sourceFiles = (meta.source_files as string[] | undefined) || (meta.source_file ? [meta.source_file as string] : [])
+  const versionConflict = meta.version_conflict as boolean | undefined
 
   const vulnBadge = getVulnBadge(vulns)
   const VulnIcon = vulnBadge.icon
@@ -95,6 +98,11 @@ export function DependencyRow({ entry }: DependencyRowProps) {
             workspace
           </span>
         )}
+        {versionConflict && (
+          <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            multi-version
+          </span>
+        )}
       </div>
 
       {/* Version */}
@@ -112,6 +120,18 @@ export function DependencyRow({ entry }: DependencyRowProps) {
         >
           {packageType === 'python' ? 'PY' : 'JS'}
         </span>
+      </ColumnValue>
+
+      {/* Source files count badge */}
+      <ColumnValue width="60px" align="center">
+        {sourceFiles.length > 1 ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/15 text-indigo-400 border border-indigo-500/25">
+            <Files className="w-3 h-3" />
+            <span>{sourceFiles.length}</span>
+          </span>
+        ) : (
+          <span className="text-slate-600 text-[10px]">1</span>
+        )}
       </ColumnValue>
 
       {/* Vulnerability badge */}

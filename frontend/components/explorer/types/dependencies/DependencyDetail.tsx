@@ -32,7 +32,10 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
   const isOutdated = meta.is_outdated as boolean
   const isWorkspaceRef = meta.is_workspace_ref as boolean
   const isDevDep = meta.is_dev_dependency as boolean
-  const sourceFile = meta.source_file as string | null
+  // Support both deduplicated (source_files) and raw (source_file) entries
+  const sourceFiles = (meta.source_files as string[] | undefined) || (meta.source_file ? [meta.source_file as string] : [])
+  const versionConflict = meta.version_conflict as boolean | undefined
+  const allVersions = (meta.all_versions as string[] | undefined) || []
   const vulns = meta.vulnerabilities as { critical?: number; high?: number; medium?: number; low?: number } | undefined
   const advisories = (meta.audit_advisories as string[]) || []
 
@@ -214,17 +217,36 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
         )}
       </div>
 
-      {/* Source file */}
-      {sourceFile && (
+      {/* Version conflict warning */}
+      {versionConflict && allVersions.length > 1 && (
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-300">
+              Multiple Versions Detected
+            </p>
+            <p className="text-xs text-amber-400/70 mt-0.5 font-mono">
+              {allVersions.join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Source files */}
+      {sourceFiles.length > 0 && (
         <div className="pt-2 border-t border-slate-700/50">
           <span className="text-xs text-slate-500 uppercase tracking-wide">
-            Source File
+            {sourceFiles.length === 1 ? 'Source File' : `Source Files (${sourceFiles.length})`}
           </span>
-          <div className="flex items-center gap-2 mt-1">
-            <FileCode className="w-4 h-4 text-slate-500" />
-            <p className="font-mono text-xs text-slate-400 truncate">
-              {sourceFile}
-            </p>
+          <div className="mt-2 space-y-1.5">
+            {sourceFiles.map((file, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                <p className="font-mono text-xs text-slate-400 truncate">
+                  {file}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       )}

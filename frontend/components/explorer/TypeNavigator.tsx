@@ -135,6 +135,7 @@ export function TypeNavigator({
                   : 'border-transparent text-slate-500 hover:text-slate-300',
               )}
               title={config.label}
+              data-testid={`explorer-type-${type}`}
             >
               <Icon className="w-5 h-5" />
               {count !== undefined && count > 0 && (
