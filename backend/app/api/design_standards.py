@@ -192,6 +192,62 @@ async def create_project_standard(
     return _standard_to_response(std)
 
 
+# NOTE: These routes MUST come before /{standard_id} routes to avoid FastAPI matching
+# "effective-rules" and "validate" as standard_id parameter
+
+
+@router.get(
+    "/projects/{project_id}/design-standards/effective-rules",
+    response_model=list[DesignRuleResponse],
+)
+async def get_effective_rules(
+    project_id: str,
+    category: str | None = Query(None, description="Filter by category"),
+) -> list[DesignRuleResponse]:
+    """Get effective rules for a project.
+
+    Returns merged rules from base and project standards.
+    Project rules override base rules with the same rule_id.
+    """
+    rules = ds_storage.get_effective_rules(project_id, category)
+    return [_rule_to_response(r) for r in rules]
+
+
+@router.post(
+    "/projects/{project_id}/design-standards/validate",
+    response_model=ValidationResponse,
+)
+async def validate_element(
+    project_id: str,
+    request: ValidationRequest,
+) -> ValidationResponse:
+    """Validate element data against project's design rules.
+
+    Returns list of violations if any rules are not met.
+    """
+    violations = ds_storage.validate_against_rules(
+        project_id,
+        request.element_data,
+        request.category,
+    )
+
+    return ValidationResponse(
+        compliant=len(violations) == 0,
+        violations=[
+            ViolationResponse(
+                rule_id=v["rule_id"],
+                rule_name=v["rule_name"],
+                category=v["category"],
+                requirement=v["requirement"],
+                expected=str(v["expected"]),
+                actual=v["actual"],
+                severity=v["severity"],
+            )
+            for v in violations
+        ],
+    )
+
+
 @router.get(
     "/projects/{project_id}/design-standards/{standard_id}",
     response_model=DesignStandardResponse,
@@ -351,58 +407,6 @@ async def delete_rule(
         raise HTTPException(status_code=404, detail="Rule not found")
 
     return {"deleted": True, "rule_id": rule_id}
-
-
-@router.get(
-    "/projects/{project_id}/design-standards/effective-rules",
-    response_model=list[DesignRuleResponse],
-)
-async def get_effective_rules(
-    project_id: str,
-    category: str | None = Query(None, description="Filter by category"),
-) -> list[DesignRuleResponse]:
-    """Get effective rules for a project.
-
-    Returns merged rules from base and project standards.
-    Project rules override base rules with the same rule_id.
-    """
-    rules = ds_storage.get_effective_rules(project_id, category)
-    return [_rule_to_response(r) for r in rules]
-
-
-@router.post(
-    "/projects/{project_id}/design-standards/validate",
-    response_model=ValidationResponse,
-)
-async def validate_element(
-    project_id: str,
-    request: ValidationRequest,
-) -> ValidationResponse:
-    """Validate element data against project's design rules.
-
-    Returns list of violations if any rules are not met.
-    """
-    violations = ds_storage.validate_against_rules(
-        project_id,
-        request.element_data,
-        request.category,
-    )
-
-    return ValidationResponse(
-        compliant=len(violations) == 0,
-        violations=[
-            ViolationResponse(
-                rule_id=v["rule_id"],
-                rule_name=v["rule_name"],
-                category=v["category"],
-                requirement=v["requirement"],
-                expected=str(v["expected"]),
-                actual=v["actual"],
-                severity=v["severity"],
-            )
-            for v in violations
-        ],
-    )
 
 
 # ============================================================================

@@ -6,9 +6,10 @@ Tests verify multi-context discovery:
 3. Project with own lockfile is treated as standalone even in workspace
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.services.explorer.types.dependencies import DependencyScanner
 
@@ -35,10 +36,10 @@ class TestStandaloneProjectDetection:
                             path="nodejs/express",
                         )
                     ]
-                    
+
                     # Should call standalone scanner when no workspace found
                     result = scanner._scan_nodejs_dependencies()
-                    
+
                     mock_scan.assert_called_once()
                     assert len(result) == 1
 
@@ -57,10 +58,12 @@ class TestStandaloneProjectDetection:
                         with patch.object(scanner, "_parse_pnpm_lock", return_value={}):
                             with patch.object(scanner, "_run_pnpm_audit", return_value={}):
                                 with patch.object(scanner, "_run_pnpm_outdated", return_value={}):
-                                    with patch.object(scanner, "_scan_standalone_node_project") as mock_standalone:
+                                    with patch.object(
+                                        scanner, "_scan_standalone_node_project"
+                                    ) as mock_standalone:
                                         # Should NOT call standalone scanner
                                         scanner._scan_nodejs_dependencies()
-                                        
+
                                         mock_standalone.assert_not_called()
 
     def test_project_with_own_lockfile_treated_as_standalone(self, scanner):
@@ -75,17 +78,19 @@ class TestStandaloneProjectDetection:
                 with patch.object(scanner, "_has_own_lockfile", return_value=True):
                     with patch.object(scanner, "_is_project_in_workspace", return_value=False):
                         with patch("pathlib.Path.exists", return_value=True):
-                            with patch.object(scanner, "_scan_standalone_node_project") as mock_standalone:
+                            with patch.object(
+                                scanner, "_scan_standalone_node_project"
+                            ) as mock_standalone:
                                 mock_standalone.return_value = []
-                                
+
                                 # Should call standalone scanner when has own lockfile
                                 scanner._scan_nodejs_dependencies()
-                                
+
                                 mock_standalone.assert_called_once()
 
     def test_mixed_parent_directory_scenario(self, scanner):
         """Project should correctly identify when it has own resolution context.
-        
+
         Scenario: Workspace at parent level but project has own lockfile.
         """
         workspace_root = Path("/fake")  # Workspace at parent level
@@ -103,7 +108,9 @@ class TestStandaloneProjectDetection:
                     # /fake/project is NOT in [/fake/frontend, /fake/backend]
                     with patch.object(scanner, "_is_project_in_workspace", return_value=False):
                         with patch("pathlib.Path.exists", return_value=True):
-                            with patch.object(scanner, "_scan_standalone_node_project") as mock_standalone:
+                            with patch.object(
+                                scanner, "_scan_standalone_node_project"
+                            ) as mock_standalone:
                                 mock_standalone.return_value = [
                                     MagicMock(
                                         entry_type="dependency",
@@ -111,9 +118,9 @@ class TestStandaloneProjectDetection:
                                         path="nodejs/react",
                                     )
                                 ]
-                                
+
                                 result = scanner._scan_nodejs_dependencies()
-                                
+
                                 # Should be treated as standalone
                                 mock_standalone.assert_called_once()
                                 assert len(result) == 1

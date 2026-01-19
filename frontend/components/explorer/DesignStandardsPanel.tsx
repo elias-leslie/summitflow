@@ -11,7 +11,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { buildApiUrl } from '@/lib/api-config'
+// NOTE: Use relative URLs for CF Access compatibility (same pattern as lib/api/explorer.ts)
 import {
   AlertCircle,
   AlertTriangle,
@@ -86,14 +86,14 @@ const categoryConfig: Record<
   },
 }
 
-// API fetch
+// API fetch - relative URLs go through Next.js rewrites for CF Access compatibility
 async function fetchEffectiveRules(projectId: string): Promise<DesignRule[]> {
   const res = await fetch(
-    buildApiUrl(`/api/projects/${projectId}/design-standards/effective-rules`),
+    `/api/projects/${projectId}/design-standards/effective-rules`,
   )
   if (!res.ok) {
     // Fallback to base rules if project has no standard
-    const baseRes = await fetch(buildApiUrl('/api/design-standards/base/rules'))
+    const baseRes = await fetch('/api/design-standards/base/rules')
     if (!baseRes.ok) throw new Error('Failed to fetch design rules')
     return baseRes.json()
   }

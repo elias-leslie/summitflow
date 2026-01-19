@@ -12,7 +12,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { buildApiUrl } from '@/lib/api-config'
+// NOTE: Use relative URLs for CF Access compatibility (same pattern as lib/api/explorer.ts)
 import {
   Activity,
   AlertCircle,
@@ -63,14 +63,14 @@ type SortField = 'path' | 'complexity_score' | 'lines_of_code' | 'priority'
 type SortDir = 'asc' | 'desc'
 type PriorityFilter = 'all' | 'high' | 'medium'
 
-// API fetch function
+// API fetch function - relative URLs go through Next.js rewrites for CF Access compatibility
 async function fetchRefactorTargets(
   projectId: string,
   codeOnly: boolean = true,
 ): Promise<RefactorTargetsResponse> {
   const params = new URLSearchParams({ code_only: String(codeOnly) })
   const res = await fetch(
-    buildApiUrl(`/api/projects/${projectId}/explorer/refactor-targets?${params}`),
+    `/api/projects/${projectId}/explorer/refactor-targets?${params}`,
   )
   if (!res.ok) {
     throw new Error('Failed to fetch refactor targets')
