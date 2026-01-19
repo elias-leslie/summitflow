@@ -29,6 +29,25 @@ from ..logging_config import get_logger
 logger = get_logger(__name__)
 
 
+# =============================================================================
+# Safety Constants (d14 decision: hardcoded, not configurable)
+# =============================================================================
+
+# Safety prime directive - prepended to ALL autonomous agent prompts
+# These are guardrails for autonomous code execution
+SAFETY_PRIME_DIRECTIVE: str = """## Safety Constraints (NON-NEGOTIABLE)
+
+You are an autonomous code agent. The following constraints MUST be followed:
+
+1. **No destructive operations**: Never delete files outside the project, never run rm -rf, never drop databases
+2. **No credential exposure**: Never log, print, or commit secrets, API keys, or credentials
+3. **No network exfiltration**: Never send project data to external services not explicitly configured
+4. **Worktree isolation**: All file modifications MUST be in the designated worktree, never in main
+5. **Rollback ready**: Every change must be reversible via git reset
+
+"""
+
+
 class ModelCapability(str, Enum):
     """Capabilities that models can fulfill."""
 
@@ -354,8 +373,6 @@ class ModelFactory:
             registry: Optional registry to use (defaults to global singleton)
         """
         self.registry = registry or get_registry()
-        self._budget_used: float = 0.0
-        self._budget_cap: float = 2.0  # Default $2 cap per d14
 
     def get_model(
         self,
@@ -376,9 +393,6 @@ class ModelFactory:
 
         Returns:
             ModelSelection with model_id, provider, and reasoning
-
-        Raises:
-            BudgetExceededError: If budget cap would be exceeded
         """
         # Map task context to capability
         capability = self._map_to_capability(task_type, phase)
@@ -501,29 +515,6 @@ class ModelFactory:
             self.registry.record_success(provider)
         else:
             self.registry.record_failure(provider)
-
-    def get_budget_remaining(self) -> float:
-        """Get remaining budget.
-
-        Returns:
-            Remaining budget in dollars
-        """
-        return self._budget_cap - self._budget_used
-
-    def set_budget_cap(self, cap: float) -> None:
-        """Set budget cap.
-
-        Args:
-            cap: Budget cap in dollars
-        """
-        self._budget_cap = cap
-
-
-class BudgetExceededError(Exception):
-    """Raised when budget cap would be exceeded."""
-
-    pass
-
 
 # Global singleton
 _registry: ModelRegistry | None = None

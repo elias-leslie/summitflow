@@ -54,6 +54,7 @@ class LLMClient(ABC):
         max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
+        task_id: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion.
@@ -64,6 +65,7 @@ class LLMClient(ABC):
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             purpose: Purpose of this request for session tracking
+            task_id: Task ID for session linkage
             **kwargs: Provider-specific options
 
         Returns:
@@ -204,6 +206,7 @@ class AgentHubLLMClient(LLMClient):
         max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
+        task_id: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion via Agent Hub.
@@ -214,6 +217,7 @@ class AgentHubLLMClient(LLMClient):
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             purpose: Purpose of this request (task_enrichment, code_generation, etc.)
+            task_id: Task ID for session linkage (stored as external_id in Agent Hub)
             **kwargs: Additional options (session_id, enable_caching, etc.)
 
         Returns:
@@ -239,6 +243,7 @@ class AgentHubLLMClient(LLMClient):
                 project_id=self.project_id,
                 session_id=kwargs.get("session_id"),
                 purpose=purpose,
+                external_id=task_id,  # Link session to task for memory extraction
                 enable_caching=kwargs.get("enable_caching", True),
             )
             return _response_to_llm_response(response)
@@ -346,6 +351,7 @@ class DualProviderClient(LLMClient):
         max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
+        task_id: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate using primary provider via Agent Hub.
@@ -362,6 +368,7 @@ class DualProviderClient(LLMClient):
             max_tokens=max_tokens,
             temperature=temperature,
             purpose=purpose,
+            task_id=task_id,
             **kwargs,
         )
 
