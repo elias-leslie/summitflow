@@ -40,10 +40,53 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
 
 EXPECTED_TASK_COLUMNS = 38
 
+# Columns for queries that JOIN with task_spirit (44 columns total)
+# Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
+TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
+    t.progress_log, t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
+    t.priority, t.task_type, t.parent_task_id, t.feature_id,
+    t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
+    t.current_phase, t.verification_result,
+    t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
+    t.complexity, t.autonomous,
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues,
+    ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
+
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44
+
 
 def _generate_task_id() -> str:
     """Generate a unique task ID."""
     return generate_prefixed_id("task")
+
+
+def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
+    """Convert a database row with spirit fields to a task dict.
+
+    Column order (44 columns):
+        First 38 columns are standard task columns (see _row_to_dict).
+        Then 6 spirit columns:
+        38: objective, 39: spirit_anti, 40: decisions, 41: constraints,
+        42: done_when, 43: plan_status
+    """
+    if row is None:
+        raise ValueError("Row cannot be None")
+    if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
+        raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
+
+    # Build base task dict from first 38 columns
+    task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
+
+    # Add spirit fields (columns 38-43)
+    task["objective"] = row[38]
+    task["spirit_anti"] = row[39]
+    task["decisions"] = row[40] if row[40] else []
+    task["constraints"] = row[41] if row[41] else []
+    task["done_when"] = row[42] if row[42] else []
+    task["plan_status"] = row[43]
+
+    return task
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
@@ -192,17 +235,19 @@ def create_task(
 
 
 def get_task(task_id: str) -> dict[str, Any] | None:
-    """Get a task by ID.
+    """Get a task by ID with spirit fields.
 
     Returns:
-        Task dict or None if not found.
+        Task dict with spirit fields (objective, spirit_anti, decisions,
+        constraints, done_when, plan_status) or None if not found.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT {TASK_COLUMNS}
-            FROM tasks
-            WHERE id = %s
+            SELECT {TASK_COLUMNS_WITH_SPIRIT}
+            FROM tasks t
+            LEFT JOIN task_spirit ts ON t.id = ts.task_id
+            WHERE t.id = %s
             """,
             (task_id,),
         )
@@ -210,7 +255,7 @@ def get_task(task_id: str) -> dict[str, Any] | None:
 
     if not row:
         return None
-    return _row_to_dict(row)
+    return _row_to_dict_with_spirit(row)
 
 
 def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:

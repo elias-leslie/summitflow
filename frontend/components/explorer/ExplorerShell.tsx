@@ -22,6 +22,7 @@ import {
   triggerExplorerScan,
 } from '@/lib/api/explorer'
 import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
+import { explorerKeys } from './hooks/useExplorerData'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
 import { DesignStandardsPanel } from './DesignStandardsPanel'
@@ -226,8 +227,14 @@ export function ExplorerShell({
             setIsScanning(false)
             setScanProgress(null)
 
-            // Invalidate scan history cache so ScanTrendLine updates
+            // Invalidate caches so UI updates immediately
             queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
+            queryClient.invalidateQueries({
+              queryKey: explorerKeys.entries(projectId),
+            })
+            queryClient.invalidateQueries({
+              queryKey: explorerKeys.stats(projectId),
+            })
 
             if (status.status === 'failed' && status.error) {
               console.error('Scan completed with error:', status.error)

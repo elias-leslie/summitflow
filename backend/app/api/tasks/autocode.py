@@ -23,7 +23,6 @@ from ...storage import quality_check_results as qcr_store
 from ...storage import tasks as task_store
 from ...storage.connection import get_connection
 from ...storage.subtasks import get_subtasks_for_task
-from ...storage.task_spirit import get_task_spirit
 
 logger = get_logger(__name__)
 
@@ -142,19 +141,13 @@ def start_autocode(
             detail=f"Task {task_id} has no subtasks. Cannot run autocode without subtasks.",
         )
 
-    # 3. Fetch task_spirit and validate has done_when criteria
-    task_spirit = get_task_spirit(task_id)
-    done_when = task_spirit.get("done_when") if task_spirit else None
+    # 3. Validate task has done_when criteria (now included via JOIN in get_task)
+    done_when = task.get("done_when")
     if not done_when:
         raise HTTPException(
             status_code=400,
             detail=f"Task {task_id} has no done_when criteria. Cannot run autocode without acceptance criteria.",
         )
-    # Merge spirit fields into task for downstream use
-    if task_spirit:
-        task["objective"] = task_spirit.get("objective")
-        task["spirit_anti"] = task_spirit.get("spirit_anti")
-        task["done_when"] = done_when
 
     # 3.5 Check quality gate status - auto-fix and block if failing
     with get_connection() as conn:

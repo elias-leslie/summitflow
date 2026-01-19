@@ -93,9 +93,9 @@ class DependencyScanner(BaseScanner):
         pyproject_files = list(self.root_path.rglob("pyproject.toml"))
         # Filter out reference/vendor directories
         pyproject_files = [
-            p for p in pyproject_files
-            if "references" not in str(p) and "node_modules" not in str(p)
-            and ".venv" not in str(p)
+            p
+            for p in pyproject_files
+            if "references" not in str(p) and "node_modules" not in str(p) and ".venv" not in str(p)
         ]
 
         # Run pip-audit once for the project if available
@@ -131,9 +131,9 @@ class DependencyScanner(BaseScanner):
                         "is_outdated": is_outdated,
                         "is_workspace_ref": "file://" in version_constraint,
                         "is_dev_dependency": is_dev,
-                        "vulnerabilities": vuln_info.get("vulnerabilities", {
-                            "critical": 0, "high": 0, "medium": 0, "low": 0
-                        }),
+                        "vulnerabilities": vuln_info.get(
+                            "vulnerabilities", {"critical": 0, "high": 0, "medium": 0, "low": 0}
+                        ),
                         "audit_advisories": vuln_info.get("advisories", []),
                         "source_file": str(pyproject_path),
                     }
@@ -145,12 +145,14 @@ class DependencyScanner(BaseScanner):
                     rel_source = pyproject_path.parent.relative_to(self.root_path)
                     path = f"python/{rel_source}/{name}"
 
-                    entries.append(ExplorerEntryCreate(
-                        path=path,
-                        name=name,
-                        health_status=health,
-                        metadata=metadata,
-                    ))
+                    entries.append(
+                        ExplorerEntryCreate(
+                            path=path,
+                            name=name,
+                            health_status=health,
+                            metadata=metadata,
+                        )
+                    )
 
             except Exception as e:
                 logger.warning(f"Failed to parse {pyproject_path}: {e}")
@@ -200,8 +202,7 @@ class DependencyScanner(BaseScanner):
                     # Parse dependency line: "package>=1.0.0" or "package[extra]>=1.0.0"
                     # Also handle: package = ">=1.0.0" format
                     match = re.match(
-                        r'["\']?([a-zA-Z0-9_-]+)(?:\[[^\]]+\])?([<>=!~^][^"\']*)?["\']?',
-                        stripped
+                        r'["\']?([a-zA-Z0-9_-]+)(?:\[[^\]]+\])?([<>=!~^][^"\']*)?["\']?', stripped
                     )
                     if match:
                         pkg_name = match.group(1).lower().replace("_", "-")
@@ -333,21 +334,49 @@ class DependencyScanner(BaseScanner):
     # -------------------------------------------------------------------------
 
     def _scan_nodejs_dependencies(self) -> list[ExplorerEntryCreate]:
-        """Scan Node.js dependencies from pnpm workspace."""
+        """Scan Node.js dependencies using multi-context discovery.
+
+        Strategy:
+        1. Check if project is part of pnpm workspace
+        2. If workspace found but project NOT in workspace packages, check for own lockfile
+        3. Projects with own lockfile are treated as standalone (resolution boundary)
+        4. Otherwise scan workspace packages that belong to this project
+        """
         entries: list[ExplorerEntryCreate] = []
         assert self.root_path is not None
 
         # Check if this project is part of pnpm workspace
         workspace_root = self._find_pnpm_workspace_root()
+
         if not workspace_root:
-            # Check for standalone package.json
+            # No workspace found - scan standalone
+            logger.debug(f"No pnpm workspace found, scanning {self.project_id} as standalone")
             package_json = self.root_path / "package.json"
             if package_json.exists():
                 return self._scan_standalone_node_project(package_json)
             return entries
 
-        # Parse workspace structure
+        # Workspace found - check if project is actually IN the workspace
         workspace_packages = self._parse_pnpm_workspace(workspace_root)
+        is_in_workspace = self._is_project_in_workspace(workspace_packages)
+
+        # Check if project has its own lockfile (resolution boundary)
+        has_own_lockfile = self._has_own_lockfile()
+
+        if not is_in_workspace or has_own_lockfile:
+            # Project is standalone even though workspace exists nearby
+            logger.info(
+                f"Project {self.project_id} has own resolution context "
+                f"(in_workspace={is_in_workspace}, own_lockfile={has_own_lockfile}), "
+                "scanning as standalone"
+            )
+            package_json = self.root_path / "package.json"
+            if package_json.exists():
+                return self._scan_standalone_node_project(package_json)
+            return entries
+
+        # Project is part of workspace - use workspace scanning
+        logger.debug(f"Scanning {self.project_id} as part of pnpm workspace at {workspace_root}")
         lock_versions = self._parse_pnpm_lock(workspace_root / "pnpm-lock.yaml")
 
         # Run pnpm audit once
@@ -386,9 +415,9 @@ class DependencyScanner(BaseScanner):
                         "is_outdated": is_outdated,
                         "is_workspace_ref": is_workspace,
                         "is_dev_dependency": is_dev,
-                        "vulnerabilities": vuln_info.get("vulnerabilities", {
-                            "critical": 0, "high": 0, "medium": 0, "low": 0
-                        }),
+                        "vulnerabilities": vuln_info.get(
+                            "vulnerabilities", {"critical": 0, "high": 0, "medium": 0, "low": 0}
+                        ),
                         "audit_advisories": vuln_info.get("advisories", []),
                         "source_file": str(pkg_path),
                     }
@@ -399,12 +428,14 @@ class DependencyScanner(BaseScanner):
                     rel_source = pkg_path.parent.relative_to(self.root_path)
                     path = f"nodejs/{rel_source}/{name}"
 
-                    entries.append(ExplorerEntryCreate(
-                        path=path,
-                        name=name,
-                        health_status=health,
-                        metadata=metadata,
-                    ))
+                    entries.append(
+                        ExplorerEntryCreate(
+                            path=path,
+                            name=name,
+                            health_status=health,
+                            metadata=metadata,
+                        )
+                    )
 
             except Exception as e:
                 logger.warning(f"Failed to parse {pkg_path}: {e}")
@@ -430,6 +461,22 @@ class DependencyScanner(BaseScanner):
             return MONOREPO_ROOT
 
         return None
+
+    def _is_project_in_workspace(self, workspace_packages: list[Path]) -> bool:
+        """Check if any workspace package is under this project's root."""
+        assert self.root_path is not None
+        project_root_str = str(self.root_path)
+        return any(str(pkg_path).startswith(project_root_str) for pkg_path in workspace_packages)
+
+    def _has_own_lockfile(self) -> bool:
+        """Check if project has its own lockfile (resolution boundary).
+
+        Projects with their own lockfile should be scanned as standalone,
+        even if they're under a workspace directory structure.
+        """
+        assert self.root_path is not None
+        lockfile_names = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"]
+        return any((self.root_path / lockfile).exists() for lockfile in lockfile_names)
 
     def _parse_pnpm_workspace(self, workspace_root: Path) -> list[Path]:
         """Parse pnpm-workspace.yaml and return package.json paths."""
@@ -552,12 +599,14 @@ class DependencyScanner(BaseScanner):
                     "source_file": str(package_json),
                 }
 
-                entries.append(ExplorerEntryCreate(
-                    path=f"nodejs/{name}",
-                    name=name,
-                    health_status="unknown",
-                    metadata=metadata,
-                ))
+                entries.append(
+                    ExplorerEntryCreate(
+                        path=f"nodejs/{name}",
+                        name=name,
+                        health_status="unknown",
+                        metadata=metadata,
+                    )
+                )
 
         except Exception as e:
             logger.warning(f"Failed to scan standalone Node project: {e}")
@@ -586,7 +635,12 @@ class DependencyScanner(BaseScanner):
                         pkg = advisory.get("module_name", "")
                         if pkg not in results:
                             results[pkg] = {
-                                "vulnerabilities": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                                "vulnerabilities": {
+                                    "critical": 0,
+                                    "high": 0,
+                                    "medium": 0,
+                                    "low": 0,
+                                },
                                 "advisories": [],
                             }
 

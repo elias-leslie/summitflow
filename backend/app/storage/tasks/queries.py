@@ -11,10 +11,11 @@ from psycopg import sql
 
 from ..connection import get_connection
 from .core import (
-    EXPECTED_TASK_COLUMNS,
+    EXPECTED_TASK_COLUMNS_WITH_SPIRIT,
     TASK_COLUMNS,
-    TASK_COLUMNS_ALIASED,
+    TASK_COLUMNS_WITH_SPIRIT,
     _row_to_dict,
+    _row_to_dict_with_spirit,
 )
 
 
@@ -28,7 +29,7 @@ def list_tasks(
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """List tasks for a project.
+    """List tasks for a project with spirit fields.
 
     Args:
         project_id: Project ID
@@ -41,7 +42,7 @@ def list_tasks(
         offset: Result offset
 
     Returns:
-        List of task dicts.
+        List of task dicts with spirit fields.
     """
     conditions = ["t.project_id = %s"]
     params: list[Any] = [project_id]
@@ -67,8 +68,9 @@ def list_tasks(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             sql.SQL(f"""
-            SELECT {TASK_COLUMNS_ALIASED}
+            SELECT {TASK_COLUMNS_WITH_SPIRIT}
             FROM tasks t
+            LEFT JOIN task_spirit ts ON t.id = ts.task_id
             WHERE {{conditions}}
             ORDER BY t.priority ASC, t.created_at DESC
             LIMIT %s OFFSET %s
@@ -77,7 +79,7 @@ def list_tasks(
         )
         rows = cur.fetchall()
 
-    return [_row_to_dict(row) for row in rows]
+    return [_row_to_dict_with_spirit(row) for row in rows]
 
 
 def get_tasks_by_enrichment_status(
@@ -112,21 +114,23 @@ def get_tasks_by_enrichment_status(
 
 
 def _row_to_dict_with_subtask_summary(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert a database row with subtask counts to a task dict.
+    """Convert a database row with spirit fields and subtask counts to a task dict.
 
-    Expects 36 columns: 34 task columns + subtask_total + subtask_completed.
+    Expects 46 columns: 44 task+spirit columns + subtask_total + subtask_completed.
     """
     if row is None:
         raise ValueError("Row cannot be None")
-    if len(row) != EXPECTED_TASK_COLUMNS + 2:
-        raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS + 2} columns, got {len(row)}")
+    if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 2:
+        raise ValueError(
+            f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 2} columns, got {len(row)}"
+        )
 
-    # First 34 columns are the standard task columns
-    task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
+    # First 44 columns are the task + spirit columns
+    task = _row_to_dict_with_spirit(row[:EXPECTED_TASK_COLUMNS_WITH_SPIRIT])
 
     # Last 2 columns are subtask counts
-    subtask_total = row[EXPECTED_TASK_COLUMNS]
-    subtask_completed = row[EXPECTED_TASK_COLUMNS + 1]
+    subtask_total = row[EXPECTED_TASK_COLUMNS_WITH_SPIRIT]
+    subtask_completed = row[EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 1]
 
     # Calculate progress percent
     progress_percent = 0.0
@@ -155,15 +159,17 @@ def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         limit: Max results (default 50)
 
     Returns:
-        List of ready task dicts with subtask_summary, ordered by priority then creation date.
+        List of ready task dicts with spirit fields and subtask_summary,
+        ordered by priority then creation date.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT {TASK_COLUMNS_ALIASED},
+            SELECT {TASK_COLUMNS_WITH_SPIRIT},
                    COALESCE(sub.total, 0) as subtask_total,
                    COALESCE(sub.completed, 0) as subtask_completed
             FROM tasks t
+            LEFT JOIN task_spirit ts ON t.id = ts.task_id
             LEFT JOIN (
                 SELECT task_id,
                        COUNT(*) as total,
@@ -198,14 +204,15 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         limit: Max results (default 50)
 
     Returns:
-        List of blocked task dicts with blocking_tasks field added.
+        List of blocked task dicts with spirit fields and blocking_tasks field added.
     """
     with get_connection() as conn, conn.cursor() as cur:
         # Get blocked tasks
         cur.execute(
             f"""
-            SELECT DISTINCT {TASK_COLUMNS_ALIASED}
+            SELECT DISTINCT {TASK_COLUMNS_WITH_SPIRIT}
             FROM tasks t
+            LEFT JOIN task_spirit ts ON t.id = ts.task_id
             WHERE t.project_id = %s
               AND t.status = 'pending'
               AND EXISTS (
@@ -222,7 +229,7 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         )
         rows = cur.fetchall()
 
-    return [_row_to_dict(row) for row in rows]
+    return [_row_to_dict_with_spirit(row) for row in rows]
 
 
 def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, Any]]:

@@ -80,11 +80,14 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
     }
   }
 
-  const hasChanges =
-    schedule &&
-    (enabled !== schedule.enabled ||
+  // For existing schedules: check if any field differs from saved values
+  // For new schedules (no schedule): any configuration is a change (user enabled backups)
+  const isNewSchedule = !schedule
+  const hasChanges = isNewSchedule
+    ? enabled // For new schedules, enabling is the trigger to save
+    : enabled !== schedule.enabled ||
       frequency !== schedule.frequency ||
-      retentionCount !== schedule.retention_count)
+      retentionCount !== schedule.retention_count
 
   if (isLoading) {
     return (
