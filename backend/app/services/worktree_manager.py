@@ -757,6 +757,273 @@ class WorktreeManager:
         """
         return self.cleanup_stale_worktrees(max_age_days=max_age_days, dry_run=dry_run)
 
+    # Blast radius thresholds (per d11 decision)
+    BLAST_RADIUS_FILES_THRESHOLD = 5
+    BLAST_RADIUS_DELETED_LINES_THRESHOLD = 100
+
+    def check_blast_radius(self, project_id: str, task_id: str) -> dict[str, Any]:
+        """Check if worktree changes exceed blast radius thresholds.
+
+        Per d11 decision: Before merge_worktree() (PR creation), calculate
+        blast radius. If files_touched > 5 OR lines_deleted > 100, flag
+        for SUPERVISOR review.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            Dict with:
+            - passed: bool - whether changes are within thresholds
+            - files_changed: int - number of files changed
+            - additions: int - lines added
+            - deletions: int - lines deleted
+            - exceeds_files: bool - if files > threshold
+            - exceeds_deletions: bool - if deletions > threshold
+            - reason: str - explanation if blocked
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            return {
+                "passed": False,
+                "files_changed": 0,
+                "additions": 0,
+                "deletions": 0,
+                "exceeds_files": False,
+                "exceeds_deletions": False,
+                "reason": "Worktree does not exist",
+            }
+
+        stats = self._get_worktree_stats(worktree_path)
+
+        exceeds_files = stats["files_changed"] > self.BLAST_RADIUS_FILES_THRESHOLD
+        exceeds_deletions = stats["deletions"] > self.BLAST_RADIUS_DELETED_LINES_THRESHOLD
+
+        passed = not (exceeds_files or exceeds_deletions)
+
+        reason = ""
+        if not passed:
+            reasons = []
+            if exceeds_files:
+                reasons.append(
+                    f"files_changed ({stats['files_changed']}) > threshold ({self.BLAST_RADIUS_FILES_THRESHOLD})"
+                )
+            if exceeds_deletions:
+                reasons.append(
+                    f"deletions ({stats['deletions']}) > threshold ({self.BLAST_RADIUS_DELETED_LINES_THRESHOLD})"
+                )
+            reason = "Blast radius exceeded: " + " AND ".join(reasons)
+
+        if not passed:
+            logger.warning(
+                "blast_radius_exceeded",
+                task_id=task_id,
+                files_changed=stats["files_changed"],
+                deletions=stats["deletions"],
+                reason=reason,
+            )
+        else:
+            logger.debug(
+                "blast_radius_ok",
+                task_id=task_id,
+                files_changed=stats["files_changed"],
+                deletions=stats["deletions"],
+            )
+
+        return {
+            "passed": passed,
+            "files_changed": stats["files_changed"],
+            "additions": stats["additions"],
+            "deletions": stats["deletions"],
+            "exceeds_files": exceeds_files,
+            "exceeds_deletions": exceeds_deletions,
+            "reason": reason,
+        }
+
+    def reset_worktree_to_base(self, project_id: str, task_id: str) -> bool:
+        """Reset a worktree to the base branch state (hard reset).
+
+        Used by SUPERVISOR escalation to get a fresh slate - discards all
+        WORKER changes and starts from clean main branch state.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            True if reset succeeded
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            logger.warning("reset_no_worktree", task_id=task_id)
+            return False
+
+        # Fetch latest from origin first
+        self._run_git(["fetch", "origin", self.base_branch], cwd=worktree_path)
+
+        # Hard reset to base branch
+        result = self._run_git(
+            ["reset", "--hard", f"origin/{self.base_branch}"],
+            cwd=worktree_path,
+        )
+
+        if result.returncode != 0:
+            # Try without origin prefix
+            result = self._run_git(
+                ["reset", "--hard", self.base_branch],
+                cwd=worktree_path,
+            )
+
+        if result.returncode == 0:
+            logger.info(
+                "worktree_reset_to_base",
+                task_id=task_id,
+                base=self.base_branch,
+            )
+            return True
+        else:
+            logger.error(
+                "worktree_reset_failed",
+                task_id=task_id,
+                error=result.stderr,
+            )
+            return False
+
+    def check_merge_conflicts(self, project_id: str, task_id: str) -> dict[str, Any]:
+        """Check if merging worktree to base would cause conflicts.
+
+        Per d10 decision: Merge conflicts trigger SUPERVISOR escalation, NOT
+        immediate human escalation.
+
+        Does a dry-run merge to detect conflicts without actually merging.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+
+        Returns:
+            Dict with:
+            - has_conflicts: bool
+            - conflicting_files: list[str] - files with conflicts
+            - can_fast_forward: bool - whether merge can be fast-forwarded
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            return {
+                "has_conflicts": False,
+                "conflicting_files": [],
+                "can_fast_forward": False,
+                "error": "Worktree does not exist",
+            }
+
+        # Fetch latest from origin
+        self._run_git(["fetch", "origin", self.base_branch], cwd=worktree_path)
+
+        # Try a dry-run merge
+        result = self._run_git(
+            ["merge", "--no-commit", "--no-ff", f"origin/{self.base_branch}"],
+            cwd=worktree_path,
+        )
+
+        # Abort the dry-run merge
+        self._run_git(["merge", "--abort"], cwd=worktree_path)
+
+        has_conflicts = result.returncode != 0 and "CONFLICT" in result.stdout + result.stderr
+
+        # Parse conflicting files
+        conflicting_files: list[str] = []
+        if has_conflicts:
+            for line in (result.stdout + result.stderr).splitlines():
+                # Extract filename from "CONFLICT (content): Merge conflict in <file>"
+                if line.startswith("CONFLICT") and "Merge conflict in" in line:
+                    parts = line.split("Merge conflict in")
+                    if len(parts) > 1:
+                        conflicting_files.append(parts[1].strip())
+
+        # Check if fast-forward is possible
+        can_ff_result = self._run_git(
+            ["merge-base", "--is-ancestor", f"origin/{self.base_branch}", "HEAD"],
+            cwd=worktree_path,
+        )
+        can_fast_forward = can_ff_result.returncode == 0
+
+        if has_conflicts:
+            logger.warning(
+                "merge_conflicts_detected",
+                task_id=task_id,
+                conflicting_files=conflicting_files,
+            )
+        else:
+            logger.debug(
+                "no_merge_conflicts",
+                task_id=task_id,
+                can_fast_forward=can_fast_forward,
+            )
+
+        return {
+            "has_conflicts": has_conflicts,
+            "conflicting_files": conflicting_files,
+            "can_fast_forward": can_fast_forward,
+        }
+
+    def get_conflict_context(self, project_id: str, task_id: str, file_path: str) -> dict[str, Any]:
+        """Get detailed context for a merge conflict.
+
+        Provides both sides of the conflict and file history to help
+        SUPERVISOR resolve it.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID
+            file_path: Path to conflicting file
+
+        Returns:
+            Dict with ours, theirs, base, and file history
+        """
+        worktree_path = self.get_worktree_path(project_id, task_id)
+        if not worktree_path.exists():
+            return {"error": "Worktree does not exist"}
+
+        context: dict[str, Any] = {
+            "file_path": file_path,
+            "ours": None,  # Our (worktree) version
+            "theirs": None,  # Their (main) version
+            "base": None,  # Common ancestor
+            "history": [],  # Recent commits touching this file
+        }
+
+        # Get our version
+        result = self._run_git(["show", f"HEAD:{file_path}"], cwd=worktree_path)
+        if result.returncode == 0:
+            context["ours"] = result.stdout
+
+        # Get their version
+        result = self._run_git(
+            ["show", f"origin/{self.base_branch}:{file_path}"], cwd=worktree_path
+        )
+        if result.returncode == 0:
+            context["theirs"] = result.stdout
+
+        # Get merge base version
+        base_result = self._run_git(
+            ["merge-base", "HEAD", f"origin/{self.base_branch}"], cwd=worktree_path
+        )
+        if base_result.returncode == 0:
+            base_sha = base_result.stdout.strip()
+            result = self._run_git(["show", f"{base_sha}:{file_path}"], cwd=worktree_path)
+            if result.returncode == 0:
+                context["base"] = result.stdout
+
+        # Get file history (last 5 commits touching this file)
+        result = self._run_git(
+            ["log", "--oneline", "-5", "--", file_path],
+            cwd=worktree_path,
+        )
+        if result.returncode == 0:
+            context["history"] = result.stdout.strip().split("\n")
+
+        return context
+
     def get_changed_files(self, project_id: str, task_id: str) -> list[tuple[str, str]]:
         """Get list of changed files in a task's worktree.
 

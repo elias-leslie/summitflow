@@ -19,9 +19,9 @@ from typing import Any, Literal
 
 import psycopg
 
-from ...constants import CLAUDE_SONNET, GEMINI_FLASH
 from ...logging_config import get_logger
 from ...services.agent_hub_client import AgentType, get_agent
+from ...services.model_registry import ModelFactory, get_factory
 from ...services.self_healing import PatternMemoryService, StoredPattern
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
@@ -76,18 +76,54 @@ def get_escalation_level(attempts: int) -> str:
         return "HUMAN"
 
 
+def get_supervisor_model(
+    attempts: int, factory: ModelFactory | None = None
+) -> tuple[str, AgentType]:
+    """Get model for SUPERVISOR level based on attempt number.
+
+    SUPERVISOR uses dual-model approach per d13 decision:
+    - Attempt 4 (first SUPERVISOR): Claude Sonnet
+    - Attempt 5 (second SUPERVISOR): Gemini Pro
+
+    Now uses ModelFactory for centralized model selection.
+
+    Args:
+        attempts: Number of fix attempts made (0-indexed before this attempt)
+        factory: Optional ModelFactory instance
+
+    Returns:
+        Tuple of (model_id, provider)
+    """
+    if factory is None:
+        factory = get_factory()
+
+    # Attempt 4 = first supervisor attempt (index 3)
+    supervisor_attempt = attempts - WORKER_ATTEMPTS + 1
+    selection = factory.get_model_for_escalation(
+        level="SUPERVISOR",
+        attempt=supervisor_attempt,
+    )
+    return selection.model_id, selection.provider
+
+
 def escalate_to_human(
     conn: psycopg.Connection[Any],
     result_id: int,
+    worktree_path: str | None = None,
 ) -> str | None:
     """Create a blocking bug task for manual review of an unfixable error.
 
     Called when fix attempts exceed MAX_FIX_ATTEMPTS (3 worker + 2 supervisor).
     Creates a P1 bug task linked to the check result.
 
+    Per d5 decision: Worktree is preserved for human inspection. Do NOT delete
+    the worktree on HUMAN escalation - include the path in the task description
+    so the human can inspect git log, git diff, and attempt_history.json.
+
     Args:
         conn: Database connection
         result_id: ID of the quality_check_result to escalate
+        worktree_path: Optional path to preserved worktree for inspection
 
     Returns:
         Created task ID, or None if escalation failed
@@ -143,11 +179,32 @@ def escalate_to_human(
             "",
             "This error could not be fixed automatically by the 3-2-1 escalation pipeline:",
             "- 3 attempts with GEMINI_FLASH (worker level)",
-            "- 2 attempts with CLAUDE_SONNET (supervisor level)",
+            "- 2 attempts with CLAUDE_SONNET + GEMINI_PRO (supervisor level)",
             "",
             "Manual investigation required.",
         ]
     )
+
+    # Add worktree inspection info if available
+    if worktree_path:
+        description_parts.extend(
+            [
+                "",
+                "## Worktree Preserved for Inspection",
+                "",
+                f"**Worktree path:** `{worktree_path}`",
+                "",
+                "The worktree has been preserved with all fix attempts. You can inspect:",
+                "- `git log` - see all attempted commits",
+                "- `git diff main...HEAD` - see current changes vs main",
+                "- `.summitflow/attempt_history.json` - detailed history of all fix attempts",
+                "",
+                "**After inspection:** Delete the worktree with:",
+                "```bash",
+                f"rm -rf {worktree_path}",
+                "```",
+            ]
+        )
     description = "\n".join(description_parts)
 
     try:
@@ -323,6 +380,47 @@ def _format_patterns_for_prompt(patterns: list[StoredPattern]) -> str:
         lines.append("")
 
     lines.append("Consider these previous fixes when determining your approach.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_attempt_history_for_prompt(approaches: list[dict[str, Any]]) -> str:
+    """Format attempt history for injection into SUPERVISOR prompts.
+
+    Tells the SUPERVISOR what approaches have already been tried and failed,
+    so it can try a different approach.
+
+    Args:
+        approaches: List of previous approach dicts from AttemptHistory
+
+    Returns:
+        Formatted string for prompt injection
+    """
+    if not approaches:
+        return ""
+
+    lines = [
+        "",
+        "## Previous Fix Attempts (ALL FAILED)",
+        "",
+        "The following approaches have already been tried and failed.",
+        "**Do NOT repeat these approaches** - try something different!",
+        "",
+    ]
+
+    for approach in approaches:
+        level = approach.get("escalation_level", "WORKER")
+        model = approach.get("model", "unknown")
+        summary = approach.get("approach_summary", "No summary")
+        attempt_num = approach.get("attempt_number", "?")
+
+        lines.append(f"### Attempt #{attempt_num} ({level} - {model})")
+        lines.append(f"**Approach tried:** {summary}")
+        lines.append(f"**Result:** {approach.get('outcome', 'failed')}")
+        lines.append("")
+
+    lines.append("**Your task:** Find a DIFFERENT approach that wasn't tried above.")
     lines.append("")
 
     return "\n".join(lines)
@@ -600,14 +698,15 @@ IMPORTANT: Previous attempts failed. Consider:
 - Verify the fix actually addresses the root cause
 """
 
-    # Select model based on escalation level
+    # Select model based on escalation level using ModelFactory
+    factory = get_factory()
     provider: AgentType
     if level == "WORKER":
-        model = GEMINI_FLASH
-        provider = "gemini"
-    else:  # SUPERVISOR
-        model = CLAUDE_SONNET
-        provider = "claude"
+        selection = factory.get_model_for_escalation(level="WORKER", attempt=attempts + 1)
+        model = selection.model_id
+        provider = selection.provider
+    else:  # SUPERVISOR - dual model approach
+        model, provider = get_supervisor_model(attempts, factory=factory)
 
     logger.info(
         "fix_attempt",
@@ -643,9 +742,8 @@ IMPORTANT: Previous attempts failed. Consider:
 
     # Verify the fix worked
     if _verify_fix(project_path, check_type, file_rel_path):
-        fixed_by = GEMINI_FLASH if level == "WORKER" else CLAUDE_SONNET
-        qcr_store.mark_fixed(conn, result_id, fixed_by=fixed_by)
-        logger.info("fix_successful", result_id=result_id, check_type=check_type, model=fixed_by)
+        qcr_store.mark_fixed(conn, result_id, fixed_by=model)
+        logger.info("fix_successful", result_id=result_id, check_type=check_type, model=model)
 
         # Store successful fix pattern for future retrieval
         _store_successful_pattern(

@@ -11,15 +11,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.constants import CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
+from app.services.model_registry import ModelFactory, ModelRegistry
 from app.services.quality_gate.fix_agent import (
     MAX_FIX_ATTEMPTS,
     SUPERVISOR_ATTEMPTS,
     WORKER_ATTEMPTS,
     _build_fix_prompt,
+    _format_attempt_history_for_prompt,
     _format_patterns_for_prompt,
     _get_similar_patterns,
     _store_successful_pattern,
     get_escalation_level,
+    get_supervisor_model,
 )
 from app.services.self_healing.pattern_memory import StoredPattern
 
@@ -337,3 +341,204 @@ class TestEscalationConstants:
         """Max attempts is worker + supervisor."""
         assert MAX_FIX_ATTEMPTS == WORKER_ATTEMPTS + SUPERVISOR_ATTEMPTS
         assert MAX_FIX_ATTEMPTS == 5
+
+
+class TestDualModelSupervisor:
+    """Tests for dual-model SUPERVISOR escalation (d13 decision)."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        """Create a fresh factory for each test."""
+        return ModelFactory(registry=ModelRegistry())
+
+    def test_supervisor_first_attempt_uses_sonnet(self, factory: ModelFactory) -> None:
+        """First SUPERVISOR attempt (attempt 4) uses Claude Sonnet."""
+        model, provider = get_supervisor_model(WORKER_ATTEMPTS, factory=factory)  # attempts=3
+        assert model == CLAUDE_SONNET
+        assert provider == "claude"
+
+    def test_supervisor_second_attempt_uses_gemini_pro(self, factory: ModelFactory) -> None:
+        """Second SUPERVISOR attempt (attempt 5) uses Gemini Pro."""
+        model, provider = get_supervisor_model(WORKER_ATTEMPTS + 1, factory=factory)  # attempts=4
+        assert model == GEMINI_PRO
+        assert provider == "gemini"
+
+    def test_supervisor_uses_gemini_pro_not_flash(self, factory: ModelFactory) -> None:
+        """SUPERVISOR uses Pro (reasoning) not Flash."""
+        model, _ = get_supervisor_model(WORKER_ATTEMPTS + 1, factory=factory)
+        assert model == GEMINI_PRO
+        assert model != GEMINI_FLASH
+
+    def test_both_supervisor_attempts_complete_before_human(self, factory: ModelFactory) -> None:
+        """Both SUPERVISOR models must be tried before HUMAN escalation."""
+        # Attempt 3 (index 3) is first SUPERVISOR
+        assert get_escalation_level(3) == "SUPERVISOR"
+        model1, _provider1 = get_supervisor_model(3, factory=factory)
+        assert model1 == CLAUDE_SONNET
+
+        # Attempt 4 (index 4) is second SUPERVISOR
+        assert get_escalation_level(4) == "SUPERVISOR"
+        model2, _provider2 = get_supervisor_model(4, factory=factory)
+        assert model2 == GEMINI_PRO
+
+        # Attempt 5 (index 5) escalates to HUMAN
+        assert get_escalation_level(5) == "HUMAN"
+
+    def test_escalation_uses_model_factory(self, factory: ModelFactory) -> None:
+        """Verify escalation properly uses ModelFactory for model selection."""
+        # WORKER uses factory
+        worker_selection = factory.get_model_for_escalation(level="WORKER", attempt=1)
+        assert worker_selection.model_id == GEMINI_FLASH
+        assert worker_selection.provider == "gemini"
+
+        # SUPERVISOR attempt 1 uses factory
+        sup1_selection = factory.get_model_for_escalation(level="SUPERVISOR", attempt=1)
+        assert sup1_selection.model_id == CLAUDE_SONNET
+        assert sup1_selection.provider == "claude"
+
+        # SUPERVISOR attempt 2 uses factory
+        sup2_selection = factory.get_model_for_escalation(level="SUPERVISOR", attempt=2)
+        assert sup2_selection.model_id == GEMINI_PRO
+        assert sup2_selection.provider == "gemini"
+
+
+class TestAttemptHistoryFormatting:
+    """Tests for attempt history formatting in SUPERVISOR prompts."""
+
+    def test_empty_approaches(self) -> None:
+        """Empty approach list returns empty string."""
+        result = _format_attempt_history_for_prompt([])
+        assert result == ""
+
+    def test_single_approach(self) -> None:
+        """Single approach is formatted correctly."""
+        approaches = [
+            {
+                "attempt_number": 1,
+                "approach_summary": "Removed unused import",
+                "outcome": "failed",
+                "model": "gemini-flash",
+                "escalation_level": "WORKER",
+            }
+        ]
+
+        result = _format_attempt_history_for_prompt(approaches)
+
+        assert "## Previous Fix Attempts (ALL FAILED)" in result
+        assert "### Attempt #1 (WORKER - gemini-flash)" in result
+        assert "Removed unused import" in result
+        assert "Do NOT repeat these approaches" in result
+
+    def test_multiple_approaches(self) -> None:
+        """Multiple approaches are all listed."""
+        approaches = [
+            {
+                "attempt_number": 1,
+                "approach_summary": "First approach",
+                "outcome": "failed",
+                "model": "gemini-flash",
+                "escalation_level": "WORKER",
+            },
+            {
+                "attempt_number": 2,
+                "approach_summary": "Second approach",
+                "outcome": "failed",
+                "model": "gemini-flash",
+                "escalation_level": "WORKER",
+            },
+            {
+                "attempt_number": 3,
+                "approach_summary": "Third approach",
+                "outcome": "failed",
+                "model": "gemini-flash",
+                "escalation_level": "WORKER",
+            },
+        ]
+
+        result = _format_attempt_history_for_prompt(approaches)
+
+        assert "### Attempt #1" in result
+        assert "### Attempt #2" in result
+        assert "### Attempt #3" in result
+        assert "First approach" in result
+        assert "Second approach" in result
+        assert "Third approach" in result
+
+    def test_includes_try_different_instruction(self) -> None:
+        """Output includes instruction to try different approach."""
+        approaches = [
+            {
+                "attempt_number": 1,
+                "approach_summary": "Test",
+                "outcome": "failed",
+            }
+        ]
+
+        result = _format_attempt_history_for_prompt(approaches)
+
+        assert "Find a DIFFERENT approach" in result
+
+
+class TestEscalateToHumanWorktree:
+    """Tests for worktree preservation on HUMAN escalation."""
+
+    @patch("app.services.quality_gate.fix_agent.qcr_store")
+    @patch("app.services.quality_gate.fix_agent.create_task")
+    def test_escalation_includes_worktree_path(
+        self, mock_create_task: MagicMock, mock_qcr: MagicMock
+    ) -> None:
+        """Escalation task includes worktree path when provided."""
+        from app.services.quality_gate.fix_agent import escalate_to_human
+
+        mock_qcr.get_check_result.return_value = {
+            "id": 1,
+            "project_id": "test-project",
+            "check_type": "ruff",
+            "file_path": "test.py",
+            "line_number": 10,
+            "error_message": "Test error",
+            "check_name": "F401",
+        }
+        mock_create_task.return_value = {"id": "task-123"}
+
+        mock_conn = MagicMock()
+        worktree_path = "/tmp/summitflow-worktrees/test-project/task-fix-123"
+
+        escalate_to_human(mock_conn, result_id=1, worktree_path=worktree_path)
+
+        # Verify description includes worktree info
+        call_args = mock_create_task.call_args
+        description = call_args.kwargs["description"]
+
+        assert "## Worktree Preserved for Inspection" in description
+        assert worktree_path in description
+        assert "attempt_history.json" in description
+        assert "git log" in description
+
+    @patch("app.services.quality_gate.fix_agent.qcr_store")
+    @patch("app.services.quality_gate.fix_agent.create_task")
+    def test_escalation_without_worktree_path(
+        self, mock_create_task: MagicMock, mock_qcr: MagicMock
+    ) -> None:
+        """Escalation works without worktree path."""
+        from app.services.quality_gate.fix_agent import escalate_to_human
+
+        mock_qcr.get_check_result.return_value = {
+            "id": 1,
+            "project_id": "test-project",
+            "check_type": "ruff",
+            "file_path": "test.py",
+            "error_message": "Test error",
+        }
+        mock_create_task.return_value = {"id": "task-123"}
+
+        mock_conn = MagicMock()
+
+        # Call without worktree_path
+        escalate_to_human(mock_conn, result_id=1)
+
+        # Verify description does NOT include worktree info
+        call_args = mock_create_task.call_args
+        description = call_args.kwargs["description"]
+
+        assert "## Worktree Preserved" not in description
