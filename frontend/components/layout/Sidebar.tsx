@@ -782,7 +782,7 @@ export function Sidebar() {
   return (
     <Suspense
       fallback={
-        <div className="w-16 h-full bg-slate-900/50 border-r border-slate-700/50 hidden md:block" />
+        <nav className="w-16 h-full bg-slate-900/50 border-r border-slate-700/50 flex-col hidden md:flex" />
       }
     >
       <SidebarContent />

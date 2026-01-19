@@ -10,6 +10,7 @@
 'use client'
 
 import { Camera } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
   Tooltip,
   TooltipContent,
@@ -32,13 +33,13 @@ const DAYS_STALE = 30
 function getEvidenceFreshness(
   evidenceCount: number,
   lastEvidenceAt: string | null,
+  now: Date,
 ): EvidenceFreshness {
   if (evidenceCount === 0 || !lastEvidenceAt) {
     return 'missing'
   }
 
   const lastDate = new Date(lastEvidenceAt)
-  const now = new Date()
   const daysSince = Math.floor(
     (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
   )
@@ -51,11 +52,10 @@ function getEvidenceFreshness(
   return 'very-stale'
 }
 
-function formatRelativeTime(dateString: string | null): string {
+function formatRelativeTime(dateString: string | null, now: Date): string {
   if (!dateString) return 'Never captured'
 
   const date = new Date(dateString)
-  const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / (1000 * 60))
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
@@ -99,9 +99,19 @@ export function EvidenceBadge({
   lastEvidenceAt,
   className,
 }: EvidenceBadgeProps) {
-  const freshness = getEvidenceFreshness(evidenceCount, lastEvidenceAt)
+  // Client-only time calculations to avoid hydration mismatch
+  const [freshness, setFreshness] = useState<EvidenceFreshness>(
+    evidenceCount === 0 || !lastEvidenceAt ? 'missing' : 'fresh',
+  )
+  const [relativeTime, setRelativeTime] = useState<string>('...')
+
+  useEffect(() => {
+    const now = new Date()
+    setFreshness(getEvidenceFreshness(evidenceCount, lastEvidenceAt, now))
+    setRelativeTime(formatRelativeTime(lastEvidenceAt, now))
+  }, [evidenceCount, lastEvidenceAt])
+
   const config = freshnessConfig[freshness]
-  const relativeTime = formatRelativeTime(lastEvidenceAt)
 
   return (
     <TooltipProvider>
