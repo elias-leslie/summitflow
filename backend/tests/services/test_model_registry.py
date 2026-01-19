@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.constants import CLAUDE_HAIKU, CLAUDE_OPUS, CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
+from app.constants import CLAUDE_OPUS, CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
 from app.services.model_registry import (
     ModelCapability,
     ModelFactory,
@@ -144,7 +144,7 @@ class TestCircuitBreaker:
             registry.record_failure("gemini")
 
         # CODING normally returns gemini, but should fallback
-        model, provider = registry.get_model(ModelCapability.CODING)
+        _model, provider = registry.get_model(ModelCapability.CODING)
 
         # Should get Claude fallback
         assert provider == "claude"
@@ -154,7 +154,7 @@ class TestCircuitBreaker:
         fallback = registry.get_fallback(ModelCapability.CODING, "gemini")
 
         assert fallback is not None
-        model, provider = fallback
+        _model, provider = fallback
         assert provider == "claude"
 
     def test_get_fallback_returns_none_if_no_alternative(self, registry: ModelRegistry) -> None:

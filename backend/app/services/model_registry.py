@@ -516,6 +516,7 @@ class ModelFactory:
         else:
             self.registry.record_failure(provider)
 
+
 # Global singleton
 _registry: ModelRegistry | None = None
 _factory: ModelFactory | None = None
