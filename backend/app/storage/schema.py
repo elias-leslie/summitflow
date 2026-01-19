@@ -395,29 +395,6 @@ def init_schema() -> None:
         )
 
         # ============================================================
-        # Prompts - Customizable prompts per project (spec, recovery, qa, extraction)
-        # ============================================================
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS prompts (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    prompt_type VARCHAR(50) NOT NULL,
-                    prompt_text TEXT NOT NULL,
-                    primary_agent VARCHAR(50) DEFAULT 'claude',
-                    primary_model VARCHAR(100) DEFAULT 'claude-sonnet-4-5',
-                    category VARCHAR(50) DEFAULT 'extraction',
-                    thinking_budget INTEGER DEFAULT 0,
-                    tools_enabled TEXT[],
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, prompt_type)
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS prompts_project_idx ON prompts(project_id)")
-
-        # ============================================================
         # Project Agent Configuration - Default agents/models per project
         # ============================================================
         cur.execute(

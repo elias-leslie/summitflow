@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Compass,
-  FileCode,
   FlaskConical,
   FolderKanban,
   GitBranch,
@@ -34,7 +33,6 @@ type NavItemId =
   | 'dashboard'
   | 'git'
   | 'backups'
-  | 'prompts'
   | 'settings'
   | 'kanban'
   | 'tasks'
@@ -84,16 +82,6 @@ const globalNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400',
     iconActiveClasses: 'text-indigo-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-indigo-400',
-  },
-  {
-    id: 'prompts',
-    label: 'Prompts',
-    href: '/prompts',
-    icon: FileCode,
-    activeClasses: 'bg-amber-500/15 text-amber-400',
-    inactiveClasses: 'text-slate-400 hover:bg-amber-500/10 hover:text-amber-400',
-    iconActiveClasses: 'text-amber-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-amber-400',
   },
   {
     id: 'settings',
@@ -424,7 +412,6 @@ function ProjectsAccordion({
     if (!currentProjectId) return null
     if (pathname.includes('/settings')) return 'settings' as NavItemId
     if (pathname.includes('/tests')) return 'tests'
-    if (pathname.includes('/prompts')) return 'prompts'
     if (pathname.includes('/git')) return 'git' as NavItemId
     if (pathname.includes('/backups')) return 'backups' as NavItemId
     const tab = searchParams.get('tab') as NavItemId | null

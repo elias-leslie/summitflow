@@ -5,7 +5,6 @@ import {
   Archive,
   Camera,
   Compass,
-  FileCode,
   FlaskConical,
   GitBranch,
   Kanban,
@@ -19,7 +18,6 @@ type TabId =
   | 'kanban'
   | 'tasks'
   | 'tests'
-  | 'prompts'
   | 'evidence'
   | 'explorer'
   | 'git'
@@ -67,17 +65,6 @@ const tabs: TabConfig[] = [
       'text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400',
     iconActiveClasses: 'text-phosphor-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-phosphor-400',
-    isRoute: true,
-  },
-  {
-    id: 'prompts',
-    label: 'Prompts',
-    icon: FileCode,
-    activeClasses: 'bg-amber-500/15 text-amber-400',
-    inactiveClasses:
-      'text-slate-500 hover:bg-amber-500/10 hover:text-amber-400',
-    iconActiveClasses: 'text-amber-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-amber-400',
     isRoute: true,
   },
   {

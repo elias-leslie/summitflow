@@ -7,7 +7,6 @@ export * from './api/evidence'
 export * from './api/git'
 export * from './api/notifications'
 export * from './api/projects'
-export * from './api/prompts'
 export * from './api/tasks'
 export * from './api/tests'
 

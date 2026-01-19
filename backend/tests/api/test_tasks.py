@@ -8,8 +8,6 @@ Tests verify that:
 
 import json
 
-import pytest
-
 from app.storage.connection import get_connection
 
 
