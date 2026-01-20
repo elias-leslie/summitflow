@@ -83,13 +83,22 @@ def _get_pattern_memory() -> PatternMemoryService:
 
 
 def _run_async(coro: Any) -> Any:
-    """Run async code from sync context."""
+    """Run async code from sync context.
+
+    Handles the case where we're already inside an event loop
+    (e.g., FastAPI request handler) by running in a thread pool.
+    """
+    import concurrent.futures
+
     try:
-        loop = asyncio.get_event_loop()
+        asyncio.get_running_loop()  # Check if loop is running
+        # Already in an event loop - run in thread pool
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result(timeout=30)
     except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+        # No event loop running - can use asyncio.run directly
+        return asyncio.run(coro)
 
 
 FixResult = Literal["fixed", "failed", "escalated_supervisor", "escalated_human"]
@@ -754,7 +763,7 @@ IMPORTANT: Previous attempts failed. Consider:
     logger.info(
         "fix_attempt",
         result_id=result_id,
-        level=level,
+        escalation_level=level,
         attempt=attempts + 1,
         model=model,
     )

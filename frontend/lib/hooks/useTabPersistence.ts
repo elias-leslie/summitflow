@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
-type TabId = 'kanban' | 'tasks' | 'evidence' | 'explorer'
+type TabId = 'kanban' | 'tasks' | 'evidence' | 'explorer' | 'health'
 type ExplorerType = 'files' | 'database' | 'celery' | 'api' | 'pages' | 'dependencies'
 
-const VALID_TABS: TabId[] = ['kanban', 'tasks', 'evidence', 'explorer']
+const VALID_TABS: TabId[] = ['kanban', 'tasks', 'evidence', 'explorer', 'health']
 const VALID_EXPLORER_TYPES: ExplorerType[] = [
   'files',
   'database',
