@@ -181,6 +181,7 @@ class AgentHubLLMClient(LLMClient):
                 base_url=self.base_url,
                 api_key=self.api_key,
                 timeout=600.0,
+                client_name="summitflow",  # Usage tracking
             )
         return self._client
 
