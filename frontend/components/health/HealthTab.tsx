@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
-import { buildApiUrl } from '@/lib/api-config'
 
 // Types for API responses
 interface HealthSummary {
@@ -73,10 +72,11 @@ export function HealthTab({ projectId }: HealthTabProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   // Fetch health summary
+  // Use relative URLs for Next.js rewrites (CF Access compatibility)
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['quality-health', projectId],
     queryFn: async () => {
-      const res = await fetch(buildApiUrl(`/api/projects/${projectId}/quality/health`))
+      const res = await fetch(`/api/projects/${projectId}/quality/health`)
       if (!res.ok) throw new Error('Failed to fetch health')
       return res.json() as Promise<HealthSummary>
     },
@@ -87,7 +87,7 @@ export function HealthTab({ projectId }: HealthTabProps) {
   const { data: recentResults } = useQuery({
     queryKey: ['quality-results', projectId, 'recent'],
     queryFn: async () => {
-      const res = await fetch(buildApiUrl(`/api/projects/${projectId}/quality/results?limit=50`))
+      const res = await fetch(`/api/projects/${projectId}/quality/results?limit=50`)
       if (!res.ok) throw new Error('Failed to fetch results')
       return res.json() as Promise<CheckResultsResponse>
     },
@@ -98,7 +98,7 @@ export function HealthTab({ projectId }: HealthTabProps) {
   const { data: unfixedResults } = useQuery({
     queryKey: ['quality-results', projectId, 'unfixed'],
     queryFn: async () => {
-      const res = await fetch(buildApiUrl(`/api/projects/${projectId}/quality/results?unfixed_only=true&limit=10`))
+      const res = await fetch(`/api/projects/${projectId}/quality/results?unfixed_only=true&limit=10`)
       if (!res.ok) throw new Error('Failed to fetch unfixed')
       return res.json() as Promise<CheckResultsResponse>
     },
