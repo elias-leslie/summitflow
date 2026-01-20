@@ -181,3 +181,36 @@ export async function deleteMockup(
     },
   )
 }
+
+/**
+ * Analyze page design response
+ */
+export interface AnalyzePageResponse {
+  success: boolean
+  mockup_id: string | null
+  screenshot_path: string | null
+  mockup_image_path: string | null
+  recommendations: string | null
+  issues_found: number
+  error: string | null
+  generation_time_ms: number
+}
+
+/**
+ * Analyze a page's design and generate improvement recommendations
+ */
+export async function analyzePage(
+  projectId: string,
+  pageUrl: string,
+  pagePath?: string,
+): Promise<AnalyzePageResponse> {
+  return fetchWithErrorHandling<AnalyzePageResponse>(
+    `/api/projects/${projectId}/mockups/analyze-page`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_url: pageUrl, page_path: pagePath }),
+      errorMessage: 'Failed to analyze page design',
+    },
+  )
+}

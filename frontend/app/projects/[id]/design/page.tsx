@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { fetchMockups, fetchMockupStats, type Mockup } from '@/lib/api/mockups'
 import { MockupCard } from '@/components/design/MockupCard'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
+import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { DesignStandardsPanel } from '@/components/explorer/DesignStandardsPanel'
 
 type ViewMode = 'grid' | 'list'
@@ -41,6 +42,7 @@ export default function DesignPage() {
   // Modal state
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
 
   // Fetch mockups
   const {
@@ -98,28 +100,40 @@ export default function DesignPage() {
           )}
         </div>
 
-        {/* View toggle */}
-        <div className="flex items-center gap-2">
+        {/* Actions */}
+        <div className="flex items-center gap-4">
+          {/* Generate button */}
           <button
-            onClick={() => setViewMode('grid')}
-            className={`p-2 rounded ${
-              viewMode === 'grid'
-                ? 'bg-outrun-500/20 text-outrun-400'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={() => setGenerateDialogOpen(true)}
+            className="btn-primary flex items-center gap-2"
           >
-            <Grid3X3 className="w-4 h-4" />
+            <Sparkles className="w-4 h-4" />
+            Generate Mockup
           </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`p-2 rounded ${
-              viewMode === 'list'
-                ? 'bg-outrun-500/20 text-outrun-400'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <List className="w-4 h-4" />
-          </button>
+
+          {/* View toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded ${
+                viewMode === 'grid'
+                  ? 'bg-outrun-500/20 text-outrun-400'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Grid3X3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded ${
+                viewMode === 'list'
+                  ? 'bg-outrun-500/20 text-outrun-400'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -293,6 +307,13 @@ export default function DesignPage() {
           }}
         />
       )}
+
+      {/* Generate mockup dialog */}
+      <GenerateMockupDialog
+        projectId={projectId}
+        open={generateDialogOpen}
+        onOpenChange={setGenerateDialogOpen}
+      />
       </div>
 
       {/* Design Standards Sidebar */}

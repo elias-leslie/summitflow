@@ -15,7 +15,7 @@ from typing import Any
 from agent_hub import AgentHubClient
 from agent_hub.exceptions import AgentHubError
 
-from ..constants import CLAUDE_SONNET, GEMINI_IMAGE
+from ..constants import CLAUDE_SONNET, GEMINI_IMAGE, GEMINI_PRO
 from ..logging_config import get_logger
 from ..storage import evidence as evidence_storage
 
@@ -432,8 +432,452 @@ def generate_mockup(
     return result
 
 
+# ============================================================================
+# Page Design Analysis - Analyze existing page against design standards
+# ============================================================================
+
+
+@dataclass
+class DesignAnalysisResult:
+    """Result of page design analysis."""
+
+    success: bool
+    mockup_id: str | None = None
+    screenshot_path: str | None = None
+    mockup_image_path: str | None = None
+    recommendations: str | None = None
+    issues_found: int = 0
+    error: str | None = None
+    generation_time_ms: int = 0
+
+
+async def _capture_page_screenshot(
+    url: str,
+    output_path: Path,
+    *,
+    width: int = 1280,
+    height: int = 720,
+    full_page: bool = True,
+) -> tuple[bool, str | None]:
+    """Capture a screenshot of a URL using agent-browser.
+
+    Args:
+        url: URL to capture
+        output_path: Path to save screenshot
+        width: Viewport width
+        height: Viewport height
+        full_page: Whether to capture full page
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    import asyncio
+    import shlex
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Build command chain for agent-browser
+        # 1. Open URL
+        # 2. Set viewport
+        # 3. Wait for network idle
+        # 4. Take screenshot
+        # 5. Close browser
+        full_flag = "--full" if full_page else ""
+        cmd = (
+            f"agent-browser open {shlex.quote(url)} && "
+            f"agent-browser set viewport {width} {height} && "
+            f"agent-browser wait --load networkidle && "
+            f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} && "
+            f"agent-browser close"
+        )
+
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+
+        if proc.returncode != 0:
+            error_msg = stderr.decode().strip() or stdout.decode().strip()
+            return False, f"Screenshot failed: {error_msg[:200]}"
+
+        if not output_path.exists():
+            return False, "Screenshot file not created"
+
+        return True, None
+
+    except TimeoutError:
+        # Try to close browser if still open
+        try:
+            close_proc = await asyncio.create_subprocess_shell(
+                "agent-browser close",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(close_proc.communicate(), timeout=5)
+        except Exception:
+            pass
+        return False, "Screenshot operation timed out"
+    except Exception as e:
+        logger.error("screenshot_capture_failed", url=url, error=str(e))
+        return False, str(e)
+
+
+def _build_design_analysis_prompt(
+    design_rules: list[dict[str, Any]],
+    page_url: str,
+) -> str:
+    """Build prompt for design analysis.
+
+    Args:
+        design_rules: List of design rules to check against
+        page_url: URL being analyzed
+
+    Returns:
+        Formatted prompt for vision analysis
+    """
+    # Format design rules by category
+    rules_by_category: dict[str, list[str]] = {}
+    for rule in design_rules:
+        category = rule.get("category", "general")
+        if category not in rules_by_category:
+            rules_by_category[category] = []
+        rule_text = f"- {rule.get('name', 'Rule')}"
+        reqs = rule.get("requirements", {})
+        if reqs:
+            for key, val in reqs.items():
+                if isinstance(val, dict):
+                    severity = val.get("severity", "info")
+                    if val.get("exact") is not None:
+                        rule_text += f" [{key}={val['exact']}, {severity}]"
+                    elif val.get("min") is not None or val.get("max") is not None:
+                        rule_text += (
+                            f" [{key}: {val.get('min', '')}-{val.get('max', '')}, {severity}]"
+                        )
+        rules_by_category[category].append(rule_text)
+
+    rules_text = ""
+    for category, rules in rules_by_category.items():
+        rules_text += f"\n### {category.upper()}\n"
+        rules_text += "\n".join(rules)
+
+    return f"""Analyze this screenshot of a web page for design and UX issues.
+
+PAGE URL: {page_url}
+
+DESIGN STANDARDS TO CHECK:
+{rules_text}
+
+YOUR TASK:
+1. Analyze the screenshot against these design standards
+2. Identify specific violations and UX issues
+3. Provide actionable improvement recommendations
+
+RESPONSE FORMAT:
+## Summary
+<1-2 sentences summarizing overall design quality>
+
+## Issues Found
+
+### Critical (Must Fix)
+<List critical issues that significantly impact usability or accessibility>
+
+### Warnings (Should Fix)
+<List issues that impact design quality but aren't critical>
+
+### Suggestions (Nice to Have)
+<List optional improvements>
+
+## Specific Recommendations
+
+<For each significant issue, provide:>
+1. **Issue**: <description>
+   **Location**: <where on the page>
+   **Fix**: <specific actionable recommendation>
+
+## Design Score
+- Typography: X/5
+- Layout: X/5
+- Color/Contrast: X/5
+- Accessibility: X/5
+- Overall UX: X/5
+
+Be specific and actionable. Reference actual elements visible in the screenshot."""
+
+
+def _analyze_screenshot_with_vision(
+    screenshot_path: Path,
+    design_rules: list[dict[str, Any]],
+    page_url: str,
+) -> tuple[str | None, int, str | None]:
+    """Analyze screenshot using Gemini Pro 3 vision via Agent Hub.
+
+    Args:
+        screenshot_path: Path to screenshot file
+        design_rules: Design rules to check against
+        page_url: URL being analyzed
+
+    Returns:
+        Tuple of (recommendations, issues_count, error)
+    """
+    from agent_hub import AgentHubClient
+    from agent_hub.models import ImageContent, MessageInput, TextContent
+
+    try:
+        # Read and encode screenshot
+        image_bytes = screenshot_path.read_bytes()
+        image_base64 = base64.b64encode(image_bytes).decode()
+
+        # Determine media type
+        suffix = screenshot_path.suffix.lower()
+        media_type = "image/png"
+        if suffix in (".jpg", ".jpeg"):
+            media_type = "image/jpeg"
+        elif suffix == ".webp":
+            media_type = "image/webp"
+
+        # Build prompt
+        prompt = _build_design_analysis_prompt(design_rules, page_url)
+
+        # Create message with image and text content blocks
+        image_content = ImageContent.from_base64(image_base64, media_type)
+        text_content = TextContent(text=prompt)
+        message = MessageInput(
+            role="user",
+            content=[image_content, text_content],
+        )
+
+        # Call Gemini Pro vision via Agent Hub
+        client = AgentHubClient(base_url=AGENT_HUB_URL, client_name="summitflow")
+        response = client.complete(
+            model=GEMINI_PRO,  # gemini-3-pro-preview has vision capabilities
+            messages=[message],
+            project_id="summitflow",
+            purpose="design_analysis",
+            max_tokens=4096,
+            temperature=0.3,
+        )
+
+        recommendations = response.content
+
+        # Count issues (rough estimate from markdown headers)
+        issues_count = recommendations.count("**Issue**:")
+        if issues_count == 0:
+            # Count bullet points in issues sections
+            issues_count = recommendations.count("- ") // 2  # Rough estimate
+
+        return recommendations, issues_count, None
+
+    except Exception as e:
+        logger.error("vision_analysis_failed", error=str(e))
+        return None, 0, str(e)
+
+
+def _generate_mockup_image(
+    screenshot_path: Path,
+    recommendations: str,
+    output_path: Path,
+    page_url: str,
+) -> str | None:
+    """Generate a mockup image showing the improved design.
+
+    Uses Gemini 3 Pro Image to generate a visual mockup based on the
+    current screenshot and the improvement recommendations.
+
+    Args:
+        screenshot_path: Path to the current page screenshot
+        recommendations: Design analysis and recommendations text
+        output_path: Path to save the generated mockup image
+        page_url: URL of the page being analyzed
+
+    Returns:
+        Path to the generated mockup image, or None if generation failed
+    """
+    from agent_hub import AgentHubClient
+
+    try:
+        # Build a prompt that describes what the improved design should look like
+        prompt = f"""Generate a UI mockup image showing an IMPROVED version of a web application page.
+
+CONTEXT:
+This is a redesign of the page at: {page_url}
+
+CURRENT ISSUES AND RECOMMENDED FIXES:
+{recommendations}
+
+REQUIREMENTS:
+1. Create a high-fidelity UI mockup at 1920x1080 resolution
+2. Apply ALL the recommended fixes from the analysis above
+3. Maintain the overall page structure and purpose
+4. Use a modern dark theme with these colors:
+   - Background: #0f0a18 (deep purple-black)
+   - Cards/surfaces: #1a0a2e (slightly lighter)
+   - Primary accent: #00f5ff (cyan)
+   - Secondary accent: #ff00ff (magenta)
+   - Text: #ffffff (white) and #a0a0a0 (muted)
+5. Ensure proper visual hierarchy, spacing, and contrast
+6. Make text legible and UI elements clearly defined
+7. Show realistic content (not lorem ipsum)
+
+OUTPUT:
+A single polished UI mockup image showing the IMPROVED design with all issues fixed."""
+
+        # Call Gemini Image via Agent Hub
+        client = AgentHubClient(base_url=AGENT_HUB_URL, client_name="summitflow")
+        response = client.generate_image(
+            prompt=prompt,
+            project_id="summitflow",
+            purpose="mockup_generation",
+            model=GEMINI_IMAGE,
+            size="1920x1080",
+        )
+
+        # Decode and save image
+        image_bytes = base64.b64decode(response.image_base64)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(image_bytes)
+
+        logger.info(
+            "mockup_image_generated",
+            output_path=str(output_path),
+            size_bytes=len(image_bytes),
+        )
+
+        return str(output_path)
+
+    except Exception as e:
+        logger.error("mockup_image_generation_failed", error=str(e))
+        return None
+
+
+async def analyze_page_design(
+    project_id: str,
+    page_url: str,
+    page_path: str | None = None,
+) -> DesignAnalysisResult:
+    """Analyze a page's design and generate improvement recommendations.
+
+    This is the main workflow for mockup generation:
+    1. Capture screenshot of the page
+    2. Fetch design standards for the project
+    3. Analyze screenshot against standards using Claude vision
+    4. Store mockup record with screenshot and recommendations
+
+    Args:
+        project_id: Project ID
+        page_url: Full URL to analyze
+        page_path: Optional page path (for storage, defaults to URL path)
+
+    Returns:
+        DesignAnalysisResult with mockup details
+    """
+    start_time = time.monotonic()
+
+    # Extract path from URL if not provided
+    if page_path is None:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(page_url)
+        page_path = parsed.path or "/"
+
+    # Step 1: Capture screenshot
+    screenshot_id = f"analysis-{int(time.time())}"
+    screenshot_dir = MOCKUP_BASE_DIR / project_id / screenshot_id
+    screenshot_path = screenshot_dir / "screenshot.png"
+
+    success, error = await _capture_page_screenshot(page_url, screenshot_path)
+    if not success:
+        return DesignAnalysisResult(
+            success=False,
+            error=f"Screenshot capture failed: {error}",
+            generation_time_ms=int((time.monotonic() - start_time) * 1000),
+        )
+
+    # Step 2: Get design rules
+    from ..storage.design_standards import get_effective_rules
+
+    design_rules = get_effective_rules(project_id)
+    if not design_rules:
+        design_rules = []
+
+    # Step 3: Analyze with vision
+    recommendations, issues_count, analysis_error = _analyze_screenshot_with_vision(
+        screenshot_path,
+        design_rules,
+        page_url,
+    )
+
+    if analysis_error:
+        return DesignAnalysisResult(
+            success=False,
+            screenshot_path=str(screenshot_path),
+            error=f"Vision analysis failed: {analysis_error}",
+            generation_time_ms=int((time.monotonic() - start_time) * 1000),
+        )
+
+    # Step 4: Generate mockup image showing the improved design
+    mockup_image_path = screenshot_dir / "mockup.png"
+
+    if recommendations:
+        try:
+            mockup_image_path_str = _generate_mockup_image(
+                screenshot_path=screenshot_path,
+                recommendations=recommendations,
+                output_path=mockup_image_path,
+                page_url=page_url,
+            )
+            if mockup_image_path_str:
+                mockup_image_path = Path(mockup_image_path_str)
+        except Exception as e:
+            logger.warning("mockup_image_generation_failed", error=str(e))
+
+    # Step 5: Store in mockups table
+    from ..storage import mockups as mockups_storage
+
+    generation_time_ms = int((time.monotonic() - start_time) * 1000)
+
+    # Use mockup image as primary file if available, otherwise screenshot
+    primary_file = str(mockup_image_path) if mockup_image_path.exists() else str(screenshot_path)
+
+    mockup = mockups_storage.create_mockup(
+        project_id=project_id,
+        name=f"Design Analysis: {page_path}",
+        description=f"Automated design analysis of {page_url}",
+        mockup_type="page",
+        file_path=primary_file,
+        page_path=page_path,
+        generator="design-analyzer",
+        generation_prompt=recommendations,
+        generation_time_ms=generation_time_ms,
+    )
+
+    logger.info(
+        "page_design_analyzed",
+        project_id=project_id,
+        page_url=page_url,
+        mockup_id=mockup["mockup_id"],
+        issues_found=issues_count,
+        generation_time_ms=generation_time_ms,
+        mockup_image_generated=mockup_image_path.exists(),
+    )
+
+    return DesignAnalysisResult(
+        success=True,
+        mockup_id=mockup["mockup_id"],
+        screenshot_path=str(screenshot_path),
+        mockup_image_path=str(mockup_image_path) if mockup_image_path.exists() else None,
+        recommendations=recommendations,
+        issues_found=issues_count,
+        generation_time_ms=generation_time_ms,
+    )
+
+
 __all__ = [
+    "DesignAnalysisResult",
     "MockupResult",
+    "analyze_page_design",
     "generate_mockup",
     "generate_mockup_claude_fallback",
     "generate_mockup_gemini",
