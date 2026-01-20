@@ -8,9 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.self_healing.orchestrator import (
+    BUDGET_CAP_USD,
     CHECK_TYPE_PRIORITY,
     MAX_ERRORS_PER_PROJECT,
     MAX_ERRORS_PER_RUN,
+    BudgetExceededError,
     SelfHealingOrchestrator,
     poll_and_fix_all,
 )
@@ -314,3 +316,157 @@ class TestPollAndFixAll:
         mock_orch_class.assert_called_once_with(mock_conn, max_errors_per_run=10)
         mock_instance.poll_and_fix.assert_called_once()
         assert result == {"total_fixed": 5}
+
+
+class TestBudgetCapEnforcement:
+    """Tests for budget cap enforcement (d14 safety constraint)."""
+
+    def test_budget_cap_constant_is_hardcoded(self) -> None:
+        """Verify BUDGET_CAP_USD is set to $2 as specified in d14."""
+        assert BUDGET_CAP_USD == 2.0
+
+    def test_budget_exceeded_error_message(self) -> None:
+        """Verify BudgetExceededError has correct message format."""
+        error = BudgetExceededError(cumulative_cost=2.5, budget=2.0)
+        assert error.cumulative_cost == 2.5
+        assert error.budget == 2.0
+        assert "$2.5000" in str(error)
+        assert "$2.00" in str(error)
+        assert "runaway costs" in str(error).lower()
+
+    @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
+    @patch("app.services.self_healing.orchestrator.list_projects")
+    @patch("app.services.self_healing.orchestrator.qcr_store")
+    def test_poll_and_fix_tracks_cumulative_cost(
+        self,
+        mock_qcr: MagicMock,
+        mock_list_projects: MagicMock,
+        mock_fix: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Test that cumulative cost is tracked and returned."""
+        mock_list_projects.return_value = [{"id": "proj-1"}]
+        mock_qcr.get_unfixed_count.side_effect = (
+            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        )
+
+        # Mock fix to return cost info
+        mock_fix.return_value = {
+            "fixed": 2,
+            "failed": 0,
+            "escalated": 0,
+            "cumulative_cost_usd": 0.15,  # $0.15 for 2 fixes
+        }
+
+        orch = SelfHealingOrchestrator(mock_conn)
+        result = orch.poll_and_fix()
+
+        assert "cumulative_cost_usd" in result
+        assert result["cumulative_cost_usd"] == 0.15
+        assert result["budget_exceeded"] is False
+
+    @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
+    @patch("app.services.self_healing.orchestrator.list_projects")
+    @patch("app.services.self_healing.orchestrator.qcr_store")
+    def test_poll_and_fix_stops_on_budget_exceeded(
+        self,
+        mock_qcr: MagicMock,
+        mock_list_projects: MagicMock,
+        mock_fix: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Test that orchestrator stops when budget is exceeded."""
+        mock_list_projects.return_value = [
+            {"id": "proj-1"},
+            {"id": "proj-2"},  # Should not be processed
+        ]
+        mock_qcr.get_unfixed_count.return_value = 5
+
+        # First project raises BudgetExceededError
+        mock_fix.side_effect = BudgetExceededError(cumulative_cost=2.5, budget=2.0)
+
+        orch = SelfHealingOrchestrator(mock_conn)
+        result = orch.poll_and_fix()
+
+        # Should not crash, but should set budget_exceeded flag
+        assert result["budget_exceeded"] is True
+        assert result["cumulative_cost_usd"] == 2.5
+        # Only first project should have been attempted
+        assert mock_fix.call_count == 1
+
+    @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
+    @patch("app.services.self_healing.orchestrator.list_projects")
+    @patch("app.services.self_healing.orchestrator.qcr_store")
+    def test_budget_passed_to_fix_unfixed_errors(
+        self,
+        mock_qcr: MagicMock,
+        mock_list_projects: MagicMock,
+        mock_fix: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Test that budget cap is passed to fix_unfixed_errors."""
+        mock_list_projects.return_value = [{"id": "proj-1"}]
+        mock_qcr.get_unfixed_count.side_effect = (
+            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        )
+        mock_fix.return_value = {
+            "fixed": 2,
+            "failed": 0,
+            "escalated": 0,
+            "cumulative_cost_usd": 0.1,
+        }
+
+        orch = SelfHealingOrchestrator(mock_conn)
+        orch.poll_and_fix()
+
+        # Verify budget_cap_usd was passed
+        call_kwargs = mock_fix.call_args.kwargs
+        assert "budget_cap_usd" in call_kwargs
+        assert call_kwargs["budget_cap_usd"] == BUDGET_CAP_USD
+        assert "cumulative_cost" in call_kwargs
+
+    @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
+    @patch("app.services.self_healing.orchestrator.list_projects")
+    @patch("app.services.self_healing.orchestrator.qcr_store")
+    def test_cumulative_cost_accumulates_across_projects(
+        self,
+        mock_qcr: MagicMock,
+        mock_list_projects: MagicMock,
+        mock_fix: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Test that cumulative cost accumulates correctly across projects."""
+        mock_list_projects.return_value = [
+            {"id": "proj-1"},
+            {"id": "proj-2"},
+        ]
+        mock_qcr.get_unfixed_count.side_effect = (
+            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        )
+
+        # Each project costs $0.5
+        call_count = 0
+
+        def mock_fix_with_cost(**kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            incoming_cost = kwargs.get("cumulative_cost", 0.0)
+            return {
+                "fixed": 2,
+                "failed": 0,
+                "escalated": 0,
+                "cumulative_cost_usd": incoming_cost + 0.5,
+            }
+
+        mock_fix.side_effect = mock_fix_with_cost
+
+        orch = SelfHealingOrchestrator(mock_conn)
+        result = orch.poll_and_fix()
+
+        # Total should be $1.0 (0.5 + 0.5)
+        assert result["cumulative_cost_usd"] == 1.0
+        assert result["projects_processed"] == 2
+
+        # Verify second project received first project's cost
+        second_call = mock_fix.call_args_list[1]
+        assert second_call.kwargs["cumulative_cost"] == 0.5

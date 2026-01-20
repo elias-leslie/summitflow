@@ -19,6 +19,30 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# =============================================================================
+# Safety Constraints (hardcoded, not configurable per d14)
+# =============================================================================
+# Budget cap per orchestration run. Prevents runaway costs from autonomous fixes.
+# Set conservatively at $2 to limit exposure while allowing meaningful work.
+BUDGET_CAP_USD = 2.0
+
+
+class BudgetExceededError(Exception):
+    """Raised when cumulative cost exceeds BUDGET_CAP_USD.
+
+    This is a safety constraint that cannot be disabled or configured.
+    When raised, the orchestrator should stop all fix attempts immediately.
+    """
+
+    def __init__(self, cumulative_cost: float, budget: float = BUDGET_CAP_USD):
+        self.cumulative_cost = cumulative_cost
+        self.budget = budget
+        super().__init__(
+            f"Budget exceeded: ${cumulative_cost:.4f} >= ${budget:.2f}. "
+            "Stopping autonomous fixes to prevent runaway costs."
+        )
+
+
 # Priority order for check types: fix lint first, then types, then tests
 # Rationale: Lint errors are usually simpler, type errors may cascade from lint,
 # and test failures often require both to be clean first.
@@ -80,11 +104,14 @@ class SelfHealingOrchestrator:
             "total_fixed": 0,
             "total_failed": 0,
             "total_escalated": 0,
+            "cumulative_cost_usd": 0.0,
+            "budget_exceeded": False,
             "by_check_type": {},
             "by_project": {},
         }
 
         total_processed = 0
+        cumulative_cost = 0.0
 
         # Get all projects with unfixed errors
         projects = self._get_projects_with_unfixed_errors()
@@ -104,17 +131,34 @@ class SelfHealingOrchestrator:
                 )
                 break
 
-            project_results = self._process_project(
-                project_id,
-                unfixed_counts,
-                remaining_budget=self.max_errors_per_run - total_processed,
-            )
+            try:
+                project_results = self._process_project(
+                    project_id,
+                    unfixed_counts,
+                    remaining_budget=self.max_errors_per_run - total_processed,
+                    cumulative_cost=cumulative_cost,
+                )
+            except BudgetExceededError as e:
+                # Budget exceeded - stop processing but don't crash
+                logger.warning(
+                    "orchestrator_budget_exceeded",
+                    cumulative_cost=e.cumulative_cost,
+                    budget=e.budget,
+                    project_id=project_id,
+                )
+                results["budget_exceeded"] = True
+                results["cumulative_cost_usd"] = e.cumulative_cost
+                break
 
             results["projects_processed"] += 1
             results["total_fixed"] += project_results["fixed"]
             results["total_failed"] += project_results["failed"]
             results["total_escalated"] += project_results["escalated"]
             results["by_project"][project_id] = project_results
+
+            # Update cumulative cost from project results
+            cumulative_cost = project_results.get("cumulative_cost_usd", cumulative_cost)
+            results["cumulative_cost_usd"] = cumulative_cost
 
             total_processed += (
                 project_results["fixed"] + project_results["failed"] + project_results["escalated"]
@@ -139,6 +183,8 @@ class SelfHealingOrchestrator:
             fixed=results["total_fixed"],
             failed=results["total_failed"],
             escalated=results["total_escalated"],
+            cumulative_cost_usd=results["cumulative_cost_usd"],
+            budget_exceeded=results["budget_exceeded"],
         )
 
         return results
@@ -183,6 +229,7 @@ class SelfHealingOrchestrator:
         project_id: str,
         unfixed_counts: dict[str, int],
         remaining_budget: int,
+        cumulative_cost: float = 0.0,
     ) -> dict[str, Any]:
         """Process a single project, fixing errors in priority order.
 
@@ -190,9 +237,13 @@ class SelfHealingOrchestrator:
             project_id: Project to process
             unfixed_counts: Dict of check_type → unfixed count
             remaining_budget: Max errors we can still process this run
+            cumulative_cost: Current cumulative cost for budget tracking
 
         Returns:
-            Results dict for this project
+            Results dict for this project including cumulative_cost_usd
+
+        Raises:
+            BudgetExceededError: If cumulative_cost exceeds BUDGET_CAP_USD
         """
         # Lazy import to avoid circular dependency
         # (fix_agent imports from self_healing for pattern memory)
@@ -203,6 +254,7 @@ class SelfHealingOrchestrator:
             "failed": 0,
             "escalated": 0,
             "by_check_type": {},
+            "cumulative_cost_usd": cumulative_cost,
         }
 
         project_budget = min(self.max_errors_per_project, remaining_budget)
@@ -228,18 +280,24 @@ class SelfHealingOrchestrator:
                 budget=project_budget,
             )
 
-            # Call existing fix_unfixed_errors from fix_agent
+            # Call fix_unfixed_errors with budget tracking
+            # BudgetExceededError will propagate up if limit is hit
             fix_results = fix_unfixed_errors(
                 conn=self.conn,
                 project_id=project_id,
                 check_type=check_type,  # type: ignore[arg-type]
                 limit=project_budget,
+                budget_cap_usd=BUDGET_CAP_USD,
+                cumulative_cost=project_results["cumulative_cost_usd"],
             )
 
             project_results["by_check_type"][check_type] = fix_results
             project_results["fixed"] += fix_results.get("fixed", 0)
             project_results["failed"] += fix_results.get("failed", 0)
             project_results["escalated"] += fix_results.get("escalated", 0)
+            project_results["cumulative_cost_usd"] = fix_results.get(
+                "cumulative_cost_usd", project_results["cumulative_cost_usd"]
+            )
 
             project_budget -= (
                 fix_results.get("fixed", 0)

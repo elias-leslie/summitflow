@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,13 +22,53 @@ import psycopg
 
 from ...constants import CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
 from ...logging_config import get_logger
-from ...services.agent_hub_client import AgentType, get_agent
+from ...services.agent_hub_client import AgentType, LLMResponse, get_agent
 from ...services.self_healing import PatternMemoryService, StoredPattern
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
 from ...storage.tasks.core import create_task
 
 logger = get_logger(__name__)
+
+# =============================================================================
+# Cost Estimation (for budget tracking)
+# =============================================================================
+# Approximate costs per 1M tokens. Updated January 2026.
+# These are estimates - actual billing may vary slightly.
+MODEL_COSTS_PER_1M_TOKENS: dict[str, dict[str, float]] = {
+    # Claude 4.5 models
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
+    "claude-opus-4-5": {"input": 15.00, "output": 75.00},
+    "claude-haiku-4-5": {"input": 0.25, "output": 1.25},
+    # Gemini 3 models
+    "gemini-3-flash-preview": {"input": 0.075, "output": 0.30},
+    "gemini-3-pro-preview": {"input": 1.25, "output": 5.00},
+}
+
+# Default cost for unknown models (conservative estimate)
+DEFAULT_COST_PER_1M = {"input": 3.00, "output": 15.00}
+
+
+def estimate_cost_from_response(response: LLMResponse) -> float:
+    """Estimate USD cost from an LLM response.
+
+    Args:
+        response: LLMResponse with usage dict containing token counts
+
+    Returns:
+        Estimated cost in USD
+    """
+    usage = response.usage
+    input_tokens = usage.get("input_tokens", 0)
+    output_tokens = usage.get("output_tokens", 0)
+
+    costs = MODEL_COSTS_PER_1M_TOKENS.get(response.model, DEFAULT_COST_PER_1M)
+
+    input_cost = (input_tokens / 1_000_000) * costs["input"]
+    output_cost = (output_tokens / 1_000_000) * costs["output"]
+
+    return input_cost + output_cost
+
 
 # Global pattern memory service (lazy initialized)
 _pattern_memory: PatternMemoryService | None = None
@@ -52,6 +93,18 @@ def _run_async(coro: Any) -> Any:
 
 
 FixResult = Literal["fixed", "failed", "escalated_supervisor", "escalated_human"]
+
+
+@dataclass
+class FixAttemptResult:
+    """Result of a fix attempt including cost tracking.
+
+    Used for budget enforcement in the self-healing orchestrator.
+    """
+
+    outcome: FixResult
+    cost_usd: float = 0.0  # Cost incurred by this attempt
+
 
 # 3-2-1 escalation thresholds
 WORKER_ATTEMPTS = 3  # Attempts 1-3
@@ -603,7 +656,7 @@ def _verify_fix(
 def fix_lint_type_error(
     conn: psycopg.Connection[Any],
     result_id: int,
-) -> FixResult:
+) -> FixAttemptResult:
     """Attempt to fix a lint/type error using 3-2-1 escalation.
 
     - WORKER (3 attempts): Uses GEMINI_FLASH
@@ -615,23 +668,23 @@ def fix_lint_type_error(
         result_id: ID of the quality_check_result to fix
 
     Returns:
-        FixResult: "fixed", "failed", "escalated_supervisor", or "escalated_human"
+        FixAttemptResult with outcome and cost_usd for budget tracking
     """
     check_result = qcr_store.get_check_result(conn, result_id)
     if not check_result:
         logger.error("check_result_not_found", result_id=result_id)
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
     # Only handle lint/type errors
     check_type = check_result["check_type"]
     if check_type not in ("ruff", "mypy", "biome", "tsc"):
         logger.warning("unsupported_check_type", check_type=check_type)
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
     # Check if already fixed
     if check_result.get("fixed_at"):
         logger.info("already_fixed", result_id=result_id)
-        return "fixed"
+        return FixAttemptResult(outcome="fixed", cost_usd=0.0)
 
     # Check escalation level
     attempts = check_result.get("fix_attempts", 0)
@@ -645,27 +698,27 @@ def fix_lint_type_error(
         )
         # Create blocking task for manual review
         escalate_to_human(conn, result_id)
-        return "escalated_human"
+        return FixAttemptResult(outcome="escalated_human", cost_usd=0.0)
 
     # Get project path
     project_id = check_result["project_id"]
     root_path = get_project_root_path(project_id)
     if not root_path:
         logger.error("project_not_found", project_id=project_id)
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=0.0)
     project_path = Path(root_path)
 
     # Get file path
     file_rel_path = check_result.get("file_path")
     if not file_rel_path:
         logger.warning("no_file_path", result_id=result_id)
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
     file_path = project_path / file_rel_path
     file_content = _read_file_content(file_path)
     if not file_content:
         logger.warning("file_not_found", path=str(file_path))
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
     # Record attempt
     qcr_store.record_fix_attempt(conn, result_id)
@@ -706,6 +759,9 @@ IMPORTANT: Previous attempts failed. Consider:
         model=model,
     )
 
+    # Track cost for budget enforcement
+    cost_usd = 0.0
+
     try:
         agent = get_agent(provider, model=model)
         response = agent.generate(
@@ -716,19 +772,23 @@ IMPORTANT: Previous attempts failed. Consider:
             purpose="quality_gate_fix",
         )
         new_content = response.content.strip()
+
+        # Calculate cost from response
+        cost_usd = estimate_cost_from_response(response)
+        logger.debug("fix_attempt_cost", cost_usd=cost_usd, model=model)
     except Exception as e:
         logger.error("llm_failed", error=str(e))
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
 
     # Check for cannot fix response
     if new_content.startswith("CANNOT_FIX:"):
         reason = new_content[11:].strip()
         logger.info("cannot_fix", result_id=result_id, reason=reason)
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
 
     # Apply the fix
     if not _apply_fix(file_path, new_content):
-        return "failed"
+        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
 
     # Verify the fix worked
     if _verify_fix(project_path, check_type, file_rel_path):
@@ -745,7 +805,7 @@ IMPORTANT: Previous attempts failed. Consider:
             fixed_content=new_content,
         )
 
-        return "fixed"
+        return FixAttemptResult(outcome="fixed", cost_usd=cost_usd)
     else:
         logger.info("fix_did_not_pass", result_id=result_id)
         # Check if we should escalate
@@ -753,10 +813,10 @@ IMPORTANT: Previous attempts failed. Consider:
         if updated and updated.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
             # Create blocking task for manual review
             escalate_to_human(conn, result_id)
-            return "escalated_human"
+            return FixAttemptResult(outcome="escalated_human", cost_usd=cost_usd)
         elif level == "WORKER" and updated and updated.get("fix_attempts", 0) >= WORKER_ATTEMPTS:
-            return "escalated_supervisor"
-        return "failed"
+            return FixAttemptResult(outcome="escalated_supervisor", cost_usd=cost_usd)
+        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
 
 
 def fix_unfixed_errors(
@@ -764,7 +824,9 @@ def fix_unfixed_errors(
     project_id: str,
     check_type: qcr_store.CheckType | None = None,
     limit: int = 10,
-) -> dict[str, int]:
+    budget_cap_usd: float | None = None,
+    cumulative_cost: float = 0.0,
+) -> dict[str, Any]:
     """Fix all unfixed lint/type errors for a project.
 
     Args:
@@ -772,11 +834,26 @@ def fix_unfixed_errors(
         project_id: Project ID
         check_type: Optional filter by check type
         limit: Maximum number of errors to attempt
+        budget_cap_usd: Optional budget cap. If provided, stops when exceeded.
+        cumulative_cost: Starting cumulative cost (for multi-project orchestration)
 
     Returns:
-        Dict with counts: fixed, failed, escalated
+        Dict with counts: fixed, failed, escalated, cumulative_cost_usd
+
+    Raises:
+        BudgetExceededError: If cumulative_cost exceeds budget_cap_usd
     """
-    results = {"fixed": 0, "failed": 0, "escalated": 0}
+    from ...services.self_healing.orchestrator import BUDGET_CAP_USD, BudgetExceededError
+
+    # Use default budget cap if not specified
+    effective_budget = budget_cap_usd if budget_cap_usd is not None else BUDGET_CAP_USD
+
+    results: dict[str, Any] = {
+        "fixed": 0,
+        "failed": 0,
+        "escalated": 0,
+        "cumulative_cost_usd": cumulative_cost,
+    }
 
     # Get unfixed results
     unfixed = qcr_store.list_check_results(
@@ -791,17 +868,33 @@ def fix_unfixed_errors(
     lint_type_errors = [r for r in unfixed if r["check_type"] in ("ruff", "mypy", "biome", "tsc")]
 
     for result in lint_type_errors:
-        outcome = fix_lint_type_error(conn, result["id"])
-        # Map escalated_supervisor and escalated_human to escalated
-        if outcome in ("escalated_supervisor", "escalated_human"):
+        # Check budget before each attempt
+        if results["cumulative_cost_usd"] >= effective_budget:
+            logger.warning(
+                "budget_cap_reached",
+                cumulative_cost=results["cumulative_cost_usd"],
+                budget=effective_budget,
+            )
+            raise BudgetExceededError(results["cumulative_cost_usd"], effective_budget)
+
+        fix_result = fix_lint_type_error(conn, result["id"])
+
+        # Track cost
+        results["cumulative_cost_usd"] += fix_result.cost_usd
+
+        # Map outcomes
+        if fix_result.outcome in ("escalated_supervisor", "escalated_human"):
             results["escalated"] += 1
         else:
-            results[outcome] += 1
+            results[fix_result.outcome] += 1
 
     logger.info(
         "batch_fix_complete",
         project_id=project_id,
-        **results,
+        fixed=results["fixed"],
+        failed=results["failed"],
+        escalated=results["escalated"],
+        cumulative_cost_usd=results["cumulative_cost_usd"],
     )
 
     return results

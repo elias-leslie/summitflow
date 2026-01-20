@@ -554,6 +554,81 @@ def delete_step(subtask_id: str, step_number: int) -> bool:
     return deleted
 
 
+def insert_step(
+    subtask_id: str,
+    position: int,
+    description: str,
+    spec: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Insert a step at a specific position, shifting existing steps down.
+
+    This allows inserting a step before an existing step. All steps at or after
+    the insertion position are renumbered (incremented by 1).
+
+    Args:
+        subtask_id: Parent subtask ID (e.g., "task-abc123-1.1")
+        position: Position to insert at (1-indexed). Existing steps at this
+                  position and after are shifted down.
+        description: Step description text
+        spec: Optional JSONB spec for implementation details
+
+    Returns:
+        The created step dict.
+
+    Raises:
+        ValueError: If position < 1
+        Exception: If subtask_id doesn't exist (FK constraint violation)
+    """
+    if position < 1:
+        raise ValueError("Position must be >= 1")
+
+    spec_json = json.dumps(spec) if spec else None
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Get steps to shift (in reverse order to avoid unique constraint violations)
+        cur.execute(
+            """
+            SELECT step_number FROM task_subtask_steps
+            WHERE subtask_id = %s AND step_number >= %s
+            ORDER BY step_number DESC
+            """,
+            (subtask_id, position),
+        )
+        steps_to_shift = [row[0] for row in cur.fetchall()]
+
+        # Shift each step individually in reverse order
+        for step_num in steps_to_shift:
+            cur.execute(
+                """
+                UPDATE task_subtask_steps
+                SET step_number = %s
+                WHERE subtask_id = %s AND step_number = %s
+                """,
+                (step_num + 1, subtask_id, step_num),
+            )
+        shifted = len(steps_to_shift)
+
+        # Insert the new step at the position
+        cur.execute(
+            f"""
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
+            VALUES (%s, %s, %s, %s)
+            RETURNING {STEP_COLUMNS}
+            """,
+            (subtask_id, position, description, spec_json),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    logger.info(
+        "Inserted step at position %d for subtask %s (shifted %d existing steps)",
+        position,
+        subtask_id,
+        shifted,
+    )
+    return _row_to_dict(row)
+
+
 def get_step_summary(subtask_id: str) -> dict[str, Any]:
     """Get summary of step completion for a subtask.
 

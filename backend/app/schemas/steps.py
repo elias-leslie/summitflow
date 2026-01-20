@@ -69,3 +69,10 @@ class BatchStepResponse(BaseModel):
 
     created: list[StepResponse]
     count: int
+
+
+class StepInsert(BaseModel):
+    """Request model for inserting a step at a specific position."""
+
+    description: str = Field(min_length=1, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")

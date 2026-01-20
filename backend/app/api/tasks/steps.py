@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException
 from ...schemas.steps import (
     BatchStepCreate,
     BatchStepResponse,
+    StepInsert,
     StepResponse,
     StepSummary,
     StepUpdate,
@@ -176,6 +177,60 @@ async def append_steps_to_subtask(
         created=[StepResponse(**s) for s in created],
         count=len(created),
     )
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{position}/insert",
+    response_model=StepResponse,
+    status_code=201,
+)
+async def insert_step_at_position(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    position: int,
+    request: StepInsert,
+) -> StepResponse:
+    """Insert a step at a specific position, shifting existing steps down.
+
+    All steps at the insertion position and after are renumbered (incremented by 1).
+    This allows inserting a step before an existing incomplete step.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        position: Position to insert at (1-indexed)
+        request: Step description and optional spec
+
+    Returns:
+        Created step with its position
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.steps import insert_step
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+
+    try:
+        created = insert_step(
+            table_id,
+            position,
+            request.description,
+            request.spec,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception as e:
+        error_msg = str(e)
+        if "violates foreign key constraint" in error_msg.lower():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Subtask {subtask_id} not found for task {task_id}",
+            ) from None
+        raise HTTPException(status_code=500, detail=error_msg) from None
+
+    return StepResponse(**created)
 
 
 @router.patch(

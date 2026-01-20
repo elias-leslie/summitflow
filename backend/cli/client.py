@@ -690,6 +690,30 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def insert_step(
+        self,
+        task_id: str,
+        subtask_id: str,
+        position: int,
+        description: str,
+    ) -> dict[str, Any]:
+        """Insert a step at a specific position, shifting existing steps down.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            position: Position to insert at (1-indexed)
+            description: Step description
+
+        Returns:
+            Created step dict.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{position}/insert"),
+            json={"description": description},
+        )
+        return self._handle_response(response)
+
     # Execution
 
     def start_execution(

@@ -132,3 +132,31 @@ def delete_step(
         return
 
     output_success(f"Deleted step {step_number} from subtask {subtask_id}")
+
+
+@app.command("insert")
+def insert_step(
+    task_id: str,
+    subtask_id: str,
+    position: int,
+    description: str,
+) -> None:
+    """Insert a step at a specific position, shifting existing steps down.
+
+    Use this to add work before an incomplete step. All steps at the
+    insertion position and after are renumbered (incremented by 1).
+
+    Examples:
+        st step insert task-abc123 1.1 3 "Complete dark mode cleanup"
+        st step insert task-abc123 2.1 7 "INCOMPLETE: Fix validation"
+    """
+    client = STClient()
+
+    try:
+        result = client.insert_step(task_id, subtask_id, position, description)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    step_num = result.get("step_number", position)
+    output_success(f"Inserted step {step_num} into subtask {subtask_id}")

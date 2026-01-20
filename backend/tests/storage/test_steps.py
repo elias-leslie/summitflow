@@ -340,3 +340,69 @@ class TestStepGates:
         # Can clear step 2 even if step 1 is not passed
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=False)
         assert result["passes"] is False
+
+
+class TestInsertStep:
+    """Tests for insert_step function."""
+
+    def test_insert_step_at_beginning(self, test_subtask):
+        """Insert at position 1 shifts all existing steps."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+
+        inserted = step_store.insert_step(test_subtask["id"], 1, "New First Step")
+
+        assert inserted["step_number"] == 1
+        assert inserted["description"] == "New First Step"
+
+        steps = step_store.get_steps_for_subtask(test_subtask["id"])
+        assert len(steps) == 3
+        assert steps[0]["description"] == "New First Step"
+        assert steps[1]["description"] == "Step 1"
+        assert steps[1]["step_number"] == 2
+        assert steps[2]["description"] == "Step 2"
+        assert steps[2]["step_number"] == 3
+
+    def test_insert_step_in_middle(self, test_subtask):
+        """Insert in middle shifts only steps at and after position."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+
+        inserted = step_store.insert_step(test_subtask["id"], 2, "New Middle Step")
+
+        assert inserted["step_number"] == 2
+
+        steps = step_store.get_steps_for_subtask(test_subtask["id"])
+        assert len(steps) == 4
+        assert steps[0]["description"] == "Step 1"
+        assert steps[0]["step_number"] == 1
+        assert steps[1]["description"] == "New Middle Step"
+        assert steps[1]["step_number"] == 2
+        assert steps[2]["description"] == "Step 2"
+        assert steps[2]["step_number"] == 3
+        assert steps[3]["description"] == "Step 3"
+        assert steps[3]["step_number"] == 4
+
+    def test_insert_step_at_end(self, test_subtask):
+        """Insert at position after last step acts like append."""
+        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+
+        inserted = step_store.insert_step(test_subtask["id"], 3, "Step 3")
+
+        assert inserted["step_number"] == 3
+
+        steps = step_store.get_steps_for_subtask(test_subtask["id"])
+        assert len(steps) == 3
+        assert steps[2]["description"] == "Step 3"
+
+    def test_insert_step_empty_subtask(self, test_subtask):
+        """Insert into empty subtask works."""
+        inserted = step_store.insert_step(test_subtask["id"], 1, "First Step")
+
+        assert inserted["step_number"] == 1
+
+        steps = step_store.get_steps_for_subtask(test_subtask["id"])
+        assert len(steps) == 1
+
+    def test_insert_step_invalid_position(self, test_subtask):
+        """Position < 1 raises ValueError."""
+        with pytest.raises(ValueError, match="Position must be >= 1"):
+            step_store.insert_step(test_subtask["id"], 0, "Invalid")
