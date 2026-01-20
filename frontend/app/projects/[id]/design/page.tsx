@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { fetchMockups, fetchMockupStats, type Mockup } from '@/lib/api/mockups'
 import { MockupCard } from '@/components/design/MockupCard'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
+import { DesignStandardsPanel } from '@/components/explorer/DesignStandardsPanel'
 
 type ViewMode = 'grid' | 'list'
 type StatusFilter = 'all' | 'generated' | 'pending_approval' | 'approved' | 'rejected' | 'applied'
@@ -82,7 +83,9 @@ export default function DesignPage() {
   }
 
   return (
-    <div className="h-full flex flex-col p-4">
+    <div className="h-full flex gap-4 p-4">
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -290,6 +293,12 @@ export default function DesignPage() {
           }}
         />
       )}
+      </div>
+
+      {/* Design Standards Sidebar */}
+      <div className="w-80 flex-shrink-0 hidden xl:block">
+        <DesignStandardsPanel projectId={projectId} />
+      </div>
     </div>
   )
 }

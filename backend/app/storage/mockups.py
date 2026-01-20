@@ -171,8 +171,7 @@ def get_mockup(project_id: str, mockup_id: str) -> dict[str, Any] | None:
     """Get a mockup by project_id and mockup_id."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups "
-            "WHERE project_id = %s AND mockup_id = %s",
+            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND mockup_id = %s",
             (project_id, mockup_id),
         )
         row = cur.fetchone()
@@ -276,8 +275,7 @@ def get_mockups_for_task(
     """Get all mockups for a task."""
     with get_connection() as conn, conn.cursor() as cur:
         query = (
-            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups "
-            "WHERE project_id = %s AND task_id = %s"
+            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND task_id = %s"
         )
         params: list[Any] = [project_id, task_id]
 
@@ -301,8 +299,7 @@ def get_mockups_for_page(
     """Get all mockups for a specific page."""
     with get_connection() as conn, conn.cursor() as cur:
         query = (
-            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups "
-            "WHERE project_id = %s AND page_path = %s"
+            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND page_path = %s"
         )
         params: list[Any] = [project_id, page_path]
 

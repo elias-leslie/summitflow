@@ -2,7 +2,6 @@
  * Mockups API module
  */
 
-import { buildApiUrl } from '../api-config'
 import { fetchWithErrorHandling } from './utils'
 
 export interface Mockup {
@@ -87,11 +86,11 @@ export async function fetchMockups(
   if (filters.search) params.set('search', filters.search)
 
   const queryString = params.toString()
-  const url = buildApiUrl(
-    `/projects/${projectId}/mockups${queryString ? `?${queryString}` : ''}`,
-  )
+  const url = `/api/projects/${projectId}/mockups${queryString ? `?${queryString}` : ''}`
 
-  return fetchWithErrorHandling<MockupListResponse>(url)
+  return fetchWithErrorHandling<MockupListResponse>(url, {
+    errorMessage: 'Failed to fetch mockups',
+  })
 }
 
 /**
@@ -100,8 +99,10 @@ export async function fetchMockups(
 export async function fetchMockupStats(
   projectId: string,
 ): Promise<MockupStats> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups/stats`)
-  return fetchWithErrorHandling<MockupStats>(url)
+  return fetchWithErrorHandling<MockupStats>(
+    `/api/projects/${projectId}/mockups/stats`,
+    { errorMessage: 'Failed to fetch mockup stats' },
+  )
 }
 
 /**
@@ -111,8 +112,10 @@ export async function fetchMockup(
   projectId: string,
   mockupId: string,
 ): Promise<Mockup> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups/${mockupId}`)
-  return fetchWithErrorHandling<Mockup>(url)
+  return fetchWithErrorHandling<Mockup>(
+    `/api/projects/${projectId}/mockups/${mockupId}`,
+    { errorMessage: 'Failed to fetch mockup' },
+  )
 }
 
 /**
@@ -122,8 +125,10 @@ export async function fetchMockupHistory(
   projectId: string,
   mockupId: string,
 ): Promise<Mockup[]> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups/${mockupId}/history`)
-  return fetchWithErrorHandling<Mockup[]>(url)
+  return fetchWithErrorHandling<Mockup[]>(
+    `/api/projects/${projectId}/mockups/${mockupId}/history`,
+    { errorMessage: 'Failed to fetch mockup history' },
+  )
 }
 
 /**
@@ -133,11 +138,11 @@ export async function createMockup(
   projectId: string,
   data: MockupCreateRequest,
 ): Promise<Mockup> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups`)
-  return fetchWithErrorHandling<Mockup>(url, {
+  return fetchWithErrorHandling<Mockup>(`/api/projects/${projectId}/mockups`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
+    errorMessage: 'Failed to create mockup',
   })
 }
 
@@ -150,12 +155,15 @@ export async function updateMockupStatus(
   status: string,
   approvedBy?: string,
 ): Promise<Mockup> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups/${mockupId}/status`)
-  return fetchWithErrorHandling<Mockup>(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, approved_by: approvedBy }),
-  })
+  return fetchWithErrorHandling<Mockup>(
+    `/api/projects/${projectId}/mockups/${mockupId}/status`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, approved_by: approvedBy }),
+      errorMessage: 'Failed to update mockup status',
+    },
+  )
 }
 
 /**
@@ -165,8 +173,11 @@ export async function deleteMockup(
   projectId: string,
   mockupId: string,
 ): Promise<{ deleted: boolean }> {
-  const url = buildApiUrl(`/projects/${projectId}/mockups/${mockupId}`)
-  return fetchWithErrorHandling<{ deleted: boolean }>(url, {
-    method: 'DELETE',
-  })
+  return fetchWithErrorHandling<{ deleted: boolean }>(
+    `/api/projects/${projectId}/mockups/${mockupId}`,
+    {
+      method: 'DELETE',
+      errorMessage: 'Failed to delete mockup',
+    },
+  )
 }

@@ -125,7 +125,7 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
       <div className="aspect-video bg-slate-800 flex items-center justify-center relative">
         {mockup.file_path ? (
           <Image
-            src={mockup.file_path}
+            src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}
             alt={mockup.name}
             fill
             className="object-cover"

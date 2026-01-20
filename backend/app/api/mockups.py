@@ -7,9 +7,11 @@ Provides CRUD operations for design mockups:
 - Mockup history/iterations
 """
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..storage import mockups as mockups_storage
@@ -229,6 +231,33 @@ async def get_mockup(
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return _to_response(mockup)
+
+
+@router.get(
+    "/projects/{project_id}/mockups/{mockup_id}/image",
+)
+async def get_mockup_image(
+    project_id: str,
+    mockup_id: str,
+) -> FileResponse:
+    """Get the mockup image file."""
+    mockup = mockups_storage.get_mockup(project_id, mockup_id)
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+
+    file_path = mockup.get("file_path")
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Mockup has no image file")
+
+    image_path = Path(file_path)
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/png",
+        filename=f"{mockup_id}.png",
+    )
 
 
 @router.get(

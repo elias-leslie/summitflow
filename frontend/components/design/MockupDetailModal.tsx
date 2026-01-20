@@ -134,10 +134,10 @@ export function MockupDetailModal({
         onClick={() => onOpenChange(false)}
       />
 
-      {/* Modal */}
-      <div className="relative bg-slate-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col mx-4">
+      {/* Modal - Full screen with padding */}
+      <div className="relative bg-slate-900 rounded-xl w-[95vw] max-w-[1600px] h-[90vh] overflow-hidden flex flex-col mx-4">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
+        <div className="flex items-center justify-between p-3 border-b border-slate-800 flex-shrink-0">
           <div className="flex items-center gap-3">
             <TypeIcon className="w-5 h-5 text-outrun-400" />
             <h2 className="text-lg font-semibold text-white">{mockup.name}</h2>
@@ -154,34 +154,33 @@ export function MockupDetailModal({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Preview */}
-            <div className="space-y-4">
-              <div className="aspect-video bg-slate-800 rounded-lg flex items-center justify-center relative">
-                {mockup.file_path ? (
-                  <Image
-                    src={mockup.file_path}
-                    alt={mockup.name}
-                    fill
-                    className="object-contain"
-                    unoptimized
-                  />
-                ) : mockup.content ? (
-                  <div className="w-full h-full p-4 overflow-auto text-white text-sm font-mono whitespace-pre-wrap">
-                    {mockup.content}
-                  </div>
-                ) : (
-                  <ImageIcon className="w-16 h-16 text-slate-600" />
-                )}
-              </div>
+        {/* Content - Image takes most space */}
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
+          {/* Preview - Large image area */}
+          <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
+            <div className="flex-1 bg-slate-800 rounded-lg flex items-center justify-center relative min-h-0">
+              {mockup.file_path ? (
+                <Image
+                  src={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
+                  alt={mockup.name}
+                  fill
+                  className="object-contain p-2"
+                  unoptimized
+                />
+              ) : mockup.content ? (
+                <div className="w-full h-full p-4 overflow-auto text-white text-sm font-mono whitespace-pre-wrap">
+                  {mockup.content}
+                </div>
+              ) : (
+                <ImageIcon className="w-16 h-16 text-slate-600" />
+              )}
+            </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2">
+            {/* Actions below image */}
+            <div className="flex items-center gap-2 mt-3 flex-shrink-0">
                 {mockup.file_path && (
                   <a
-                    href={mockup.file_path}
+                    href={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-secondary flex items-center gap-2"
@@ -192,8 +191,8 @@ export function MockupDetailModal({
                 )}
                 {mockup.file_path && (
                   <a
-                    href={mockup.file_path}
-                    download
+                    href={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
+                    download={`${mockup.mockup_id}.png`}
                     className="btn-secondary flex items-center gap-2"
                   >
                     <Download className="w-4 h-4" />
@@ -208,9 +207,10 @@ export function MockupDetailModal({
                   History
                 </button>
               </div>
-            </div>
+          </div>
 
-            {/* Details */}
+          {/* Details Sidebar */}
+          <div className="w-80 flex-shrink-0 border-l border-slate-800 p-4 overflow-auto hidden lg:block">
             <div className="space-y-4">
               {/* Description */}
               {mockup.description && (
