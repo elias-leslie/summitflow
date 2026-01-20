@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  Activity,
   Archive,
   Camera,
   ChevronDown,
@@ -39,6 +40,7 @@ type NavItemId =
   | 'tests'
   | 'evidence'
   | 'explorer'
+  | 'health'
 
 interface NavItemConfig {
   id: NavItemId
@@ -146,6 +148,16 @@ const projectNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-teal-500/10 hover:text-teal-400',
     iconActiveClasses: 'text-teal-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-teal-400',
+  },
+  {
+    id: 'health',
+    label: 'Health',
+    href: '',
+    icon: Activity,
+    activeClasses: 'bg-purple-500/15 text-purple-400',
+    inactiveClasses: 'text-slate-400 hover:bg-purple-500/10 hover:text-purple-400',
+    iconActiveClasses: 'text-purple-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-purple-400',
   },
 ]
 

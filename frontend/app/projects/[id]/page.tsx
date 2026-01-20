@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { EvidenceTab } from '@/components/evidence/EvidenceTab'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
+import { HealthTab } from '@/components/health/HealthTab'
 import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
 import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
@@ -228,6 +229,11 @@ export default function ProjectDetailPage() {
               initialType={explorerType}
               onTypeChange={handleExplorerTypeChange}
             />
+          </div>
+        )}
+        {activeTab === 'health' && (
+          <div className="h-full overflow-auto p-4">
+            <HealthTab projectId={projectId} />
           </div>
         )}
       </section>
