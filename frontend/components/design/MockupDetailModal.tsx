@@ -8,6 +8,7 @@ import {
   Code2,
   Download,
   ExternalLink,
+  GitCompare,
   History,
   Image as ImageIcon,
   LayoutTemplate,
@@ -20,9 +21,13 @@ import Image from 'next/image'
 import { useState } from 'react'
 import {
   fetchMockupHistory,
+  getMockupImageUrl,
+  getScreenshotUrl,
+  hasScreenshot,
   updateMockupStatus,
   type Mockup,
 } from '@/lib/api/mockups'
+import { ComparisonSlider } from './ComparisonSlider'
 
 interface MockupDetailModalProps {
   mockup: Mockup
@@ -88,6 +93,10 @@ export function MockupDetailModal({
 }: MockupDetailModalProps) {
   const [updating, setUpdating] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
+
+  // Check if this mockup supports comparison (design-analyzer mockups have screenshots)
+  const canCompare = hasScreenshot(mockup)
 
   // Fetch history
   const { data: history } = useQuery({
@@ -159,9 +168,16 @@ export function MockupDetailModal({
           {/* Preview - Large image area */}
           <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
             <div className="flex-1 bg-slate-800 rounded-lg flex items-center justify-center relative min-h-0">
-              {mockup.file_path ? (
+              {showComparison && canCompare ? (
+                <ComparisonSlider
+                  beforeImageUrl={getScreenshotUrl(projectId, mockup.mockup_id)}
+                  afterImageUrl={getMockupImageUrl(projectId, mockup.mockup_id)}
+                  beforeAlt="Original screenshot"
+                  afterAlt={mockup.name}
+                />
+              ) : mockup.file_path ? (
                 <Image
-                  src={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
+                  src={getMockupImageUrl(projectId, mockup.mockup_id)}
                   alt={mockup.name}
                   fill
                   className="object-contain p-2"
@@ -178,9 +194,18 @@ export function MockupDetailModal({
 
             {/* Actions below image */}
             <div className="flex items-center gap-2 mt-3 flex-shrink-0">
+                {canCompare && (
+                  <button
+                    onClick={() => setShowComparison(!showComparison)}
+                    className={`btn-secondary flex items-center gap-2 ${showComparison ? 'bg-amber-500/20 text-amber-400' : ''}`}
+                  >
+                    <GitCompare className="w-4 h-4" />
+                    {showComparison ? 'Exit Compare' : 'Compare'}
+                  </button>
+                )}
                 {mockup.file_path && (
                   <a
-                    href={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
+                    href={getMockupImageUrl(projectId, mockup.mockup_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-secondary flex items-center gap-2"
@@ -191,7 +216,7 @@ export function MockupDetailModal({
                 )}
                 {mockup.file_path && (
                   <a
-                    href={`/api/projects/${projectId}/mockups/${mockup.mockup_id}/image`}
+                    href={getMockupImageUrl(projectId, mockup.mockup_id)}
                     download={`${mockup.mockup_id}.png`}
                     className="btn-secondary flex items-center gap-2"
                   >

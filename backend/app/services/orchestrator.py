@@ -1,13 +1,13 @@
 """Orchestrator Service for Autonomous Task Execution.
 
-Implements the Sonnet coordinator pattern with Flash workers:
-- Sonnet (claude-sonnet-4-5) coordinates overall execution
-- Flash (gemini-3-flash-preview) handles parallel analysis and coding
-- Pro (gemini-3-pro-preview) consulted when stuck in patterns
+Uses Agent Hub agents for execution:
+- agent:coder (AGENT_WORKER) handles coding tasks with mandate injection
+- agent:supervisor (AGENT_SUPERVISOR) coordinates and handles stuck patterns
+- Agent Hub provides model fallback chains, mandate injection, and metrics
 
-Decision d1: Sonnet coordinator with Flash workers
+Decision d1: Agent Hub agents with mandate injection
 Decision d2: Claude SDK native interrupt() via WebSocket priority message
-Decision d3: Flash for all coding (78% SWE-bench), Pro only for stuck patterns
+Decision d3: Coder agent for all coding, supervisor for stuck patterns
 Decision d5: Self-heal 3 iterations, then auto-revert worktree
 """
 
@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..constants import (
-    GEMINI_FLASH,
-    GEMINI_PRO,
+    AGENT_SUPERVISOR,
+    AGENT_WORKER,
 )
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
@@ -403,7 +403,7 @@ class OrchestratorService:
 
         # Step 4: Execute subtasks
         self._set_state(ExecutionState.EXECUTING)
-        await self._send_model_change(GEMINI_FLASH, "Starting with Flash worker")
+        await self._send_model_change(AGENT_WORKER, "Starting with agent:coder worker")
 
         for subtask in pending_subtasks:
             if self._interrupted:
@@ -476,7 +476,7 @@ class OrchestratorService:
         result = SubtaskResult(
             subtask_id=subtask_id,
             success=False,
-            model_used=GEMINI_FLASH,
+            model_used=AGENT_WORKER,
         )
 
         consecutive_failures = 0
@@ -491,12 +491,12 @@ class OrchestratorService:
 
             # Decide which model to use
             if consecutive_failures >= self.STUCK_THRESHOLD:
-                model = GEMINI_PRO
+                model = AGENT_SUPERVISOR
                 await self._send_model_change(
-                    GEMINI_PRO, f"Stuck pattern after {consecutive_failures} failures"
+                    AGENT_SUPERVISOR, f"Escalating to supervisor after {consecutive_failures} failures"
                 )
             else:
-                model = GEMINI_FLASH
+                model = AGENT_WORKER
 
             result.model_used = model
             await self._send_log("info", f"Attempt {attempt + 1}/{self.MAX_RETRIES} with {model}")
@@ -546,16 +546,16 @@ class OrchestratorService:
     async def _dispatch_to_flash(
         self,
         subtask: dict[str, Any],
-        model: str = GEMINI_FLASH,
+        model: str = AGENT_WORKER,
     ) -> tuple[bool, str | None]:
-        """Dispatch subtask to Flash (or Pro) worker for execution.
+        """Dispatch subtask to worker agent for execution.
 
         Uses Agent Hub SDK's run_agent for agentic execution with tool calling.
 
         Args:
             subtask: Subtask to execute
-            model: Model to use (GEMINI_FLASH or GEMINI_PRO for Gemini,
-                   or CLAUDE_SONNET for Claude with code execution)
+            model: Agent/model to use (AGENT_WORKER, AGENT_SUPERVISOR, etc.
+                   or direct model names like CLAUDE_SONNET)
 
         Returns:
             Tuple of (success, error_message)

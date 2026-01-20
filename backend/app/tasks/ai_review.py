@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.celery_app import celery_app
-from app.constants import GEMINI_PRO
+from app.constants import AGENT_REVIEWER
 from app.logging_config import get_logger
 from app.services.agent_hub_client import get_agent
 from app.services.autonomous.reviewer import opus_review
@@ -529,7 +529,7 @@ def _run_ui_review(
         return {"status": "skip", "reason": "No frontend changes"}
 
     try:
-        gemini = get_agent("gemini", model=GEMINI_PRO)
+        reviewer = get_agent("agent", model=AGENT_REVIEWER)
 
         prompt = f"""Review this UI/frontend task for design quality:
 
@@ -552,7 +552,7 @@ Respond with JSON:
     "confidence": 0.95
 }}"""
 
-        response = gemini.generate(
+        response = reviewer.generate(
             prompt=prompt,
             system="You are a UI/UX code reviewer. Output only valid JSON.",
             max_tokens=1000,

@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  ArrowUpCircle,
   Box,
   CheckCircle2,
   Clock,
@@ -11,7 +12,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Image from 'next/image'
-import type { Mockup } from '@/lib/api/mockups'
+import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
 
 interface MockupCardProps {
   mockup: Mockup
@@ -70,6 +71,7 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
   const status = statusConfig[mockup.status as keyof typeof statusConfig] ?? statusConfig.generated
   const StatusIcon = status.icon
   const TypeIcon = typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
+  const isImprovement = hasScreenshot(mockup)
 
   const formattedDate = mockup.created_at
     ? new Date(mockup.created_at).toLocaleDateString(undefined, {
@@ -99,10 +101,18 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
           )}
         </div>
 
-        {/* Status badge */}
-        <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}>
-          <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
-          <span className={`text-xs ${status.color}`}>{status.label}</span>
+        {/* Badges */}
+        <div className="flex items-center gap-2">
+          {isImprovement && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gradient-to-r from-amber-500/10 to-cyan-500/10">
+              <ArrowUpCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs text-amber-400">Improvement</span>
+            </div>
+          )}
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}>
+            <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
+            <span className={`text-xs ${status.color}`}>{status.label}</span>
+          </div>
         </div>
 
         {/* Meta */}
@@ -135,12 +145,20 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
           <TypeIcon className="w-12 h-12 text-slate-600" />
         )}
 
-        {/* Status overlay */}
-        <div
-          className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded ${status.bg}`}
-        >
-          <StatusIcon className={`w-3 h-3 ${status.color}`} />
-          <span className={`text-xs ${status.color}`}>{status.label}</span>
+        {/* Badges overlay */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          {isImprovement && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-gradient-to-r from-amber-500/20 to-cyan-500/20 backdrop-blur-sm">
+              <ArrowUpCircle className="w-3 h-3 text-amber-400" />
+              <span className="text-xs text-amber-400">Improvement</span>
+            </div>
+          )}
+          <div
+            className={`flex items-center gap-1 px-2 py-1 rounded ${status.bg} backdrop-blur-sm`}
+          >
+            <StatusIcon className={`w-3 h-3 ${status.color}`} />
+            <span className={`text-xs ${status.color}`}>{status.label}</span>
+          </div>
         </div>
 
         {/* Version badge */}

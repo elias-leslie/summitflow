@@ -149,7 +149,7 @@ class AgentHubLLMClient(LLMClient):
         """Initialize Agent Hub client.
 
         Args:
-            model: Model identifier (e.g., "claude-sonnet-4-5")
+            model: Model identifier (e.g., "claude-sonnet-4-5", "agent:coder")
             provider: Optional provider override (auto-detected from model)
             base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
             api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
@@ -163,10 +163,18 @@ class AgentHubLLMClient(LLMClient):
         self._client: AgentHubClient | None = None
 
     def _detect_provider(self, model: str) -> str:
-        """Detect provider from model name."""
-        if "claude" in model.lower():
+        """Detect provider from model name.
+
+        For agent:X models, provider detection happens on the Agent Hub side
+        based on the agent's configured primary model.
+        """
+        model_lower = model.lower()
+        if model_lower.startswith("agent:"):
+            # Agent Hub agents are provider-agnostic; they have their own model configs
+            return "agent"
+        elif "claude" in model_lower:
             return "claude"
-        elif "gemini" in model.lower():
+        elif "gemini" in model_lower:
             return "gemini"
         else:
             # Default to Claude

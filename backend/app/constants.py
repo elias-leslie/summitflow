@@ -25,6 +25,13 @@ GEMINI_PRO = "gemini-3-pro-preview"
 # Gemini image generation model
 GEMINI_IMAGE = "gemini-3-pro-image-preview"
 
+# Agent Hub agents (use agent:slug format)
+# These route to Agent Hub which provides mandate injection, model fallback, etc.
+AGENT_WORKER = "agent:coder"  # Code generation worker (Flash-based with Sonnet fallback)
+AGENT_SUPERVISOR = "agent:supervisor"  # Supervisor for coordination (Sonnet-based)
+AGENT_REVIEWER = "agent:reviewer"  # Code review (Opus-based)
+AGENT_FIXER = "agent:fixer"  # Error fixing (Sonnet-based with escalation)
+
 # Default models for each use case
 DEFAULT_CLAUDE_MODEL = CLAUDE_SONNET
 DEFAULT_GEMINI_MODEL = GEMINI_FLASH
@@ -51,4 +58,11 @@ VALID_CLAUDE_MODELS = (
 VALID_GEMINI_MODELS = (
     GEMINI_FLASH,
     GEMINI_PRO,
+)
+
+VALID_AGENT_MODELS = (
+    AGENT_WORKER,
+    AGENT_SUPERVISOR,
+    AGENT_REVIEWER,
+    AGENT_FIXER,
 )
