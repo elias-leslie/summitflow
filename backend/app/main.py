@@ -19,6 +19,7 @@ from .api import (
     explorer,
     git,
     implementation,
+    mockups,
     notifications,
     projects,
     quality_gate,
@@ -98,6 +99,7 @@ app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
+app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 
 from .api import ideas, ws_execution  # noqa: E402
 

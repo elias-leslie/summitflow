@@ -17,6 +17,7 @@ import {
   Kanban,
   LayoutGrid,
   ListTodo,
+  Palette,
   Settings2,
   Zap,
 } from 'lucide-react'
@@ -41,6 +42,7 @@ type NavItemId =
   | 'evidence'
   | 'explorer'
   | 'health'
+  | 'design'
 
 interface NavItemConfig {
   id: NavItemId
@@ -158,6 +160,16 @@ const projectNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-purple-500/10 hover:text-purple-400',
     iconActiveClasses: 'text-purple-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-purple-400',
+  },
+  {
+    id: 'design',
+    label: 'Design',
+    href: '/design',
+    icon: Palette,
+    activeClasses: 'bg-fuchsia-500/15 text-fuchsia-400',
+    inactiveClasses: 'text-slate-400 hover:bg-fuchsia-500/10 hover:text-fuchsia-400',
+    iconActiveClasses: 'text-fuchsia-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-fuchsia-400',
   },
 ]
 
@@ -426,6 +438,7 @@ function ProjectsAccordion({
     if (pathname.includes('/tests')) return 'tests'
     if (pathname.includes('/git')) return 'git' as NavItemId
     if (pathname.includes('/backups')) return 'backups' as NavItemId
+    if (pathname.includes('/design')) return 'design'
     const tab = searchParams.get('tab') as NavItemId | null
     return tab || 'kanban'
   }

@@ -25,7 +25,6 @@ import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
 import { explorerKeys } from './hooks/useExplorerData'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
-import { DesignStandardsPanel } from './DesignStandardsPanel'
 import { ScanningOverlay, SummaryBar } from './SummaryBar'
 import { TypeNavigator } from './TypeNavigator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
@@ -336,11 +335,6 @@ export function ExplorerShell({
 
         {/* Code Health Panel - only shown for files view */}
         {activeType === 'files' && <CodeHealthPanel projectId={projectId} />}
-
-        {/* Design Standards Panel - shown for pages view */}
-        {activeType === 'pages' && (
-          <DesignStandardsPanel projectId={projectId} />
-        )}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden">
