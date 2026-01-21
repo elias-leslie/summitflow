@@ -4,7 +4,6 @@ Split from monolithic tasks.py (1981 lines) into focused modules:
 - core.py: CRUD operations, helpers
 - dependencies.py: Task dependency management
 - criteria.py: Acceptance criteria validation
-- amendments.py: Criterion amendment requests
 - enrichment.py: AI-powered task enrichment
 - subtasks.py: Subtask management
 - steps.py: Step management within subtasks
@@ -14,7 +13,6 @@ Split from monolithic tasks.py (1981 lines) into focused modules:
 
 from fastapi import APIRouter
 
-from .amendments import router as amendments_router
 from .autocode import router as autocode_router
 from .core import router as core_router
 from .criteria import router as criteria_router
@@ -30,7 +28,6 @@ router = APIRouter()
 router.include_router(core_router)
 router.include_router(dependencies_router)
 router.include_router(criteria_router)
-router.include_router(amendments_router)
 router.include_router(enrichment_router)
 router.include_router(subtasks_router)
 router.include_router(steps_router)

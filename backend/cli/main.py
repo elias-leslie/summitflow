@@ -86,14 +86,7 @@ CRITERION:
   criterion list --task <task-id>                                  # list criteria for task
   criterion create <text> --task <task-id> [--category C] [--verify-by test|agent|human] [--verify-command cmd] [--expected-output text]
   criterion update <id> [--criterion text] [--category C] [--verify-command cmd] [--verify-by M] [--expected-output text]
-  criterion preflight --task <task-id>                             # TDD preflight: verify commands fail
-  criterion amend <task-id> <criterion-id> --new-command <cmd> --reason <text>  # request verify_command change
-  criterion override <task-id> <criterion-id> --action pass|reset --reason <text>  # human override
-
-AMENDMENT:
-  amendment list [--task <task-id>] [--status pending|approved|rejected]
-  amendment approve <amendment-id> [--reason text]
-  amendment reject <amendment-id> --reason <text>
+  criterion verify <task-id> <criterion-id> [--by test|manual]     # mark criterion as verified
 
 TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
 
@@ -152,9 +145,6 @@ app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(worktree.app, name="worktree")
 app.add_typer(criterion.app, name="criterion")
-from .commands import amendment  # noqa: E402 - imported here to register after criterion
-
-app.add_typer(amendment.app, name="amendment")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")

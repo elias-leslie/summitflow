@@ -451,41 +451,16 @@ def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_context_amendments(amendments: list[dict[str, Any]]) -> str:
-    """Format pending amendments for context output.
-
-    Format: AMENDMENTS[N]:pending
-    <amendment_id>|<criterion_id>|<reason>
-    """
-    if not amendments:
-        return ""
-
-    # Filter to only pending amendments
-    pending = [a for a in amendments if a.get("status") == "pending"]
-    if not pending:
-        return ""
-
-    lines = [f"AMENDMENTS[{len(pending)}]:pending"]
-    for a in pending:
-        amend_id = a.get("amendment_id", "?")
-        crit_id = a.get("criterion_id", "?")
-        reason = a.get("reason") or ""
-        lines.append(f"  {amend_id}|{crit_id}|{reason}")
-
-    return "\n".join(lines)
-
-
 def output_context(
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
     criteria: list[dict[str, Any]],
     blockers: list[dict[str, Any]] | None = None,
-    amendments: list[dict[str, Any]] | None = None,
+    amendments: list[dict[str, Any]] | None = None,  # Kept for backwards compatibility, ignored
 ) -> None:
     """Output full task context in TOON format.
 
-    Combines task header, decisions, subtasks with steps, criteria, blockers,
-    and pending amendments.
+    Combines task header, decisions, subtasks with steps, criteria, and blockers.
     """
     if _compact_output:
         sections = [
@@ -498,9 +473,6 @@ def output_context(
         if blockers:
             sections.append(format_context_blockers(blockers))
 
-        if amendments:
-            sections.append(format_context_amendments(amendments))
-
         print("\n".join(s for s in sections if s))
     else:
         output_json(
@@ -509,6 +481,5 @@ def output_context(
                 "subtasks": subtasks,
                 "criteria": criteria,
                 "blockers": blockers or [],
-                "amendments": amendments or [],
             }
         )

@@ -278,8 +278,6 @@ async def update_step(
                 "message": str(e),
                 "criterion_id": e.criterion_id,
                 "output": e.output,
-                "attempts": e.attempts,
-                "escalation_level": e.escalation_level,
                 "verification_failed": True,
             },
         ) from e

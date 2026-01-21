@@ -2,12 +2,11 @@
 
 Handles:
 - validate_task_criteria
+- list_task_criteria
 - create_task_criterion
 - delete_task_criterion
 - batch_create_task_criteria
 - verify_task_criterion_junction
-- criterion_preflight_endpoint
-- criterion_verify_endpoint
 
 Note: This module uses task_acceptance_criteria table (direct task ownership)
 rather than the old acceptance_criteria + task_criteria junction pattern.
@@ -88,10 +87,7 @@ async def list_task_criteria(
     """List all criteria for a task with verification status.
 
     Uses task_acceptance_criteria table (direct task ownership).
-    Returns criteria with verification state including:
-    - verified, verified_at
-    - preflight_status, is_locked
-    - verification_status, verification_attempts, escalation_level
+    Returns criteria with verification state including verified, verified_at.
 
     Args:
         project_id: Project ID
@@ -163,8 +159,6 @@ async def create_task_criterion(
         "verify_by": criterion["verify_by"],
         "expected_output": criterion.get("expected_output"),
         "task_id": task_id,
-        "is_locked": criterion.get("is_locked", False),
-        "preflight_status": criterion.get("preflight_status"),
     }
 
 
@@ -269,8 +263,6 @@ async def batch_create_task_criteria(
                         "verify_by": criterion["verify_by"],
                         "expected_output": criterion.get("expected_output"),
                         "task_id": task_id,
-                        "is_locked": criterion.get("is_locked", False),
-                        "preflight_status": criterion.get("preflight_status"),
                     }
                 )
 
@@ -303,9 +295,6 @@ async def verify_task_criterion_junction(
 ) -> dict[str, Any]:
     """Update verification status in task_acceptance_criteria.
 
-    Note: This endpoint is deprecated for TDD-style verification.
-    Use POST /criteria/{id}/verify instead which runs verify_command automatically.
-
     Args:
         project_id: Project ID
         task_id: Task ID
@@ -330,8 +319,6 @@ async def verify_task_criterion_junction(
             )
 
         now = datetime.now(UTC)
-        # G6 enforcement requires verification_status='passed' or 'skipped' when setting verified=TRUE
-        verification_status = "passed" if request.verified else "pending"
         updated = update_task_criterion(
             conn,
             task_id,
@@ -340,7 +327,6 @@ async def verify_task_criterion_junction(
                 "verified": request.verified,
                 "verified_at": now if request.verified else None,
                 "verified_by_actual": request.verified_by,
-                "verification_status": verification_status,
             },
         )
 
@@ -356,82 +342,3 @@ async def verify_task_criterion_junction(
         "criterion_id": criterion_id,
         "verified_by": request.verified_by,
     }
-
-
-@router.post(
-    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/preflight",
-    response_model=dict[str, Any],
-)
-async def criterion_preflight_endpoint(
-    project_id: str,
-    task_id: str,
-    criterion_id: str,
-) -> dict[str, Any]:
-    """Run TDD-style preflight validation on a criterion's verify_command.
-
-    Preflight checks that verify_command FAILS before work begins (TDD-style).
-    Valid results:
-    - valid_fail: Command fails (exit 1-125) - good for TDD
-    - invalid_pass: Command passes (exit 0) - bad, test already passes
-    - invalid_crash: Command errors (exit 126-127) - bad, syntax error
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID
-        criterion_id: Criterion ID
-
-    Returns:
-        Preflight result with status and output.
-    """
-    _verify_task_project(task_id, project_id)
-
-    from ...storage.verification import run_preflight_for_criterion
-
-    with get_connection() as conn:
-        result = run_preflight_for_criterion(conn, task_id, criterion_id)
-
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-
-    return result
-
-
-@router.post(
-    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}/run-verify",
-    response_model=dict[str, Any],
-)
-async def criterion_run_verify_endpoint(
-    project_id: str,
-    task_id: str,
-    criterion_id: str,
-) -> dict[str, Any]:
-    """Run verification for a criterion (system-mediated).
-
-    This is the TDD-style verification endpoint. It:
-    1. Checks criterion is locked (task must be running)
-    2. Runs verify_command and records result
-    3. Updates verification_status and verification_attempts
-    4. Escalates to SUPERVISOR/HUMAN after max attempts
-
-    Note: Agents should not call this directly - use st step/subtask pass
-    which runs verification automatically for linked criteria.
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID
-        criterion_id: Criterion ID
-
-    Returns:
-        Verification result with status, output, and escalation info.
-    """
-    _verify_task_project(task_id, project_id)
-
-    from ...storage.verification import run_verification
-
-    with get_connection() as conn:
-        result = run_verification(conn, task_id, criterion_id)
-
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result)
-
-    return result

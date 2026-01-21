@@ -212,8 +212,6 @@ class SubtaskVerificationError(Exception):
     Attributes:
         criterion_id: The criterion that failed verification
         output: The verification command output
-        attempts: Current attempt count
-        escalation_level: Current escalation level (WORKER, SUPERVISOR, HUMAN)
     """
 
     def __init__(
@@ -221,14 +219,10 @@ class SubtaskVerificationError(Exception):
         message: str,
         criterion_id: str,
         output: str,
-        attempts: int,
-        escalation_level: str,
     ):
         super().__init__(message)
         self.criterion_id = criterion_id
         self.output = output
-        self.attempts = attempts
-        self.escalation_level = escalation_level
 
 
 def _run_linked_verifications_for_subtask(subtask_table_id: str, task_id: str) -> dict[str, Any]:
@@ -244,8 +238,10 @@ def _run_linked_verifications_for_subtask(subtask_table_id: str, task_id: str) -
             - results: list of verification results
             - failed: first failed criterion (if any)
     """
+    from datetime import UTC, datetime
+
     from .criterion_subtask_map import get_criteria_for_subtask
-    from .verification import get_task_criterion, run_verification
+    from .verification import get_task_criterion, run_verify_command, update_task_criterion
 
     # Get linked criteria
     criteria = get_criteria_for_subtask(subtask_table_id)
@@ -291,24 +287,28 @@ def _run_linked_verifications_for_subtask(subtask_table_id: str, task_id: str) -
                 continue
 
             # Run verification
-            result = run_verification(conn, task_id, criterion_id)
-            results.append(result)
+            status, exit_code, output = run_verify_command(full_criterion["verify_command"])
+            now = datetime.now(UTC)
 
-            # Check for failure
-            if result.get("status") == "failed":
-                return {
-                    "passed": False,
-                    "results": results,
-                    "failed": result,
+            if status == "passed":
+                # Update criterion as verified
+                update_task_criterion(
+                    conn,
+                    task_id,
+                    criterion_id,
+                    {"verified": True, "verified_at": now, "verified_by_actual": "test"},
+                )
+                results.append({"criterion_id": criterion_id, "status": "passed", "output": output})
+            else:
+                # Verification failed
+                result = {
+                    "criterion_id": criterion_id,
+                    "status": "failed",
+                    "exit_code": exit_code,
+                    "output": output,
                 }
-
-            # Check for escalation to human
-            if result.get("error") and "HUMAN" in str(result.get("error", "")):
-                return {
-                    "passed": False,
-                    "results": results,
-                    "failed": result,
-                }
+                results.append(result)
+                return {"passed": False, "results": results, "failed": result}
 
     return {"passed": True, "results": results, "failed": None}
 
@@ -375,41 +375,16 @@ def update_subtask_passes(
         failed = verification_result["failed"]
         criterion_id = failed.get("criterion_id", "unknown")
         output = failed.get("output", "No output")
-        attempts = failed.get("attempts", 0)
-        escalation_level = failed.get("escalation_level", "WORKER")
 
-        # Build error message based on escalation level
-        from .verification import MAX_WORKER_ATTEMPTS
-
-        if escalation_level == "HUMAN":
-            message = (
-                f"Criterion {criterion_id} requires human review. "
-                f"Verification failed after exhausting supervisor attempts. "
-                f"Use 'st criterion override' to manually approve."
-            )
-        elif escalation_level == "SUPERVISOR":
-            message = (
-                f"Criterion {criterion_id} verification failed. "
-                f"Escalated to SUPERVISOR level after 3 worker attempts. "
-                f"Attempt {attempts}/2 at current level.\n"
-                f"Output: {output[:500]}"
-            )
-        else:
-            # WORKER level
-            remaining = MAX_WORKER_ATTEMPTS - attempts
-            message = (
-                f"Criterion {criterion_id} verification failed. "
-                f"Attempt {attempts}/{MAX_WORKER_ATTEMPTS}. "
-                f"{remaining} attempt(s) remaining before escalation.\n"
-                f"Output: {output[:500]}"
-            )
+        message = (
+            f"Criterion {criterion_id} verification failed.\n"
+            f"Output: {output[:500]}"
+        )
 
         raise SubtaskVerificationError(
             message=message,
             criterion_id=criterion_id,
             output=output,
-            attempts=attempts,
-            escalation_level=escalation_level,
         )
 
     # All verifications passed - mark subtask as passed
