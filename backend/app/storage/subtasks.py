@@ -376,10 +376,7 @@ def update_subtask_passes(
         criterion_id = failed.get("criterion_id", "unknown")
         output = failed.get("output", "No output")
 
-        message = (
-            f"Criterion {criterion_id} verification failed.\n"
-            f"Output: {output[:500]}"
-        )
+        message = f"Criterion {criterion_id} verification failed.\nOutput: {output[:500]}"
 
         raise SubtaskVerificationError(
             message=message,

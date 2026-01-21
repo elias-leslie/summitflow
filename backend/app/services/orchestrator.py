@@ -493,7 +493,8 @@ class OrchestratorService:
             if consecutive_failures >= self.STUCK_THRESHOLD:
                 model = AGENT_SUPERVISOR
                 await self._send_model_change(
-                    AGENT_SUPERVISOR, f"Escalating to supervisor after {consecutive_failures} failures"
+                    AGENT_SUPERVISOR,
+                    f"Escalating to supervisor after {consecutive_failures} failures",
                 )
             else:
                 model = AGENT_WORKER

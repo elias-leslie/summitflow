@@ -117,9 +117,9 @@ class TestEnforcementTriggersDropped:
                 """
             )
             exists = cur.fetchone()[0]
-            assert (
-                not exists
-            ), "enforce_verified_requires_verification_status trigger should be dropped"
+            assert not exists, (
+                "enforce_verified_requires_verification_status trigger should be dropped"
+            )
 
     def test_criteria_qa_trigger_dropped(self) -> None:
         """enforce_criteria_verified_before_qa_pass trigger should not exist."""
@@ -133,9 +133,7 @@ class TestEnforcementTriggersDropped:
                 """
             )
             exists = cur.fetchone()[0]
-            assert (
-                not exists
-            ), "enforce_criteria_verified_before_qa_pass trigger should be dropped"
+            assert not exists, "enforce_criteria_verified_before_qa_pass trigger should be dropped"
 
     def test_qa_signoff_trigger_dropped(self) -> None:
         """enforce_qa_signoff_before_complete trigger should not exist."""
@@ -200,9 +198,7 @@ class TestDeadColumnsDropped:
         verification_cols = [
             c for c in tac_columns if c.startswith("verification_") and not c.startswith("verify")
         ]
-        assert (
-            not verification_cols
-        ), f"verification columns should be dropped: {verification_cols}"
+        assert not verification_cols, f"verification columns should be dropped: {verification_cols}"
 
     def test_escalation_level_column_dropped(self, tac_columns: list[str]) -> None:
         """escalation_level column should not exist."""

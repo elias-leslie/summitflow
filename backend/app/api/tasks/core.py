@@ -647,8 +647,7 @@ async def update_task_status(
         with get_connection() as conn:
             criteria = get_effective_criteria(conn, project_id, task)
             test_criteria = [
-                c for c in criteria
-                if c.get("verify_by") == "test" and c.get("verify_command")
+                c for c in criteria if c.get("verify_by") == "test" and c.get("verify_command")
             ]
             if test_criteria:
                 from ...services.verification_runner import run_verification_commands

@@ -59,14 +59,16 @@ def run_verification_commands(
             # Check exit code
             if result.returncode != 0:
                 output = _truncate_output(result.stdout + result.stderr)
-                failures.append({
-                    "criterion_id": criterion_id,
-                    "criterion": crit.get("criterion", ""),
-                    "verify_command": verify_command,
-                    "exit_code": result.returncode,
-                    "output": output,
-                    "expected_output": expected_output,
-                })
+                failures.append(
+                    {
+                        "criterion_id": criterion_id,
+                        "criterion": crit.get("criterion", ""),
+                        "verify_command": verify_command,
+                        "exit_code": result.returncode,
+                        "output": output,
+                        "expected_output": expected_output,
+                    }
+                )
                 logger.warning(
                     f"Verification failed for {criterion_id}: exit_code={result.returncode}"
                 )
@@ -76,15 +78,17 @@ def run_verification_commands(
             if expected_output:
                 combined_output = result.stdout + result.stderr
                 if expected_output not in combined_output:
-                    failures.append({
-                        "criterion_id": criterion_id,
-                        "criterion": crit.get("criterion", ""),
-                        "verify_command": verify_command,
-                        "exit_code": 0,
-                        "output": _truncate_output(combined_output),
-                        "expected_output": expected_output,
-                        "mismatch": True,
-                    })
+                    failures.append(
+                        {
+                            "criterion_id": criterion_id,
+                            "criterion": crit.get("criterion", ""),
+                            "verify_command": verify_command,
+                            "exit_code": 0,
+                            "output": _truncate_output(combined_output),
+                            "expected_output": expected_output,
+                            "mismatch": True,
+                        }
+                    )
                     logger.warning(
                         f"Verification failed for {criterion_id}: "
                         f"expected '{expected_output}' not found in output"
@@ -94,27 +98,31 @@ def run_verification_commands(
             logger.info(f"Verification passed for {criterion_id}")
 
         except subprocess.TimeoutExpired:
-            failures.append({
-                "criterion_id": criterion_id,
-                "criterion": crit.get("criterion", ""),
-                "verify_command": verify_command,
-                "exit_code": -1,
-                "output": f"Command timed out after {timeout}s",
-                "expected_output": expected_output,
-                "timeout": True,
-            })
+            failures.append(
+                {
+                    "criterion_id": criterion_id,
+                    "criterion": crit.get("criterion", ""),
+                    "verify_command": verify_command,
+                    "exit_code": -1,
+                    "output": f"Command timed out after {timeout}s",
+                    "expected_output": expected_output,
+                    "timeout": True,
+                }
+            )
             logger.warning(f"Verification timed out for {criterion_id}")
 
         except Exception as e:
-            failures.append({
-                "criterion_id": criterion_id,
-                "criterion": crit.get("criterion", ""),
-                "verify_command": verify_command,
-                "exit_code": -1,
-                "output": f"Error running command: {e}",
-                "expected_output": expected_output,
-                "error": True,
-            })
+            failures.append(
+                {
+                    "criterion_id": criterion_id,
+                    "criterion": crit.get("criterion", ""),
+                    "verify_command": verify_command,
+                    "exit_code": -1,
+                    "output": f"Error running command: {e}",
+                    "expected_output": expected_output,
+                    "error": True,
+                }
+            )
             logger.exception(f"Error running verification for {criterion_id}")
 
     return failures

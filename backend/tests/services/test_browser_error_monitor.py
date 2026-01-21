@@ -141,9 +141,7 @@ class TestCreateBrowserErrorTask:
 
     @patch("app.services.self_healing.browser_monitor.create_task")
     @patch("app.services.self_healing.browser_monitor.bug_task_exists_for_error")
-    def test_creates_bug_task(
-        self, mock_dedup: MagicMock, mock_create: MagicMock
-    ) -> None:
+    def test_creates_bug_task(self, mock_dedup: MagicMock, mock_create: MagicMock) -> None:
         """Creates bug task from browser error."""
         mock_dedup.return_value = False
         mock_create.return_value = {"id": "task-browser123"}
@@ -192,9 +190,7 @@ class TestCreateBrowserErrorTask:
 
     @patch("app.services.self_healing.browser_monitor.create_task")
     @patch("app.services.self_healing.browser_monitor.bug_task_exists_for_error")
-    def test_skip_dedup_bypasses_check(
-        self, mock_dedup: MagicMock, mock_create: MagicMock
-    ) -> None:
+    def test_skip_dedup_bypasses_check(self, mock_dedup: MagicMock, mock_create: MagicMock) -> None:
         """skip_dedup=True bypasses duplicate check."""
         mock_create.return_value = {"id": "task-123"}
 

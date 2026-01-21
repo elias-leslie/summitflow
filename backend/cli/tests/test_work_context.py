@@ -59,9 +59,7 @@ class TestContextModule:
         assert ctx.project_id == "proj-1"
         assert ctx.set_at  # Should have timestamp
 
-    def test_set_context_in_git_repo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_set_context_in_git_repo(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test context is stored locally when in a git repo."""
         home_dir = tmp_path / "home"
         git_root = tmp_path / "project"
@@ -81,7 +79,9 @@ class TestContextModule:
         global_path = home_dir / ".summitflow" / "context.json"
         assert not global_path.exists()
 
-    def test_get_context_priority_env_first(self, temp_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_get_context_priority_env_first(
+        self, temp_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Environment variable takes priority over file."""
         # Set file context
         set_active_task_id("task-from-file")
@@ -113,9 +113,7 @@ class TestContextModule:
         # Write local context
         local_dir = git_root / ".summitflow"
         local_dir.mkdir(parents=True)
-        (local_dir / "context.json").write_text(
-            json.dumps({"task_id": "task-local", "set_at": ""})
-        )
+        (local_dir / "context.json").write_text(json.dumps({"task_id": "task-local", "set_at": ""}))
 
         # Mock git root to point to project
         monkeypatch.setattr("cli.context._get_git_root", lambda: git_root)
@@ -227,7 +225,9 @@ class TestWorkCommand:
         mock_client.get_task.assert_called_once_with("task-valid")
 
     @patch("cli.commands.tasks.STClient")
-    def test_work_set_error_on_invalid_task(self, mock_client_cls: MagicMock, temp_home: Path) -> None:
+    def test_work_set_error_on_invalid_task(
+        self, mock_client_cls: MagicMock, temp_home: Path
+    ) -> None:
         """st work <task-id> errors when task doesn't exist."""
         from cli.client import APIError
 
