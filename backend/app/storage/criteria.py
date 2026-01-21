@@ -356,47 +356,13 @@ def get_criteria_for_task(
 ) -> list[dict[str, Any]]:
     """Get all criteria linked to a task with verification state.
 
-    Note: project_id is kept for API compatibility but not used in query.
-    The task_criteria junction already constrains results by task_id,
-    and criteria may have different project_id if task was moved.
+    Note: Delegates to get_criteria_for_task_v2 from verification module.
+    The old acceptance_criteria + task_criteria tables were dropped in migration 088.
     """
-    _ = project_id  # Unused - criteria project may differ from task project
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT ac.id, ac.project_id, ac.criterion_id, ac.criterion,
-                   ac.category, ac.measurement, ac.threshold, ac.created_at, ac.created_by_task_id,
-                   ac.verify_command, ac.verify_by, ac.expected_output,
-                   tc.verified, tc.verified_at, tc.verified_by
-            FROM acceptance_criteria ac
-            JOIN task_criteria tc ON ac.id = tc.criterion_id
-            WHERE tc.task_id = %s
-            ORDER BY ac.criterion_id
-            """,
-            (task_id,),
-        )
-        rows = cur.fetchall()
+    _ = project_id  # Unused, kept for API compatibility
+    from .verification import get_criteria_for_task_v2
 
-    return [
-        {
-            "id": row[0],
-            "project_id": row[1],
-            "criterion_id": row[2],
-            "criterion": row[3],
-            "category": row[4],
-            "measurement": row[5],
-            "threshold": row[6],
-            "created_at": row[7],
-            "created_by_task_id": row[8],
-            "verify_command": row[9],
-            "verify_by": row[10],
-            "expected_output": row[11],
-            "verified": row[12],
-            "verified_at": row[13],
-            "verified_by_who": row[14],  # Renamed to avoid conflict with ac.verify_by
-        }
-        for row in rows
-    ]
+    return get_criteria_for_task_v2(conn, task_id)
 
 
 def get_criteria_count_for_task(task_id: str) -> int:
@@ -404,29 +370,14 @@ def get_criteria_count_for_task(task_id: str) -> int:
 
     This is a lightweight query for /do_it pre-checks and compact display.
     Does not require project_id since task_id is globally unique.
-
-    Checks task_acceptance_criteria (new model) first, falls back to
-    task_criteria (legacy junction) for unmigrated data.
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # Check new model first
         cur.execute(
             "SELECT COUNT(*) FROM task_acceptance_criteria WHERE task_id = %s",
             (task_id,),
         )
         row = cur.fetchone()
-        count = row[0] if row else 0
-
-        # Fallback to legacy model if new model is empty
-        if count == 0:
-            cur.execute(
-                "SELECT COUNT(*) FROM task_criteria WHERE task_id = %s",
-                (task_id,),
-            )
-            row = cur.fetchone()
-            count = row[0] if row else 0
-
-    return count
+        return row[0] if row else 0
 
 
 def get_criteria_counts_batch(task_ids: list[str]) -> dict[str, int]:
@@ -434,15 +385,11 @@ def get_criteria_counts_batch(task_ids: list[str]) -> dict[str, int]:
 
     This eliminates N+1 queries when listing tasks.
     Returns a dict mapping task_id -> count.
-
-    Checks task_acceptance_criteria (new model) first, falls back to
-    task_criteria (legacy junction) for unmigrated data.
     """
     if not task_ids:
         return {}
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Get counts from new model
         cur.execute(
             """
             SELECT task_id, COUNT(*) as count
@@ -452,26 +399,10 @@ def get_criteria_counts_batch(task_ids: list[str]) -> dict[str, int]:
             """,
             (task_ids,),
         )
-        new_counts = {row[0]: row[1] for row in cur.fetchall()}
+        counts = {row[0]: row[1] for row in cur.fetchall()}
 
-        # Get counts from legacy model for tasks not in new model
-        missing_ids = [tid for tid in task_ids if tid not in new_counts]
-        legacy_counts: dict[str, int] = {}
-        if missing_ids:
-            cur.execute(
-                """
-                SELECT task_id, COUNT(*) as count
-                FROM task_criteria
-                WHERE task_id = ANY(%s)
-                GROUP BY task_id
-                """,
-                (missing_ids,),
-            )
-            legacy_counts = {row[0]: row[1] for row in cur.fetchall()}
-
-    # Merge results, default to 0 for tasks with no criteria
-    result = {tid: new_counts.get(tid, legacy_counts.get(tid, 0)) for tid in task_ids}
-    return result
+    # Default to 0 for tasks with no criteria
+    return {tid: counts.get(tid, 0) for tid in task_ids}
 
 
 def update_task_criterion_verification(
@@ -547,34 +478,13 @@ def unlink_test_from_criterion(
 
 
 def get_tests_for_criterion(conn: psycopg.Connection, criterion_db_id: int) -> list[dict[str, Any]]:
-    """Get all tests linked to a criterion."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT t.id, t.project_id, t.test_id, t.name, t.test_type,
-                   t.last_result, t.last_run_at, ct.is_primary
-            FROM tests t
-            JOIN criterion_tests ct ON t.id = ct.test_id
-            WHERE ct.criterion_id = %s
-            ORDER BY ct.is_primary DESC, t.name
-            """,
-            (criterion_db_id,),
-        )
-        rows = cur.fetchall()
+    """Get all tests linked to a criterion.
 
-    return [
-        {
-            "id": row[0],
-            "project_id": row[1],
-            "test_id": row[2],
-            "name": row[3],
-            "test_type": row[4],
-            "last_result": row[5],
-            "last_run_at": row[6],
-            "is_primary": row[7],
-        }
-        for row in rows
-    ]
+    Note: tests and criterion_tests tables were dropped in migration 088.
+    This function now returns empty list. Use verify_command on criteria instead.
+    """
+    _ = conn, criterion_db_id  # Unused - tables dropped
+    return []
 
 
 def get_criteria_for_test(conn: psycopg.Connection, test_db_id: int) -> list[dict[str, Any]]:
@@ -620,15 +530,12 @@ def get_effective_criteria(
 ) -> list[dict[str, Any]]:
     """Get effective criteria for a task.
 
-    Sources criteria from (in order):
-    1. task_acceptance_criteria table (new task-scoped model - preferred)
-    2. acceptance_criteria + task_criteria junction (legacy model - fallback)
-    3. JSONB fallback (very old model - deprecated)
+    Sources criteria from task_acceptance_criteria table.
 
     Args:
         conn: Database connection
-        project_id: Project ID
-        task: Task dict with id, capability_id, acceptance_criteria fields
+        project_id: Project ID (unused, kept for API compatibility)
+        task: Task dict with id field
 
     Returns:
         List of criterion dicts with id, criterion_id, criterion, category,
@@ -636,50 +543,17 @@ def get_effective_criteria(
     """
     from .verification import get_criteria_for_task_v2
 
+    _ = project_id  # Unused, kept for API compatibility
+
     task_id = task.get("id")
-    capability_id = task.get("capability_id")
+    if not task_id:
+        return []
 
-    # Source 1: task_acceptance_criteria (new model - preferred)
-    if task_id:
-        criteria = get_criteria_for_task_v2(conn, task_id)
-        if criteria:
-            logger.debug(
-                f"criteria_from_task_acceptance_criteria: task_id={task_id}, count={len(criteria)}"
-            )
-            return criteria
-
-    # Source 2: Legacy junction model (fallback for unmigrated data)
-    if task_id:
-        criteria = get_criteria_for_task(conn, project_id, task_id)
-        if criteria:
-            logger.debug(f"criteria_from_legacy_junction: task_id={task_id}, count={len(criteria)}")
-            return criteria
-
-    # Source 3: JSONB fallback (very old model - deprecated)
-    jsonb_criteria = task.get("acceptance_criteria") or []
-    if jsonb_criteria:
+    criteria = get_criteria_for_task_v2(conn, task_id)
+    if criteria:
         logger.debug(
-            f"criteria_from_jsonb_fallback: task_id={task_id}, count={len(jsonb_criteria)}"
+            f"criteria_from_task_acceptance_criteria: task_id={task_id}, count={len(criteria)}"
         )
-        # Normalize JSONB format to match junction table format
-        return [
-            {
-                "id": None,  # No DB id for JSONB
-                "criterion_id": c.get("id", f"legacy-{i}"),
-                "criterion": c.get("criterion", c.get("description", "")),
-                "category": c.get("category", "correctness"),
-                "measurement": c.get("measurement", "test"),
-                "threshold": c.get("threshold"),
-                "verify_command": c.get("verify_command"),
-                "verify_by": c.get("verify_by", "test"),
-                "expected_output": c.get("expected_output"),
-                "verified": c.get("verified", False),
-                "verified_at": c.get("verified_at"),
-                "verified_by_who": c.get("verified_by_who"),
-            }
-            for i, c in enumerate(jsonb_criteria)
-        ]
+        return criteria
 
-    # No criteria found
-    logger.debug(f"no_criteria_found: task_id={task_id}, capability_id={capability_id}")
     return []

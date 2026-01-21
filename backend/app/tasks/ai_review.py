@@ -712,11 +712,10 @@ def _verify_acceptance_criteria(task: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "error": "No task id"}
 
     from app.storage.connection import get_connection
-    from app.storage.criteria import get_criteria_for_task
+    from app.storage.verification import get_criteria_for_task_v2
 
-    project_id = task.get("project_id", "")
     with get_connection() as conn:
-        criteria = get_criteria_for_task(conn, project_id, task_id)
+        criteria = get_criteria_for_task_v2(conn, task_id)
 
     verified_count = sum(1 for c in criteria if c.get("verified"))
     total_count = len(criteria)
