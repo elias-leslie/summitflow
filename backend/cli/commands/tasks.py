@@ -862,7 +862,7 @@ def update(
 
 @app.command()
 def close(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str | None, typer.Option("-r", "--reason")] = None,
 ) -> None:
     """Close a task (mark as completed).
@@ -870,9 +870,15 @@ def close(
     All subtasks must be complete and all acceptance criteria must be verified.
     QA must be passed or skipped. There is no bypass - if gates fail, complete the work first.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st close task-abc123 -r "All subtasks completed"
+        st close -r "Done"    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Pre-check: verify QA status before attempting close
@@ -1725,3 +1731,84 @@ def qa_skip(
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
+
+
+@app.command()
+def work(
+    task_id: Annotated[str | None, typer.Argument()] = None,
+    done: Annotated[
+        bool,
+        typer.Option("--done", help="Clear active context"),
+    ] = False,
+    show: Annotated[
+        bool,
+        typer.Option("--show", help="Show current context"),
+    ] = False,
+) -> None:
+    """Set or show the active task context.
+
+    Once set, subsequent commands (close, subtask, step, criterion) will
+    use this task automatically when no explicit ID is provided.
+
+    Examples:
+        st work task-abc123          # Set active task
+        st work --show               # Show current context
+        st work --done               # Clear active context
+        st close                     # Uses active task (no ID needed)
+        st subtask pass 1.1          # Uses active task
+    """
+    from ..context import (
+        clear_active_task_id,
+        get_active_context,
+        set_active_task_id,
+    )
+
+    # --show: display current context
+    if show:
+        ctx = get_active_context()
+        if ctx:
+            typer.echo(f"ACTIVE:{ctx.task_id}")
+            if ctx.set_at:
+                typer.echo(f"  set_at: {ctx.set_at}")
+            if ctx.project_id:
+                typer.echo(f"  project: {ctx.project_id}")
+        else:
+            typer.echo("No active context")
+        return
+
+    # --done: clear context
+    if done:
+        if clear_active_task_id():
+            typer.echo("CLEARED: active context")
+        else:
+            typer.echo("No active context to clear")
+        return
+
+    # Set context: requires task_id
+    if not task_id:
+        # No argument and no flag - show current context
+        ctx = get_active_context()
+        if ctx:
+            typer.echo(f"ACTIVE:{ctx.task_id}")
+        else:
+            output_error("Usage: st work <task-id> or st work --show")
+            raise typer.Exit(1)
+        return
+
+    # Validate task exists
+    client = STClient(require_project=False)
+    try:
+        task = client.get_task(task_id)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    # Set active context
+    project_id = task.get("project_id")
+    context_path = set_active_task_id(task_id, project_id)
+
+    # Output confirmation
+    typer.echo(f"ACTIVE:{task_id}")
+    typer.echo(f"  title: {task.get('title', '')[:60]}")
+    typer.echo(f"  status: {task.get('status', 'unknown')}")
+    typer.echo(f"  context: {context_path}")

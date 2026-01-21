@@ -14,14 +14,19 @@ app = typer.Typer(help="Criterion management commands")
 
 @app.command("list")
 def list_criteria(
-    task_id: Annotated[str, typer.Option("--task", "-t", help="Task ID")],
+    task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
 ) -> None:
     """List criteria for a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st criterion list --task task-abc123
-        st criterion list -t task-abc123
+        st criterion list    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -52,14 +57,15 @@ def create_criterion(
 ) -> None:
     """Create a criterion and link to a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st criterion create "All pytest tests pass" --task task-abc123 --verify-by test
-        st criterion create "UI renders correctly" -t task-abc123 --verify-by agent -v "ba check http://localhost:3001 --no-errors"
+        st criterion create "UI renders correctly" --verify-by agent -v "ba check http://localhost:3001 --no-errors"
     """
-    if not task_id:
-        output_error("--task is required")
-        raise typer.Exit(1)
+    from ..context import require_task_id
 
+    task_id = require_task_id(task_id)
     client = STClient()
 
     criterion_data = {
@@ -150,16 +156,21 @@ def update_criterion(
 
 @app.command("verify")
 def verify_criterion(
-    task_id: str,
     criterion_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
     verified_by: Annotated[str, typer.Option("--by")] = "test",
 ) -> None:
     """Verify a criterion for a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st criterion verify task-abc123 ac-001
-        st criterion verify task-abc123 ac-001 --by manual
+        st criterion verify ac-001 --task task-abc123
+        st criterion verify ac-001    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:

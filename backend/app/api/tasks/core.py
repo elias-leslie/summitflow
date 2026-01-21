@@ -642,7 +642,32 @@ async def update_task_status(
                 },
             )
 
-        # Gate 2: All acceptance criteria must be verified (from all sources)
+        # Gate 2: Run verify_command for test-type criteria
+        # This executes test verification inline before allowing close
+        with get_connection() as conn:
+            criteria = get_effective_criteria(conn, project_id, task)
+            test_criteria = [
+                c for c in criteria
+                if c.get("verify_by") == "test" and c.get("verify_command")
+            ]
+            if test_criteria:
+                from ...services.verification_runner import run_verification_commands
+
+                failed_verifications = run_verification_commands(test_criteria, timeout=30)
+                if failed_verifications:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "message": "Verification failed for test-type criteria",
+                            "failed_criteria": failed_verifications,
+                            "what_to_do": [
+                                "Fix the failing tests before closing the task",
+                                f"Run: st criterion list --task {task_id} to see criteria",
+                            ],
+                        },
+                    )
+
+        # Gate 3: All acceptance criteria must be verified (from all sources)
         with get_connection() as conn:
             criteria = get_effective_criteria(conn, project_id, task)
             if criteria:

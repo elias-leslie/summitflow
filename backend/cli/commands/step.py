@@ -14,15 +14,21 @@ app = typer.Typer(help="Step management commands")
 
 @app.command("pass")
 def pass_step(
-    task_id: str,
     subtask_id: str,
     step_number: int,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Mark a step as passed.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st step pass task-abc123 1.1 1
+        st step pass 1.1 1 --task task-abc123
+        st step pass 1.1 1    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -36,17 +42,22 @@ def pass_step(
 
 @app.command("create")
 def create_steps(
-    task_id: str,
     subtask_id: str,
     descriptions: Annotated[list[str], typer.Argument()],
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Create steps for a subtask in batch.
 
     Pass multiple step descriptions as arguments.
+    If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step create task-abc123 1.1 "Step 1" "Step 2" "Step 3"
+        st step create 1.1 "Step 1" "Step 2" "Step 3" --task task-abc123
+        st step create 1.1 "Step 1" "Step 2"    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -61,18 +72,23 @@ def create_steps(
 
 @app.command("add")
 def add_steps(
-    task_id: str,
     subtask_id: str,
     descriptions: Annotated[list[str], typer.Argument()],
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Append steps to a subtask with existing steps.
 
     Unlike 'create' which starts at step 1, 'add' finds the highest
     existing step number and continues from there.
+    If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step add task-abc123 1.1 "New step 6" "New step 7"
+        st step add 1.1 "New step 6" "New step 7" --task task-abc123
+        st step add 1.1 "New step 6" "New step 7"    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -93,14 +109,20 @@ def add_steps(
 
 @app.command("list")
 def list_steps(
-    task_id: str,
     subtask_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """List steps for a subtask.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st step list task-abc123 1.1
+        st step list 1.1 --task task-abc123
+        st step list 1.1    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -114,15 +136,21 @@ def list_steps(
 
 @app.command("delete")
 def delete_step(
-    task_id: str,
     subtask_id: str,
     step_number: int,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Delete a step from a subtask.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st step delete task-abc123 1.1 3
+        st step delete 1.1 3 --task task-abc123
+        st step delete 1.1 3    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -136,20 +164,24 @@ def delete_step(
 
 @app.command("insert")
 def insert_step(
-    task_id: str,
     subtask_id: str,
     position: int,
     description: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Insert a step at a specific position, shifting existing steps down.
 
     Use this to add work before an incomplete step. All steps at the
     insertion position and after are renumbered (incremented by 1).
+    If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step insert task-abc123 1.1 3 "Complete dark mode cleanup"
-        st step insert task-abc123 2.1 7 "INCOMPLETE: Fix validation"
+        st step insert 1.1 3 "Complete dark mode cleanup" --task task-abc123
+        st step insert 1.1 3 "Complete dark mode cleanup"    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:

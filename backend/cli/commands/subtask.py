@@ -20,13 +20,19 @@ app = typer.Typer(help="Subtask management commands")
 
 @app.command("list")
 def list_subtasks(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
 ) -> None:
     """List subtasks for a task with progress.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st subtask list task-abc123
+        st subtask list    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -43,14 +49,20 @@ def list_subtasks(
 
 @app.command("show")
 def show_subtask(
-    task_id: str,
     subtask_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Show details of a specific subtask.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st subtask show task-abc123 1.1
+        st subtask show 1.1 --task task-abc123
+        st subtask show 1.1    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -75,18 +87,23 @@ def show_subtask(
 
 @app.command("create")
 def create_subtask(
-    task_id: str,
     subtask_id: str,
     description: Annotated[str, typer.Option("-d", "--description")],
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
     phase: Annotated[str, typer.Option("--phase")] = "implementation",
     steps: Annotated[list[str] | None, typer.Option("--step")] = None,
 ) -> None:
     """Create a subtask for a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st subtask create task-abc123 1.1 -d "Add component" --phase backend
-        st subtask create task-abc123 1.1 -d "Add component" --step "Step 1" --step "Step 2"
+        st subtask create 1.1 -d "Add component" --task task-abc123
+        st subtask create 1.1 -d "Add component" --step "Step 1" --step "Step 2"
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -106,16 +123,21 @@ def create_subtask(
 
 @app.command("pass")
 def pass_subtask(
-    task_id: str,
     subtask_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Mark a subtask as passed.
 
     All steps must be complete before passing (enforced by DB trigger).
+    If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st subtask pass task-abc123 1.1
+        st subtask pass 1.1 --task task-abc123
+        st subtask pass 1.1    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Pre-check: verify all steps are complete
@@ -152,14 +174,20 @@ def pass_subtask(
 
 @app.command("delete")
 def delete_subtask(
-    task_id: str,
     subtask_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Delete a subtask and all its steps.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st subtask delete task-abc123 99.1
+        st subtask delete 99.1 --task task-abc123
+        st subtask delete 99.1    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
