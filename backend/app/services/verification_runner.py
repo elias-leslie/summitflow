@@ -48,9 +48,9 @@ def run_verification_commands(
         logger.info(f"Running verification for {criterion_id}: {verify_command[:100]}...")
 
         try:
+            # Use bash explicitly since commands may use bash-specific features like 'source'
             result = subprocess.run(
-                verify_command,
-                shell=True,
+                ["bash", "-c", verify_command],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
