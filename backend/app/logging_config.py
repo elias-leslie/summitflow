@@ -69,6 +69,10 @@ class StructuredLogger:
     def critical(self, event: str, **kwargs: Any) -> None:
         self._log(logging.CRITICAL, event, **kwargs)
 
+    def exception(self, event: str, **kwargs: Any) -> None:
+        """Log error with exception info."""
+        self._logger.exception(event, **kwargs)
+
 
 def get_logger(name: str) -> StructuredLogger:
     """Get a structured logger instance.

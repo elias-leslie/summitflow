@@ -86,71 +86,6 @@ def init_schema() -> None:
         )
 
         # ============================================================
-        # Evidence Tables
-        # ============================================================
-
-        # Evidence table - evidence storage for verification
-        # Uses task_id and/or explorer_entry_id (at least one required via CHECK constraint)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS evidence (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    evidence_id VARCHAR(50) NOT NULL,
-                    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-                    explorer_entry_id INTEGER REFERENCES explorer_entries(id) ON DELETE SET NULL,
-                    criterion_db_id INTEGER REFERENCES acceptance_criteria(id) ON DELETE CASCADE,
-                    evidence_type VARCHAR(50) DEFAULT 'screenshot'
-                        CHECK (evidence_type IN ('screenshot', 'mockup', 'test-output', 'api-response', 'console_error')),
-                    environment VARCHAR(50) DEFAULT 'local',
-                    sub_element_selector VARCHAR(500),
-                    viewport_name VARCHAR(50),
-                    file_path VARCHAR(500) NOT NULL,
-                    file_size_bytes INTEGER,
-                    version INTEGER DEFAULT 1,
-                    is_current BOOLEAN DEFAULT TRUE,
-                    captured_at TIMESTAMPTZ DEFAULT NOW(),
-                    expires_at TIMESTAMPTZ,
-                    quality_status VARCHAR(20) DEFAULT 'pending',
-                    quality_issues JSONB DEFAULT '[]'::jsonb,
-                    confidence FLOAT,
-                    ai_reviewed_at TIMESTAMPTZ,
-                    ai_reviewed_by VARCHAR(50),
-                    ai_evidence TEXT,
-                    user_reviewed_at TIMESTAMPTZ,
-                    user_approved BOOLEAN,
-                    user_notes TEXT,
-                    -- Mockup support fields
-                    linked_evidence_id INTEGER REFERENCES evidence(id) ON DELETE SET NULL,
-                    mockup_status VARCHAR(20) CHECK (mockup_status IN ('generated', 'pending_approval', 'approved', 'rejected') OR mockup_status IS NULL),
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, evidence_id),
-                    CONSTRAINT evidence_task_or_entry_check CHECK (task_id IS NOT NULL OR explorer_entry_id IS NOT NULL)
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id)")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evidence_explorer_entry ON evidence(explorer_entry_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evidence_criterion_db ON evidence(criterion_db_id)"
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_environment ON evidence(environment)")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evidence_viewport ON evidence(viewport_name) WHERE viewport_name IS NOT NULL"
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_quality ON evidence(quality_status)")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evidence_current ON evidence(is_current) WHERE is_current = TRUE"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evidence_linked ON evidence(linked_evidence_id) WHERE linked_evidence_id IS NOT NULL"
-        )
-
-        # ============================================================
         # Tasks Table - Issue tracking and agent execution state
         # NOTE: Migrations are authoritative. This is fallback only.
         # ============================================================
@@ -233,127 +168,6 @@ def init_schema() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id)")
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)"
-        )
-
-        # Tests - Centralized test registry (how we verify)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS tests (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    test_id VARCHAR(100) NOT NULL,
-                    name VARCHAR(255) NOT NULL,
-                    test_type VARCHAR(50) NOT NULL,
-                    command TEXT,
-                    script TEXT,
-                    config JSONB DEFAULT '{}'::jsonb,
-                    working_dir TEXT,
-                    timeout_seconds INTEGER DEFAULT 60,
-                    -- Result tracking
-                    last_run_at TIMESTAMPTZ,
-                    last_result VARCHAR(20),
-                    last_duration_ms INTEGER,
-                    last_output TEXT,
-                    last_error TEXT,
-                    -- Statistics
-                    run_count INTEGER DEFAULT 0,
-                    pass_count INTEGER DEFAULT 0,
-                    fail_count INTEGER DEFAULT 0,
-                    flaky_score FLOAT DEFAULT 0.0,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    UNIQUE(project_id, test_id)
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_type ON tests(test_type)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_result ON tests(last_result)")
-
-        # ============================================================
-        # Unified Criteria Tables (TDD Architecture)
-        # ============================================================
-
-        # Acceptance criteria - reusable criteria linked to tasks
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS acceptance_criteria (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    criterion_id VARCHAR(20) NOT NULL,
-                    criterion TEXT NOT NULL,
-                    category VARCHAR(20) DEFAULT 'correctness',
-                    measurement VARCHAR(20) DEFAULT 'test',
-                    threshold TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    created_by_task_id TEXT,
-                    UNIQUE (project_id, criterion_id)
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_acceptance_criteria_project ON acceptance_criteria(project_id)"
-        )
-
-        # Task-Criteria junction (verification tracking)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS task_criteria (
-                    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-                    criterion_id INTEGER NOT NULL REFERENCES acceptance_criteria(id),
-                    verified BOOLEAN DEFAULT FALSE,
-                    verified_at TIMESTAMPTZ,
-                    verified_by VARCHAR(20),
-                    PRIMARY KEY (task_id, criterion_id),
-                    CONSTRAINT task_criteria_verified_by_check CHECK (
-                        verified_by IN ('opus', 'test', 'human', 'agent') OR verified_by IS NULL
-                    )
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_criteria_task ON task_criteria(task_id)")
-
-        # Criterion-Tests junction (tests verify criteria)
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS criterion_tests (
-                    criterion_id INTEGER NOT NULL REFERENCES acceptance_criteria(id) ON DELETE CASCADE,
-                    test_id INTEGER NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-                    is_primary BOOLEAN DEFAULT FALSE,
-                    added_at TIMESTAMPTZ DEFAULT NOW(),
-                    PRIMARY KEY (criterion_id, test_id)
-                )
-                """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_criterion_tests_criterion ON criterion_tests(criterion_id)"
-        )
-
-        # Test runs - Historical test execution records
-        cur.execute(
-            """
-                CREATE TABLE IF NOT EXISTS test_runs (
-                    id SERIAL PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    test_id INTEGER NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-                    run_type VARCHAR(20) NOT NULL DEFAULT 'manual',
-                    result VARCHAR(20) NOT NULL,
-                    duration_ms INTEGER,
-                    output TEXT,
-                    error TEXT,
-                    evidence_path TEXT,
-                    triggered_by VARCHAR(100),
-                    session_id TEXT,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
-                )
-                """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_test ON test_runs(test_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_test_runs_result ON test_runs(result)")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)"
         )
 
         # Agent sessions - Track agent build sessions
@@ -575,7 +389,6 @@ def init_schema() -> None:
             # updated_at columns for tracking modifications (migration 077)
             ("updated_at TIMESTAMPTZ DEFAULT NOW()", "tasks"),
             ("updated_at TIMESTAMPTZ DEFAULT NOW()", "task_subtasks"),
-            ("updated_at TIMESTAMPTZ DEFAULT NOW()", "acceptance_criteria"),
             # escalation tracking for quality check results (migration 080)
             (
                 "escalation_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
@@ -597,8 +410,6 @@ def init_schema() -> None:
                 logger.warning("Failed to add column %s to %s: %s", column_name, table, e)
 
         # Create indexes for columns added via ALTER TABLE
-        with contextlib.suppress(psycopg.errors.UndefinedColumn):
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id)")
         with contextlib.suppress(psycopg.errors.UndefinedColumn):
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_qcr_escalation_task_id
