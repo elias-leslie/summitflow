@@ -41,20 +41,6 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-# Check Browser Server (user service)
-echo -n "Browser:       "
-if systemctl --user is-active --quiet summitflow-browser.service 2>/dev/null; then
-    if curl -sf http://127.0.0.1:9323/health > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Running (http://127.0.0.1:9323)${NC}"
-    else
-        echo -e "${YELLOW}⚠ Running but health check failed${NC}"
-        ERRORS=$((ERRORS + 1))
-    fi
-else
-    echo -e "${RED}✗ Not running${NC}"
-    ERRORS=$((ERRORS + 1))
-fi
-
 # Check Frontend (user service)
 echo -n "Frontend:      "
 if systemctl --user is-active --quiet summitflow-frontend.service 2>/dev/null; then

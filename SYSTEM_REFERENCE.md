@@ -336,7 +336,6 @@ Ideas → Planning → In Progress → AI Review → Human Review → Done
 | `summitflow-frontend` | 3001 | `npm run start -- --hostname 0.0.0.0 --port 3001` |
 | `summitflow-celery` | - | `celery -A app.celery_app worker --concurrency=2` |
 | `summitflow-celery-beat` | - | `celery -A app.celery_app beat` |
-| `summitflow-browser` | 9323 | `node server.js` (Playwright pre-warmed) |
 
 #### Environment Variables
 ```
@@ -717,7 +716,6 @@ Scope: Global (126) + Project (35)
 |---------|-----|--------|------|
 | SummitFlow Backend | 1790744 | 142 MB | 8001 |
 | SummitFlow Celery | 1790801 | 118 MB | - |
-| SummitFlow Browser | 1790869 | 68 MB | 9323 |
 | Agent Hub Backend | 1811312 | 313 MB | 8003 |
 | Neo4j | 1811156 | - | 7687 |
 | PostgreSQL | 1065 | - | 5432 |
@@ -809,7 +807,7 @@ Scope: Global (126) + Project (35)
 ### Start All Services
 ```bash
 # SummitFlow
-systemctl --user start summitflow-backend summitflow-frontend summitflow-celery summitflow-celery-beat summitflow-browser
+systemctl --user start summitflow-backend summitflow-frontend summitflow-celery summitflow-celery-beat
 
 # Agent Hub
 systemctl --user start agent-hub-backend agent-hub-frontend agent-hub-celery neo4j
