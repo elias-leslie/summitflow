@@ -99,12 +99,6 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24 * 7,  # Weekly
         "kwargs": {"project_id": "summitflow"},
     },
-    # Daily evidence capture - capture screenshots and API responses at 2am UTC
-    "daily-evidence-capture": {
-        "task": "summitflow.capture_all_projects",
-        "schedule": 60 * 60 * 24,  # Every 24 hours
-        "kwargs": {"environment": "local", "dry_run": False},
-    },
     # Scheduled backups - check and run due backups every hour
     "run-scheduled-backups": {
         "task": "summitflow.run_scheduled_backups",
@@ -122,12 +116,6 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 60 * 24 * 7,  # Weekly
         "kwargs": {"project_id": "summitflow"},
     },
-    # Resolved regressions check - auto-close tasks when regressions fixed
-    "check-resolved-regressions-summitflow": {
-        "task": "summitflow.check_resolved_regressions",
-        "schedule": 60 * 60 * 6,  # Every 6 hours
-        "kwargs": {"project_id": "summitflow", "auto_close_tasks": True},
-    },
     # Stale task cleanup - archive tasks pending >30 days with no activity
     "cleanup-stale-tasks": {
         "task": "summitflow.cleanup_stale_tasks",
@@ -138,6 +126,12 @@ celery_app.conf.beat_schedule = {
     "monitor-systemd-errors": {
         "task": "summitflow.monitor_systemd_errors",
         "schedule": 60 * 5,  # Every 5 minutes
+        "kwargs": {"project_id": "summitflow"},
+    },
+    # Self-healing - monitor browser console errors (after explorer scans)
+    "monitor-browser-errors": {
+        "task": "summitflow.monitor_browser_errors",
+        "schedule": 60 * 60 * 6,  # Every 6 hours
         "kwargs": {"project_id": "summitflow"},
     },
     # Self-healing - orchestrate automated fix triggering
@@ -184,8 +178,6 @@ from app.tasks import (  # noqa: F401, E402
     autonomous,
     backup,
     enrichment,
-    evidence_capture,
-    evidence_tasks,
     explorer_tasks,
     orchestrator_runner,
     self_healing,

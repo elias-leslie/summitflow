@@ -51,7 +51,7 @@ TARGET="all"
 # Check for subcommands (first positional argument)
 # All TOOL_DEFS keys are valid subcommands
 case "${1:-}" in
-    pytest|ruff|mypy|biome|tsc) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
+    pytest|ruff|mypy|biome|tsc|sqlfluff|squawk) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
 esac
 
 # Parse remaining flags
@@ -559,6 +559,8 @@ TOOL_DEFS[mypy]='TYPES|mypy|--ignore-missing-imports|grep_error|backend|0|1'
 TOOL_DEFS[pytest]='TEST|pytest|--tb=short -q|pytest_parse|backend|0|0'
 TOOL_DEFS[biome]='BIOME|npx|biome lint . --max-diagnostics=100|biome_parse|frontend|1|0'
 TOOL_DEFS[tsc]='TSC|npx|tsc --noEmit|grep_error_ts|frontend|1|0'
+TOOL_DEFS[sqlfluff]='SQLFLUFF|sqlfluff|lint --dialect postgres|wc_l|migrations|1|1'
+TOOL_DEFS[squawk]='SQUAWK|squawk||wc_l|migrations|1|1'
 
 # Check if project has frontend (biome.json, eslint.config.*, or package.json in frontend/)
 has_frontend() {
@@ -603,6 +605,12 @@ get_tool_working_dir() {
             local frontend_dir="$PROJECT_DIR/frontend"
             [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
             echo "$frontend_dir"
+            ;;
+        migrations)
+            # For SQL linting: look for migrations/ in backend or root
+            local mig_dir="$BACKEND_PATH/migrations"
+            [[ ! -d "$mig_dir" ]] && mig_dir="$PROJECT_DIR/migrations"
+            echo "$mig_dir"
             ;;
         root)
             echo "$PROJECT_DIR"
@@ -751,6 +759,8 @@ show_help() {
     echo "  mypy             Run mypy with TOON output (<50 bytes on clean)"
     echo "  biome            Run biome lint with TOON output (frontend)"
     echo "  tsc              Run tsc with TOON output (frontend)"
+    echo "  sqlfluff         Run sqlfluff lint with TOON output (migrations)"
+    echo "  squawk           Run squawk migration safety with TOON output (migrations)"
     echo ""
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"

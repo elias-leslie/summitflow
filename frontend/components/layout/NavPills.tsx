@@ -3,9 +3,7 @@
 import clsx from 'clsx'
 import {
   Archive,
-  Camera,
   Compass,
-  FlaskConical,
   GitBranch,
   Kanban,
   ListTodo,
@@ -17,8 +15,6 @@ import { useSearchParams } from 'next/navigation'
 type TabId =
   | 'kanban'
   | 'tasks'
-  | 'tests'
-  | 'evidence'
   | 'explorer'
   | 'git'
   | 'backups'
@@ -55,26 +51,6 @@ const tabs: TabConfig[] = [
       'text-slate-500 hover:bg-orange-500/10 hover:text-orange-400',
     iconActiveClasses: 'text-orange-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-orange-400',
-  },
-  {
-    id: 'tests',
-    label: 'Tests',
-    icon: FlaskConical,
-    activeClasses: 'bg-phosphor-500/15 text-phosphor-400',
-    inactiveClasses:
-      'text-slate-500 hover:bg-phosphor-500/10 hover:text-phosphor-400',
-    iconActiveClasses: 'text-phosphor-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-phosphor-400',
-    isRoute: true,
-  },
-  {
-    id: 'evidence',
-    label: 'Evidence',
-    icon: Camera,
-    activeClasses: 'bg-pink-500/15 text-pink-400',
-    inactiveClasses: 'text-slate-500 hover:bg-pink-500/10 hover:text-pink-400',
-    iconActiveClasses: 'text-pink-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-pink-400',
   },
   {
     id: 'explorer',

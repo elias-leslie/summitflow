@@ -6,7 +6,7 @@ code quality issues detected by Explorer scans.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import Connection
@@ -147,7 +147,7 @@ def mark_issue_resolved(
 
     def _do_update(c: Connection) -> bool:
         with c.cursor() as cur:
-            cur.execute(query, (datetime.utcnow(), scan_id, reason, issue_id))
+            cur.execute(query, (datetime.now(UTC), scan_id, reason, issue_id))
             return bool(cur.rowcount > 0)
 
     if conn:
@@ -191,7 +191,7 @@ def upsert_issue(
     Returns:
         The issue ID
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     # Try to find existing open issue
     # Use IS NOT DISTINCT FROM for proper NULL handling

@@ -5,7 +5,6 @@ import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { EvidenceTab } from '@/components/evidence/EvidenceTab'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import { HealthTab } from '@/components/health/HealthTab'
 import type { ExplorerType } from '@/components/explorer/types'
@@ -58,15 +57,6 @@ export default function ProjectDetailPage() {
   }
   if (urlTaskType && ['all', 'feature', 'bug', 'task'].includes(urlTaskType)) {
     taskInitialFilters.type = urlTaskType as TaskFilterValues['type']
-  }
-
-  // Get evidence entry_id filter from URL
-  const urlEntryId = searchParams.get('entry_id')
-  const evidenceEntryId = urlEntryId ? parseInt(urlEntryId, 10) : undefined
-
-  // Handler to clear evidence entry filter
-  const handleClearEvidenceEntryFilter = () => {
-    router.replace(`/projects/${projectId}?tab=evidence`, { scroll: false })
   }
 
   // Update URL when explorer type changes (without full navigation)
@@ -208,17 +198,6 @@ export default function ProjectDetailPage() {
             <TasksTab
               projectId={projectId}
               initialFilters={taskInitialFilters}
-            />
-          </div>
-        )}
-        {activeTab === 'evidence' && (
-          <div className="h-full overflow-auto p-4">
-            <EvidenceTab
-              projectId={projectId}
-              entryId={evidenceEntryId}
-              onClearEntryFilter={
-                evidenceEntryId ? handleClearEvidenceEntryFilter : undefined
-              }
             />
           </div>
         )}

@@ -6,7 +6,7 @@ Tests parsing of journalctl output and error deduplication.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -202,21 +202,21 @@ class TestSystemdMonitor:
             unit="test.service",
             message="Error A",
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash1",
         )
         error2 = JournalError(
             unit="test.service",
             message="Error A",
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash1",  # Same hash
         )
         error3 = JournalError(
             unit="test.service",
             message="Error B",
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash2",
         )
 
@@ -233,7 +233,7 @@ class TestSystemdMonitor:
             unit="test.service",
             message="Error",
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash1",
         )
 
@@ -252,7 +252,7 @@ class TestSystemdMonitor:
             unit="test.service",
             message="Error",
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="existing_hash",
         )
 

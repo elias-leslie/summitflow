@@ -15,7 +15,6 @@ from .api import (
     backups,
     celery_endpoints,
     design_standards,
-    evidence,
     explorer,
     git,
     implementation,
@@ -27,7 +26,6 @@ from .api import (
     schemas,
     tasks,
     tdd,
-    tdd_tests,
 )
 from .config import REDIS_URL
 from .schemas.health import ComponentHealth, DetailedHealthResponse
@@ -82,12 +80,10 @@ app.add_middleware(
 
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(evidence.router, prefix="/api", tags=["evidence"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(celery_endpoints.router, tags=["celery"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
-app.include_router(tdd_tests.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])

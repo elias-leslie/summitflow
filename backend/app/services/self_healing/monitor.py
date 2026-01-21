@@ -10,7 +10,7 @@ import hashlib
 import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ...logging_config import get_logger
@@ -196,9 +196,9 @@ class SystemdMonitor:
             try:
                 timestamp = datetime.fromtimestamp(int(timestamp_us) / 1_000_000)
             except (ValueError, OSError):
-                timestamp = datetime.now()
+                timestamp = datetime.now(UTC)
         else:
-            timestamp = datetime.now()
+            timestamp = datetime.now(UTC)
 
         error_hash = compute_error_hash(unit, message)
 

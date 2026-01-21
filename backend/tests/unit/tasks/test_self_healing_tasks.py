@@ -5,7 +5,7 @@ Tests the scheduled monitoring task and rate limiting.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from app.services.self_healing.monitor import PRIORITY_ERR, JournalError
@@ -49,14 +49,14 @@ class TestMonitorSystemdErrors:
                 unit="test.service",
                 message="Error 1",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
             JournalError(
                 unit="test.service",
                 message="Error 2",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash2",
             ),
         ]
@@ -84,7 +84,7 @@ class TestMonitorSystemdErrors:
                 unit="test.service",
                 message="Error",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
         ]
@@ -110,7 +110,7 @@ class TestMonitorSystemdErrors:
                 unit="test.service",
                 message="Error",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
         ]
@@ -135,7 +135,7 @@ class TestMonitorSystemdErrors:
                 unit="test.service",
                 message=f"Error {i}",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash=f"hash{i}",
             )
             for i in range(15)  # More than default limit
@@ -181,7 +181,7 @@ class TestMonitorSystemdErrors:
                 unit="test.service",
                 message="Error",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
         ]

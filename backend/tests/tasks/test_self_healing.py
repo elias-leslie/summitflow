@@ -5,7 +5,7 @@ Tests the systemd journal monitor creating bug tasks from errors.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -130,7 +130,7 @@ class TestSystemdMonitorIntegration:
             unit="test.service",
             message="A" * 200,  # Very long message
             priority=PRIORITY_ERR,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash123",
         )
 
@@ -158,7 +158,7 @@ class TestSystemdMonitorIntegration:
             unit="test.service",
             message="Fatal error",
             priority=PRIORITY_CRIT,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             error_hash="hash123",
         )
 
@@ -187,14 +187,14 @@ class TestProcessJournalErrors:
                 unit="test.service",
                 message="Error 1",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
             JournalError(
                 unit="test.service",
                 message="Error 2",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash2",
             ),
         ]
@@ -222,7 +222,7 @@ class TestProcessJournalErrors:
                 unit="test.service",
                 message="Error",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
         ]
@@ -249,7 +249,7 @@ class TestProcessJournalErrors:
                 unit="test.service",
                 message="Error",
                 priority=PRIORITY_ERR,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 error_hash="hash1",
             ),
         ]

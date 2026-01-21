@@ -529,7 +529,7 @@ def _run_ui_review(
         return {"status": "skip", "reason": "No frontend changes"}
 
     try:
-        reviewer = get_agent("agent", model=AGENT_REVIEWER)
+        reviewer = get_agent("claude", model=AGENT_REVIEWER)
 
         prompt = f"""Review this UI/frontend task for design quality:
 

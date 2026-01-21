@@ -1,14 +1,13 @@
 /**
  * EndpointRow - Row content renderer for API endpoints
  *
- * Renders endpoint path with method badge, status, response time, and evidence.
+ * Renders endpoint path with method badge, status, and response time.
  */
 
 import { FileText, Globe } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
-import { EvidenceBadge } from '../../EvidenceBadge'
 
 interface EndpointRowProps {
   entry: ExplorerEntry
@@ -101,14 +100,6 @@ export function EndpointRow({ entry }: EndpointRowProps) {
         muted={!responseTime}
       >
         {formatDuration(responseTime)}
-      </ColumnValue>
-
-      {/* Evidence badge */}
-      <ColumnValue width="60px" align="center">
-        <EvidenceBadge
-          evidenceCount={entry.evidenceCount ?? 0}
-          lastEvidenceAt={entry.lastEvidenceAt ?? null}
-        />
       </ColumnValue>
     </>
   )

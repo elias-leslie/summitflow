@@ -5,12 +5,10 @@ import clsx from 'clsx'
 import {
   Activity,
   Archive,
-  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Compass,
-  FlaskConical,
   FolderKanban,
   GitBranch,
   Globe,
@@ -38,8 +36,6 @@ type NavItemId =
   | 'settings'
   | 'kanban'
   | 'tasks'
-  | 'tests'
-  | 'evidence'
   | 'explorer'
   | 'health'
   | 'design'
@@ -120,26 +116,6 @@ const projectNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-orange-500/10 hover:text-orange-400',
     iconActiveClasses: 'text-orange-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-orange-400',
-  },
-  {
-    id: 'tests',
-    label: 'Tests',
-    href: '/tests',
-    icon: FlaskConical,
-    activeClasses: 'bg-phosphor-500/15 text-phosphor-400',
-    inactiveClasses: 'text-slate-400 hover:bg-phosphor-500/10 hover:text-phosphor-400',
-    iconActiveClasses: 'text-phosphor-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-phosphor-400',
-  },
-  {
-    id: 'evidence',
-    label: 'Evidence',
-    href: '',
-    icon: Camera,
-    activeClasses: 'bg-pink-500/15 text-pink-400',
-    inactiveClasses: 'text-slate-400 hover:bg-pink-500/10 hover:text-pink-400',
-    iconActiveClasses: 'text-pink-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-pink-400',
   },
   {
     id: 'explorer',
@@ -435,7 +411,6 @@ function ProjectsAccordion({
   const getActiveTab = (): NavItemId | null => {
     if (!currentProjectId) return null
     if (pathname.includes('/settings')) return 'settings' as NavItemId
-    if (pathname.includes('/tests')) return 'tests'
     if (pathname.includes('/git')) return 'git' as NavItemId
     if (pathname.includes('/backups')) return 'backups' as NavItemId
     if (pathname.includes('/design')) return 'design'

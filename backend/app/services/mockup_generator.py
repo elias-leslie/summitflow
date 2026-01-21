@@ -1,13 +1,14 @@
 """Mockup generator service for design audit workflows.
 
 Uses Agent Hub for image generation (Gemini) with Claude HTML as fallback.
-Mockups are stored as evidence records with type='mockup'.
+Mockups are stored in the mockups table.
 """
 
 from __future__ import annotations
 
 import base64
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ from agent_hub.exceptions import AgentHubError
 
 from ..constants import CLAUDE_SONNET, GEMINI_IMAGE, GEMINI_PRO
 from ..logging_config import get_logger
-from ..storage import evidence as evidence_storage
+from ..storage import mockups as mockups_storage
 
 logger = get_logger(__name__)
 
@@ -28,12 +29,17 @@ MOCKUP_BASE_DIR = Path("/tmp/summitflow/mockups")
 AGENT_HUB_URL = "http://localhost:8003"
 
 
+def _generate_mockup_id() -> str:
+    """Generate a new mockup ID in the format mk-{uuid}."""
+    return f"mk-{uuid.uuid4().hex[:12]}"
+
+
 @dataclass
 class MockupResult:
     """Result of mockup generation."""
 
     success: bool
-    evidence_id: str | None = None
+    mockup_id: str | None = None
     db_id: int | None = None
     image_path: str | None = None
     error: str | None = None
@@ -132,7 +138,7 @@ def generate_mockup_gemini(
         design_direction: Optional specific design direction
 
     Returns:
-        MockupResult with evidence details
+        MockupResult with mockup details
     """
     start_time = time.monotonic()
 
@@ -160,36 +166,36 @@ def generate_mockup_gemini(
             ext = "webp"
 
         # Save image to file
-        evidence_id = evidence_storage.generate_evidence_id()
-        mockup_dir = MOCKUP_BASE_DIR / project_id / evidence_id
+        mockup_id = _generate_mockup_id()
+        mockup_dir = MOCKUP_BASE_DIR / project_id / mockup_id
         mockup_dir.mkdir(parents=True, exist_ok=True)
 
         image_path = mockup_dir / f"mockup.{ext}"
         image_path.write_bytes(image_bytes)
 
-        # Store as evidence
-        from ..storage.connection import get_connection
-
-        with get_connection() as conn, conn.cursor() as cur:
-            db_id, evidence_id, _captured_at = evidence_storage.insert_evidence_record(
-                cur,
-                project_id=project_id,
-                file_path=str(image_path),
-                file_size_bytes=len(image_bytes),
-                explorer_entry_id=explorer_entry_id,
-                evidence_type="mockup",
-                mockup_status="pending_approval",
-                environment="generated",
-            )
-            conn.commit()
-
         generation_time = int((time.monotonic() - start_time) * 1000)
+
+        # Store in mockups table
+        page_path = page_info.get("path", "/")
+        page_name = page_info.get("name", "Generated mockup")
+
+        mockup = mockups_storage.create_mockup(
+            project_id=project_id,
+            name=f"Mockup: {page_name}",
+            description=f"Generated mockup for {page_path}",
+            mockup_type="page",
+            file_path=str(image_path),
+            page_path=page_path,
+            generator="gemini",
+            generation_prompt=prompt,
+            generation_time_ms=generation_time,
+        )
 
         logger.info(
             "mockup_generated",
             project_id=project_id,
             explorer_entry_id=explorer_entry_id,
-            evidence_id=evidence_id,
+            mockup_id=mockup["mockup_id"],
             generator="gemini",
             generation_time_ms=generation_time,
             session_id=response.session_id,
@@ -197,8 +203,8 @@ def generate_mockup_gemini(
 
         return MockupResult(
             success=True,
-            evidence_id=evidence_id,
-            db_id=db_id,
+            mockup_id=mockup["mockup_id"],
+            db_id=mockup["id"],
             image_path=str(image_path),
             generator="gemini",
             generation_time_ms=generation_time,
@@ -253,7 +259,7 @@ def generate_mockup_claude_fallback(
         design_direction: Optional specific design direction
 
     Returns:
-        MockupResult with evidence details
+        MockupResult with mockup details
     """
     from .agent_hub_client import get_agent
 
@@ -291,44 +297,45 @@ Output ONLY the HTML code, no explanation."""
             html_content = html_content.split("```")[1].split("```")[0].strip()
 
         # Save HTML to file
-        evidence_id = evidence_storage.generate_evidence_id()
-        mockup_dir = MOCKUP_BASE_DIR / project_id / evidence_id
+        mockup_id = _generate_mockup_id()
+        mockup_dir = MOCKUP_BASE_DIR / project_id / mockup_id
         mockup_dir.mkdir(parents=True, exist_ok=True)
 
         html_path = mockup_dir / "mockup.html"
         html_path.write_text(html_content)
 
-        # Store as evidence
-        from ..storage.connection import get_connection
-
-        with get_connection() as conn, conn.cursor() as cur:
-            db_id, evidence_id, _captured_at = evidence_storage.insert_evidence_record(
-                cur,
-                project_id=project_id,
-                file_path=str(html_path),
-                file_size_bytes=len(html_content.encode()),
-                explorer_entry_id=explorer_entry_id,
-                evidence_type="mockup",
-                mockup_status="pending_approval",
-                environment="generated",
-            )
-            conn.commit()
-
         generation_time = int((time.monotonic() - start_time) * 1000)
+
+        # Store in mockups table
+        page_path = page_info.get("path", "/")
+        page_name = page_info.get("name", "Generated mockup")
+
+        mockup = mockups_storage.create_mockup(
+            project_id=project_id,
+            name=f"Mockup: {page_name}",
+            description=f"Generated HTML mockup for {page_path}",
+            mockup_type="page",
+            file_path=str(html_path),
+            content=html_content,
+            page_path=page_path,
+            generator="claude",
+            generation_prompt=html_prompt,
+            generation_time_ms=generation_time,
+        )
 
         logger.info(
             "mockup_generated",
             project_id=project_id,
             explorer_entry_id=explorer_entry_id,
-            evidence_id=evidence_id,
+            mockup_id=mockup["mockup_id"],
             generator="claude",
             generation_time_ms=generation_time,
         )
 
         return MockupResult(
             success=True,
-            evidence_id=evidence_id,
-            db_id=db_id,
+            mockup_id=mockup["mockup_id"],
+            db_id=mockup["id"],
             image_path=str(html_path),
             generator="claude",
             generation_time_ms=generation_time,

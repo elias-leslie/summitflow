@@ -307,10 +307,10 @@ def format_context_task(task: dict[str, Any]) -> str:
     )
 
     if objective := task.get("objective"):
-        lines.append(f"OBJECTIVE:{_truncate(objective, 100)}")
+        lines.append(f"OBJECTIVE:{objective}")
 
     if spirit_anti := task.get("spirit_anti"):
-        lines.append(f"SPIRIT_ANTI:{_truncate(spirit_anti, 150)}")
+        lines.append(f"SPIRIT_ANTI:{spirit_anti}")
 
     constraints = task.get("constraints") or []
     if constraints:
@@ -337,13 +337,15 @@ def format_context_decisions(decisions: list[dict[str, Any]]) -> str:
         d_id = d.get("id", "?")
         title = d.get("title", "")
         outcome = d.get("outcome", "")
-        lines.append(f"{d_id}:{_truncate(title, 30)}→{_truncate(outcome, 80)}")
+        lines.append(f"{d_id}:{title}→{outcome}")
 
     return "\n".join(lines)
 
 
 def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
     """Format subtasks with steps inline for context output.
+
+    Shows ALL details - full descriptions, all steps for all subtasks.
 
     Format: SUBTASKS[N]:<done>/<total>:<pct>%
     <subtask_id> <PASS|____> <description> [steps: <done>/<total>]
@@ -362,19 +364,21 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
     for subtask in subtasks:
         subtask_id = subtask.get("subtask_id", "?")
         passes = "PASS" if subtask.get("passes") else "____"
-        desc = _truncate(subtask.get("description") or "", 50)
+        # Full description - no truncation
+        desc = subtask.get("description") or ""
         step_summary = subtask.get("step_summary", {})
         step_done = step_summary.get("completed", 0)
         step_total = step_summary.get("total", 0)
 
         lines.append(f"{subtask_id:5} {passes} {desc} [{step_done}/{step_total}]")
 
-        # Include steps inline
-        steps = subtask.get("steps") or []
+        # Include steps for ALL subtasks - check both key names
+        steps = subtask.get("steps") or subtask.get("steps_from_table") or []
         for step in steps:
             step_num = step.get("step_number", 0)
             step_pass = "PASS" if step.get("passes") else "____"
-            step_desc = _truncate(step.get("description") or "", 60)
+            # Full step description - no truncation
+            step_desc = step.get("description") or ""
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
 
     return "\n".join(lines)
@@ -399,7 +403,7 @@ def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
     for c in criteria:
         c_id = c.get("criterion_id", "?")
         passes = "PASS" if c.get("verified") else "____"
-        criterion = _truncate(c.get("criterion") or "", 60)
+        criterion = c.get("criterion") or ""
         lines.append(f"{c_id} {passes} {criterion}")
 
         verify_by = c.get("verify_by") or "human"
@@ -407,8 +411,8 @@ def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
         expected = c.get("expected_output") or ""
 
         if verify_cmd or expected:
-            cmd_str = _truncate(verify_cmd, 50) if verify_cmd else "-"
-            expect_str = _truncate(expected, 30) if expected else "-"
+            cmd_str = verify_cmd if verify_cmd else "-"
+            expect_str = expected if expected else "-"
             lines.append(f"  verify_by:{verify_by} cmd:{cmd_str} expect:{expect_str}")
 
         # Add verification status fields (from task_acceptance_criteria)
@@ -441,7 +445,7 @@ def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
     for b in blockers:
         b_id = b.get("id", "?")
         status = b.get("status", "?")
-        title = _truncate(b.get("title") or "", 50)
+        title = b.get("title") or ""
         lines.append(f"{b_id}|{status}|{title}")
 
     return "\n".join(lines)
@@ -465,7 +469,7 @@ def format_context_amendments(amendments: list[dict[str, Any]]) -> str:
     for a in pending:
         amend_id = a.get("amendment_id", "?")
         crit_id = a.get("criterion_id", "?")
-        reason = _truncate(a.get("reason") or "", 50)
+        reason = a.get("reason") or ""
         lines.append(f"  {amend_id}|{crit_id}|{reason}")
 
     return "\n".join(lines)

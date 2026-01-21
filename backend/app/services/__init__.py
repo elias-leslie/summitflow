@@ -1,7 +1,6 @@
 """SummitFlow services.
 
 Services:
-- evidence_manager: Evidence/artifact storage and management
 - agent_hub: Agent Hub autocode task dispatch
 """
 
@@ -13,64 +12,12 @@ from .agent_hub import (
     dispatch_task,
     validate_evidence,
 )
-from .evidence_manager import (
-    EVIDENCE_TYPES,
-    MOCKUP_STATUSES,
-    capture_console_errors,
-    capture_evidence,
-    generate_evidence_id,
-    get_approved_mockup,
-    get_auto_captured_evidence,
-    get_evidence_base_dir,
-    get_evidence_by_id,
-    get_evidence_for_entry,
-    get_evidence_for_task,
-    get_evidence_path,
-    get_latest_evidence,
-    get_mockups_for_entry,
-    get_needs_user_review,
-    get_next_version,
-    get_pending_review,
-    get_summary,
-    get_with_user_notes,
-    list_evidence,
-    read_evidence_file,
-    save_evidence,
-    update_ai_review,
-    update_mockup_status,
-    update_user_review,
-)
 
 __all__ = [
-    "EVIDENCE_TYPES",
-    "MOCKUP_STATUSES",
     "AgentHubService",
     "EvidenceContract",
     "ExecutionState",
     "TaskContext",
-    "capture_console_errors",
-    "capture_evidence",
     "dispatch_task",
-    "generate_evidence_id",
-    "get_approved_mockup",
-    "get_auto_captured_evidence",
-    "get_evidence_base_dir",
-    "get_evidence_by_id",
-    "get_evidence_for_entry",
-    "get_evidence_for_task",
-    "get_evidence_path",
-    "get_latest_evidence",
-    "get_mockups_for_entry",
-    "get_needs_user_review",
-    "get_next_version",
-    "get_pending_review",
-    "get_summary",
-    "get_with_user_notes",
-    "list_evidence",
-    "read_evidence_file",
-    "save_evidence",
-    "update_ai_review",
-    "update_mockup_status",
-    "update_user_review",
     "validate_evidence",
 ]

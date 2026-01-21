@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import pickle
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from app.celery_app import celery_app
@@ -87,7 +87,7 @@ def get_active_tasks() -> list[dict[str, Any]]:
                         else None
                     ),
                     "duration": (
-                        (datetime.now().timestamp() - task["time_start"])
+                        (datetime.now(UTC).timestamp() - task["time_start"])
                         if "time_start" in task
                         else None
                     ),

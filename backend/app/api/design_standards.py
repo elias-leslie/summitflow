@@ -426,7 +426,7 @@ class MockupResponse(BaseModel):
     """Response from mockup generation."""
 
     success: bool
-    evidence_id: str | None = None
+    mockup_id: str | None = None
     db_id: int | None = None
     image_path: str | None = None
     error: str | None = None
@@ -446,7 +446,7 @@ async def generate_mockup_endpoint(
     """Generate a design mockup for an explorer entry (page).
 
     Uses Gemini 3 Pro Image for mockup generation with Claude HTML fallback.
-    Mockups are stored as evidence with type='mockup' and status='pending_approval'.
+    Mockups are stored in the mockups table with status='generated'.
     """
     from ..services.mockup_generator import generate_mockup
 
@@ -458,12 +458,12 @@ async def generate_mockup_endpoint(
     )
 
     mockup_url = None
-    if result.success and result.evidence_id:
-        mockup_url = f"/api/projects/{project_id}/evidence/{result.evidence_id}/screenshot"
+    if result.success and result.mockup_id:
+        mockup_url = f"/api/projects/{project_id}/mockups/{result.mockup_id}"
 
     return MockupResponse(
         success=result.success,
-        evidence_id=result.evidence_id,
+        mockup_id=result.mockup_id,
         db_id=result.db_id,
         image_path=result.image_path,
         error=result.error,

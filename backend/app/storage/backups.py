@@ -8,7 +8,7 @@ This module handles all database interactions for backup records:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .connection import generate_prefixed_id, get_connection
@@ -88,7 +88,7 @@ def create_backup_record(
         Created backup record
     """
     backup_id = _generate_backup_id()
-    name = f"{project_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    name = f"{project_id}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

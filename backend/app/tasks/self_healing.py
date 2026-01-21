@@ -12,6 +12,10 @@ from typing import Any
 from celery import shared_task
 
 from ..logging_config import get_logger
+from ..services.self_healing.browser_monitor import (
+    BrowserErrorMonitor,
+    create_browser_error_task,
+)
 from ..services.self_healing.monitor import (
     SystemdMonitor,
     create_error_task,
@@ -22,6 +26,83 @@ logger = get_logger(__name__)
 
 # Maximum tasks to create per monitoring run
 MAX_TASKS_PER_RUN = 10
+
+
+@shared_task(name="summitflow.monitor_browser_errors")  # type: ignore[untyped-decorator]
+def monitor_browser_errors(
+    project_id: str = "summitflow",
+    max_tasks: int = MAX_TASKS_PER_RUN,
+) -> dict[str, int]:
+    """Monitor browser console errors and create bug tasks.
+
+    Scheduled task that runs after explorer health checks to detect
+    console errors on pages and create bug tasks for investigation.
+
+    Args:
+        project_id: Project ID for task creation
+        max_tasks: Maximum number of tasks to create per run
+
+    Returns:
+        Dict with counts: created, skipped, errors
+    """
+    logger.info(
+        "starting_browser_error_monitoring",
+        project_id=project_id,
+        max_tasks=max_tasks,
+    )
+
+    results = {"created": 0, "skipped": 0, "errors": 0}
+
+    try:
+        monitor = BrowserErrorMonitor(project_id)
+        new_errors = monitor.get_new_errors()
+
+        if not new_errors:
+            logger.debug("no_new_browser_errors_detected")
+            return results
+
+        logger.info("new_browser_errors_found", count=len(new_errors))
+
+        # Rate limit: process only up to max_tasks
+        for error in new_errors[:max_tasks]:
+            try:
+                task = create_browser_error_task(project_id, error)
+                if task:
+                    results["created"] += 1
+                    logger.info(
+                        "created_browser_error_task",
+                        task_id=task["id"],
+                        page_path=error.page_path,
+                    )
+                else:
+                    results["skipped"] += 1
+            except Exception as e:
+                logger.error(
+                    "browser_task_creation_failed",
+                    error_hash=error.error_hash,
+                    error=str(e),
+                )
+                results["errors"] += 1
+
+        # Log if we hit the rate limit
+        if len(new_errors) > max_tasks:
+            logger.warning(
+                "browser_monitoring_rate_limited",
+                total_errors=len(new_errors),
+                processed=max_tasks,
+                skipped=len(new_errors) - max_tasks,
+            )
+
+    except Exception as e:
+        logger.error("browser_monitoring_failed", error=str(e))
+        results["errors"] += 1
+
+    logger.info(
+        "browser_monitoring_complete",
+        **results,
+    )
+
+    return results
 
 
 @shared_task(name="summitflow.monitor_systemd_errors")  # type: ignore[untyped-decorator]
