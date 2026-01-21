@@ -694,7 +694,10 @@ def _notify_human_review_needed(task_id: str, reason: str) -> None:
 
 
 def _verify_acceptance_criteria(task: dict[str, Any]) -> dict[str, Any]:
-    """Verify task against done_when criteria.
+    """Verify task completion by checking step status.
+
+    Verification now happens at the step level via verify_command.
+    This function checks if all steps across all subtasks are passed.
 
     Args:
         task: Task dict
@@ -702,36 +705,38 @@ def _verify_acceptance_criteria(task: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Check result dict
     """
-    done_when = task.get("done_when") or []
-    if not done_when:
-        return {"status": "skip", "reason": "No done_when criteria"}
-
-    # Get existing criterion verifications from task
     task_id = task.get("id")
     if not task_id:
         return {"status": "error", "error": "No task id"}
 
-    from app.storage.connection import get_connection
-    from app.storage.verification import get_criteria_for_task_v2
+    from app.storage.subtasks import get_subtasks_for_task
 
-    with get_connection() as conn:
-        criteria = get_criteria_for_task_v2(conn, task_id)
+    subtasks = get_subtasks_for_task(task_id, include_steps=True)
+    if not subtasks:
+        return {"status": "skip", "reason": "No subtasks defined"}
 
-    verified_count = sum(1 for c in criteria if c.get("verified"))
-    total_count = len(criteria)
+    total_steps = 0
+    passed_steps = 0
+    incomplete_subtasks = []
 
-    if total_count == 0:
-        return {
-            "status": "skip",
-            "reason": "No acceptance criteria defined",
-        }
+    for subtask in subtasks:
+        steps = subtask.get("steps_from_table", [])
+        for step in steps:
+            total_steps += 1
+            if step.get("passes"):
+                passed_steps += 1
+        if not subtask.get("passes"):
+            incomplete_subtasks.append(subtask.get("subtask_id"))
 
-    all_verified = verified_count == total_count
+    if total_steps == 0:
+        return {"status": "skip", "reason": "No steps defined"}
+
+    all_passed = passed_steps == total_steps
     return {
-        "status": "pass" if all_verified else "fail",
-        "verified": verified_count,
-        "total": total_count,
-        "missing": [c["criterion"] for c in criteria if not c.get("verified")],
+        "status": "pass" if all_passed else "fail",
+        "verified": passed_steps,
+        "total": total_steps,
+        "missing": incomplete_subtasks if not all_passed else [],
     }
 
 

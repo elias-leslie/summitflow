@@ -3,14 +3,15 @@
 This module provides data access for the task_subtask_steps table, which stores
 normalized step data for granular completion tracking within subtasks.
 
-Note: Step completion now triggers automatic verification of linked criteria.
-See update_step_passes for TDD-style verification enforcement.
+Each step can have a verify_command for the tight agent feedback loop:
+  code → run verify_command → fix if fail → repeat
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -21,18 +22,22 @@ from .connection import get_connection
 
 logger = logging.getLogger(__name__)
 
-# Column list for all step SELECT/RETURNING queries (8 columns)
-STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at"""
+# Column list for all step SELECT/RETURNING queries (10 columns)
+STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, expected_output"""
 
 # Expected column count for row validation
-EXPECTED_STEP_COLUMNS = 8
+EXPECTED_STEP_COLUMNS = 10
+
+# Timeout for verify_command execution (30 seconds)
+VERIFY_COMMAND_TIMEOUT = 30
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a step dict.
 
-    Column order (8 columns):
-        id, subtask_id, step_number, description, spec, passes, passed_at, created_at
+    Column order (10 columns):
+        id, subtask_id, step_number, description, spec, passes, passed_at, created_at,
+        verify_command, expected_output
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -47,6 +52,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "passes": row[5],
         "passed_at": row[6].isoformat() if row[6] else None,
         "created_at": row[7].isoformat() if row[7] else None,
+        "verify_command": row[8],
+        "expected_output": row[9],
     }
 
 
@@ -55,6 +62,8 @@ def create_step(
     step_number: int,
     description: str,
     spec: dict[str, Any] | None = None,
+    verify_command: str | None = None,
+    expected_output: str | None = None,
 ) -> dict[str, Any]:
     """Create a new step for a subtask.
 
@@ -63,6 +72,8 @@ def create_step(
         step_number: 1-indexed step number within subtask
         description: Step description text
         spec: Optional JSONB spec for implementation details
+        verify_command: Bash command to verify step completion
+        expected_output: Expected output pattern for verification
 
     Returns:
         The created step dict.
@@ -76,11 +87,11 @@ def create_step(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING {STEP_COLUMNS}
             """,
-            (subtask_id, step_number, description, spec_json),
+            (subtask_id, step_number, description, spec_json, verify_command, expected_output),
         )
         row = cur.fetchone()
         conn.commit()
@@ -125,162 +136,92 @@ class StepVerificationError(Exception):
     """Raised when step completion is blocked by failed verification.
 
     Attributes:
-        criterion_id: The criterion that failed verification
+        step_number: The step that failed verification
         output: The verification command output
+        exit_code: The exit code from the verify_command
     """
 
     def __init__(
         self,
         message: str,
-        criterion_id: str,
+        step_number: int,
         output: str,
+        exit_code: int = 1,
     ):
         super().__init__(message)
-        self.criterion_id = criterion_id
+        self.step_number = step_number
         self.output = output
+        self.exit_code = exit_code
 
 
-def _get_task_id_from_subtask(subtask_id: str) -> str | None:
-    """Extract task_id from subtask by querying the database.
-
-    Args:
-        subtask_id: The subtask ID (e.g., "task-abc123-1.1")
+def run_verify_command(
+    verify_command: str,
+    timeout: int = VERIFY_COMMAND_TIMEOUT,
+) -> tuple[str, int, str]:
+    """Execute a verify_command and return classification.
 
     Returns:
-        The task_id or None if subtask not found.
+        Tuple of (status, exit_code, output) where status is one of:
+        - 'passed': Exit code 0
+        - 'failed': Exit code != 0
+        - 'crashed': Exit code 126-127 or exception
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT task_id FROM task_subtasks WHERE id = %s",
-            (subtask_id,),
+    try:
+        result = subprocess.run(
+            verify_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd="/home/kasadis/summitflow",
         )
-        row = cur.fetchone()
-        return row[0] if row else None
 
+        exit_code = result.returncode
+        output = result.stdout + result.stderr
 
-def _run_linked_verifications(subtask_id: str) -> dict[str, Any]:
-    """Run verifications for all criteria linked to a subtask.
+        # Classify based on exit code
+        if exit_code == 0:
+            return ("passed", 0, output)
+        elif 1 <= exit_code <= 125:
+            return ("failed", exit_code, output)
+        else:  # 126-127 = command not found or not executable
+            return ("crashed", exit_code, output)
 
-    Args:
-        subtask_id: The subtask ID
-
-    Returns:
-        Dict with:
-            - passed: bool - True if all verifications passed
-            - results: list of verification results
-            - failed: first failed criterion (if any)
-    """
-    from datetime import UTC, datetime
-
-    from .criterion_subtask_map import get_criteria_for_subtask
-    from .verification import get_task_criterion, run_verify_command, update_task_criterion
-
-    # Get linked criteria
-    criteria = get_criteria_for_subtask(subtask_id)
-    if not criteria:
-        # No linked criteria - step passes without verification
-        return {"passed": True, "results": [], "failed": None}
-
-    # Get task_id from subtask
-    task_id = _get_task_id_from_subtask(subtask_id)
-    if not task_id:
-        logger.warning(f"Could not find task_id for subtask {subtask_id}")
-        return {"passed": True, "results": [], "failed": None}
-
-    results = []
-    with get_connection() as conn:
-        for crit in criteria:
-            criterion_id = crit.get("criterion_id")  # This is the ac-XXX code
-            if not criterion_id:
-                logger.warning(f"Criterion mapping missing criterion_id: {crit}")
-                continue
-
-            # Get full criterion details
-            full_criterion = get_task_criterion(conn, task_id, criterion_id)
-            if not full_criterion:
-                logger.warning(f"Criterion {criterion_id} not found for task {task_id}")
-                continue
-
-            # Skip if no verify_command
-            if not full_criterion.get("verify_command"):
-                logger.debug(f"Criterion {criterion_id} has no verify_command, skipping")
-                results.append(
-                    {
-                        "criterion_id": criterion_id,
-                        "status": "skipped",
-                        "reason": "no verify_command",
-                    }
-                )
-                continue
-
-            # Skip if already verified
-            if full_criterion.get("verified"):
-                logger.debug(f"Criterion {criterion_id} already verified, skipping")
-                results.append(
-                    {
-                        "criterion_id": criterion_id,
-                        "status": "already_verified",
-                    }
-                )
-                continue
-
-            # Run verification
-            status, exit_code, output = run_verify_command(full_criterion["verify_command"])
-            now = datetime.now(UTC)
-
-            if status == "passed":
-                # Update criterion as verified
-                update_task_criterion(
-                    conn,
-                    task_id,
-                    criterion_id,
-                    {"verified": True, "verified_at": now, "verified_by_actual": "test"},
-                )
-                results.append({"criterion_id": criterion_id, "status": "passed", "output": output})
-            else:
-                # Verification failed
-                result = {
-                    "criterion_id": criterion_id,
-                    "status": "failed",
-                    "exit_code": exit_code,
-                    "output": output,
-                }
-                results.append(result)
-                return {"passed": False, "results": results, "failed": result}
-
-    return {"passed": True, "results": results, "failed": None}
+    except subprocess.TimeoutExpired:
+        return ("crashed", -1, f"Command timed out after {timeout}s")
+    except Exception as e:
+        return ("crashed", -1, str(e))
 
 
 def update_step_passes(
     subtask_id: str,
     step_number: int,
     passes: bool,
-    force: bool = False,  # Deprecated: kept for API compatibility, ignored
+    force: bool = False,
 ) -> dict[str, Any] | None:
     """Update step passes status with automatic verification.
 
     When passes is set to True:
-    1. Looks up linked criteria via criterion_subtask_map
-    2. For each criterion with verify_command, runs verification
-    3. Only marks step passes=true if all verifications pass
-    4. Raises StepVerificationError on failure with attempt count and output
+    1. Fetches the step's verify_command (if any)
+    2. Runs the verify_command
+    3. Only marks step passes=true if verification passes (exit code 0)
+    4. Raises StepVerificationError on failure
 
     When passes is set to False, clears passed_at without verification.
+    When force is True, skips verification and marks as passed.
 
     Args:
         subtask_id: Parent subtask ID
         step_number: Step number to update
         passes: Whether the step passes
-        force: DEPRECATED - kept for API compatibility, ignored
+        force: Skip verification and mark as passed (use sparingly)
 
     Returns:
         Updated step dict or None if not found.
 
     Raises:
-        StepVerificationError: If verification fails (when passes=True)
+        StepVerificationError: If verification fails (when passes=True and not force)
     """
-    _ = force  # Deprecated parameter, ignored
-
     # If marking as failed/incomplete, no verification needed
     if not passes:
         passed_at = None
@@ -304,23 +245,42 @@ def update_step_passes(
         logger.debug("Updated step %d passes=False for subtask %s", step_number, subtask_id)
         return _row_to_dict(row)
 
-    # passes=True: Run verification for linked criteria
-    verification_result = _run_linked_verifications(subtask_id)
-
-    if not verification_result["passed"]:
-        failed = verification_result["failed"]
-        criterion_id = failed.get("criterion_id", "unknown")
-        output = failed.get("output", "No output")
-
-        message = f"Criterion {criterion_id} verification failed.\nOutput: {output[:500]}"
-
-        raise StepVerificationError(
-            message=message,
-            criterion_id=criterion_id,
-            output=output,
+    # passes=True: Get the step to check for verify_command
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {STEP_COLUMNS}
+            FROM task_subtask_steps
+            WHERE subtask_id = %s AND step_number = %s
+            """,
+            (subtask_id, step_number),
         )
+        row = cur.fetchone()
 
-    # All verifications passed - mark step as passed
+    if not row:
+        logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+        return None
+
+    step = _row_to_dict(row)
+    verify_command = step.get("verify_command")
+
+    # Run verification if verify_command exists and not forcing
+    if verify_command and not force:
+        status, exit_code, output = run_verify_command(verify_command)
+
+        if status != "passed":
+            message = f"Step {step_number} verification failed (exit code {exit_code}).\nCommand: {verify_command}\nOutput: {output[:500]}"
+
+            raise StepVerificationError(
+                message=message,
+                step_number=step_number,
+                output=output,
+                exit_code=exit_code,
+            )
+
+        logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
+
+    # Verification passed (or no verify_command, or force) - mark step as passed
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -357,10 +317,10 @@ def update_step_passes(
         return None
 
     logger.info(
-        "Step %d verified and passed for subtask %s (verified %d criteria)",
+        "Step %d passed for subtask %s%s",
         step_number,
         subtask_id,
-        len(verification_result["results"]),
+        " (forced)" if force else (" (verified)" if verify_command else ""),
     )
     return _row_to_dict(row)
 
@@ -376,7 +336,7 @@ def bulk_create_steps(
     Args:
         subtask_id: Parent subtask ID
         steps: List of step items - either strings (description only)
-               or dicts with {description: str, spec: dict | None}
+               or dicts with {description, spec, verify_command, expected_output}
 
     Returns:
         List of created step dicts.
@@ -393,18 +353,22 @@ def bulk_create_steps(
             if isinstance(step, str):
                 description = step
                 spec = None
+                verify_command = None
+                expected_output = None
             else:
                 description = step.get("description", "")
                 spec = step.get("spec")
+                verify_command = step.get("verify_command")
+                expected_output = step.get("expected_output")
 
             spec_json = json.dumps(spec) if spec else None
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description, spec_json),
+                (subtask_id, idx, description, spec_json, verify_command, expected_output),
             )
             row = cur.fetchone()
             created.append(_row_to_dict(row))
@@ -427,7 +391,7 @@ def append_steps(
     Args:
         subtask_id: Parent subtask ID
         steps: List of step items - either strings (description only)
-               or dicts with {description: str, spec: dict | None}
+               or dicts with {description, spec, verify_command, expected_output}
 
     Returns:
         List of created step dicts.
@@ -452,18 +416,22 @@ def append_steps(
             if isinstance(step, str):
                 description = step
                 spec = None
+                verify_command = None
+                expected_output = None
             else:
                 description = step.get("description", "")
                 spec = step.get("spec")
+                verify_command = step.get("verify_command")
+                expected_output = step.get("expected_output")
 
             spec_json = json.dumps(spec) if spec else None
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description, spec_json),
+                (subtask_id, idx, description, spec_json, verify_command, expected_output),
             )
             row = cur.fetchone()
             created.append(_row_to_dict(row))
@@ -531,6 +499,8 @@ def insert_step(
     position: int,
     description: str,
     spec: dict[str, Any] | None = None,
+    verify_command: str | None = None,
+    expected_output: str | None = None,
 ) -> dict[str, Any]:
     """Insert a step at a specific position, shifting existing steps down.
 
@@ -543,6 +513,8 @@ def insert_step(
                   position and after are shifted down.
         description: Step description text
         spec: Optional JSONB spec for implementation details
+        verify_command: Bash command to verify step completion
+        expected_output: Expected output pattern for verification
 
     Returns:
         The created step dict.
@@ -583,11 +555,11 @@ def insert_step(
         # Insert the new step at the position
         cur.execute(
             f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING {STEP_COLUMNS}
             """,
-            (subtask_id, position, description, spec_json),
+            (subtask_id, position, description, spec_json, verify_command, expected_output),
         )
         row = cur.fetchone()
         conn.commit()

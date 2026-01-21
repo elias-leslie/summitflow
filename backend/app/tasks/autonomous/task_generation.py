@@ -9,12 +9,10 @@ from app.celery_app import celery_app
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
-from app.storage.connection import get_connection
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.steps import bulk_create_steps
 from app.storage.subtasks import bulk_create_subtasks
 from app.storage.task_spirit import approve_plan, create_task_spirit
-from app.storage.verification import create_task_criterion
 
 logger = logging.getLogger(__name__)
 
@@ -130,55 +128,6 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 # Auto-approve plan for SIMPLE auto-generated tasks
                 approve_plan(task_id, approved_by="auto-generated")
 
-                # Create acceptance criteria with verification commands
-                with get_connection() as conn:
-                    # Criterion 1: Ruff lint passes
-                    create_task_criterion(
-                        conn=conn,
-                        task_id=task_id,
-                        criterion="Ruff linting passes with no errors",
-                        category="quality",
-                        verify_by="test",
-                        verify_command="dt ruff",
-                        expected_output="LINT:OK",
-                    )
-
-                    # Criterion 2: Mypy type check passes
-                    create_task_criterion(
-                        conn=conn,
-                        task_id=task_id,
-                        criterion="Mypy type checking passes",
-                        category="quality",
-                        verify_by="test",
-                        verify_command="dt mypy",
-                        expected_output="TYPES:OK",
-                    )
-
-                    # Criterion 3: Pytest passes
-                    create_task_criterion(
-                        conn=conn,
-                        task_id=task_id,
-                        criterion="All tests pass",
-                        category="correctness",
-                        verify_by="test",
-                        verify_command="dt pytest",
-                        expected_output="TEST:OK",
-                    )
-
-                    # Criterion 4: Frontend - browser check (if applicable)
-                    if is_frontend:
-                        create_task_criterion(
-                            conn=conn,
-                            task_id=task_id,
-                            criterion="No console errors in browser",
-                            category="correctness",
-                            verify_by="agent",
-                            verify_command="ba check http://localhost:3001 --no-errors",
-                            expected_output="exit code 0",
-                        )
-
-                    conn.commit()
-
                 # Create subtask via normalized table
                 subtask_data = [
                     {
@@ -189,16 +138,37 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 ]
                 created_subtasks = bulk_create_subtasks(task_id, subtask_data)
 
-                # Create steps for the subtask
+                # Create steps with verification commands for agent feedback loop
                 if created_subtasks:
                     subtask_full_id = created_subtasks[0]["id"]
-                    step_descriptions = [
-                        f"Analyze {file_path} for refactoring opportunities",
-                        f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
-                        "Run dt --check to verify all quality gates pass",
-                        "Commit changes with descriptive message",
+                    steps = [
+                        {"description": f"Analyze {file_path} for refactoring opportunities"},
+                        {"description": f"Apply refactoring to reduce complexity (current: {complexity:.1f})"},
+                        {
+                            "description": "Verify ruff linting passes",
+                            "verify_command": "dt ruff",
+                            "expected_output": "LINT:OK",
+                        },
+                        {
+                            "description": "Verify mypy type checking passes",
+                            "verify_command": "dt mypy",
+                            "expected_output": "TYPES:OK",
+                        },
+                        {
+                            "description": "Verify all tests pass",
+                            "verify_command": "dt pytest",
+                            "expected_output": "TEST:OK",
+                        },
                     ]
-                    bulk_create_steps(subtask_full_id, step_descriptions)
+                    # Add browser check for frontend files
+                    if is_frontend:
+                        steps.append({
+                            "description": "Verify no console errors in browser",
+                            "verify_command": "ba check http://localhost:3001 --no-errors",
+                            "expected_output": "exit code 0",
+                        })
+                    steps.append({"description": "Commit changes with descriptive message"})
+                    bulk_create_steps(subtask_full_id, steps)
 
                 created += 1
                 logger.info(

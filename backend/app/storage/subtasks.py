@@ -206,146 +206,39 @@ class SubtaskGateError(Exception):
         self.incomplete_steps = incomplete_steps or []
 
 
-class SubtaskVerificationError(Exception):
-    """Raised when subtask completion is blocked by failed verification.
-
-    Attributes:
-        criterion_id: The criterion that failed verification
-        output: The verification command output
-    """
-
-    def __init__(
-        self,
-        message: str,
-        criterion_id: str,
-        output: str,
-    ):
-        super().__init__(message)
-        self.criterion_id = criterion_id
-        self.output = output
-
-
-def _run_linked_verifications_for_subtask(subtask_table_id: str, task_id: str) -> dict[str, Any]:
-    """Run verifications for all criteria linked to a subtask.
-
-    Args:
-        subtask_table_id: The subtask table ID (e.g., "task-abc123-1.1")
-        task_id: The parent task ID (e.g., "task-abc123")
-
-    Returns:
-        Dict with:
-            - passed: bool - True if all verifications passed
-            - results: list of verification results
-            - failed: first failed criterion (if any)
-    """
-    from datetime import UTC, datetime
-
-    from .criterion_subtask_map import get_criteria_for_subtask
-    from .verification import get_task_criterion, run_verify_command, update_task_criterion
-
-    # Get linked criteria
-    criteria = get_criteria_for_subtask(subtask_table_id)
-    if not criteria:
-        # No linked criteria - subtask passes without verification
-        return {"passed": True, "results": [], "failed": None}
-
-    results = []
-    with get_connection() as conn:
-        for crit in criteria:
-            criterion_id = crit.get("criterion_id")  # This is the ac-XXX code
-            if not criterion_id:
-                logger.warning(f"Criterion mapping missing criterion_id: {crit}")
-                continue
-
-            # Get full criterion details
-            full_criterion = get_task_criterion(conn, task_id, criterion_id)
-            if not full_criterion:
-                logger.warning(f"Criterion {criterion_id} not found for task {task_id}")
-                continue
-
-            # Skip if no verify_command
-            if not full_criterion.get("verify_command"):
-                logger.debug(f"Criterion {criterion_id} has no verify_command, skipping")
-                results.append(
-                    {
-                        "criterion_id": criterion_id,
-                        "status": "skipped",
-                        "reason": "no verify_command",
-                    }
-                )
-                continue
-
-            # Skip if already verified
-            if full_criterion.get("verified"):
-                logger.debug(f"Criterion {criterion_id} already verified, skipping")
-                results.append(
-                    {
-                        "criterion_id": criterion_id,
-                        "status": "already_verified",
-                    }
-                )
-                continue
-
-            # Run verification
-            status, exit_code, output = run_verify_command(full_criterion["verify_command"])
-            now = datetime.now(UTC)
-
-            if status == "passed":
-                # Update criterion as verified
-                update_task_criterion(
-                    conn,
-                    task_id,
-                    criterion_id,
-                    {"verified": True, "verified_at": now, "verified_by_actual": "test"},
-                )
-                results.append({"criterion_id": criterion_id, "status": "passed", "output": output})
-            else:
-                # Verification failed
-                result = {
-                    "criterion_id": criterion_id,
-                    "status": "failed",
-                    "exit_code": exit_code,
-                    "output": output,
-                }
-                results.append(result)
-                return {"passed": False, "results": results, "failed": result}
-
-    return {"passed": True, "results": results, "failed": None}
-
-
 def update_subtask_passes(
     task_id: str,
     subtask_id: str,
     passes: bool,
-    force: bool = False,  # Deprecated: kept for API compatibility, ignored
+    force: bool = False,
 ) -> dict[str, Any] | None:
-    """Update subtask passes status with automatic verification.
+    """Update subtask passes status.
+
+    Verification happens at the step level (via step.verify_command).
+    Subtask passes when all its steps pass, or when force=True.
 
     When passes is set to True:
-    1. Looks up linked criteria via criterion_subtask_map
-    2. For each criterion with verify_command, runs verification
-    3. Only marks subtask passes=true if all verifications pass
-    4. Auto-closes all steps on success
-    5. Raises SubtaskVerificationError on failure with attempt count and output
+    1. Optionally checks if all steps are passed (unless force=True)
+    2. Auto-closes all incomplete steps
+    3. Marks subtask as passed
 
-    When passes is set to False, clears passed_at without verification.
+    When passes is set to False, clears passed_at.
 
     Args:
         task_id: Parent task ID
         subtask_id: Subtask ID (e.g., "1.1")
         passes: Whether the subtask passes
-        force: DEPRECATED - kept for API compatibility, ignored
+        force: Skip step completion check and mark as passed
 
     Returns:
         Updated subtask dict or None if not found.
 
     Raises:
-        SubtaskVerificationError: If verification fails (when passes=True)
+        SubtaskGateError: If steps are incomplete and force=False
     """
-    _ = force  # Deprecated parameter, ignored
     table_id = _generate_subtask_id(task_id, subtask_id)
 
-    # If marking as failed/incomplete, no verification needed
+    # If marking as failed/incomplete, just update
     if not passes:
         passed_at = None
         with get_connection() as conn, conn.cursor() as cur:
@@ -368,27 +261,23 @@ def update_subtask_passes(
         logger.debug("Updated subtask %s passes=False for task %s", subtask_id, task_id)
         return _row_to_dict(row)
 
-    # passes=True: Run verification for linked criteria
-    verification_result = _run_linked_verifications_for_subtask(table_id, task_id)
+    # passes=True: Check step completion (unless force)
+    if not force:
+        from .steps import get_steps_for_subtask
 
-    if not verification_result["passed"]:
-        failed = verification_result["failed"]
-        criterion_id = failed.get("criterion_id", "unknown")
-        output = failed.get("output", "No output")
+        steps = get_steps_for_subtask(table_id)
+        incomplete = [s["step_number"] for s in steps if not s.get("passes")]
+        if incomplete:
+            raise SubtaskGateError(
+                f"Cannot pass subtask {subtask_id}: steps {incomplete} not complete. Use force=True to override.",
+                incomplete_steps=incomplete,
+            )
 
-        message = f"Criterion {criterion_id} verification failed.\nOutput: {output[:500]}"
-
-        raise SubtaskVerificationError(
-            message=message,
-            criterion_id=criterion_id,
-            output=output,
-        )
-
-    # All verifications passed - mark subtask as passed
+    # Mark subtask as passed
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Auto-close all incomplete steps for this subtask (cleanup)
+        # Auto-close all incomplete steps for this subtask
         cur.execute(
             """
             UPDATE task_subtask_steps
@@ -417,12 +306,7 @@ def update_subtask_passes(
         logger.warning("Subtask %s not found for task %s", subtask_id, task_id)
         return None
 
-    logger.info(
-        "Subtask %s verified and passed for task %s (verified %d criteria)",
-        subtask_id,
-        task_id,
-        len(verification_result["results"]),
-    )
+    logger.info("Subtask %s passed for task %s", subtask_id, task_id)
     return _row_to_dict(row)
 
 
