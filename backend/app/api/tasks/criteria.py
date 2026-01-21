@@ -27,6 +27,7 @@ from ...schemas.tasks import (
     CriteriaValidateRequest,
     CriteriaValidateResponse,
     CriterionFailure,
+    UpdateTaskCriterionRequest,
     VerifyTaskCriterionRequest,
 )
 from ...services.criteria_validator import validate_criteria
@@ -342,3 +343,71 @@ async def verify_task_criterion_junction(
         "criterion_id": criterion_id,
         "verified_by": request.verified_by,
     }
+
+
+@router.patch(
+    "/projects/{project_id}/tasks/{task_id}/criteria/{criterion_id}",
+    response_model=dict[str, Any],
+)
+async def update_task_criterion(
+    project_id: str,
+    task_id: str,
+    criterion_id: str,
+    request: UpdateTaskCriterionRequest,
+) -> dict[str, Any]:
+    """Update a criterion's fields in task_acceptance_criteria.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        criterion_id: Criterion ID (format: ac-NNN)
+        request: Fields to update
+
+    Returns:
+        Updated criterion dict.
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.verification import get_task_criterion, update_task_criterion
+
+    with get_connection() as conn:
+        criterion = get_task_criterion(conn, task_id, criterion_id)
+        if not criterion:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Criterion {criterion_id} not found for task {task_id}",
+            )
+
+        # Build updates dict from non-None fields
+        updates = {}
+        if request.criterion is not None:
+            updates["criterion"] = request.criterion
+        if request.category is not None:
+            updates["category"] = request.category
+        if request.verify_command is not None:
+            updates["verify_command"] = request.verify_command
+        if request.verify_by is not None:
+            updates["verify_by"] = request.verify_by
+        if request.expected_output is not None:
+            updates["expected_output"] = request.expected_output
+
+        if not updates:
+            # No updates, just return current criterion
+            return criterion
+
+        updated = update_task_criterion(conn, task_id, criterion_id, updates)
+
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Criterion {criterion_id} not found for task {task_id}",
+            )
+
+    logger.info(
+        "task_criterion_updated",
+        task_id=task_id,
+        criterion_id=criterion_id,
+        fields=list(updates.keys()),
+    )
+
+    return updated

@@ -374,21 +374,23 @@ class STClient:
 
     def update_criterion(
         self,
+        task_id: str,
         criterion_id: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Update a criterion.
 
         Args:
+            task_id: Task ID
             criterion_id: Criterion ID (e.g., "ac-001")
-            **kwargs: Fields to update (criterion, category, measurement, threshold)
+            **kwargs: Fields to update (criterion, category, verify_command, verify_by, expected_output)
 
         Returns:
             Updated criterion dict.
         """
         data = {k: v for k, v in kwargs.items() if v is not None}
         response = self._client.patch(
-            self._url(f"/criteria/{criterion_id}"),
+            self._url(f"/tasks/{task_id}/criteria/{criterion_id}"),
             json=data,
         )
         return self._handle_response(response)

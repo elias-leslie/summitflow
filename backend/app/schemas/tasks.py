@@ -451,6 +451,20 @@ class VerifyTaskCriterionRequest(BaseModel):
     verified_by: Literal["opus", "test", "human", "agent"] = "human"
 
 
+class UpdateTaskCriterionRequest(BaseModel):
+    """Request model for updating a task criterion."""
+
+    criterion: str | None = Field(default=None, min_length=10, description="Criterion text")
+    category: Literal["performance", "correctness", "security", "quality"] | None = None
+    verify_command: str | None = Field(
+        default=None, description="Bash command to verify this criterion"
+    )
+    verify_by: Literal["test", "opus", "human", "agent"] | None = None
+    expected_output: str | None = Field(
+        default=None, description="Expected output from verify_command"
+    )
+
+
 # =============================================================================
 # Batch Creation Models
 # =============================================================================

@@ -95,14 +95,9 @@ def create_criterion(
 @app.command("update")
 def update_criterion(
     criterion_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
     criterion: Annotated[str | None, typer.Option("--criterion", help="New criterion text")] = None,
     category: Annotated[str | None, typer.Option("--category", help="New category")] = None,
-    measurement: Annotated[
-        str | None, typer.Option("--measurement", "-m", help="New measurement type")
-    ] = None,
-    threshold: Annotated[
-        str | None, typer.Option("--threshold", "-t", help="New threshold value")
-    ] = None,
     verify_command: Annotated[
         str | None, typer.Option("--verify-command", "-v", help="Bash command to verify")
     ] = None,
@@ -116,12 +111,16 @@ def update_criterion(
 ) -> None:
     """Update a criterion.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st criterion update ac-001 --criterion "Updated criterion text"
-        st criterion update ac-001 --category performance --threshold "<100ms"
-        st criterion update ac-001 --verify-command "ba check http://localhost:3001 --no-errors"
-        st criterion update ac-001 --verify-by agent --expected-output "Screenshot shows 5 columns"
+        st criterion update ac-001 --verify-command "pytest tests/ -v"
+        st criterion update ac-001 --task task-abc123 --verify-by agent
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Build update dict
@@ -130,10 +129,6 @@ def update_criterion(
         updates["criterion"] = criterion
     if category is not None:
         updates["category"] = category
-    if measurement is not None:
-        updates["measurement"] = measurement
-    if threshold is not None:
-        updates["threshold"] = threshold
     if verify_command is not None:
         updates["verify_command"] = verify_command
     if verify_by is not None:
@@ -146,7 +141,7 @@ def update_criterion(
         raise typer.Exit(1)
 
     try:
-        result = client.update_criterion(criterion_id, **updates)
+        result = client.update_criterion(task_id, criterion_id, **updates)
     except APIError as e:
         handle_api_error(e)
         return
