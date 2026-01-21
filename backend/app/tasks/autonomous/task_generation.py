@@ -142,9 +142,15 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                 if created_subtasks:
                     subtask_full_id = created_subtasks[0]["id"]
                     steps = [
-                        {"description": f"Analyze {file_path} for refactoring opportunities"},
                         {
-                            "description": f"Apply refactoring to reduce complexity (current: {complexity:.1f})"
+                            "description": f"Analyze {file_path} for refactoring opportunities",
+                            "verify_command": f"test -f {file_path}",
+                            "expected_output": "exit code 0",
+                        },
+                        {
+                            "description": f"Apply refactoring to reduce complexity (current: {complexity:.1f})",
+                            "verify_command": "dt ruff",
+                            "expected_output": "LINT:OK",
                         },
                         {
                             "description": "Verify ruff linting passes",
@@ -171,7 +177,13 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                                 "expected_output": "exit code 0",
                             }
                         )
-                    steps.append({"description": "Commit changes with descriptive message"})
+                    steps.append(
+                        {
+                            "description": "Commit changes with descriptive message",
+                            "verify_command": "git diff --cached --quiet || git log -1 --oneline",
+                            "expected_output": "exit code 0 or commit hash",
+                        }
+                    )
                     bulk_create_steps(subtask_full_id, steps)
 
                 created += 1

@@ -224,7 +224,6 @@ class SubtaskUpdate(BaseModel):
     """Request model for updating a subtask."""
 
     passes: bool = Field(description="Whether subtask passes/is complete")
-    force: bool = Field(default=False, description="Bypass step completion gate check")
 
 
 class SubtaskSummary(BaseModel):
