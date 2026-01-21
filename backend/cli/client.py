@@ -716,6 +716,72 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def create_step_with_verification(
+        self,
+        task_id: str,
+        subtask_id: str,
+        description: str,
+        verify_command: str,
+        expected_output: str,
+    ) -> dict[str, Any]:
+        """Create a single step with required verification.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            description: Step description
+            verify_command: Bash command to verify completion (exit 0 = pass)
+            expected_output: Description of what success looks like
+
+        Returns:
+            Created step dict.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"),
+            json={
+                "description": description,
+                "verify_command": verify_command,
+                "expected_output": expected_output,
+            },
+        )
+        return self._handle_response(response)
+
+    def update_step_fields(
+        self,
+        task_id: str,
+        subtask_id: str,
+        step_number: int,
+        verify_command: str | None = None,
+        expected_output: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Update step fields (verification and/or description).
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            step_number: Step number (1-indexed)
+            verify_command: Bash command to verify completion
+            expected_output: Description of what success looks like
+            description: Step description
+
+        Returns:
+            Updated step dict.
+        """
+        data: dict[str, Any] = {}
+        if verify_command is not None:
+            data["verify_command"] = verify_command
+        if expected_output is not None:
+            data["expected_output"] = expected_output
+        if description is not None:
+            data["description"] = description
+
+        response = self._client.patch(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/fields"),
+            json=data,
+        )
+        return self._handle_response(response)
+
     # Execution
 
     def start_execution(

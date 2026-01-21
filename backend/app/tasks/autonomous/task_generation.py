@@ -173,7 +173,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                         steps.append(
                             {
                                 "description": "Verify no console errors in browser",
-                                "verify_command": "ba check http://localhost:3001 --no-errors",
+                                "verify_command": "agent-browser open http://localhost:3001 && agent-browser wait --load networkidle",
                                 "expected_output": "exit code 0",
                             }
                         )

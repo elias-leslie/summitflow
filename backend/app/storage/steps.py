@@ -124,6 +124,33 @@ def get_steps_for_subtask(subtask_id: str) -> list[dict[str, Any]]:
     return [_row_to_dict(row) for row in rows]
 
 
+def get_step(subtask_id: str, step_number: int) -> dict[str, Any] | None:
+    """Get a single step by subtask_id and step_number.
+
+    Args:
+        subtask_id: Parent subtask ID
+        step_number: Step number (1-indexed)
+
+    Returns:
+        Step dict or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {STEP_COLUMNS}
+            FROM task_subtask_steps
+            WHERE subtask_id = %s AND step_number = %s
+            """,
+            (subtask_id, step_number),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return _row_to_dict(row)
+
+
 class StepGateError(Exception):
     """Raised when step completion gate is violated."""
 
@@ -260,6 +287,7 @@ def update_step_passes(
 
     step = _row_to_dict(row)
     verify_command = step.get("verify_command")
+    expected_output = step.get("expected_output")
 
     # verify_command is required - fail if missing
     if not verify_command:
@@ -270,11 +298,25 @@ def update_step_passes(
             exit_code=-1,
         )
 
+    # expected_output is required - fail if missing
+    if not expected_output:
+        raise StepVerificationError(
+            message=f"Step {step_number} has no expected_output. Every step must define what success looks like.",
+            step_number=step_number,
+            output="",
+            exit_code=-1,
+        )
+
     # Run verification
     status, exit_code, output = run_verify_command(verify_command)
 
     if status != "passed":
-        message = f"Step {step_number} verification failed (exit code {exit_code}).\nCommand: {verify_command}\nOutput: {output[:500]}"
+        message = (
+            f"Step {step_number} verification failed (exit code {exit_code}).\n"
+            f"Command: {verify_command}\n"
+            f"Expected: {expected_output}\n"
+            f"Output: {output[:500]}"
+        )
 
         raise StepVerificationError(
             message=message,
@@ -322,6 +364,68 @@ def update_step_passes(
         return None
 
     logger.info("Step %d passed for subtask %s (verified)", step_number, subtask_id)
+    return _row_to_dict(row)
+
+
+def update_step_fields(
+    subtask_id: str,
+    step_number: int,
+    verify_command: str | None = None,
+    expected_output: str | None = None,
+    description: str | None = None,
+) -> dict[str, Any] | None:
+    """Update step fields (verification and/or description).
+
+    Args:
+        subtask_id: Parent subtask ID
+        step_number: Step number to update
+        verify_command: Bash command to verify completion
+        expected_output: Description of what success looks like
+        description: Step description
+
+    Returns:
+        Updated step dict or None if not found.
+    """
+    # Build dynamic UPDATE based on provided fields
+    updates: list[str] = []
+    values: list[Any] = []
+
+    if verify_command is not None:
+        updates.append("verify_command = %s")
+        values.append(verify_command)
+
+    if expected_output is not None:
+        updates.append("expected_output = %s")
+        values.append(expected_output)
+
+    if description is not None:
+        updates.append("description = %s")
+        values.append(description)
+
+    if not updates:
+        # Nothing to update - just return existing step
+        return get_step(subtask_id, step_number)
+
+    values.extend([subtask_id, step_number])
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE task_subtask_steps
+            SET {", ".join(updates)}
+            WHERE subtask_id = %s AND step_number = %s
+            RETURNING {STEP_COLUMNS}
+            """,
+            tuple(values),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+        return None
+
+    logger.info("Updated step %d fields for subtask %s", step_number, subtask_id)
     return _row_to_dict(row)
 
 

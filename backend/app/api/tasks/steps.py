@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException
 from ...schemas.steps import (
     BatchStepCreate,
     BatchStepResponse,
+    StepCreateWithVerification,
+    StepFieldsUpdate,
     StepInsert,
     StepResponse,
     StepSummary,
@@ -231,6 +233,113 @@ async def insert_step_at_position(
         raise HTTPException(status_code=500, detail=error_msg) from None
 
     return StepResponse(**created)
+
+
+@router.post(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps",
+    response_model=StepResponse,
+    status_code=201,
+)
+async def create_step_with_verification(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    request: StepCreateWithVerification,
+) -> StepResponse:
+    """Create a single step with required verification.
+
+    Every step must have a verify_command and expected_output.
+    Step is appended after any existing steps.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: Step with description, verify_command, expected_output
+
+    Returns:
+        Created step
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.steps import create_step, get_steps_for_subtask
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+
+    # Find next step number
+    existing_steps = get_steps_for_subtask(table_id)
+    next_number = max((s["step_number"] for s in existing_steps), default=0) + 1
+
+    try:
+        created = create_step(
+            subtask_id=table_id,
+            step_number=next_number,
+            description=request.description,
+            spec=request.spec,
+            verify_command=request.verify_command,
+            expected_output=request.expected_output,
+        )
+    except Exception as e:
+        error_msg = str(e)
+        if "violates foreign key constraint" in error_msg.lower():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Subtask {subtask_id} not found for task {task_id}",
+            ) from None
+        raise HTTPException(status_code=500, detail=error_msg) from None
+
+    return StepResponse(**created)
+
+
+@router.patch(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/fields",
+    response_model=StepResponse,
+)
+async def update_step_fields(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+    request: StepFieldsUpdate,
+) -> StepResponse:
+    """Update step fields (verification and/or description).
+
+    Use this to add or modify verify_command, expected_output, or description.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        step_number: Step number (1-indexed)
+        request: Fields to update
+
+    Returns:
+        Updated step
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.steps import update_step_fields as storage_update_step_fields
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+
+    try:
+        updated = storage_update_step_fields(
+            subtask_id=table_id,
+            step_number=step_number,
+            verify_command=request.verify_command,
+            expected_output=request.expected_output,
+            description=request.description,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step {step_number} not found for subtask {subtask_id}",
+        )
+
+    return StepResponse(**updated)
 
 
 @router.patch(

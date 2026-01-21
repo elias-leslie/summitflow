@@ -40,15 +40,94 @@ def pass_step(
     output_success(f"Marked step {step_number} of subtask {subtask_id} as passed")
 
 
+@app.command("new")
+def new_step(
+    subtask_id: str,
+    description: str,
+    verify_command: Annotated[str, typer.Option("--verify", "-v", help="Bash command to verify completion")],
+    expected_output: Annotated[str, typer.Option("--expected", "-e", help="What success looks like")],
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+) -> None:
+    """Create a single step with required verification.
+
+    Every step must have a verify_command (exit 0 = pass) and expected_output.
+    If no task_id is provided, uses the active context from 'st work'.
+
+    Examples:
+        st step new 1.1 "Add login endpoint" -v "rg 'def login' api.py" -e "Function exists" --task task-abc123
+        st step new 1.1 "Run tests" -v "dt pytest" -e "All tests pass"    # Uses active context
+    """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        result = client.create_step_with_verification(
+            task_id, subtask_id, description, verify_command, expected_output
+        )
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    step_num = result.get("step_number", "?")
+    output_success(f"Created step {step_num} for subtask {subtask_id}")
+
+
+@app.command("update")
+def update_step(
+    subtask_id: str,
+    step_number: int,
+    verify_command: Annotated[str | None, typer.Option("--verify", "-v", help="Bash command to verify completion")] = None,
+    expected_output: Annotated[str | None, typer.Option("--expected", "-e", help="What success looks like")] = None,
+    description: Annotated[str | None, typer.Option("--desc", "-d", help="Step description")] = None,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+) -> None:
+    """Update step verification or description.
+
+    Use this to add or modify verify_command and expected_output on existing steps.
+    If no task_id is provided, uses the active context from 'st work'.
+
+    Examples:
+        st step update 1.1 1 -v "rg 'pattern' file.py" -e "Pattern found" --task task-abc123
+        st step update 1.1 1 -v "dt pytest" -e "Tests pass"    # Uses active context
+    """
+    from ..context import require_task_id
+
+    if not any([verify_command, expected_output, description]):
+        typer.echo("Error: At least one of --verify, --expected, or --desc required", err=True)
+        raise typer.Exit(1)
+
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        result = client.update_step_fields(
+            task_id, subtask_id, step_number,
+            verify_command=verify_command,
+            expected_output=expected_output,
+            description=description,
+        )
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_success(f"Updated step {step_number} of subtask {subtask_id}")
+
+
 @app.command("create")
 def create_steps(
     subtask_id: str,
     descriptions: Annotated[list[str], typer.Argument()],
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Create steps for a subtask in batch.
+    """Create steps for a subtask in batch (no verification).
 
     Pass multiple step descriptions as arguments.
+    NOTE: Steps created this way have no verify_command and cannot be passed
+    until verification is added with 'st step update'.
+
+    For steps with verification, use 'st step new' instead.
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
@@ -68,6 +147,7 @@ def create_steps(
 
     created = result.get("created", [])
     output_success(f"Created {len(created)} steps for subtask {subtask_id}")
+    typer.echo("NOTE: Steps have no verification. Use 'st step update' to add verify_command.", err=True)
 
 
 @app.command("add")
