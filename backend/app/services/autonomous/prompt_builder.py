@@ -2,7 +2,7 @@
 
 Builds execution prompts with:
 - Task context (title, description, files)
-- Effective criteria (from capability or task junction tables)
+- Step-level verification commands
 - Filtered rules based on affected files
 - Learned patterns
 - Iteration context (previous failures, advice)
@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...storage.connection import get_connection
-from ...storage.criteria import get_effective_criteria, get_tests_for_criterion
 from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
 
@@ -57,56 +55,6 @@ def build_execution_prompt(
         lines.append("")
         lines.append(task["objective"])
         lines.append("")
-
-    # Acceptance Criteria - from capability or task junction tables
-    project_id = task.get("project_id") or context.get("project_id")
-    if not project_id:
-        raise ValueError("project_id is required for building execution prompt")
-    with get_connection() as conn:
-        criteria = get_effective_criteria(conn, project_id, task)
-
-        if criteria:
-            lines.append("## ACCEPTANCE CRITERIA")
-            lines.append("")
-
-            # Indicate source of criteria
-            if task.get("capability_id"):
-                lines.append(f"_Criteria from capability: {task['capability_id']}_")
-            else:
-                lines.append("_Task-specific criteria_")
-            lines.append("")
-
-            lines.append("Each criterion must be verified before task completion.")
-            lines.append("Write tests to verify each criterion. Link test to criterion when done.")
-            lines.append("")
-
-            # Get test linkage for each criterion
-            for c in criteria:
-                verified = "x" if c.get("verified") else " "
-                crit_id = c.get("criterion_id", "?")
-                crit_text = c.get("criterion", "")
-                threshold = c.get("threshold")
-                threshold_str = f" (threshold: {threshold})" if threshold else ""
-
-                # Get linked tests for this criterion
-                tests: list[dict[str, Any]] = []
-                if c.get("id"):  # Has DB id, can lookup tests
-                    tests = get_tests_for_criterion(conn, c["id"])
-
-                if tests:
-                    test_names = [t.get("name", t.get("test_id", "?")) for t in tests]
-                    lines.append(
-                        f"- [{verified}] {crit_id}: {crit_text}{threshold_str} "
-                        f"[Tests: {', '.join(test_names)}]"
-                    )
-                else:
-                    lines.append(f"- [{verified}] {crit_id}: {crit_text}{threshold_str}")
-
-                # Show verification status for task-linked criteria
-                if c.get("verified_by"):
-                    lines.append(f"  _Verified by: {c['verified_by']}_")
-
-            lines.append("")
 
     # Files affected
     files = task.get("files_affected") or context.get("files") or []

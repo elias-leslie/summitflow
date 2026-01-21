@@ -197,30 +197,27 @@ def update_step_passes(
     subtask_id: str,
     step_number: int,
     passes: bool,
-    force: bool = False,
 ) -> dict[str, Any] | None:
-    """Update step passes status with automatic verification.
+    """Update step passes status with mandatory verification.
 
     When passes is set to True:
-    1. Fetches the step's verify_command (if any)
+    1. Fetches the step's verify_command (required)
     2. Runs the verify_command
     3. Only marks step passes=true if verification passes (exit code 0)
-    4. Raises StepVerificationError on failure
+    4. Raises StepVerificationError on failure or missing verify_command
 
     When passes is set to False, clears passed_at without verification.
-    When force is True, skips verification and marks as passed.
 
     Args:
         subtask_id: Parent subtask ID
         step_number: Step number to update
         passes: Whether the step passes
-        force: Skip verification and mark as passed (use sparingly)
 
     Returns:
         Updated step dict or None if not found.
 
     Raises:
-        StepVerificationError: If verification fails (when passes=True and not force)
+        StepVerificationError: If verification fails or verify_command is missing
     """
     # If marking as failed/incomplete, no verification needed
     if not passes:
@@ -264,23 +261,31 @@ def update_step_passes(
     step = _row_to_dict(row)
     verify_command = step.get("verify_command")
 
-    # Run verification if verify_command exists and not forcing
-    if verify_command and not force:
-        status, exit_code, output = run_verify_command(verify_command)
+    # verify_command is required - fail if missing
+    if not verify_command:
+        raise StepVerificationError(
+            message=f"Step {step_number} has no verify_command. Every step must have verification.",
+            step_number=step_number,
+            output="",
+            exit_code=-1,
+        )
 
-        if status != "passed":
-            message = f"Step {step_number} verification failed (exit code {exit_code}).\nCommand: {verify_command}\nOutput: {output[:500]}"
+    # Run verification
+    status, exit_code, output = run_verify_command(verify_command)
 
-            raise StepVerificationError(
-                message=message,
-                step_number=step_number,
-                output=output,
-                exit_code=exit_code,
-            )
+    if status != "passed":
+        message = f"Step {step_number} verification failed (exit code {exit_code}).\nCommand: {verify_command}\nOutput: {output[:500]}"
 
-        logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
+        raise StepVerificationError(
+            message=message,
+            step_number=step_number,
+            output=output,
+            exit_code=exit_code,
+        )
 
-    # Verification passed (or no verify_command, or force) - mark step as passed
+    logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
+
+    # Verification passed - mark step as passed
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -316,12 +321,7 @@ def update_step_passes(
         logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
         return None
 
-    logger.info(
-        "Step %d passed for subtask %s%s",
-        step_number,
-        subtask_id,
-        " (forced)" if force else (" (verified)" if verify_command else ""),
-    )
+    logger.info("Step %d passed for subtask %s (verified)", step_number, subtask_id)
     return _row_to_dict(row)
 
 

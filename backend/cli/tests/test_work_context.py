@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +11,6 @@ from typer.testing import CliRunner
 
 from cli.commands.tasks import app as tasks_app
 from cli.context import (
-    ActiveContext,
     clear_active_task_id,
     get_active_context,
     get_active_task_id,
@@ -265,7 +263,7 @@ class TestCloseWithContext:
 
         with patch("cli.context._get_git_root", return_value=None):
             set_active_task_id("task-context")
-            result = self.runner.invoke(tasks_app, ["close"])
+            self.runner.invoke(tasks_app, ["close"])
 
         # Should have called close_task with the context task_id
         mock_client.close_task.assert_called_once_with("task-context", reason=None)

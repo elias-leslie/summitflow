@@ -143,7 +143,9 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                     subtask_full_id = created_subtasks[0]["id"]
                     steps = [
                         {"description": f"Analyze {file_path} for refactoring opportunities"},
-                        {"description": f"Apply refactoring to reduce complexity (current: {complexity:.1f})"},
+                        {
+                            "description": f"Apply refactoring to reduce complexity (current: {complexity:.1f})"
+                        },
                         {
                             "description": "Verify ruff linting passes",
                             "verify_command": "dt ruff",
@@ -162,11 +164,13 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                     ]
                     # Add browser check for frontend files
                     if is_frontend:
-                        steps.append({
-                            "description": "Verify no console errors in browser",
-                            "verify_command": "ba check http://localhost:3001 --no-errors",
-                            "expected_output": "exit code 0",
-                        })
+                        steps.append(
+                            {
+                                "description": "Verify no console errors in browser",
+                                "verify_command": "ba check http://localhost:3001 --no-errors",
+                                "expected_output": "exit code 0",
+                            }
+                        )
                     steps.append({"description": "Commit changes with descriptive message"})
                     bulk_create_steps(subtask_full_id, steps)
 

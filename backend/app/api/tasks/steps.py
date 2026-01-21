@@ -262,7 +262,7 @@ async def update_step(
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
     try:
-        updated = update_step_passes(table_id, step_number, request.passes, force=request.force)
+        updated = update_step_passes(table_id, step_number, request.passes)
     except StepGateError as e:
         raise HTTPException(
             status_code=400,
@@ -276,8 +276,9 @@ async def update_step(
             status_code=422,
             detail={
                 "message": str(e),
-                "criterion_id": e.criterion_id,
+                "step_number": e.step_number,
                 "output": e.output,
+                "exit_code": e.exit_code,
                 "verification_failed": True,
             },
         ) from e

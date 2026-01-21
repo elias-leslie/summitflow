@@ -5,8 +5,6 @@ ac-004: Evidence and Tests tables are dropped from database
 
 from __future__ import annotations
 
-import pytest
-
 from app.storage.connection import get_connection
 
 

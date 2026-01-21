@@ -210,17 +210,16 @@ def update_subtask_passes(
     task_id: str,
     subtask_id: str,
     passes: bool,
-    force: bool = False,
 ) -> dict[str, Any] | None:
     """Update subtask passes status.
 
     Verification happens at the step level (via step.verify_command).
-    Subtask passes when all its steps pass, or when force=True.
+    Subtask passes ONLY when ALL its steps have passed verification.
 
     When passes is set to True:
-    1. Optionally checks if all steps are passed (unless force=True)
-    2. Auto-closes all incomplete steps
-    3. Marks subtask as passed
+    1. Checks that all steps are passed (required, no bypass)
+    2. Raises SubtaskGateError if any step is incomplete
+    3. Marks subtask as passed only if all steps passed
 
     When passes is set to False, clears passed_at.
 
@@ -228,13 +227,12 @@ def update_subtask_passes(
         task_id: Parent task ID
         subtask_id: Subtask ID (e.g., "1.1")
         passes: Whether the subtask passes
-        force: Skip step completion check and mark as passed
 
     Returns:
         Updated subtask dict or None if not found.
 
     Raises:
-        SubtaskGateError: If steps are incomplete and force=False
+        SubtaskGateError: If any steps are incomplete (no bypass available)
     """
     table_id = _generate_subtask_id(task_id, subtask_id)
 
@@ -261,35 +259,23 @@ def update_subtask_passes(
         logger.debug("Updated subtask %s passes=False for task %s", subtask_id, task_id)
         return _row_to_dict(row)
 
-    # passes=True: Check step completion (unless force)
-    if not force:
-        from .steps import get_steps_for_subtask
+    # passes=True: Gate on all steps being complete (no bypass)
+    from .steps import get_steps_for_subtask
 
-        steps = get_steps_for_subtask(table_id)
-        incomplete = [s["step_number"] for s in steps if not s.get("passes")]
-        if incomplete:
-            raise SubtaskGateError(
-                f"Cannot pass subtask {subtask_id}: steps {incomplete} not complete. Use force=True to override.",
-                incomplete_steps=incomplete,
-            )
+    steps = get_steps_for_subtask(table_id)
+    incomplete = [s["step_number"] for s in steps if not s.get("passes")]
 
-    # Mark subtask as passed
+    if incomplete:
+        raise SubtaskGateError(
+            f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
+            "Each step must pass its verify_command before the subtask can be marked complete.",
+            incomplete_steps=incomplete,
+        )
+
+    # All steps passed - mark subtask as passed
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Auto-close all incomplete steps for this subtask
-        cur.execute(
-            """
-            UPDATE task_subtask_steps
-            SET passes = TRUE, passed_at = %s
-            WHERE subtask_id = %s AND passes = FALSE
-            """,
-            (passed_at, table_id),
-        )
-        steps_closed = cur.rowcount
-        if steps_closed > 0:
-            logger.info(f"Auto-closed {steps_closed} incomplete steps for subtask {subtask_id}")
-
         cur.execute(
             f"""
             UPDATE task_subtasks

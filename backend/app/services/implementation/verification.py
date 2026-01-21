@@ -1,6 +1,6 @@
-"""Implementation verification - Test running and criteria checking.
+"""Implementation verification - Test running and step completion checking.
 
-Runs external verification tools (pytest, pyright, ruff) and checks acceptance criteria.
+Runs external verification tools (pytest, pyright, ruff) and checks step completion.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
-from ...storage.connection import get_connection
-from ...storage.criteria import get_effective_criteria
+from ...storage.steps import get_steps_for_subtask
+from ...storage.subtasks import get_subtasks_for_task
 from .types import SUBPROCESS_TIMEOUT_SECONDS
 
 logger = get_logger(__name__)
@@ -103,38 +103,51 @@ def run_verification(
 
 
 def check_acceptance_criteria(project_id: str, task: dict[str, Any]) -> dict[str, Any]:
-    """Check if all acceptance criteria are verified.
+    """Check if all steps are verified (step-level verification).
 
-    Uses get_effective_criteria to source from capability or task junction
-    tables, with JSONB fallback for backward compatibility.
+    Checks that all steps across all subtasks are marked as passed.
 
     Args:
-        project_id: Project ID
-        task: Task dict
+        project_id: Project ID (unused but kept for API compatibility)
+        task: Task dict with 'id' field
 
     Returns:
         Dict with:
         - all_verified: bool
-        - total: int
-        - verified_count: int
-        - unverified: list of criterion IDs
+        - total: int (total steps)
+        - verified_count: int (passed steps)
+        - unverified: list of step IDs that haven't passed
     """
     if not task:
         return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
 
-    # Use get_effective_criteria for dual-source support
-    with get_connection() as conn:
-        criteria = get_effective_criteria(conn, project_id, task)
-
-    if not criteria:
+    task_id = task.get("id")
+    if not task_id:
         return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
 
-    verified_count = sum(1 for c in criteria if c.get("verified"))
-    unverified = [c.get("criterion_id") for c in criteria if not c.get("verified")]
+    # Get all subtasks for the task
+    subtasks = get_subtasks_for_task(task_id, include_steps=False)
+    if not subtasks:
+        return {"all_verified": True, "total": 0, "verified_count": 0, "unverified": []}
+
+    total = 0
+    verified_count = 0
+    unverified: list[str] = []
+
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "")
+        steps = get_steps_for_subtask(subtask_id)
+        for step in steps:
+            total += 1
+            step_id = f"{subtask_id}.{step.get('step_number', 0)}"
+            if step.get("passes"):
+                verified_count += 1
+            else:
+                unverified.append(step_id)
 
     return {
         "all_verified": len(unverified) == 0,
-        "total": len(criteria),
+        "total": total,
         "verified_count": verified_count,
         "unverified": unverified,
     }

@@ -32,16 +32,72 @@ from ...schemas.tasks import (
 )
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
-from ...storage.connection import get_connection
-from ...storage.criteria import (
-    get_criteria_count_for_task,
-    get_criteria_counts_batch,
-    get_effective_criteria,
-)
+from ...storage.steps import get_steps_for_subtask
+from ...storage.subtasks import get_subtasks_for_task
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _get_step_count_for_task(task_id: str) -> int:
+    """Get total step count across all subtasks for a task.
+
+    Returns 0 if no subtasks or steps exist.
+    """
+    subtasks = get_subtasks_for_task(task_id, include_steps=False)
+    if not subtasks:
+        return 0
+
+    total = 0
+    for subtask in subtasks:
+        steps = get_steps_for_subtask(subtask.get("id", ""))
+        total += len(steps)
+    return total
+
+
+def _get_step_counts_batch(task_ids: list[str]) -> dict[str, int]:
+    """Get step counts for multiple tasks.
+
+    Returns dict mapping task_id to step count.
+    """
+    return {task_id: _get_step_count_for_task(task_id) for task_id in task_ids}
+
+
+def _get_step_verification_status(task_id: str) -> dict[str, Any]:
+    """Get step verification status for a task.
+
+    Returns dict with:
+    - total: int (total steps)
+    - verified: int (passed steps)
+    - unverified: list of step IDs that haven't passed
+    - all_verified: bool
+    """
+    subtasks = get_subtasks_for_task(task_id, include_steps=False)
+    if not subtasks:
+        return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
+
+    total = 0
+    verified = 0
+    unverified: list[str] = []
+
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "")
+        steps = get_steps_for_subtask(subtask_id)
+        for step in steps:
+            total += 1
+            step_id = f"{subtask_id}.{step.get('step_number', 0)}"
+            if step.get("passes"):
+                verified += 1
+            else:
+                unverified.append(step_id)
+
+    return {
+        "total": total,
+        "verified": verified,
+        "unverified": unverified,
+        "all_verified": len(unverified) == 0,
+    }
 
 
 def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
@@ -208,7 +264,7 @@ def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -
         acceptance_criteria=task_criteria_list,
         criteria_count=criteria_count
         if criteria_count is not None
-        else get_criteria_count_for_task(task["id"]),
+        else _get_step_count_for_task(task["id"]),
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
         # Pipeline v2 fields
@@ -296,7 +352,7 @@ async def list_tasks(
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = get_criteria_counts_batch(task_ids)
+    criteria_counts = _get_step_counts_batch(task_ids)
 
     return TaskListResponse(
         tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
@@ -318,7 +374,7 @@ async def list_ready_tasks(
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = get_criteria_counts_batch(task_ids)
+    criteria_counts = _get_step_counts_batch(task_ids)
 
     return TaskListResponse(
         tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
@@ -339,7 +395,7 @@ async def list_blocked_tasks(
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = get_criteria_counts_batch(task_ids)
+    criteria_counts = _get_step_counts_batch(task_ids)
 
     return TaskListResponse(
         tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
@@ -618,7 +674,7 @@ async def update_task_status(
         When completing a task, all subtasks must be complete and all
         acceptance criteria must be verified. There is no bypass.
     """
-    task = _verify_task_project(task_id, project_id)
+    _verify_task_project(task_id, project_id)
 
     # Gate checks when completing - NO BYPASS ALLOWED
     # These gates ensure work is actually done before marking complete
@@ -642,52 +698,22 @@ async def update_task_status(
                 },
             )
 
-        # Gate 2: Run verify_command for test-type criteria
-        # This executes test verification inline before allowing close
-        with get_connection() as conn:
-            criteria = get_effective_criteria(conn, project_id, task)
-            test_criteria = [
-                c for c in criteria if c.get("verify_by") == "test" and c.get("verify_command")
-            ]
-            if test_criteria:
-                from ...services.verification_runner import run_verification_commands
-
-                failed_verifications = run_verification_commands(test_criteria, timeout=30)
-                if failed_verifications:
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "message": "Verification failed for test-type criteria",
-                            "failed_criteria": failed_verifications,
-                            "what_to_do": [
-                                "Fix the failing tests before closing the task",
-                                f"Run: st criterion list --task {task_id} to see criteria",
-                            ],
-                        },
-                    )
-
-        # Gate 3: All acceptance criteria must be verified (from all sources)
-        with get_connection() as conn:
-            criteria = get_effective_criteria(conn, project_id, task)
-            if criteria:
-                unverified = [
-                    c.get("criterion_id", "unknown")
-                    for c in criteria
-                    if not c.get("verified", False)
-                ]
-                if unverified:
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "message": "Cannot complete task with unverified acceptance criteria",
-                            "unverified_criteria": unverified,
-                            "what_to_do": [
-                                "Verify each criterion by running its linked test",
-                                "Use: st criterion verify <criterion-id> --by test",
-                                "Or if verified externally: st criterion verify <criterion-id> --manual 'evidence'",
-                            ],
-                        },
-                    )
+        # Gate 2: All steps must be verified (step-level verification)
+        # Note: Step verify_commands are run when marking steps as passed, not here
+        step_status = _get_step_verification_status(task_id)
+        if step_status["total"] > 0 and not step_status["all_verified"]:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Cannot complete task with incomplete steps",
+                    "unverified_steps": step_status["unverified"][:10],
+                    "remaining": len(step_status["unverified"]),
+                    "what_to_do": [
+                        "Complete all steps before closing the task",
+                        f"Run: st context {task_id} to see remaining steps",
+                    ],
+                },
+            )
 
     try:
         updated = task_store.update_task_status(
@@ -703,18 +729,16 @@ async def update_task_status(
     if update.reason and update.status in ("completed", "cancelled"):
         updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
 
-    # Populate verification_result on completion
+    # Populate verification_result on completion (step-level verification)
     if update.status == "completed" and updated:
-        with get_connection() as conn:
-            criteria = get_effective_criteria(conn, project_id, updated)
-            verified_count = sum(1 for c in criteria if c.get("verified"))
-            verification_result = {
-                "total": len(criteria),
-                "verified": verified_count,
-                "unverified": [c.get("criterion_id") for c in criteria if not c.get("verified")],
-                "all_verified": verified_count == len(criteria) if criteria else True,
-            }
-            updated = task_store.update_task(task_id, verification_result=verification_result)
+        step_status = _get_step_verification_status(task_id)
+        verification_result = {
+            "total": step_status["total"],
+            "verified": step_status["verified"],
+            "unverified": step_status["unverified"],
+            "all_verified": step_status["all_verified"],
+        }
+        updated = task_store.update_task(task_id, verification_result=verification_result)
 
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
