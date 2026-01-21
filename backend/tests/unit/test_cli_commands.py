@@ -233,15 +233,16 @@ class TestSubtaskCreate:
         )
         cleanup_test_tasks.append(task["id"])
 
-        # Create subtask via CLI
+        # Create subtask via CLI (new interface: subtask_id first, --task option)
         result = runner.invoke(
             subtask_app,
             [
                 "create",
-                task["id"],
                 "1.1",
                 "-d",
                 "Test subtask description",
+                "--task",
+                task["id"],
                 "--phase",
                 "backend",
             ],
@@ -260,14 +261,16 @@ class TestSubtaskCreate:
         )
         cleanup_test_tasks.append(task["id"])
 
+        # New interface: subtask_id first, --task option
         result = runner.invoke(
             subtask_app,
             [
                 "create",
-                task["id"],
                 "1.1",
                 "-d",
                 "Test with steps",
+                "--task",
+                task["id"],
                 "--step",
                 "First step",
                 "--step",
@@ -304,16 +307,17 @@ class TestStepCreate:
             display_order=0,
         )
 
-        # Create steps via CLI
+        # Create steps via CLI (new interface: subtask_id first, --task option)
         result = runner.invoke(
             step_app,
             [
                 "create",
-                task["id"],
                 "1.1",
                 "Step one",
                 "Step two",
                 "Step three",
+                "--task",
+                task["id"],
             ],
         )
 

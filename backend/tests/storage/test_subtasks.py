@@ -1,11 +1,14 @@
 """Unit tests for subtasks storage layer."""
 
+from unittest.mock import patch
+
 import pytest
 
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.subtasks import SubtaskGateError
 
 
 @pytest.fixture
@@ -454,11 +457,12 @@ class TestGetSubtaskSummary:
         assert abs(summary["progress_percent"] - 33.3) < 0.1
 
     def test_summary_all_complete(self, test_task):
-        """Test summary with all complete."""
+        """Test summary with all complete (no steps means can pass directly)."""
         subtask_store.create_subtask(test_task["id"], "1.1", "First", 0)
         subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1)
-        subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
-        subtask_store.update_subtask_passes(test_task["id"], "1.2", True, force=True)
+        # Subtasks with no steps can be marked complete directly
+        subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        subtask_store.update_subtask_passes(test_task["id"], "1.2", True)
 
         summary = subtask_store.get_subtask_summary(test_task["id"])
 
@@ -471,24 +475,30 @@ class TestGetSubtaskSummary:
 class TestSubtaskGates:
     """Tests for subtask step completion gate.
 
-    Note: Per ac-1050/ac-1051, gate now auto-closes incomplete steps.
-    SubtaskGateError is no longer raised.
+    Note: Strict step verification - gate blocks if ANY steps are incomplete.
+    No force param - no bypass available.
     """
 
-    def test_subtask_gate_auto_closes_incomplete_steps(self, test_task):
-        """Subtask pass auto-closes incomplete steps (no longer blocks)."""
+    def test_subtask_gate_blocks_incomplete_steps(self, test_task):
+        """Subtask pass blocked when steps are incomplete."""
         subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
         )
 
-        # Per ac-1050/ac-1051: incomplete steps are auto-closed, not blocked
-        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-        assert result["passes"] is True
+        # Gate blocks - incomplete steps must be completed first
+        with pytest.raises(SubtaskGateError, match=r"steps.*are not complete"):
+            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
-    def test_subtask_gate_allows_all_steps_complete(self, test_task):
+    @patch("app.storage.steps.run_verify_command")
+    def test_subtask_gate_allows_all_steps_complete(self, mock_verify, test_task):
         """Can mark subtask as passed when all steps are complete."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+        ]
         subtask = subtask_store.create_subtask(
-            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
+            test_task["id"], "1.1", "Test subtask", 0, steps=steps
         )
 
         # Complete all steps
@@ -499,15 +509,15 @@ class TestSubtaskGates:
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result["passes"] is True
 
-    def test_subtask_gate_force_param_deprecated(self, test_task):
-        """Force flag is deprecated but accepted for API compatibility."""
+    def test_subtask_gate_force_param_removed(self, test_task):
+        """Force flag has been removed - no bypass available."""
         subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
         )
 
-        # force=True accepted but behavior unchanged (auto-closes anyway)
-        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
-        assert result["passes"] is True
+        # force=True should raise TypeError
+        with pytest.raises(TypeError, match="unexpected keyword argument 'force'"):
+            subtask_store.update_subtask_passes(test_task["id"], "1.1", True, force=True)
 
     def test_subtask_gate_no_steps_allowed(self, test_task):
         """Subtask with no steps can be marked as passed."""
@@ -517,18 +527,23 @@ class TestSubtaskGates:
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result["passes"] is True
 
-    def test_subtask_gate_partial_completion_auto_closes(self, test_task):
-        """Subtask with some steps complete auto-closes remaining."""
-        subtask = subtask_store.create_subtask(
-            test_task["id"], "1.1", "Test", 0, steps=["Step 1", "Step 2", "Step 3"]
-        )
+    @patch("app.storage.steps.run_verify_command")
+    def test_subtask_gate_partial_completion_blocks(self, mock_verify, test_task):
+        """Subtask with some steps complete blocks remaining."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
+        ]
+        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 
         # Complete only step 1
         step_store.update_step_passes(subtask["id"], 1, True)
 
-        # Per ac-1050/ac-1051: remaining steps auto-closed
-        result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-        assert result["passes"] is True
+        # Gate blocks - steps 2 and 3 still incomplete
+        with pytest.raises(SubtaskGateError, match=r"steps.*are not complete"):
+            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
     def test_clearing_subtask_has_no_gate(self, test_task):
         """Setting passes=False has no gate check."""

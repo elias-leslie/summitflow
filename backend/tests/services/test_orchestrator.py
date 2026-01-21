@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.constants import GEMINI_FLASH, GEMINI_PRO
+from app.constants import AGENT_SUPERVISOR, AGENT_WORKER
 from app.services.orchestrator import (
     ExecutionState,
     OrchestrationResult,
@@ -87,12 +87,12 @@ class TestSubtaskResult:
             success=False,
             error="Test error",
             iterations=3,
-            model_used=GEMINI_FLASH,
+            model_used=AGENT_WORKER,
         )
         assert result.success is False
         assert result.error == "Test error"
         assert result.iterations == 3
-        assert result.model_used == GEMINI_FLASH
+        assert result.model_used == AGENT_WORKER
 
 
 class TestOrchestrationResult:
@@ -173,11 +173,11 @@ class TestExecuteSubtask:
 
             # First STUCK_THRESHOLD attempts use Flash
             for i in range(orchestrator.STUCK_THRESHOLD):
-                assert models_used[i] == GEMINI_FLASH
+                assert models_used[i] == AGENT_WORKER
 
             # After threshold, escalate to Pro
             for i in range(orchestrator.STUCK_THRESHOLD, len(models_used)):
-                assert models_used[i] == GEMINI_PRO
+                assert models_used[i] == AGENT_SUPERVISOR
 
     @pytest.mark.asyncio
     async def test_subtask_success_on_first_try(self, orchestrator: OrchestratorService):
@@ -305,7 +305,7 @@ class TestDispatchToFlash:
         with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
             success, error = await orchestrator._dispatch_to_flash(
                 subtask={"id": "1.1", "description": "Test subtask", "steps": ["Step 1"]},
-                model=GEMINI_FLASH,
+                model=AGENT_WORKER,
             )
 
             assert success is True
@@ -334,7 +334,7 @@ class TestDispatchToFlash:
         with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
             success, error = await orchestrator._dispatch_to_flash(
                 subtask={"id": "1.1", "description": "Test"},
-                model=GEMINI_FLASH,
+                model=AGENT_WORKER,
             )
 
             assert success is False
@@ -377,8 +377,8 @@ class TestWebSocketIntegration:
     async def test_send_model_change(self, orchestrator: OrchestratorService):
         """Test model change notification via WebSocket."""
         with patch("app.api.ws_execution.send_model_change", new_callable=AsyncMock) as mock_send:
-            await orchestrator._send_model_change(GEMINI_PRO, "Stuck pattern")
-            mock_send.assert_called_once_with("task-123", GEMINI_PRO, "Stuck pattern")
+            await orchestrator._send_model_change(AGENT_SUPERVISOR, "Stuck pattern")
+            mock_send.assert_called_once_with("task-123", AGENT_SUPERVISOR, "Stuck pattern")
 
     @pytest.mark.asyncio
     async def test_handle_failure_sets_failed_status(self, tmp_path: Path):

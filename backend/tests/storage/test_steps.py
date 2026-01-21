@@ -1,11 +1,14 @@
 """Unit tests for steps storage layer."""
 
+from unittest.mock import patch
+
 import pytest
 
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.steps import StepVerificationError
 
 
 @pytest.fixture
@@ -122,32 +125,44 @@ class TestGetStepsForSubtask:
 
 
 class TestUpdateStepPasses:
-    """Tests for update_step_passes function."""
+    """Tests for update_step_passes function.
 
-    def test_update_step_passes_true(self, test_subtask):
-        """Test marking a step as passing."""
-        step_store.create_step(test_subtask["id"], 1, "Test step")
+    Note: Steps now require verify_command for passes=True.
+    We mock run_verify_command to control verification outcomes.
+    """
+
+    @patch("app.storage.steps.run_verify_command")
+    def test_update_step_passes_true(self, mock_verify, test_subtask):
+        """Test marking a step as passing with successful verification."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        step_store.create_step(test_subtask["id"], 1, "Test step", verify_command="echo pass")
 
         updated = step_store.update_step_passes(test_subtask["id"], 1, True)
 
         assert updated is not None
         assert updated["passes"] is True
         assert updated["passed_at"] is not None
+        mock_verify.assert_called_once_with("echo pass")
 
-    def test_update_step_passes_false(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_update_step_passes_false(self, mock_verify, test_subtask):
         """Test marking a step as not passing (resetting)."""
-        step_store.create_step(test_subtask["id"], 1, "Test step")
+        mock_verify.return_value = ("passed", 0, "ok")
+        step_store.create_step(test_subtask["id"], 1, "Test step", verify_command="echo pass")
         step_store.update_step_passes(test_subtask["id"], 1, True)
 
+        # passes=False doesn't run verification
         updated = step_store.update_step_passes(test_subtask["id"], 1, False)
 
         assert updated is not None
         assert updated["passes"] is False
         assert updated["passed_at"] is None
 
-    def test_update_step_passes_toggle(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_update_step_passes_toggle(self, mock_verify, test_subtask):
         """Test toggling step pass status multiple times."""
-        step_store.create_step(test_subtask["id"], 1, "Test step")
+        mock_verify.return_value = ("passed", 0, "ok")
+        step_store.create_step(test_subtask["id"], 1, "Test step", verify_command="echo pass")
 
         # Toggle on
         updated1 = step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -166,6 +181,22 @@ class TestUpdateStepPasses:
         result = step_store.update_step_passes(test_subtask["id"], 999, True)
 
         assert result is None
+
+    def test_update_step_passes_no_verify_command_raises(self, test_subtask):
+        """Test that passes=True without verify_command raises error."""
+        step_store.create_step(test_subtask["id"], 1, "Test step")  # No verify_command
+
+        with pytest.raises(StepVerificationError, match="no verify_command"):
+            step_store.update_step_passes(test_subtask["id"], 1, True)
+
+    @patch("app.storage.steps.run_verify_command")
+    def test_update_step_passes_verification_fails(self, mock_verify, test_subtask):
+        """Test that verification failure raises error."""
+        mock_verify.return_value = ("failed", 1, "error output")
+        step_store.create_step(test_subtask["id"], 1, "Test step", verify_command="exit 1")
+
+        with pytest.raises(StepVerificationError, match="verification failed"):
+            step_store.update_step_passes(test_subtask["id"], 1, True)
 
 
 class TestBulkCreateSteps:
@@ -247,9 +278,17 @@ class TestGetStepSummary:
         assert summary["completed"] == 0
         assert summary["progress_percent"] == 0
 
-    def test_step_summary_partial(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_summary_partial(self, mock_verify, test_subtask):
         """Test summary with partial completion."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3", "Step 4"])
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
+            {"description": "Step 4", "verify_command": "echo 4"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
         step_store.update_step_passes(test_subtask["id"], 2, True)
 
@@ -259,9 +298,15 @@ class TestGetStepSummary:
         assert summary["completed"] == 2
         assert summary["progress_percent"] == 50.0
 
-    def test_step_summary_all_complete(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_summary_all_complete(self, mock_verify, test_subtask):
         """Test summary with all steps complete."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
         step_store.update_step_passes(test_subtask["id"], 2, True)
 
@@ -283,21 +328,34 @@ class TestGetStepSummary:
 class TestStepGates:
     """Tests for step sequential completion gate.
 
-    Note: Per ac-1051, gate is now logging-only, not blocking.
-    Out-of-order completion is allowed but logged.
+    Note: Steps require verify_command. Out-of-order completion logs info.
+    Force param has been removed - no bypass allowed.
     """
 
-    def test_step_gate_allows_out_of_order_completion(self, test_subtask):
-        """Can mark step 2 as passed even if step 1 is not passed (logs warning)."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_gate_allows_out_of_order_completion(self, mock_verify, test_subtask):
+        """Can mark step 2 as passed even if step 1 is not passed (logs info)."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
 
-        # Per ac-1051: gate is logging-only, not blocking
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result["passes"] is True
 
-    def test_step_gate_allows_sequential_completion(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_gate_allows_sequential_completion(self, mock_verify, test_subtask):
         """Can mark step 2 as passed after step 1 is passed."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
 
         # Mark step 1 as passed
         result1 = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
@@ -307,29 +365,45 @@ class TestStepGates:
         result2 = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result2["passes"] is True
 
-    def test_step_gate_force_param_deprecated(self, test_subtask):
-        """Force flag is deprecated but accepted for API compatibility."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+    def test_step_gate_force_param_removed(self, test_subtask):
+        """Force flag has been removed - no bypass available."""
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
 
-        # force=True is accepted but behavior unchanged (gate doesn't block anyway)
-        result = step_store.update_step_passes(
-            test_subtask["id"], step_number=2, passes=True, force=True
-        )
-        assert result["passes"] is True
+        # force=True should raise TypeError
+        with pytest.raises(TypeError, match="unexpected keyword argument 'force'"):
+            step_store.update_step_passes(
+                test_subtask["id"], step_number=2, passes=True, force=True
+            )
 
-    def test_step_gate_first_step_no_check(self, test_subtask):
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_gate_first_step_no_check(self, mock_verify, test_subtask):
         """First step has no gate check (no previous steps)."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
 
         # Step 1 should always work
         result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
         assert result["passes"] is True
 
-    def test_step_gate_logs_missing_steps(self, test_subtask):
-        """Gate logs missing steps but allows completion."""
-        step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
+    @patch("app.storage.steps.run_verify_command")
+    def test_step_gate_logs_missing_steps(self, mock_verify, test_subtask):
+        """Gate logs missing steps but allows completion with valid verify_command."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        steps = [
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
+        ]
+        step_store.bulk_create_steps(test_subtask["id"], steps)
 
-        # Per ac-1051: gate logs but doesn't block
         result = step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
         assert result["passes"] is True
 
@@ -337,7 +411,7 @@ class TestStepGates:
         """Setting passes=False has no gate check (can clear any step)."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
 
-        # Can clear step 2 even if step 1 is not passed
+        # Can clear step 2 even if step 1 is not passed (no verify_command needed for False)
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=False)
         assert result["passes"] is False
 

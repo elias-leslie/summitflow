@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.constants import GEMINI_FLASH, GEMINI_PRO
+from app.constants import AGENT_SUPERVISOR, AGENT_WORKER
 from app.services.orchestrator import (
     ExecutionState,
     OrchestrationResult,
@@ -178,7 +178,7 @@ class TestRefactorTaskExecution:
             with patch.object(orchestrator, "_dispatch_to_flash", side_effect=track_model):
                 await orchestrator.coordinate("task-123")
 
-            assert models_used[0] == GEMINI_FLASH
+            assert models_used[0] == AGENT_WORKER
 
 
 class TestInterruptAndResume:
@@ -440,10 +440,10 @@ class TestFailureAndRevert:
 
             # Verify model escalation after STUCK_THRESHOLD
             for i in range(orchestrator.STUCK_THRESHOLD):
-                assert models_used[i] == GEMINI_FLASH
+                assert models_used[i] == AGENT_WORKER
 
             for i in range(orchestrator.STUCK_THRESHOLD, len(models_used)):
-                assert models_used[i] == GEMINI_PRO
+                assert models_used[i] == AGENT_SUPERVISOR
 
 
 class TestTimeWindowRespected:

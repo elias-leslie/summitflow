@@ -151,16 +151,22 @@ class TestRunMypy:
 
 
 class TestVerifyAcceptanceCriteria:
-    """Tests for _verify_acceptance_criteria helper."""
+    """Tests for _verify_acceptance_criteria helper.
 
-    def test_no_done_when(self) -> None:
+    Note: Verification now happens at step level. done_when is no longer checked.
+    Instead, the function checks if all subtask steps have passed.
+    """
+
+    def test_no_subtasks(self) -> None:
+        """Task with no subtasks should skip verification."""
         task: dict = {"id": "task-123"}
         result = _verify_acceptance_criteria(task)
         assert result["status"] == "skip"
-        assert "No done_when" in result["reason"]
+        assert "No subtasks defined" in result["reason"]
 
     def test_no_task_id(self) -> None:
-        task = {"done_when": ["tests pass"]}
+        """Task without ID should error."""
+        task: dict = {"done_when": ["tests pass"]}
         result = _verify_acceptance_criteria(task)
         assert result["status"] == "error"
 
