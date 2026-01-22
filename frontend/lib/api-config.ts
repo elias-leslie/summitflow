@@ -44,6 +44,10 @@ export function getApiBaseUrl(): string {
  *
  * Automatically handles ws/wss based on current protocol.
  *
+ * IMPORTANT: In production, WebSocket uses same-origin routing via Cloudflare Tunnel
+ * path-based rules. This avoids CF Access cookie issues (cookies are subdomain-specific).
+ * The Tunnel config routes /ws/* paths directly to the backend.
+ *
  * @param path - WebSocket path (e.g., /ws/execution/task-123)
  * @returns Full WebSocket URL
  */
@@ -60,9 +64,10 @@ export function getWsUrl(path: string): string {
     return `ws://localhost:${PORTS.backend}${path}`
   }
 
-  // Production
+  // Production: use same-origin WebSocket via Cloudflare Tunnel path routing
+  // Tunnel config routes /ws/* paths directly to backend, avoiding CF Access cookie issues
   if (host === PROD_DOMAIN) {
-    return `${protocol}//${PROD_API_DOMAIN}${path}`
+    return `${protocol}//${PROD_DOMAIN}${path}`
   }
 
   // Fallback

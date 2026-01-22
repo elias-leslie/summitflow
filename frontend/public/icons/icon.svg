@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- SummitFlow Outrun Style Icon - matches logo-wide-v4.svg -->
+  <defs>
+    <!-- Sun gradient -->
+    <linearGradient id="outrunSun" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff200"/>
+      <stop offset="50%" style="stop-color:#ff6600"/>
+      <stop offset="100%" style="stop-color:#ff0066"/>
+    </linearGradient>
+    <!-- Sun glow -->
+    <radialGradient id="sunGlow" cx="256" cy="220" r="150" gradientUnits="userSpaceOnUse">
+      <stop offset="40%" style="stop-color:#ff6600; stop-opacity:0.25"/>
+      <stop offset="70%" style="stop-color:#ff0066; stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:#ff0066; stop-opacity:0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#000000"/>
+
+  <!-- Subtle stars -->
+  <g fill="#ffffff" opacity="0.2">
+    <circle cx="80" cy="80" r="3"/>
+    <circle cx="420" cy="60" r="2.5"/>
+    <circle cx="60" cy="180" r="2"/>
+    <circle cx="450" cy="150" r="3"/>
+    <circle cx="150" cy="50" r="2"/>
+    <circle cx="380" cy="100" r="2.5"/>
+  </g>
+
+  <!-- Sun glow -->
+  <ellipse cx="256" cy="220" rx="180" ry="120" fill="url(#sunGlow)"/>
+
+  <!-- Sun -->
+  <circle cx="256" cy="220" r="80" fill="url(#outrunSun)"/>
+
+  <!-- Sun scanlines -->
+  <g fill="#000000">
+    <rect x="176" y="190" width="160" height="5"/>
+    <rect x="176" y="205" width="160" height="7"/>
+    <rect x="176" y="225" width="160" height="9"/>
+    <rect x="176" y="250" width="160" height="12"/>
+    <rect x="176" y="280" width="160" height="15"/>
+  </g>
+
+  <!-- Mountain range -->
+  <polygon points="
+    40,320
+    80,280 120,300 160,260 200,290
+    230,270 256,200 282,260 310,240
+    340,280 380,260 420,290 460,270
+    472,320
+    472,340 40,340"
+    fill="#1a0a2e"/>
+
+  <!-- Grid floor -->
+  <g stroke="#ff0066" stroke-width="2">
+    <!-- Horizontal lines -->
+    <line x1="40" y1="350" x2="472" y2="350"/>
+    <line x1="40" y1="380" x2="472" y2="380"/>
+    <line x1="40" y1="420" x2="472" y2="420"/>
+    <line x1="40" y1="470" x2="472" y2="470"/>
+    <!-- Perspective lines -->
+    <line x1="256" y1="320" x2="120" y2="472"/>
+    <line x1="256" y1="320" x2="200" y2="472"/>
+    <line x1="256" y1="320" x2="312" y2="472"/>
+    <line x1="256" y1="320" x2="392" y2="472"/>
+  </g>
+</svg>
