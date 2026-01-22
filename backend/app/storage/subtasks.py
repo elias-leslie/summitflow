@@ -263,6 +263,15 @@ def update_subtask_passes(
     from .steps import get_steps_for_subtask
 
     steps = get_steps_for_subtask(table_id)
+
+    # Gate: Subtask must have at least one step to be marked as passed
+    if not steps:
+        raise SubtaskGateError(
+            f"Cannot pass subtask {subtask_id}: subtask has no steps. "
+            "Every subtask must have at least one step with verify_command.",
+            incomplete_steps=[],
+        )
+
     incomplete = [s["step_number"] for s in steps if not s.get("passes")]
 
     if incomplete:

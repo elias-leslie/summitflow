@@ -698,10 +698,26 @@ async def update_task_status(
                 },
             )
 
-        # Gate 2: All steps must be verified (step-level verification)
+        # Gate 2: Task must have at least one verified step
         # Note: Step verify_commands are run when marking steps as passed, not here
         step_status = _get_step_verification_status(task_id)
-        if step_status["total"] > 0 and not step_status["all_verified"]:
+
+        # Gate 2a: Cannot complete task with zero steps (verification is mandatory)
+        if step_status["total"] == 0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Cannot complete task with zero steps",
+                    "total_steps": 0,
+                    "what_to_do": [
+                        "Every task must have at least one step with verify_command",
+                        "Create subtasks with steps, or import a proper plan.json",
+                    ],
+                },
+            )
+
+        # Gate 2b: All steps must be verified
+        if not step_status["all_verified"]:
             raise HTTPException(
                 status_code=422,
                 detail={

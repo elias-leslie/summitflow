@@ -1251,6 +1251,52 @@ def verify_plan(
                         f"criterion {ac_id} references subtask '{sid}' which doesn't exist"
                     )
 
+    # Validate step structure: every subtask must have steps with verify_command and expected_output
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "?")
+        steps = subtask.get("steps", [])
+
+        if not steps:
+            issues.append(f"subtask {subtask_id}: missing required 'steps' array")
+            continue
+
+        for step_idx, step in enumerate(steps):
+            step_num = step_idx + 1
+            # Steps can be strings (legacy) or objects with verify_command
+            if isinstance(step, str):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: must be object with verify_command, "
+                    f"not string"
+                )
+                continue
+
+            if not step.get("verify_command"):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: missing required 'verify_command'"
+                )
+            if not step.get("expected_output"):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
+                )
+
+    # Validate final verification subtask: last subtask must be verification phase
+    if subtasks:
+        last_subtask = subtasks[-1]
+        last_id = last_subtask.get("id", "?")
+        last_phase = last_subtask.get("phase", "").lower()
+        last_desc = last_subtask.get("description", "").lower()
+
+        is_verification = (
+            last_phase == "verification"
+            or "verification" in last_desc
+            or "verify" in last_desc
+        )
+        if not is_verification:
+            issues.append(
+                f"Final subtask {last_id} must be a verification subtask "
+                f"(phase='verification' or description contains 'verification')"
+            )
+
     # Output result
     if issues:
         typer.echo("FAIL")
@@ -1405,6 +1451,59 @@ def import_plan(
             raise typer.Exit(1)
     if complexity == "COMPLEX" and not plan.get("decisions"):
         output_error("FAIL: COMPLEX tasks require 'decisions'")
+        raise typer.Exit(1)
+
+    # Validate step structure and final verification subtask (same as verify_plan)
+    subtasks = plan.get("subtasks", [])
+    issues: list[str] = []
+
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "?")
+        steps = subtask.get("steps", [])
+
+        if not steps:
+            issues.append(f"subtask {subtask_id}: missing required 'steps' array")
+            continue
+
+        for step_idx, step in enumerate(steps):
+            step_num = step_idx + 1
+            if isinstance(step, str):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: must be object with verify_command"
+                )
+                continue
+
+            if not step.get("verify_command"):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: missing required 'verify_command'"
+                )
+            if not step.get("expected_output"):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
+                )
+
+    # Validate final verification subtask
+    if subtasks:
+        last_subtask = subtasks[-1]
+        last_id = last_subtask.get("id", "?")
+        last_phase = last_subtask.get("phase", "").lower()
+        last_desc = last_subtask.get("description", "").lower()
+
+        is_verification = (
+            last_phase == "verification"
+            or "verification" in last_desc
+            or "verify" in last_desc
+        )
+        if not is_verification:
+            issues.append(
+                f"Final subtask {last_id} must be a verification subtask "
+                f"(phase='verification' or description contains 'verification')"
+            )
+
+    if issues:
+        output_error("FAIL: Step structure validation failed")
+        for issue in issues:
+            typer.echo(f"  - {issue}", err=True)
         raise typer.Exit(1)
 
     # Dry run - show what would be created

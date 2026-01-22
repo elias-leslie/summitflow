@@ -222,9 +222,8 @@ class TestCreateFromFileErrors:
 class TestSubtaskCreate:
     """Test st subtask create command."""
 
-    def test_subtask_create(self, cleanup_test_tasks):
-        """Test creating a subtask for an existing task."""
-        # First create a task
+    def test_subtask_create_requires_steps(self, cleanup_test_tasks):
+        """Test that creating a subtask without steps fails."""
         task = task_store.create_task(
             project_id="summitflow",
             title="CLI Subtask Test",
@@ -233,7 +232,7 @@ class TestSubtaskCreate:
         )
         cleanup_test_tasks.append(task["id"])
 
-        # Create subtask via CLI (new interface: subtask_id first, --task option)
+        # Subtask without steps should fail (gate rejects)
         result = runner.invoke(
             subtask_app,
             [
@@ -248,11 +247,11 @@ class TestSubtaskCreate:
             ],
         )
 
-        assert result.exit_code == 0
-        assert "Created subtask 1.1" in result.output
+        assert result.exit_code == 1
+        assert "steps are required" in result.output.lower()
 
-    def test_subtask_create_with_steps(self, cleanup_test_tasks):
-        """Test creating a subtask with inline steps."""
+    def test_subtask_create_with_steps_json(self, cleanup_test_tasks):
+        """Test creating a subtask with proper step structure via --steps-json."""
         task = task_store.create_task(
             project_id="summitflow",
             title="CLI Subtask Steps Test",
@@ -261,7 +260,12 @@ class TestSubtaskCreate:
         )
         cleanup_test_tasks.append(task["id"])
 
-        # New interface: subtask_id first, --task option
+        # Use --steps-json with proper verify_command and expected_output
+        steps_json = json.dumps([
+            {"description": "First step", "verify_command": "echo ok", "expected_output": "ok"},
+            {"description": "Second step", "verify_command": "echo done", "expected_output": "done"},
+        ])
+
         result = runner.invoke(
             subtask_app,
             [
@@ -271,6 +275,34 @@ class TestSubtaskCreate:
                 "Test with steps",
                 "--task",
                 task["id"],
+                "--steps-json",
+                steps_json,
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Created subtask 1.1" in result.output
+
+    def test_subtask_create_legacy_steps_warning(self, cleanup_test_tasks):
+        """Test that using --step shows warning about missing verify_command."""
+        task = task_store.create_task(
+            project_id="summitflow",
+            title="CLI Subtask Legacy Test",
+            task_type="task",
+            priority=3,
+        )
+        cleanup_test_tasks.append(task["id"])
+
+        # Legacy --step flag works but warns
+        result = runner.invoke(
+            subtask_app,
+            [
+                "create",
+                "1.1",
+                "-d",
+                "Test with legacy steps",
+                "--task",
+                task["id"],
                 "--step",
                 "First step",
                 "--step",
@@ -278,8 +310,9 @@ class TestSubtaskCreate:
             ],
         )
 
-        assert result.exit_code == 0
-        assert "Created subtask 1.1" in result.output
+        # Still creates but warns about missing verify_command
+        assert "warning" in result.output.lower()
+        assert "verify_command" in result.output.lower()
 
 
 class TestStepCreate:
@@ -397,3 +430,223 @@ class TestBackupCommands:
         assert result.exit_code == 0
         assert "--dry-run" in result.output
         assert "--yes" in result.output
+
+
+class TestVerifyPlanGates:
+    """Test st verify command validates step structure and final verification subtask.
+
+    These gates ensure:
+    1. Every subtask has non-empty steps array
+    2. Every step has verify_command and expected_output
+    3. Final subtask is a verification subtask
+    """
+
+    def test_verify_rejects_missing_steps(self):
+        """st verify rejects plans with subtasks missing steps array."""
+        plan = {
+            "title": "Test plan with missing steps array",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "description": "Missing steps array",
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "missing required 'steps' array" in result.output.lower()
+
+    def test_verify_rejects_empty_steps(self):
+        """st verify rejects plans with empty steps array."""
+        plan = {
+            "title": "Test plan with empty steps array",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "description": "Empty steps array",
+                    "steps": [],
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "missing required 'steps' array" in result.output.lower()
+
+    def test_verify_rejects_steps_without_verify_command(self):
+        """st verify rejects steps missing verify_command."""
+        plan = {
+            "title": "Test plan with steps missing verify_command",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "description": "Step without verify_command",
+                    "steps": [
+                        {
+                            "description": "Step missing verify_command",
+                            "expected_output": "Some output",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "missing required 'verify_command'" in result.output.lower()
+
+    def test_verify_rejects_steps_without_expected_output(self):
+        """st verify rejects steps missing expected_output."""
+        plan = {
+            "title": "Test plan with steps missing expected_output",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "description": "Step without expected_output",
+                    "steps": [
+                        {
+                            "description": "Step missing expected_output",
+                            "verify_command": "echo ok",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "missing required 'expected_output'" in result.output.lower()
+
+    def test_verify_rejects_string_steps(self):
+        """st verify rejects legacy string steps (must be objects)."""
+        plan = {
+            "title": "Test plan with string steps",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "description": "String steps",
+                    "steps": ["Step 1 as string", "Step 2 as string"],
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "must be object with verify_command" in result.output.lower()
+
+    def test_verify_requires_final_verification_subtask(self):
+        """st verify rejects plans without a final verification subtask."""
+        plan = {
+            "title": "Test plan without verification subtask",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "phase": "implementation",
+                    "description": "Implementation subtask",
+                    "steps": [
+                        {
+                            "description": "Do the work",
+                            "verify_command": "echo ok",
+                            "expected_output": "ok",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "must be a verification subtask" in result.output.lower()
+
+    def test_verify_accepts_valid_plan_with_verification_subtask(self):
+        """st verify accepts plan with proper steps and verification subtask."""
+        plan = {
+            "title": "Test plan with proper structure",
+            "objective": "Test objective that is long enough to pass validation",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {
+                    "id": "1.1",
+                    "phase": "implementation",
+                    "description": "Implementation subtask",
+                    "steps": [
+                        {
+                            "description": "Do the work",
+                            "verify_command": "echo ok",
+                            "expected_output": "ok",
+                        }
+                    ],
+                },
+                {
+                    "id": "2.1",
+                    "phase": "verification",
+                    "description": "Final verification subtask",
+                    "steps": [
+                        {
+                            "description": "Verify all is good",
+                            "verify_command": "st criterion verify --all",
+                            "expected_output": "All criteria verified",
+                        }
+                    ],
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 0
+            assert "PASS" in result.output
