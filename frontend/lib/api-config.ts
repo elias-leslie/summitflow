@@ -30,9 +30,10 @@ export function getApiBaseUrl(): string {
     return `http://localhost:${PORTS.backend}`
   }
 
-  // Production: dev.summitflow.dev -> devapi.summitflow.dev
+  // Production: use same-origin to avoid CF Access CORS issues
+  // Next.js rewrites /api/* to backend, so we don't need cross-origin URL
   if (host === PROD_DOMAIN) {
-    return `https://${PROD_API_DOMAIN}`
+    return '' // Empty string = same-origin (uses current domain)
   }
 
   // Fallback: use localhost (shouldn't happen in normal use)

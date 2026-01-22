@@ -47,19 +47,6 @@ export default function DashboardPage() {
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <Link
-            href="/evidence"
-            className="card p-4 flex items-center gap-3 hover:border-pink-500/50 hover:bg-pink-500/5 transition-all group"
-          >
-            <div className="p-2 rounded-lg bg-pink-500/20 text-pink-400 group-hover:bg-pink-500/30 transition-colors">
-              <Camera className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">Evidence</div>
-              <div className="text-xs text-slate-500">All screenshots</div>
-            </div>
-          </Link>
-
-          <Link
             href="/backups"
             className="card p-4 flex items-center gap-3 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
           >
