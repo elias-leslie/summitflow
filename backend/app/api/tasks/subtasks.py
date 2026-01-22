@@ -180,7 +180,14 @@ async def create_subtask_endpoint(
         if isinstance(step, str):
             steps.append(step)
         else:
-            steps.append({"description": step.description, "spec": step.spec})
+            step_dict: dict[str, Any] = {"description": step.description}
+            if step.spec:
+                step_dict["spec"] = step.spec
+            if step.verify_command:
+                step_dict["verify_command"] = step.verify_command
+            if step.expected_output:
+                step_dict["expected_output"] = step.expected_output
+            steps.append(step_dict)
 
     subtask = create_subtask(
         task_id=task_id,
