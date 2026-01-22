@@ -83,7 +83,9 @@ class StepCreateWithVerification(BaseModel):
     """Request model for creating a single step with required verification."""
 
     description: str = Field(min_length=1, description="Step description")
-    verify_command: str = Field(min_length=1, description="Bash command to verify completion (exit 0 = pass)")
+    verify_command: str = Field(
+        min_length=1, description="Bash command to verify completion (exit 0 = pass)"
+    )
     expected_output: str = Field(min_length=1, description="Description of what success looks like")
     spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
 
@@ -91,6 +93,10 @@ class StepCreateWithVerification(BaseModel):
 class StepFieldsUpdate(BaseModel):
     """Request model for updating step fields (verification and/or description)."""
 
-    verify_command: str | None = Field(default=None, min_length=1, description="Bash command to verify completion")
-    expected_output: str | None = Field(default=None, min_length=1, description="Description of what success looks like")
+    verify_command: str | None = Field(
+        default=None, min_length=1, description="Bash command to verify completion"
+    )
+    expected_output: str | None = Field(
+        default=None, min_length=1, description="Description of what success looks like"
+    )
     description: str | None = Field(default=None, min_length=1, description="Step description")

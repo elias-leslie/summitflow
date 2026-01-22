@@ -494,8 +494,8 @@ class TestSubtaskGates:
         """Can mark subtask as passed when all steps are complete."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
         ]
         subtask = subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=steps
@@ -512,7 +512,14 @@ class TestSubtaskGates:
     def test_subtask_gate_force_param_removed(self, test_task):
         """Force flag has been removed - no bypass available."""
         subtask_store.create_subtask(
-            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
+            test_task["id"],
+            "1.1",
+            "Test subtask",
+            0,
+            steps=[
+                {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
+                {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
+            ],
         )
 
         # force=True should raise TypeError
@@ -532,9 +539,9 @@ class TestSubtaskGates:
         """Subtask with some steps complete blocks remaining."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
-            {"description": "Step 3", "verify_command": "echo 3"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
+            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "exit 0"},
         ]
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 

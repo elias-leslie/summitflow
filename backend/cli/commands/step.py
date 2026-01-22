@@ -44,8 +44,12 @@ def pass_step(
 def new_step(
     subtask_id: str,
     description: str,
-    verify_command: Annotated[str, typer.Option("--verify", "-v", help="Bash command to verify completion")],
-    expected_output: Annotated[str, typer.Option("--expected", "-e", help="What success looks like")],
+    verify_command: Annotated[
+        str, typer.Option("--verify", "-v", help="Bash command to verify completion")
+    ],
+    expected_output: Annotated[
+        str, typer.Option("--expected", "-e", help="What success looks like")
+    ],
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Create a single step with required verification.
@@ -78,9 +82,15 @@ def new_step(
 def update_step(
     subtask_id: str,
     step_number: int,
-    verify_command: Annotated[str | None, typer.Option("--verify", "-v", help="Bash command to verify completion")] = None,
-    expected_output: Annotated[str | None, typer.Option("--expected", "-e", help="What success looks like")] = None,
-    description: Annotated[str | None, typer.Option("--desc", "-d", help="Step description")] = None,
+    verify_command: Annotated[
+        str | None, typer.Option("--verify", "-v", help="Bash command to verify completion")
+    ] = None,
+    expected_output: Annotated[
+        str | None, typer.Option("--expected", "-e", help="What success looks like")
+    ] = None,
+    description: Annotated[
+        str | None, typer.Option("--desc", "-d", help="Step description")
+    ] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Update step verification or description.
@@ -102,8 +112,10 @@ def update_step(
     client = STClient()
 
     try:
-        result = client.update_step_fields(
-            task_id, subtask_id, step_number,
+        client.update_step_fields(
+            task_id,
+            subtask_id,
+            step_number,
             verify_command=verify_command,
             expected_output=expected_output,
             description=description,
@@ -147,7 +159,9 @@ def create_steps(
 
     created = result.get("created", [])
     output_success(f"Created {len(created)} steps for subtask {subtask_id}")
-    typer.echo("NOTE: Steps have no verification. Use 'st step update' to add verify_command.", err=True)
+    typer.echo(
+        "NOTE: Steps have no verification. Use 'st step update' to add verify_command.", err=True
+    )
 
 
 @app.command("add")

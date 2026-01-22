@@ -320,6 +320,23 @@ def format_context_task(task: dict[str, Any]) -> str:
     if done_when:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
 
+    # Add context block if present (files_to_modify, files_to_create, risks, references)
+    context = task.get("context") or {}
+    if context:
+        context_parts = []
+        if files_mod := context.get("files_to_modify"):
+            context_parts.append(f"modify:{','.join(files_mod)}")
+        if files_create := context.get("files_to_create"):
+            context_parts.append(f"create:{','.join(files_create)}")
+        if risks := context.get("risks"):
+            context_parts.append(f"risks:{len(risks)}")
+        if refs := context.get("references"):
+            context_parts.append(f"refs:{len(refs)}")
+        if testing := context.get("testing_strategy"):
+            context_parts.append(f"testing:{testing[:50]}")
+        if context_parts:
+            lines.append(f"CONTEXT:{' | '.join(context_parts)}")
+
     return "\n".join(lines)
 
 
@@ -364,13 +381,15 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
     for subtask in subtasks:
         subtask_id = subtask.get("subtask_id", "?")
         passes = "PASS" if subtask.get("passes") else "____"
+        phase = subtask.get("phase") or ""
         # Full description - no truncation
         desc = subtask.get("description") or ""
         step_summary = subtask.get("step_summary", {})
         step_done = step_summary.get("completed", 0)
         step_total = step_summary.get("total", 0)
 
-        lines.append(f"{subtask_id:5} {passes} {desc} [{step_done}/{step_total}]")
+        phase_prefix = f"[{phase}] " if phase else ""
+        lines.append(f"{subtask_id:5} {passes} {phase_prefix}{desc} [{step_done}/{step_total}]")
 
         # Include steps for ALL subtasks - check both key names
         steps = subtask.get("steps") or subtask.get("steps_from_table") or []
@@ -380,6 +399,14 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
             # Full step description - no truncation
             step_desc = step.get("description") or ""
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
+
+            # Show verification details if present
+            verify_cmd = step.get("verify_command")
+            expected_out = step.get("expected_output")
+            if verify_cmd:
+                lines.append(f"       verify: {verify_cmd}")
+            if expected_out:
+                lines.append(f"       expect: {expected_out}")
 
     return "\n".join(lines)
 

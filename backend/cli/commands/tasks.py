@@ -513,8 +513,8 @@ def context(
 
         subtasks = subtask_data.get("subtasks", [])
 
-        # Fetch criteria
-        criteria = client.list_task_criteria(task_id)
+        # Criteria system removed - verification now at step level
+        criteria: list[dict] = []
 
         # Fetch blockers (dependencies where this task is blocked by others)
         deps = client.list_dependencies(task_id)
@@ -579,8 +579,8 @@ def export(
 
         subtasks = subtask_data.get("subtasks", [])
 
-        # Fetch criteria
-        criteria = client.list_task_criteria(task_id)
+        # Criteria system removed - verification now at step level
+        criteria: list[dict] = []
 
         # Fetch dependencies
         deps = client.list_dependencies(task_id)
@@ -1486,11 +1486,8 @@ def import_plan(
                     steps=sub.get("steps", []),
                 )
 
-            # 5. Delete existing criteria
-            existing_criteria = client.list_task_criteria(task_id)
-            for crit in existing_criteria:
-                with contextlib.suppress(APIError):
-                    client.delete_task_criterion(task_id, crit["criterion_id"])
+            # 5. Criteria system removed - verification now at step level
+            # (criteria cleanup code removed)
 
             # 6. Upsert task_spirit for normalized storage
             from app.storage.task_spirit import upsert_task_spirit
