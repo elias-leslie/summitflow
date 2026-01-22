@@ -29,9 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=10" />
-        <link rel="manifest" href="/manifest.json?v=10" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png?v=10" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=20" />
+        <link rel="manifest" href="/manifest.json?v=20" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png?v=20" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="SummitFlow" />
@@ -63,7 +63,7 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js?v=10').then(
+                  navigator.serviceWorker.register('/sw.js?v=20').then(
                     function(registration) {
                       console.log('SW registered:', registration.scope);
                     },

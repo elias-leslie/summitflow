@@ -3,31 +3,42 @@
   <defs>
     <!-- Sun gradient -->
     <linearGradient id="outrunSun" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#fff200"/>
-      <stop offset="50%" style="stop-color:#ff6600"/>
-      <stop offset="100%" style="stop-color:#ff0066"/>
+      <stop offset="0%" style="stop-color:#ffff00"/>
+      <stop offset="50%" style="stop-color:#ff9900"/>
+      <stop offset="100%" style="stop-color:#ff0099"/>
     </linearGradient>
     <!-- Sun glow -->
     <radialGradient id="sunGlow" cx="256" cy="220" r="150" gradientUnits="userSpaceOnUse">
-      <stop offset="40%" style="stop-color:#ff6600; stop-opacity:0.4"/>
-      <stop offset="70%" style="stop-color:#ff0066; stop-opacity:0.15"/>
+      <stop offset="40%" style="stop-color:#ffaa00; stop-opacity:0.8"/>
+      <stop offset="70%" style="stop-color:#ff0066; stop-opacity:0.4"/>
       <stop offset="100%" style="stop-color:#ff0066; stop-opacity:0"/>
     </radialGradient>
+    <!-- Grid glow -->
+    <filter id="gridGlow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
   <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="#000000"/>
+  <rect width="512" height="512" rx="96" fill="#0a0015"/>
 
-  <!-- Subtle stars -->
-  <g fill="#ffffff" opacity="0.35">
-    <circle cx="80" cy="80" r="3"/>
-    <circle cx="420" cy="60" r="2.5"/>
-    <circle cx="60" cy="180" r="2"/>
-    <circle cx="450" cy="150" r="3"/>
-    <circle cx="150" cy="50" r="2"/>
-    <circle cx="380" cy="100" r="2.5"/>
-    <circle cx="320" cy="70" r="2"/>
-    <circle cx="190" cy="90" r="2.5"/>
+  <!-- Bright stars -->
+  <g fill="#ffffff" opacity="0.8">
+    <circle cx="80" cy="80" r="4"/>
+    <circle cx="420" cy="60" r="3.5"/>
+    <circle cx="60" cy="180" r="3"/>
+    <circle cx="450" cy="150" r="4"/>
+    <circle cx="150" cy="50" r="3"/>
+    <circle cx="380" cy="100" r="3.5"/>
+    <circle cx="320" cy="70" r="3"/>
+    <circle cx="190" cy="90" r="3.5"/>
+    <circle cx="256" cy="120" r="2.5"/>
+    <circle cx="350" cy="140" r="2"/>
+    <circle cx="120" cy="130" r="2.5"/>
   </g>
 
   <!-- Sun glow -->
@@ -56,7 +67,7 @@
     fill="#1a0a2e"/>
 
   <!-- Grid floor -->
-  <g stroke="#ff3388" stroke-width="2">
+  <g stroke="#ff0099" stroke-width="3" filter="url(#gridGlow)">
     <!-- Horizontal lines -->
     <line x1="40" y1="350" x2="472" y2="350"/>
     <line x1="40" y1="380" x2="472" y2="380"/>
