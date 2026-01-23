@@ -186,6 +186,19 @@ create_archive() {
         --transform="s|^|${PROJECT_NAME}/|" \
         -C "$STAGING_DIR" "database.sql.gz"
 
+    # Add Neo4j/Graphiti memory backups for agent-hub
+    if [ "$PROJECT_NAME" = "agent-hub" ] && [ -d "$PROJECT_DIR/backups/memory" ]; then
+        local latest_memory_backup
+        latest_memory_backup=$(ls -td "$PROJECT_DIR/backups/memory"/*/ 2>/dev/null | head -1)
+        if [ -n "$latest_memory_backup" ] && [ -d "$latest_memory_backup" ]; then
+            log "Adding Neo4j memory backup to archive..."
+            tar --append \
+                --file="$tar_path" \
+                --transform="s|^|${PROJECT_NAME}/|" \
+                -C "$PROJECT_DIR" "backups/memory/$(basename "$latest_memory_backup")"
+        fi
+    fi
+
     # Compress
     gzip -f "$tar_path"
 
@@ -251,6 +264,11 @@ main() {
 
     local db_size
     db_size=$(stat -c%s "$db_dump" 2>/dev/null || stat -f%z "$db_dump" 2>/dev/null || echo "0")
+
+    # Dump Neo4j Graphiti for agent-hub (runs memory backup)
+    if [ "$PROJECT_NAME" = "agent-hub" ]; then
+        dump_neo4j_graphiti "backup-$TIMESTAMP" || log_warn "Neo4j backup failed (continuing with PostgreSQL backup)"
+    fi
 
     # Create archive
     log "Creating archive (this may take a moment)..."
