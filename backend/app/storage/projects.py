@@ -77,6 +77,37 @@ def get_all_project_root_paths() -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
+def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
+    """Find project whose root_path matches the given working directory.
+
+    Checks if cwd starts with any project's root_path.
+
+    Args:
+        cwd: Current working directory path
+
+    Returns:
+        Project dict with id, name, root_path or None if no match.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Find project where cwd starts with root_path
+        # Order by root_path length descending to get most specific match
+        cur.execute(
+            """
+            SELECT id, name, root_path
+            FROM projects
+            WHERE root_path IS NOT NULL
+              AND %s LIKE root_path || '%%'
+            ORDER BY LENGTH(root_path) DESC
+            LIMIT 1
+            """,
+            (cwd,),
+        )
+        row = cur.fetchone()
+        if row:
+            return {"id": row[0], "name": row[1], "root_path": row[2]}
+        return None
+
+
 def list_projects() -> list[dict[str, Any]]:
     """List all projects.
 

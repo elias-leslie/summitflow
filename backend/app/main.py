@@ -14,6 +14,7 @@ from .api import (
     autonomous,
     backups,
     celery_endpoints,
+    context,
     design_standards,
     explorer,
     git,
@@ -96,6 +97,7 @@ app.include_router(design_standards.router, prefix="/api", tags=["design-standar
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
+app.include_router(context.router, prefix="/api", tags=["context"])
 
 from .api import ideas, ws_execution  # noqa: E402
 

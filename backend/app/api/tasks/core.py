@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 
 from ...logging_config import get_logger
 from ...schemas.tasks import (
@@ -126,6 +127,117 @@ def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
             status_code=404, detail=f"Task {task_id} not found in project {project_id}"
         )
     return task
+
+
+def _toon_format_task(task: TaskResponse) -> str:
+    """Convert TaskResponse to TOON (Token-Optimized Output Notation) format.
+
+    Format: ID|STATUS|PRIORITY|TYPE|COMPLEXITY|DONE/TOTAL|CRITERIA|DECISIONS|TITLE
+    Example: task-abc123|running|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
+    """
+    # Calculate done/total from subtask_summary if available
+    done_total = "0/0"
+    if task.subtask_summary:
+        done_total = f"{task.subtask_summary.completed}/{task.subtask_summary.total}"
+
+    # Format criteria count
+    criteria_str = f"criteria:{task.criteria_count or 0}"
+
+    # Format decisions count
+    decisions_count = len(task.decisions) if task.decisions else 0
+    decisions_str = f"decisions:{decisions_count}"
+
+    # Format priority
+    priority_str = f"P{task.priority}"
+
+    # Complexity (default to empty if not set)
+    complexity_str = task.complexity or ""
+
+    # Truncate title to 80 chars max
+    title = task.title[:80] if task.title else ""
+
+    return f"{task.id}|{task.status}|{priority_str}|{task.task_type}|{complexity_str}|{done_total}|{criteria_str}|{decisions_str}|{title}"
+
+
+def toon_format(task: TaskResponse) -> str:
+    """Public API for TOON formatting - alias for _toon_format_task."""
+    return _toon_format_task(task)
+
+
+def get_hints(tasks: list[TaskResponse], project_id: str, endpoint_type: str = "list") -> list[str]:
+    """Generate navigation hints based on task state.
+
+    Args:
+        tasks: List of task responses
+        project_id: Current project ID
+        endpoint_type: Type of endpoint (list, ready, blocked)
+
+    Returns:
+        List of hint strings with API URLs for next actions
+    """
+    hints: list[str] = []
+    base_url = f"http://localhost:8001/api/projects/{project_id}"
+
+    if not tasks:
+        hints.append(f"No tasks found. Create one: POST {base_url}/tasks")
+        return hints
+
+    # Count by status
+    status_counts: dict[str, int] = {}
+    for task in tasks:
+        status_counts[task.status] = status_counts.get(task.status, 0) + 1
+
+    # Suggest based on endpoint type and task states
+    if endpoint_type == "ready":
+        if tasks:
+            first = tasks[0]
+            hints.append(f"Start task: PATCH {base_url}/tasks/{first.id}/status")
+            hints.append(f"View context: GET {base_url}/tasks/{first.id}/context")
+    elif endpoint_type == "blocked":
+        hints.append(f"View ready tasks: GET {base_url}/tasks/ready")
+        if tasks:
+            first = tasks[0]
+            hints.append(f"View blockers: GET {base_url}/tasks/{first.id}/dependencies")
+    else:
+        # General list hints - always include at least one
+        if status_counts.get("pending", 0) > 0:
+            hints.append(f"View ready tasks: GET {base_url}/tasks/ready")
+        if status_counts.get("running", 0) > 0:
+            hints.append(f"Filter running: GET {base_url}/tasks?status=running")
+        if len(tasks) >= 50:
+            hints.append(f"More results: GET {base_url}/tasks?offset=50")
+        # Always include a default hint if none generated
+        if not hints:
+            first = tasks[0]
+            hints.append(f"View task details: GET {base_url}/tasks/{first.id}")
+
+    return hints
+
+
+def _toon_format_task_list(tasks: list[TaskResponse], endpoint_type: str = "list") -> str:
+    """Convert task list to TOON format.
+
+    Format:
+    ENDPOINT:PREFIX:TOTAL
+    task lines...
+
+    Example for ready endpoint:
+    READY:3
+    task-abc123|pending|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
+    """
+    prefix_map = {
+        "ready": "READY",
+        "blocked": "BLOCKED",
+        "list": "TASKS"
+    }
+
+    prefix = prefix_map.get(endpoint_type, "TASKS")
+    lines = [f"{prefix}:{len(tasks)}"]
+
+    for task in tasks:
+        lines.append(_toon_format_task(task))
+
+    return "\n".join(lines)
 
 
 def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -> TaskResponse:
@@ -304,7 +416,7 @@ def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -
 
 
 # Endpoints
-@router.get("/projects/{project_id}/tasks", response_model=TaskListResponse)
+@router.get("/projects/{project_id}/tasks", response_model=None)
 async def list_tasks(
     project_id: str,
     status: str | None = Query(None, description="Filter by status"),
@@ -321,7 +433,8 @@ async def list_tasks(
     ),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
-) -> TaskListResponse:
+    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+) -> TaskListResponse | PlainTextResponse:
     """List tasks for a project.
 
     Query params:
@@ -359,17 +472,25 @@ async def list_tasks(
     task_ids = [t["id"] for t in tasks]
     criteria_counts = _get_step_counts_batch(task_ids)
 
+    task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+
+    # Return TOON format if requested
+    if format == "toon":
+        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="list"))
+
     return TaskListResponse(
-        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
+        tasks=task_responses,
         total=len(tasks),  # TODO: Add proper total count
+        hints=get_hints(task_responses, project_id, endpoint_type="list"),
     )
 
 
-@router.get("/projects/{project_id}/tasks/ready", response_model=TaskListResponse)
+@router.get("/projects/{project_id}/tasks/ready", response_model=None)
 async def list_ready_tasks(
     project_id: str,
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
-) -> TaskListResponse:
+    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+) -> TaskListResponse | PlainTextResponse:
     """List tasks that are ready to work on (not blocked by dependencies).
 
     Returns pending tasks with no incomplete blocking dependencies,
@@ -381,17 +502,25 @@ async def list_ready_tasks(
     task_ids = [t["id"] for t in tasks]
     criteria_counts = _get_step_counts_batch(task_ids)
 
+    task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+
+    # Return TOON format if requested
+    if format == "toon":
+        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="ready"))
+
     return TaskListResponse(
-        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
+        tasks=task_responses,
         total=len(tasks),
+        hints=get_hints(task_responses, project_id, endpoint_type="ready"),
     )
 
 
-@router.get("/projects/{project_id}/tasks/blocked", response_model=TaskListResponse)
+@router.get("/projects/{project_id}/tasks/blocked", response_model=None)
 async def list_blocked_tasks(
     project_id: str,
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
-) -> TaskListResponse:
+    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+) -> TaskListResponse | PlainTextResponse:
     """List tasks that are blocked by incomplete dependencies.
 
     Returns pending tasks that have unresolved blocking dependencies.
@@ -402,9 +531,16 @@ async def list_blocked_tasks(
     task_ids = [t["id"] for t in tasks]
     criteria_counts = _get_step_counts_batch(task_ids)
 
+    task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+
+    # Return TOON format if requested
+    if format == "toon":
+        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="blocked"))
+
     return TaskListResponse(
-        tasks=[_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks],
+        tasks=task_responses,
         total=len(tasks),
+        hints=get_hints(task_responses, project_id, endpoint_type="blocked"),
     )
 
 
@@ -590,8 +726,11 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     return BatchTaskResponse(created=created, errors=errors)
 
 
-@router.get("/tasks/{task_id}", response_model=TaskResponse)
-async def get_task_global(task_id: str) -> TaskResponse:
+@router.get("/tasks/{task_id}", response_model=None)
+async def get_task_global(
+    task_id: str,
+    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+) -> TaskResponse | PlainTextResponse:
     """Get a task by ID without requiring project context.
 
     Task IDs are globally unique, so project_id is not needed for lookup.
@@ -604,11 +743,22 @@ async def get_task_global(task_id: str) -> TaskResponse:
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    return _task_to_response(task)
+
+    task_response = _task_to_response(task)
+
+    # Return TOON format if requested
+    if format == "toon":
+        return PlainTextResponse(content=_toon_format_task(task_response))
+
+    return task_response
 
 
-@router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
-async def get_task(project_id: str, task_id: str) -> TaskResponse:
+@router.get("/projects/{project_id}/tasks/{task_id}", response_model=None)
+async def get_task(
+    project_id: str,
+    task_id: str,
+    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+) -> TaskResponse | PlainTextResponse:
     """Get a single task by ID.
 
     Args:
@@ -616,7 +766,13 @@ async def get_task(project_id: str, task_id: str) -> TaskResponse:
         task_id: Task ID
     """
     task = _verify_task_project(task_id, project_id)
-    return _task_to_response(task)
+    task_response = _task_to_response(task)
+
+    # Return TOON format if requested
+    if format == "toon":
+        return PlainTextResponse(content=_toon_format_task(task_response))
+
+    return task_response
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
