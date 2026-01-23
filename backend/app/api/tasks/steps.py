@@ -395,7 +395,7 @@ async def update_step_status(
         except (ValueError, TypeError):
             raise HTTPException(
                 status_code=400,
-                detail=f"fix_step_number must be an integer, got: {fix_step_number}"
+                detail=f"fix_step_number must be an integer, got: {fix_step_number}",
             ) from None
 
     try:

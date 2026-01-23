@@ -97,7 +97,14 @@ def valid_plan() -> dict[str, Any]:
                         "description": "Create test file",
                         "verify_command": "echo 'test passed'",
                         "expected_output": "test passed",
-                    }
+                    },
+                    {
+                        # Deploy step - uses echo to simulate rebuild.sh in tests
+                        # Validation passes because description contains "deploy"
+                        "description": "Deploy backend changes",
+                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
+                        "expected_output": "Rebuild complete",
+                    },
                 ],
             },
             {
@@ -235,9 +242,138 @@ def plan_no_verification_subtask() -> dict[str, Any]:
                         "description": "Do something",
                         "verify_command": "echo ok",
                         "expected_output": "ok",
-                    }
+                    },
+                    {
+                        "description": "Deploy backend changes",
+                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
+                        "expected_output": "Rebuild complete",
+                    },
                 ],
             }
+        ],
+    }
+
+
+def plan_missing_deploy_step() -> dict[str, Any]:
+    """Plan with backend phase subtask missing deploy step."""
+    return {
+        "title": "E2E Test - Missing Deploy Step",
+        "objective": "Test rejection of plans without deploy step",
+        "task_type": "task",
+        "complexity": "SIMPLE",
+        "subtasks": [
+            {
+                "id": "1.1",
+                "description": "Backend subtask without deploy",
+                "phase": "backend",
+                "steps": [
+                    {
+                        "description": "Do something",
+                        "verify_command": "echo ok",
+                        "expected_output": "ok",
+                    }
+                ],
+            },
+            {
+                "id": "1.2",
+                "description": "Final verification",
+                "phase": "verification",
+                "steps": [
+                    {
+                        "description": "Verify",
+                        "verify_command": "echo done",
+                        "expected_output": "done",
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def plan_frontend_missing_browser_check() -> dict[str, Any]:
+    """Plan with frontend phase subtask missing browser verification step."""
+    return {
+        "title": "E2E Test - Missing Browser Check",
+        "objective": "Test rejection of frontend plans without browser check",
+        "task_type": "task",
+        "complexity": "SIMPLE",
+        "subtasks": [
+            {
+                "id": "1.1",
+                "description": "Frontend subtask without browser check",
+                "phase": "frontend",
+                "steps": [
+                    {
+                        "description": "Update component",
+                        "verify_command": "echo ok",
+                        "expected_output": "ok",
+                    },
+                    {
+                        # Has deploy but no browser check
+                        "description": "Deploy frontend changes",
+                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
+                        "expected_output": "Rebuild complete",
+                    },
+                ],
+            },
+            {
+                "id": "1.2",
+                "description": "Final verification",
+                "phase": "verification",
+                "steps": [
+                    {
+                        "description": "Verify",
+                        "verify_command": "echo done",
+                        "expected_output": "done",
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def plan_frontend_valid() -> dict[str, Any]:
+    """Valid frontend plan with deploy and browser check."""
+    return {
+        "title": "E2E Test - Valid Frontend Plan",
+        "objective": "Test acceptance of valid frontend plan",
+        "task_type": "task",
+        "complexity": "SIMPLE",
+        "subtasks": [
+            {
+                "id": "1.1",
+                "description": "Frontend subtask with all required steps",
+                "phase": "frontend",
+                "steps": [
+                    {
+                        "description": "Update component",
+                        "verify_command": "echo ok",
+                        "expected_output": "ok",
+                    },
+                    {
+                        "description": "Deploy frontend changes",
+                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
+                        "expected_output": "Rebuild complete",
+                    },
+                    {
+                        "description": "Verify no console errors",
+                        "verify_command": "echo 'agent-browser errors: No errors'",
+                        "expected_output": "No errors",
+                    },
+                ],
+            },
+            {
+                "id": "1.2",
+                "description": "Final verification",
+                "phase": "verification",
+                "steps": [
+                    {
+                        "description": "Verify",
+                        "verify_command": "echo done",
+                        "expected_output": "done",
+                    }
+                ],
+            },
         ],
     }
 
@@ -316,6 +452,42 @@ class TestVerifyGate:
             assert (
                 "verification" in result.stderr.lower() or "verification" in result.stdout.lower()
             )
+        finally:
+            plan_file.unlink()
+
+    def test_verify_rejects_missing_deploy_step(self):
+        """st verify should reject backend/frontend subtasks without deploy step."""
+        plan_file = create_plan_file(plan_missing_deploy_step())
+        try:
+            result = run_cli(["verify", str(plan_file)])
+            assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
+            assert "deploy" in result.stderr.lower() or "rebuild.sh" in result.stderr.lower(), (
+                f"Expected deploy-related error, got: {result.stderr}"
+            )
+        finally:
+            plan_file.unlink()
+
+    def test_verify_rejects_frontend_missing_browser_check(self):
+        """st verify should reject frontend subtasks without browser verification."""
+        plan_file = create_plan_file(plan_frontend_missing_browser_check())
+        try:
+            result = run_cli(["verify", str(plan_file)])
+            assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
+            assert (
+                "browser" in result.stderr.lower()
+                or "agent-browser" in result.stderr.lower()
+                or "console error" in result.stderr.lower()
+            ), f"Expected browser-related error, got: {result.stderr}"
+        finally:
+            plan_file.unlink()
+
+    def test_verify_accepts_valid_frontend_plan(self):
+        """st verify should accept frontend plan with deploy and browser check."""
+        plan_file = create_plan_file(plan_frontend_valid())
+        try:
+            result = run_cli(["verify", str(plan_file)])
+            assert result.returncode == 0, f"Expected success, got: {result.stderr}"
+            assert "PASS" in result.stdout
         finally:
             plan_file.unlink()
 
@@ -646,11 +818,15 @@ class TestHappyPath:
         assert result.returncode == 0, f"Update to running failed: {result.stderr}"
 
         # 4. Complete steps for each subtask
-        for subtask_id in ["1.1", "1.2"]:
-            # Pass step 1 (each subtask has 1 step)
-            # Format: st step pass <subtask_id> <step_number> --task <task_id>
-            result = run_cli(["step", "pass", subtask_id, "1", "--task", task_id])
-            assert result.returncode == 0, f"Step pass failed for {subtask_id}: {result.stderr}"
+        # Subtask 1.1 has 2 steps (implementation + deploy), subtask 1.2 has 1 step
+        subtask_steps = {"1.1": [1, 2], "1.2": [1]}
+        for subtask_id, steps in subtask_steps.items():
+            for step_num in steps:
+                # Format: st step pass <subtask_id> <step_number> --task <task_id>
+                result = run_cli(["step", "pass", subtask_id, str(step_num), "--task", task_id])
+                assert result.returncode == 0, (
+                    f"Step pass failed for {subtask_id}.{step_num}: {result.stderr}"
+                )
 
             # Pass subtask
             # Format: st subtask pass <subtask_id> --task <task_id>

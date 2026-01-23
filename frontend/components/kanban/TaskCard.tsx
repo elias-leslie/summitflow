@@ -3,135 +3,27 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlertTriangle,
-  ArrowDownCircle,
-  Bot,
-  Bug,
-  Check,
-  CheckSquare,
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Eye,
   GitPullRequest,
   GripVertical,
   Lightbulb,
   Link2,
   Loader2,
-  OctagonX,
-  Package,
-  Pause,
-  RefreshCw,
-  X,
   Zap,
 } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
 import { useState } from 'react'
 
-import type { Task, TaskStatus, TaskType } from '@/lib/api'
+import type { Task } from '@/lib/api'
+import {
+  getPriorityClasses,
+  getTaskStatusCardConfig,
+  getTaskTypeConfigSmall,
+} from '@/lib/task-config'
 import { ExecutionPanel, type ExecutionState } from './ExecutionPanel'
 
-// ============================================================================
-// Task Status Configuration
-// ============================================================================
-
-const taskStatusConfig: Record<
-  TaskStatus,
-  { icon: React.ReactNode; className: string; title: string }
-> = {
-  pending: { icon: null, className: '', title: '' },
-  running: {
-    icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
-    className: 'text-blue-400',
-    title: 'Task running',
-  },
-  paused: {
-    icon: <Pause className="h-3.5 w-3.5" />,
-    className: 'text-yellow-400',
-    title: 'Task paused',
-  },
-  blocked: {
-    icon: <OctagonX className="h-3.5 w-3.5" />,
-    className: 'text-orange-400',
-    title: 'Task blocked',
-  },
-  pr_created: {
-    icon: <GitPullRequest className="h-3.5 w-3.5" />,
-    className: 'text-amber-400',
-    title: 'PR created',
-  },
-  ai_reviewing: {
-    icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
-    className: 'text-amber-400',
-    title: 'AI reviewing',
-  },
-  human_review: {
-    icon: <Eye className="h-3.5 w-3.5" />,
-    className: 'text-violet-400',
-    title: 'Human review required',
-  },
-  completed: {
-    icon: <Check className="h-3.5 w-3.5" />,
-    className: 'text-green-400',
-    title: 'Task completed',
-  },
-  failed: {
-    icon: <X className="h-3.5 w-3.5" />,
-    className: 'text-red-400',
-    title: 'Task failed',
-  },
-  cancelled: {
-    icon: <X className="h-3.5 w-3.5" />,
-    className: 'text-slate-500',
-    title: 'Task cancelled',
-  },
-}
-
-// ============================================================================
-// Task Type Configuration
-// ============================================================================
-
-const taskTypeConfig: Record<
-  TaskType,
-  { icon: React.ReactNode; className: string }
-> = {
-  feature: {
-    icon: <Package className="h-3.5 w-3.5" />,
-    className: 'text-purple-400',
-  },
-  bug: {
-    icon: <Bug className="h-3.5 w-3.5" />,
-    className: 'text-red-400',
-  },
-  task: {
-    icon: <CheckSquare className="h-3.5 w-3.5" />,
-    className: 'text-blue-400',
-  },
-  refactor: {
-    icon: <RefreshCw className="h-3.5 w-3.5" />,
-    className: 'text-cyan-400',
-  },
-  debt: {
-    icon: <AlertTriangle className="h-3.5 w-3.5" />,
-    className: 'text-amber-400',
-  },
-  regression: {
-    icon: <ArrowDownCircle className="h-3.5 w-3.5" />,
-    className: 'text-orange-400',
-  },
-}
-
-// ============================================================================
-// Priority Colors
-// ============================================================================
-
-const priorityColors: Record<number, string> = {
-  0: 'bg-rose-500/30 text-rose-300 border-rose-500/40', // Critical
-  1: 'bg-orange-500/20 text-orange-400 border-orange-500/30', // High
-  2: 'bg-amber-500/20 text-amber-400 border-amber-500/30', // Medium
-  3: 'bg-blue-500/20 text-blue-400 border-blue-500/30', // Low
-  4: 'bg-slate-500/20 text-slate-400 border-slate-500/30', // Backlog
-}
 
 // ============================================================================
 // Types
@@ -187,8 +79,8 @@ export function TaskCard({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task
-  const statusConfig = taskStatusConfig[task.status]
+  const typeConfig = getTaskTypeConfigSmall(task.task_type)
+  const statusConfig = getTaskStatusCardConfig(task.status)
   const isIdea = isCrowdsourcedIdea(task)
 
   // Show expand button for running or ai_reviewing tasks
@@ -236,7 +128,7 @@ export function TaskCard({
             <span className="text-xs mono text-slate-500">{task.id}</span>
             {/* Priority Badge */}
             <span
-              className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityColors[task.priority] || priorityColors[2]}`}
+              className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${getPriorityClasses(task.priority)}`}
             >
               P{task.priority}
             </span>
@@ -420,7 +312,7 @@ interface DragOverlayTaskCardProps {
 }
 
 export function DragOverlayTaskCard({ task }: DragOverlayTaskCardProps) {
-  const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task
+  const typeConfig = getTaskTypeConfigSmall(task.task_type)
 
   return (
     <div className="rounded-lg border border-phosphor-500 bg-slate-900 p-3 shadow-xl shadow-phosphor-500/20 rotate-2 max-w-[300px]">
@@ -428,7 +320,7 @@ export function DragOverlayTaskCard({ task }: DragOverlayTaskCardProps) {
         <span className={typeConfig.className}>{typeConfig.icon}</span>
         <span className="text-xs mono text-slate-500">{task.id}</span>
         <span
-          className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityColors[task.priority] || priorityColors[2]}`}
+          className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${getPriorityClasses(task.priority)}`}
         >
           P{task.priority}
         </span>

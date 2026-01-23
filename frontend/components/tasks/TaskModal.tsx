@@ -1,26 +1,11 @@
 'use client'
 
 import {
-  AlertTriangle,
-  ArrowDownCircle,
-  Bot,
-  Bug,
-  CheckCircle2,
-  CheckSquare,
   ChevronDown,
   ChevronRight,
-  Clock,
-  Edit2,
   ExternalLink,
-  FastForward,
   Link2,
   Loader2,
-  Package,
-  Play,
-  RefreshCw,
-  Save,
-  Square,
-  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
@@ -29,7 +14,7 @@ import { ExecutionBadges } from '@/components/tasks/ExecutionBadges'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { ObjectiveSection } from '@/components/tasks/ObjectiveSection'
 import { SubtasksSection } from '@/components/tasks/SubtasksSection'
-import { Button } from '@/components/ui/button'
+import { TaskModalActions } from '@/components/tasks/TaskModalActions'
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -40,11 +25,15 @@ import {
   type Subtask,
   type Task,
   type TaskStatus,
-  type TaskType,
   updateSubtask,
   updateTask,
   updateTaskStatus,
 } from '@/lib/api/tasks'
+import {
+  getPriorityColors,
+  getStatusConfig,
+  getTaskTypeConfig,
+} from '@/lib/task-config'
 
 // ============================================================================
 // Collapsible Section Component
@@ -100,134 +89,8 @@ interface TaskModalProps {
   initialTask?: Task | null
 }
 
-// ============================================================================
-// Priority Colors
-// ============================================================================
 
-const priorityColors: Record<
-  number,
-  { bg: string; text: string; border: string }
-> = {
-  0: {
-    bg: 'bg-rose-500/30',
-    text: 'text-rose-300',
-    border: 'border-rose-500/40',
-  },
-  1: {
-    bg: 'bg-orange-500/20',
-    text: 'text-orange-400',
-    border: 'border-orange-500/30',
-  },
-  2: {
-    bg: 'bg-amber-500/20',
-    text: 'text-amber-400',
-    border: 'border-amber-500/30',
-  },
-  3: {
-    bg: 'bg-blue-500/20',
-    text: 'text-blue-400',
-    border: 'border-blue-500/30',
-  },
-  4: {
-    bg: 'bg-slate-500/20',
-    text: 'text-slate-400',
-    border: 'border-slate-500/30',
-  },
-}
 
-// ============================================================================
-// Task Type Configuration
-// ============================================================================
-
-const taskTypeConfig: Record<
-  TaskType,
-  { icon: React.ReactNode; label: string; className: string }
-> = {
-  feature: {
-    icon: <Package className="h-4 w-4" />,
-    label: 'Feature',
-    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  },
-  bug: {
-    icon: <Bug className="h-4 w-4" />,
-    label: 'Bug',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  task: {
-    icon: <CheckSquare className="h-4 w-4" />,
-    label: 'Task',
-    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  },
-  refactor: {
-    icon: <RefreshCw className="h-4 w-4" />,
-    label: 'Refactor',
-    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  },
-  debt: {
-    icon: <AlertTriangle className="h-4 w-4" />,
-    label: 'Tech Debt',
-    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  },
-  regression: {
-    icon: <ArrowDownCircle className="h-4 w-4" />,
-    label: 'Regression',
-    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  },
-}
-
-// ============================================================================
-// Status Configuration
-// ============================================================================
-
-const statusConfig: Record<
-  TaskStatus,
-  { label: string; className: string; icon?: React.ReactNode }
-> = {
-  pending: {
-    label: 'Pending',
-    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  },
-  running: {
-    label: 'Running',
-    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-  },
-  paused: {
-    label: 'Paused',
-    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    icon: <Clock className="h-3 w-3" />,
-  },
-  blocked: {
-    label: 'Blocked',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  pr_created: {
-    label: 'PR Created',
-    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  },
-  ai_reviewing: {
-    label: 'AI Reviewing',
-    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-  },
-  human_review: {
-    label: 'Human Review',
-    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  },
-  completed: {
-    label: 'Completed',
-    className: 'bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30',
-    icon: <CheckCircle2 className="h-3 w-3" />,
-  },
-  failed: {
-    label: 'Failed',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  },
-}
 
 // ============================================================================
 // Task Modal Component
@@ -457,16 +320,12 @@ export function TaskModal({
   // Don't render if no task ID
   if (!taskId) return null
 
-  // Get config values
+  // Get config values from shared config
   const typeConfig = task
-    ? taskTypeConfig[task.task_type] || taskTypeConfig.task
-    : taskTypeConfig.task
-  const colors = task
-    ? priorityColors[task.priority] || priorityColors[2]
-    : priorityColors[2]
-  const status = task
-    ? statusConfig[task.status] || statusConfig.pending
-    : statusConfig.pending
+    ? getTaskTypeConfig(task.task_type)
+    : getTaskTypeConfig('task')
+  const colors = task ? getPriorityColors(task.priority) : getPriorityColors(2)
+  const status = task ? getStatusConfig(task.status) : getStatusConfig('pending')
 
   // Capability context
   const capability = task?.capability
@@ -477,12 +336,9 @@ export function TaskModal({
     ? (capability.criteria_passed / capability.criteria_total) * 100
     : 0
 
-  // Status checks for action buttons
+  // Status checks for timeline visibility
   const isRunning = task?.status === 'running'
   const isPaused = task?.status === 'paused'
-  const isCompleted = task?.status === 'completed'
-  const isPending = task?.status === 'pending'
-  const isHumanReview = task?.status === 'human_review'
   const isAiReviewing = task?.status === 'ai_reviewing'
 
   // Show timeline when task is in an active execution state
@@ -564,150 +420,20 @@ export function TaskModal({
               )}
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {isPending && (
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={handleStartExecution}
-                    disabled={isExecuting}
-                  >
-                    {isExecuting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    {isExecuting ? 'Starting...' : 'Start Execution'}
-                  </Button>
-                )}
-                {isPaused && (
-                  <Button
-                    variant="outline"
-                    className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                    onClick={handleStartExecution}
-                    disabled={isExecuting}
-                  >
-                    {isExecuting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FastForward className="h-4 w-4" />
-                    )}
-                    {isExecuting ? 'Resuming...' : 'Continue'}
-                  </Button>
-                )}
-                {isRunning && (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="gap-2 border-blue-500/30 text-blue-400"
-                      disabled
-                    >
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Executing...
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-2 border-red-500/30 text-red-400 hover:bg-red-500/10"
-                      onClick={handleStopExecution}
-                      disabled={isStopping}
-                    >
-                      <Square className="h-4 w-4" />
-                      {isStopping ? 'Stopping at next checkpoint...' : 'Stop'}
-                    </Button>
-                  </>
-                )}
-                {isHumanReview && (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="gap-2 border-phosphor-500/30 text-phosphor-400 hover:bg-phosphor-500/10"
-                      onClick={() => handleStatusChange('running')}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Approve
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                      onClick={() => handleStatusChange('pending')}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Request Changes
-                    </Button>
-                  </>
-                )}
-                {isCompleted && (
-                  <Button
-                    variant="outline"
-                    className="gap-2 border-phosphor-500/30 text-phosphor-400"
-                    disabled
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Completed
-                  </Button>
-                )}
-                {isAiReviewing && (
-                  <Button
-                    variant="outline"
-                    className="gap-2 border-cyan-500/30 text-cyan-400"
-                    disabled
-                  >
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    AI Reviewing...
-                  </Button>
-                )}
-                {/* Autonomous Toggle */}
-                <Button
-                  variant="outline"
-                  className={`gap-2 ${
-                    task.autonomous
-                      ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
-                      : 'border-slate-600 text-slate-400'
-                  }`}
-                  onClick={handleToggleAutonomous}
-                  disabled={isTogglingAutonomous || isRunning}
-                  title={
-                    task.autonomous
-                      ? 'Autonomous execution enabled - task will be picked up by auto-exec when enabled'
-                      : 'Click to enable autonomous execution for this task'
-                  }
-                >
-                  {isTogglingAutonomous ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Bot className="h-4 w-4" />
-                  )}
-                  {task.autonomous ? 'Autonomous' : 'Manual'}
-                </Button>
-                <div className="ml-auto flex items-center gap-2">
-                  {isEditing ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleEditCancel}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={handleEditSave}
-                      >
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleEditStart}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
+              <TaskModalActions
+                task={task}
+                isExecuting={isExecuting}
+                isStopping={isStopping}
+                isTogglingAutonomous={isTogglingAutonomous}
+                isEditing={isEditing}
+                onStartExecution={handleStartExecution}
+                onStopExecution={handleStopExecution}
+                onStatusChange={handleStatusChange}
+                onToggleAutonomous={handleToggleAutonomous}
+                onEditStart={handleEditStart}
+                onEditCancel={handleEditCancel}
+                onEditSave={handleEditSave}
+              />
 
               {/* Objective Section - Always visible at top */}
               <ObjectiveSection

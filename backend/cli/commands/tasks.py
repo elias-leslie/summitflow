@@ -1279,6 +1279,39 @@ def verify_plan(
                     f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
                 )
 
+    # Validate deploy and browser steps for backend/frontend subtasks
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "?")
+        phase = subtask.get("phase", "").lower()
+        steps = subtask.get("steps", [])
+
+        if phase in ("backend", "frontend") and steps:
+            has_deploy = False
+            has_browser_check = False
+
+            for step in steps:
+                if isinstance(step, dict):
+                    step_desc = step.get("description", "").lower()
+                    verify_cmd = step.get("verify_command", "").lower()
+
+                    if "deploy" in step_desc or "rebuild.sh" in verify_cmd:
+                        has_deploy = True
+                    if "agent-browser" in verify_cmd or "console error" in step_desc:
+                        has_browser_check = True
+
+            if not has_deploy:
+                issues.append(
+                    f"subtask {subtask_id} (phase={phase}): must have deploy step "
+                    f"(rebuild.sh in verify_command or 'deploy' in description)"
+                )
+
+            # Frontend subtasks also require browser verification
+            if phase == "frontend" and not has_browser_check:
+                issues.append(
+                    f"subtask {subtask_id} (phase=frontend): must have browser verification step "
+                    f"(agent-browser in verify_command or 'console error' in description)"
+                )
+
     # Validate final verification subtask: last subtask must be verification phase
     if subtasks:
         last_subtask = subtasks[-1]
@@ -1478,6 +1511,39 @@ def import_plan(
             if not step.get("expected_output"):
                 issues.append(
                     f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
+                )
+
+    # Validate deploy and browser steps for backend/frontend subtasks
+    for subtask in subtasks:
+        subtask_id = subtask.get("id", "?")
+        phase = subtask.get("phase", "").lower()
+        steps = subtask.get("steps", [])
+
+        if phase in ("backend", "frontend") and steps:
+            has_deploy = False
+            has_browser_check = False
+
+            for step in steps:
+                if isinstance(step, dict):
+                    step_desc = step.get("description", "").lower()
+                    verify_cmd = step.get("verify_command", "").lower()
+
+                    if "deploy" in step_desc or "rebuild.sh" in verify_cmd:
+                        has_deploy = True
+                    if "agent-browser" in verify_cmd or "console error" in step_desc:
+                        has_browser_check = True
+
+            if not has_deploy:
+                issues.append(
+                    f"subtask {subtask_id} (phase={phase}): must have deploy step "
+                    f"(rebuild.sh in verify_command or 'deploy' in description)"
+                )
+
+            # Frontend subtasks also require browser verification
+            if phase == "frontend" and not has_browser_check:
+                issues.append(
+                    f"subtask {subtask_id} (phase=frontend): must have browser verification step "
+                    f"(agent-browser in verify_command or 'console error' in description)"
                 )
 
     # Validate final verification subtask

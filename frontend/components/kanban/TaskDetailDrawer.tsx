@@ -1,19 +1,13 @@
 'use client'
 
 import {
-  AlertTriangle,
-  ArrowDownCircle,
-  Bug,
   CheckCircle2,
-  CheckSquare,
   Edit2,
   ExternalLink,
   FastForward,
   Link2,
   Loader2,
-  Package,
   Play,
-  RefreshCw,
   Save,
   X,
 } from 'lucide-react'
@@ -37,8 +31,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import type { Task, TaskStatus, TaskType } from '@/lib/api'
+import type { Task, TaskStatus } from '@/lib/api'
 import { getSubtasksWithSteps, type Subtask } from '@/lib/api/tasks'
+import { getPriorityColors, getTaskTypeConfig } from '@/lib/task-config'
 
 interface TaskDetailDrawerProps {
   task: Task | null
@@ -51,80 +46,6 @@ interface TaskDetailDrawerProps {
   checkpoint?: Checkpoint | null
 }
 
-// ============================================================================
-// Priority Colors
-// ============================================================================
-
-const priorityColors: Record<
-  number,
-  { bg: string; text: string; border: string }
-> = {
-  0: {
-    bg: 'bg-rose-500/30',
-    text: 'text-rose-300',
-    border: 'border-rose-500/40',
-  },
-  1: {
-    bg: 'bg-orange-500/20',
-    text: 'text-orange-400',
-    border: 'border-orange-500/30',
-  },
-  2: {
-    bg: 'bg-amber-500/20',
-    text: 'text-amber-400',
-    border: 'border-amber-500/30',
-  },
-  3: {
-    bg: 'bg-blue-500/20',
-    text: 'text-blue-400',
-    border: 'border-blue-500/30',
-  },
-  4: {
-    bg: 'bg-slate-500/20',
-    text: 'text-slate-400',
-    border: 'border-slate-500/30',
-  },
-}
-
-// ============================================================================
-// Task Type Configuration
-// ============================================================================
-
-const taskTypeConfig: Record<
-  TaskType,
-  { icon: React.ReactNode; label: string; className: string }
-> = {
-  feature: {
-    icon: <Package className="h-4 w-4" />,
-    label: 'Feature',
-    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  },
-  bug: {
-    icon: <Bug className="h-4 w-4" />,
-    label: 'Bug',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  task: {
-    icon: <CheckSquare className="h-4 w-4" />,
-    label: 'Task',
-    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  },
-  refactor: {
-    icon: <RefreshCw className="h-4 w-4" />,
-    label: 'Refactor',
-    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  },
-  debt: {
-    icon: <AlertTriangle className="h-4 w-4" />,
-    label: 'Tech Debt',
-    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  },
-  regression: {
-    icon: <ArrowDownCircle className="h-4 w-4" />,
-    label: 'Regression',
-    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  },
-}
 
 // ============================================================================
 // Task Detail Drawer
@@ -165,8 +86,8 @@ export function TaskDetailDrawer({
 
   if (!task) return null
 
-  const typeConfig = taskTypeConfig[task.task_type] || taskTypeConfig.task
-  const colors = priorityColors[task.priority] || priorityColors[2]
+  const typeConfig = getTaskTypeConfig(task.task_type)
+  const colors = getPriorityColors(task.priority)
 
   // Capability context
   const capability = task.capability
