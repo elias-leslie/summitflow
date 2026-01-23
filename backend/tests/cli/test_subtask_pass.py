@@ -4,8 +4,6 @@ Tests the is_step_resolved function that determines if a step should block
 subtask completion.
 """
 
-import pytest
-
 from cli.commands.subtask import is_step_resolved
 
 

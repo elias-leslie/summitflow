@@ -229,7 +229,9 @@ def pass_subtask(
             steps_from_table = target.get("steps_from_table", [])
             if steps_from_table:
                 # Build map of step_number -> passes for fix step lookups
-                step_passes_map = {s["step_number"]: s.get("passes", False) for s in steps_from_table}
+                step_passes_map = {
+                    s["step_number"]: s.get("passes", False) for s in steps_from_table
+                }
 
                 incomplete = [
                     s["step_number"]

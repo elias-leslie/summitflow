@@ -318,9 +318,7 @@ def update_subtask_passes(
                     plan_defects.append(s["step_number"])
                 else:
                     # Fix step missing or not passing - treat as incomplete
-                    invalid_plan_defects.append(
-                        (s["step_number"], fix_step_num)
-                    )
+                    invalid_plan_defects.append((s["step_number"], fix_step_num))
                     incomplete.append(s["step_number"])
             else:
                 incomplete.append(s["step_number"])

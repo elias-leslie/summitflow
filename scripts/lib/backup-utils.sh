@@ -781,6 +781,40 @@ EOF
     fi
 }
 
+# Neo4j Graphiti backup for agent-hub
+# Creates JSON exports of Graphiti nodes/edges
+dump_neo4j_graphiti() {
+    local name="${1:-daily-backup}"
+    local agent_hub_dir="/home/kasadis/agent-hub"
+    local backup_script="$agent_hub_dir/backend/scripts/memory/backup.py"
+
+    # Only run for agent-hub project
+    if [ "$PROJECT_NAME" != "agent-hub" ]; then
+        log_info "Neo4j backup skipped (not agent-hub project)"
+        return 0
+    fi
+
+    if [ ! -f "$backup_script" ]; then
+        log_warn "Neo4j backup script not found: $backup_script"
+        return 1
+    fi
+
+    log "Creating Neo4j Graphiti backup..."
+
+    # Activate agent-hub venv and run backup
+    if (
+        cd "$agent_hub_dir/backend" && \
+        source .venv/bin/activate && \
+        python -m scripts.memory.backup --name "$name"
+    ); then
+        log_success "Neo4j Graphiti backup complete"
+        return 0
+    else
+        log_error "Neo4j Graphiti backup failed"
+        return 1
+    fi
+}
+
 # Export functions for subshells
 export -f log log_success log_warn log_error log_info
 export -f ensure_smb_credentials test_smb_connection test_smb_connection_quiet
@@ -790,3 +824,4 @@ export -f update_backup_index get_backup_count remove_oldest_from_index
 export -f apply_retention backup_checkpoint
 export -f build_backup_manifest verify_backup
 export -f validate_index restore_index_from_git sync_index_from_smb
+export -f dump_neo4j_graphiti

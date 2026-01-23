@@ -450,7 +450,9 @@ async def update_step(
     project_root = get_project_root_path(project_id)
 
     try:
-        updated = update_step_passes(table_id, step_number, request.passes, project_root=project_root)
+        updated = update_step_passes(
+            table_id, step_number, request.passes, project_root=project_root
+        )
     except StepGateError as e:
         raise HTTPException(
             status_code=400,
