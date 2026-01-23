@@ -191,25 +191,23 @@ def get_hints(tasks: list[TaskResponse], project_id: str, endpoint_type: str = "
     if endpoint_type == "ready":
         if tasks:
             first = tasks[0]
+            hints.append(f"Full context: GET {base_url}/tasks/{first.id}/context")
             hints.append(f"Start task: PATCH {base_url}/tasks/{first.id}/status")
-            hints.append(f"View context: GET {base_url}/tasks/{first.id}/context")
     elif endpoint_type == "blocked":
         hints.append(f"View ready tasks: GET {base_url}/tasks/ready")
         if tasks:
             first = tasks[0]
             hints.append(f"View blockers: GET {base_url}/tasks/{first.id}/dependencies")
     else:
-        # General list hints - always include at least one
+        # General list hints - always include context hint first
+        first = tasks[0]
+        hints.append(f"Full context: GET {base_url}/tasks/{first.id}/context")
         if status_counts.get("pending", 0) > 0:
             hints.append(f"View ready tasks: GET {base_url}/tasks/ready")
         if status_counts.get("running", 0) > 0:
             hints.append(f"Filter running: GET {base_url}/tasks?status=running")
         if len(tasks) >= 50:
             hints.append(f"More results: GET {base_url}/tasks?offset=50")
-        # Always include a default hint if none generated
-        if not hints:
-            first = tasks[0]
-            hints.append(f"View task details: GET {base_url}/tasks/{first.id}")
 
     return hints
 
