@@ -1,39 +1,18 @@
 'use client'
 
-import {
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Link2,
-  Loader2,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
-import { ExecutionBadges } from '@/components/tasks/ExecutionBadges'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
+import { LinkedCapabilitySection } from '@/components/tasks/LinkedCapabilitySection'
 import { ObjectiveSection } from '@/components/tasks/ObjectiveSection'
 import { SubtasksSection } from '@/components/tasks/SubtasksSection'
+import { TaskMetadata } from '@/components/tasks/TaskMetadata'
 import { TaskModalActions } from '@/components/tasks/TaskModalActions'
+import { TaskModalHeader } from '@/components/tasks/TaskModalHeader'
+import { useTaskModal } from '@/components/tasks/useTaskModal'
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  executeTask,
-  fetchTask,
-  getSubtasksWithSteps,
-  type Subtask,
-  type Task,
-  type TaskStatus,
-  updateSubtask,
-  updateTask,
-  updateTaskStatus,
-} from '@/lib/api/tasks'
-import {
-  getPriorityColors,
-  getStatusConfig,
-  getTaskTypeConfig,
-} from '@/lib/task-config'
+import type { Task } from '@/lib/api/tasks'
 
 // ============================================================================
 // Collapsible Section Component
@@ -104,237 +83,49 @@ export function TaskModal({
   onTaskUpdate,
   initialTask,
 }: TaskModalProps) {
-  // Task data state
-  const [task, setTask] = useState<Task | null>(initialTask || null)
-  const [subtasks, setSubtasks] = useState<Subtask[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Edit state
-  const [isEditing, setIsEditing] = useState(false)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-
-  // Execution state
-  const [isExecuting, setIsExecuting] = useState(false)
-  const [isStopping, setIsStopping] = useState(false)
-  const [executionError, setExecutionError] = useState<string | null>(null)
-  const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false)
-
-  // Collapsible section state (all collapsed by default)
-  const [descriptionOpen, setDescriptionOpen] = useState(false)
-  const [subtasksOpen, setSubtasksOpen] = useState(false)
-  const [timelineOpen, setTimelineOpen] = useState(false)
-
-  // Fetch task when modal opens
-  useEffect(() => {
-    if (open && taskId) {
-      // Use initial task if available and matches ID
-      if (initialTask && initialTask.id === taskId) {
-        setTask(initialTask)
-        setIsLoading(false)
-      } else {
-        setIsLoading(true)
-        setError(null)
-        fetchTask(projectId, taskId)
-          .then((data) => {
-            setTask(data)
-          })
-          .catch((err) => {
-            console.error('Failed to fetch task:', err)
-            setError('Failed to load task details')
-          })
-          .finally(() => {
-            setIsLoading(false)
-          })
-      }
-    }
-  }, [open, taskId, projectId, initialTask])
-
-  // Fetch subtasks when task is loaded
-  useEffect(() => {
-    if (open && task) {
-      setIsLoadingSubtasks(true)
-      getSubtasksWithSteps(projectId, task.id)
-        .then((response) => {
-          setSubtasks(response.subtasks)
-        })
-        .catch((err) => {
-          console.error('Failed to fetch subtasks:', err)
-          setSubtasks([])
-        })
-        .finally(() => {
-          setIsLoadingSubtasks(false)
-        })
-    }
-  }, [open, task, projectId])
-
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!open) {
-      setIsEditing(false)
-      setEditTitle('')
-      setEditDescription('')
-      setError(null)
-      // Reset collapsible sections to collapsed
-      setDescriptionOpen(false)
-      setSubtasksOpen(false)
-      setTimelineOpen(false)
-    }
-  }, [open])
-
-  // Edit handlers
-  const handleEditStart = useCallback(() => {
-    if (!task) return
-    setEditTitle(task.title)
-    setEditDescription(task.description || '')
-    setIsEditing(true)
-  }, [task])
-
-  const handleEditCancel = useCallback(() => {
-    setIsEditing(false)
-    setEditTitle('')
-    setEditDescription('')
-  }, [])
-
-  const handleEditSave = useCallback(async () => {
-    if (!task) return
-    try {
-      const updated = await updateTask(projectId, task.id, {
-        title: editTitle,
-        description: editDescription,
-      })
-      setTask(updated)
-      onTaskUpdate?.(updated)
-      setIsEditing(false)
-    } catch (err) {
-      console.error('Failed to update task:', err)
-    }
-  }, [task, projectId, editTitle, editDescription, onTaskUpdate])
-
-  // Status change handlers
-  const handleStatusChange = useCallback(
-    async (newStatus: TaskStatus) => {
-      if (!task) return
-      try {
-        const updated = await updateTaskStatus(projectId, task.id, newStatus)
-        setTask(updated)
-        onTaskUpdate?.(updated)
-      } catch (err) {
-        console.error('Failed to update status:', err)
-      }
-    },
-    [task, projectId, onTaskUpdate],
-  )
-
-  // Subtask toggle handler
-  const handleSubtaskToggle = useCallback(
-    async (subtaskId: string, passes: boolean) => {
-      if (!task) return
-      try {
-        const updated = await updateSubtask(
-          projectId,
-          task.id,
-          subtaskId,
-          passes,
-        )
-        setSubtasks((prev) =>
-          prev.map((s) =>
-            s.subtask_id === subtaskId ? { ...s, ...updated } : s,
-          ),
-        )
-      } catch (err) {
-        console.error('Failed to update subtask:', err)
-        throw err
-      }
-    },
-    [task, projectId],
-  )
-
-  // Start execution handler
-  const handleStartExecution = useCallback(async () => {
-    if (!task) return
-    setIsExecuting(true)
-    setExecutionError(null)
-    try {
-      await executeTask(projectId, task.id)
-      // Refetch task to get updated status
-      const updated = await fetchTask(projectId, task.id)
-      setTask(updated)
-      onTaskUpdate?.(updated)
-    } catch (err) {
-      console.error('Failed to start execution:', err)
-      setExecutionError(
-        err instanceof Error ? err.message : 'Failed to start execution',
-      )
-    } finally {
-      setIsExecuting(false)
-    }
-  }, [task, projectId, onTaskUpdate])
-
-  // Stop execution handler (sends signal via WebSocket)
-  const handleStopExecution = useCallback(async () => {
-    if (!task) return
-    setIsStopping(true)
-    // Send stop signal - the WebSocket connection in ExecutionTimeline will handle this
-    // For now, we just update the status to paused
-    try {
-      const updated = await updateTaskStatus(projectId, task.id, 'paused')
-      setTask(updated)
-      onTaskUpdate?.(updated)
-    } catch (err) {
-      console.error('Failed to stop execution:', err)
-    } finally {
-      setIsStopping(false)
-    }
-  }, [task, projectId, onTaskUpdate])
-
-  // Objective edit handler
-  const handleObjectiveEdit = useCallback(
-    async (newObjective: string) => {
-      if (!task) return
-      // Note: Would need a separate API for objective
-      onTaskUpdate?.({ ...task, objective: newObjective })
-    },
-    [task, onTaskUpdate],
-  )
-
-  // Toggle autonomous flag
-  const handleToggleAutonomous = useCallback(async () => {
-    if (!task) return
-    setIsTogglingAutonomous(true)
-    try {
-      const updated = await updateTask(projectId, task.id, {
-        autonomous: !task.autonomous,
-      })
-      setTask(updated)
-      onTaskUpdate?.(updated)
-    } catch (err) {
-      console.error('Failed to toggle autonomous:', err)
-    } finally {
-      setIsTogglingAutonomous(false)
-    }
-  }, [task, projectId, onTaskUpdate])
+  const {
+    task,
+    subtasks,
+    isLoading,
+    isLoadingSubtasks,
+    error,
+    isEditing,
+    editTitle,
+    editDescription,
+    setEditDescription,
+    isExecuting,
+    isStopping,
+    executionError,
+    isTogglingAutonomous,
+    descriptionOpen,
+    subtasksOpen,
+    timelineOpen,
+    setDescriptionOpen,
+    setSubtasksOpen,
+    setTimelineOpen,
+    handleEditStart,
+    handleEditCancel,
+    handleEditSave,
+    handleStatusChange,
+    handleSubtaskToggle,
+    handleStartExecution,
+    handleStopExecution,
+    handleObjectiveEdit,
+    handleToggleAutonomous,
+    setEditTitle,
+  } = useTaskModal({
+    taskId,
+    projectId,
+    open,
+    initialTask,
+    onTaskUpdate,
+  })
 
   // Don't render if no task ID
   if (!taskId) return null
 
-  // Get config values from shared config
-  const typeConfig = task
-    ? getTaskTypeConfig(task.task_type)
-    : getTaskTypeConfig('task')
-  const colors = task ? getPriorityColors(task.priority) : getPriorityColors(2)
-  const status = task ? getStatusConfig(task.status) : getStatusConfig('pending')
-
   // Capability context
   const capability = task?.capability
-  const hasCriteria = capability && capability.criteria_total > 0
-  const allPassed =
-    hasCriteria && capability.criteria_passed === capability.criteria_total
-  const progressPct = hasCriteria
-    ? (capability.criteria_passed / capability.criteria_total) * 100
-    : 0
 
   // Status checks for timeline visibility
   const isRunning = task?.status === 'running'
@@ -373,42 +164,12 @@ export function TaskModal({
         {task && !isLoading && !error && (
           <>
             {/* Header */}
-            <div className="border-b border-slate-700 px-6 py-4">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span className="mono text-sm text-slate-500">{task.id}</span>
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${colors.bg} ${colors.text} ${colors.border}`}
-                >
-                  P{task.priority}
-                </span>
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded border flex items-center gap-1 ${typeConfig.className}`}
-                >
-                  {typeConfig.icon}
-                  {typeConfig.label}
-                </span>
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded border flex items-center gap-1 ${status.className}`}
-                >
-                  {status.icon}
-                  {status.label}
-                </span>
-                {/* Execution metadata badges (model, cost, retries) */}
-                <ExecutionBadges task={task} />
-              </div>
-              {isEditing ? (
-                <Input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="text-lg font-semibold"
-                  autoFocus
-                />
-              ) : (
-                <h2 className="display text-lg font-semibold text-white">
-                  {task.title}
-                </h2>
-              )}
-            </div>
+            <TaskModalHeader
+              task={task}
+              isEditing={isEditing}
+              editTitle={editTitle}
+              onEditTitleChange={setEditTitle}
+            />
 
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
@@ -468,56 +229,10 @@ export function TaskModal({
 
               {/* Linked Capability */}
               {capability && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                      <Link2 className="h-4 w-4" />
-                      Linked Capability
-                    </h3>
-                    <Link
-                      href={`/projects/${projectId}/components`}
-                      className="text-xs text-phosphor-400 hover:text-phosphor-300 flex items-center gap-1"
-                    >
-                      View Capabilities
-                      <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <span className="mono text-xs text-slate-500">
-                          {capability.capability_id}
-                        </span>
-                        <h4 className="text-sm font-medium text-white">
-                          {capability.name}
-                        </h4>
-                      </div>
-                    </div>
-
-                    {hasCriteria && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-slate-500">
-                            Criteria
-                          </span>
-                          <span
-                            className={`text-xs mono font-medium ${allPassed ? 'text-phosphor-400' : 'text-slate-400'}`}
-                          >
-                            {capability.criteria_passed}/
-                            {capability.criteria_total}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-300 ${allPassed ? 'bg-phosphor-500' : 'bg-blue-500'}`}
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <LinkedCapabilitySection
+                  capability={capability}
+                  projectId={projectId}
+                />
               )}
 
               {/* Criteria Progress */}
@@ -611,27 +326,7 @@ export function TaskModal({
               )}
 
               {/* Metadata */}
-              <div className="text-xs text-slate-500 space-y-1 pt-4 border-t border-slate-800">
-                <p>
-                  Status: <span className="text-slate-300">{task.status}</span>
-                </p>
-                {task.created_at && (
-                  <p>
-                    Created: {new Date(task.created_at).toLocaleDateString()}
-                  </p>
-                )}
-                {task.started_at && (
-                  <p>
-                    Started: {new Date(task.started_at).toLocaleDateString()}
-                  </p>
-                )}
-                {task.completed_at && (
-                  <p>
-                    Completed:{' '}
-                    {new Date(task.completed_at).toLocaleDateString()}
-                  </p>
-                )}
-              </div>
+              <TaskMetadata task={task} />
             </div>
           </>
         )}
