@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -16,6 +16,30 @@ from ..output import (
 )
 
 app = typer.Typer(help="Subtask management commands")
+
+
+def is_step_resolved(step: dict[str, Any], step_passes: dict[int, bool]) -> bool:
+    """Check if a step is resolved (passed or plan_defect with passing fix).
+
+    A step is considered resolved if:
+    1. It has passes=True, OR
+    2. It has status="plan_defect" AND its linked fix_step_number has passes=True
+
+    Args:
+        step: Step data dict with 'passes', 'status', and 'fix_step_number' fields
+        step_passes: Map of step_number -> passes for all steps in the subtask
+
+    Returns:
+        True if the step is resolved, False otherwise
+    """
+    if step.get("passes"):
+        return True
+    # plan_defect steps are resolved if their fix step passed
+    if step.get("status") == "plan_defect":
+        fix_num = step.get("fix_step_number")
+        if fix_num and step_passes.get(fix_num, False):
+            return True
+    return False
 
 
 @app.command("list")
@@ -205,20 +229,13 @@ def pass_subtask(
             steps_from_table = target.get("steps_from_table", [])
             if steps_from_table:
                 # Build map of step_number -> passes for fix step lookups
-                step_passes = {s["step_number"]: s.get("passes", False) for s in steps_from_table}
+                step_passes_map = {s["step_number"]: s.get("passes", False) for s in steps_from_table}
 
-                def is_step_resolved(step: dict) -> bool:
-                    """Check if a step is resolved (passed or plan_defect with passing fix)."""
-                    if step.get("passes"):
-                        return True
-                    # plan_defect steps are resolved if their fix step passed
-                    if step.get("status") == "plan_defect":
-                        fix_num = step.get("fix_step_number")
-                        if fix_num and step_passes.get(fix_num, False):
-                            return True
-                    return False
-
-                incomplete = [s["step_number"] for s in steps_from_table if not is_step_resolved(s)]
+                incomplete = [
+                    s["step_number"]
+                    for s in steps_from_table
+                    if not is_step_resolved(s, step_passes_map)
+                ]
                 if incomplete:
                     output_error(
                         f"Incomplete steps: {', '.join(map(str, incomplete))}. "
