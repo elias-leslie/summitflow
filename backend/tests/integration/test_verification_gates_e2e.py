@@ -58,7 +58,7 @@ def cleanup_tasks():
 def run_cli(args: list[str], check: bool = False) -> subprocess.CompletedProcess:
     """Run st CLI command and return result."""
     result = subprocess.run(
-        ["st"] + args,
+        ["st", *args],
         capture_output=True,
         text=True,
         timeout=30,
@@ -70,10 +70,9 @@ def run_cli(args: list[str], check: bool = False) -> subprocess.CompletedProcess
 
 def create_plan_file(plan: dict[str, Any]) -> Path:
     """Create a temporary plan.json file."""
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-    json.dump(plan, tmp)
-    tmp.close()
-    return Path(tmp.name)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+        json.dump(plan, tmp)
+        return Path(tmp.name)
 
 
 # ============================================================================

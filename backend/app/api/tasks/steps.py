@@ -302,16 +302,17 @@ async def update_step_fields(
     step_number: int,
     request: StepFieldsUpdate,
 ) -> StepResponse:
-    """Update step fields (verification and/or description).
+    """Update step description.
 
-    Use this to add or modify verify_command, expected_output, or description.
+    NOTE: verify_command and expected_output are immutable after creation.
+    Only the description field can be updated.
 
     Args:
         project_id: Project ID
         task_id: Task ID
         subtask_id: Subtask ID (e.g., "1.1")
         step_number: Step number (1-indexed)
-        request: Fields to update
+        request: Fields to update (description only)
 
     Returns:
         Updated step
@@ -326,8 +327,6 @@ async def update_step_fields(
         updated = storage_update_step_fields(
             subtask_id=table_id,
             step_number=step_number,
-            verify_command=request.verify_command,
-            expected_output=request.expected_output,
             description=request.description,
         )
     except Exception as e:

@@ -656,3 +656,137 @@ class TestVerifyPlanGates:
 
             assert result.exit_code == 0
             assert "PASS" in result.output
+
+
+class TestStepUpdateImmutableVerification:
+    """Test that verify_command and expected_output are immutable after creation.
+
+    Once a step is created with verification, the verify_command and expected_output
+    cannot be modified. This prevents gaming the verification system by changing
+    the verification to match incorrect implementation.
+    """
+
+    def test_update_verify_immutable_command_blocked(self, cleanup_test_tasks):
+        """st step update -v should be blocked with immutable error."""
+        # Create task and subtask
+        task = task_store.create_task(
+            project_id="summitflow",
+            title="CLI Step Update Immutable Test",
+            task_type="task",
+            priority=3,
+        )
+        cleanup_test_tasks.append(task["id"])
+
+        from app.storage import subtasks as subtask_store
+
+        subtask_store.create_subtask(
+            task_id=task["id"],
+            subtask_id="1.1",
+            description="Test subtask",
+            phase="backend",
+            display_order=0,
+            steps=[
+                {"description": "Test step", "verify_command": "echo ok", "expected_output": "ok"}
+            ],
+        )
+
+        # Try to update verify_command - should be blocked
+        result = runner.invoke(
+            step_app,
+            [
+                "update",
+                "1.1",
+                "1",
+                "-v",
+                "echo modified",
+                "--task",
+                task["id"],
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "immutable" in result.output.lower()
+
+    def test_step_update_expected_output_blocked(self, cleanup_test_tasks):
+        """st step update -e should be blocked with immutable error."""
+        task = task_store.create_task(
+            project_id="summitflow",
+            title="CLI Step Update Expected Immutable Test",
+            task_type="task",
+            priority=3,
+        )
+        cleanup_test_tasks.append(task["id"])
+
+        from app.storage import subtasks as subtask_store
+
+        subtask_store.create_subtask(
+            task_id=task["id"],
+            subtask_id="1.1",
+            description="Test subtask",
+            phase="backend",
+            display_order=0,
+            steps=[
+                {"description": "Test step", "verify_command": "echo ok", "expected_output": "ok"}
+            ],
+        )
+
+        # Try to update expected_output - should be blocked
+        result = runner.invoke(
+            step_app,
+            [
+                "update",
+                "1.1",
+                "1",
+                "-e",
+                "modified output",
+                "--task",
+                task["id"],
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "immutable" in result.output.lower()
+
+    def test_step_update_description_allowed(self, cleanup_test_tasks):
+        """st step update -d should still work (only description is mutable)."""
+        task = task_store.create_task(
+            project_id="summitflow",
+            title="CLI Step Update Description Test",
+            task_type="task",
+            priority=3,
+        )
+        cleanup_test_tasks.append(task["id"])
+
+        from app.storage import subtasks as subtask_store
+
+        subtask_store.create_subtask(
+            task_id=task["id"],
+            subtask_id="1.1",
+            description="Test subtask",
+            phase="backend",
+            display_order=0,
+            steps=[
+                {
+                    "description": "Original description",
+                    "verify_command": "echo ok",
+                    "expected_output": "ok",
+                }
+            ],
+        )
+
+        # Update description - should work
+        result = runner.invoke(
+            step_app,
+            [
+                "update",
+                "1.1",
+                "1",
+                "-d",
+                "Updated description",
+                "--task",
+                task["id"],
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Updated" in result.output

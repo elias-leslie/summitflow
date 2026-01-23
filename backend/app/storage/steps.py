@@ -166,7 +166,17 @@ class StepVerificationError(Exception):
         step_number: The step that failed verification
         output: The verification command output
         exit_code: The exit code from the verify_command
+        next_steps: Guidance for what to do next
     """
+
+    # Standard guidance for all verification failures
+    NEXT_STEPS_GUIDANCE = """
+Next steps:
+  1. Fix your implementation to match the expected behavior
+  2. If the plan is wrong, create a fix subtask: st subtask create <parent-id> -d "Fix: ..."
+  3. Log the issue: st log <task-id> "Plan defect: ..."
+
+Do NOT modify the verify_command - verification gates are immutable."""
 
     def __init__(
         self,
@@ -175,10 +185,13 @@ class StepVerificationError(Exception):
         output: str,
         exit_code: int = 1,
     ):
-        super().__init__(message)
+        # Append guidance to message
+        full_message = f"{message}\n{self.NEXT_STEPS_GUIDANCE}"
+        super().__init__(full_message)
         self.step_number = step_number
         self.output = output
         self.exit_code = exit_code
+        self.next_steps = self.NEXT_STEPS_GUIDANCE
 
 
 def run_verify_command(
@@ -386,17 +399,16 @@ def update_step_passes(
 def update_step_fields(
     subtask_id: str,
     step_number: int,
-    verify_command: str | None = None,
-    expected_output: str | None = None,
     description: str | None = None,
 ) -> dict[str, Any] | None:
-    """Update step fields (verification and/or description).
+    """Update step description.
+
+    NOTE: verify_command and expected_output are immutable after creation.
+    Only the description field can be updated.
 
     Args:
         subtask_id: Parent subtask ID
         step_number: Step number to update
-        verify_command: Bash command to verify completion
-        expected_output: Description of what success looks like
         description: Step description
 
     Returns:
@@ -405,14 +417,6 @@ def update_step_fields(
     # Build dynamic UPDATE based on provided fields
     updates: list[str] = []
     values: list[Any] = []
-
-    if verify_command is not None:
-        updates.append("verify_command = %s")
-        values.append(verify_command)
-
-    if expected_output is not None:
-        updates.append("expected_output = %s")
-        values.append(expected_output)
 
     if description is not None:
         updates.append("description = %s")

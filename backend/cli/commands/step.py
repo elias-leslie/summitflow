@@ -20,6 +20,10 @@ def pass_step(
 ) -> None:
     """Mark a step as passed.
 
+    Runs the verify_command and checks for expected_output.
+    If verification fails, guides you toward fixing the implementation
+    or creating a fix subtask if the plan is wrong.
+
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
@@ -34,6 +38,22 @@ def pass_step(
     try:
         client.update_step(task_id, subtask_id, step_number, passes=True)
     except APIError as e:
+        # Check if this is a verification failure
+        detail = e.detail if isinstance(e.detail, dict) else {}
+        if detail.get("verification_failed"):
+            # Display verification failure with guidance
+            typer.echo(f"ERROR {e.detail}", err=True)
+            # Show guidance for verification failure - create fix subtask if plan is wrong
+            typer.echo("\n--- Verification Failed ---", err=True)
+            typer.echo("Next steps:", err=True)
+            typer.echo("  1. Fix your implementation to match the expected behavior", err=True)
+            typer.echo(
+                f"  2. If plan is wrong, create fix: st subtask create {subtask_id.split('.')[0]}.X "
+                f"-d 'Fix: ...' --task {task_id}",
+                err=True,
+            )
+            typer.echo(f"  3. Log the issue: st log {task_id} 'Plan defect: ...'", err=True)
+            raise typer.Exit(1) from None
         handle_api_error(e)
         return
 
@@ -83,29 +103,48 @@ def update_step(
     subtask_id: str,
     step_number: int,
     verify_command: Annotated[
-        str | None, typer.Option("--verify", "-v", help="Bash command to verify completion")
+        str | None,
+        typer.Option("--verify", "-v", help="[BLOCKED] Verification commands are immutable"),
     ] = None,
     expected_output: Annotated[
-        str | None, typer.Option("--expected", "-e", help="What success looks like")
+        str | None,
+        typer.Option("--expected", "-e", help="[BLOCKED] Expected output is immutable"),
     ] = None,
     description: Annotated[
         str | None, typer.Option("--desc", "-d", help="Step description")
     ] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Update step verification or description.
+    """Update step description only.
 
-    Use this to add or modify verify_command and expected_output on existing steps.
+    NOTE: verify_command and expected_output are immutable after creation.
+    If verification is wrong, create a fix subtask instead of modifying the plan.
+
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step update 1.1 1 -v "rg 'pattern' file.py" -e "Pattern found" --task task-abc123
-        st step update 1.1 1 -v "dt pytest" -e "Tests pass"    # Uses active context
+        st step update 1.1 1 -d "Clearer description" --task task-abc123
+        st step update 1.1 1 -d "Clearer description"    # Uses active context
     """
     from ..context import require_task_id
 
-    if not any([verify_command, expected_output, description]):
-        typer.echo("Error: At least one of --verify, --expected, or --desc required", err=True)
+    # Verification commands are immutable - reject attempts to modify
+    if verify_command is not None or expected_output is not None:
+        typer.echo(
+            "Error: verify_command and expected_output are immutable after creation.\n"
+            "\n"
+            "Verification gates define the contract. If the step fails:\n"
+            "  1. Fix your implementation to match the expected behavior\n"
+            "  2. If the plan is wrong, create a fix subtask: st subtask create <id> ...\n"
+            "  3. Log the issue: st log <task-id> 'Plan defect: ...'\n"
+            "\n"
+            "Do NOT modify verification to make failing steps pass.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if not description:
+        typer.echo("Error: --desc/-d is required (only description can be updated)", err=True)
         raise typer.Exit(1)
 
     task_id = require_task_id(task_id)
@@ -116,8 +155,6 @@ def update_step(
             task_id,
             subtask_id,
             step_number,
-            verify_command=verify_command,
-            expected_output=expected_output,
             description=description,
         )
     except APIError as e:

@@ -21,6 +21,17 @@ _human_output: bool = False
 _compact_output: bool = False
 _progress_only: bool = False
 
+# --- Verification Failure Guidance ---
+# Immutable verification gates - guidance for handling failures
+
+VERIFICATION_FAIL_HEADER = "--- Verification Failed ---"
+VERIFICATION_FAIL_GUIDANCE = """Next steps:
+  1. Fix your implementation to match the expected behavior
+  2. If plan is wrong, create fix subtask: st subtask create <parent>.X -d 'Fix: ...'
+  3. Log the issue: st log <task-id> 'Plan defect: ...'
+
+Do NOT modify the verify_command - verification gates are immutable."""
+
 
 def set_human_output(enabled: bool) -> None:
     """Enable or disable human-readable (pretty-printed) output."""

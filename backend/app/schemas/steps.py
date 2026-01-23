@@ -91,12 +91,10 @@ class StepCreateWithVerification(BaseModel):
 
 
 class StepFieldsUpdate(BaseModel):
-    """Request model for updating step fields (verification and/or description)."""
+    """Request model for updating step fields (description only).
 
-    verify_command: str | None = Field(
-        default=None, min_length=1, description="Bash command to verify completion"
-    )
-    expected_output: str | None = Field(
-        default=None, min_length=1, description="Description of what success looks like"
-    )
+    NOTE: verify_command and expected_output are immutable after creation.
+    Only the description field can be updated.
+    """
+
     description: str | None = Field(default=None, min_length=1, description="Step description")

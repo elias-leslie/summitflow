@@ -136,7 +136,7 @@ class TestUpdateStepPasses:
         """Test marking a step as passing with successful verification."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="exit 0"
+            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="ok"
         )
 
         updated = step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -151,7 +151,7 @@ class TestUpdateStepPasses:
         """Test marking a step as not passing (resetting)."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="exit 0"
+            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="ok"
         )
         step_store.update_step_passes(test_subtask["id"], 1, True)
 
@@ -167,7 +167,7 @@ class TestUpdateStepPasses:
         """Test toggling step pass status multiple times."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="exit 0"
+            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="ok"
         )
 
         # Toggle on
@@ -200,7 +200,7 @@ class TestUpdateStepPasses:
         """Test that verification failure raises error."""
         mock_verify.return_value = ("failed", 1, "error output")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="exit 1", expected_output="exit 0"
+            test_subtask["id"], 1, "Test step", verify_command="exit 1", expected_output="ok"
         )
 
         with pytest.raises(StepVerificationError, match="verification failed"):
@@ -291,10 +291,10 @@ class TestGetStepSummary:
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
-            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "exit 0"},
-            {"description": "Step 4", "verify_command": "echo 4", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "ok"},
+            {"description": "Step 4", "verify_command": "echo 4", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -311,8 +311,8 @@ class TestGetStepSummary:
         """Test summary with all steps complete."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -345,9 +345,9 @@ class TestStepGates:
         """Can mark step 2 as passed even if step 1 is not passed (logs info)."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
-            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -359,9 +359,9 @@ class TestStepGates:
         """Can mark step 2 as passed after step 1 is passed."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
-            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -376,8 +376,8 @@ class TestStepGates:
     def test_step_gate_force_param_removed(self, test_subtask):
         """Force flag has been removed - no bypass available."""
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -392,8 +392,8 @@ class TestStepGates:
         """First step has no gate check (no previous steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -406,9 +406,9 @@ class TestStepGates:
         """Gate logs missing steps but allows completion with valid verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "exit 0"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "exit 0"},
-            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "exit 0"},
+            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
+            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "ok"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 

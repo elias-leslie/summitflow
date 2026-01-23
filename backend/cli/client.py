@@ -751,28 +751,23 @@ class STClient:
         task_id: str,
         subtask_id: str,
         step_number: int,
-        verify_command: str | None = None,
-        expected_output: str | None = None,
         description: str | None = None,
     ) -> dict[str, Any]:
-        """Update step fields (verification and/or description).
+        """Update step description.
+
+        NOTE: verify_command and expected_output are immutable after creation.
+        Only the description field can be updated.
 
         Args:
             task_id: Task ID
             subtask_id: Subtask ID (e.g., "1.1")
             step_number: Step number (1-indexed)
-            verify_command: Bash command to verify completion
-            expected_output: Description of what success looks like
             description: Step description
 
         Returns:
             Updated step dict.
         """
         data: dict[str, Any] = {}
-        if verify_command is not None:
-            data["verify_command"] = verify_command
-        if expected_output is not None:
-            data["expected_output"] = expected_output
         if description is not None:
             data["description"] = description
 

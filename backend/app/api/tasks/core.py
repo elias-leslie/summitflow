@@ -527,14 +527,16 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                                 if step.expected_output:
                                     step_dict["expected_output"] = step.expected_output
                                 steps_as_dicts.append(step_dict)
-                        subtask_dicts.append({
-                            "subtask_id": s.subtask_id,
-                            "phase": s.phase,
-                            "description": s.description,
-                            "steps": steps_as_dicts,
-                            "display_order": s.display_order,
-                            "details": s.details,
-                        })
+                        subtask_dicts.append(
+                            {
+                                "subtask_id": s.subtask_id,
+                                "phase": s.phase,
+                                "description": s.description,
+                                "steps": steps_as_dicts,
+                                "display_order": s.display_order,
+                                "details": s.details,
+                            }
+                        )
                     created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)
 
                     # Handle subtask dependencies
