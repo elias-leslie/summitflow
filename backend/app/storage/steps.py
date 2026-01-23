@@ -325,6 +325,22 @@ def update_step_passes(
             exit_code=exit_code,
         )
 
+    # Check if expected_output appears in actual output
+    if expected_output not in output:
+        message = (
+            f"Step {step_number} verification failed: expected output not found.\n"
+            f"Command: {verify_command}\n"
+            f"Expected: {expected_output}\n"
+            f"Actual output: {output[:500]}"
+        )
+
+        raise StepVerificationError(
+            message=message,
+            step_number=step_number,
+            output=output,
+            exit_code=0,
+        )
+
     logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
 
     # Verification passed - mark step as passed

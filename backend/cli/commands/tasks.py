@@ -1287,9 +1287,7 @@ def verify_plan(
         last_desc = last_subtask.get("description", "").lower()
 
         is_verification = (
-            last_phase == "verification"
-            or "verification" in last_desc
-            or "verify" in last_desc
+            last_phase == "verification" or "verification" in last_desc or "verify" in last_desc
         )
         if not is_verification:
             issues.append(
@@ -1490,9 +1488,7 @@ def import_plan(
         last_desc = last_subtask.get("description", "").lower()
 
         is_verification = (
-            last_phase == "verification"
-            or "verification" in last_desc
-            or "verify" in last_desc
+            last_phase == "verification" or "verification" in last_desc or "verify" in last_desc
         )
         if not is_verification:
             issues.append(

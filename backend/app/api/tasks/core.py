@@ -511,17 +511,30 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
             created_subtasks = None
             if item.subtasks:
                 try:
-                    subtask_dicts = [
-                        {
+                    subtask_dicts = []
+                    for s in item.subtasks:
+                        # Convert StepInput models to dicts for storage layer
+                        steps_as_dicts: list[str | dict[str, Any]] = []
+                        for step in s.steps:
+                            if isinstance(step, str):
+                                steps_as_dicts.append(step)
+                            else:
+                                step_dict: dict[str, Any] = {"description": step.description}
+                                if step.spec:
+                                    step_dict["spec"] = step.spec
+                                if step.verify_command:
+                                    step_dict["verify_command"] = step.verify_command
+                                if step.expected_output:
+                                    step_dict["expected_output"] = step.expected_output
+                                steps_as_dicts.append(step_dict)
+                        subtask_dicts.append({
                             "subtask_id": s.subtask_id,
                             "phase": s.phase,
                             "description": s.description,
-                            "steps": s.steps,
+                            "steps": steps_as_dicts,
                             "display_order": s.display_order,
                             "details": s.details,
-                        }
-                        for s in item.subtasks
-                    ]
+                        })
                     created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)
 
                     # Handle subtask dependencies

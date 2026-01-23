@@ -261,10 +261,16 @@ class TestSubtaskCreate:
         cleanup_test_tasks.append(task["id"])
 
         # Use --steps-json with proper verify_command and expected_output
-        steps_json = json.dumps([
-            {"description": "First step", "verify_command": "echo ok", "expected_output": "ok"},
-            {"description": "Second step", "verify_command": "echo done", "expected_output": "done"},
-        ])
+        steps_json = json.dumps(
+            [
+                {"description": "First step", "verify_command": "echo ok", "expected_output": "ok"},
+                {
+                    "description": "Second step",
+                    "verify_command": "echo done",
+                    "expected_output": "done",
+                },
+            ]
+        )
 
         result = runner.invoke(
             subtask_app,

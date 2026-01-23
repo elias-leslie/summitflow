@@ -490,12 +490,8 @@ class TestGetSubtaskSummary:
 
         # Create subtasks with steps (required for completion)
         steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
-        subtask1 = subtask_store.create_subtask(
-            test_task["id"], "1.1", "First", 0, steps=steps
-        )
-        subtask2 = subtask_store.create_subtask(
-            test_task["id"], "1.2", "Second", 1, steps=steps
-        )
+        subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=steps)
+        subtask2 = subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=steps)
 
         # Complete all steps first
         step_store.update_step_passes(subtask1["id"], 1, True)

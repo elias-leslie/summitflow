@@ -5,7 +5,6 @@ import {
   Activity,
   AlertCircle,
   Archive,
-  Camera,
   ChevronLeft,
   ChevronRight,
   FolderKanban,

@@ -10,7 +10,9 @@
 
 const PORTS = { frontend: 3001, backend: 8001 }
 const PROD_DOMAIN = 'dev.summitflow.dev'
-const PROD_API_DOMAIN = 'devapi.summitflow.dev'
+// Kept for future cross-origin API routing if CF Access removed
+const _PROD_API_DOMAIN = 'devapi.summitflow.dev'
+void _PROD_API_DOMAIN // suppress unused warning
 
 /**
  * Get the base URL for SummitFlow backend API calls.
