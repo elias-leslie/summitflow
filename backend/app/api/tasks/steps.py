@@ -443,11 +443,14 @@ async def update_step(
     """
     _verify_task_project(task_id, project_id)
 
+    from ...storage.projects import get_project_root_path
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
+    project_root = get_project_root_path(project_id)
+
     try:
-        updated = update_step_passes(table_id, step_number, request.passes)
+        updated = update_step_passes(table_id, step_number, request.passes, project_root=project_root)
     except StepGateError as e:
         raise HTTPException(
             status_code=400,

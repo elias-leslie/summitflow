@@ -211,8 +211,15 @@ Do NOT modify the verify_command - verification gates are immutable."""
 def run_verify_command(
     verify_command: str,
     timeout: int = VERIFY_COMMAND_TIMEOUT,
+    cwd: str | None = None,
 ) -> tuple[str, int, str]:
     """Execute a verify_command and return classification.
+
+    Args:
+        verify_command: The bash command to run
+        timeout: Command timeout in seconds
+        cwd: Working directory to run from. If None, uses /home/kasadis/summitflow
+             as fallback for backwards compatibility.
 
     Returns:
         Tuple of (status, exit_code, output) where status is one of:
@@ -220,6 +227,9 @@ def run_verify_command(
         - 'failed': Exit code != 0
         - 'crashed': Exit code 126-127 or exception
     """
+    # Default to summitflow for backwards compatibility
+    working_dir = cwd or "/home/kasadis/summitflow"
+
     try:
         result = subprocess.run(
             verify_command,
@@ -227,7 +237,7 @@ def run_verify_command(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd="/home/kasadis/summitflow",
+            cwd=working_dir,
         )
 
         exit_code = result.returncode
@@ -251,6 +261,7 @@ def update_step_passes(
     subtask_id: str,
     step_number: int,
     passes: bool,
+    project_root: str | None = None,
 ) -> dict[str, Any] | None:
     """Update step passes status with mandatory verification.
 
@@ -266,6 +277,8 @@ def update_step_passes(
         subtask_id: Parent subtask ID
         step_number: Step number to update
         passes: Whether the step passes
+        project_root: Working directory for verify_command execution.
+                      If None, defaults to /home/kasadis/summitflow.
 
     Returns:
         Updated step dict or None if not found.
@@ -334,8 +347,8 @@ def update_step_passes(
             exit_code=-1,
         )
 
-    # Run verification
-    status, exit_code, output = run_verify_command(verify_command)
+    # Run verification from project root
+    status, exit_code, output = run_verify_command(verify_command, cwd=project_root)
 
     if status != "passed":
         message = (

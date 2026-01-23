@@ -520,7 +520,12 @@ class ImplementationExecutor:
         for step in steps:
             step_number = step.get("step_number")
             if step_number and not step.get("passes"):
-                update_step_passes(subtask_full_id, step_number, True)
+                update_step_passes(
+                    subtask_full_id,
+                    step_number,
+                    True,
+                    project_root=str(self.repo_path),
+                )
                 logger.debug(
                     "step_marked_complete",
                     subtask_id=subtask_full_id,

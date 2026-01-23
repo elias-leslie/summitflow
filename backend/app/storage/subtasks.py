@@ -298,14 +298,30 @@ def update_subtask_passes(
         )
 
     # Check for incomplete steps, but allow plan_defect steps to be skipped
+    # ONLY if their linked fix_step is still passing
     from .steps import STEP_STATUS_PLAN_DEFECT
+
+    # Build a lookup for step passes status
+    step_passes_lookup = {s["step_number"]: s.get("passes", False) for s in steps}
 
     incomplete = []
     plan_defects = []
+    invalid_plan_defects = []
+
     for s in steps:
         if not s.get("passes"):
             if s.get("status") == STEP_STATUS_PLAN_DEFECT:
-                plan_defects.append(s["step_number"])
+                # Validate the fix_step is still passing
+                fix_step_num = s.get("fix_step_number")
+                if fix_step_num and step_passes_lookup.get(fix_step_num):
+                    # Fix step exists and is passing - allow plan_defect to be skipped
+                    plan_defects.append(s["step_number"])
+                else:
+                    # Fix step missing or not passing - treat as incomplete
+                    invalid_plan_defects.append(
+                        (s["step_number"], fix_step_num)
+                    )
+                    incomplete.append(s["step_number"])
             else:
                 incomplete.append(s["step_number"])
 
@@ -314,6 +330,11 @@ def update_subtask_passes(
             f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
             "Each step must pass its verify_command before the subtask can be marked complete."
         )
+        if invalid_plan_defects:
+            msg += (
+                f" Steps {[s for s, _ in invalid_plan_defects]} are marked plan_defect "
+                "but their fix steps are not passing."
+            )
         if plan_defects:
             msg += f" (Plan defect steps {plan_defects} are allowed to be skipped.)"
         raise SubtaskGateError(msg, incomplete_steps=incomplete)
