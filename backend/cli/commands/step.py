@@ -329,26 +329,31 @@ def insert_step(
 def mark_plan_defect(
     subtask_id: str,
     step_number: int,
-    fix_subtask: Annotated[
-        str,
-        typer.Option("--fix", "-f", help="ID of the COMPLETED fix subtask (e.g., '1.4')"),
+    fix_step: Annotated[
+        int,
+        typer.Option("--fix", "-f", help="Step number of the PASSED fix step (e.g., 3)"),
     ],
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Mark a step as a plan defect with a linked fix subtask.
+    """Mark a step as a plan defect with a linked fix step.
 
     Use this when a step's verification is fundamentally wrong (wrong path,
     wrong API, impossible expected_output). This allows the subtask to be
     passed without fixing the broken verification.
 
-    REQUIRED: You must first create and complete a fix subtask that implements
-    the correct solution. The --fix flag links to that completed subtask.
+    REQUIRED: You must first create and pass a fix step within the same subtask
+    that has the correct verification. The --fix flag links to that passed step.
+
+    Workflow:
+    1. Add fix step:    st step add <subtask> "Fix: correct verification"
+    2. Pass fix step:   st step pass <subtask> <fix_step>
+    3. Mark defect:     st step defect <subtask> <step> --fix <fix_step>
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step defect 1.1 4 --fix 1.4 --task task-abc123
-        st step defect 2.3 1 --fix 2.9              # Uses active context
+        st step defect 1.1 1 --fix 3 --task task-abc123
+        st step defect 2.3 1 --fix 4              # Uses active context
     """
     from ..context import require_task_id
 
@@ -357,7 +362,7 @@ def mark_plan_defect(
 
     try:
         client.update_step_status(
-            task_id, subtask_id, step_number, status="plan_defect", fix_subtask_id=fix_subtask
+            task_id, subtask_id, step_number, status="plan_defect", fix_step_number=fix_step
         )
     except APIError as e:
         handle_api_error(e)
@@ -365,5 +370,5 @@ def mark_plan_defect(
 
     output_success(
         f"Marked step {step_number} of subtask {subtask_id} as plan_defect "
-        f"(linked to fix subtask {fix_subtask})"
+        f"(linked to fix step {fix_step})"
     )

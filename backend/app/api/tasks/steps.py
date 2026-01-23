@@ -359,15 +359,20 @@ async def update_step_status(
     Use 'plan_defect' when the step's verification is fundamentally wrong
     and cannot be fixed by changing the implementation.
 
-    For 'plan_defect' status, you MUST provide 'fix_subtask_id' pointing to
-    a completed fix subtask that implements the correct solution.
+    For 'plan_defect' status, you MUST provide 'fix_step_number' pointing to
+    a passed step within the same subtask that has the correct verification.
+
+    Workflow:
+    1. Add fix step: st step add <subtask> "Fix: correct verification"
+    2. Pass fix step: st step pass <subtask> <fix_step_number>
+    3. Mark defect: st step defect <subtask> <step> --fix <fix_step_number>
 
     Args:
         project_id: Project ID
         task_id: Task ID
         subtask_id: Subtask ID (e.g., "1.1")
         step_number: Step number (1-indexed)
-        request: Dict with 'status' and optional 'fix_subtask_id' fields
+        request: Dict with 'status' and optional 'fix_step_number' fields
 
     Returns:
         Updated step
@@ -382,15 +387,20 @@ async def update_step_status(
     if not status:
         raise HTTPException(status_code=400, detail="status field is required")
 
-    # For plan_defect, convert fix_subtask_id to full table ID
-    fix_subtask_id = request.get("fix_subtask_id")
-    if fix_subtask_id and not fix_subtask_id.startswith(task_id):
-        # Convert "1.4" to "task-abc123-1.4"
-        fix_subtask_id = f"{task_id}-{fix_subtask_id}"
+    # For plan_defect, get fix_step_number (integer, not subtask ID)
+    fix_step_number = request.get("fix_step_number")
+    if fix_step_number is not None:
+        try:
+            fix_step_number = int(fix_step_number)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"fix_step_number must be an integer, got: {fix_step_number}"
+            ) from None
 
     try:
         updated = storage_update_step_status(
-            table_id, step_number, status, fix_subtask_id=fix_subtask_id
+            table_id, step_number, status, fix_step_number=fix_step_number
         )
     except PlanDefectError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None

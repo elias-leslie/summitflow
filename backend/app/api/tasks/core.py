@@ -91,8 +91,8 @@ def _get_step_verification_status(task_id: str) -> dict[str, Any]:
             step_id = f"{subtask_id}.{step.get('step_number', 0)}"
             if step.get("passes"):
                 verified += 1
-            elif step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_subtask_id"):
-                # Plan defect steps with completed fix subtasks count as verified
+            elif step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_step_number"):
+                # Plan defect steps with linked fix step count as verified
                 verified += 1
             else:
                 unverified.append(step_id)

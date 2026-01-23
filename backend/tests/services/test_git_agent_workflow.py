@@ -93,7 +93,7 @@ class TestGetBlobShas:
 class TestAutoClaimWithWorktree:
     """Tests for auto_claim_with_worktree function."""
 
-    @patch("app.services.git_service.task_store")
+    @patch("app.storage.tasks")
     @patch("app.services.worktree_manager.WorktreeManager.create_worktree")
     def test_creates_worktree_and_updates_task(
         self,
@@ -113,7 +113,7 @@ class TestAutoClaimWithWorktree:
         assert "base_sha" in result
         mock_store.update_task.assert_called_once()
 
-    @patch("app.services.git_service.task_store")
+    @patch("app.storage.tasks")
     @patch("app.services.worktree_manager.WorktreeManager.create_worktree")
     def test_raises_on_worktree_error(
         self,
@@ -132,7 +132,7 @@ class TestAutoClaimWithWorktree:
 class TestAutoCreatePr:
     """Tests for auto_create_pr function."""
 
-    @patch("app.services.git_service.task_store")
+    @patch("app.storage.tasks")
     @patch("app.services.git_service.push_branch")
     @patch("subprocess.run")
     def test_creates_pr_successfully(
@@ -155,7 +155,7 @@ class TestAutoCreatePr:
         assert result["branch_name"] == "exec/task-123"
         mock_store.update_task_status.assert_called_with("task-123", "ai_reviewing")
 
-    @patch("app.services.git_service.task_store")
+    @patch("app.storage.tasks")
     def test_fails_on_missing_task(self, mock_store: MagicMock) -> None:
         mock_store.get_task.return_value = None
 
@@ -164,7 +164,7 @@ class TestAutoCreatePr:
 
         assert "not found" in str(exc_info.value)
 
-    @patch("app.services.git_service.task_store")
+    @patch("app.storage.tasks")
     def test_fails_on_missing_branch(self, mock_store: MagicMock) -> None:
         mock_store.get_task.return_value = {"id": "task-123", "branch_name": None}
 

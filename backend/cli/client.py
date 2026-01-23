@@ -783,7 +783,7 @@ class STClient:
         subtask_id: str,
         step_number: int,
         status: str,
-        fix_subtask_id: str | None = None,
+        fix_step_number: int | None = None,
     ) -> dict[str, Any]:
         """Update step status.
 
@@ -792,14 +792,14 @@ class STClient:
             subtask_id: Subtask ID (e.g., "1.1")
             step_number: Step number (1-indexed)
             status: New status (pending, passed, failed, plan_defect)
-            fix_subtask_id: For plan_defect: ID of the completed fix subtask
+            fix_step_number: For plan_defect: step number of the passed fix step
 
         Returns:
             Updated step dict.
         """
         data = {"status": status}
-        if fix_subtask_id:
-            data["fix_subtask_id"] = fix_subtask_id
+        if fix_step_number is not None:
+            data["fix_step_number"] = fix_step_number
 
         response = self._client.patch(
             self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status"),
