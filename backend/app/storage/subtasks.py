@@ -160,6 +160,31 @@ def get_subtask(task_id: str, subtask_id: str) -> dict[str, Any] | None:
     return _row_to_dict(row)
 
 
+def get_subtask_by_table_id(table_id: str) -> dict[str, Any] | None:
+    """Get a single subtask by its full table ID.
+
+    Args:
+        table_id: Full subtask ID (e.g., "task-abc123-1.1")
+
+    Returns:
+        Subtask dict or None if not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {SUBTASK_COLUMNS}
+            FROM task_subtasks
+            WHERE id = %s
+            """,
+            (table_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return _row_to_dict(row)
+
+
 def get_subtasks_for_task(
     task_id: str,
     include_steps: bool = False,
@@ -272,13 +297,32 @@ def update_subtask_passes(
             incomplete_steps=[],
         )
 
-    incomplete = [s["step_number"] for s in steps if not s.get("passes")]
+    # Check for incomplete steps, but allow plan_defect steps to be skipped
+    from .steps import STEP_STATUS_PLAN_DEFECT
+
+    incomplete = []
+    plan_defects = []
+    for s in steps:
+        if not s.get("passes"):
+            if s.get("status") == STEP_STATUS_PLAN_DEFECT:
+                plan_defects.append(s["step_number"])
+            else:
+                incomplete.append(s["step_number"])
 
     if incomplete:
-        raise SubtaskGateError(
+        msg = (
             f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
-            "Each step must pass its verify_command before the subtask can be marked complete.",
-            incomplete_steps=incomplete,
+            "Each step must pass its verify_command before the subtask can be marked complete."
+        )
+        if plan_defects:
+            msg += f" (Plan defect steps {plan_defects} are allowed to be skipped.)"
+        raise SubtaskGateError(msg, incomplete_steps=incomplete)
+
+    if plan_defects:
+        logger.info(
+            "Subtask %s passing with plan_defect steps: %s",
+            subtask_id,
+            plan_defects,
         )
 
     # All steps passed - mark subtask as passed

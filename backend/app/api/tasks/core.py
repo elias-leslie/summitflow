@@ -69,10 +69,12 @@ def _get_step_verification_status(task_id: str) -> dict[str, Any]:
 
     Returns dict with:
     - total: int (total steps)
-    - verified: int (passed steps)
+    - verified: int (passed steps, including plan_defect with completed fix)
     - unverified: list of step IDs that haven't passed
     - all_verified: bool
     """
+    from ...storage.steps import STEP_STATUS_PLAN_DEFECT
+
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
     if not subtasks:
         return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
@@ -88,6 +90,9 @@ def _get_step_verification_status(task_id: str) -> dict[str, Any]:
             total += 1
             step_id = f"{subtask_id}.{step.get('step_number', 0)}"
             if step.get("passes"):
+                verified += 1
+            elif step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_subtask_id"):
+                # Plan defect steps with completed fix subtasks count as verified
                 verified += 1
             else:
                 unverified.append(step_id)

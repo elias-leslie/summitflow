@@ -22,11 +22,23 @@ from .connection import get_connection
 
 logger = logging.getLogger(__name__)
 
-# Column list for all step SELECT/RETURNING queries (10 columns)
-STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, expected_output"""
+# Column list for all step SELECT/RETURNING queries (12 columns)
+STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, expected_output, status, fix_subtask_id"""
 
 # Expected column count for row validation
-EXPECTED_STEP_COLUMNS = 10
+EXPECTED_STEP_COLUMNS = 12
+
+# Valid step status values
+STEP_STATUS_PENDING = "pending"
+STEP_STATUS_PASSED = "passed"
+STEP_STATUS_FAILED = "failed"
+STEP_STATUS_PLAN_DEFECT = "plan_defect"
+VALID_STEP_STATUSES = {
+    STEP_STATUS_PENDING,
+    STEP_STATUS_PASSED,
+    STEP_STATUS_FAILED,
+    STEP_STATUS_PLAN_DEFECT,
+}
 
 # Timeout for verify_command execution (30 seconds)
 VERIFY_COMMAND_TIMEOUT = 30
@@ -35,9 +47,9 @@ VERIFY_COMMAND_TIMEOUT = 30
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a step dict.
 
-    Column order (10 columns):
+    Column order (12 columns):
         id, subtask_id, step_number, description, spec, passes, passed_at, created_at,
-        verify_command, expected_output
+        verify_command, expected_output, status, fix_subtask_id
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -54,6 +66,8 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "created_at": row[7].isoformat() if row[7] else None,
         "verify_command": row[8],
         "expected_output": row[9],
+        "status": row[10] or STEP_STATUS_PENDING,
+        "fix_subtask_id": row[11],
     }
 
 
@@ -728,3 +742,97 @@ def get_step_summary(subtask_id: str) -> dict[str, Any]:
         "completed": completed,
         "progress_percent": progress_percent,
     }
+
+
+class PlanDefectError(Exception):
+    """Raised when a plan_defect operation is invalid."""
+
+    pass
+
+
+def update_step_status(
+    subtask_id: str,
+    step_number: int,
+    status: str,
+    fix_subtask_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Update step status.
+
+    Valid status values:
+    - 'pending': Step not yet attempted
+    - 'passed': Step completed successfully
+    - 'failed': Step failed verification
+    - 'plan_defect': Step's verification was wrong (plan issue, not implementation)
+
+    For 'plan_defect' status, a fix_subtask_id is REQUIRED and the fix subtask
+    must be completed (passes=True). This ensures the plan defect has been
+    addressed with an alternative solution.
+
+    Args:
+        subtask_id: Parent subtask ID
+        step_number: Step number to update
+        status: New status value
+        fix_subtask_id: For plan_defect only: ID of the completed fix subtask
+
+    Returns:
+        Updated step dict or None if not found.
+
+    Raises:
+        ValueError: If status is not a valid value
+        PlanDefectError: If plan_defect without valid completed fix subtask
+    """
+    if status not in VALID_STEP_STATUSES:
+        raise ValueError(
+            f"Invalid status '{status}'. Valid values: {', '.join(sorted(VALID_STEP_STATUSES))}"
+        )
+
+    # For plan_defect status, require and validate fix_subtask_id
+    if status == STEP_STATUS_PLAN_DEFECT:
+        if not fix_subtask_id:
+            raise PlanDefectError(
+                "plan_defect status requires a fix_subtask_id. "
+                "Create a fix subtask with correct verification, pass it, "
+                "then mark this step as plan_defect."
+            )
+
+        # Validate the fix subtask exists and is completed
+        from .subtasks import get_subtask_by_table_id
+
+        fix_subtask = get_subtask_by_table_id(fix_subtask_id)
+        if not fix_subtask:
+            raise PlanDefectError(
+                f"Fix subtask '{fix_subtask_id}' not found. "
+                "Create and complete a fix subtask first."
+            )
+
+        if not fix_subtask.get("passes"):
+            raise PlanDefectError(
+                f"Fix subtask '{fix_subtask_id}' is not completed. "
+                "Pass the fix subtask before marking this step as plan_defect."
+            )
+
+        logger.info(
+            "Step %d marked as plan_defect with fix subtask %s",
+            step_number,
+            fix_subtask_id,
+        )
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE task_subtask_steps
+            SET status = %s, fix_subtask_id = %s
+            WHERE subtask_id = %s AND step_number = %s
+            RETURNING {STEP_COLUMNS}
+            """,
+            (status, fix_subtask_id, subtask_id, step_number),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+        return None
+
+    logger.info("Updated step %d status to '%s' for subtask %s", step_number, status, subtask_id)
+    return _row_to_dict(row)

@@ -31,6 +31,7 @@ AGENT_WORKER = "agent:coder"  # Code generation worker (Flash-based with Sonnet 
 AGENT_SUPERVISOR = "agent:supervisor"  # Supervisor for coordination (Sonnet-based)
 AGENT_REVIEWER = "agent:reviewer"  # Code review (Opus-based)
 AGENT_FIXER = "agent:fixer"  # Error fixing (Sonnet-based with escalation)
+AGENT_QA = "agent:qa"  # QA supervisor for task quality review (Opus-based)
 
 # Default models for each use case
 DEFAULT_CLAUDE_MODEL = CLAUDE_SONNET
@@ -65,4 +66,22 @@ VALID_AGENT_MODELS = (
     AGENT_SUPERVISOR,
     AGENT_REVIEWER,
     AGENT_FIXER,
+    AGENT_QA,
 )
+
+# =============================================================================
+# QA Review Thresholds
+# =============================================================================
+# These control when the QA review loop escalates to different agents/modes
+
+# Number of worker retry attempts before escalating to supervisor
+QA_WORKER_STUCK_THRESHOLD = 3
+
+# Number of supervisor attempts before escalating to human
+QA_SUPERVISOR_STUCK_THRESHOLD = 2
+
+# Total number of QA review attempts before escalation to human
+QA_ESCALATION_THRESHOLD = 5
+
+# Maximum number of QA review iterations before giving up
+QA_MAX_ITERATIONS = 50

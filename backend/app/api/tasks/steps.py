@@ -342,6 +342,73 @@ async def update_step_fields(
 
 
 @router.patch(
+    "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status",
+    response_model=StepResponse,
+)
+async def update_step_status(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+    request: dict[str, Any],
+) -> StepResponse:
+    """Update step status.
+
+    Valid status values: pending, passed, failed, plan_defect.
+
+    Use 'plan_defect' when the step's verification is fundamentally wrong
+    and cannot be fixed by changing the implementation.
+
+    For 'plan_defect' status, you MUST provide 'fix_subtask_id' pointing to
+    a completed fix subtask that implements the correct solution.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        step_number: Step number (1-indexed)
+        request: Dict with 'status' and optional 'fix_subtask_id' fields
+
+    Returns:
+        Updated step
+    """
+    _verify_task_project(task_id, project_id)
+
+    from ...storage.steps import PlanDefectError
+    from ...storage.steps import update_step_status as storage_update_step_status
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+    status = request.get("status")
+    if not status:
+        raise HTTPException(status_code=400, detail="status field is required")
+
+    # For plan_defect, convert fix_subtask_id to full table ID
+    fix_subtask_id = request.get("fix_subtask_id")
+    if fix_subtask_id and not fix_subtask_id.startswith(task_id):
+        # Convert "1.4" to "task-abc123-1.4"
+        fix_subtask_id = f"{task_id}-{fix_subtask_id}"
+
+    try:
+        updated = storage_update_step_status(
+            table_id, step_number, status, fix_subtask_id=fix_subtask_id
+        )
+    except PlanDefectError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step {step_number} not found for subtask {subtask_id}",
+        )
+
+    return StepResponse(**updated)
+
+
+@router.patch(
     "/projects/{project_id}/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}",
     response_model=StepResponse,
 )
