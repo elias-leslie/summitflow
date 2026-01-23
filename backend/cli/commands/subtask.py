@@ -204,7 +204,21 @@ def pass_subtask(
         if target:
             steps_from_table = target.get("steps_from_table", [])
             if steps_from_table:
-                incomplete = [s["step_number"] for s in steps_from_table if not s.get("passes")]
+                # Build map of step_number -> passes for fix step lookups
+                step_passes = {s["step_number"]: s.get("passes", False) for s in steps_from_table}
+
+                def is_step_resolved(step: dict) -> bool:
+                    """Check if a step is resolved (passed or plan_defect with passing fix)."""
+                    if step.get("passes"):
+                        return True
+                    # plan_defect steps are resolved if their fix step passed
+                    if step.get("status") == "plan_defect":
+                        fix_num = step.get("fix_step_number")
+                        if fix_num and step_passes.get(fix_num, False):
+                            return True
+                    return False
+
+                incomplete = [s["step_number"] for s in steps_from_table if not is_step_resolved(s)]
                 if incomplete:
                     output_error(
                         f"Incomplete steps: {', '.join(map(str, incomplete))}. "
