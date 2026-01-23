@@ -231,9 +231,9 @@ def run_verify_command(
     working_dir = cwd or "/home/kasadis/summitflow"
 
     try:
+        # Use bash explicitly since commands may use bash-specific features like 'source'
         result = subprocess.run(
-            verify_command,
-            shell=True,
+            ["bash", "-c", verify_command],
             capture_output=True,
             text=True,
             timeout=timeout,

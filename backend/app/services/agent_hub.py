@@ -516,9 +516,9 @@ RULES:
     def _run_command(self, cmd: str, cwd: Path) -> dict[str, Any]:
         """Run a command and capture output."""
         try:
+            # Use bash explicitly since commands may use bash-specific features like 'source'
             result = subprocess.run(
-                cmd,
-                shell=True,
+                ["bash", "-c", cmd],
                 cwd=cwd,
                 capture_output=True,
                 text=True,
