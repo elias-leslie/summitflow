@@ -12,9 +12,9 @@ from difflib import SequenceMatcher
 VARIABLE_PATTERNS = [
     (r"0x[0-9a-fA-F]+", "<addr>"),  # Memory addresses
     (r"line \d+", "line <N>"),  # Line numbers
+    (r"\d{2}:\d{2}:\d{2}", "<time>"),  # Times (must be before colon pattern)
     (r":\d+:", ":<N>:"),  # File:line:col patterns
     (r"\d{4}-\d{2}-\d{2}", "<date>"),  # Dates
-    (r"\d{2}:\d{2}:\d{2}", "<time>"),  # Times
     (r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<uuid>"),  # UUIDs
     (r"/tmp/[^\s]+", "<tmpfile>"),  # Temp files
     (r"task-[a-z0-9]+", "task-<id>"),  # Task IDs
