@@ -1694,7 +1694,7 @@ def import_plan(
                     typer.echo(f"  Warning: Failed to create dependencies: {dep_err}")
 
             task = client.get_task(task_id)
-            typer.echo(f"{task_id} updated")
+            # Will print summary after task_spirit write
 
         except APIError as e:
             handle_api_error(e)
@@ -1721,7 +1721,7 @@ def import_plan(
 
         task = created[0]
         task_id = task["id"]
-        typer.echo(f"{task_id} created")
+        # Will print summary after task_spirit write
 
     # Write to task_spirit table for normalized storage
     from app.storage.task_spirit import upsert_task_spirit
@@ -1751,12 +1751,10 @@ def import_plan(
             complexity=complexity,
         )
     except Exception as e:
-        typer.echo(f"  Warning: Failed to write task_spirit: {e}")
+        typer.echo(f"WARN task_spirit write failed: {e}", err=True)
 
-    # Output summary
-    typer.echo(f"  title: {task.get('title', plan['title'])}")
-    typer.echo(f"  complexity: {task.get('complexity', complexity)}")
-    typer.echo(f"  subtasks: {len(subtasks)}")
+    # TOON summary - will add criteria count after creation
+    criteria_count = 0
 
     # Create acceptance criteria if provided
     ac_list = plan.get("acceptance_criteria", [])
@@ -1775,15 +1773,12 @@ def import_plan(
 
         try:
             result = client.batch_create_task_criteria(task_id, criteria_items)
-            created_count = len(result.get("created", []))
-            error_count = len(result.get("errors", []))
-            typer.echo(f"  criteria: {created_count} created")
-            if error_count > 0:
-                typer.echo(f"  criteria errors: {error_count}")
-                for err in result.get("errors", []):
-                    typer.echo(f"    - {err.get('criterion', '')[:30]}: {err.get('error', '')}")
+            criteria_count = len(result.get("created", []))
         except APIError as e:
-            typer.echo(f"  Warning: Failed to create criteria: {e.detail}")
+            typer.echo(f"WARN criteria failed: {e.detail}", err=True)
+
+    # Final TOON summary
+    typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks|{criteria_count} criteria")
 
 
 @app.command()
@@ -1803,7 +1798,7 @@ def approve(
     try:
         result = approve_plan(task_id, approved_by="user")
         if result:
-            typer.echo(f"APPROVED: {task_id} - ready to run")
+            typer.echo(f"APPROVED:{task_id}")
         else:
             output_error(f"Task {task_id} not found in task_spirit table")
             raise typer.Exit(1)
@@ -1836,7 +1831,7 @@ def qa_pass(
                 f"Use: st criterion list --task {task_id}"
             )
             raise typer.Exit(1)
-        typer.echo(f"QA:PASSED: {task_id}")
+        typer.echo(f"QA:PASSED:{task_id}")
     except APIError as e:
         # Check for trigger rejection
         if "unverified criteria" in str(e.detail).lower():
@@ -1856,7 +1851,7 @@ def qa_fail(
     client = STClient(require_project=False)
     try:
         client.update_task(task_id, qa_status="failed")
-        typer.echo(f"QA:FAILED: {task_id}")
+        typer.echo(f"QA:FAILED:{task_id}")
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -1885,7 +1880,7 @@ def qa_skip(
 
     try:
         client.update_task(task_id, qa_status="skipped")
-        typer.echo(f"QA:SKIPPED: {task_id}")
+        typer.echo(f"QA:SKIPPED:{task_id}")
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -1925,21 +1920,17 @@ def work(
     if show:
         ctx = get_active_context()
         if ctx:
-            typer.echo(f"ACTIVE:{ctx.task_id}")
-            if ctx.set_at:
-                typer.echo(f"  set_at: {ctx.set_at}")
-            if ctx.project_id:
-                typer.echo(f"  project: {ctx.project_id}")
+            typer.echo(f"ACTIVE:{ctx.task_id}|{ctx.project_id or ''}")
         else:
-            typer.echo("No active context")
+            typer.echo("ACTIVE:(none)")
         return
 
     # --done: clear context
     if done:
         if clear_active_task_id():
-            typer.echo("CLEARED: active context")
+            typer.echo("CLEARED")
         else:
-            typer.echo("No active context to clear")
+            typer.echo("ACTIVE:(none)")
         return
 
     # Set context: requires task_id
@@ -1963,10 +1954,9 @@ def work(
 
     # Set active context
     project_id = task.get("project_id")
-    context_path = set_active_task_id(task_id, project_id)
+    set_active_task_id(task_id, project_id)
 
     # Output confirmation
-    typer.echo(f"ACTIVE:{task_id}")
-    typer.echo(f"  title: {task.get('title', '')[:60]}")
-    typer.echo(f"  status: {task.get('status', 'unknown')}")
-    typer.echo(f"  context: {context_path}")
+    status = task.get("status", "unknown")
+    title = task.get("title", "")[:50]
+    typer.echo(f"ACTIVE:{task_id}|{status}|{title}")

@@ -193,7 +193,7 @@ def create_subtask(
         handle_api_error(e)
         return
 
-    output_success(f"Created subtask {subtask_id} for task {task_id}")
+    output_success(subtask_id)
 
 
 @app.command("pass")
@@ -239,10 +239,7 @@ def pass_subtask(
                     if not is_step_resolved(s, step_passes_map)
                 ]
                 if incomplete:
-                    output_error(
-                        f"Incomplete steps: {', '.join(map(str, incomplete))}. "
-                        f"Complete with: st step pass {task_id} {subtask_id} <step#>"
-                    )
+                    output_error(f"INCOMPLETE:{subtask_id}|steps:{','.join(map(str, incomplete))}")
                     raise typer.Exit(1)
     except APIError:
         pass  # Continue - let API handle any errors
@@ -253,7 +250,7 @@ def pass_subtask(
         handle_api_error(e)
         return
 
-    output_success(f"Marked subtask {subtask_id} as passed")
+    output_success(subtask_id)
 
 
 @app.command("delete")
@@ -280,4 +277,4 @@ def delete_subtask(
         handle_api_error(e)
         return
 
-    output_success(f"Deleted subtask {subtask_id} from task {task_id}")
+    print(f"DEL {subtask_id}")

@@ -58,7 +58,7 @@ def pass_step(
         handle_api_error(e)
         return
 
-    output_success(f"Marked step {step_number} of subtask {subtask_id} as passed")
+    output_success(f"{subtask_id}.{step_number}")
 
 
 @app.command("new")
@@ -96,7 +96,7 @@ def new_step(
         return
 
     step_num = result.get("step_number", "?")
-    output_success(f"Created step {step_num} for subtask {subtask_id}")
+    output_success(f"{subtask_id}.{step_num}")
 
 
 @app.command("update")
@@ -162,7 +162,7 @@ def update_step(
         handle_api_error(e)
         return
 
-    output_success(f"Updated step {step_number} of subtask {subtask_id}")
+    output_success(f"{subtask_id}.{step_number}")
 
 
 @app.command("create")
@@ -196,10 +196,7 @@ def create_steps(
         return
 
     created = result.get("created", [])
-    output_success(f"Created {len(created)} steps for subtask {subtask_id}")
-    typer.echo(
-        "NOTE: Steps have no verification. Use 'st step update' to add verify_command.", err=True
-    )
+    output_success(f"{subtask_id}|{len(created)} steps")
 
 
 @app.command("add")
@@ -232,11 +229,9 @@ def add_steps(
     created = result.get("created", [])
     if created:
         start_num = created[0].get("step_number", "?")
-        output_success(
-            f"Added {len(created)} steps to subtask {subtask_id} (starting at step {start_num})"
-        )
+        output_success(f"{subtask_id}|+{len(created)} from {start_num}")
     else:
-        output_success("No steps added")
+        output_success(f"{subtask_id}|+0")
 
 
 @app.command("list")
@@ -291,7 +286,7 @@ def delete_step(
         handle_api_error(e)
         return
 
-    output_success(f"Deleted step {step_number} from subtask {subtask_id}")
+    print(f"DEL {subtask_id}.{step_number}")
 
 
 @app.command("insert")
@@ -323,7 +318,7 @@ def insert_step(
         return
 
     step_num = result.get("step_number", position)
-    output_success(f"Inserted step {step_num} into subtask {subtask_id}")
+    output_success(f"{subtask_id}.{step_num}")
 
 
 @app.command("defect")
@@ -369,7 +364,4 @@ def mark_plan_defect(
         handle_api_error(e)
         return
 
-    output_success(
-        f"Marked step {step_number} of subtask {subtask_id} as plan_defect "
-        f"(linked to fix step {fix_step})"
-    )
+    output_success(f"{subtask_id}.{step_number}|defect→{fix_step}")
