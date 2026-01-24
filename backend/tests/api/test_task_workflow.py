@@ -185,7 +185,7 @@ class TestContextEndpoint:
                 ],
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 201  # 201 Created for POST
 
         # Get context and verify subtask is included
         response = client.get(
