@@ -1,21 +1,17 @@
 """Index file generator for Explorer service.
 
 Generates a .index.yaml file at project root containing:
-- Health summary (healthy/warning/error counts)
-- Hotspots (top refactor targets)
 - Pages (all frontend routes)
-- Endpoints (grouped by category)
+- Endpoints (all API routes, fully expanded)
 - Tables (all database tables)
 - Background tasks (all scheduled jobs)
-- Dependencies summary
 - Folder structure
 
-Constraint: Output should be <150 lines to stay scannable by AI.
+Constraint: Output should be scannable by AI agents.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,37 +23,6 @@ from ...storage import explorer as storage
 from .base import get_project_root
 
 logger = get_logger(__name__)
-
-
-def _get_health_summary(project_id: str) -> dict[str, int]:
-    """Get health status counts."""
-    stats = storage.get_stats(project_id)
-    by_health: dict[str, int] = stats.get("by_health", {})
-    return by_health
-
-
-def _get_hotspots(project_id: str, limit: int = 5) -> list[str]:
-    """Get top refactor targets as compact strings."""
-    targets = storage.get_refactor_targets(project_id, limit=limit, code_only=True)
-
-    hotspots = []
-    for t in targets.get("targets", []):
-        parts = [t["path"]]
-        details = []
-
-        if t.get("lines_of_code", 0) > 500:
-            details.append(f"{t['lines_of_code']} LOC")
-        if t.get("complexity_score", 0) > 20:
-            details.append(f"complexity: {t['complexity_score']:.0f}")
-        if not t.get("test_file_exists", True):
-            details.append("untested")
-
-        if details:
-            parts.append(f"({', '.join(details)})")
-
-        hotspots.append(" ".join(parts))
-
-    return hotspots
 
 
 def _get_pages(project_id: str) -> list[str]:
@@ -76,17 +41,23 @@ def _get_pages(project_id: str) -> list[str]:
     return sorted(pages)
 
 
-def _get_endpoints_grouped(project_id: str) -> dict[str, int]:
-    """Get endpoints grouped by category."""
-    entries = storage.get_entries(project_id, {"type": "endpoint", "limit": 200})
+def _get_endpoints(project_id: str) -> list[str]:
+    """Get all API endpoints, fully expanded."""
+    entries = storage.get_entries(project_id, {"type": "endpoint", "limit": 500})
 
-    categories: dict[str, int] = defaultdict(int)
+    endpoints = []
     for e in entries:
-        category = e.get("metadata", {}).get("category", "other")
-        categories[category] += 1
+        path = e.get("path", "")
+        meta = e.get("metadata", {})
+        func_name = meta.get("function_name", "")
 
-    # Sort by count descending
-    return dict(sorted(categories.items(), key=lambda x: -x[1]))
+        # Format: "GET /api/tasks/{id} (get_task)"
+        if func_name:
+            endpoints.append(f"{path} ({func_name})")
+        else:
+            endpoints.append(path)
+
+    return sorted(endpoints)
 
 
 def _get_tables(project_id: str) -> list[str]:
@@ -109,25 +80,6 @@ def _get_background_tasks(project_id: str) -> list[str]:
             tasks.append(name)
 
     return sorted(tasks)
-
-
-def _get_dependencies_summary(project_id: str) -> dict[str, Any]:
-    """Get dependencies summary."""
-    entries = storage.get_entries(project_id, {"type": "dependency", "limit": 500})
-
-    total = len(entries)
-    outdated = 0
-    vulnerable = 0
-
-    for e in entries:
-        meta = e.get("metadata", {})
-        if meta.get("is_outdated"):
-            outdated += 1
-        vulns = meta.get("vulnerabilities", {})
-        if vulns and (vulns.get("critical", 0) + vulns.get("high", 0) > 0):
-            vulnerable += 1
-
-    return {"total": total, "outdated": outdated, "vulnerable": vulnerable}
 
 
 def _get_folders(project_id: str) -> dict[str, str]:
@@ -182,13 +134,10 @@ def generate_index(project_id: str) -> str:
         YAML string with comprehensive project overview
     """
     # Gather all data
-    health = _get_health_summary(project_id)
-    hotspots = _get_hotspots(project_id)
     pages = _get_pages(project_id)
-    endpoints = _get_endpoints_grouped(project_id)
+    endpoints = _get_endpoints(project_id)
     tables = _get_tables(project_id)
     tasks = _get_background_tasks(project_id)
-    deps = _get_dependencies_summary(project_id)
     folders = _get_folders(project_id)
 
     # Build index structure
@@ -197,19 +146,11 @@ def generate_index(project_id: str) -> str:
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
     }
 
-    # Health summary
-    if health:
-        index_data["health"] = health
-
-    # Hotspots (actionable)
-    if hotspots:
-        index_data["hotspots"] = hotspots
-
-    # Pages (what the app does)
+    # Pages (frontend routes)
     if pages:
         index_data["pages"] = pages
 
-    # Endpoints (API surface, grouped)
+    # Endpoints (full API surface)
     if endpoints:
         index_data["endpoints"] = endpoints
 
@@ -220,10 +161,6 @@ def generate_index(project_id: str) -> str:
     # Background tasks
     if tasks:
         index_data["tasks"] = tasks
-
-    # Dependencies summary
-    if deps["total"] > 0:
-        index_data["dependencies"] = deps
 
     # Folder structure
     if folders:

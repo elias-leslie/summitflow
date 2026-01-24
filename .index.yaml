@@ -1,15 +1,5 @@
 project: summitflow
-generated_at: 2026-01-24 07:00 UTC
-health:
-  error: 15
-  healthy: 1319
-  warning: 114
-hotspots:
-- backend/cli/commands/tasks.py (1972 LOC, untested)
-- frontend/components/tasks/TasksTab.tsx (796 LOC, untested)
-- 'backend/app/services/autonomous/prompt_builder.py (complexity: 35, untested)'
-- frontend/lib/api/tasks.ts (638 LOC, untested)
-- backend/app/api/tasks/core.py (935 LOC, untested)
+generated_at: 2026-01-24 07:03 UTC
 pages:
 - / (app)
 - /about (about)
@@ -25,11 +15,44 @@ pages:
 - /projects/new (new)
 - /settings (settings)
 endpoints:
-  projects: 17
-  api: 11
-  explorer: 8
-  health: 1
-  analytics: 1
+- DELETE /projects/{project_id}/backups/{backup_id} (delete_backup)
+- DELETE /{project_id} (delete_project)
+- GET /activity (get_activity_feed)
+- GET /notifications (get_user_notifications)
+- GET /projects/{project_id}/backups/{backup_id}/restore/preview (preview_restore)
+- GET /projects/{project_id}/ideas (list_ideas)
+- GET /projects/{project_id}/ideas/{idea_id} (get_idea)
+- GET /projects/{project_id}/quality/results (list_check_results)
+- GET /projects/{project_id}/tdd/component-suggestions (get_component_suggestions)
+- GET /projects/{project_id}/tdd/suggestions (get_suggestions)
+- GET /schemas (list_schemas)
+- GET /schemas/{schema_name} (get_schema)
+- GET /{project_id}/analysis/coverage-gaps (get_coverage_gaps)
+- GET /{project_id}/explorer (list_entries)
+- GET /{project_id}/explorer/children (get_children)
+- GET /{project_id}/explorer/entry/{entry_id} (get_entry_by_id)
+- GET /{project_id}/explorer/refactor-targets (get_refactor_targets)
+- GET /{project_id}/explorer/scan-comparison (get_scan_comparison)
+- GET /{project_id}/explorer/scan-history (get_scan_history)
+- GET /{project_id}/explorer/scan/status (get_scan_status)
+- GET /{project_id}/explorer/stats (get_stats)
+- GET /{project_id}/explorer/{entry_type}/{path:path} (get_entry)
+- GET /{project_id}/refactor-sessions/active (get_active_session)
+- GET /{project_id}/refactor-sessions/{task_id} (get_session)
+- PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
+- POST /projects/{project_id}/errors/console (capture_console_error)
+- POST /projects/{project_id}/ideas/execute-now (execute_ideas_now)
+- POST /projects/{project_id}/ideas/{idea_id}/approve (approve_idea)
+- POST /projects/{project_id}/ideas/{idea_id}/refine (refine_idea_endpoint)
+- POST /projects/{project_id}/ideas/{idea_id}/retry (retry_refinement)
+- POST /projects/{project_id}/quality/auto-fix (trigger_auto_fix)
+- POST /projects/{project_id}/quality/results (create_check_result)
+- POST /projects/{project_id}/quality/results/{result_id}/fix-attempt (record_fix_attempt)
+- POST /projects/{project_id}/quality/results/{result_id}/mark-fixed (mark_result_fixed)
+- POST /projects/{project_id}/quality/sync (sync_results)
+- POST /{project_id}/explorer/scan (trigger_scan)
+- POST /{project_id}/refactor-sessions (create_session)
+- POST /{project_id}/refactor-sessions/{task_id}/complete (complete_session)
 tables:
 - agent_sessions
 - artifacts
@@ -80,10 +103,6 @@ tasks:
 - run_scheduled_backups (every 1 minute)
 - scan_all_projects (every 1 minute)
 - weekly_deep_scan (every 1 minute)
-dependencies:
-  total: 65
-  outdated: 9
-  vulnerable: 0
 folders:
   (root): 25 files - services, tests
   .claude: 3 files
