@@ -23,6 +23,7 @@ Metadata schema (per architecture doc):
 
 from __future__ import annotations
 
+import contextlib
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -181,10 +182,14 @@ class TaskScanner(BaseScanner):
             task_block_match = re.search(task_block_pattern, content, re.DOTALL)
             if task_block_match:
                 block = task_block_match.group(1)
-                # Numeric schedule (seconds)
-                schedule_match = re.search(r'"schedule":\s*(\d+(?:\.\d+)?)', block)
+                # Numeric schedule - capture expressions like "60 * 60 * 6"
+                schedule_match = re.search(r'"schedule":\s*([\d\s\*\+\-\/\.]+)', block)
                 if schedule_match:
-                    schedule[task_name]["schedule_seconds"] = float(schedule_match.group(1))
+                    expr = schedule_match.group(1).strip().rstrip(",")
+                    # Safely evaluate simple math expressions (only digits and operators)
+                    if re.match(r'^[\d\s\*\+\-\/\.]+$', expr):
+                        with contextlib.suppress(Exception):
+                            schedule[task_name]["schedule_seconds"] = float(eval(expr))
                 # Crontab schedule
                 crontab_match = re.search(r'"schedule":\s*crontab\(([^)]+)\)', block)
                 if crontab_match:

@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-01-24 07:03 UTC
+generated_at: 2026-01-24 07:07 UTC
 pages:
 - / (app)
 - /about (about)
@@ -88,21 +88,21 @@ tables:
 - terminal_sessions
 - user_prompts
 tasks:
-- autonomous_work_pickup (every 1 minute)
-- cleanup_debug_captures (every 1 minute)
-- cleanup_orphaned_worktrees (every 1 minute)
-- cleanup_stale_tasks (every 1 minute)
-- daily_code_health_scan (every 1 minute)
-- generate_tasks_from_scan (every 1 minute)
-- monitor_browser_errors (every 1 minute)
-- monitor_systemd_errors (every 1 minute)
-- orchestrate_self_healing (every 1 minute)
-- process_crowdsourced_ideas (every 1 minute)
-- reset_expired_task_claims (every 1 minute)
-- review_pending_tasks (every 1 minute)
-- run_scheduled_backups (every 1 minute)
-- scan_all_projects (every 1 minute)
-- weekly_deep_scan (every 1 minute)
+- autonomous_work_pickup (every 30 minutes)
+- cleanup_debug_captures (every 1 day)
+- cleanup_orphaned_worktrees (every 6 hours)
+- cleanup_stale_tasks (every 1 day)
+- daily_code_health_scan (every 1 day)
+- generate_tasks_from_scan (every 7 days)
+- monitor_browser_errors (every 6 hours)
+- monitor_systemd_errors (every 5 minutes)
+- orchestrate_self_healing (every 15 minutes)
+- process_crowdsourced_ideas (every 1 day)
+- reset_expired_task_claims (every 1 hour)
+- review_pending_tasks (every 30 minutes)
+- run_scheduled_backups (every 1 hour)
+- scan_all_projects (every 6 hours)
+- weekly_deep_scan (every 7 days)
 folders:
   (root): 25 files - services, tests
   .claude: 3 files
