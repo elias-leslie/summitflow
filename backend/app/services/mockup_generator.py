@@ -13,20 +13,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_hub import AgentHubClient
 from agent_hub.exceptions import AgentHubError
 
 from ..constants import CLAUDE_SONNET, GEMINI_IMAGE, GEMINI_PRO
 from ..logging_config import get_logger
 from ..storage import mockups as mockups_storage
+from .agent_hub_client import get_sync_client
 
 logger = get_logger(__name__)
 
 # Directory for storing mockup images
 MOCKUP_BASE_DIR = Path("/tmp/summitflow/mockups")
 
-# Agent Hub configuration
-AGENT_HUB_URL = "http://localhost:8003"
+# Note: Agent Hub configuration moved to agent_hub_client.py
 
 
 def _generate_mockup_id() -> str:
@@ -47,9 +46,9 @@ class MockupResult:
     generation_time_ms: int = 0
 
 
-def _get_agent_hub_client() -> AgentHubClient:
+def _get_agent_hub_client() -> Any:
     """Get Agent Hub client for image generation."""
-    return AgentHubClient(base_url=AGENT_HUB_URL)
+    return get_sync_client()
 
 
 def _build_mockup_prompt(
@@ -629,7 +628,6 @@ def _analyze_screenshot_with_vision(
     Returns:
         Tuple of (recommendations, issues_count, error)
     """
-    from agent_hub import AgentHubClient
     from agent_hub.models import ImageContent, MessageInput, TextContent
 
     try:
@@ -657,7 +655,7 @@ def _analyze_screenshot_with_vision(
         )
 
         # Call Gemini Pro vision via Agent Hub
-        client = AgentHubClient(base_url=AGENT_HUB_URL, client_name="summitflow")
+        client = get_sync_client()
         response = client.complete(
             model=GEMINI_PRO,  # gemini-3-pro-preview has vision capabilities
             messages=[message],
@@ -702,8 +700,6 @@ def _generate_mockup_image(
     Returns:
         Path to the generated mockup image, or None if generation failed
     """
-    from agent_hub import AgentHubClient
-
     try:
         # Build a prompt that describes what the improved design should look like
         prompt = f"""Generate a UI mockup image showing an IMPROVED version of a web application page.
@@ -732,7 +728,7 @@ OUTPUT:
 A single polished UI mockup image showing the IMPROVED design with all issues fixed."""
 
         # Call Gemini Image via Agent Hub
-        client = AgentHubClient(base_url=AGENT_HUB_URL, client_name="summitflow")
+        client = get_sync_client()
         response = client.generate_image(
             prompt=prompt,
             project_id="summitflow",

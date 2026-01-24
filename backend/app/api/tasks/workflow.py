@@ -1,9 +1,10 @@
 """Tasks API - Workflow endpoints.
 
-Handles plan approval, context retrieval, and export:
+Handles plan approval, context retrieval, export, and logs:
 - POST /approve: Approve a task's plan
 - GET /context: Full task context (TOON default)
 - GET /export: Complete task JSON for plan.json round-trip
+- GET /logs: Task progress log entries (TOON default)
 """
 
 from __future__ import annotations
@@ -399,3 +400,48 @@ async def export_task(
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
 
     return _build_export_data(task, spirit, subtasks)
+
+
+@router.get("/projects/{project_id}/tasks/{task_id}/logs", response_model=None)
+async def get_task_logs(
+    project_id: str,
+    task_id: str,
+    format: str | None = Query(None, description="Output format: 'json' for JSON (default is TOON)"),
+) -> PlainTextResponse | dict[str, Any]:
+    """Get task progress log entries.
+
+    Returns TOON format by default:
+    ```
+    LOGS[3]:task-abc123
+    [2026-01-23 10:00] Plan defect in subtask 1.2...
+    [2026-01-23 11:00] Gap analysis completed...
+    [2026-01-23 12:00] Session paused at subtask 2.1
+    ```
+
+    Use ?format=json for JSON response.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        format: Output format ('json' for JSON, default is TOON)
+    """
+    task = _verify_task_project(task_id, project_id)
+
+    # Get progress log
+    progress_log = task.get("progress_log") or []
+    if isinstance(progress_log, str):
+        progress_log = [progress_log] if progress_log else []
+
+    if format == "json":
+        return {
+            "task_id": task_id,
+            "entries": progress_log,
+            "count": len(progress_log),
+        }
+
+    # Default: TOON format
+    lines = [f"LOGS[{len(progress_log)}]:{task_id}"]
+    for entry in progress_log:
+        lines.append(entry)
+
+    return PlainTextResponse(content="\n".join(lines))
