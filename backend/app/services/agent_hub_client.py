@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent_hub import AgentHubClient, CompletionResponse
+from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
 from agent_hub.exceptions import AgentHubError
 
 from ..logging_config import get_logger
@@ -108,7 +108,68 @@ class LLMClient(ABC):
 AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
 
+# SummitFlow client credentials for Agent Hub authentication
+SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
+SUMMITFLOW_CLIENT_SECRET = os.getenv("SUMMITFLOW_CLIENT_SECRET")
+SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
+
 AgentType = Literal["claude", "gemini"]
+
+
+def get_sync_client(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 600.0,
+    client_name: str = "summitflow",
+) -> AgentHubClient:
+    """Get a configured sync Agent Hub client with credentials.
+
+    Args:
+        base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
+        api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
+        timeout: Request timeout in seconds (default: 600)
+        client_name: Client identifier for usage tracking
+
+    Returns:
+        Configured AgentHubClient with credentials injected
+    """
+    return AgentHubClient(
+        base_url=base_url or AGENT_HUB_URL,
+        api_key=api_key or AGENT_HUB_API_KEY,
+        timeout=timeout,
+        client_name=client_name,
+        client_id=SUMMITFLOW_CLIENT_ID,
+        client_secret=SUMMITFLOW_CLIENT_SECRET,
+        request_source=SUMMITFLOW_REQUEST_SOURCE,
+    )
+
+
+def get_async_client(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 600.0,
+    client_name: str = "summitflow",
+) -> AsyncAgentHubClient:
+    """Get a configured async Agent Hub client with credentials.
+
+    Args:
+        base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
+        api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
+        timeout: Request timeout in seconds (default: 600)
+        client_name: Client identifier for usage tracking
+
+    Returns:
+        Configured AsyncAgentHubClient with credentials injected
+    """
+    return AsyncAgentHubClient(
+        base_url=base_url or AGENT_HUB_URL,
+        api_key=api_key or AGENT_HUB_API_KEY,
+        timeout=timeout,
+        client_name=client_name,
+        client_id=SUMMITFLOW_CLIENT_ID,
+        client_secret=SUMMITFLOW_CLIENT_SECRET,
+        request_source=SUMMITFLOW_REQUEST_SOURCE,
+    )
 
 
 def _response_to_llm_response(response: CompletionResponse) -> LLMResponse:
@@ -190,6 +251,9 @@ class AgentHubLLMClient(LLMClient):
                 api_key=self.api_key,
                 timeout=600.0,
                 client_name="summitflow",  # Usage tracking
+                client_id=SUMMITFLOW_CLIENT_ID,
+                client_secret=SUMMITFLOW_CLIENT_SECRET,
+                request_source=SUMMITFLOW_REQUEST_SOURCE,
             )
         return self._client
 
@@ -395,4 +459,6 @@ __all__ = [
     "LLMClient",
     "LLMResponse",
     "get_agent",
+    "get_async_client",
+    "get_sync_client",
 ]
