@@ -555,7 +555,6 @@ Respond with JSON:
         response = reviewer.generate(
             prompt=prompt,
             system="You are a UI/UX code reviewer. Output only valid JSON.",
-            max_tokens=1000,
             temperature=0.3,
         )
 

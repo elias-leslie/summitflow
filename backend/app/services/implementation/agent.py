@@ -24,7 +24,7 @@ def execute_agent(
     """Execute agent with model and prompt.
 
     Args:
-        model: ModelConfig dict with provider, model, max_tokens, description
+        model: ModelConfig dict with provider, model, description
         prompt: The execution prompt built by prompt_builder
         working_dir: Working directory for file operations (Claude only)
 
@@ -33,7 +33,6 @@ def execute_agent(
     """
     provider = model.get("provider", "gemini")
     model_id = model.get("model", DEFAULT_GEMINI_MODEL)
-    max_tokens = model.get("max_tokens", 8192)
 
     logger.info(
         "agent_execution_start",
@@ -51,7 +50,6 @@ def execute_agent(
         response = agent.generate(
             prompt=prompt,
             system="You are an expert software engineer implementing code changes. Output only valid code changes in the specified format.",
-            max_tokens=max_tokens,
             temperature=0.7,
             working_dir=working_dir_str,
         )
@@ -128,7 +126,6 @@ Keep response concise (under 500 words)."""
         response = agent.generate(
             prompt=prompt,
             system="You are a debugging expert. Provide clear, actionable advice.",
-            max_tokens=1024,
             temperature=0.3,
         )
 

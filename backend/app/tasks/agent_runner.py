@@ -91,7 +91,6 @@ def run_agent_task(
             response = agent.generate(
                 prompt=context,
                 system=_get_system_prompt(project_id),
-                max_tokens=4096,
             )
             # Support both naming conventions (Claude uses input_tokens, Gemini uses prompt_tokens)
             input_tokens = response.usage.get("input_tokens") or response.usage.get(

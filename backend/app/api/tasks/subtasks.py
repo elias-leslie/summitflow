@@ -279,7 +279,7 @@ Original:
 Return JSON:
 {{"cleaned_prompt": "...", "changes_made": ["change1", "change2"]}}"""
 
-        response = client.generate(prompt, max_tokens=1000, temperature=0.2)
+        response = client.generate(prompt, temperature=0.2)
 
         import json
 

@@ -84,7 +84,6 @@ def refine_idea(
         response = client.generate(
             prompt=prompt,
             system=REFINEMENT_SYSTEM_PROMPT,
-            max_tokens=1024,
             temperature=0.3,
             purpose="idea_refinement",
         )
@@ -164,7 +163,6 @@ Complexity: {complexity}"""
         response = client.generate(
             prompt=prompt,
             system=SCORING_SYSTEM_PROMPT,
-            max_tokens=256,
             temperature=0.2,
             purpose="idea_scoring",
         )

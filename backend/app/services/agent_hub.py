@@ -272,7 +272,6 @@ class AgentHubService:
         response = client.generate(
             prompt=prompt,
             system=system_prompt,
-            max_tokens=8192,
             temperature=0.7,
             purpose="code_generation",
         )

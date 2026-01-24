@@ -51,7 +51,6 @@ class LLMClient(ABC):
         self,
         prompt: str,
         system: str | None = None,
-        max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
         task_id: str | None = None,
@@ -62,7 +61,6 @@ class LLMClient(ABC):
         Args:
             prompt: User prompt
             system: System prompt (optional)
-            max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             purpose: Purpose of this request for session tracking
             task_id: Task ID for session linkage
@@ -276,7 +274,6 @@ class AgentHubLLMClient(LLMClient):
         self,
         prompt: str,
         system: str | None = None,
-        max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
         task_id: str | None = None,
@@ -287,7 +284,6 @@ class AgentHubLLMClient(LLMClient):
         Args:
             prompt: User prompt
             system: System prompt (optional)
-            max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             purpose: Purpose of this request (task_enrichment, code_generation, etc.)
             task_id: Task ID for session linkage (stored as external_id in Agent Hub)
@@ -311,7 +307,6 @@ class AgentHubLLMClient(LLMClient):
             response = client.complete(
                 model=self.model,
                 messages=messages,
-                max_tokens=max_tokens,
                 temperature=temperature,
                 project_id=self.project_id,
                 session_id=kwargs.get("session_id"),
@@ -421,7 +416,6 @@ class DualProviderClient(LLMClient):
         self,
         prompt: str,
         system: str | None = None,
-        max_tokens: int = 4096,
         temperature: float = 1.0,
         purpose: str | None = None,
         task_id: str | None = None,
@@ -438,7 +432,6 @@ class DualProviderClient(LLMClient):
         return self._client.generate(
             prompt=prompt,
             system=system,
-            max_tokens=max_tokens,
             temperature=temperature,
             purpose=purpose,
             task_id=task_id,

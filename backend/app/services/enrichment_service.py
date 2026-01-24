@@ -162,7 +162,6 @@ def enrich_task(
 
             response = client.generate(
                 prompt=prompt,
-                max_tokens=4096,
                 temperature=0.3,
                 purpose="task_enrichment",
             )
@@ -270,7 +269,6 @@ Return ONLY valid JSON matching the output format in the prompt above."""
 
         response = client.generate(
             prompt=prompt,
-            max_tokens=2000,
             temperature=0.2,
             purpose="criteria_validation",
         )
@@ -465,7 +463,6 @@ Return ONLY valid JSON matching the response format in the prompt above."""
     try:
         response = client.generate(
             prompt=prompt,
-            max_tokens=4096,
             temperature=0.5,
             purpose="task_discussion",
         )

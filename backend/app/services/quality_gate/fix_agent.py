@@ -776,7 +776,6 @@ IMPORTANT: Previous attempts failed. Consider:
         response = agent.generate(
             prompt=prompt,
             system="You are a code fix agent. Output only the fixed code, no explanations.",
-            max_tokens=8000,
             temperature=0.2 if level == "WORKER" else 0.3,
             purpose="quality_gate_fix",
         )

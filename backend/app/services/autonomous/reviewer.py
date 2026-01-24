@@ -277,7 +277,6 @@ def opus_review(
         response = opus.generate(
             prompt=prompt,
             system="You are a senior code reviewer. Be thorough but fair. Output only valid JSON.",
-            max_tokens=2000,
             temperature=0.3,  # Lower temperature for more consistent reviews
         )
         response_text = response.content

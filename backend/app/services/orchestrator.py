@@ -588,7 +588,6 @@ class OrchestratorService:
                     provider=provider,
                     model=model,
                     system_prompt="You are an expert software engineer executing tasks. Be thorough and precise.",
-                    max_tokens=64000,
                     max_turns=20,
                     enable_code_execution=(provider == "claude"),  # Only for Claude
                     working_dir=str(self.effective_repo_path),

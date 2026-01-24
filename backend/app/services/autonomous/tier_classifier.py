@@ -27,7 +27,6 @@ class ModelConfig(TypedDict):
 
     provider: str  # 'claude' or 'gemini'
     model: str  # Model identifier
-    max_tokens: int
     description: str
 
 
@@ -38,25 +37,21 @@ AUTONOMOUS_MODELS: dict[int, ModelConfig] = {
     1: {
         "provider": "claude",
         "model": CLAUDE_HAIKU,
-        "max_tokens": 8192,
         "description": "Claude Haiku 4.5 for small tasks",
     },
     2: {
         "provider": "claude",
         "model": CLAUDE_SONNET,
-        "max_tokens": 32768,
         "description": "Claude Sonnet 4.5 for medium tasks",
     },
     3: {
         "provider": "claude",
         "model": CLAUDE_SONNET,
-        "max_tokens": 65536,
         "description": "Claude Sonnet 4.5 for large tasks",
     },
     4: {
         "provider": "claude",
         "model": CLAUDE_OPUS,
-        "max_tokens": 64000,
         "description": "Claude Opus 4.5 for architecture/multi-domain",
     },
 }
@@ -65,21 +60,18 @@ AUTONOMOUS_MODELS: dict[int, ModelConfig] = {
 CONSULTATION_MODEL: ModelConfig = {
     "provider": "gemini",
     "model": GEMINI_PRO,
-    "max_tokens": 65536,
     "description": "Gemini 3 Pro for consultation/handoff (large context)",
 }
 
 MANUAL_MODEL: ModelConfig = {
     "provider": "claude",
     "model": CLAUDE_SONNET,
-    "max_tokens": 64000,
     "description": "Claude Sonnet 4.5 for manual /do_it execution",
 }
 
 REVIEW_MODEL: ModelConfig = {
     "provider": "claude",
     "model": CLAUDE_OPUS,
-    "max_tokens": 32000,
     "description": "Claude Opus 4.5 for review gate",
 }
 
@@ -121,7 +113,7 @@ def select_model_for_tier(tier: int, manual: bool = False) -> ModelConfig:
         manual: If True, always return Claude Sonnet for better quality
 
     Returns:
-        ModelConfig dict with provider, model, max_tokens, description
+        ModelConfig dict with provider, model, description
     """
     if manual:
         return MANUAL_MODEL.copy()
