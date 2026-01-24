@@ -27,6 +27,7 @@ from .api import (
     schemas,
     tasks,
     tdd,
+    verify_patterns,
 )
 from .config import REDIS_URL
 from .schemas.health import ComponentHealth, DetailedHealthResponse
@@ -98,6 +99,7 @@ app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])
+app.include_router(verify_patterns.router, prefix="/api", tags=["verify-patterns"])
 
 from .api import ideas, ws_execution  # noqa: E402
 

@@ -162,6 +162,14 @@ def create(
         str | None,
         typer.Option("--blocked-by", help="Task ID that blocks this task"),
     ] = None,
+    quick: Annotated[
+        bool,
+        typer.Option("--quick", help="Create from template with auto-generated plan"),
+    ] = False,
+    template: Annotated[
+        str | None,
+        typer.Option("--template", help="Template: bug-fix, add-endpoint, add-component"),
+    ] = None,
 ) -> None:
     """Create a new task or batch create from file.
 
@@ -171,7 +179,42 @@ def create(
         st create "Implement X" --blocked-by task-abc123
         st create --from-file tasks.json
         st create --from-file tasks.json --dry-run
+        st create --quick --template bug-fix "Fix login validation"
     """
+    # Handle --quick mode: generate plan from template and import
+    if quick:
+        if not title:
+            output_error("--quick requires a title")
+            raise typer.Exit(1)
+        if not template:
+            output_error("--quick requires --template (bug-fix, add-endpoint, add-component)")
+            raise typer.Exit(1)
+
+        client = STClient()
+        try:
+            # Generate plan from template via quick-plan API
+            plan_data = client.post(
+                f"/projects/{client.project_id}/tasks/quick-plan",
+                {
+                    "title": title,
+                    "description": description or title,
+                    "template": template,
+                    "params": {},
+                },
+            )
+            # Import the generated plan via batch create
+            result = client.post(
+                f"/projects/{client.project_id}/tasks/batch",
+                plan_data,
+            )
+            if result.get("task_id"):
+                output_success(f"Created: {result['task_id']}")
+            else:
+                output_json(result)
+        except APIError as e:
+            handle_api_error(e)
+        return
+
     # Handle --from-file mode
     if from_file:
         _create_from_file(from_file, dry_run)
