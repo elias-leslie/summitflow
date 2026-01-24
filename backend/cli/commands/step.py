@@ -41,18 +41,19 @@ def pass_step(
         # Check if this is a verification failure
         detail = e.detail if isinstance(e.detail, dict) else {}
         if detail.get("verification_failed"):
-            # Display verification failure with guidance
-            typer.echo(f"ERROR {e.detail}", err=True)
-            # Show guidance for verification failure - create fix subtask if plan is wrong
-            typer.echo("\n--- Verification Failed ---", err=True)
-            typer.echo("Next steps:", err=True)
-            typer.echo("  1. Fix your implementation to match the expected behavior", err=True)
+            # TOON-efficient verification failure output
+            exit_code = detail.get("exit_code", 1)
+            output = detail.get("output", "").strip() or "(empty)"
+            # Truncate output to first 100 chars
+            if len(output) > 100:
+                output = output[:100] + "..."
+            typer.echo(f"STEP_FAIL:{subtask_id}.{step_number}|exit={exit_code}", err=True)
+            typer.echo(f"  got: {output}", err=True)
             typer.echo(
-                f"  2. If plan is wrong, create fix: st subtask create {subtask_id.split('.')[0]}.X "
-                f"-d 'Fix: ...' --task {task_id}",
+                f"FIX: 1) impl 2) st step new {subtask_id} 'Fix:...' -v 'cmd' -e 'expect' "
+                f"3) st step defect {subtask_id} {step_number} --fix N",
                 err=True,
             )
-            typer.echo(f"  3. Log the issue: st log {task_id} 'Plan defect: ...'", err=True)
             raise typer.Exit(1) from None
         handle_api_error(e)
         return
