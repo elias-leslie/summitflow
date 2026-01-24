@@ -263,10 +263,10 @@ class OrchestratorService:
         if not self._current_streaming_session_id:
             return
 
-        from agent_hub import AsyncAgentHubClient
+        from .agent_hub_client import get_async_client
 
         try:
-            async with AsyncAgentHubClient() as client:
+            async with get_async_client() as client:
                 result = await client.cancel_stream(self._current_streaming_session_id)
                 logger.info(
                     "stream_cancellation_result",
@@ -561,7 +561,7 @@ class OrchestratorService:
         Returns:
             Tuple of (success, error_message)
         """
-        from agent_hub import AsyncAgentHubClient
+        from .agent_hub_client import get_async_client
 
         subtask_id = str(subtask.get("subtask_full_id") or subtask.get("id") or "unknown")
         description = subtask.get("description", "")
@@ -582,7 +582,7 @@ class OrchestratorService:
         await self._send_log("info", f"Starting agent execution with {provider}/{model}")
 
         try:
-            async with AsyncAgentHubClient() as client:
+            async with get_async_client() as client:
                 result = await client.run_agent(
                     task=prompt,
                     provider=provider,

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import subprocess
 import time
@@ -23,7 +22,6 @@ from .agent_hub_client import AgentHubLLMClient, LLMResponse
 
 logger = get_logger(__name__)
 
-AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 MAX_RETRIES = 3
 RETRY_DELAYS = [1, 2, 4]  # Exponential backoff
 
@@ -162,7 +160,6 @@ class AgentHubService:
         if self._client is None:
             self._client = AgentHubLLMClient(
                 model=self.model,
-                base_url=AGENT_HUB_URL,
             )
         return self._client
 
