@@ -212,7 +212,6 @@ def run_verify_command(
     verify_command: str,
     timeout: int = VERIFY_COMMAND_TIMEOUT,
     cwd: str | None = None,
-    record_pattern: bool = True,
 ) -> tuple[str, int, str]:
     """Execute a verify_command and return classification.
 
@@ -221,7 +220,6 @@ def run_verify_command(
         timeout: Command timeout in seconds
         cwd: Working directory to run from. If None, uses /home/kasadis/summitflow
              as fallback for backwards compatibility.
-        record_pattern: Whether to record outcome to pattern library (default True)
 
     Returns:
         Tuple of (status, exit_code, output) where status is one of:
@@ -229,15 +227,8 @@ def run_verify_command(
         - 'failed': Exit code != 0
         - 'crashed': Exit code 126-127 or exception
     """
-    import time
-
     # Default to summitflow for backwards compatibility
     working_dir = cwd or "/home/kasadis/summitflow"
-    start_time = time.time()
-    duration_ms = 0
-    exit_code = -1
-    status = "crashed"
-    output = ""
 
     try:
         # Use bash explicitly since commands may use bash-specific features like 'source'
@@ -249,40 +240,21 @@ def run_verify_command(
             cwd=working_dir,
         )
 
-        duration_ms = int((time.time() - start_time) * 1000)
         exit_code = result.returncode
         output = result.stdout + result.stderr
 
         # Classify based on exit code
         if exit_code == 0:
-            status = "passed"
+            return ("passed", 0, output)
         elif 1 <= exit_code <= 125:
-            status = "failed"
+            return ("failed", exit_code, output)
         else:  # 126-127 = command not found or not executable
-            status = "crashed"
+            return ("crashed", exit_code, output)
 
     except subprocess.TimeoutExpired:
-        duration_ms = int((time.time() - start_time) * 1000)
-        output = f"Command timed out after {timeout}s"
+        return ("crashed", -1, f"Command timed out after {timeout}s")
     except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
-        output = str(e)
-
-    # Record outcome to pattern library for feedback loop
-    if record_pattern:
-        try:
-            from . import verify_patterns
-            verify_patterns.record_outcome(
-                command=verify_command,
-                success=(status == "passed"),
-                duration_ms=duration_ms,
-                exit_code=exit_code,
-            )
-        except Exception as e:
-            # Don't fail verification if pattern recording fails
-            logger.warning("Failed to record verify pattern: %s", e)
-
-    return (status, exit_code, output)
+        return ("crashed", -1, str(e))
 
 
 def update_step_passes(
