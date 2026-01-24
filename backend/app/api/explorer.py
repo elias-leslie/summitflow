@@ -486,3 +486,56 @@ async def trigger_health_check(
         "task_id": result.id,
         "message": "Health check started. Results will update page entries.",
     }
+
+
+@router.post("/{project_id}/explorer/regenerate-index")
+async def regenerate_index(project_id: str) -> dict[str, Any]:
+    """Regenerate .index.yaml file for a project.
+
+    Creates/updates the index file at project root with:
+    - Health summary
+    - Hotspots (refactor targets)
+    - Pages, endpoints, tables, tasks
+    - Dependencies summary
+    - Folder structure
+    """
+    _validate_project_exists(project_id)
+
+    from ..services.explorer import write_index_file
+
+    result = write_index_file(project_id)
+
+    if result:
+        return {
+            "status": "success",
+            "project_id": project_id,
+            "path": result,
+        }
+    else:
+        return {
+            "status": "failed",
+            "project_id": project_id,
+            "error": "Could not write index file (check project root_path)",
+        }
+
+
+@router.post("/explorer/regenerate-all-indexes")
+async def regenerate_all_indexes() -> dict[str, Any]:
+    """Regenerate .index.yaml files for all projects.
+
+    Useful for refreshing all project indexes after schema changes.
+    """
+    from ..services.explorer import write_all_index_files
+
+    results = write_all_index_files()
+
+    success = [k for k, v in results.items() if v is not None]
+    failed = [k for k, v in results.items() if v is None]
+
+    return {
+        "status": "completed",
+        "success_count": len(success),
+        "failed_count": len(failed),
+        "success": success,
+        "failed": failed,
+    }

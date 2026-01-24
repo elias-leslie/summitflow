@@ -30,7 +30,7 @@ from typing import Any, Literal
 from ...storage import explorer as storage
 from .base import BaseScanner, get_project_config, get_project_root
 from .health import calculate_health
-from .index_generator import generate_index, write_index_file
+from .index_generator import generate_index, write_all_index_files, write_index_file
 from .models import (
     ExplorerEntry,
     ExplorerEntryCreate,
@@ -61,6 +61,7 @@ __all__ = [
     "run_scan_with_tracking",
     "scan",
     "start_scan",
+    "write_all_index_files",
     "write_index_file",
 ]
 

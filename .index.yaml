@@ -1,24 +1,103 @@
 project: summitflow
-generated_at: 2026-01-19 23:05 UTC
-total_files: 1247
+generated_at: 2026-01-24 07:00 UTC
+health:
+  error: 15
+  healthy: 1319
+  warning: 114
+hotspots:
+- backend/cli/commands/tasks.py (1972 LOC, untested)
+- frontend/components/tasks/TasksTab.tsx (796 LOC, untested)
+- 'backend/app/services/autonomous/prompt_builder.py (complexity: 35, untested)'
+- frontend/lib/api/tasks.ts (638 LOC, untested)
+- backend/app/api/tasks/core.py (935 LOC, untested)
+pages:
+- / (app)
+- /about (about)
+- /backups (backups)
+- /git (git)
+- /projects/:id (projects/:id)
+- /projects/:id/backups (backups)
+- /projects/:id/backups/:backupId/restore (restore)
+- /projects/:id/design (design)
+- /projects/:id/git (git)
+- /projects/:id/git/worktrees (worktrees)
+- /projects/:id/settings (settings)
+- /projects/new (new)
+- /settings (settings)
+endpoints:
+  projects: 17
+  api: 11
+  explorer: 8
+  health: 1
+  analytics: 1
+tables:
+- agent_sessions
+- artifacts
+- backup_schedules
+- backups
+- code_health_lists
+- design_rules
+- design_standards
+- explorer_entries
+- explorer_relationships
+- explorer_sub_elements
+- ideas
+- migration_backup
+- mockups
+- notifications
+- project_agent_config
+- projects
+- qa_issues
+- quality_check_results
+- refactor_sessions
+- scan_history
+- scan_states
+- sitemap_entries
+- subtask_dependencies
+- task_dependencies
+- task_labels
+- task_spirit
+- task_subtask_steps
+- task_subtasks
+- tasks
+- terminal_panes
+- terminal_project_settings
+- terminal_sessions
+- user_prompts
+tasks:
+- autonomous_work_pickup (every 1 minute)
+- cleanup_debug_captures (every 1 minute)
+- cleanup_orphaned_worktrees (every 1 minute)
+- cleanup_stale_tasks (every 1 minute)
+- daily_code_health_scan (every 1 minute)
+- generate_tasks_from_scan (every 1 minute)
+- monitor_browser_errors (every 1 minute)
+- monitor_systemd_errors (every 1 minute)
+- orchestrate_self_healing (every 1 minute)
+- process_crowdsourced_ideas (every 1 minute)
+- reset_expired_task_claims (every 1 minute)
+- review_pending_tasks (every 1 minute)
+- run_scheduled_backups (every 1 minute)
+- scan_all_projects (every 1 minute)
+- weekly_deep_scan (every 1 minute)
+dependencies:
+  total: 65
+  outdated: 9
+  vulnerable: 0
 folders:
-  (root): 24 files - config, docs, services, tests - (claude, dev-tools, gitignore,
-    html, json)
-  .claude: 3 files - (gitignore, json)
-  .dev-tools: 8 files - tests - (txt)
-  .qna-session: 1 files - (json)
-  .summitflow: 33 files - config, docs, models, services - (bak, md)
-  assets: 2 files - (html)
-  backend: 415 files - api, config, docs, models, services, storage, tests - (0, env,
-    ini, json, md)
-  docs: 62 files - docs, tests - (json, md)
-  frontend: 222 files - api, components, config, docs, models, storage, tests - (backup-tailwind-v3,
-    css, js, json, md)
-  mockups: 7 files - (html)
-  project_review: 11 files - docs - (json, md, txt)
-  scripts: 32 files - config, services, tests - (conf, py, service, sh)
-  services: 10 files - config, docs, services - (claude, js, json, md)
-  spec: 2 files - tests - (json)
-  tasks: 413 files - components, config, docs, models, services, storage, tests -
-    (backup, bak, gitkeep, json, md)
-  tests: 2 files - tests - (py)
+  (root): 25 files - services, tests
+  .claude: 3 files
+  .dev-tools: 12 files - tests
+  .qna-session: 1 files
+  .summitflow: 35 files - services, tests
+  assets: 2 files
+  backend: 407 files - api, services, tests
+  docs: 62 files - tests
+  frontend: 213 files - api, components, tests
+  mockups: 7 files
+  project_review: 11 files
+  scripts: 33 files - services, tests
+  services: 4 files - services
+  spec: 2 files - tests
+  tasks: 465 files - api, components, services, tests
+  tests: 2 files - tests
