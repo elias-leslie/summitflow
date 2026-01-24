@@ -4,6 +4,306 @@
   "destination": "//192.168.8.128/davion-gem/project-backups/summitflow",
   "backups": [
     {
+      "name": "summitflow-20260124-121519.tar.gz",
+      "timestamp": "2026-01-24T12:15:32-05:00",
+      "size_bytes": 112909830,
+      "db_size_bytes": 1054708,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2026-01-24T12:15:30-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 366
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 62
+          },
+          "scripts": {
+            "count": 29
+          },
+          ".qna-session": {
+            "count": 1
+          },
+          "tests": {
+            "count": 1
+          },
+          ".summitflow": {
+            "count": 32
+          },
+          "references": {
+            "count": 7175
+          },
+          "frontend": {
+            "count": 180
+          },
+          ".dev-tools": {
+            "count": 15
+          },
+          ".claude": {
+            "count": 3
+          },
+          "tasks": {
+            "count": 339
+          },
+          "spec": {
+            "count": 1
+          },
+          "data": {
+            "count": 4
+          },
+          "mockups": {
+            "count": 7
+          },
+          "services": {
+            "count": 1
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          "package.json": {
+            "count": 1
+          },
+          "SYSTEM_REFERENCE.md": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          },
+          ".index.yaml": {
+            "count": 1
+          }
+        },
+        "total_files": 8266,
+        "checksum": "sha256:42a3d858f20776fd535ad1734168888f4d6b42a9c5b4eedb5d89b9477cf77d8a"
+      }
+    },
+    {
+      "name": "summitflow-20260124-060755.tar.gz",
+      "timestamp": "2026-01-24T06:08:06-05:00",
+      "size_bytes": 112875536,
+      "db_size_bytes": 1034570,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2026-01-24T06:08:05-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 366
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 62
+          },
+          "scripts": {
+            "count": 29
+          },
+          ".qna-session": {
+            "count": 1
+          },
+          "tests": {
+            "count": 1
+          },
+          ".summitflow": {
+            "count": 32
+          },
+          "references": {
+            "count": 7175
+          },
+          "frontend": {
+            "count": 180
+          },
+          ".dev-tools": {
+            "count": 15
+          },
+          ".claude": {
+            "count": 3
+          },
+          "tasks": {
+            "count": 338
+          },
+          "spec": {
+            "count": 1
+          },
+          "data": {
+            "count": 4
+          },
+          "mockups": {
+            "count": 7
+          },
+          "services": {
+            "count": 1
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          "package.json": {
+            "count": 1
+          },
+          "SYSTEM_REFERENCE.md": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          },
+          ".index.yaml": {
+            "count": 1
+          }
+        },
+        "total_files": 8265,
+        "checksum": "sha256:db6b79b6812b507df6c1b3044e17c08ae6832acde04ec00c94332a75da0fbf48"
+      }
+    },
+    {
+      "name": "summitflow-20260124-023321.tar.gz",
+      "timestamp": "2026-01-24T02:33:34-05:00",
+      "size_bytes": 112844290,
+      "db_size_bytes": 1015296,
+      "status": "ok",
+      "verification": {
+        "verified": true,
+        "verified_at": "2026-01-24T02:33:32-05:00",
+        "errors": [],
+        "tree": {
+          "backend": {
+            "count": 366
+          },
+          "project_review": {
+            "count": 16
+          },
+          "docs": {
+            "count": 62
+          },
+          "scripts": {
+            "count": 29
+          },
+          ".qna-session": {
+            "count": 1
+          },
+          "tests": {
+            "count": 1
+          },
+          ".summitflow": {
+            "count": 32
+          },
+          "references": {
+            "count": 7175
+          },
+          "frontend": {
+            "count": 180
+          },
+          ".dev-tools": {
+            "count": 15
+          },
+          ".claude": {
+            "count": 3
+          },
+          "tasks": {
+            "count": 337
+          },
+          "spec": {
+            "count": 1
+          },
+          "data": {
+            "count": 4
+          },
+          "mockups": {
+            "count": 7
+          },
+          "services": {
+            "count": 1
+          },
+          "assets": {
+            "count": 23
+          },
+          "mockup-redesign.html": {
+            "count": 1
+          },
+          "logo_animation_prompt.md": {
+            "count": 1
+          },
+          "database.sql.gz": {
+            "count": 1
+          },
+          "README.md": {
+            "count": 1
+          },
+          "backup_deprecated.sql": {
+            "count": 1
+          },
+          "backup-index.json": {
+            "count": 1
+          },
+          "package.json": {
+            "count": 1
+          },
+          "SYSTEM_REFERENCE.md": {
+            "count": 1
+          },
+          ".gitignore": {
+            "count": 1
+          },
+          "CLAUDE.md": {
+            "count": 1
+          },
+          ".index.yaml": {
+            "count": 1
+          }
+        },
+        "total_files": 8264,
+        "checksum": "sha256:c5c94dedecb15184895a282c51ff4aca50c557e82970b1d6e7bf413fe9a545f2"
+      }
+    },
+    {
       "name": "summitflow-20260123-182844.tar.gz",
       "timestamp": "2026-01-23T18:28:57-05:00",
       "size_bytes": 112913890,
@@ -16655,5 +16955,5 @@
       }
     }
   ],
-  "last_updated": "2026-01-23T18:28:57-05:00"
+  "last_updated": "2026-01-24T12:15:32-05:00"
 }

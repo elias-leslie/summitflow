@@ -393,9 +393,7 @@ class TaskListResponse(BaseModel):
 
     tasks: list[TaskResponse]
     total: int
-    hints: list[str] | None = Field(
-        default=None, description="Navigation hints for next actions"
-    )
+    hints: list[str] | None = Field(default=None, description="Navigation hints for next actions")
 
 
 class StartTaskRequest(BaseModel):

@@ -123,7 +123,9 @@ def _format_toon_context(
     # Subtasks summary and details
     if subtasks:
         completed = sum(1 for s in subtasks if s.get("passes"))
-        lines.append(f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{int(completed/len(subtasks)*100) if subtasks else 0}%")
+        lines.append(
+            f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{int(completed / len(subtasks) * 100) if subtasks else 0}%"
+        )
 
         for st in subtasks:
             steps = get_steps_for_subtask(st["id"])
@@ -157,12 +159,24 @@ def _format_toon_context(
         for b in blockers:
             lines.append(f"  {b['id']}|{b['status']}|{b['title'][:50]}")
 
+    # Progress log (last 3 entries for session continuity)
+    progress_log = task.get("progress_log") or []
+    if isinstance(progress_log, str):
+        entries = [e.strip() for e in progress_log.split("\n") if e.strip()]
+    else:
+        entries = progress_log
+    if entries:
+        recent_logs = entries[-3:]
+        lines.append(f"LOG[{len(entries)}]:")
+        for log in recent_logs:
+            log_preview = str(log)[:100]
+            if len(str(log)) > 100:
+                log_preview += "..."
+            lines.append(f"  {log_preview}")
+
     # Acceptance criteria count
     criteria_verified = sum(
-        1
-        for st in subtasks
-        for s in get_steps_for_subtask(st["id"])
-        if s.get("passes")
+        1 for st in subtasks for s in get_steps_for_subtask(st["id"]) if s.get("passes")
     )
     lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
 
@@ -180,11 +194,13 @@ def _build_export_data(
     acceptance_criteria = []
     if spirit and spirit.get("done_when"):
         for i, dw in enumerate(spirit["done_when"], 1):
-            acceptance_criteria.append({
-                "id": f"ac-{i}",
-                "criterion": dw,
-                "verified": False,
-            })
+            acceptance_criteria.append(
+                {
+                    "id": f"ac-{i}",
+                    "criterion": dw,
+                    "verified": False,
+                }
+            )
 
     # Build subtasks with full step details
     subtasks_export = []
@@ -192,29 +208,32 @@ def _build_export_data(
         steps = get_steps_for_subtask(st["id"])
         # Get dependencies from subtask_dependencies table
         from ...storage.subtasks import get_subtask_dependencies
+
         deps = get_subtask_dependencies(task["id"], st["subtask_id"])
         depends_on = deps if deps else None
 
-        subtasks_export.append({
-            "id": st["subtask_id"],
-            "phase": st.get("phase"),
-            "description": st["description"],
-            "passes": st.get("passes", False),
-            "passed_at": st.get("passed_at"),
-            "depends_on": depends_on,
-            "steps": [
-                {
-                    "step_number": s["step_number"],
-                    "description": s["description"],
-                    "spec": s.get("spec"),
-                    "verify_command": s.get("verify_command"),
-                    "expected_output": s.get("expected_output"),
-                    "passes": s.get("passes", False),
-                    "status": s.get("status"),
-                }
-                for s in steps
-            ],
-        })
+        subtasks_export.append(
+            {
+                "id": st["subtask_id"],
+                "phase": st.get("phase"),
+                "description": st["description"],
+                "passes": st.get("passes", False),
+                "passed_at": st.get("passed_at"),
+                "depends_on": depends_on,
+                "steps": [
+                    {
+                        "step_number": s["step_number"],
+                        "description": s["description"],
+                        "spec": s.get("spec"),
+                        "verify_command": s.get("verify_command"),
+                        "expected_output": s.get("expected_output"),
+                        "passes": s.get("passes", False),
+                        "status": s.get("status"),
+                    }
+                    for s in steps
+                ],
+            }
+        )
 
     # Get progress log
     progress_log = task.get("progress_log") or []
@@ -247,7 +266,9 @@ def _build_export_data(
             "constraints": spirit.get("constraints", []) if spirit else [],
             "done_when": spirit.get("done_when", []) if spirit else [],
             "context": spirit.get("context", {}) if spirit else {},
-        } if spirit else None,
+        }
+        if spirit
+        else None,
         "acceptance_criteria": acceptance_criteria,
         "subtasks": subtasks_export,
         "dependencies": {
@@ -317,7 +338,9 @@ async def approve_task_plan(
 async def get_task_context(
     project_id: str,
     task_id: str,
-    format: str | None = Query(None, description="Output format: 'json' for JSON (default is TOON)"),
+    format: str | None = Query(
+        None, description="Output format: 'json' for JSON (default is TOON)"
+    ),
 ) -> PlainTextResponse | dict[str, Any]:
     """Get full task context including spirit, subtasks, steps, and blockers.
 
@@ -345,10 +368,12 @@ async def get_task_context(
         subtasks_with_steps = []
         for st in subtasks:
             steps = get_steps_for_subtask(st["id"])
-            subtasks_with_steps.append({
-                **st,
-                "steps": steps,
-            })
+            subtasks_with_steps.append(
+                {
+                    **st,
+                    "steps": steps,
+                }
+            )
 
         return {
             "task": {
@@ -406,7 +431,9 @@ async def export_task(
 async def get_task_logs(
     project_id: str,
     task_id: str,
-    format: str | None = Query(None, description="Output format: 'json' for JSON (default is TOON)"),
+    format: str | None = Query(
+        None, description="Output format: 'json' for JSON (default is TOON)"
+    ),
 ) -> PlainTextResponse | dict[str, Any]:
     """Get task progress log entries.
 

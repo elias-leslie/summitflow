@@ -489,6 +489,34 @@ def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_context_log(progress_log: list[str] | str | None) -> str:
+    """Format progress log for context output (last 3 entries).
+
+    Format: LOG[total]
+    <log entry preview, max 100 chars>
+    """
+    if not progress_log:
+        return ""
+
+    if isinstance(progress_log, str):
+        entries = [e.strip() for e in progress_log.split("\n") if e.strip()]
+    else:
+        entries = progress_log
+
+    if not entries:
+        return ""
+
+    recent_logs = entries[-3:]
+    lines = [f"LOG[{len(entries)}]"]
+    for log in recent_logs:
+        log_preview = str(log)[:100]
+        if len(str(log)) > 100:
+            log_preview += "..."
+        lines.append(f"  {log_preview}")
+
+    return "\n".join(lines)
+
+
 def output_context(
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
@@ -510,6 +538,9 @@ def output_context(
 
         if blockers:
             sections.append(format_context_blockers(blockers))
+
+        if task.get("progress_log"):
+            sections.append(format_context_log(task["progress_log"]))
 
         print("\n".join(s for s in sections if s))
     else:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,7 +39,7 @@ def _make_mock_task(task_id: str, **kwargs) -> dict:
         "pull_request_url": None,
         "total_sessions": 0,
         "total_tokens_used": 0,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "started_at": None,
         "completed_at": None,
         "priority": kwargs.get("priority", 2),
@@ -85,7 +85,7 @@ def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs) -> dict:
         "status": "pending",
         "display_order": kwargs.get("display_order", 0),
         "steps": kwargs.get("steps", []),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "started_at": None,
         "completed_at": None,
     }
@@ -119,6 +119,7 @@ def mock_st_client():
         task = tasks_db.get(task_id)
         if not task:
             from cli.client import APIError
+
             raise APIError(404, f"Task {task_id} not found")
         return task
 
@@ -176,12 +177,14 @@ def mock_storage():
     def mock_list_subtasks(task_id):
         return [s for s in subtasks_db.values() if s["task_id"] == task_id]
 
-    with patch("app.storage.tasks.create_task", side_effect=mock_create_task), \
-         patch("app.storage.tasks.get_task", side_effect=mock_get_task), \
-         patch("app.storage.tasks.delete_task", side_effect=mock_delete_task), \
-         patch("app.storage.subtasks.create_subtask", side_effect=mock_create_subtask), \
-         patch("app.storage.subtasks.get_subtask", side_effect=mock_get_subtask), \
-         patch("app.storage.subtasks.list_subtasks", side_effect=mock_list_subtasks):
+    with (
+        patch("app.storage.tasks.create_task", side_effect=mock_create_task),
+        patch("app.storage.tasks.get_task", side_effect=mock_get_task),
+        patch("app.storage.tasks.delete_task", side_effect=mock_delete_task),
+        patch("app.storage.subtasks.create_subtask", side_effect=mock_create_subtask),
+        patch("app.storage.subtasks.get_subtask", side_effect=mock_get_subtask),
+        patch("app.storage.subtasks.list_subtasks", side_effect=mock_list_subtasks),
+    ):
         yield {"tasks": tasks_db, "subtasks": subtasks_db}
 
 
@@ -379,11 +382,13 @@ class TestSubtaskCreate:
         """Test that creating a subtask without steps fails."""
         # Create mock task first
         mock_client, tasks_db = mock_st_client
-        task = mock_client.create_task({
-            "title": "CLI Subtask Test",
-            "task_type": "task",
-            "priority": 3,
-        })
+        task = mock_client.create_task(
+            {
+                "title": "CLI Subtask Test",
+                "task_type": "task",
+                "priority": 3,
+            }
+        )
 
         # Also mock the subtask CLI's client
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
@@ -408,22 +413,28 @@ class TestSubtaskCreate:
     def test_subtask_create_with_steps_json(self, mock_st_client):
         """Test creating a subtask with proper step structure via --steps-json."""
         mock_client, tasks_db = mock_st_client
-        task = mock_client.create_task({
-            "title": "CLI Subtask Steps Test",
-            "task_type": "task",
-            "priority": 3,
-        })
+        task = mock_client.create_task(
+            {
+                "title": "CLI Subtask Steps Test",
+                "task_type": "task",
+                "priority": 3,
+            }
+        )
 
         # Mock create_subtask to return success
-        mock_client.create_subtask = MagicMock(return_value=_make_mock_subtask(
-            task["id"], "1.1", description="Test with steps"
-        ))
+        mock_client.create_subtask = MagicMock(
+            return_value=_make_mock_subtask(task["id"], "1.1", description="Test with steps")
+        )
 
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
             # Use --steps-json with proper verify_command and expected_output
             steps_json = json.dumps(
                 [
-                    {"description": "First step", "verify_command": "echo ok", "expected_output": "ok"},
+                    {
+                        "description": "First step",
+                        "verify_command": "echo ok",
+                        "expected_output": "ok",
+                    },
                     {
                         "description": "Second step",
                         "verify_command": "echo done",
@@ -452,11 +463,13 @@ class TestSubtaskCreate:
     def test_subtask_create_legacy_steps_warning(self, mock_st_client):
         """Test that using --step shows warning about missing verify_command."""
         mock_client, tasks_db = mock_st_client
-        task = mock_client.create_task({
-            "title": "CLI Subtask Legacy Test",
-            "task_type": "task",
-            "priority": 3,
-        })
+        task = mock_client.create_task(
+            {
+                "title": "CLI Subtask Legacy Test",
+                "task_type": "task",
+                "priority": 3,
+            }
+        )
 
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
             # Legacy --step flag works but warns
@@ -488,7 +501,9 @@ class TestStepCreate:
     more complex mocking of the step storage layer.
     """
 
-    @pytest.mark.skip(reason="Requires complex storage mocking - use integration tests for full flow")
+    @pytest.mark.skip(
+        reason="Requires complex storage mocking - use integration tests for full flow"
+    )
     def test_step_create(self, mock_storage):
         """Test creating steps for a subtask."""
         pass
@@ -498,9 +513,7 @@ class TestStepCreate:
         from cli.client import APIError
 
         mock_client = MagicMock()
-        mock_client.bulk_create_steps = MagicMock(
-            side_effect=APIError(404, "Task not found")
-        )
+        mock_client.bulk_create_steps = MagicMock(side_effect=APIError(404, "Task not found"))
 
         with patch("cli.commands.step.STClient", return_value=mock_client):
             result = runner.invoke(

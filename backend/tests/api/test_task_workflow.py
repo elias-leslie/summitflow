@@ -73,9 +73,7 @@ class TestApproveEndpoint:
         cleanup_task(task_id)
 
         # Approve the plan (should create spirit record)
-        response = client.post(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/approve"
-        )
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/approve")
         assert response.status_code == 200
         data = response.json()
 
@@ -85,9 +83,7 @@ class TestApproveEndpoint:
 
     def test_approve_nonexistent_task(self, client, test_project_id):
         """Approving a nonexistent task should return 404."""
-        response = client.post(
-            f"/api/projects/{test_project_id}/tasks/task-nonexistent/approve"
-        )
+        response = client.post(f"/api/projects/{test_project_id}/tasks/task-nonexistent/approve")
         assert response.status_code == 404
 
 
@@ -112,9 +108,7 @@ class TestContextEndpoint:
         cleanup_task(task_id)
 
         # Get context (TOON format by default)
-        response = client.get(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/context"
-        )
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/plain; charset=utf-8"
 
@@ -236,9 +230,7 @@ class TestExportEndpoint:
             conn.commit()
 
         # Get export
-        response = client.get(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/export"
-        )
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/export")
         assert response.status_code == 200
         data = response.json()
 
@@ -287,9 +279,7 @@ class TestExportEndpoint:
             conn.commit()
 
         # Get export
-        response = client.get(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/export"
-        )
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/export")
         assert response.status_code == 200
         data = response.json()
 
@@ -303,7 +293,5 @@ class TestExportEndpoint:
 
     def test_export_nonexistent_task(self, client, test_project_id):
         """Exporting a nonexistent task should return 404."""
-        response = client.get(
-            f"/api/projects/{test_project_id}/tasks/task-nonexistent/export"
-        )
+        response = client.get(f"/api/projects/{test_project_id}/tasks/task-nonexistent/export")
         assert response.status_code == 404

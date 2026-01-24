@@ -223,11 +223,7 @@ def _toon_format_task_list(tasks: list[TaskResponse], endpoint_type: str = "list
     READY:3
     task-abc123|pending|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
     """
-    prefix_map = {
-        "ready": "READY",
-        "blocked": "BLOCKED",
-        "list": "TASKS"
-    }
+    prefix_map = {"ready": "READY", "blocked": "BLOCKED", "list": "TASKS"}
 
     prefix = prefix_map.get(endpoint_type, "TASKS")
     lines = [f"{prefix}:{len(tasks)}"]
@@ -431,7 +427,9 @@ async def list_tasks(
     ),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Results offset"),
-    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+    format: str | None = Query(
+        None, description="Output format: 'toon' for compact token-optimized"
+    ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks for a project.
 
@@ -474,7 +472,9 @@ async def list_tasks(
 
     # Return TOON format if requested
     if format == "toon":
-        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="list"))
+        return PlainTextResponse(
+            content=_toon_format_task_list(task_responses, endpoint_type="list")
+        )
 
     return TaskListResponse(
         tasks=task_responses,
@@ -487,7 +487,9 @@ async def list_tasks(
 async def list_ready_tasks(
     project_id: str,
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
-    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+    format: str | None = Query(
+        None, description="Output format: 'toon' for compact token-optimized"
+    ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks that are ready to work on (not blocked by dependencies).
 
@@ -504,7 +506,9 @@ async def list_ready_tasks(
 
     # Return TOON format if requested
     if format == "toon":
-        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="ready"))
+        return PlainTextResponse(
+            content=_toon_format_task_list(task_responses, endpoint_type="ready")
+        )
 
     return TaskListResponse(
         tasks=task_responses,
@@ -517,7 +521,9 @@ async def list_ready_tasks(
 async def list_blocked_tasks(
     project_id: str,
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
-    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+    format: str | None = Query(
+        None, description="Output format: 'toon' for compact token-optimized"
+    ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks that are blocked by incomplete dependencies.
 
@@ -533,7 +539,9 @@ async def list_blocked_tasks(
 
     # Return TOON format if requested
     if format == "toon":
-        return PlainTextResponse(content=_toon_format_task_list(task_responses, endpoint_type="blocked"))
+        return PlainTextResponse(
+            content=_toon_format_task_list(task_responses, endpoint_type="blocked")
+        )
 
     return TaskListResponse(
         tasks=task_responses,
@@ -727,7 +735,9 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
 @router.get("/tasks/{task_id}", response_model=None)
 async def get_task_global(
     task_id: str,
-    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+    format: str | None = Query(
+        None, description="Output format: 'toon' for compact token-optimized"
+    ),
 ) -> TaskResponse | PlainTextResponse:
     """Get a task by ID without requiring project context.
 
@@ -755,7 +765,9 @@ async def get_task_global(
 async def get_task(
     project_id: str,
     task_id: str,
-    format: str | None = Query(None, description="Output format: 'toon' for compact token-optimized"),
+    format: str | None = Query(
+        None, description="Output format: 'toon' for compact token-optimized"
+    ),
 ) -> TaskResponse | PlainTextResponse:
     """Get a single task by ID.
 
