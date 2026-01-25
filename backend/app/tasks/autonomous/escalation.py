@@ -23,6 +23,29 @@ from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
 
+WORKER_MAX_FAILURES = QA_WORKER_STUCK_THRESHOLD
+SUPERVISOR_MAX_ATTEMPTS = QA_SUPERVISOR_STUCK_THRESHOLD
+
+
+def check_escalation_needed(
+    failure_count: int = 0,
+    supervisor_attempts: int = 0,
+) -> dict[str, bool]:
+    """Check if escalation is needed based on failure counts.
+
+    Args:
+        failure_count: Number of worker failures on same issue
+        supervisor_attempts: Number of supervisor guidance attempts
+
+    Returns:
+        Dict with escalation flags
+    """
+    return {
+        "escalate_to_supervisor": failure_count >= WORKER_MAX_FAILURES
+        and supervisor_attempts < SUPERVISOR_MAX_ATTEMPTS,
+        "escalate_to_human": supervisor_attempts >= SUPERVISOR_MAX_ATTEMPTS,
+    }
+
 
 @shared_task(bind=True, name="autonomous.supervisor_guidance")  # type: ignore[untyped-decorator]
 def supervisor_guidance(

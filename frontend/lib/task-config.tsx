@@ -177,6 +177,11 @@ export const statusConfig: Record<TaskStatus, StatusConfig> = {
     label: 'Pending',
     className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
   },
+  queue: {
+    label: 'Queued',
+    className: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+    icon: <Clock className="h-3 w-3" />,
+  },
   running: {
     label: 'Running',
     className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
@@ -235,6 +240,11 @@ export interface TaskStatusCardConfig {
 
 export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
   pending: { icon: null, className: '', title: '' },
+  queue: {
+    icon: <Clock className="h-3.5 w-3.5" />,
+    className: 'text-sky-400',
+    title: 'Queued for execution',
+  },
   running: {
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
     className: 'text-blue-400',

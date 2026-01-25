@@ -10,6 +10,7 @@ import { buildQueryString, fetchWithErrorHandling, getApiBase } from './utils'
 
 export type TaskStatus =
   | 'pending'
+  | 'queue'
   | 'running'
   | 'paused'
   | 'blocked'

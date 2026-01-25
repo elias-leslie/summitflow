@@ -27,10 +27,11 @@ import { DragOverlayTaskCard, TaskCard } from './TaskCard'
 // Types
 // ============================================================================
 
-// Kanban columns for git management workflow (6 columns: Ideas + 5 workflow per decision d2/d4)
+// Kanban columns for git management workflow (7 columns: Ideas + 6 workflow per decision d2/d4/d9)
 export type TaskKanbanColumn =
   | 'ideas'
   | 'planning'
+  | 'queue'
   | 'in_progress'
   | 'ai_review'
   | 'human_review'
@@ -60,6 +61,8 @@ interface TaskKanbanBoardProps {
 const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // Planning column
   pending: 'planning',
+  // Queue column (waiting for execution)
+  queue: 'queue',
   // In Progress column
   running: 'in_progress',
   paused: 'in_progress',
@@ -89,6 +92,7 @@ function isCrowdsourcedIdea(task: Task): boolean {
 const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
   ideas: 'pending', // Ideas are pending tasks with crowdsourced label
   planning: 'pending',
+  queue: 'queue',
   in_progress: 'running',
   ai_review: 'ai_reviewing',
   human_review: 'human_review',
@@ -102,6 +106,7 @@ const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
 const COLUMNS: KanbanColumn[] = [
   { id: 'ideas', title: 'Ideas', color: 'yellow', icon: 'lightbulb' },
   { id: 'planning', title: 'Planning', color: 'slate', icon: null },
+  { id: 'queue', title: 'Queue', color: 'sky', icon: null },
   { id: 'in_progress', title: 'In Progress', color: 'blue', icon: null },
   { id: 'ai_review', title: 'AI Review', color: 'amber', icon: 'sparkles' },
   { id: 'human_review', title: 'Human Review', color: 'violet', icon: 'eye' },
@@ -173,6 +178,11 @@ function DroppableColumn({
       header: 'text-slate-400',
       border: 'border-slate-700',
       bg: 'bg-slate-900/30',
+    },
+    sky: {
+      header: 'text-sky-400',
+      border: 'border-sky-500/30',
+      bg: 'bg-sky-950/20',
     },
     blue: {
       header: 'text-blue-400',
@@ -328,6 +338,7 @@ export function TaskKanbanBoard({
     const grouped: Record<TaskKanbanColumn, Task[]> = {
       ideas: [],
       planning: [],
+      queue: [],
       in_progress: [],
       ai_review: [],
       human_review: [],

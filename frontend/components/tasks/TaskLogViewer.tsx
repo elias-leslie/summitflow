@@ -60,6 +60,7 @@ const statusConfig: Record<
   }
 > = {
   pending: { icon: Clock, variant: 'slate' },
+  queue: { icon: Clock, variant: 'slate' },
   running: { icon: PlayCircle, variant: 'phosphor' },
   paused: { icon: PauseCircle, variant: 'amber' },
   blocked: { icon: XCircle, variant: 'amber' },

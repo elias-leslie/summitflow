@@ -49,6 +49,11 @@ const statusIcons: Record<
     color: 'text-slate-400',
     bg: 'bg-slate-500/20',
   },
+  queue: {
+    icon: <Clock className="h-3 w-3" />,
+    color: 'text-sky-400',
+    bg: 'bg-sky-500/20',
+  },
   running: {
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
     color: 'text-blue-400',

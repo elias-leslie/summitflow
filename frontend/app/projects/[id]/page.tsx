@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import { HealthTab } from '@/components/health/HealthTab'
 import type { ExplorerType } from '@/components/explorer/types'
+import { BottomExecutionDock } from '@/components/execution/BottomExecutionDock'
+import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
 import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
@@ -74,6 +76,8 @@ export default function ProjectDetailPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [modalOpen, setModalOpen] = useState(!!urlTaskId)
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
+  const [escalationOpen, setEscalationOpen] = useState(false)
+  const [escalationTask, setEscalationTask] = useState<Task | null>(null)
 
   // Handle URL task param changes
   useEffect(() => {
@@ -115,10 +119,25 @@ export default function ProjectDetailPage() {
   }
 
   const handleTaskClick = (task: Task) => {
-    setSelectedTaskId(task.id)
-    setSelectedTask(task)
-    setModalOpen(true)
+    if (task.status === 'blocked') {
+      setEscalationTask(task)
+      setEscalationOpen(true)
+    } else {
+      setSelectedTaskId(task.id)
+      setSelectedTask(task)
+      setModalOpen(true)
+    }
   }
+
+  const handleApproveAndResume = async (_message?: string) => {
+    if (!escalationTask) return
+    await updateTaskStatus(projectId, escalationTask.id, 'running')
+    refetchKanbanTasks()
+  }
+
+  const runningTasks = kanbanTasks
+    .filter((t) => t.status === 'running')
+    .map((task) => ({ task }))
 
   const handleTaskUpdate = (task: Task) => {
     setSelectedTask(task)
@@ -191,6 +210,17 @@ export default function ProjectDetailPage() {
               onOpenChange={handleCreateDialogChange}
               projectId={projectId}
             />
+            {runningTasks.length > 0 && (
+              <BottomExecutionDock runningTasks={runningTasks} />
+            )}
+            {escalationTask && (
+              <EscalationPanel
+                task={escalationTask}
+                isOpen={escalationOpen}
+                onClose={() => setEscalationOpen(false)}
+                onApproveAndResume={handleApproveAndResume}
+              />
+            )}
           </div>
         )}
         {activeTab === 'tasks' && (

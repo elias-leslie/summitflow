@@ -486,6 +486,21 @@ body::before {
   animation: status-pulse 2s ease-in-out infinite;
 }
 
+/* Pulse glow for running task cards */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(0, 245, 255, 0.3), 0 0 16px rgba(0, 245, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0, 245, 255, 0.5), 0 0 32px rgba(0, 245, 255, 0.25);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
 /* Hide scrollbar utility */
 .scrollbar-hide {
   -ms-overflow-style: none;

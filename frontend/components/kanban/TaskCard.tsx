@@ -16,13 +16,72 @@ import {
 import { AnimatePresence } from 'motion/react'
 import { useState } from 'react'
 
-import type { Task } from '@/lib/api'
+import type { Task, TaskStatus } from '@/lib/api'
 import {
   getPriorityClasses,
   getTaskStatusCardConfig,
   getTaskTypeConfigSmall,
 } from '@/lib/task-config'
 import { ExecutionPanel, type ExecutionState } from './ExecutionPanel'
+
+const EXECUTION_PHASES = ['Triage', 'Plan', 'Queue', 'Execute', 'Review'] as const
+type ExecutionPhase = (typeof EXECUTION_PHASES)[number]
+
+function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
+  switch (status) {
+    case 'pending':
+      return 'Triage'
+    case 'paused':
+    case 'blocked':
+      return 'Plan'
+    case 'queue':
+      return 'Queue'
+    case 'running':
+      return 'Execute'
+    case 'ai_reviewing':
+    case 'human_review':
+    case 'pr_created':
+      return 'Review'
+    default:
+      return null
+  }
+}
+
+function StepProgressIndicator({ status }: { status: TaskStatus }) {
+  const currentPhase = getPhaseFromStatus(status)
+  if (!currentPhase) return null
+
+  const currentIndex = EXECUTION_PHASES.indexOf(currentPhase)
+
+  return (
+    <div className="flex items-center gap-1 text-xs">
+      {EXECUTION_PHASES.map((phase, index) => {
+        const isActive = index === currentIndex
+        const isPast = index < currentIndex
+        return (
+          <div key={phase} className="flex items-center gap-1">
+            {index > 0 && (
+              <div
+                className={`w-2 h-px ${isPast ? 'bg-phosphor-500' : 'bg-slate-600'}`}
+              />
+            )}
+            <span
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                isActive
+                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                  : isPast
+                    ? 'bg-slate-700 text-slate-300'
+                    : 'bg-slate-800 text-slate-500'
+              }`}
+            >
+              {phase}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 
 // ============================================================================
@@ -97,12 +156,19 @@ export function TaskCard({
   const allPassed =
     hasCriteria && capability.criteria_passed === capability.criteria_total
 
+  const isRunning = task.status === 'running'
+  const currentStep = execution?.currentStep
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       data-testid={`task-card-${task.id}`}
-      className="group relative rounded-lg border border-slate-700 bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-colors cursor-pointer"
+      className={`group relative rounded-lg border bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-colors cursor-pointer ${
+        isRunning
+          ? 'border-phosphor-500/50 shadow-phosphor-500/20 shadow-lg animate-pulse-glow'
+          : 'border-slate-700'
+      }`}
       onClick={onClick}
     >
       {/* Drag Handle */}
@@ -148,6 +214,17 @@ export function TaskCard({
         <h4 className="text-sm font-medium text-white leading-tight mb-2 line-clamp-2">
           {task.title}
         </h4>
+
+        {/* Current Step from WebSocket execution event */}
+        {isRunning && currentStep && (
+          <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-blue-500/10 border border-blue-500/20">
+            <Loader2 className="h-3 w-3 animate-spin text-blue-400 shrink-0" />
+            <span className="text-xs text-blue-300 truncate">{currentStep}</span>
+          </div>
+        )}
+
+        {/* Step Progress Indicator showing phase */}
+        {canExpand && <StepProgressIndicator status={task.status} />}
 
         {/* AI Review Status Bar - shown for relevant states */}
         {(task.status === 'ai_reviewing' ||

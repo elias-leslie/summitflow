@@ -141,6 +141,10 @@ const statusConfig: Record<
     icon: <Clock className="h-3.5 w-3.5" />,
     className: 'text-slate-400',
   },
+  queue: {
+    icon: <Clock className="h-3.5 w-3.5" />,
+    className: 'text-sky-400',
+  },
   running: {
     icon: <Play className="h-3.5 w-3.5" />,
     className: 'text-blue-400',
