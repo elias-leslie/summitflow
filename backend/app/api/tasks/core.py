@@ -129,6 +129,54 @@ def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
     return task
 
 
+def _dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
+    """Dispatch autonomous execution Celery task based on status transition.
+
+    Status triggers:
+    - pending -> Idea triage (if task_type is 'idea')
+    - queue -> Begin autonomous execution
+    - cancelled/blocked (from running) -> Emergency stop
+    """
+    try:
+        if new_status == "queue":
+            from ...tasks.autonomous import start_execution
+
+            start_execution.delay(task_id, project_id)
+            logger.info("Dispatched autonomous execution", task_id=task_id, status=new_status)
+
+        elif new_status == "pending":
+            task = task_store.get_task(task_id)
+            if task and task.get("task_type") == "idea":
+                from ...tasks.autonomous import triage_idea
+
+                triage_idea.delay(task_id, project_id)
+                logger.info("Dispatched idea triage", task_id=task_id)
+
+        elif new_status in ("cancelled", "blocked"):
+            _abort_running_task(task_id)
+
+    except ImportError:
+        logger.debug("Autonomous tasks not available")
+    except Exception as e:
+        logger.warning("Failed to dispatch autonomous task", task_id=task_id, error=str(e))
+
+
+def _abort_running_task(task_id: str) -> None:
+    """Emergency stop - abort any running Celery tasks for this task.
+
+    Called when task is dragged out of running column (to cancelled/blocked).
+    """
+    try:
+        from ...services.celery_inspector import revoke_task_by_name
+
+        revoke_task_by_name(f"autonomous.start_execution:{task_id}")
+        logger.info("Aborted running task", task_id=task_id)
+    except ImportError:
+        logger.debug("Celery inspector not available")
+    except Exception as e:
+        logger.warning("Failed to abort running task", task_id=task_id, error=str(e))
+
+
 def _toon_format_task(task: TaskResponse) -> str:
     """Convert TaskResponse to TOON (Token-Optimized Output Notation) format.
 
@@ -930,6 +978,9 @@ async def update_task_status(
     # Append completion reason to progress_log if provided
     if update.reason and update.status in ("completed", "cancelled"):
         updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
+
+    # Dispatch autonomous execution tasks on status transitions
+    _dispatch_autonomous_task(task_id, update.status, project_id)
 
     # Populate verification_result on completion (step-level verification)
     if update.status == "completed" and updated:

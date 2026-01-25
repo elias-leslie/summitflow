@@ -179,10 +179,10 @@ def process_crowdsourced_ideas(project_id: str) -> dict[str, Any]:
             # This triggers the existing implementation pipeline
             logger.info(f"Dispatching idea {idea_id} via task {task_id}")
 
-            from .execution import autonomous_work_pickup
+            from .execution import start_execution
 
             # Trigger async execution - the task will be picked up
-            autonomous_work_pickup.delay(project_id)
+            start_execution.delay(task_id, project_id)
 
             # Estimate cost (placeholder - real cost tracking would come from Agent Hub)
             estimated_cost = 0.50  # Conservative estimate per task

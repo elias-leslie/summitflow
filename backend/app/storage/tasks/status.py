@@ -33,9 +33,12 @@ from .core import TASK_COLUMNS, _row_to_dict, get_task
 # Valid task status transitions (extended for git management workflow)
 VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
-    "pending": {"running", "paused", "blocked", "cancelled"},
+    "pending": {"queue", "running", "paused", "blocked", "cancelled"},
+    # Queue state (autonomous execution pipeline)
+    "queue": {"running", "pending", "blocked", "cancelled"},
     # Work states
     "running": {
+        "queue",
         "paused",
         "failed",
         "blocked",
@@ -46,9 +49,9 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "needs_review",
         "cancelled",
     },
-    "paused": {"running", "pending", "failed", "cancelled"},
-    "blocked": {"running", "pending", "failed", "cancelled"},
-    "failed": {"pending", "running", "cancelled"},
+    "paused": {"queue", "running", "pending", "failed", "cancelled"},
+    "blocked": {"queue", "running", "pending", "failed", "cancelled"},
+    "failed": {"queue", "pending", "running", "cancelled"},
     # PR/Review states (agent workflow)
     "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled"},
     "ai_reviewing": {"completed", "human_review", "running", "failed"},
@@ -61,9 +64,10 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "cancelled": set(),
 }
 
-# Status to kanban column mapping (5 columns per decision d2)
+# Status to kanban column mapping (6 columns with Queue)
 STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
     "pending": "Planning",
+    "queue": "Queue",  # Queued for autonomous execution
     "running": "In Progress",
     "paused": "In Progress",
     "blocked": "In Progress",

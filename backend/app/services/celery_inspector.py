@@ -297,3 +297,31 @@ def get_unified_task_list(
         tasks.extend(failed)
 
     return tasks
+
+
+def revoke_task_by_name(task_identifier: str, terminate: bool = True) -> bool:
+    """Revoke/abort a running Celery task.
+
+    Args:
+        task_identifier: Task identifier in format "task_name:context_id"
+                        e.g., "autonomous.start_execution:task-abc123"
+        terminate: If True, terminate the task immediately (SIGTERM)
+
+    Returns:
+        True if revoke was sent, False if task not found
+    """
+    active_tasks = get_active_tasks()
+
+    for task in active_tasks:
+        task_args = task.get("args", [])
+        task_name = task.get("name", "")
+
+        if task_identifier.startswith(task_name):
+            context_id = task_identifier.split(":", 1)[1] if ":" in task_identifier else None
+            if context_id and context_id in str(task_args):
+                task_id = task.get("id")
+                if task_id:
+                    celery_app.control.revoke(task_id, terminate=terminate)
+                    return True
+
+    return False
