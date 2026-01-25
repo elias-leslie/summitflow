@@ -467,14 +467,8 @@ def context(
             if spirit.get("complexity"):
                 task["complexity"] = spirit["complexity"]
 
-        # Fetch subtasks with steps (use task's project_id)
-        task_project_id = task.get("project_id")
-        if task_project_id and client.project_id != task_project_id:
-            subtask_client = STClient(project_id=task_project_id, require_project=False)
-            subtask_data = subtask_client.get_subtasks(task_id, include_steps=True)
-        else:
-            subtask_data = client.get_subtasks(task_id, include_steps=True)
-
+        # Fetch subtasks with steps (global endpoint, no project context needed)
+        subtask_data = client.get_subtasks(task_id, include_steps=True)
         subtasks = subtask_data.get("subtasks", [])
 
         # Fetch blockers (dependencies where this task is blocked by others)

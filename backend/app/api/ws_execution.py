@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..services.pubsub import subscribe_ws_events
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -233,6 +235,8 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
     # Accept connection
     current_seq = await manager.connect(websocket, task_id)
 
+    redis_task: asyncio.Task[None] | None = None
+
     try:
         # Send connection confirmation
         await websocket.send_json(
@@ -247,17 +251,44 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
         if from_sequence > 0:
             await manager.replay(websocket, task_id, from_sequence)
 
-        # Listen for incoming messages
+        async def forward_redis_events() -> None:
+            """Forward events from Redis to all connected clients via ConnectionManager.
+
+            Routes through manager.broadcast() so messages are:
+            1. Assigned sequence numbers
+            2. Stored for replay on reconnection
+            3. Sent to all connected clients
+            """
+            async for event in subscribe_ws_events(task_id):
+                try:
+                    msg_type_str = event.get("type", "log")
+                    msg_type = (
+                        MessageType(msg_type_str)
+                        if msg_type_str in MessageType.__members__.values()
+                        else MessageType.LOG
+                    )
+                    await manager.broadcast(
+                        task_id,
+                        Message(
+                            type=msg_type,
+                            task_id=task_id,
+                            data=event.get("data", {}),
+                        ),
+                    )
+                except Exception:
+                    break
+
+        redis_task = asyncio.create_task(forward_redis_events())
+
+        # Listen for incoming messages from client
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type")
 
             if msg_type == MessageType.STOP_SIGNAL.value:
-                # Trigger stop handler if registered
                 handler = _stop_handlers.get(task_id)
                 if handler:
                     handler()
-                # Broadcast stop signal to other listeners
                 await manager.broadcast(
                     task_id,
                     Message(
@@ -268,12 +299,10 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
                 )
 
             elif msg_type == MessageType.CHAT_MESSAGE.value:
-                # Trigger chat handler if registered (for orchestrator)
                 chat_handler = _chat_handlers.get(task_id)
                 message_data = data.get("data", {})
                 if chat_handler:
                     chat_handler(message_data)
-                # Broadcast chat message to other listeners
                 await manager.broadcast(
                     task_id,
                     Message(
@@ -286,6 +315,10 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        if redis_task:
+            redis_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await redis_task
         await manager.disconnect(websocket, task_id)
 
 

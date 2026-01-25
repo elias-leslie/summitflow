@@ -503,7 +503,133 @@ Ran autonomous execution on task-ee23fccf (refactor explorer.py):
 
 ---
 
-## NEXT SESSION: Simple Task E2E Test
+## Session 2026-01-25 (Late Night) - Fixes Applied & E2E PASSED
+
+### What Was Done
+
+**Issue 1: WebSocket Streaming Architecture** - FIXED
+- Created `backend/app/services/pubsub.py` with Redis pub/sub for cross-process messaging
+- Updated `execution.py` to use `publish_ws_event()` instead of async WebSocket calls
+- Updated `ws_execution.py` to subscribe to Redis channel and forward to clients
+- Now Celery workers can emit events that FastAPI WebSocket handlers receive
+
+**Issue 3: Task Steps Not Reset on Re-Run** - FIXED
+- Added `_reset_steps_for_rerun()` function in execution.py
+- Called at start of execution to clear previous verification results
+- Allows re-running failed tasks without stale step state
+
+**Issue 4: Double Verification Bug** - FIXED
+- `update_step_passes()` was verifying from wrong directory (main project root instead of worktree)
+- Added `project_root=worktree_path` parameter to `update_step_passes()` call
+- Now both verification paths use the worktree correctly
+
+**Issue 5: AI Review Missing project_id** - FIXED
+- Added `project_id=project_id` to `client.complete()` call in review.py
+
+### Simple E2E Test Results
+
+Created task `task-535c9e99` with simple TODO comment addition:
+
+```
+st create "Add TODO comment to execution.py" -t task -d "..."
+st subtask create 1.1 -d "Add TODO comment" --task task-535c9e99 --phase backend \
+  --steps-json '[{"description": "Add TODO comment", "verify_command": "rg -q \"TODO: Remove this test\" backend/app/tasks/autonomous/execution.py && echo Found", "expected_output": "Found"}]'
+st update task-535c9e99 --status queue
+```
+
+**Results:**
+- Worktree created: `/tmp/summitflow-worktrees/summitflow/task-535c9e99`
+- Agent Hub called: agent_slug="coder" ran for ~18s
+- Step verification: PASSED (check_type=contains, reason=contains_match)
+- Subtask marked: PASSED
+- TODO comment: Added to worktree execution.py line 1
+- QA Review: Triggered (minor bug fixed post-test)
+
+### Files Modified This Session
+
+- `backend/app/services/pubsub.py` - NEW: Redis pub/sub for WebSocket events
+- `backend/app/tasks/autonomous/execution.py` - Redis emit, step reset, worktree path
+- `backend/app/api/ws_execution.py` - Redis subscription in WebSocket handler
+- `backend/app/tasks/autonomous/review.py` - Added missing project_id parameter
+
+### Remaining Items
+
+1. **Execution Timeline Architecture** - See NEXT SESSION below (blocking)
+2. **Escalation Flow** - 3x worker → supervisor → human (code exists, needs integration test)
+3. **Wind-down** - Max iterations pause (code exists, needs test)
+4. **QA Review Verdicts** - APPROVED/NEEDS_FIX/PLAN_DEFECT/ESCALATE (needs test)
+
+---
+
+## NEXT SESSION: Execution Timeline Architecture (SOTA)
+
+### The Problem
+
+Current implementation has a gap:
+- **Live events work** when WebSocket is connected during execution
+- **Historical events lost** - if you open the page after execution, timeline is empty
+- Redis pub/sub is ephemeral - messages not stored
+
+### Task
+
+Design and implement a SOTA execution timeline that:
+1. Shows events live during execution
+2. Allows viewing full history after execution completes
+3. Has excellent UI/UX
+
+### Procedure
+
+**Phase 1: Research**
+1. Research patterns for real-time + historical event streams:
+   - Redis Streams vs Redis Lists vs PostgreSQL
+   - Event sourcing patterns
+   - How Celery Flower, Airflow, GitHub Actions handle this
+2. Check existing SummitFlow infrastructure (what's already available?)
+
+**Phase 2: User Interview (BEFORE /consult)**
+Ask user about UX preferences:
+- How far back should history go? (per task, time-based, count-based)
+- Should events be filterable/searchable?
+- Playback/scrubbing through past executions?
+- Notifications when execution events happen?
+- Mobile considerations?
+
+**Phase 3: Expert Consultation**
+Run findings by `/consult --pro` with:
+- Current architecture constraints
+- User requirements from interview
+- Proposed options with tradeoffs
+
+**Phase 4: User Interview (AFTER /consult)**
+Present expert recommendations and get alignment on:
+- Final architecture choice
+- UI/UX design direction
+- Any additional requirements
+
+**Phase 5: Implementation**
+1. Use `/frontend-design` skill for UI components
+2. Backend event storage
+3. WebSocket + REST hybrid for live + historical
+4. Integration testing
+
+### Current Files
+
+- `backend/app/api/ws_execution.py` - WebSocket endpoint
+- `backend/app/services/pubsub.py` - Redis pub/sub (ephemeral)
+- `backend/app/tasks/autonomous/execution.py` - Event emitter
+- `frontend/hooks/useExecutionWebSocket.ts` - Client hook
+- `frontend/components/tasks/ExecutionTimeline.tsx` - UI component
+
+### Known Constraints
+
+- Redis available at `redis://localhost:6379`
+- PostgreSQL available for persistent storage
+- Celery workers are separate processes from FastAPI
+- Frontend uses Next.js with React hooks
+
+---
+
+## ARCHIVED: Simple Task E2E Test
 
 Create a simple test task and run it through the full pipeline:
 

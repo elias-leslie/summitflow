@@ -25,7 +25,7 @@ from ...schemas.steps import (
     StepSummary,
     StepUpdate,
 )
-from .core import _verify_task_project
+from .core import _get_task_or_404, _verify_task_project
 
 router = APIRouter()
 
@@ -548,3 +548,112 @@ async def get_step_summary_endpoint(
     summary = get_step_summary(table_id)
 
     return StepSummary(**summary)
+
+
+# Global endpoints (no project_id required - task IDs are globally unique)
+
+
+@router.patch(
+    "/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status",
+    response_model=StepResponse,
+)
+async def update_step_status_global(
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+    request: dict[str, Any],
+) -> StepResponse:
+    """Update step status (global lookup, no project context required).
+
+    Valid status values: pending, passed, failed, plan_defect.
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        step_number: Step number (1-indexed)
+        request: Dict with 'status' and optional 'fix_step_number' fields
+
+    Returns:
+        Updated step
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.steps import PlanDefectError
+    from ...storage.steps import update_step_status as storage_update_step_status
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+    status = request.get("status")
+    if not status:
+        raise HTTPException(status_code=400, detail="status field is required")
+
+    fix_step_number = request.get("fix_step_number")
+    if fix_step_number is not None:
+        try:
+            fix_step_number = int(fix_step_number)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"fix_step_number must be an integer, got: {fix_step_number}",
+            ) from None
+
+    try:
+        updated = storage_update_step_status(
+            table_id, step_number, status, fix_step_number=fix_step_number
+        )
+    except PlanDefectError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step {step_number} not found for subtask {subtask_id}",
+        )
+
+    return StepResponse(**updated)
+
+
+@router.patch(
+    "/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}",
+    response_model=StepResponse,
+)
+async def update_step_global(
+    task_id: str,
+    subtask_id: str,
+    step_number: int,
+    request: StepUpdate,
+) -> StepResponse:
+    """Update a step's passes status (global lookup, no project context required).
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        step_number: Step number (1-indexed)
+        request: Update with passes boolean
+
+    Returns:
+        Updated step
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.steps import StepVerificationError, update_step_passes
+
+    table_id = _get_subtask_table_id(task_id, subtask_id)
+    try:
+        updated = update_step_passes(table_id, step_number, passes=request.passes)
+    except StepVerificationError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": str(e), "verify_output": getattr(e, "output", "")},
+        ) from e
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step {step_number} not found for subtask {subtask_id}",
+        )
+
+    return StepResponse(**updated)

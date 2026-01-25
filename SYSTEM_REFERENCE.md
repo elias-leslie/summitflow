@@ -48,12 +48,17 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         SUMMITFLOW (dev.summitflow.dev)                 │
-│  Celery Beat (30 min) → autonomous_work_pickup() → OrchestratorService  │
-│  ├─ Claim task (PostgreSQL lock)                                        │
+│  EXECUTION PATHWAYS:                                                    │
+│  ├─ st autocode (CLI) → AgentHubService → Single subtask dispatch       │
+│  ├─ POST /execute (API) → Celery → OrchestratorService → Multi-subtask  │
+│  └─ Celery Beat (30 min) → autonomous_work_pickup() → Orchestrator      │
+│                                                                         │
+│  ORCHESTRATOR FLOW:                                                     │
+│  ├─ Claim task (PostgreSQL lock, 30 min TTL)                            │
 │  ├─ Create worktree (/tmp/summitflow-worktrees/{project}/{task})        │
-│  ├─ Execute subtasks via Agent Hub                                      │
-│  ├─ Opus review gate                                                    │
-│  └─ Auto-merge (Tier 1 only)                                           │
+│  ├─ Execute subtasks via Agent Hub (agent:coder, agent:supervisor)      │
+│  ├─ Step verification (verify_command exit 0)                           │
+│  └─ Auto-merge (Tier 1 only, blast radius check)                        │
 │                                                                         │
 │  UI: Dashboard | Design | Explorer | Evidence | Kanban | Git | Backups  │
 │  Backend: FastAPI (8001) | Celery | PostgreSQL | Redis DB 1             │
@@ -63,15 +68,25 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         AGENT HUB (agent.summitflow.dev)                │
 │  POST /api/complete                                                     │
-│  ├─ Memory injection (3-block progressive)                              │
+│  ├─ Memory injection (3-block: Mandates/Guardrails/Reference)           │
+│  ├─ Agent routing (agent:coder, agent:supervisor, etc.)                 │
 │  ├─ LLM call (Claude/Gemini with fallback chains)                       │
-│  ├─ Citation tracking                                                   │
-│  └─ Cost tracking per external_id                                       │
+│  ├─ Citation tracking ([M:uuid8] references)                            │
+│  └─ Cost tracking per external_id + project_id                          │
 │                                                                         │
 │  UI: Dashboard | Chat | Agents | Memory | Sessions | Admin              │
 │  Backend: FastAPI (8003) | Neo4j (Graphiti) | PostgreSQL | Redis DB 2   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Execution Pathway Decision
+
+| Use Case | Pathway | Implementation |
+|----------|---------|----------------|
+| Single subtask (CLI) | `st autocode` | AgentHubService → Agent Hub LLM |
+| Multi-subtask (async) | POST `/execute` | Celery → OrchestratorService |
+| Scheduled pickup | Celery Beat | autonomous_work_pickup() |
+| **DEPRECATED** | `st exec` | ImplementationExecutor (do not use) |
 
 ---
 
@@ -244,19 +259,50 @@ file, table, endpoint, page, celery_task, dependency
 
 **Entry point**: `st` command
 
+#### Active Task Context
+The `st work <task-id>` command sets an active task context. Subsequent commands (context, close, cancel, claim, delete, log, subtask, step) will use this task automatically when no explicit ID is provided.
+
+```bash
+st work task-abc123          # Set active task
+st work --show               # Show current context
+st work --done               # Clear context
+st close                     # Uses active task (no ID needed)
+```
+
+#### Task Commands
+
+| Command | Purpose | Active Context |
+|---------|---------|----------------|
+| `st create` | Create task (single or batch via --from-file) | No |
+| `st list` | List tasks with filters | No |
+| `st ready` | List unblocked tasks ready to work on | No |
+| `st show <ids>` | Show task details with subtask progress | No |
+| `st context [id]` | Full task context in single call (optimized for /do_it) | Yes |
+| `st export [id]` | Export complete task to JSON | Yes |
+| `st update [id]` | Update task fields, status, dependencies | Yes |
+| `st close [id]` | Close task (all subtasks must be complete) | Yes |
+| `st cancel [id]` | Cancel task from any non-terminal state | Yes |
+| `st claim [id]` | Claim/release task, optionally with worktree | Yes |
+| `st delete [id]` | Delete task | Yes |
+| `st bug` | Create bug task (shorthand for create -t bug) | No |
+| `st log <msg>` | Append to task progress log with timestamp | Yes |
+| `st work` | Set/show/clear active task context | N/A |
+| `st verify` | Validate plan.json against schema | No |
+| `st import` | Import plan.json as task with subtasks | No |
+| `st autocode [id]` | Execute task via Agent Hub (PRIMARY) | Yes |
+| `st exec [id]` | **DEPRECATED** - use st autocode | Yes |
+
+#### Subcommands
+
 | Command | Subcommands | Purpose |
 |---------|-------------|---------|
-| `st create` | - | Create task |
-| `st list` | - | List tasks |
-| `st ready` | - | Mark task ready |
-| `st show` | - | Show task details |
-| `st close` | - | Close task |
-| `st subtask` | list, show, create, pass, delete | Subtask management |
-| `st step` | list, pass, new, add, delete | Step management |
+| `st subtask` | list, show, create, pass, block, delete | Subtask management |
+| `st step` | list, pass, new, insert, defect, delete | Step management |
 | `st worktree` | list, prune | Worktree management |
 | `st git` | status, sync, cleanup | Git operations |
 | `st backup` | list, create, restore, status, schedule | Backup management |
 | `st autonomous` | enable, disable, status | Autonomous settings |
+| `st health` | (no subcommands) | Quality gate status |
 
 **Output modes**: `--compact` (TOON), `--human` (pretty JSON), `--no-compact` (raw JSON)
 
@@ -821,10 +867,33 @@ curl http://localhost:8003/api/memory/stats # Memory system
 
 ### Common CLI Commands
 ```bash
-st list                          # List tasks
-st ready                         # Mark task ready
+# Task workflow
+st ready                         # List unblocked tasks
+st work task-abc123              # Set active task context
+st context                       # Full task context (uses active task)
+st subtask list                  # List subtasks with steps
+st step pass 1.1 1               # Mark step complete
+st subtask pass 1.1              # Mark subtask complete (all steps must pass)
+st close                         # Close task (all subtasks must pass)
+
+# Execution
+st autocode                      # Execute via Agent Hub (PRIMARY)
+st autocode --status exec-123    # Check execution status
+
+# Task management
+st list --status pending         # Filter by status
+st show task-abc123              # Show task details
+st update --priority 1           # Update active task
+st log "Progress note"           # Add to progress log
+
+# Planning
+st verify plan.json              # Validate plan schema
+st import plan.json              # Create task from plan
+
+# Infrastructure
 st backup create                 # Create backup
 st autonomous status             # Check autonomous settings
+st health                        # Quality gate status
 ```
 
 ### Memory API Quick Reference
@@ -840,4 +909,4 @@ curl -X POST "http://localhost:8003/api/memory/save-learning" \
 
 ---
 
-*Generated: 2026-01-20 | Confidence: 99%*
+*Generated: 2026-01-25 | Companion: QUICK_REFERENCE.md*

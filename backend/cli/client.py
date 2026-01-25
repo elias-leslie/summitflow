@@ -319,7 +319,7 @@ class STClient:
         Returns:
             List of dependency dicts.
         """
-        response = self._client.get(self._url(f"/tasks/{task_id}/dependencies"))
+        response = self._client.get(self._global_url(f"/tasks/{task_id}/dependencies"))
         return self._handle_response(response)
 
     def remove_dependency(
@@ -392,7 +392,7 @@ class STClient:
             Dict with subtasks list and summary.
         """
         params = {"include_steps": str(include_steps).lower()}
-        response = self._client.get(self._url(f"/tasks/{task_id}/subtasks"), params=params)
+        response = self._client.get(self._global_url(f"/tasks/{task_id}/subtasks"), params=params)
         return self._handle_response(response)
 
     def create_subtask(
@@ -467,7 +467,7 @@ class STClient:
         """
         data = {"passes": passes}
         response = self._client.patch(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data
+            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data
         )
         return self._handle_response(response)
 
@@ -566,7 +566,7 @@ class STClient:
         """
         data = {"passes": passes}
         response = self._client.patch(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
+            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
             json=data,
         )
         return self._handle_response(response)
@@ -702,7 +702,7 @@ class STClient:
             data["fix_step_number"] = fix_step_number
 
         response = self._client.patch(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status"),
+            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status"),
             json=data,
         )
         return self._handle_response(response)
@@ -795,7 +795,7 @@ class STClient:
             Status dict confirming append.
         """
         data = {"entry": entry}
-        response = self._client.post(self._url(f"/tasks/{task_id}/log"), json=data)
+        response = self._client.post(self._global_url(f"/tasks/{task_id}/log"), json=data)
         return self._handle_response(response)
 
     # Autocode

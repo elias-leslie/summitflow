@@ -74,6 +74,7 @@ Output format:
         client = get_sync_client()
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
+            project_id=project_id,
             agent_slug="reviewer",
         )
 

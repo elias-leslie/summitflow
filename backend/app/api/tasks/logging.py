@@ -30,7 +30,7 @@ from ...schemas.tasks import (
 from ...services.task_validation import validate_task_ready
 from ...storage import tasks as task_store
 from ...utils.sse import format_sse_event as _sse_event
-from .core import _task_to_response, _verify_task_project
+from .core import _get_task_or_404, _task_to_response, _verify_task_project
 
 logger = get_logger(__name__)
 
@@ -318,3 +318,28 @@ async def release_task(project_id: str, task_id: str) -> TaskResponse:
         raise HTTPException(status_code=500, detail="Failed to release task")
 
     return _task_to_response(released)
+
+
+# Global endpoints (no project_id required - task IDs are globally unique)
+
+
+@router.post("/tasks/{task_id}/log", response_model=dict[str, Any])
+async def append_task_log_global(task_id: str, log_entry: TaskLogEntry) -> dict[str, Any]:
+    """Append an entry to the task's progress log (global lookup, no project context required).
+
+    Args:
+        task_id: Task ID
+        log_entry: Log entry text
+    """
+    task = _get_task_or_404(task_id)
+
+    updated = task_store.append_progress_log(task_id, log_entry.entry)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to append to progress log")
+
+    return {
+        "status": "appended",
+        "project_id": task["project_id"],
+        "task_id": task_id,
+        "entry": log_entry.entry,
+    }

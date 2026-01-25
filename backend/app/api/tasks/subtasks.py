@@ -24,7 +24,7 @@ from ...schemas.tasks import (
     SubtaskResponse,
     SubtaskUpdate,
 )
-from .core import _verify_task_project
+from .core import _get_task_or_404, _verify_task_project
 
 logger = get_logger(__name__)
 
@@ -304,3 +304,87 @@ Return JSON:
             cleaned_prompt=request.raw_request,
             changes_made=[f"Cleanup failed: {e}"],
         )
+
+
+# Global endpoints (no project_id required - task IDs are globally unique)
+
+
+@router.get(
+    "/tasks/{task_id}/subtasks",
+    response_model=dict[str, Any],
+)
+async def get_task_subtasks_global(
+    task_id: str,
+    include_steps: bool = Query(False, description="Include steps for each subtask"),
+) -> dict[str, Any]:
+    """Get subtasks for a task (global lookup, no project context required).
+
+    Task IDs are globally unique, so project_id is not needed.
+
+    Args:
+        task_id: Task ID
+        include_steps: If True, include steps for each subtask
+
+    Returns:
+        Dict with subtasks list and summary
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
+
+    subtasks = get_subtasks_for_task(task_id, include_steps=include_steps)
+    summary = get_subtask_summary(task_id)
+
+    return {
+        "subtasks": subtasks,
+        "summary": summary,
+    }
+
+
+@router.patch(
+    "/tasks/{task_id}/subtasks/{subtask_id}",
+    response_model=SubtaskResponse,
+)
+async def update_task_subtask_global(
+    task_id: str,
+    subtask_id: str,
+    request: SubtaskUpdate,
+) -> SubtaskResponse:
+    """Update a subtask's passes status (global lookup, no project context required).
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: Update with passes boolean
+
+    Returns:
+        Updated SubtaskResponse
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.subtasks import (
+        SubtaskGateError,
+        update_subtask_passes,
+    )
+
+    try:
+        updated = update_subtask_passes(task_id, subtask_id, request.passes)
+    except SubtaskGateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(e),
+                "incomplete_steps": e.incomplete_steps,
+            },
+        ) from e
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subtask {subtask_id} not found for task {task_id}",
+        )
+
+    if "steps" not in updated:
+        updated["steps"] = []
+
+    return SubtaskResponse(**updated)

@@ -129,6 +129,27 @@ def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
     return task
 
 
+def _get_task_or_404(task_id: str) -> dict[str, Any]:
+    """Get task by ID without project validation.
+
+    Task IDs are globally unique, so project_id is not required.
+    Use this for global endpoints where project context is not available.
+
+    Args:
+        task_id: Task ID to fetch
+
+    Returns:
+        Task dict
+
+    Raises:
+        HTTPException(404): If task not found
+    """
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return task
+
+
 def _dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
     """Dispatch autonomous execution Celery task based on status transition.
 

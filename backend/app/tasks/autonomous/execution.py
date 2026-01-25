@@ -5,21 +5,21 @@ Executes subtasks with fresh context per subtask to prevent context rot.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from celery import Task as CeleryTask
 from celery import shared_task
 
-from ...api.ws_execution import send_error, send_log, send_progress
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.pubsub import publish_ws_event
 from ...services.worktree_manager import get_worktree_manager
 from ...storage import tasks as task_store
 from ...storage.projects import get_project_root_path
-from ...storage.steps import update_step_passes
+from ...storage.steps import get_steps_for_subtask, update_step_passes
 from ...storage.subtasks import (
     get_handoff_context,
     get_subtasks_for_task,
@@ -50,16 +50,73 @@ def _get_worktree_path(project_id: str, task_id: str) -> str:
     return str(worktree.path)
 
 
-def _emit(coro: Any) -> None:
-    """Run async WebSocket emit from sync Celery context (fire-and-forget)."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(coro)  # noqa: RUF006 (fire-and-forget)
-        else:
-            loop.run_until_complete(coro)
-    except Exception:
-        pass
+def _emit_log(task_id: str, level: str, message: str, source: str = "execution") -> None:
+    """Emit a log event via Redis pub/sub."""
+    publish_ws_event(
+        task_id,
+        {
+            "type": "log",
+            "task_id": task_id,
+            "data": {"level": level, "message": message, "source": source},
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+def _emit_progress(
+    task_id: str,
+    subtask_id: str | None = None,
+    step: int | None = None,
+    status: str = "in_progress",
+    total_subtasks: int | None = None,
+    completed_subtasks: int | None = None,
+) -> None:
+    """Emit a progress event via Redis pub/sub."""
+    publish_ws_event(
+        task_id,
+        {
+            "type": "progress",
+            "task_id": task_id,
+            "data": {
+                "subtask_id": subtask_id,
+                "step": step,
+                "status": status,
+                "total_subtasks": total_subtasks,
+                "completed_subtasks": completed_subtasks,
+            },
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+def _emit_error(task_id: str, error: str, recoverable: bool = True) -> None:
+    """Emit an error event via Redis pub/sub."""
+    publish_ws_event(
+        task_id,
+        {
+            "type": "error",
+            "task_id": task_id,
+            "data": {"error": error, "recoverable": recoverable},
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+def _reset_steps_for_rerun(subtasks: list[dict[str, Any]]) -> None:
+    """Reset step passes values to allow re-running failed tasks.
+
+    Called at the start of execution to clear previous verification results.
+    This enables running the same task multiple times without stale state.
+    """
+    for subtask in subtasks:
+        subtask_table_id = subtask.get("id", "")
+        if not subtask_table_id:
+            continue
+
+        steps = get_steps_for_subtask(subtask_table_id)
+        for step in steps:
+            if step.get("passes"):
+                update_step_passes(subtask_table_id, step["step_number"], passes=False)
 
 
 def _compute_issue_id(error: str) -> str:
@@ -85,25 +142,26 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
         Execution result with status
     """
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
-    _emit(send_log(task_id, "info", "Starting autonomous execution", source="execution"))
+    _emit_log(task_id, "info", "Starting autonomous execution")
 
     task = task_store.get_task(task_id)
     if not task:
-        _emit(send_error(task_id, "Task not found", recoverable=False))
+        _emit_error(task_id, "Task not found", recoverable=False)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
     task_store.update_task_status(task_id, "running")
 
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
+    _reset_steps_for_rerun(subtasks)
     incomplete = [s for s in subtasks if not s.get("passes")]
     total = len(subtasks)
     completed = total - len(incomplete)
 
-    _emit(send_progress(task_id, total_subtasks=total, completed_subtasks=completed))
+    _emit_progress(task_id, total_subtasks=total, completed_subtasks=completed)
 
     if not incomplete:
         task_store.update_task_status(task_id, "completed")
-        _emit(send_log(task_id, "info", "All subtasks already complete", source="execution"))
+        _emit_log(task_id, "info", "All subtasks already complete")
         return {"task_id": task_id, "status": "completed", "message": "All subtasks complete"}
 
     results: list[dict[str, Any]] = []
@@ -112,14 +170,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
 
     for iteration, subtask in enumerate(incomplete, 1):
         if iteration > MAX_ITERATIONS:
-            _emit(
-                send_log(
-                    task_id,
-                    "warn",
-                    f"Max iterations ({MAX_ITERATIONS}) reached",
-                    source="execution",
-                )
-            )
+            _emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached")
             _wind_down(task_id, results, incomplete, "max_iterations")
             break
 
@@ -127,14 +178,12 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
         results.append(result)
         completed += 1
         status = "passed" if result.get("status") == "passed" else "failed"
-        _emit(
-            send_progress(
-                task_id,
-                subtask_id=result.get("subtask_id"),
-                status=status,
-                total_subtasks=total,
-                completed_subtasks=completed,
-            )
+        _emit_progress(
+            task_id,
+            subtask_id=result.get("subtask_id"),
+            status=status,
+            total_subtasks=total,
+            completed_subtasks=completed,
         )
 
         if result.get("status") == "failed":
@@ -146,9 +195,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                 escalation = check_escalation_needed(issue_count, sup_count)
 
                 if escalation.get("escalate_to_human"):
-                    _emit(
-                        send_log(task_id, "error", "Escalating to human review", source="execution")
-                    )
+                    _emit_log(task_id, "error", "Escalating to human review")
                     task_store.update_task_status(task_id, "human_review")
                     task_store.append_progress_log(
                         task_id,
@@ -159,11 +206,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                     return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
                 if escalation.get("escalate_to_supervisor"):
-                    _emit(
-                        send_log(
-                            task_id, "warn", "Requesting supervisor guidance", source="execution"
-                        )
-                    )
+                    _emit_log(task_id, "warn", "Requesting supervisor guidance")
                     supervisor_guidance.delay(
                         task_id,
                         result.get("subtask_id", ""),
@@ -176,9 +219,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
 
     all_passed = all(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        _emit(
-            send_log(task_id, "info", "All subtasks passed, starting QA review", source="execution")
-        )
+        _emit_log(task_id, "info", "All subtasks passed, starting QA review")
         ai_review.delay(task_id, project_id)
 
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
@@ -195,8 +236,8 @@ def _execute_subtask(
     subtask_short_id = subtask.get("subtask_id", "")
 
     logger.info("Executing subtask", task_id=task_id, subtask_id=subtask_short_id)
-    _emit(send_log(task_id, "info", f"Starting subtask {subtask_short_id}", source="execution"))
-    _emit(send_progress(task_id, subtask_id=subtask_short_id, status="in_progress"))
+    _emit_log(task_id, "info", f"Starting subtask {subtask_short_id}")
+    _emit_progress(task_id, subtask_id=subtask_short_id, status="in_progress")
 
     prompt = _build_subtask_prompt(task_id, subtask)
 
@@ -208,7 +249,7 @@ def _execute_subtask(
             worktree_path=worktree_path,
             prompt_length=len(prompt),
         )
-        _emit(send_log(task_id, "info", f"Using worktree: {worktree_path}", source="execution"))
+        _emit_log(task_id, "info", f"Using worktree: {worktree_path}")
         client = get_sync_client()
         logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
         response = client.run_agent(
@@ -230,22 +271,15 @@ def _execute_subtask(
         if all_passed:
             update_subtask_passes(task_id, subtask_short_id, passes=True)
             _extract_handoff_summary(subtask_id, response.content)
-            _emit(
-                send_log(task_id, "info", f"Subtask {subtask_short_id} passed", source="execution")
-            )
+            _emit_log(task_id, "info", f"Subtask {subtask_short_id} passed")
         else:
             failed_steps = [r for r in step_results if not r["passed"]]
             for fail in failed_steps:
                 error_msg = fail.get("error") or fail.get("reason") or "verification failed"
                 issue_id = _compute_issue_id(error_msg)
                 issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
-            _emit(
-                send_log(
-                    task_id,
-                    "warn",
-                    f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)",
-                    source="execution",
-                )
+            _emit_log(
+                task_id, "warn", f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)"
             )
 
         return {
@@ -260,7 +294,7 @@ def _execute_subtask(
         error_str = str(e)
         issue_id = _compute_issue_id(error_str)
         issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
-        _emit(send_error(task_id, f"Subtask {subtask_short_id} error: {error_str}"))
+        _emit_error(task_id, f"Subtask {subtask_short_id} error: {error_str}")
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
@@ -320,17 +354,15 @@ def _verify_steps(
 
         result = verify_step(step, worktree_path)
 
-        update_step_passes(subtask_id, step_num, result.passed)
+        update_step_passes(subtask_id, step_num, result.passed, project_root=worktree_path)
         status = "passed" if result.passed else "failed"
-        _emit(
-            send_log(
-                task_id,
-                "info" if result.passed else "warn",
-                f"Step {step_num}: {status}",
-                source="verify",
-            )
+        _emit_log(
+            task_id,
+            "info" if result.passed else "warn",
+            f"Step {step_num}: {status}",
+            source="verify",
         )
-        _emit(send_progress(task_id, subtask_id=subtask_id, step=step_num, status=status))
+        _emit_progress(task_id, subtask_id=subtask_id, step=step_num, status=status)
 
         results.append(
             {
@@ -358,8 +390,6 @@ def _wind_down(
     reason: str,
 ) -> None:
     """Preserve session state when execution pauses."""
-    from datetime import UTC, datetime
-
     completed_ids = [r["subtask_id"] for r in results if r.get("status") == "passed"]
     failed_ids = [r["subtask_id"] for r in results if r.get("status") == "failed"]
     remaining_ids = [
@@ -382,4 +412,4 @@ NEXT SESSION:
 
     task_store.append_progress_log(task_id, wind_down_log)
     task_store.update_task_status(task_id, "paused")
-    _emit(send_log(task_id, "info", f"Session paused: {reason}", source="execution"))
+    _emit_log(task_id, "info", f"Session paused: {reason}")

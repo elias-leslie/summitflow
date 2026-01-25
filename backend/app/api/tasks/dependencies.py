@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ...schemas.tasks import DependencyCreate, DependencyResponse
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
-from .core import _verify_task_project
+from .core import _get_task_or_404, _verify_task_project
 
 router = APIRouter()
 
@@ -127,3 +127,35 @@ async def remove_task_dependency(
         "depends_on_task_id": depends_on_task_id,
         "dependency_type": dependency_type,
     }
+
+
+# Global endpoints (no project_id required - task IDs are globally unique)
+
+
+@router.get("/tasks/{task_id}/dependencies", response_model=list[DependencyResponse])
+async def get_task_dependencies_global(task_id: str) -> list[DependencyResponse]:
+    """Get dependencies for a task (global lookup, no project context required).
+
+    Task IDs are globally unique, so project_id is not needed.
+
+    Args:
+        task_id: Task ID
+
+    Returns:
+        List of dependencies with details about the blocking tasks.
+    """
+    _get_task_or_404(task_id)
+
+    deps = dep_store.get_dependencies(task_id)
+    return [
+        DependencyResponse(
+            id=d["id"],
+            task_id=d["task_id"],
+            depends_on_task_id=d["depends_on_task_id"],
+            dependency_type=d["dependency_type"],
+            created_at=d["created_at"].isoformat() if d["created_at"] else None,
+            depends_on_title=d.get("depends_on_title"),
+            depends_on_status=d.get("depends_on_status"),
+        )
+        for d in deps
+    ]
