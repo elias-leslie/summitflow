@@ -867,18 +867,23 @@ def close(
 
 @app.command()
 def cancel(
-    task_id: str,
-    reason: Annotated[str, typer.Option("-r", "--reason")],
+    task_id: Annotated[str | None, typer.Argument()] = None,
+    reason: Annotated[str, typer.Option("-r", "--reason")] = "",
 ) -> None:
     """Cancel a task (mark as cancelled from any state).
 
     Use this for tasks that are invalid, obsolete, or no longer needed.
     Works from any non-terminal state (pending, running, paused, failed).
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st cancel task-abc123 -r "Invalid: file doesn't exist"
-        st cancel task-abc123 --reason "Obsolete: already fixed"
+        st cancel -r "Obsolete: already fixed"    # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -894,7 +899,7 @@ def cancel(
 
 @app.command()
 def claim(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     lock: Annotated[int, typer.Option("--lock")] = 30,
     release: Annotated[bool, typer.Option("--release")] = False,
     agent: Annotated[
@@ -906,13 +911,17 @@ def claim(
     Use --agent to create an isolated git worktree for agent execution.
     The worktree will be created at .worktrees/exec/{task_id}/.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st claim task-abc123 --lock 60
-        st claim task-abc123 --release
-        st claim task-abc123 --agent
+        st claim --release                # Uses active context
+        st claim --agent
     """
     from ..config import get_config
+    from ..context import require_task_id
 
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -950,15 +959,21 @@ def claim(
 
 @app.command()
 def delete(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     force: Annotated[bool, typer.Option("-f", "--force")] = False,
 ) -> None:
     """Delete a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st delete task-abc123
-        st delete task-abc123 --force
+        st delete --force              # Uses active context (dangerous!)
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
+
     if not force:
         confirm = typer.confirm(f"Delete task {task_id}?")
         if not confirm:
@@ -1046,7 +1061,7 @@ def bug(
 
 @app.command()
 def exec(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     agent: Annotated[str, typer.Option("--agent")] = "claude",
     worktree: Annotated[bool, typer.Option("--worktree")] = False,
 ) -> None:
@@ -1054,11 +1069,16 @@ def exec(
 
     Triggers the autonomous execution system to work on the task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st exec task-abc123
-        st exec task-abc123 --agent gemini
-        st exec task-abc123 --worktree
+        st exec --agent gemini            # Uses active context
+        st exec --worktree
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     try:
@@ -1275,7 +1295,7 @@ def verify_plan(
 
 @app.command()
 def autocode(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     status: Annotated[
         str | None,
         typer.Option("--status", help="Get status of execution by ID"),
@@ -1298,13 +1318,17 @@ def autocode(
     Dispatches the first incomplete subtask to an AI worker for autonomous
     code generation, then validates and commits the results.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st autocode task-abc123              # Start execution
-        st autocode task-abc123 --dry-run    # Validate without executing
-        st autocode task-abc123 --status exec-12345  # Check status
-        st autocode task-abc123 --abort exec-12345   # Abort execution
-        st autocode task-abc123 --model claude-opus-4-5  # Use specific model
+        st autocode --dry-run                # Uses active context
+        st autocode --status exec-12345
+        st autocode --model claude-opus-4-5
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Status check mode
