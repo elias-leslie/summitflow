@@ -252,8 +252,7 @@ file, table, endpoint, page, celery_task, dependency
 | `st show` | - | Show task details |
 | `st close` | - | Close task |
 | `st subtask` | list, show, create, pass, delete | Subtask management |
-| `st step` | list, pass, create, add, delete | Step management |
-| `st criterion` | list, create, update, preflight | Criteria management |
+| `st step` | list, pass, new, add, delete | Step management |
 | `st worktree` | list, prune | Worktree management |
 | `st git` | status, sync, cleanup | Git operations |
 | `st backup` | list, create, restore, status, schedule | Backup management |

@@ -10,7 +10,6 @@ from app.storage.connection import close_pool
 from .commands import (
     autonomous,
     backup,
-    criterion,
     deps,
     git,
     health,
@@ -42,11 +41,9 @@ TASKS:
   list [--status S] [--type T] [--priority P]
   ready                                    # unblocked tasks
   show <id>... [--full] [--summary]        # --summary=one-liner
-  inspect <id>...                          # id|status|done/total
   context <id>                             # full task context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--blocked-by id] [--unblock id]
-  approve <id>                             # approve plan for execution
   close <id> --reason <text>
   cancel <id> --reason <text>
   delete <id>
@@ -55,11 +52,6 @@ TASKS:
   exec <id> [--agent claude|gemini]
   log <id> <message>
   autocode <id> [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
-
-QA:
-  qa pass <task-id>                        # mark QA passed (required before close)
-  qa fail <task-id>                        # mark QA failed
-  qa skip <task-id> [--force]              # skip QA (SIMPLE tasks only, or --force)
 
 SUBTASK:
   subtask list <task-id>
@@ -82,13 +74,7 @@ DEP:
 
 PROJECTS: projects list | projects current
 
-CRITERION:
-  criterion list --task <task-id>                                  # list criteria for task
-  criterion create <text> --task <task-id> [--category C] [--verify-by test|agent|human] [--verify-command cmd] [--expected-output text]
-  criterion update <id> [--criterion text] [--category C] [--verify-command cmd] [--verify-by M] [--expected-output text]
-  criterion verify <task-id> <criterion-id> [--by test|manual]     # mark criterion as verified
-
-TEST: test list [--type T] | link <id> --criterion <id> | import --framework pytest|vitest
+TEST: test list [--type T] | import --framework pytest|vitest
 
 WORKTREE: worktree list | worktree prune
 
@@ -144,11 +130,9 @@ app.add_typer(step.app, name="step")
 app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(worktree.app, name="worktree")
-app.add_typer(criterion.app, name="criterion")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
-app.add_typer(tasks.qa_app, name="qa")
 app.add_typer(health.app, name="health")
 
 

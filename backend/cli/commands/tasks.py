@@ -416,57 +416,15 @@ def show(
 
 
 @app.command()
-def inspect(
-    task_ids: Annotated[list[str], typer.Argument(help="One or more task IDs")],
-) -> None:
-    """Quick one-liner inspection of tasks.
-
-    Returns a compact summary for each task: id|status|subtasks:done/total|steps:done/total
-
-    Examples:
-        st inspect task-abc123
-        st inspect task-abc123 task-def456
-    """
-    client = STClient()
-
-    for task_id in task_ids:
-        try:
-            task = client.get_task(task_id)
-            subtask_data = client.get_subtasks(task_id, include_steps=True)
-        except APIError as e:
-            # Print error as inline message and continue
-            typer.echo(f"{task_id}|ERROR|{e!s}")
-            continue
-
-        status = task.get("status", "unknown")
-        summary = subtask_data.get("summary", {})
-        subtask_done = summary.get("completed", 0)
-        subtask_total = summary.get("total", 0)
-
-        # Count steps across all subtasks
-        subtasks = subtask_data.get("subtasks", [])
-        steps_done = 0
-        steps_total = 0
-        for s in subtasks:
-            step_summary = s.get("step_summary", {})
-            steps_done += step_summary.get("completed", 0)
-            steps_total += step_summary.get("total", 0)
-
-        typer.echo(
-            f"{task_id}|{status}|subtasks:{subtask_done}/{subtask_total}|steps:{steps_done}/{steps_total}"
-        )
-
-
-@app.command()
 def context(
     task_id: str,
 ) -> None:
     """Get full task context in a single call.
 
-    Returns task details, subtasks with steps, acceptance criteria, decisions,
-    and blockers in TOON format (with --compact) or JSON.
+    Returns task details, subtasks with steps, decisions, and blockers
+    in TOON format (with --compact) or JSON.
 
-    This is optimized for /do_it workflow - one command instead of 4+ calls.
+    This is optimized for /do_it workflow - one command instead of multiple calls.
 
     Examples:
         st --compact context task-abc123
@@ -513,9 +471,6 @@ def context(
 
         subtasks = subtask_data.get("subtasks", [])
 
-        # Criteria system removed - verification now at step level
-        criteria: list[dict] = []
-
         # Fetch blockers (dependencies where this task is blocked by others)
         deps = client.list_dependencies(task_id)
         blockers = []
@@ -537,7 +492,7 @@ def context(
         handle_api_error(e)
         return
 
-    output_context(task, subtasks, criteria, blockers, amendments=[])
+    output_context(task, subtasks, blockers)
 
 
 @app.command()
@@ -829,19 +784,6 @@ def update(
 
     # Apply status update (uses separate endpoint)
     if status_to_update:
-        # Pre-check: if transitioning to 'running', verify plan is approved
-        if status_to_update == "running":
-            from app.storage.task_spirit import get_task_spirit
-
-            spirit = get_task_spirit(task_id)
-            if spirit:
-                plan_status = spirit.get("plan_status", "draft")
-                if plan_status != "approved":
-                    output_error(
-                        f"Plan not approved (status: {plan_status}). Run: st approve {task_id}"
-                    )
-                    raise typer.Exit(1)
-
         try:
             task = client.update_status(task_id, status_to_update)
         except APIError as e:
@@ -867,10 +809,7 @@ def close(
 ) -> None:
     """Close a task (mark as completed).
 
-    All subtasks must be complete and all acceptance criteria must be verified.
-    QA must be passed or skipped. There is no bypass - if gates fail, complete the work first.
-
-    If no task_id is provided, uses the active context from 'st work'.
+    All subtasks must be complete. If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
         st close task-abc123 -r "All subtasks completed"
@@ -880,19 +819,6 @@ def close(
 
     task_id = require_task_id(task_id)
     client = STClient()
-
-    # Pre-check: verify QA status before attempting close
-    try:
-        task_data = client.get_task(task_id)
-        qa_status = task_data.get("qa_status", "pending")
-        if qa_status not in ("passed", "skipped"):
-            output_error(
-                f"QA not passed (status: {qa_status}). "
-                f"Run: st qa pass {task_id} (or st qa skip {task_id})"
-            )
-            raise typer.Exit(1)
-    except APIError:
-        pass  # Continue - let close_task handle any errors
 
     try:
         task = client.close_task(task_id, reason=reason)
@@ -1238,18 +1164,6 @@ def verify_plan(
                     issues.append(f"subtask {subtask_id} depends_on '{dep}' which doesn't exist")
                 if dep == subtask_id:
                     issues.append(f"subtask {subtask_id} cannot depend on itself")
-
-    # Validate criterion-subtask mapping if acceptance_criteria have subtask_ids
-    ac_list = plan.get("acceptance_criteria", [])
-    for ac in ac_list:
-        ac_id = ac.get("id", "?")
-        subtask_ids = ac.get("subtask_ids", [])
-        if subtask_ids:
-            for sid in subtask_ids:
-                if sid not in valid_subtask_ids:
-                    issues.append(
-                        f"criterion {ac_id} references subtask '{sid}' which doesn't exist"
-                    )
 
     # Validate step structure: every subtask must have steps with verify_command and expected_output
     for subtask in subtasks:
@@ -1753,137 +1667,8 @@ def import_plan(
     except Exception as e:
         typer.echo(f"WARN task_spirit write failed: {e}", err=True)
 
-    # TOON summary - will add criteria count after creation
-    criteria_count = 0
-
-    # Create acceptance criteria if provided
-    ac_list = plan.get("acceptance_criteria", [])
-    if ac_list:
-        criteria_items = []
-        for ac in ac_list:
-            criteria_items.append(
-                {
-                    "criterion": ac["criterion"],
-                    "category": ac.get("category", "correctness"),
-                    "verify_command": ac.get("verify_command"),
-                    "verify_by": ac.get("verify_by", "test"),
-                    "expected_output": ac.get("expected_output"),
-                }
-            )
-
-        try:
-            result = client.batch_create_task_criteria(task_id, criteria_items)
-            criteria_count = len(result.get("created", []))
-        except APIError as e:
-            typer.echo(f"WARN criteria failed: {e.detail}", err=True)
-
     # Final TOON summary
-    typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks|{criteria_count} criteria")
-
-
-@app.command()
-def approve(
-    task_id: str,
-) -> None:
-    """Approve a task's plan, allowing execution to start.
-
-    Sets plan_status='approved' in task_spirit table.
-    Tasks must be approved before they can be started (status='running').
-
-    Examples:
-        st approve task-abc123
-    """
-    from app.storage.task_spirit import approve_plan
-
-    try:
-        result = approve_plan(task_id, approved_by="user")
-        if result:
-            typer.echo(f"APPROVED:{task_id}")
-        else:
-            output_error(f"Task {task_id} not found in task_spirit table")
-            raise typer.Exit(1)
-    except Exception as e:
-        output_error(f"Failed to approve: {e}")
-        raise typer.Exit(1) from None
-
-
-# QA command group
-qa_app = typer.Typer(help="QA signoff commands")
-app.add_typer(qa_app, name="qa")
-
-
-@qa_app.command("pass")
-def qa_pass(
-    task_id: str,
-) -> None:
-    """Mark QA as passed for a task.
-
-    All acceptance criteria must be verified first.
-    """
-    client = STClient(require_project=False)
-    try:
-        client.update_task(task_id, qa_status="passed")
-        # Verify the update actually took effect (DB trigger may have blocked it)
-        task = client.get_task(task_id)
-        if task.get("qa_status") != "passed":
-            output_error(
-                f"QA pass blocked by DB trigger. Current status: {task.get('qa_status')}. "
-                f"Use: st criterion list --task {task_id}"
-            )
-            raise typer.Exit(1)
-        typer.echo(f"QA:PASSED:{task_id}")
-    except APIError as e:
-        # Check for trigger rejection
-        if "unverified criteria" in str(e.detail).lower():
-            output_error(
-                "Cannot pass QA with unverified criteria. Use: st criterion list --task " + task_id
-            )
-        else:
-            handle_api_error(e)
-        raise typer.Exit(1) from None
-
-
-@qa_app.command("fail")
-def qa_fail(
-    task_id: str,
-) -> None:
-    """Mark QA as failed for a task."""
-    client = STClient(require_project=False)
-    try:
-        client.update_task(task_id, qa_status="failed")
-        typer.echo(f"QA:FAILED:{task_id}")
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
-
-
-@qa_app.command("skip")
-def qa_skip(
-    task_id: str,
-) -> None:
-    """Skip QA for a task.
-
-    Only SIMPLE tasks can skip QA. STANDARD/COMPLEX tasks must pass QA.
-    """
-    client = STClient(require_project=False)
-
-    # Check complexity - only SIMPLE tasks can skip
-    try:
-        task = client.get_task(task_id)
-        complexity = task.get("complexity", "SIMPLE")
-        if complexity in ("STANDARD", "COMPLEX"):
-            output_error(f"Cannot skip QA for {complexity} task. Must pass QA.")
-            raise typer.Exit(1)
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
-
-    try:
-        client.update_task(task_id, qa_status="skipped")
-        typer.echo(f"QA:SKIPPED:{task_id}")
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
+    typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks")
 
 
 @app.command()
@@ -1900,7 +1685,7 @@ def work(
 ) -> None:
     """Set or show the active task context.
 
-    Once set, subsequent commands (close, subtask, step, criterion) will
+    Once set, subsequent commands (close, subtask, step) will
     use this task automatically when no explicit ID is provided.
 
     Examples:

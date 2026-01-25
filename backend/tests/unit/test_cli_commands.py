@@ -798,8 +798,8 @@ class TestVerifyPlanGates:
                     "steps": [
                         {
                             "description": "Verify all is good",
-                            "verify_command": "st criterion verify --all",
-                            "expected_output": "All criteria verified",
+                            "verify_command": "echo 'All verified'",
+                            "expected_output": "All verified",
                         }
                     ],
                 },

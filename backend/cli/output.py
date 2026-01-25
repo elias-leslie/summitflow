@@ -119,8 +119,7 @@ def output_json(data: Any) -> None:
 def output_task(task: dict[str, Any]) -> None:
     """Output a single task.
 
-    Compact format includes fields needed for /do_it pre-checks:
-    id|status|P<priority>|type|complexity|done/total|criteria:N|title
+    Compact format: id|status|P<priority>|type|complexity|done/total|decisions:N|title
     """
     if _compact_output:
         subtask_summary = task.get("subtask_summary") or {}
@@ -128,14 +127,12 @@ def output_task(task: dict[str, Any]) -> None:
         total = subtask_summary.get("total", 0)
         priority = task.get("priority", 3)
         complexity = task.get("complexity") or "SIMPLE"
-        # criteria_count comes from task_criteria join (populated by API)
-        criteria_count = task.get("criteria_count", 0)
         decisions = task.get("decisions") or []
         decisions_count = len(decisions) if isinstance(decisions, list) else 0
         print(
             f"{task.get('id')}|{task.get('status')}|P{priority}|"
             f"{task.get('task_type')}|{complexity}|{done}/{total}|"
-            f"criteria:{criteria_count}|decisions:{decisions_count}|{task.get('title')}"
+            f"decisions:{decisions_count}|{task.get('title')}"
         )
     else:
         output_json(task)
@@ -284,7 +281,7 @@ def format_context_task(task: dict[str, Any]) -> str:
     OBJECTIVE:<objective>
     SPIRIT_ANTI:<anti-patterns>
     CONSTRAINTS[N]:<constraint1>|<constraint2>|...
-    DONE_WHEN[N]:<criterion1>|<criterion2>|...
+    DONE_WHEN[N]:<item1>|<item2>|...
     """
     lines = []
     task_id = task.get("id", "unknown")
@@ -293,17 +290,10 @@ def format_context_task(task: dict[str, Any]) -> str:
     task_type = task.get("task_type", "task")
     complexity = task.get("complexity") or "SIMPLE"
 
-    # Include plan_status and qa_status in header
-    plan_status = task.get("plan_status", "draft")
-    qa_status = task.get("qa_status", "pending")
     lines.append(f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}")
 
-    # Add workflow status line
-    criteria_count = task.get("criteria_count", 0)
     decisions_count = len(task.get("decisions") or [])
-    lines.append(
-        f"WORKFLOW:plan:{plan_status}|qa:{qa_status}|criteria:{criteria_count}|decisions:{decisions_count}"
-    )
+    lines.append(f"WORKFLOW:decisions:{decisions_count}")
 
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
@@ -410,54 +400,6 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_context_criteria(criteria: list[dict[str, Any]]) -> str:
-    """Format acceptance criteria for context output.
-
-    Format: CRITERIA[N]:<verified>/<total>
-    <criterion_id> <PASS|____> <criterion>
-      verify_by:<test|agent|human> cmd:<verify_command> expect:<expected_output>
-      preflight:<status> verified:<status> attempts:<n> escalation:<level> locked:<bool>
-    """
-    if not criteria:
-        return "CRITERIA[0]:0/0"
-
-    verified = sum(1 for c in criteria if c.get("verified"))
-    total = len(criteria)
-
-    lines = [f"CRITERIA[{total}]:{verified}/{total}"]
-
-    for c in criteria:
-        c_id = c.get("criterion_id", "?")
-        passes = "PASS" if c.get("verified") else "____"
-        criterion = c.get("criterion") or ""
-        lines.append(f"{c_id} {passes} {criterion}")
-
-        verify_by = c.get("verify_by") or "human"
-        verify_cmd = c.get("verify_command") or ""
-        expected = c.get("expected_output") or ""
-
-        if verify_cmd or expected:
-            cmd_str = verify_cmd if verify_cmd else "-"
-            expect_str = expected if expected else "-"
-            lines.append(f"  verify_by:{verify_by} cmd:{cmd_str} expect:{expect_str}")
-
-        # Add verification status fields (from task_acceptance_criteria)
-        preflight = c.get("preflight_status") or "-"
-        ver_status = c.get("verification_status") or "pending"
-        attempts = c.get("verification_attempts") or 0
-        escalation = c.get("escalation_level") or "WORKER"
-        locked = "Y" if c.get("is_locked") else "N"
-
-        # Only show verification line if there's meaningful data
-        if preflight != "-" or attempts > 0 or ver_status != "pending":
-            lines.append(
-                f"  preflight:{preflight} status:{ver_status} "
-                f"attempts:{attempts} escalation:{escalation} locked:{locked}"
-            )
-
-    return "\n".join(lines)
-
-
 def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
     """Format blockers for context output.
 
@@ -508,19 +450,17 @@ def format_context_log(progress_log: list[str] | str | None) -> str:
 def output_context(
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
-    criteria: list[dict[str, Any]],
     blockers: list[dict[str, Any]] | None = None,
 ) -> None:
     """Output full task context in TOON format.
 
-    Combines task header, decisions, subtasks with steps, criteria, and blockers.
+    Combines task header, decisions, subtasks with steps, and blockers.
     """
     if _compact_output:
         sections = [
             format_context_task(task),
             format_context_decisions(task.get("decisions") or []),
             format_context_subtasks(subtasks),
-            format_context_criteria(criteria),
         ]
 
         if blockers:
@@ -535,7 +475,6 @@ def output_context(
             {
                 "task": task,
                 "subtasks": subtasks,
-                "criteria": criteria,
                 "blockers": blockers or [],
             }
         )
