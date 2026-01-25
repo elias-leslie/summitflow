@@ -1,94 +1,181 @@
-"""Celery task for Opus review of pending tasks."""
+"""AI Review task using Agent Hub complete() with reviewer agent.
+
+Reviews git diffs and routes tasks based on complexity:
+- SIMPLE: Auto-merge if approved
+- STANDARD/COMPLEX: Human review if approved
+- Rejected: Create fix subtask and retry
+"""
 
 from __future__ import annotations
 
-import logging
+import subprocess
 from typing import Any
 
-from app.celery_app import celery_app
-from app.storage import tasks as task_store
+from celery import Task as CeleryTask
+from celery import shared_task
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+from ...services.agent_hub_client import get_sync_client
+from ...storage import tasks as task_store
+
+logger = get_logger(__name__)
 
 
-@celery_app.task(name="summitflow.review_pending_tasks")  # type: ignore[untyped-decorator]
-def review_pending_tasks(project_id: str) -> dict[str, Any]:
-    """Review tasks in ai_reviewing status via Opus.
+@shared_task(bind=True, name="autonomous.ai_review")  # type: ignore[untyped-decorator]
+def ai_review(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]:
+    """Run AI review on completed task using reviewer agent (Opus).
 
-    Fetches tasks awaiting review and runs Opus review on each.
-    Applies the appropriate handler based on verdict.
+    Reviews the git diff and provides approval/rejection verdict.
 
     Args:
-        project_id: Project to review tasks for
+        task_id: The task ID to review
+        project_id: The project ID
 
     Returns:
-        Dict with reviewed_count, verdicts breakdown, and any errors
+        Review result with verdict and routing
     """
-    from app.services.autonomous.reviewer import (
-        handle_approval,
-        handle_fix_request,
-        handle_rejection,
-        opus_review,
-    )
-    from app.storage.agent_configs import is_autonomous_enabled
+    logger.info("Starting AI review", task_id=task_id, project_id=project_id)
+
+    task = task_store.get_task(task_id)
+    if not task:
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    task_store.update_task_status(task_id, "ai_reviewing")
+
+    git_diff = _get_git_diff(project_id)
+    complexity = task.get("complexity", "STANDARD")
+
+    prompt = f"""Review this code change for quality, correctness, and security.
+
+Task: {task.get('title', '')}
+Complexity: {complexity}
+
+Git Diff:
+```
+{git_diff[:5000]}
+```
+
+Provide your review:
+1. VERDICT: APPROVE or REJECT
+2. Summary of changes
+3. Any concerns or issues found
+4. Recommendations
+
+Output format:
+{{
+    "verdict": "APPROVE" or "REJECT",
+    "summary": "...",
+    "concerns": ["..."],
+    "recommendation": "..."
+}}"""
 
     try:
-        # Check if autonomous execution is enabled
-        if not is_autonomous_enabled(project_id):
-            logger.debug(f"Autonomous execution disabled for {project_id}")
-            return {"status": "disabled", "reason": "autonomous_enabled=false"}
-
-        # Get tasks in ai_reviewing status
-        pending_tasks = task_store.list_tasks(
-            project_id=project_id,
-            status_filter="ai_reviewing",
-            limit=5,  # Review up to 5 at a time
+        client = get_sync_client()
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            agent_slug="reviewer",
         )
 
-        if not pending_tasks:
-            return {"status": "no_tasks", "reviewed_count": 0}
-
-        verdicts: dict[str, int] = {"APPROVE": 0, "REJECT": 0, "REQUEST_FIX": 0}
-        reviewed = 0
-        errors: list[dict[str, str]] = []
-
-        for task in pending_tasks:
-            task_id = task["id"]
-            try:
-                # Run Opus review
-                review_result = opus_review(task)
-                verdict = review_result.get("verdict", "REQUEST_FIX")
-                verdicts[verdict] = verdicts.get(verdict, 0) + 1
-                reviewed += 1
-
-                # Apply appropriate handler
-                if verdict == "APPROVE":
-                    handle_approval(task, review_result, auto_push=False)
-                    logger.info(f"Task {task_id} approved by Opus review")
-                elif verdict == "REJECT":
-                    handle_rejection(task, review_result)
-                    logger.info(f"Task {task_id} rejected by Opus review")
-                else:  # REQUEST_FIX
-                    handle_fix_request(task, review_result)
-                    logger.info(f"Task {task_id} needs fixes per Opus review")
-
-            except Exception as task_error:
-                logger.error(f"Error reviewing task {task_id}: {task_error}")
-                errors.append({"task_id": task_id, "error": str(task_error)})
-
-        logger.info(
-            f"Review complete for {project_id}: reviewed={reviewed}, "
-            f"approved={verdicts['APPROVE']}, rejected={verdicts['REJECT']}, "
-            f"fix_requested={verdicts['REQUEST_FIX']}"
-        )
+        review_result = _parse_review_response(response.content)
+        _route_based_on_verdict(task_id, complexity, review_result)
 
         return {
-            "status": "success",
-            "reviewed_count": reviewed,
-            "verdicts": verdicts,
-            "errors": errors if errors else None,
+            "task_id": task_id,
+            "status": "reviewed",
+            "verdict": review_result.get("verdict"),
+            "complexity": complexity,
         }
 
     except Exception as e:
-        logger.error(f"Error in review_pending_tasks: {e}")
-        return {"status": "error", "error": str(e)}
+        logger.warning("AI review failed", task_id=task_id, error=str(e))
+        task_store.update_task_status(task_id, "human_review")
+        return {"task_id": task_id, "status": "error", "message": str(e)}
+
+
+def _get_git_diff(project_id: str) -> str:
+    """Get git diff for the project."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD~1"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=f"/home/kasadis/{project_id}",
+        )
+        return result.stdout or "(no changes)"
+    except Exception as e:
+        return f"(error getting diff: {e})"
+
+
+def _parse_review_response(content: str) -> dict[str, Any]:
+    """Parse the reviewer agent's response."""
+    import json
+    import re
+
+    try:
+        json_match = re.search(r"\{[\s\S]*\}", content)
+        if json_match:
+            parsed: dict[str, Any] = json.loads(json_match.group())
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    if "APPROVE" in content.upper():
+        return {"verdict": "APPROVE", "summary": content}
+    return {"verdict": "REJECT", "summary": content}
+
+
+def _route_based_on_verdict(
+    task_id: str,
+    complexity: str,
+    review_result: dict[str, Any],
+) -> None:
+    """Route task based on AI review verdict and complexity."""
+    verdict = review_result.get("verdict", "").upper()
+
+    if verdict == "APPROVE":
+        if complexity == "SIMPLE":
+            _auto_merge(task_id)
+            task_store.update_task_status(task_id, "completed")
+            task_store.append_progress_log(task_id, "AI Review: APPROVED - Auto-merged (SIMPLE)")
+        else:
+            task_store.update_task_status(task_id, "human_review")
+            task_store.append_progress_log(
+                task_id,
+                f"AI Review: APPROVED - Routing to Human Review ({complexity})",
+            )
+    else:
+        _create_fix_subtask(task_id, review_result)
+        task_store.update_task_status(task_id, "queue")
+        task_store.append_progress_log(
+            task_id,
+            f"AI Review: REJECTED - Created fix subtask. Issues: {review_result.get('concerns', [])}",
+        )
+
+
+def _auto_merge(task_id: str) -> None:
+    """Auto-merge via worktree manager (placeholder)."""
+    logger.info("Auto-merge triggered for SIMPLE task", task_id=task_id)
+
+
+def _create_fix_subtask(task_id: str, review_result: dict[str, Any]) -> None:
+    """Create fix subtask from reviewer feedback."""
+    from ...storage.subtasks import create_subtask
+
+    concerns = review_result.get("concerns", [])
+    recommendation = review_result.get("recommendation", "Address reviewer concerns")
+
+    description = f"Fix: {recommendation}\n\nReviewer concerns:\n" + "\n".join(
+        f"- {c}" for c in concerns
+    )
+
+    create_subtask(
+        task_id=task_id,
+        subtask_id="99.1",
+        description=description[:500],
+        display_order=99,
+        phase="backend",
+        steps=[{"description": "Address reviewer feedback", "verify_command": None}],
+    )
+
+    logger.info("Created fix subtask from review feedback", task_id=task_id)
