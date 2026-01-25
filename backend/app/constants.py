@@ -32,6 +32,7 @@ AGENT_SUPERVISOR = "agent:supervisor"  # Supervisor for coordination (Sonnet-bas
 AGENT_REVIEWER = "agent:reviewer"  # Code review (Opus-based)
 AGENT_FIXER = "agent:fixer"  # Error fixing (Sonnet-based with escalation)
 AGENT_QA = "agent:qa"  # QA supervisor for task quality review (Opus-based)
+AGENT_IDEA_INTAKE = "agent:idea-intake"  # Idea triage and clarification (Flash-based)
 
 # Default models for each use case
 DEFAULT_CLAUDE_MODEL = CLAUDE_SONNET
@@ -67,6 +68,7 @@ VALID_AGENT_MODELS = (
     AGENT_REVIEWER,
     AGENT_FIXER,
     AGENT_QA,
+    AGENT_IDEA_INTAKE,
 )
 
 # =============================================================================
