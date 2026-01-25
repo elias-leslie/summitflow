@@ -6,7 +6,6 @@ Tests that 2 non-conflicting tasks execute simultaneously via AgentPool.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -50,7 +49,9 @@ class TestFileOverlapDetector:
         has_overlap = detector.has_conflict(task_b["files_to_modify"])
         assert has_overlap is False
 
-    def test_overlap_detected(self, task_a: dict[str, Any], task_c_conflicts_a: dict[str, Any]) -> None:
+    def test_overlap_detected(
+        self, task_a: dict[str, Any], task_c_conflicts_a: dict[str, Any]
+    ) -> None:
         """Tasks modifying the same file should conflict."""
         detector = FileOverlapDetector()
         detector.register_task_files(task_a["id"], task_a["files_to_modify"])

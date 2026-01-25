@@ -25,51 +25,55 @@ class ComplexityTier(str, Enum):
     COMPLEX = "COMPLEX"
 
 
-SIMPLE_KEYWORDS = frozenset([
-    "typo",
-    "typos",
-    "fix",
-    "update",
-    "change",
-    "rename",
-    "add comment",
-    "remove",
-    "delete",
-    "bump",
-    "version",
-    "spelling",
-    "lint",
-    "format",
-    "style",
-    "whitespace",
-    "import",
-    "unused",
-    "dead code",
-])
+SIMPLE_KEYWORDS = frozenset(
+    [
+        "typo",
+        "typos",
+        "fix",
+        "update",
+        "change",
+        "rename",
+        "add comment",
+        "remove",
+        "delete",
+        "bump",
+        "version",
+        "spelling",
+        "lint",
+        "format",
+        "style",
+        "whitespace",
+        "import",
+        "unused",
+        "dead code",
+    ]
+)
 
-COMPLEX_KEYWORDS = frozenset([
-    "architecture",
-    "refactor",
-    "redesign",
-    "migration",
-    "migrate",
-    "security",
-    "auth",
-    "authentication",
-    "authorization",
-    "encryption",
-    "database schema",
-    "breaking change",
-    "api change",
-    "new system",
-    "infrastructure",
-    "performance",
-    "scalability",
-    "concurrency",
-    "multi-tenant",
-    "deployment",
-    "ci/cd",
-])
+COMPLEX_KEYWORDS = frozenset(
+    [
+        "architecture",
+        "refactor",
+        "redesign",
+        "migration",
+        "migrate",
+        "security",
+        "auth",
+        "authentication",
+        "authorization",
+        "encryption",
+        "database schema",
+        "breaking change",
+        "api change",
+        "new system",
+        "infrastructure",
+        "performance",
+        "scalability",
+        "concurrency",
+        "multi-tenant",
+        "deployment",
+        "ci/cd",
+    ]
+)
 
 
 @dataclass
@@ -218,7 +222,11 @@ Respond with JSON only:
             if json_match:
                 data = json.loads(json_match.group())
                 tier_str = data.get("tier", "STANDARD").upper()
-                tier = ComplexityTier[tier_str] if tier_str in ComplexityTier.__members__ else ComplexityTier.STANDARD
+                tier = (
+                    ComplexityTier[tier_str]
+                    if tier_str in ComplexityTier.__members__
+                    else ComplexityTier.STANDARD
+                )
                 reasoning = data.get("reasoning", "AI assessment")
 
                 return ComplexityResult(

@@ -47,7 +47,7 @@ def ai_review(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]
 
     prompt = f"""Review this code change for quality, correctness, and security.
 
-Task: {task.get('title', '')}
+Task: {task.get("title", "")}
 Complexity: {complexity}
 
 Git Diff:
@@ -55,18 +55,19 @@ Git Diff:
 {git_diff[:5000]}
 ```
 
-Provide your review:
-1. VERDICT: APPROVE or REJECT
-2. Summary of changes
-3. Any concerns or issues found
-4. Recommendations
+Provide your review with one of these verdicts:
+1. APPROVED - Code is correct and complete
+2. NEEDS_FIX - Implementation has issues that need fixing
+3. PLAN_DEFECT - Implementation is correct but verify_command is wrong
+4. ESCALATE - Issue too complex for AI review
 
 Output format:
 {{
-    "verdict": "APPROVE" or "REJECT",
+    "verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE",
     "summary": "...",
     "concerns": ["..."],
-    "recommendation": "..."
+    "recommendation": "...",
+    "fix_steps": ["..."]  // For NEEDS_FIX
 }}"""
 
     try:
@@ -120,9 +121,14 @@ def _parse_review_response(content: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
-    if "APPROVE" in content.upper():
-        return {"verdict": "APPROVE", "summary": content}
-    return {"verdict": "REJECT", "summary": content}
+    content_upper = content.upper()
+    if "APPROVED" in content_upper:
+        return {"verdict": "APPROVED", "summary": content}
+    if "PLAN_DEFECT" in content_upper:
+        return {"verdict": "PLAN_DEFECT", "summary": content}
+    if "ESCALATE" in content_upper:
+        return {"verdict": "ESCALATE", "summary": content}
+    return {"verdict": "NEEDS_FIX", "summary": content}
 
 
 def _route_based_on_verdict(
@@ -130,27 +136,91 @@ def _route_based_on_verdict(
     complexity: str,
     review_result: dict[str, Any],
 ) -> None:
-    """Route task based on AI review verdict and complexity."""
+    """Route task based on AI review verdict.
+
+    Verdicts:
+    - APPROVED: Move to pr_created (ready for merge)
+    - NEEDS_FIX: Log issues, create fix subtask, retry execution
+    - PLAN_DEFECT: Add fix step, mark original as defect, retry
+    - ESCALATE: Move to human_review
+    """
     verdict = review_result.get("verdict", "").upper()
 
-    if verdict == "APPROVE":
-        if complexity == "SIMPLE":
-            _auto_merge(task_id)
-            task_store.update_task_status(task_id, "completed")
-            task_store.append_progress_log(task_id, "AI Review: APPROVED - Auto-merged (SIMPLE)")
-        else:
-            task_store.update_task_status(task_id, "human_review")
-            task_store.append_progress_log(
-                task_id,
-                f"AI Review: APPROVED - Routing to Human Review ({complexity})",
-            )
-    else:
+    if verdict == "APPROVED":
+        task_store.update_task_status(task_id, "pr_created")
+        task_store.append_progress_log(
+            task_id,
+            f"AI Review: APPROVED - Ready for merge ({complexity})",
+        )
+        logger.info("QA approved, moving to pr_created", task_id=task_id)
+
+    elif verdict == "NEEDS_FIX":
         _create_fix_subtask(task_id, review_result)
         task_store.update_task_status(task_id, "queue")
         task_store.append_progress_log(
             task_id,
-            f"AI Review: REJECTED - Created fix subtask. Issues: {review_result.get('concerns', [])}",
+            f"AI Review: NEEDS_FIX - Created fix subtask. Issues: {review_result.get('concerns', [])}",
         )
+        logger.info("QA needs fix, queued for retry", task_id=task_id)
+
+    elif verdict == "PLAN_DEFECT":
+        _handle_plan_defect(task_id, review_result)
+        task_store.update_task_status(task_id, "queue")
+        task_store.append_progress_log(
+            task_id,
+            "AI Review: PLAN_DEFECT - Added fix step with correct verification",
+        )
+        logger.info("Plan defect detected, added fix step", task_id=task_id)
+
+    else:
+        task_store.update_task_status(task_id, "human_review")
+        task_store.append_progress_log(
+            task_id,
+            f"AI Review: ESCALATE - {review_result.get('summary', 'Issue requires human review')[:200]}",
+        )
+        logger.info("QA escalated to human review", task_id=task_id)
+
+
+def _handle_plan_defect(task_id: str, review_result: dict[str, Any]) -> None:
+    """Handle plan defect by adding fix step with correct verification.
+
+    When the implementation is correct but the verify_command is wrong,
+    we add a fix step that proves correctness and mark the original as defect.
+    """
+    from ...storage.subtasks import create_subtask
+
+    recommendation = review_result.get(
+        "recommendation", "Implementation correct, verification fixed"
+    )
+    fix_steps = review_result.get("fix_steps", [])
+
+    steps_list: list[str | dict[str, Any]] = []
+    for fix in fix_steps:
+        steps_list.append(
+            {
+                "description": fix if isinstance(fix, str) else str(fix),
+                "verify_command": None,
+            }
+        )
+
+    if not steps_list:
+        steps_list = [
+            {
+                "description": "Verify correct implementation with fixed command",
+                "verify_command": None,
+            }
+        ]
+
+    create_subtask(
+        task_id=task_id,
+        subtask_id="98.1",
+        description=f"Plan Defect Fix: {recommendation[:400]}",
+        display_order=98,
+        phase="verification",
+        steps=steps_list,
+    )
+
+    logger.info("Created plan defect fix subtask", task_id=task_id)
 
 
 def _auto_merge(task_id: str) -> None:

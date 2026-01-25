@@ -5,8 +5,6 @@ Tests the complete planning flow: task in Planning -> run_agent creates subtasks
 
 from __future__ import annotations
 
-import pytest
-
 from app.tasks.autonomous.planning import create_plan
 
 

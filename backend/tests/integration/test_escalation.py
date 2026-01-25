@@ -5,8 +5,6 @@ Tests the escalation pattern: worker fails 3x -> supervisor guidance -> human es
 
 from __future__ import annotations
 
-import pytest
-
 from app.tasks.autonomous.escalation import (
     SUPERVISOR_MAX_ATTEMPTS,
     WORKER_MAX_FAILURES,

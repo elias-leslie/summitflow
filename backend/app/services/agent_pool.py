@@ -47,9 +47,7 @@ class FileOverlapDetector:
 
     def unregister_task_files(self, task_id: str) -> None:
         """Unregister files when task completes."""
-        self._active_files = {
-            f: tid for f, tid in self._active_files.items() if tid != task_id
-        }
+        self._active_files = {f: tid for f, tid in self._active_files.items() if tid != task_id}
 
     def detect_overlap(self, files_to_modify: list[str]) -> list[tuple[str, str]]:
         """Detect which files overlap with currently active tasks.
@@ -120,7 +118,9 @@ class AgentPool:
         )
         self._queue.append(entry)
         self._queue.sort()
-        logger.info("Task enqueued", task_id=task_id, priority=priority, queue_size=len(self._queue))
+        logger.info(
+            "Task enqueued", task_id=task_id, priority=priority, queue_size=len(self._queue)
+        )
 
     def get_next_safe(self) -> TaskQueueEntry | None:
         """Get next task that is safe to execute (no file conflicts).

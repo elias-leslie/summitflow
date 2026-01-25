@@ -35,7 +35,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
     "pending": {"queue", "running", "paused", "blocked", "cancelled"},
     # Queue state (autonomous execution pipeline)
-    "queue": {"running", "pending", "blocked", "cancelled"},
+    "queue": {"running", "pending", "blocked", "cancelled", "human_review"},
     # Work states
     "running": {
         "queue",
@@ -129,6 +129,7 @@ def update_task_status(
     """
     valid_statuses = {
         "pending",
+        "queue",
         "running",
         "paused",
         "failed",

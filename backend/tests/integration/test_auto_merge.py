@@ -5,8 +5,6 @@ Tests the complete auto-merge flow: SIMPLE task completes -> AI Review passes ->
 
 from __future__ import annotations
 
-import pytest
-
 from app.tasks.autonomous.review import ai_review
 
 

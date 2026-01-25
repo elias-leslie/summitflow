@@ -21,6 +21,7 @@ _human_output: bool = False
 _compact_output: bool = False
 _progress_only: bool = False
 
+
 def set_human_output(enabled: bool) -> None:
     """Enable or disable human-readable (pretty-printed) output."""
     global _human_output

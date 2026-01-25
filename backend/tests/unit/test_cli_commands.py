@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -381,7 +381,7 @@ class TestSubtaskCreate:
     def test_subtask_create_requires_steps(self, mock_st_client):
         """Test that creating a subtask without steps fails."""
         # Create mock task first
-        mock_client, tasks_db = mock_st_client
+        mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
             {
                 "title": "CLI Subtask Test",
@@ -412,7 +412,7 @@ class TestSubtaskCreate:
 
     def test_subtask_create_with_steps_json(self, mock_st_client):
         """Test creating a subtask with proper step structure via --steps-json."""
-        mock_client, tasks_db = mock_st_client
+        mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
             {
                 "title": "CLI Subtask Steps Test",
@@ -462,7 +462,7 @@ class TestSubtaskCreate:
 
     def test_subtask_create_legacy_steps_warning(self, mock_st_client):
         """Test that using --step shows warning about missing verify_command."""
-        mock_client, tasks_db = mock_st_client
+        mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
             {
                 "title": "CLI Subtask Legacy Test",

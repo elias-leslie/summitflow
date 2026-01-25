@@ -22,8 +22,7 @@ from app.services.orchestrator import (
     OrchestrationResult,
     OrchestratorService,
 )
-from app.tasks.autonomous.execution import (
-    AUTONOMOUS_TASK_TYPES,
+from app.tasks.autonomous import (
     autonomous_work_pickup,
 )
 

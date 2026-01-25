@@ -1,0 +1,708 @@
+"""End-to-end tests for autonomous execution engine.
+
+Tests the FULL flows with real database state and mocked Agent Hub:
+1. Triage: Idea → assess clarity → route (CLEAR → queue, NEEDS_CLARIFICATION → blocked)
+2. Planning: Queue → create subtasks → route by complexity
+3. Execution: Running → execute subtasks → verify steps → complete
+4. Review: PR Created → AI review → auto-merge (SIMPLE) or human review
+5. Escalation: Failures → supervisor guidance → human escalation
+
+Each test creates real database records, mocks Agent Hub, and verifies state transitions.
+"""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from app.services.complexity_assessor import ComplexityTier
+from app.storage import tasks as task_store
+from app.storage.connection import get_connection
+from app.storage.subtasks import create_subtask, get_subtasks_for_task
+from app.storage.task_spirit import create_task_spirit, get_task_spirit
+from app.tasks.autonomous.escalation import check_escalation_needed
+from app.tasks.autonomous.execution import start_execution
+from app.tasks.autonomous.planning import create_plan
+from app.tasks.autonomous.review import ai_review
+from app.tasks.autonomous.triage import triage_idea
+
+
+@pytest.fixture
+def test_project_id() -> str:
+    """Ensure test project exists in database."""
+    project_id = "e2e-test-project"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (project_id, "E2E Test Project", "http://localhost:3001"),
+        )
+        conn.commit()
+    return project_id
+
+
+@pytest.fixture
+def cleanup_tasks():
+    """Track and cleanup test tasks after tests."""
+    task_ids: list[str] = []
+    yield task_ids
+    if task_ids:
+        with get_connection() as conn, conn.cursor() as cur:
+            for task_id in task_ids:
+                cur.execute(
+                    "DELETE FROM subtask_summaries WHERE subtask_id IN (SELECT id FROM task_subtasks WHERE task_id = %s)",
+                    (task_id,),
+                )
+                cur.execute(
+                    "DELETE FROM task_subtask_steps WHERE subtask_id IN (SELECT id FROM task_subtasks WHERE task_id = %s)",
+                    (task_id,),
+                )
+                cur.execute("DELETE FROM task_subtasks WHERE task_id = %s", (task_id,))
+                cur.execute("DELETE FROM task_spirit WHERE task_id = %s", (task_id,))
+                cur.execute("DELETE FROM task_labels WHERE task_id = %s", (task_id,))
+                cur.execute(
+                    "DELETE FROM task_dependencies WHERE task_id = %s OR depends_on_task_id = %s",
+                    (task_id, task_id),
+                )
+                cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            conn.commit()
+
+
+def create_mock_agent_response(content: str) -> MagicMock:
+    """Create a mock Agent Hub response."""
+    mock_response = MagicMock()
+    mock_response.content = content
+    return mock_response
+
+
+class TestTriageE2E:
+    """End-to-end tests for idea triage flow."""
+
+    def test_clear_idea_moves_to_queue(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """A clear idea should move from pending → queue with complexity set."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add logout button to navbar",
+            description="Add a logout button to the top-right of the navbar that logs out the user",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        # Task starts in pending status by default
+
+        mock_response = create_mock_agent_response(
+            json.dumps(
+                {
+                    "status": "CLEAR",
+                    "objective": "Add logout button to navbar",
+                    "requirements": ["Button in navbar", "Logout API call", "Redirect to login"],
+                    "suggested_complexity": "SIMPLE",
+                    "clarifying_questions": [],
+                    "reasoning": "Clear, well-defined UI task with specific requirements",
+                }
+            )
+        )
+
+        with patch("app.tasks.autonomous.triage.get_sync_client") as mock_client:
+            mock_client.return_value.complete.return_value = mock_response
+            result = triage_idea(task_id, test_project_id)
+
+        assert result["status"] == "completed"
+        assert result["result"]["status"] == "CLEAR"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "queue"
+        assert updated_task["complexity"] == "SIMPLE"
+        assert "Triage complete: CLEAR" in (updated_task.get("progress_log") or "")
+
+    def test_unclear_idea_moves_to_blocked(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """An unclear idea should move to blocked with clarifying questions."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Make it faster",
+            description="",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        mock_response = create_mock_agent_response(
+            json.dumps(
+                {
+                    "status": "NEEDS_CLARIFICATION",
+                    "clarifying_questions": [
+                        "What specifically needs to be faster?",
+                        "What is the current performance?",
+                        "What is the target performance?",
+                    ],
+                    "reasoning": "Vague request needs more context",
+                }
+            )
+        )
+
+        with patch("app.tasks.autonomous.triage.get_sync_client") as mock_client:
+            mock_client.return_value.complete.return_value = mock_response
+            result = triage_idea(task_id, test_project_id)
+
+        assert result["status"] == "completed"
+        assert result["result"]["status"] == "NEEDS_CLARIFICATION"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "blocked"
+        assert "What specifically needs to be faster?" in (updated_task.get("progress_log") or "")
+
+    def test_missing_task_returns_error(self, test_project_id: str) -> None:
+        """Triage on missing task should return error (not raise)."""
+        result = triage_idea("nonexistent-task-xyz", test_project_id)
+        assert result["status"] == "error"
+        assert "not found" in result["message"].lower()
+
+
+class TestPlanningE2E:
+    """End-to-end tests for autonomous planning flow."""
+
+    def test_planning_creates_subtasks_and_routes_simple(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Planning should create subtasks and route SIMPLE to queue."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add loading spinner to button",
+            description="Show loading spinner while form submits",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "queue")
+
+        plan_json = json.dumps(
+            {
+                "objective": "Add loading state to submit button",
+                "subtasks": [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": "frontend",
+                        "description": "Add loading prop to Button component",
+                        "steps": [
+                            {
+                                "description": "Add isLoading prop",
+                                "verify_command": "rg 'isLoading' components/Button.tsx",
+                                "expected_output": "isLoading",
+                            }
+                        ],
+                    },
+                    {
+                        "subtask_id": "1.2",
+                        "phase": "frontend",
+                        "description": "Connect loading state to form submission",
+                        "steps": [
+                            {
+                                "description": "Update form to track loading",
+                                "verify_command": "rg 'setLoading' pages/Form.tsx",
+                                "expected_output": "setLoading",
+                            }
+                        ],
+                    },
+                ],
+                "constraints": ["Use existing spinner component"],
+            }
+        )
+
+        mock_response = create_mock_agent_response(plan_json)
+
+        with (
+            patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
+        ):
+            mock_client.return_value.run_agent.return_value = mock_response
+            mock_assessor_instance = MagicMock()
+            mock_assessor_instance.assess_sync.return_value = MagicMock(
+                tier=ComplexityTier.SIMPLE,
+                reasoning="Simple UI change",
+            )
+            mock_assessor.return_value = mock_assessor_instance
+
+            result = create_plan(task_id, test_project_id)
+
+        assert result["status"] == "completed"
+        assert result["subtasks_created"] == 2
+
+        subtasks = get_subtasks_for_task(task_id, include_steps=True)
+        assert len(subtasks) == 2
+        assert subtasks[0]["subtask_id"] == "1.1"
+        assert subtasks[0]["phase"] == "frontend"
+
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        assert spirit["objective"] == "Add loading state to submit button"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "queue"
+        assert updated_task["complexity"] == "SIMPLE"
+
+    def test_complex_task_routes_to_human_review(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Complex tasks should route to human_review after planning."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Implement real-time collaboration",
+            description="Add real-time editing with conflict resolution using CRDTs",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "queue")
+
+        plan_json = json.dumps(
+            {
+                "objective": "Implement CRDT-based real-time collaboration",
+                "subtasks": [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": "research",
+                        "description": "Research CRDT libraries",
+                        "steps": [{"description": "Compare Yjs vs Automerge"}],
+                    },
+                    {
+                        "subtask_id": "2.1",
+                        "phase": "backend",
+                        "description": "Set up WebSocket server",
+                        "steps": [{"description": "Configure WebSocket with Redis pub/sub"}],
+                    },
+                ],
+                "constraints": ["Must handle offline mode", "Preserve undo history"],
+            }
+        )
+
+        mock_response = create_mock_agent_response(plan_json)
+
+        with (
+            patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
+        ):
+            mock_client.return_value.run_agent.return_value = mock_response
+            mock_assessor_instance = MagicMock()
+            mock_assessor_instance.assess_sync.return_value = MagicMock(
+                tier=ComplexityTier.COMPLEX,
+                reasoning="CRDT implementation requires architecture decisions",
+            )
+            mock_assessor.return_value = mock_assessor_instance
+
+            result = create_plan(task_id, test_project_id)
+
+        assert result["status"] == "completed"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "human_review"
+        assert updated_task["complexity"] == "COMPLEX"
+        assert "Human Review" in (updated_task.get("progress_log") or "")
+
+
+class TestExecutionE2E:
+    """End-to-end tests for subtask execution flow."""
+
+    def test_execution_completes_all_subtasks(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Execution should run all subtasks and mark them passed."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add test file",
+            description="Create a simple test file",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        create_task_spirit(
+            task_id=task_id,
+            objective="Create test file",
+            constraints=[],
+        )
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Create test file",
+            display_order=0,
+            phase="backend",
+            steps=[
+                {
+                    "description": "Create test.py",
+                    "verify_command": "echo 'test passed'",
+                    "expected_output": "test passed",
+                }
+            ],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        mock_response = create_mock_agent_response("Created test.py successfully")
+
+        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
+            mock_client.return_value.run_agent.return_value = mock_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert len(result["subtask_results"]) == 1
+        assert result["subtask_results"][0]["status"] == "passed"
+
+        subtasks = get_subtasks_for_task(task_id, include_steps=True)
+        assert subtasks[0]["passes"] is True
+
+    def test_execution_stops_on_failure(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Execution should stop when a subtask fails verification."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Create and verify file",
+            description="Create a file and verify it exists",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        create_task_spirit(task_id=task_id, objective="Create file", constraints=[])
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Create file that will fail verification",
+            display_order=0,
+            phase="backend",
+            steps=[
+                {
+                    "description": "Create nonexistent.py",
+                    "verify_command": "cat /nonexistent/path/file.py 2>/dev/null",
+                    "expected_output": "def main():",
+                }
+            ],
+        )
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.2",
+            description="This subtask should not run",
+            display_order=1,
+            phase="backend",
+            steps=[{"description": "Should be skipped"}],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        mock_response = create_mock_agent_response("Created file")
+
+        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
+            mock_client.return_value.run_agent.return_value = mock_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert len(result["subtask_results"]) == 1
+        assert result["subtask_results"][0]["status"] == "failed"
+
+        subtasks = get_subtasks_for_task(task_id, include_steps=True)
+        assert subtasks[0]["passes"] is not True
+        assert subtasks[1]["passes"] is None
+
+
+class TestAIReviewE2E:
+    """End-to-end tests for AI review and auto-merge flow."""
+
+    def test_simple_approved_auto_merges(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """SIMPLE task approved by AI should auto-merge and complete."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Fix typo in README",
+            description="Correct spelling error",
+            task_type="bug",
+            complexity="SIMPLE",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        # Transition: pending → running → pr_created
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "pr_created")
+
+        review_json = json.dumps(
+            {
+                "verdict": "APPROVE",
+                "summary": "Simple typo fix, looks good",
+                "concerns": [],
+                "recommendation": "Merge it",
+            }
+        )
+
+        mock_response = create_mock_agent_response(review_json)
+
+        with (
+            patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            mock_diff.return_value = "- tyop\n+ typo"
+
+            result = ai_review(task_id, test_project_id)
+
+        assert result["status"] == "reviewed"
+        assert result["verdict"] == "APPROVE"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "completed"
+        assert "Auto-merged (SIMPLE)" in (updated_task.get("progress_log") or "")
+
+    def test_standard_approved_goes_to_human_review(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """STANDARD task approved by AI should go to human_review."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add new API endpoint",
+            description="Create GET /api/users endpoint",
+            task_type="feature",
+            complexity="STANDARD",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        # Transition: pending → running → pr_created
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "pr_created")
+
+        review_json = json.dumps(
+            {
+                "verdict": "APPROVE",
+                "summary": "New endpoint follows patterns, tests included",
+                "concerns": [],
+                "recommendation": "Good to merge after human review",
+            }
+        )
+
+        mock_response = create_mock_agent_response(review_json)
+
+        with (
+            patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            mock_diff.return_value = "+ def get_users():"
+
+            result = ai_review(task_id, test_project_id)
+
+        assert result["status"] == "reviewed"
+        assert result["verdict"] == "APPROVE"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "human_review"
+        assert "STANDARD" in (updated_task.get("progress_log") or "")
+
+    def test_rejected_creates_fix_subtask(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Rejected review should create fix subtask and re-queue."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add validation",
+            description="Add input validation to form",
+            task_type="task",
+            complexity="SIMPLE",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        # Transition: pending → running → pr_created
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "pr_created")
+
+        review_json = json.dumps(
+            {
+                "verdict": "REJECT",
+                "summary": "Validation is incomplete",
+                "concerns": ["Missing email format check", "No error messages"],
+                "recommendation": "Add email regex and user-friendly error messages",
+            }
+        )
+
+        mock_response = create_mock_agent_response(review_json)
+
+        with (
+            patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            mock_diff.return_value = "+ if not email:"
+
+            result = ai_review(task_id, test_project_id)
+
+        assert result["status"] == "reviewed"
+        assert result["verdict"] == "REJECT"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "queue"
+        assert "REJECTED" in (updated_task.get("progress_log") or "")
+
+        subtasks = get_subtasks_for_task(task_id, include_steps=True)
+        fix_subtasks = [s for s in subtasks if s["subtask_id"] == "99.1"]
+        assert len(fix_subtasks) == 1
+        assert "email" in fix_subtasks[0]["description"].lower()
+
+
+class TestEscalationE2E:
+    """End-to-end tests for 3-2-1 escalation pattern."""
+
+    def test_no_escalation_below_threshold(self) -> None:
+        """First failures should not trigger escalation."""
+        result = check_escalation_needed(failure_count=1, supervisor_attempts=0)
+        assert result["escalate_to_supervisor"] is False
+        assert result["escalate_to_human"] is False
+
+        result = check_escalation_needed(failure_count=2, supervisor_attempts=0)
+        assert result["escalate_to_supervisor"] is False
+        assert result["escalate_to_human"] is False
+
+    def test_escalate_to_supervisor_at_3_failures(self) -> None:
+        """3 worker failures should trigger supervisor escalation."""
+        result = check_escalation_needed(failure_count=3, supervisor_attempts=0)
+        assert result["escalate_to_supervisor"] is True
+        assert result["escalate_to_human"] is False
+
+    def test_escalate_to_human_at_2_supervisor_attempts(self) -> None:
+        """2 supervisor attempts should trigger human escalation."""
+        result = check_escalation_needed(failure_count=3, supervisor_attempts=2)
+        # Once human escalation is triggered, supervisor escalation is False
+        # (no point escalating to supervisor when human review is needed)
+        assert result["escalate_to_supervisor"] is False
+        assert result["escalate_to_human"] is True
+
+    def test_escalation_thresholds_match_321_pattern(self) -> None:
+        """Verify 3-2-1 pattern: 3 worker, 2 supervisor, 1 human."""
+        from app.tasks.autonomous.escalation import (
+            SUPERVISOR_MAX_ATTEMPTS,
+            WORKER_MAX_FAILURES,
+        )
+
+        assert WORKER_MAX_FAILURES == 3
+        assert SUPERVISOR_MAX_ATTEMPTS == 2
+
+
+class TestFullAutonomousPipeline:
+    """Integration tests for the complete autonomous pipeline."""
+
+    def test_full_pipeline_simple_task(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Test complete flow: triage → plan → execute → review → complete."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add console.log for debugging",
+            description="Add console.log to track API calls",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        triage_response = create_mock_agent_response(
+            json.dumps(
+                {
+                    "status": "CLEAR",
+                    "suggested_complexity": "SIMPLE",
+                    "clarifying_questions": [],
+                }
+            )
+        )
+
+        with patch("app.tasks.autonomous.triage.get_sync_client") as mock_client:
+            mock_client.return_value.complete.return_value = triage_response
+            triage_result = triage_idea(task_id, test_project_id)
+
+        assert triage_result["status"] == "completed"
+        assert task_store.get_task(task_id)["status"] == "queue"
+
+        plan_response = create_mock_agent_response(
+            json.dumps(
+                {
+                    "objective": "Add debug logging",
+                    "subtasks": [
+                        {
+                            "subtask_id": "1.1",
+                            "phase": "frontend",
+                            "description": "Add console.log to API client",
+                            "steps": [
+                                {
+                                    "description": "Add logging statement",
+                                    "verify_command": "echo 'done'",
+                                    "expected_output": "done",
+                                }
+                            ],
+                        }
+                    ],
+                    "constraints": [],
+                }
+            )
+        )
+
+        with (
+            patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
+        ):
+            mock_client.return_value.run_agent.return_value = plan_response
+            mock_assessor_instance = MagicMock()
+            mock_assessor_instance.assess_sync.return_value = MagicMock(
+                tier=ComplexityTier.SIMPLE,
+                reasoning="Simple logging task",
+            )
+            mock_assessor.return_value = mock_assessor_instance
+
+            plan_result = create_plan(task_id, test_project_id)
+
+        assert plan_result["status"] == "completed"
+        assert plan_result["subtasks_created"] == 1
+
+        exec_response = create_mock_agent_response("Added console.log to API client")
+
+        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
+            mock_client.return_value.run_agent.return_value = exec_response
+            exec_result = start_execution(task_id, test_project_id)
+
+        assert exec_result["status"] == "executed"
+        assert exec_result["subtask_results"][0]["status"] == "passed"
+
+        review_response = create_mock_agent_response(
+            json.dumps(
+                {
+                    "verdict": "APPROVE",
+                    "summary": "Simple logging addition",
+                    "concerns": [],
+                }
+            )
+        )
+
+        with (
+            patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+        ):
+            mock_client.return_value.complete.return_value = review_response
+            mock_diff.return_value = "+ console.log('API call')"
+
+            review_result = ai_review(task_id, test_project_id)
+
+        assert review_result["status"] == "reviewed"
+        assert review_result["verdict"] == "APPROVE"
+
+        final_task = task_store.get_task(task_id)
+        assert final_task is not None
+        assert final_task["status"] == "completed"
+        assert "Auto-merged (SIMPLE)" in (final_task.get("progress_log") or "")

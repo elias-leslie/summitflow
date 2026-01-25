@@ -52,10 +52,54 @@ def create_plan(self: CeleryTask, task_id: str, project_id: str) -> dict[str, An
 Title: {title}
 Description: {description or "(no description)"}
 
-Provide a structured plan with:
-1. Objective (one sentence)
-2. Subtasks with steps (each step must have verify_command and expected_output)
-3. Any constraints or considerations
+## Verification Requirements
+
+For each step, provide verify_command and expected_output:
+
+1. verify_command must:
+   - Return exit 0 when step is complete
+   - Use rg (ripgrep) for code searches, NOT grep
+   - Escape special chars: parens \\( \\), brackets \\[ \\]
+   - Use relative paths from project root (backend/, not /home/.../backend/)
+   - Include actual code patterns (function names, class names, type annotations)
+
+2. expected_output must:
+   - Be a specific string that appears in output
+   - NOT be generic like "success" or "found"
+
+## Common verify_command patterns:
+
+Code exists:
+  verify_command: "rg -q 'def my_function\\(' backend/app/module.py && echo 'Found'"
+  expected_output: "Found"
+
+Type annotation:
+  verify_command: "rg 'CONSTANT: int = ' backend/app/constants.py"
+  expected_output: "CONSTANT: int = "
+
+Import exists:
+  verify_command: "rg '^from.*import.*MyClass' backend/app/module.py && echo 'Import found'"
+  expected_output: "Import found"
+
+Tests pass:
+  verify_command: "cd backend && .venv/bin/pytest tests/test_module.py -q"
+  expected_output: "passed"
+
+## BAD verify_commands (DO NOT USE):
+- "cat file | grep something"  # Use rg instead
+- "ls /home/user/project/..."  # Absolute paths
+- "/path/to/.venv/bin/pytest"  # Absolute venv path
+- "grep 'pattern' file"        # Use rg
+
+## Deploy steps (REQUIRED for backend/frontend phases):
+
+Backend:
+  verify_command: "./scripts/rebuild.sh --backend 2>&1 | rg -q 'Rebuild complete' && echo 'Rebuild complete'"
+  expected_output: "Rebuild complete"
+
+Frontend:
+  verify_command: "./scripts/rebuild.sh --frontend 2>&1 | rg -q 'Rebuild complete' && echo 'Rebuild complete'"
+  expected_output: "Rebuild complete"
 
 Output as JSON with this structure:
 {{
@@ -68,8 +112,8 @@ Output as JSON with this structure:
             "steps": [
                 {{
                     "description": "...",
-                    "verify_command": "command to verify",
-                    "expected_output": "expected output"
+                    "verify_command": "command to verify (use rg, relative paths)",
+                    "expected_output": "specific expected string"
                 }}
             ]
         }}
@@ -110,11 +154,54 @@ def _parse_plan_response(content: str) -> dict[str, Any]:
         json_match = re.search(r"\{[\s\S]*\}", content)
         if json_match:
             parsed: dict[str, Any] = json.loads(json_match.group())
+            _validate_and_fix_plan(parsed)
             return parsed
     except json.JSONDecodeError as e:
         logger.warning("Failed to parse plan JSON", error=str(e))
 
     return {"objective": "Could not parse plan", "subtasks": [], "constraints": []}
+
+
+def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
+    """Validate and fix common issues in verify_commands."""
+    import re
+
+    generic_outputs = {"success", "found", "ok", "done", "pass", "passed", "true", "yes"}
+
+    for subtask in plan.get("subtasks", []):
+        for step in subtask.get("steps", []):
+            verify = step.get("verify_command", "")
+            expected = step.get("expected_output", "")
+
+            if verify:
+                if "/home/" in verify:
+                    logger.warning(
+                        "Absolute path in verify_command",
+                        subtask=subtask.get("subtask_id"),
+                        verify=verify[:100],
+                    )
+                    step["verify_command"] = re.sub(r"/home/\w+/\w+/", "", verify)
+
+                if "cat " in verify and "| grep" in verify:
+                    logger.warning(
+                        "cat|grep pattern in verify_command",
+                        subtask=subtask.get("subtask_id"),
+                    )
+                    step["verify_command"] = re.sub(
+                        r"cat\s+(\S+)\s*\|\s*grep\s+(.+)",
+                        r"rg \2 \1",
+                        verify,
+                    )
+
+                if verify.startswith("grep "):
+                    step["verify_command"] = "rg " + verify[5:]
+
+            if expected and expected.lower().strip() in generic_outputs:
+                logger.warning(
+                    "Generic expected_output",
+                    subtask=subtask.get("subtask_id"),
+                    expected=expected,
+                )
 
 
 def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
@@ -138,20 +225,24 @@ def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
             formatted_steps = []
             for step in steps:
                 if isinstance(step, dict):
-                    formatted_steps.append({
-                        "description": step.get("description", ""),
-                        "verify_command": step.get("verify_command"),
-                        "expected_output": step.get("expected_output"),
-                    })
+                    formatted_steps.append(
+                        {
+                            "description": step.get("description", ""),
+                            "verify_command": step.get("verify_command"),
+                            "expected_output": step.get("expected_output"),
+                        }
+                    )
                 else:
                     formatted_steps.append({"description": str(step)})
 
-            formatted_subtasks.append({
-                "subtask_id": st.get("subtask_id", f"{len(formatted_subtasks) + 1}.1"),
-                "phase": st.get("phase"),
-                "description": st.get("description", ""),
-                "steps": formatted_steps,
-            })
+            formatted_subtasks.append(
+                {
+                    "subtask_id": st.get("subtask_id", f"{len(formatted_subtasks) + 1}.1"),
+                    "phase": st.get("phase"),
+                    "description": st.get("description", ""),
+                    "steps": formatted_steps,
+                }
+            )
 
         bulk_create_subtasks(task_id, formatted_subtasks)
         logger.info("Created subtasks from plan", task_id=task_id, count=len(formatted_subtasks))

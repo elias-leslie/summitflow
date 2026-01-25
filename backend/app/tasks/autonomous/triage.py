@@ -54,7 +54,17 @@ def triage_idea(self: CeleryTask, task_id: str, project_id: str) -> dict[str, An
 Title: {title}
 Description: {description or "(no description provided)"}
 
-Provide your assessment in JSON format."""
+Provide your assessment in JSON format:
+{{
+    "status": "CLEAR" | "NEEDS_CLARIFICATION",
+    "objective": "Single measurable goal",
+    "spirit": "Core intent - what TO accomplish",
+    "anti": "What should absolutely NOT be done",
+    "requirements": ["List of acceptance criteria"],
+    "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",
+    "clarifying_questions": ["Only if NEEDS_CLARIFICATION"],
+    "reasoning": "Brief explanation"
+}}"""
 
     try:
         client = get_sync_client()
@@ -107,7 +117,9 @@ def _parse_triage_response(content: str) -> dict[str, Any]:
 
     return {
         "status": "NEEDS_CLARIFICATION",
-        "clarifying_questions": ["Could you provide more details about what you want to accomplish?"],
+        "clarifying_questions": [
+            "Could you provide more details about what you want to accomplish?"
+        ],
         "reasoning": "Could not parse agent response, requesting clarification",
     }
 
@@ -124,6 +136,12 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
         complexity = result.get("suggested_complexity", "STANDARD")
         objective = result.get("objective", "")
         requirements = result.get("requirements", [])
+        spirit = result.get("spirit", "")
+        anti = result.get("anti", "")
+
+        spirit_anti = None
+        if spirit or anti:
+            spirit_anti = f"SPIRIT: {spirit}. ANTI: {anti}."
 
         task_store.update_task(task_id, complexity=complexity)
 
@@ -131,6 +149,7 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
             create_task_spirit(
                 task_id=task_id,
                 objective=objective,
+                spirit_anti=spirit_anti,
                 complexity=complexity,
                 done_when=requirements if requirements else None,
             )

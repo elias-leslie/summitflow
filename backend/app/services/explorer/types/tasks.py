@@ -187,7 +187,7 @@ class TaskScanner(BaseScanner):
                 if schedule_match:
                     expr = schedule_match.group(1).strip().rstrip(",")
                     # Safely evaluate simple math expressions (only digits and operators)
-                    if re.match(r'^[\d\s\*\+\-\/\.]+$', expr):
+                    if re.match(r"^[\d\s\*\+\-\/\.]+$", expr):
                         with contextlib.suppress(Exception):
                             schedule[task_name]["schedule_seconds"] = float(eval(expr))
                 # Crontab schedule

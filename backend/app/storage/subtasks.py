@@ -789,15 +789,17 @@ def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]
     for row in rows:
         files = row[3] or []
         decisions = row[4] or []
-        summaries.append({
-            "id": row[0],
-            "subtask_id": row[1],
-            "short_id": row[6],
-            "summary": row[2],
-            "files_modified": files,
-            "decisions_made": decisions,
-            "created_at": row[5].isoformat() if row[5] else None,
-        })
+        summaries.append(
+            {
+                "id": row[0],
+                "subtask_id": row[1],
+                "short_id": row[6],
+                "summary": row[2],
+                "files_modified": files,
+                "decisions_made": decisions,
+                "created_at": row[5].isoformat() if row[5] else None,
+            }
+        )
         all_files.extend(files)
         all_decisions.extend(decisions)
 

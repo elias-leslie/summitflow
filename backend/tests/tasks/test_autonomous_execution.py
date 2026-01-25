@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.tasks.autonomous.execution import AUTONOMOUS_TASK_TYPES, autonomous_work_pickup
+from app.tasks.autonomous import autonomous_work_pickup
 
 
 class TestAutonomousTaskTypes:

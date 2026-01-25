@@ -5,8 +5,6 @@ Tests the complete triage flow: create task -> triage runs -> moves to Planning 
 
 from __future__ import annotations
 
-import pytest
-
 from app.tasks.autonomous.triage import triage_idea
 
 
