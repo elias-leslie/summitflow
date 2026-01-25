@@ -79,10 +79,10 @@ Output as JSON with this structure:
 
     try:
         client = get_sync_client()
-        response = client.run_agent(
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            project_id=project_id,
             agent_slug="planner",
-            prompt=prompt,
-            working_dir=f"/home/kasadis/{project_id}",
         )
 
         plan_data = _parse_plan_response(response.content)

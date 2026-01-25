@@ -15,6 +15,7 @@ from ...constants import AGENT_IDEA_INTAKE
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import tasks as task_store
+from ...storage.task_spirit import create_task_spirit
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,7 @@ Provide your assessment in JSON format."""
         client = get_sync_client()
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
+            project_id=project_id,
             agent_slug=AGENT_IDEA_INTAKE.replace("agent:", ""),
         )
 
@@ -113,14 +115,27 @@ def _parse_triage_response(content: str) -> dict[str, Any]:
 def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
     """Process triage result and update task accordingly.
 
-    If CLEAR: Move task to 'queue' status for planning.
+    If CLEAR: Create task_spirit with objective and move to 'queue' status for planning.
     If NEEDS_CLARIFICATION: Add questions to task chat/progress_log.
     """
     status = result.get("status", "").upper()
 
     if status == "CLEAR":
         complexity = result.get("suggested_complexity", "STANDARD")
+        objective = result.get("objective", "")
+        requirements = result.get("requirements", [])
+
         task_store.update_task(task_id, complexity=complexity)
+
+        if objective:
+            create_task_spirit(
+                task_id=task_id,
+                objective=objective,
+                complexity=complexity,
+                done_when=requirements if requirements else None,
+            )
+            logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
+
         task_store.update_task_status(task_id, "queue")
         task_store.append_progress_log(
             task_id,

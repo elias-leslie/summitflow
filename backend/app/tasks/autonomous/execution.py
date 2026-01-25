@@ -82,9 +82,10 @@ def _execute_subtask(task_id: str, subtask: dict[str, Any], project_id: str) -> 
     try:
         client = get_sync_client()
         response = client.run_agent(
+            task=prompt,
             agent_slug="coder",
-            prompt=prompt,
             working_dir=worktree_path,
+            max_turns=30,
         )
 
         steps = subtask.get("steps_from_table", [])
