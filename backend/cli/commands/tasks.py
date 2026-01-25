@@ -417,7 +417,7 @@ def show(
 
 @app.command()
 def context(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
 ) -> None:
     """Get full task context in a single call.
 
@@ -426,10 +426,16 @@ def context(
 
     This is optimized for /do_it workflow - one command instead of multiple calls.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st --compact context task-abc123
         st context task-abc123
+        st context                        # Uses active context
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient(require_project=False)
 
     try:
@@ -497,7 +503,7 @@ def context(
 
 @app.command()
 def export(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     output: Annotated[
         str | None,
         typer.Option("-o", "--output", help="Output file path (default: stdout)"),
@@ -511,13 +517,18 @@ def export(
 
     This is the single-command full export for task archival or comparison.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st export task-abc123                      # Output to stdout
         st export task-abc123 -o task.json        # Write to file
-        st export task-abc123 -o /tmp/task.json   # Write to specific path
+        st export -o /tmp/task.json               # Uses active context
     """
     from datetime import datetime
 
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient(require_project=False)
 
     try:
@@ -609,7 +620,7 @@ def export(
 
 @app.command()
 def update(
-    task_id: str,
+    task_id: Annotated[str | None, typer.Argument()] = None,
     status: Annotated[str | None, typer.Option("-s", "--status")] = None,
     priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
@@ -648,17 +659,18 @@ def update(
 ) -> None:
     """Update a task.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
         st update task-abc123 --status running
-        st update task-abc123 -p 1 -l "complexity:large"
-        st update task-abc123 --add-label auto-generated
-        st update task-abc123 --remove-label tier:1 --add-label tier:2
-        st update task-abc123 --move-to other-project
-        st update task-abc123 --objective "Enable X to do Y"
-        st update task-abc123 --branch feature/auth --pr-url https://github.com/...
-        st update task-abc123 --blocked-by task-def456
-        st update task-abc123 --unblock task-def456
+        st update --status running                    # Uses active context
+        st update -p 1 -l "complexity:large"
+        st update --add-label auto-generated
+        st update --objective "Enable X to do Y"
     """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Build update data
@@ -1060,19 +1072,24 @@ def exec(
 
 @app.command()
 def log(
-    task_id: str,
     message: str,
+    task_id: Annotated[str | None, typer.Option("-t", "--task", help="Task ID")] = None,
 ) -> None:
     """Append a log entry to a task's progress log.
 
     A timestamp is automatically prepended to the message.
 
+    If no task_id is provided, uses the active context from 'st work'.
+
     Examples:
-        st log task-abc123 "Started working on feature"
-        st log task-abc123 "Fixed issue with validation"
+        st log "Started working on feature"           # Uses active context
+        st log "Fixed issue" --task task-abc123       # Explicit task
     """
     from datetime import datetime
 
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
     client = STClient()
 
     # Add timestamp prefix
