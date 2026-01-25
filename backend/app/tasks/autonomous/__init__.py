@@ -11,9 +11,11 @@ This module provides Celery tasks for autonomous task execution:
 from __future__ import annotations
 
 from .execution import start_execution
+from .planning import create_plan
 from .triage import triage_idea
 
 __all__ = [
+    "create_plan",
     "start_execution",
     "triage_idea",
 ]
