@@ -99,9 +99,10 @@ app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 
-from .api import ideas, ws_execution  # noqa: E402
+from .api import events, ideas, ws_execution  # noqa: E402
 
 app.include_router(ideas.router, prefix="/api", tags=["ideas"])
+app.include_router(events.router, prefix="/api", tags=["events"])
 app.include_router(ws_execution.router, tags=["execution"])
 
 
