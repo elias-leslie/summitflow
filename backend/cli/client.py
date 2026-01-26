@@ -496,7 +496,7 @@ class STClient:
             Dict with logged count and subtask_id.
         """
         response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
+            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
             json={"citations": citations},
         )
         return self._handle_response(response)

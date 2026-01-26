@@ -344,6 +344,21 @@ def update_subtask_passes(
             plan_defects,
         )
 
+    # Gate: Must log citations before subtask can be marked as passed
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM subtask_citations WHERE subtask_id = %s",
+            (table_id,),
+        )
+        citation_count = cur.fetchone()[0]
+
+    if citation_count == 0:
+        raise SubtaskGateError(
+            f"Cannot pass subtask {subtask_id}: must log citations first. "
+            "Use 'st citations log M:uuid+ G:uuid-' to log memory citations used during this subtask.",
+            incomplete_steps=[],
+        )
+
     # All steps passed - mark subtask as passed
     passed_at = datetime.now(UTC)
 
