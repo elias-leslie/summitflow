@@ -278,3 +278,41 @@ def delete_subtask(
         return
 
     print(f"DEL {subtask_id}")
+
+
+@app.command("citations")
+def log_citations(
+    citations: Annotated[list[str], typer.Argument(help="Citations in suffix notation (M:abc123+ G:def456-)")],
+    subtask_id: Annotated[str | None, typer.Option("--subtask", "-s", help="Subtask ID")] = None,
+    task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
+) -> None:
+    """Log episode citations with suffix notation ratings.
+
+    Citations use suffix notation for three-signal rating:
+    - M:abc12345+  -> mandate helpful (promotes episode)
+    - G:def67890-  -> guardrail harmful (demotes episode)
+    - M:xyz99999   -> used/neutral (no suffix)
+
+    If no task_id is provided, uses the active context from 'st work'.
+
+    Examples:
+        st subtask citations M:abc12345+ G:def67890- M:xyz99999 --subtask 1.1
+        st subtask citations M:85bf4635+ --subtask 2.1  # Uses active context
+    """
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
+    if not subtask_id:
+        output_error("Subtask ID required (--subtask/-s)")
+        raise typer.Exit(1)
+
+    client = STClient()
+
+    try:
+        result = client.log_citations(task_id, subtask_id, citations)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    logged = result.get("logged", 0)
+    output_success(f"Logged {logged} citations for subtask {subtask_id}")

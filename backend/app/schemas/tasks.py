@@ -562,3 +562,44 @@ class BatchTaskCriteriaResponse(BaseModel):
 
     created: list[dict[str, Any]]
     errors: list[BatchCriterionResult]
+
+
+# =============================================================================
+# Citation Models
+# =============================================================================
+
+
+class CitationLogRequest(BaseModel):
+    """Request model for logging subtask citations.
+
+    Citations use suffix notation for three-signal rating:
+    - M:abc123+  -> mandate helpful (promote tier)
+    - G:def456-  -> guardrail harmful (demote/blacklist)
+    - M:xyz789   -> used/neutral (no suffix)
+
+    Pattern: [MG]:[8-char uuid prefix][+/-]?
+    """
+
+    citations: list[str] = Field(
+        ...,
+        description="List of citations in suffix notation: M:abc123+, G:def456-, M:xyz789",
+    )
+
+    @field_validator("citations")
+    @classmethod
+    def validate_citations(cls, v: list[str]) -> list[str]:
+        pattern = re.compile(r"^[MG]:[a-f0-9]{8}[+-]?$")
+        for citation in v:
+            if not pattern.match(citation):
+                raise ValueError(
+                    f"Invalid citation format: {citation}. "
+                    "Expected format: M:abc12345+ or G:def67890- or M:xyz99999"
+                )
+        return v
+
+
+class CitationLogResponse(BaseModel):
+    """Response model for citation logging."""
+
+    logged: int = Field(..., description="Number of citations logged")
+    subtask_id: str = Field(..., description="Subtask ID citations were logged for")

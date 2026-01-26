@@ -484,6 +484,25 @@ class STClient:
         response = self._client.delete(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"))
         return self._handle_response(response)
 
+    def log_citations(
+        self, task_id: str, subtask_id: str, citations: list[str]
+    ) -> dict[str, Any]:
+        """Log episode citations for a subtask with suffix notation ratings.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+            citations: List of citations in suffix notation (M:abc123+ G:def456-)
+
+        Returns:
+            Dict with logged count and subtask_id.
+        """
+        response = self._client.post(
+            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
+            json={"citations": citations},
+        )
+        return self._handle_response(response)
+
     # Steps
 
     def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:

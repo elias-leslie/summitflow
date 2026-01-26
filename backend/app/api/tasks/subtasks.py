@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Query
 from ...constants import DEFAULT_GEMINI_MODEL
 from ...logging_config import get_logger
 from ...schemas.tasks import (
+    CitationLogRequest,
+    CitationLogResponse,
     CleanupPromptRequest,
     CleanupPromptResponse,
     SubtaskCreate,
@@ -388,3 +390,39 @@ async def update_task_subtask_global(
         updated["steps"] = []
 
     return SubtaskResponse(**updated)
+
+
+@router.post(
+    "/tasks/{task_id}/subtasks/{subtask_id}/citations",
+    response_model=CitationLogResponse,
+)
+async def log_subtask_citations(
+    task_id: str,
+    subtask_id: str,
+    request: CitationLogRequest,
+) -> CitationLogResponse:
+    """Log episode citations for a subtask with suffix notation ratings.
+
+    Citations use suffix notation for three-signal rating:
+    - M:abc123+  -> mandate helpful (promotes episode tier)
+    - G:def456-  -> guardrail harmful (demotes/blacklists episode)
+    - M:xyz789   -> used/neutral (no suffix, just records usage)
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: CitationLogRequest with list of citations
+
+    Returns:
+        CitationLogResponse with count of logged citations
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.subtasks import log_citations
+
+    logged = log_citations(task_id, subtask_id, request.citations)
+
+    return CitationLogResponse(
+        logged=logged,
+        subtask_id=subtask_id,
+    )

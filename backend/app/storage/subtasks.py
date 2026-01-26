@@ -808,3 +808,58 @@ def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]
         "total_files_modified": list(set(all_files)),
         "key_decisions": all_decisions,
     }
+
+
+def parse_citation(citation: str) -> tuple[str, str]:
+    """Parse a citation in suffix notation to (episode_uuid_prefix, rating).
+
+    Args:
+        citation: Citation string like "M:abc12345+" or "G:def67890-" or "M:xyz99999"
+
+    Returns:
+        Tuple of (uuid_prefix, rating) where rating is 'helpful', 'harmful', or 'used'
+    """
+    prefix = citation[2:10]
+    suffix = citation[10:] if len(citation) > 10 else ""
+    if suffix == "+":
+        rating = "helpful"
+    elif suffix == "-":
+        rating = "harmful"
+    else:
+        rating = "used"
+    return prefix, rating
+
+
+def log_citations(task_id: str, subtask_id: str, citations: list[str]) -> int:
+    """Log episode citations for a subtask with ratings.
+
+    Parses suffix notation and stores in subtask_citations table.
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        citations: List of citations in suffix notation
+
+    Returns:
+        Number of citations logged
+    """
+    if not citations:
+        return 0
+
+    table_id = _generate_subtask_id(task_id, subtask_id)
+
+    parsed = [parse_citation(c) for c in citations]
+
+    with get_connection() as conn, conn.cursor() as cur:
+        for uuid_prefix, rating in parsed:
+            cur.execute(
+                """
+                INSERT INTO subtask_citations (subtask_id, episode_uuid, rating)
+                VALUES (%s, %s, %s)
+                """,
+                (table_id, uuid_prefix, rating),
+            )
+        conn.commit()
+
+    logger.info("Logged %d citations for subtask %s", len(parsed), subtask_id)
+    return len(parsed)
