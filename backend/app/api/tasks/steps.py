@@ -637,17 +637,36 @@ async def update_step_global(
     Returns:
         Updated step
     """
-    _get_task_or_404(task_id)
+    task = _get_task_or_404(task_id)
 
-    from ...storage.steps import StepVerificationError, update_step_passes
+    from ...storage.projects import get_project_root_path
+    from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
+    project_root = get_project_root_path(task.get("project_id"))
+
     try:
-        updated = update_step_passes(table_id, step_number, passes=request.passes)
-    except StepVerificationError as e:
+        updated = update_step_passes(
+            table_id, step_number, passes=request.passes, project_root=project_root
+        )
+    except StepGateError as e:
         raise HTTPException(
             status_code=400,
-            detail={"message": str(e), "verify_output": getattr(e, "output", "")},
+            detail={
+                "message": str(e),
+                "missing_steps": e.missing_steps,
+            },
+        ) from e
+    except StepVerificationError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(e),
+                "step_number": e.step_number,
+                "output": e.output,
+                "exit_code": e.exit_code,
+                "verification_failed": True,
+            },
         ) from e
 
     if updated is None:
