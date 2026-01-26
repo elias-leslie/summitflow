@@ -107,7 +107,9 @@ SummitFlow: 8001 (API), 3001 (UI)
 Agent Hub:  8003 (API), 3003 (UI)
 ```
 
-## Memory System
+## Memory System (ACE-aligned)
+
+Based on [Agentic Context Engineering (ACE) paper](https://arxiv.org/pdf/2510.04618) - see `references/ace_review.md`
 
 ```bash
 # Save learning (provisional 70-89, canonical 90-99)
@@ -120,6 +122,24 @@ curl -X POST http://localhost:8003/api/memory/golden-standards \
 ```
 
 **Categories**: coding_standard, troubleshooting_guide, operational_context, system_design, domain_knowledge
+
+### Citation Tracking (ACE Model)
+
+| System | Tracks | Purpose |
+|--------|--------|---------|
+| SummitFlow | `subtask_citations` with rating (+/-/used) | Per-subtask citation logging |
+| Agent Hub | `loaded_count`, `referenced_count` | Injection and citation counts |
+| Agent Hub | `helpful_count`, `harmful_count` | ACE voting (task-181399fe) |
+
+**Citation suffix notation**: `st citations log M:abc+ G:def-` where `+` = helpful, `-` = harmful
+
+### Learning Loop (task-181399fe)
+
+```
+run_agent() → memory injection → agent cites [M:uuid8] → log_citations(+/-)
+    → aggregate to helpful_count/harmful_count → tier_optimizer promotes/demotes
+    → close_session() → retrospective → extract_learnings() → future injection
+```
 
 ## Common Gotchas
 
@@ -139,6 +159,16 @@ curl -X POST http://localhost:8003/api/memory/golden-standards \
 - Half-ass work at low context → Use `/wrap_it`
 - Cherry-pick subtasks → Follow dependency order
 
+## Known Gaps (task-181399fe)
+
+| Gap | Current State | After Fix |
+|-----|---------------|-----------|
+| run_agent sessions | Fake (uses agent_id) | Real DB sessions |
+| run_agent memory | No injection | Injection on turn 1 |
+| ACE helpful/harmful | Not implemented | helpful_count/harmful_count on episodes |
+| tier_optimizer | Uses utility_score only | Uses helpful >= 5, harmful >= 3 |
+| Retrospectives | Don't exist | Generated on close_session() |
+
 ---
 
-*Updated: 2026-01-25 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details*
+*Updated: 2026-01-26 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details*

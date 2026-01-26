@@ -356,7 +356,7 @@ def update_subtask_passes(
     if citation_count == 0:
         raise SubtaskGateError(
             f"Cannot pass subtask {subtask_id}: must log citations first. "
-            "Use 'st citations log M:uuid+ G:uuid-' to log memory citations used during this subtask.",
+            "Use 'st subtask citations M:uuid+ G:uuid- --subtask X.Y' to log memory citations used.",
             incomplete_steps=[],
         )
 

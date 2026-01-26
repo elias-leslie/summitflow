@@ -438,10 +438,14 @@ AGENT_HUB_URL=http://localhost:8003
   content: String,
   source_description: String,
   created_at: DateTime,
-  loaded_count: Int,
-  referenced_count: Int,
-  success_count: Int,
-  utility_score: Float
+  -- Usage tracking --
+  loaded_count: Int,        -- Times injected into context
+  referenced_count: Int,    -- Times cited by LLM ([M:uuid8])
+  success_count: Int,       -- From feedback API (thumbs up)
+  utility_score: Float,     -- success_count / referenced_count
+  -- ACE-aligned (task-181399fe) --
+  helpful_count: Int,       -- Aggregated from SummitFlow + ratings
+  harmful_count: Int        -- Aggregated from SummitFlow - ratings
 })
 
 (:Entity {
@@ -452,6 +456,8 @@ AGENT_HUB_URL=http://localhost:8003
 
 (:Episodic)-[:MENTIONS]->(:Entity)
 ```
+
+**Note**: `helpful_count` and `harmful_count` are being added by task-181399fe to align with the ACE paper's voting model. The tier_optimizer will use `harmful_count >= 3` for demotion and `helpful_count >= 5` for promotion.
 
 ### 3.3 API Endpoints
 
@@ -498,10 +504,23 @@ AGENT_HUB_URL=http://localhost:8003
 #### Orchestration
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
+| POST | `/api/orchestration/run-agent` | Agentic execution with tool loop |
 | POST | `/api/orchestration/subagent` | Spawn subagent |
 | POST | `/api/orchestration/parallel` | Parallel execution |
 | POST | `/api/orchestration/maker-checker` | Verification pattern |
 | WS | `/api/orchestration/roundtable` | Multi-agent discussion |
+
+#### run_agent vs /complete (task-181399fe)
+
+| Feature | `/complete` | `run_agent` (current) | `run_agent` (after task-181399fe) |
+|---------|-------------|----------------------|-----------------------------------|
+| Session | Real DB session | Fake (agent_id) | Real DB session |
+| Memory injection | Yes | No | Yes (turn 1 only) |
+| Citation tracking | Yes | No | Yes (all turns) |
+| Response fields | `memory_uuids` | None | `session_id`, `memory_uuids`, `cited_uuids` |
+| Retrospectives | Manual close | N/A | Auto on close_session() |
+
+**SummitFlow uses `run_agent`** for autonomous execution (`st autocode`, Celery tasks).
 
 #### Admin
 | Method | Endpoint | Purpose |
@@ -519,6 +538,8 @@ AGENT_HUB_URL=http://localhost:8003
 | GET | `/api/feedback/stats` | Feedback statistics |
 
 ### 3.4 Memory System
+
+Based on [Agentic Context Engineering (ACE) paper](https://arxiv.org/pdf/2510.04618) - see `summitflow/references/ace_review.md`
 
 #### 3-Block Progressive Disclosure
 
@@ -546,12 +567,57 @@ coding_standard, troubleshooting_guide, system_design, operational_context, doma
 - 70-89 = Provisional (needs validation)
 - <70 = Experimental
 
-#### Usage Tracking
+#### Usage Tracking (Current)
 ```
 loaded_count: Times injected into context
 referenced_count: Times cited by LLM ([M:uuid8])
-success_count: Times associated with positive feedback
+success_count: Times associated with positive feedback (via feedback API)
 utility_score: success_count / referenced_count
+```
+
+#### ACE-Aligned Voting (task-181399fe)
+Per ACE paper, the voting system should use helpful/harmful counts:
+```
+helpful_count: Aggregated from SummitFlow citation ratings (+)
+harmful_count: Aggregated from SummitFlow citation ratings (-)
+vote = helpful_count - harmful_count
+If vote < -3: demote/drop the episode
+If vote > 5: promote the episode
+```
+
+**SummitFlow Citation Ratings**: `st citations log M:abc+ G:def-`
+- `+` suffix = helpful (helpful_count++)
+- `-` suffix = harmful (harmful_count++)
+- no suffix = used but neutral
+
+#### Learning Loop (task-181399fe)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      COMPLETE LEARNING LOOP                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. INJECTION: run_agent() injects memory facts on turn 1           │
+│     → loaded_count++ for each injected episode                      │
+│                                                                     │
+│  2. CITATION: Agent cites facts in response [M:uuid8]               │
+│     → referenced_count++ for each cited episode                     │
+│                                                                     │
+│  3. RATING: SummitFlow logs citations with ratings                  │
+│     st citations log M:abc+ G:def-                                  │
+│     → POST /api/memory/episodes/{uuid}/rating                       │
+│     → helpful_count++ or harmful_count++                            │
+│                                                                     │
+│  4. OPTIMIZATION: tier_optimizer (daily Celery)                     │
+│     → harmful_count >= 3: demote episode                            │
+│     → helpful_count >= 5 AND referenced >= 20: promote              │
+│                                                                     │
+│  5. RETROSPECTIVE: close_session() triggers Celery task             │
+│     → generate_retrospective() analyzes session                     │
+│     → extract_learnings() creates new episodes                      │
+│     → New episodes appear in future memory injection                │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.5 Agents
@@ -712,6 +778,7 @@ response = client.complete(
 
 ### Memory Flow
 
+#### Current (/complete endpoint)
 ```
 1. SummitFlow calls Agent Hub with project_id + external_id
 2. Agent Hub queries Neo4j for relevant episodes (project scope)
@@ -720,6 +787,40 @@ response = client.complete(
 5. Agent Hub extracts citations ([M:uuid8]) from response
 6. Agent Hub tracks usage (loaded_count, referenced_count)
 7. Session linked via external_id for cost aggregation
+```
+
+#### After task-181399fe (run_agent endpoint)
+```
+1. SummitFlow calls run_agent with agent_slug
+2. Agent Hub creates real DB session
+3. Turn 1: complete_internal() with memory injection
+   - Queries Neo4j for episodes
+   - Injects 3-block context
+   - Tracks loaded_count
+4. LLM generates response with tool calls
+5. Each turn: complete_internal() extracts citations
+   - Tracks referenced_count for cited episodes
+6. Response includes session_id, memory_uuids, cited_uuids
+7. SummitFlow logs citations with ratings (+/-/used)
+8. Agent Hub aggregates to helpful_count/harmful_count
+9. SummitFlow calls close_session(session_id)
+10. Agent Hub generates retrospective → extract_learnings()
+```
+
+#### Citation Rating Flow (ACE-aligned)
+```
+SummitFlow                          Agent Hub
+    │                                   │
+    ├─ st citations log M:abc+ G:def- ──►│
+    │   (stores in subtask_citations)   │
+    │                                   │
+    │   POST /memory/episodes/abc/rating│
+    │   body: {rating: "helpful"}  ─────►│
+    │                                   ├─► helpful_count++ on abc
+    │                                   │
+    │   POST /memory/episodes/def/rating│
+    │   body: {rating: "harmful"}  ─────►│
+    │                                   └─► harmful_count++ on def
 ```
 
 ---
@@ -845,6 +946,13 @@ Scope: Global (126) + Project (35)
 | `/home/kasadis/summitflow/backups/` | Local backups |
 | `/home/kasadis/summitflow/tasks/` | Task definitions |
 
+### Reference Documents
+
+| Path | Purpose |
+|------|---------|
+| `/home/kasadis/summitflow/references/ace_review.md` | ACE paper review (memory system design basis) |
+| `/home/kasadis/agent-hub/tasks/task-181399fe/plan.json` | Learning loop completion plan |
+
 ---
 
 ## Quick Reference
@@ -909,4 +1017,4 @@ curl -X POST "http://localhost:8003/api/memory/save-learning" \
 
 ---
 
-*Generated: 2026-01-25 | Companion: QUICK_REFERENCE.md*
+*Generated: 2026-01-26 | Companion: QUICK_REFERENCE.md*
