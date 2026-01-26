@@ -1,9 +1,8 @@
-"""Tasks API - Logging, streaming, and task lifecycle.
+"""Tasks API - Logging and task lifecycle.
 
 Handles:
 - validate_task_ready_endpoint
 - append_task_log
-- stream_task_log (SSE)
 - start_task
 - claim_task
 - release_task
@@ -11,12 +10,9 @@ Handles:
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException
 
 from ...constants import VALID_AGENT_TYPES
 from ...logging_config import get_logger
@@ -29,7 +25,6 @@ from ...schemas.tasks import (
 )
 from ...services.task_validation import validate_task_ready
 from ...storage import tasks as task_store
-from ...utils.sse import format_sse_event as _sse_event
 from .core import _get_task_or_404, _task_to_response, _verify_task_project
 
 logger = get_logger(__name__)
@@ -86,112 +81,6 @@ async def append_task_log(project_id: str, task_id: str, log_entry: TaskLogEntry
         "task_id": task_id,
         "entry": log_entry.entry,
     }
-
-
-@router.get("/projects/{project_id}/tasks/{task_id}/stream")
-async def stream_task_log(
-    project_id: str,
-    task_id: str,
-    request: Request,
-) -> StreamingResponse:
-    """Stream task progress log updates via Server-Sent Events (SSE).
-
-    Continuously polls the database for new progress log entries and streams
-    them to the client. The stream ends when:
-    - The task reaches a terminal status (completed, failed)
-    - The client disconnects
-
-    Args:
-        project_id: Project ID
-        task_id: Task ID
-        request: FastAPI request (for disconnect detection)
-
-    Returns:
-        StreamingResponse with text/event-stream content type
-    """
-    task = _verify_task_project(task_id, project_id)
-
-    async def event_generator() -> AsyncGenerator[str, None]:
-        """Generate SSE events for task progress."""
-        last_log_length = 0
-        terminal_statuses = {"completed", "failed"}
-        poll_interval = 1.0  # Poll every second
-
-        logger.info("sse_stream_started", task_id=task_id)
-
-        try:
-            # Send initial connection event
-            yield _sse_event(
-                "connected",
-                {"task_id": task_id, "status": task["status"]},
-            )
-
-            while True:
-                # Check for client disconnect
-                if await request.is_disconnected():
-                    logger.info("sse_client_disconnected", task_id=task_id)
-                    break
-
-                # Fetch current task state
-                current_task = task_store.get_task(task_id)
-                if not current_task:
-                    yield _sse_event("error", {"message": "Task no longer exists"})
-                    break
-
-                # Check for new log entries
-                current_log = current_task.get("progress_log") or ""
-                if len(current_log) > last_log_length:
-                    # Extract only the new portion
-                    new_content = current_log[last_log_length:]
-                    last_log_length = len(current_log)
-
-                    yield _sse_event(
-                        "log",
-                        {"content": new_content},
-                    )
-
-                # Send status update
-                yield _sse_event(
-                    "status",
-                    {
-                        "status": current_task["status"],
-                        "total_tokens_used": current_task.get("total_tokens_used", 0),
-                    },
-                )
-
-                # Check for terminal status
-                if current_task["status"] in terminal_statuses:
-                    yield _sse_event(
-                        "complete",
-                        {
-                            "status": current_task["status"],
-                            "error_message": current_task.get("error_message"),
-                        },
-                    )
-                    logger.info(
-                        "sse_task_completed",
-                        task_id=task_id,
-                        status=current_task["status"],
-                    )
-                    break
-
-                await asyncio.sleep(poll_interval)
-
-        except asyncio.CancelledError:
-            logger.info("sse_stream_cancelled", task_id=task_id)
-        except Exception as e:
-            logger.error("sse_stream_error", task_id=task_id, error=str(e))
-            yield _sse_event("error", {"message": str(e)})
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        },
-    )
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/start", response_model=dict[str, Any])
