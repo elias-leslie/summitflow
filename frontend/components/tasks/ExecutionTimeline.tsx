@@ -17,6 +17,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getWsUrl } from '@/lib/api-config'
+import {
+  getEventsByTask,
+  type Event,
+  type EventVisibility,
+} from '@/lib/api/events'
 
 // ============================================================================
 // Types
@@ -34,10 +39,15 @@ interface TimelineMessage {
   data: Record<string, unknown>
   timestamp: string
   sequence: number
+  trace_id?: string
+  span_id?: string | null
+  visibility?: EventVisibility
 }
 
 interface ExecutionTimelineProps {
   taskId: string
+  /** Project ID for fetching historical events */
+  projectId?: string
   /** Whether to auto-connect on mount */
   autoConnect?: boolean
   /** Show chat input at bottom */
@@ -228,15 +238,20 @@ function TimelineEvent({ message }: { message: TimelineMessage }) {
 
 export function ExecutionTimeline({
   taskId,
+  projectId,
   autoConnect = true,
   showChatInput = false,
   chatEnabled = false,
   className = '',
 }: ExecutionTimelineProps) {
   const [messages, setMessages] = useState<TimelineMessage[]>([])
+  const [historicalEvents, setHistoricalEvents] = useState<TimelineMessage[]>(
+    [],
+  )
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPrevious, setShowPrevious] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [isSending, setIsSending] = useState(false)
 
@@ -246,6 +261,61 @@ export function ExecutionTimeline({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttemptRef = useRef<number>(0)
   const maxReconnectDelay = 30000 // Cap at 30 seconds
+
+  // Convert Event from API to TimelineMessage format
+  const eventToTimelineMessage = useCallback(
+    (event: Event, index: number): TimelineMessage => {
+      const typeMap: Record<string, TimelineMessage['type']> = {
+        log: 'log',
+        progress: 'progress',
+        model_change: 'model_change',
+        chat_message: 'chat_message',
+        error: 'error',
+      }
+      return {
+        type: typeMap[event.event_type] || 'log',
+        task_id: event.trace_id,
+        data: {
+          message: event.message,
+          level: event.level,
+          source: event.source,
+          ...event.attributes,
+        },
+        timestamp: event.timestamp,
+        sequence: index,
+        trace_id: event.trace_id,
+        span_id: event.span_id,
+        visibility: event.visibility,
+      }
+    },
+    [],
+  )
+
+  // Fetch historical events on mount
+  useEffect(() => {
+    if (!projectId) return
+
+    const fetchHistory = async () => {
+      setIsLoadingHistory(true)
+      try {
+        const events = await getEventsByTask(projectId, taskId, {
+          visibility: 'user',
+          limit: 500,
+        })
+        const converted = events.map(eventToTimelineMessage)
+        setHistoricalEvents(converted)
+        if (converted.length > 0) {
+          lastSequenceRef.current = converted.length
+        }
+      } catch (err) {
+        console.error('Failed to fetch historical events:', err)
+      } finally {
+        setIsLoadingHistory(false)
+      }
+    }
+
+    fetchHistory()
+  }, [projectId, taskId, eventToTimelineMessage])
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -369,33 +439,42 @@ export function ExecutionTimeline({
         </div>
       </div>
 
-      {/* Previous executions toggle */}
-      <button
-        onClick={() => setShowPrevious(!showPrevious)}
-        className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-400 hover:bg-slate-800/30"
-      >
-        {showPrevious ? (
-          <ChevronUp className="h-3 w-3" />
-        ) : (
-          <ChevronDown className="h-3 w-3" />
-        )}
-        Previous Executions
-      </button>
-
-      <AnimatePresence>
-        {showPrevious && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="border-b border-slate-800 bg-slate-900/50 overflow-hidden"
+      {/* Historical events toggle */}
+      {historicalEvents.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowPrevious(!showPrevious)}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-400 hover:bg-slate-800/30"
           >
-            <div className="p-3 text-xs text-slate-500 italic">
-              No previous executions found
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {showPrevious ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+            Historical Events ({historicalEvents.length})
+          </button>
+
+          <AnimatePresence>
+            {showPrevious && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="border-b border-slate-800 bg-slate-900/50 overflow-hidden max-h-[300px] overflow-y-auto"
+              >
+                <div className="py-2">
+                  {historicalEvents.map((message, idx) => (
+                    <TimelineEvent
+                      key={`hist-${message.sequence}-${idx}`}
+                      message={message}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
       {/* Timeline content */}
       <div
@@ -404,7 +483,12 @@ export function ExecutionTimeline({
       >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600 py-8">
-            {isConnected ? (
+            {isLoadingHistory ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin mb-2" />
+                <span className="text-sm">Loading history...</span>
+              </>
+            ) : isConnected ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin mb-2" />
                 <span className="text-sm">Waiting for execution events...</span>
