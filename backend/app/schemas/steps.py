@@ -38,8 +38,8 @@ class StepResponse(BaseModel):
     status: str | None = Field(
         default="pending", description="Step status: pending, passed, failed, plan_defect"
     )
-    fix_subtask_id: str | None = Field(
-        default=None, description="For plan_defect: ID of the completed fix subtask"
+    fix_step_number: int | None = Field(
+        default=None, description="For plan_defect: step number of the passing fix step"
     )
 
 

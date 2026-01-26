@@ -730,7 +730,7 @@ def get_step_summary(subtask_id: str) -> dict[str, Any]:
     Returns:
         Dict with keys:
             - total: Total number of steps
-            - completed: Number of steps with passes=True
+            - completed: Number of resolved steps (passed OR plan_defect with passing fix)
             - progress_percent: Completion percentage (0-100)
     """
     with get_connection() as conn, conn.cursor() as cur:
@@ -738,9 +738,15 @@ def get_step_summary(subtask_id: str) -> dict[str, Any]:
             """
             SELECT
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE passes = TRUE) as completed
-            FROM task_subtask_steps
-            WHERE subtask_id = %s
+                COUNT(*) FILTER (WHERE
+                    s.passes = TRUE
+                    OR (s.status = 'plan_defect' AND fix.passes = TRUE)
+                ) as completed
+            FROM task_subtask_steps s
+            LEFT JOIN task_subtask_steps fix
+                ON fix.subtask_id = s.subtask_id
+                AND fix.step_number = s.fix_step_number
+            WHERE s.subtask_id = %s
             """,
             (subtask_id,),
         )
