@@ -848,15 +848,22 @@ def parse_citation(citation: str) -> tuple[str, str]:
     return prefix, rating
 
 
-def log_citations(task_id: str, subtask_id: str, citations: list[str]) -> int:
+def log_citations(
+    task_id: str,
+    subtask_id: str,
+    citations: list[str],
+    client: Any | None = None,
+) -> int:
     """Log episode citations for a subtask with ratings.
 
     Parses suffix notation and stores in subtask_citations table.
+    Also sends ratings to Agent Hub for ACE-aligned tier optimization.
 
     Args:
         task_id: Task ID
         subtask_id: Subtask ID (e.g., "1.1")
-        citations: List of citations in suffix notation
+        citations: List of citations in suffix notation or plain UUIDs
+        client: Optional Agent Hub client for sending ratings
 
     Returns:
         Number of citations logged
@@ -866,7 +873,14 @@ def log_citations(task_id: str, subtask_id: str, citations: list[str]) -> int:
 
     table_id = _generate_subtask_id(task_id, subtask_id)
 
-    parsed = [parse_citation(c) for c in citations]
+    # Parse citations - support both suffix notation (M:abc12345+) and plain UUIDs
+    parsed: list[tuple[str, str]] = []
+    for c in citations:
+        if ":" in c:
+            parsed.append(parse_citation(c))
+        else:
+            # Plain UUID from Agent Hub - default to "used"
+            parsed.append((c, "used"))
 
     with get_connection() as conn, conn.cursor() as cur:
         for uuid_prefix, rating in parsed:
@@ -878,6 +892,14 @@ def log_citations(task_id: str, subtask_id: str, citations: list[str]) -> int:
                 (table_id, uuid_prefix, rating),
             )
         conn.commit()
+
+    # Send ratings to Agent Hub for ACE-aligned tier optimization
+    if client is not None:
+        for uuid_prefix, rating in parsed:
+            try:
+                client.rate_episode(uuid_prefix, rating)
+            except Exception as e:
+                logger.warning("Failed to send rating to Agent Hub: %s", e)
 
     logger.info("Logged %d citations for subtask %s", len(parsed), subtask_id)
     return len(parsed)

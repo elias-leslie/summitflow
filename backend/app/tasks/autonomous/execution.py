@@ -313,12 +313,21 @@ def _execute_subtask(
             agent_slug="coder",
             working_dir=worktree_path,
             max_turns=30,
+            project_id=project_id,
+            use_memory=True,
         )
         logger.info(
             "Agent completed",
             subtask_id=subtask_short_id,
             response_length=len(response.content) if response.content else 0,
+            session_id=response.session_id,
+            cited_uuids=len(response.cited_uuids) if response.cited_uuids else 0,
         )
+
+        # Log citations from Agent Hub response for ACE-aligned feedback
+        if response.cited_uuids:
+            from ...storage.subtasks import log_citations
+            log_citations(task_id, subtask_short_id, response.cited_uuids, client=client)
 
         steps = subtask.get("steps_from_table", [])
         step_results = _verify_steps(task_id, subtask_id, steps, worktree_path, project_id)
