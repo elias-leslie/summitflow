@@ -350,7 +350,8 @@ def update_subtask_passes(
             "SELECT COUNT(*) FROM subtask_citations WHERE subtask_id = %s",
             (table_id,),
         )
-        citation_count = cur.fetchone()[0]
+        row = cur.fetchone()
+        citation_count = row[0] if row else 0
 
     if citation_count == 0:
         raise SubtaskGateError(
