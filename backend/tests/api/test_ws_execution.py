@@ -129,8 +129,8 @@ class TestConnectionManager:
         assert replay_ws.send_json.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_message_queue_limited(self, conn_manager):
-        """Test message queue doesn't exceed MAX_REPLAY_MESSAGES."""
+    async def test_redis_cache_limited(self, conn_manager):
+        """Test Redis cache doesn't exceed MAX_REPLAY_MESSAGES."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
 
@@ -139,9 +139,9 @@ class TestConnectionManager:
             msg = Message(type=MessageType.LOG, task_id="task-1", data={"i": i})
             await conn_manager.broadcast("task-1", msg)
 
-        # Check queue is trimmed
-        queue = conn_manager._message_queues["task-1"]
-        assert len(queue) == conn_manager.MAX_REPLAY_MESSAGES
+        # Check cache is trimmed
+        cache = conn_manager._redis_cache["task-1"]
+        assert len(cache) == conn_manager.MAX_REPLAY_MESSAGES
 
 
 class TestStopHandlers:

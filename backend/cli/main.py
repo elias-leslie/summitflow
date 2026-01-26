@@ -49,9 +49,8 @@ TASKS:
   delete <id>
   bug <title> [-p 0-4] [-d desc]           # shorthand: create -t bug
   claim <id> [--lock 30] [--release]       # lock task for N minutes
-  exec <id> [--agent claude|gemini]
   log <id> <message>
-  autocode <id> [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
+  autocode <id> [--sync] [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
 
 SUBTASK:
   subtask list <task-id>

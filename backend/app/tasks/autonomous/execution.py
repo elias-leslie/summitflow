@@ -98,12 +98,23 @@ def _emit_progress(
     project_id: str | None = None,
 ) -> None:
     """Emit a progress event via Redis pub/sub."""
+    if subtask_id:
+        if step is not None:
+            message = f"Subtask {subtask_id} step {step}: {status}"
+        else:
+            message = f"Subtask {subtask_id}: {status}"
+    elif total_subtasks is not None:
+        message = f"Progress: {completed_subtasks or 0}/{total_subtasks} subtasks"
+    else:
+        message = f"Status: {status}"
+
     publish_ws_event(
         task_id,
         {
             "type": "progress",
             "task_id": task_id,
             "data": {
+                "message": message,
                 "subtask_id": subtask_id,
                 "step": step,
                 "status": status,
@@ -132,7 +143,7 @@ def _emit_error(
         {
             "type": "error",
             "task_id": task_id,
-            "data": {"error": error, "recoverable": recoverable},
+            "data": {"message": error, "error": error, "recoverable": recoverable},
             "timestamp": datetime.now(UTC).isoformat(),
         },
         project_id=project_id,

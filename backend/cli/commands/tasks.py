@@ -1047,87 +1047,6 @@ def bug(
 
 
 @app.command()
-def exec(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Validate only, don't execute")
-    ] = False,
-) -> None:
-    """Start autonomous execution of a task.
-
-    Validates the task is ready (has subtasks), then queues it for
-    autonomous execution via Celery. Execution runs in a worktree
-    to protect the main branch.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st exec task-abc123
-        st exec --dry-run    # Validate without executing
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    # 1. Fetch task and validate
-    try:
-        task = client.get_task(task_id)
-        subtasks_response = client.get_subtasks(task_id)
-        subtasks = subtasks_response.get("subtasks", [])
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    # 2. Check task has subtasks
-    if not subtasks:
-        output_error(f"Task {task_id} has no subtasks. Run /plan_it first.")
-        raise typer.Exit(1)
-
-    # 3. Check current status
-    status = task.get("status", "pending")
-    if status in ("running", "queue"):
-        output_error(f"Task {task_id} is already {status}.")
-        raise typer.Exit(1)
-    if status in ("completed", "merged", "pr_created"):
-        output_error(f"Task {task_id} is already {status}.")
-        raise typer.Exit(1)
-
-    # 4. Dry run - show what would happen
-    if dry_run:
-        incomplete = [s for s in subtasks if not s.get("passes")]
-        output_json(
-            {
-                "task_id": task_id,
-                "status": "dry_run",
-                "subtasks_total": len(subtasks),
-                "subtasks_incomplete": len(incomplete),
-                "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
-                "message": f"Would queue {task_id} for autonomous execution",
-            }
-        )
-        return
-
-    # 5. Queue for execution by setting status to 'queue'
-    # Must use update_status (not update_task) to trigger autonomous execution callback
-    try:
-        result = client.update_status(task_id, status="queue")
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    # 6. Output result with helpful info
-    output_json(
-        {
-            "task_id": task_id,
-            "status": "queued",
-            "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
-            "events_url": f"/api/projects/{task.get('project_id', 'summitflow')}/events?trace_id={task_id}",
-        }
-    )
-
-
-@app.command()
 def log(
     message: str,
     task_id: Annotated[str | None, typer.Option("-t", "--task", help="Task ID")] = None,
@@ -1333,6 +1252,10 @@ def verify_plan(
 @app.command()
 def autocode(
     task_id: Annotated[str | None, typer.Argument()] = None,
+    sync: Annotated[
+        bool,
+        typer.Option("--sync", help="Run synchronously (blocks until complete)"),
+    ] = False,
     status: Annotated[
         str | None,
         typer.Option("--status", help="Get status of execution by ID"),
@@ -1350,18 +1273,21 @@ def autocode(
         typer.Option("--dry-run", help="Validate only, don't execute"),
     ] = False,
 ) -> None:
-    """Run autocode execution on a task via Agent Hub.
+    """Execute task via Agent Hub.
 
-    Dispatches the first incomplete subtask to an AI worker for autonomous
-    code generation, then validates and commits the results.
+    Default: Queues task for async Celery execution with full pipeline
+    (worktree isolation, multi-subtask, review gates, self-healing).
+
+    Use --sync for immediate single-subtask execution (useful for debugging).
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st autocode task-abc123              # Start execution
-        st autocode --dry-run                # Uses active context
-        st autocode --status exec-12345
-        st autocode --model claude-opus-4-5
+        st autocode task-abc123              # Queue for async execution
+        st autocode task-abc123 --sync       # Run synchronously (blocks)
+        st autocode --dry-run                # Validate without executing
+        st autocode --status exec-12345      # Check execution status
+        st autocode --model claude-opus-4-5  # Specify model
     """
     from ..context import require_task_id
 
@@ -1402,19 +1328,68 @@ def autocode(
         output_json(result)
         return
 
-    # Start execution mode
+    # Async mode (default): Queue for Celery execution
+    if not sync:
+        try:
+            task = client.get_task(task_id)
+            subtasks_response = client.get_subtasks(task_id)
+            subtasks = subtasks_response.get("subtasks", [])
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+        if not subtasks:
+            output_error(f"Task {task_id} has no subtasks. Run /plan_it first.")
+            raise typer.Exit(1)
+
+        current_status = task.get("status", "pending")
+        if current_status in ("running", "queue"):
+            output_error(f"Task {task_id} is already {current_status}.")
+            raise typer.Exit(1)
+        if current_status in ("completed", "merged", "pr_created"):
+            output_error(f"Task {task_id} is already {current_status}.")
+            raise typer.Exit(1)
+
+        if dry_run:
+            incomplete = [s for s in subtasks if not s.get("passes")]
+            output_json(
+                {
+                    "task_id": task_id,
+                    "status": "dry_run",
+                    "mode": "async",
+                    "subtasks_total": len(subtasks),
+                    "subtasks_incomplete": len(incomplete),
+                    "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
+                    "message": f"Would queue {task_id} for autonomous execution",
+                }
+            )
+            return
+
+        try:
+            client.update_status(task_id, status="queue")
+        except APIError as e:
+            handle_api_error(e)
+            raise typer.Exit(1) from None
+
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "queued",
+                "mode": "async",
+                "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
+            }
+        )
+        return
+
+    # Sync mode: Direct API call (single subtask, blocks)
     try:
         result = client.start_autocode(task_id, model=model, dry_run=dry_run)
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    # Format evidence summary for completed executions
-    if result.get("status") in ("completed", "failed"):
-        output_json(result)
-    else:
-        # For pending/running/dry_run, output as-is
-        output_json(result)
+    result["mode"] = "sync"
+    output_json(result)
 
 
 @app.command("import")

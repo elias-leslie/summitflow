@@ -83,10 +83,10 @@
 
 | Use Case | Pathway | Implementation |
 |----------|---------|----------------|
-| Single subtask (CLI) | `st autocode` | AgentHubService → Agent Hub LLM |
-| Multi-subtask (async) | POST `/execute` | Celery → OrchestratorService |
+| Async execution (CLI) | `st autocode` | Sets status=queue → Celery → OrchestratorService |
+| Sync execution (CLI) | `st autocode --sync` | AgentHubService → Agent Hub LLM (single subtask) |
+| Multi-subtask (API) | POST `/execute` | Celery → OrchestratorService |
 | Scheduled pickup | Celery Beat | autonomous_work_pickup() |
-| **DEPRECATED** | `st exec` | ImplementationExecutor (do not use) |
 
 ---
 
@@ -289,8 +289,7 @@ st close                     # Uses active task (no ID needed)
 | `st work` | Set/show/clear active task context | N/A |
 | `st verify` | Validate plan.json against schema | No |
 | `st import` | Import plan.json as task with subtasks | No |
-| `st autocode [id]` | Execute task via Agent Hub (PRIMARY) | Yes |
-| `st exec [id]` | **DEPRECATED** - use st autocode | Yes |
+| `st autocode [id]` | Queue for async execution (default) or sync with --sync | Yes |
 
 #### Subcommands
 

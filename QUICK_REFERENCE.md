@@ -28,12 +28,11 @@ Once set, these commands use active task automatically:
 | Pathway | Command | Use When |
 |---------|---------|----------|
 | **Claude Code** | `/do_it` | Interactive session (you ARE the agent) |
-| **Autonomous** | `st autocode` | Dispatch subtask to Agent Hub worker |
-| **Async** | POST `/execute` | Multi-subtask orchestration (Celery) |
+| **Autonomous** | `st autocode` | Queue for Celery (async, full pipeline) |
+| **Autonomous (sync)** | `st autocode --sync` | Direct dispatch (blocks, single subtask) |
 | **Scheduled** | Celery Beat | autonomous_work_pickup() |
-| **DEPRECATED** | `st exec` | Do not use |
 
-**Note**: When using Claude Code with `/do_it`, you execute steps directly and use `st step pass`/`st subtask pass`. The `st autocode` command dispatches work to a separate AI worker for autonomous execution.
+**Note**: When using Claude Code with `/do_it`, you execute steps directly and use `st step pass`/`st subtask pass`. The `st autocode` command queues work for the full autonomous pipeline (worktrees, review gates). Use `--sync` for debugging.
 
 ## Verification Model
 

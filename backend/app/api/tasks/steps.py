@@ -643,7 +643,8 @@ async def update_step_global(
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
-    project_root = get_project_root_path(task.get("project_id"))
+    project_id = task.get("project_id")
+    project_root = get_project_root_path(project_id) if project_id else None
 
     try:
         updated = update_step_passes(
