@@ -50,8 +50,26 @@ def _get_worktree_path(project_id: str, task_id: str) -> str:
     return str(worktree.path)
 
 
-def _emit_log(task_id: str, level: str, message: str, source: str = "execution") -> None:
+def _emit_log(
+    task_id: str,
+    level: str,
+    message: str,
+    source: str = "execution",
+    *,
+    project_id: str | None = None,
+    visibility: str = "user",
+) -> None:
     """Emit a log event via Redis pub/sub."""
+    from ...storage.events import EventLevel
+
+    level_map: dict[str, EventLevel] = {
+        "info": "info",
+        "warn": "warning",
+        "warning": "warning",
+        "error": "error",
+        "debug": "debug",
+    }
+
     publish_ws_event(
         task_id,
         {
@@ -60,6 +78,11 @@ def _emit_log(task_id: str, level: str, message: str, source: str = "execution")
             "data": {"level": level, "message": message, "source": source},
             "timestamp": datetime.now(UTC).isoformat(),
         },
+        project_id=project_id,
+        trace_id=task_id,
+        source=source,
+        level=level_map.get(level, "info"),
+        visibility=visibility,  # type: ignore[arg-type]
     )
 
 
@@ -70,6 +93,8 @@ def _emit_progress(
     status: str = "in_progress",
     total_subtasks: int | None = None,
     completed_subtasks: int | None = None,
+    *,
+    project_id: str | None = None,
 ) -> None:
     """Emit a progress event via Redis pub/sub."""
     publish_ws_event(
@@ -86,10 +111,20 @@ def _emit_progress(
             },
             "timestamp": datetime.now(UTC).isoformat(),
         },
+        project_id=project_id,
+        trace_id=task_id,
+        source="orchestrator",
+        visibility="user",
     )
 
 
-def _emit_error(task_id: str, error: str, recoverable: bool = True) -> None:
+def _emit_error(
+    task_id: str,
+    error: str,
+    recoverable: bool = True,
+    *,
+    project_id: str | None = None,
+) -> None:
     """Emit an error event via Redis pub/sub."""
     publish_ws_event(
         task_id,
@@ -99,6 +134,11 @@ def _emit_error(task_id: str, error: str, recoverable: bool = True) -> None:
             "data": {"error": error, "recoverable": recoverable},
             "timestamp": datetime.now(UTC).isoformat(),
         },
+        project_id=project_id,
+        trace_id=task_id,
+        source="orchestrator",
+        level="error",
+        visibility="user",
     )
 
 
@@ -142,11 +182,11 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
         Execution result with status
     """
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
-    _emit_log(task_id, "info", "Starting autonomous execution")
+    _emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
 
     task = task_store.get_task(task_id)
     if not task:
-        _emit_error(task_id, "Task not found", recoverable=False)
+        _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
     task_store.update_task_status(task_id, "running")
@@ -157,11 +197,11 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
     total = len(subtasks)
     completed = total - len(incomplete)
 
-    _emit_progress(task_id, total_subtasks=total, completed_subtasks=completed)
+    _emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
 
     if not incomplete:
         task_store.update_task_status(task_id, "completed")
-        _emit_log(task_id, "info", "All subtasks already complete")
+        _emit_log(task_id, "info", "All subtasks already complete", project_id=project_id)
         return {"task_id": task_id, "status": "completed", "message": "All subtasks complete"}
 
     results: list[dict[str, Any]] = []
@@ -170,7 +210,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
 
     for iteration, subtask in enumerate(incomplete, 1):
         if iteration > MAX_ITERATIONS:
-            _emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached")
+            _emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id)
             _wind_down(task_id, results, incomplete, "max_iterations")
             break
 
@@ -184,6 +224,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
             status=status,
             total_subtasks=total,
             completed_subtasks=completed,
+            project_id=project_id,
         )
 
         if result.get("status") == "failed":
@@ -195,7 +236,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                 escalation = check_escalation_needed(issue_count, sup_count)
 
                 if escalation.get("escalate_to_human"):
-                    _emit_log(task_id, "error", "Escalating to human review")
+                    _emit_log(task_id, "error", "Escalating to human review", project_id=project_id)
                     task_store.update_task_status(task_id, "human_review")
                     task_store.append_progress_log(
                         task_id,
@@ -206,7 +247,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                     return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
                 if escalation.get("escalate_to_supervisor"):
-                    _emit_log(task_id, "warn", "Requesting supervisor guidance")
+                    _emit_log(task_id, "warn", "Requesting supervisor guidance", project_id=project_id)
                     supervisor_guidance.delay(
                         task_id,
                         result.get("subtask_id", ""),
@@ -219,7 +260,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
 
     all_passed = all(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        _emit_log(task_id, "info", "All subtasks passed, starting QA review")
+        _emit_log(task_id, "info", "All subtasks passed, starting QA review", project_id=project_id)
         ai_review.delay(task_id, project_id)
 
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
@@ -236,8 +277,8 @@ def _execute_subtask(
     subtask_short_id = subtask.get("subtask_id", "")
 
     logger.info("Executing subtask", task_id=task_id, subtask_id=subtask_short_id)
-    _emit_log(task_id, "info", f"Starting subtask {subtask_short_id}")
-    _emit_progress(task_id, subtask_id=subtask_short_id, status="in_progress")
+    _emit_log(task_id, "info", f"Starting subtask {subtask_short_id}", project_id=project_id)
+    _emit_progress(task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id)
 
     prompt = _build_subtask_prompt(task_id, subtask)
 
@@ -249,7 +290,7 @@ def _execute_subtask(
             worktree_path=worktree_path,
             prompt_length=len(prompt),
         )
-        _emit_log(task_id, "info", f"Using worktree: {worktree_path}")
+        _emit_log(task_id, "info", f"Using worktree: {worktree_path}", project_id=project_id, visibility="internal")
         client = get_sync_client()
         logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
         response = client.run_agent(
@@ -271,7 +312,7 @@ def _execute_subtask(
         if all_passed:
             update_subtask_passes(task_id, subtask_short_id, passes=True)
             _extract_handoff_summary(subtask_id, response.content)
-            _emit_log(task_id, "info", f"Subtask {subtask_short_id} passed")
+            _emit_log(task_id, "info", f"Subtask {subtask_short_id} passed", project_id=project_id)
         else:
             failed_steps = [r for r in step_results if not r["passed"]]
             for fail in failed_steps:
@@ -279,7 +320,8 @@ def _execute_subtask(
                 issue_id = _compute_issue_id(error_msg)
                 issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
             _emit_log(
-                task_id, "warn", f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)"
+                task_id, "warn", f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)",
+                project_id=project_id,
             )
 
         return {
@@ -294,7 +336,7 @@ def _execute_subtask(
         error_str = str(e)
         issue_id = _compute_issue_id(error_str)
         issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
-        _emit_error(task_id, f"Subtask {subtask_short_id} error: {error_str}")
+        _emit_error(task_id, f"Subtask {subtask_short_id} error: {error_str}", project_id=project_id)
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
