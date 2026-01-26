@@ -5,15 +5,18 @@ Supports multiple verification patterns:
 - Exit code checks (returncode == 0)
 - Output contains checks (expected string in stdout)
 - Command aliases (dt -> actual commands)
+- Venv path resolution (uses main repo's venv when in worktree)
 """
 
 from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
+from ...storage.projects import get_project_root_path
 
 logger = get_logger(__name__)
 
@@ -22,6 +25,32 @@ COMMAND_ALIASES: dict[str, str] = {
     "dt mypy": "cd backend && .venv/bin/mypy app/ --ignore-missing-imports",
     "dt pytest": "cd backend && .venv/bin/pytest -x -q",
 }
+
+
+def _resolve_venv_paths(cmd: str, project_id: str) -> str:
+    """Resolve .venv paths to use main repo's venv (not worktree's).
+
+    Worktrees don't include virtualenvs, so we need to point to the main repo.
+
+    Args:
+        cmd: Command that may contain .venv references
+        project_id: Project ID to look up main repo path
+
+    Returns:
+        Command with absolute venv paths
+    """
+    if ".venv" not in cmd:
+        return cmd
+
+    main_repo = get_project_root_path(project_id)
+    if not main_repo:
+        return cmd
+
+    main_backend_venv = Path(main_repo) / "backend" / ".venv"
+    if not main_backend_venv.exists():
+        return cmd
+
+    return cmd.replace(".venv/bin/", f"{main_backend_venv}/bin/")
 
 
 @dataclass
@@ -74,6 +103,7 @@ def verify_step(
     step: dict[str, Any],
     working_dir: str,
     timeout: int = 60,
+    project_id: str | None = None,
 ) -> VerificationResult:
     """Verify a single step.
 
@@ -81,6 +111,7 @@ def verify_step(
         step: Step dict with verify_command and expected_output
         working_dir: Directory to run command in
         timeout: Command timeout in seconds
+        project_id: Project ID for resolving venv paths (uses main repo venv in worktrees)
 
     Returns:
         VerificationResult with pass/fail status
@@ -99,6 +130,8 @@ def verify_step(
         )
 
     expanded_cmd = expand_command(verify_cmd)
+    if project_id:
+        expanded_cmd = _resolve_venv_paths(expanded_cmd, project_id)
     check_type, check_value = parse_expected(expected)
 
     logger.info(

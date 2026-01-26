@@ -189,7 +189,7 @@ def get_events_by_trace(
                    event_type, name, source, level, visibility,
                    message, attributes, timestamp
             FROM events
-            WHERE {' AND '.join(conditions)}
+            WHERE {" AND ".join(conditions)}
             ORDER BY timestamp ASC
             LIMIT %s
             """,

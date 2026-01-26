@@ -74,8 +74,16 @@ def publish_ws_event(
     if project_id is not None:
         try:
             event_type = event.get("type", "log")
-            message = event.get("data", {}).get("message") if isinstance(event.get("data"), dict) else None
-            attributes = event.get("data", {}) if isinstance(event.get("data"), dict) else {"raw": event.get("data")}
+            message = (
+                event.get("data", {}).get("message")
+                if isinstance(event.get("data"), dict)
+                else None
+            )
+            attributes = (
+                event.get("data", {})
+                if isinstance(event.get("data"), dict)
+                else {"raw": event.get("data")}
+            )
 
             create_event(
                 project_id=project_id,

@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from psycopg.rows import TupleRow
@@ -208,6 +210,74 @@ Do NOT modify the verify_command - verification gates are immutable."""
         self.next_steps = self.NEXT_STEPS_GUIDANCE
 
 
+def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
+    """Resolve .venv paths to use main repo's venv (not worktree's).
+
+    Worktrees don't include virtualenvs, so we need to point to the main repo.
+
+    Args:
+        cmd: Command that may contain .venv references
+        cwd: Working directory (may be worktree or main repo)
+
+    Returns:
+        Command with absolute venv paths
+    """
+    if ".venv" not in cmd:
+        return cmd
+
+    if not cwd:
+        return cmd
+
+    # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
+    worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", cwd)
+    if worktree_match:
+        project_id = worktree_match.group(1)
+        # Look up main repo path
+        from .projects import get_project_root_path
+
+        main_repo = get_project_root_path(project_id)
+        if main_repo:
+            main_backend_venv = Path(main_repo) / "backend" / ".venv"
+            if main_backend_venv.exists():
+                return cmd.replace(".venv/bin/", f"{main_backend_venv}/bin/")
+
+    # Not a worktree - check if cwd has backend/.venv
+    cwd_path = Path(cwd)
+    if (cwd_path / "backend" / ".venv").exists():
+        return cmd.replace(".venv/bin/", f"{cwd_path}/backend/.venv/bin/")
+
+    # Try parent directory (for when cwd is backend/)
+    if cwd_path.name == "backend" and (cwd_path / ".venv").exists():
+        return cmd.replace(".venv/bin/", f"{cwd_path}/.venv/bin/")
+
+    return cmd
+
+
+def _parse_expected(expected: str | None) -> tuple[str, str | None]:
+    """Parse expected_output into (check_type, value).
+
+    Returns:
+        (check_type, value) where check_type is one of:
+        - "exit_code": Check returncode == 0 (no output check)
+        - "contains": Check value in output
+    """
+    if not expected:
+        return ("exit_code", None)
+
+    expected_lower = expected.lower().strip()
+
+    if expected_lower.startswith("exit code"):
+        return ("exit_code", None)
+
+    if expected_lower in ("lint:ok", "types:ok", "test:ok"):
+        return ("exit_code", None)
+
+    if expected_lower.startswith("contains:"):
+        return ("contains", expected[9:].strip())
+
+    return ("contains", expected)
+
+
 def run_verify_command(
     verify_command: str,
     timeout: int = VERIFY_COMMAND_TIMEOUT,
@@ -230,10 +300,13 @@ def run_verify_command(
     # Default to summitflow for backwards compatibility
     working_dir = cwd or "/home/kasadis/summitflow"
 
+    # Resolve .venv paths for worktrees (which don't have their own venv)
+    resolved_command = _resolve_venv_paths(verify_command, working_dir)
+
     try:
         # Use bash explicitly since commands may use bash-specific features like 'source'
         result = subprocess.run(
-            ["bash", "-c", verify_command],
+            ["bash", "-c", resolved_command],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -347,6 +420,9 @@ def update_step_passes(
             exit_code=-1,
         )
 
+    # Parse expected output to determine check type
+    check_type, check_value = _parse_expected(expected_output)
+
     # Run verification from project root
     status, exit_code, output = run_verify_command(verify_command, cwd=project_root)
 
@@ -365,8 +441,9 @@ def update_step_passes(
             exit_code=exit_code,
         )
 
-    # Check if expected_output appears in actual output
-    if expected_output not in output:
+    # For "exit_code" check type, exit code 0 is sufficient (already passed above)
+    # For "contains" check type, verify the expected value appears in output
+    if check_type == "contains" and check_value and check_value not in output:
         message = (
             f"Step {step_number} verification failed: expected output not found.\n"
             f"Command: {verify_command}\n"

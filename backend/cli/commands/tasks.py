@@ -1049,7 +1049,9 @@ def bug(
 @app.command()
 def exec(
     task_id: Annotated[str | None, typer.Argument()] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate only, don't execute")] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Validate only, don't execute")
+    ] = False,
 ) -> None:
     """Start autonomous execution of a task.
 
@@ -1094,14 +1096,16 @@ def exec(
     # 4. Dry run - show what would happen
     if dry_run:
         incomplete = [s for s in subtasks if not s.get("passes")]
-        output_json({
-            "task_id": task_id,
-            "status": "dry_run",
-            "subtasks_total": len(subtasks),
-            "subtasks_incomplete": len(incomplete),
-            "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
-            "message": f"Would queue {task_id} for autonomous execution",
-        })
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "dry_run",
+                "subtasks_total": len(subtasks),
+                "subtasks_incomplete": len(incomplete),
+                "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
+                "message": f"Would queue {task_id} for autonomous execution",
+            }
+        )
         return
 
     # 5. Queue for execution by setting status to 'queue'
@@ -1113,12 +1117,14 @@ def exec(
         return
 
     # 6. Output result with helpful info
-    output_json({
-        "task_id": task_id,
-        "status": "queued",
-        "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
-        "events_url": f"/api/projects/{task.get('project_id', 'summitflow')}/events?trace_id={task_id}",
-    })
+    output_json(
+        {
+            "task_id": task_id,
+            "status": "queued",
+            "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
+            "events_url": f"/api/projects/{task.get('project_id', 'summitflow')}/events?trace_id={task_id}",
+        }
+    )
 
 
 @app.command()

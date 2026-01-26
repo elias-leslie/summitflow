@@ -6,6 +6,7 @@ Runs external verification tools (pytest, pyright, ruff) and checks step complet
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,43 @@ from ...storage.subtasks import get_subtasks_for_task
 from .types import SUBPROCESS_TIMEOUT_SECONDS
 
 logger = get_logger(__name__)
+
+
+def _resolve_venv_path(cmd_path: str, repo_path: Path) -> str:
+    """Resolve .venv paths to use main repo's venv for worktrees.
+
+    Worktrees don't include virtualenvs, so we need to point to the main repo.
+
+    Args:
+        cmd_path: Command path like ".venv/bin/pytest"
+        repo_path: Repository path (may be worktree or main repo)
+
+    Returns:
+        Resolved path string
+    """
+    if not cmd_path.startswith(".venv/"):
+        return cmd_path
+
+    # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
+    repo_str = str(repo_path)
+    worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", repo_str)
+    if worktree_match:
+        project_id = worktree_match.group(1)
+        from ...storage.projects import get_project_root_path
+
+        main_repo = get_project_root_path(project_id)
+        if main_repo:
+            main_venv = Path(main_repo) / "backend" / ".venv"
+            if main_venv.exists():
+                return str(main_venv / cmd_path[6:])  # Skip ".venv/"
+
+    # Not a worktree - try parent repo's venv
+    backend_venv = repo_path / "backend" / ".venv"
+    if backend_venv.exists():
+        return str(backend_venv / cmd_path[6:])
+
+    # Fallback to relative path
+    return cmd_path
 
 
 def run_verification(
@@ -42,10 +80,15 @@ def run_verification(
 
     backend_path = repo_path / "backend"
 
+    # Resolve venv paths for worktrees
+    pytest_path = _resolve_venv_path(".venv/bin/pytest", repo_path)
+    pyright_path = _resolve_venv_path(".venv/bin/pyright", repo_path)
+    ruff_path = _resolve_venv_path(".venv/bin/ruff", repo_path)
+
     # Run pytest
     try:
         pytest_result = subprocess.run(
-            [".venv/bin/pytest", "-v", "--tb=short"],
+            [pytest_path, "-v", "--tb=short"],
             cwd=backend_path,
             capture_output=True,
             text=True,
@@ -63,7 +106,7 @@ def run_verification(
     # Run pyright
     try:
         pyright_result = subprocess.run(
-            [".venv/bin/pyright", "app/"],
+            [pyright_path, "app/"],
             cwd=backend_path,
             capture_output=True,
             text=True,
@@ -81,7 +124,7 @@ def run_verification(
     # Run ruff
     try:
         ruff_result = subprocess.run(
-            [".venv/bin/ruff", "check", "app/"],
+            [ruff_path, "check", "app/"],
             cwd=backend_path,
             capture_output=True,
             text=True,

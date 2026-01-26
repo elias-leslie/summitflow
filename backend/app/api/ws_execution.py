@@ -153,18 +153,20 @@ class ConnectionManager:
         db_events = get_events_by_trace(trace_id, visibility="user", limit=self.MAX_REPLAY_MESSAGES)
         for event in db_events:
             try:
-                await websocket.send_json({
-                    "type": event["event_type"],
-                    "task_id": task_id,
-                    "data": {
-                        "message": event["message"],
-                        "level": event["level"],
-                        "source": event["source"],
-                        **event["attributes"],
-                    },
-                    "timestamp": event["timestamp"].isoformat(),
-                    "sequence": 0,  # Historical events don't have sequence
-                })
+                await websocket.send_json(
+                    {
+                        "type": event["event_type"],
+                        "task_id": task_id,
+                        "data": {
+                            "message": event["message"],
+                            "level": event["level"],
+                            "source": event["source"],
+                            **event["attributes"],
+                        },
+                        "timestamp": event["timestamp"].isoformat(),
+                        "sequence": 0,  # Historical events don't have sequence
+                    }
+                )
             except Exception:
                 break
 

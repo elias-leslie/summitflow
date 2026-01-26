@@ -71,9 +71,7 @@ def run_agent_task(
             agent = get_agent(agent_type, model)
             if not agent.is_available():
                 raise RuntimeError(f"{agent_type} agent is not available")
-            log_task_event(
-                task_id, f"Initialized {agent_type} agent ({agent.get_model_name()})"
-            )
+            log_task_event(task_id, f"Initialized {agent_type} agent ({agent.get_model_name()})")
         except Exception as e:
             logger.error("agent_init_failed", agent_type=agent_type, error=str(e))
             tasks.update_task_status(task_id, "failed", error_message=str(e))

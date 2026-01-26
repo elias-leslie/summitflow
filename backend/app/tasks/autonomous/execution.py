@@ -198,7 +198,9 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
     total = len(subtasks)
     completed = total - len(incomplete)
 
-    _emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
+    _emit_progress(
+        task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id
+    )
 
     if not incomplete:
         task_store.update_task_status(task_id, "completed")
@@ -211,7 +213,9 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
 
     for iteration, subtask in enumerate(incomplete, 1):
         if iteration > MAX_ITERATIONS:
-            _emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id)
+            _emit_log(
+                task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id
+            )
             _wind_down(task_id, results, incomplete, "max_iterations")
             break
 
@@ -248,7 +252,9 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                     return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
                 if escalation.get("escalate_to_supervisor"):
-                    _emit_log(task_id, "warn", "Requesting supervisor guidance", project_id=project_id)
+                    _emit_log(
+                        task_id, "warn", "Requesting supervisor guidance", project_id=project_id
+                    )
                     supervisor_guidance.delay(
                         task_id,
                         result.get("subtask_id", ""),
@@ -279,7 +285,9 @@ def _execute_subtask(
 
     logger.info("Executing subtask", task_id=task_id, subtask_id=subtask_short_id)
     _emit_log(task_id, "info", f"Starting subtask {subtask_short_id}", project_id=project_id)
-    _emit_progress(task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id)
+    _emit_progress(
+        task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id
+    )
 
     prompt = _build_subtask_prompt(task_id, subtask)
 
@@ -291,7 +299,13 @@ def _execute_subtask(
             worktree_path=worktree_path,
             prompt_length=len(prompt),
         )
-        _emit_log(task_id, "info", f"Using worktree: {worktree_path}", project_id=project_id, visibility="internal")
+        _emit_log(
+            task_id,
+            "info",
+            f"Using worktree: {worktree_path}",
+            project_id=project_id,
+            visibility="internal",
+        )
         client = get_sync_client()
         logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
         response = client.run_agent(
@@ -307,7 +321,7 @@ def _execute_subtask(
         )
 
         steps = subtask.get("steps_from_table", [])
-        step_results = _verify_steps(task_id, subtask_id, steps, worktree_path)
+        step_results = _verify_steps(task_id, subtask_id, steps, worktree_path, project_id)
 
         all_passed = all(r["passed"] for r in step_results)
         if all_passed:
@@ -321,7 +335,9 @@ def _execute_subtask(
                 issue_id = _compute_issue_id(error_msg)
                 issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
             _emit_log(
-                task_id, "warn", f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)",
+                task_id,
+                "warn",
+                f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)",
                 project_id=project_id,
             )
 
@@ -337,7 +353,9 @@ def _execute_subtask(
         error_str = str(e)
         issue_id = _compute_issue_id(error_str)
         issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
-        _emit_error(task_id, f"Subtask {subtask_short_id} error: {error_str}", project_id=project_id)
+        _emit_error(
+            task_id, f"Subtask {subtask_short_id} error: {error_str}", project_id=project_id
+        )
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
@@ -387,7 +405,11 @@ def _build_subtask_prompt(task_id: str, subtask: dict[str, Any]) -> str:
 
 
 def _verify_steps(
-    task_id: str, subtask_id: str, steps: list[dict[str, Any]], worktree_path: str
+    task_id: str,
+    subtask_id: str,
+    steps: list[dict[str, Any]],
+    worktree_path: str,
+    project_id: str,
 ) -> list[dict[str, Any]]:
     """Run verify_command for each step and check expected_output."""
     results: list[dict[str, Any]] = []
@@ -395,7 +417,7 @@ def _verify_steps(
     for step in steps:
         step_num = step.get("step_number", 0)
 
-        result = verify_step(step, worktree_path)
+        result = verify_step(step, worktree_path, project_id=project_id)
 
         update_step_passes(subtask_id, step_num, result.passed, project_root=worktree_path)
         status = "passed" if result.passed else "failed"
