@@ -831,12 +831,14 @@ def parse_citation(citation: str) -> tuple[str, str]:
 
     Args:
         citation: Citation string like "M:abc12345+" or "G:def67890-" or "M:xyz99999"
+                  Also handles bracket format: "[M:abc12345]"
 
     Returns:
         Tuple of (uuid_prefix, rating) where rating is 'helpful', 'harmful', or 'used'
     """
-    prefix = citation[2:10]
-    suffix = citation[10:] if len(citation) > 10 else ""
+    clean = citation.strip("[]")
+    prefix = clean[2:10]
+    suffix = clean[10:] if len(clean) > 10 else ""
     if suffix == "+":
         rating = "helpful"
     elif suffix == "-":
