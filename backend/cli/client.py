@@ -484,9 +484,7 @@ class STClient:
         response = self._client.delete(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"))
         return self._handle_response(response)
 
-    def log_citations(
-        self, task_id: str, subtask_id: str, citations: list[str]
-    ) -> dict[str, Any]:
+    def log_citations(self, task_id: str, subtask_id: str, citations: list[str]) -> dict[str, Any]:
         """Log episode citations for a subtask with suffix notation ratings.
 
         Args:

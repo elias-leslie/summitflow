@@ -282,7 +282,9 @@ def delete_subtask(
 
 @app.command("citations")
 def log_citations(
-    citations: Annotated[list[str], typer.Argument(help="Citations in suffix notation (M:abc123+ G:def456-)")],
+    citations: Annotated[
+        list[str], typer.Argument(help="Citations in suffix notation (M:abc123+ G:def456-)")
+    ],
     subtask_id: Annotated[str | None, typer.Option("--subtask", "-s", help="Subtask ID")] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
 ) -> None:
