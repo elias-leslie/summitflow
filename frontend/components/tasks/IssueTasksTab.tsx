@@ -38,7 +38,7 @@ import {
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { CreateTaskDialog } from './CreateTaskDialog'
-import { TaskLogViewer } from './TaskLogViewer'
+import { ExecutionTimeline } from './ExecutionTimeline'
 
 interface IssueTasksTabProps {
   projectId: string
@@ -283,18 +283,15 @@ function TaskRow({
                 )}
               </div>
 
-              {/* Task Log Viewer for running/paused tasks */}
+              {/* Execution Timeline for running/paused tasks */}
               {(task.status === 'running' || task.status === 'paused') && (
                 <div
                   className="pt-3 border-t border-slate-700"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <h4 className="text-xs font-medium text-slate-400 mb-2">
-                    Task Logs
-                  </h4>
-                  <TaskLogViewer
-                    projectId={projectId}
+                  <ExecutionTimeline
                     taskId={task.id}
+                    projectId={projectId}
                     className="max-h-[400px]"
                   />
                 </div>
