@@ -20,6 +20,7 @@ from ...constants import CLAUDE_OPUS
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...services.git_service import capture_diff, get_diff_stats, revert_to
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
@@ -463,7 +464,7 @@ def handle_fix_request(
         feedback_parts.append(f"Suggestions: {', '.join(suggestions)}")
 
     feedback = " | ".join(feedback_parts)
-    task_store.append_progress_log(task_id, feedback)
+    log_task_event(task_id, feedback)
 
     # Reset to pending so it can be picked up again
     # Note: Don't revert - let agent try to fix from current state

@@ -19,6 +19,7 @@ from ...constants import (
 )
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
@@ -101,7 +102,7 @@ DO NOT write code. Guide the worker on HOW to approach this."""
         )
 
         guidance = response.content
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"Supervisor guidance for {subtask_id}:\n{guidance[:500]}",
         )
@@ -180,7 +181,7 @@ Total Attempts: {attempts}
 
 Please review and approve a direction to proceed."""
 
-    task_store.append_progress_log(task_id, message)
+    log_task_event(task_id, message)
     logger.info("Escalation message added", task_id=task_id)
 
 

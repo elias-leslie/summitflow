@@ -31,6 +31,7 @@ from ...schemas.tasks import (
     TaskStatusUpdate,
     TaskUpdate,
 )
+from ...storage import log_task_event
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from ...storage.steps import get_steps_for_subtask
@@ -424,7 +425,6 @@ def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -
         title=task["title"],
         description=task["description"],
         status=task["status"],
-        progress_log=task["progress_log"],
         error_message=task["error_message"],
         branch_name=task["branch_name"],
         commits=task["commits"] or [],
@@ -996,9 +996,9 @@ async def update_task_status(
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update task status")
 
-    # Append completion reason to progress_log if provided
+    # Log completion reason to events if provided
     if update.reason and update.status in ("completed", "cancelled"):
-        updated = task_store.append_progress_log(task_id, f"Closed: {update.reason}")
+        log_task_event(task_id, f"Closed: {update.reason}")
 
     # Dispatch autonomous execution tasks on status transitions
     _dispatch_autonomous_task(task_id, update.status, project_id)

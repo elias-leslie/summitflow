@@ -17,6 +17,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.pubsub import publish_ws_event
 from ...services.worktree_manager import get_worktree_manager
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.projects import get_project_root_path
 from ...storage.steps import get_steps_for_subtask, update_step_passes
@@ -238,7 +239,7 @@ def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str
                 if escalation.get("escalate_to_human"):
                     _emit_log(task_id, "error", "Escalating to human review", project_id=project_id)
                     task_store.update_task_status(task_id, "human_review")
-                    task_store.append_progress_log(
+                    log_task_event(
                         task_id,
                         f"ESCALATION_REQUIRED\nTask: {task_id}\nSubtask: {result.get('subtask_id')}\n"
                         f"Issue: {result.get('error', 'verification failed')}\n"
@@ -452,6 +453,6 @@ NEXT SESSION:
 2. Reason for pause: {reason}
 """
 
-    task_store.append_progress_log(task_id, wind_down_log)
+    log_task_event(task_id, wind_down_log)
     task_store.update_task_status(task_id, "paused")
     _emit_log(task_id, "info", f"Session paused: {reason}")

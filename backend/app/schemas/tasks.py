@@ -86,7 +86,7 @@ class TaskStatusUpdate(BaseModel):
 
     status: str  # pending, running, paused, blocked, pr_created, ai_reviewing, human_review, completed, failed, cancelled
     error_message: str | None = None
-    reason: str | None = None  # Completion reason (stored in progress_log)
+    reason: str | None = None  # Completion reason (logged to events table)
     # NOTE: force flag removed - gates cannot be bypassed, complete the work instead
 
 
@@ -332,7 +332,6 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     status: str
-    progress_log: str | None
     error_message: str | None
     branch_name: str | None
     commits: list[str]

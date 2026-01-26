@@ -16,6 +16,7 @@ from celery import shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
@@ -149,7 +150,7 @@ def _route_based_on_verdict(
 
     if verdict == "APPROVED":
         task_store.update_task_status(task_id, "pr_created")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"AI Review: APPROVED - Ready for merge ({complexity})",
         )
@@ -158,7 +159,7 @@ def _route_based_on_verdict(
     elif verdict == "NEEDS_FIX":
         _create_fix_subtask(task_id, review_result)
         task_store.update_task_status(task_id, "queue")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"AI Review: NEEDS_FIX - Created fix subtask. Issues: {review_result.get('concerns', [])}",
         )
@@ -167,7 +168,7 @@ def _route_based_on_verdict(
     elif verdict == "PLAN_DEFECT":
         _handle_plan_defect(task_id, review_result)
         task_store.update_task_status(task_id, "queue")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             "AI Review: PLAN_DEFECT - Added fix step with correct verification",
         )
@@ -175,7 +176,7 @@ def _route_based_on_verdict(
 
     else:
         task_store.update_task_status(task_id, "human_review")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"AI Review: ESCALATE - {review_result.get('summary', 'Issue requires human review')[:200]}",
         )

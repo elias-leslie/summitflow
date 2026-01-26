@@ -14,6 +14,7 @@ from celery import shared_task
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.complexity_assessor import ComplexityAssessor, ComplexityTier
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.subtasks import bulk_create_subtasks
 from ...storage.task_spirit import create_task_spirit, get_task_spirit
@@ -142,7 +143,7 @@ Output as JSON with this structure:
     except Exception as e:
         logger.warning("Planning failed", task_id=task_id, error=str(e))
         task_store.update_task_status(task_id, "blocked")
-        task_store.append_progress_log(task_id, f"Planning failed: {e}")
+        log_task_event(task_id, f"Planning failed: {e}")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 
 
@@ -261,7 +262,7 @@ def _route_based_on_complexity(task_id: str, title: str, description: str) -> No
 
     if result.tier == ComplexityTier.COMPLEX:
         task_store.update_task_status(task_id, "human_review")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"Complexity: {result.tier.value} - Routing to Human Review for discussion. "
             f"Reason: {result.reasoning}",
@@ -273,7 +274,7 @@ def _route_based_on_complexity(task_id: str, title: str, description: str) -> No
         )
     else:
         task_store.update_task_status(task_id, "queue")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"Complexity: {result.tier.value} - Plan ready, queued for execution.",
         )

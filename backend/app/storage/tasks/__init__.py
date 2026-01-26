@@ -32,7 +32,6 @@ from .queries import (
 from .status import (
     VALID_TRANSITIONS,
     add_commit,
-    append_progress_log,
     update_task_status,
     validate_status_transition,
 )
@@ -44,7 +43,6 @@ __all__ = [
     "VALID_TRANSITIONS",
     "_row_to_dict",
     "add_commit",
-    "append_progress_log",
     "bug_task_exists_for_error",
     "claim_task",
     "count_running_tasks",

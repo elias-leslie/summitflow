@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from ...logging_config import get_logger
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
+from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
 from ...storage.task_spirit import approve_plan, get_task_spirit
@@ -159,18 +160,17 @@ def _format_toon_context(
         for b in blockers:
             lines.append(f"  {b['id']}|{b['status']}|{b['title'][:50]}")
 
-    # Progress log (last 3 entries for session continuity)
-    progress_log = task.get("progress_log") or []
-    if isinstance(progress_log, str):
-        entries = [e.strip() for e in progress_log.split("\n") if e.strip()]
-    else:
-        entries = progress_log
-    if entries:
-        recent_logs = entries[-3:]
-        lines.append(f"LOG[{len(entries)}]:")
-        for log in recent_logs:
-            log_preview = str(log)[:100]
-            if len(str(log)) > 100:
+    # Progress log from events table (last 3 entries for session continuity)
+    events = get_events_by_trace(task["id"], visibility="user", limit=100)
+    if events:
+        recent_events = events[-3:]
+        lines.append(f"LOG[{len(events)}]:")
+        for event in recent_events:
+            msg = event.get("message") or ""
+            ts = event.get("timestamp")
+            ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else ""
+            log_preview = f"[{ts_str}] {msg[:80]}"
+            if len(msg) > 80:
                 log_preview += "..."
             lines.append(f"  {log_preview}")
 
@@ -235,10 +235,13 @@ def _build_export_data(
             }
         )
 
-    # Get progress log
-    progress_log = task.get("progress_log") or []
-    if isinstance(progress_log, str):
-        progress_log = [progress_log] if progress_log else []
+    # Get progress log from events table
+    events = get_events_by_trace(task["id"], visibility="user", limit=500)
+    progress_log = [
+        f"[{e['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}] {e['message']}"
+        for e in events
+        if e.get("message")
+    ]
 
     # Get dependencies
     blocking = dep_store.get_blocking_tasks(task["id"])
@@ -452,12 +455,15 @@ async def get_task_logs(
         task_id: Task ID
         format: Output format ('json' for JSON, default is TOON)
     """
-    task = _verify_task_project(task_id, project_id)
+    _verify_task_project(task_id, project_id)
 
-    # Get progress log
-    progress_log = task.get("progress_log") or []
-    if isinstance(progress_log, str):
-        progress_log = [progress_log] if progress_log else []
+    # Get progress log from events table
+    events = get_events_by_trace(task_id, visibility="user", limit=500)
+    progress_log = [
+        f"[{e['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}] {e['message']}"
+        for e in events
+        if e.get("message")
+    ]
 
     if format == "json":
         return {

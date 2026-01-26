@@ -100,7 +100,6 @@ def init_schema() -> None:
                     title TEXT NOT NULL,
                     description TEXT,
                     status TEXT DEFAULT 'pending',
-                    progress_log TEXT,
                     error_message TEXT,
                     branch_name TEXT,
                     commits TEXT[] DEFAULT '{}',

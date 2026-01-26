@@ -14,6 +14,7 @@ from celery import shared_task
 from ...constants import AGENT_IDEA_INTAKE
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.task_spirit import create_task_spirit
 
@@ -128,7 +129,7 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
     """Process triage result and update task accordingly.
 
     If CLEAR: Create task_spirit with objective and move to 'queue' status for planning.
-    If NEEDS_CLARIFICATION: Add questions to task chat/progress_log.
+    If NEEDS_CLARIFICATION: Add questions to events log.
     """
     status = result.get("status", "").upper()
 
@@ -156,7 +157,7 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
             logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
 
         task_store.update_task_status(task_id, "queue")
-        task_store.append_progress_log(
+        log_task_event(
             task_id,
             f"Triage complete: CLEAR - Complexity: {complexity}. Moving to queue.",
         )
@@ -166,7 +167,7 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
         questions = result.get("clarifying_questions", [])
         if questions:
             questions_text = "\n".join(f"- {q}" for q in questions)
-            task_store.append_progress_log(
+            log_task_event(
                 task_id,
                 f"Triage: Needs clarification\n{questions_text}",
             )

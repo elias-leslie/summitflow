@@ -12,7 +12,7 @@ from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.agent_hub_client import AgentType, get_agent
-from ..storage import tasks
+from ..storage import log_task_event, tasks
 
 logger = get_logger(__name__)
 
@@ -63,7 +63,7 @@ def run_agent_task(
 
     # 2. Update task status to running
     tasks.update_task_status(task_id, "running")
-    tasks.append_progress_log(task_id, f"Starting agent execution with {agent_type}")
+    log_task_event(task_id, f"Starting agent execution with {agent_type}")
 
     try:
         # 3. Initialize agent
@@ -71,21 +71,21 @@ def run_agent_task(
             agent = get_agent(agent_type, model)
             if not agent.is_available():
                 raise RuntimeError(f"{agent_type} agent is not available")
-            tasks.append_progress_log(
+            log_task_event(
                 task_id, f"Initialized {agent_type} agent ({agent.get_model_name()})"
             )
         except Exception as e:
             logger.error("agent_init_failed", agent_type=agent_type, error=str(e))
             tasks.update_task_status(task_id, "failed", error_message=str(e))
-            tasks.append_progress_log(task_id, f"ERROR: Failed to initialize agent: {e}")
+            log_task_event(task_id, f"ERROR: Failed to initialize agent: {e}")
             return {"status": "error", "error": f"Agent init failed: {e}"}
 
         # 4. Build context prompt
         context = _build_agent_context(task)
-        tasks.append_progress_log(task_id, "Built context for agent")
+        log_task_event(task_id, "Built context for agent")
 
         # 6. Execute agent
-        tasks.append_progress_log(task_id, "Sending prompt to agent...")
+        log_task_event(task_id, "Sending prompt to agent...")
 
         try:
             response = agent.generate(
@@ -99,7 +99,7 @@ def run_agent_task(
             output_tokens = response.usage.get("output_tokens") or response.usage.get(
                 "completion_tokens", 0
             )
-            tasks.append_progress_log(
+            log_task_event(
                 task_id,
                 f"Agent response received ({input_tokens} in, {output_tokens} out)",
             )
@@ -112,7 +112,7 @@ def run_agent_task(
                 tasks.update_task_status(
                     task_id, "failed", error_message=f"Agent execution failed: {e}"
                 )
-                tasks.append_progress_log(task_id, f"ERROR: Agent failed after retries: {e}")
+                log_task_event(task_id, f"ERROR: Agent failed after retries: {e}")
                 return {"status": "error", "error": str(e)}
 
         # 7. Update task with results
@@ -128,11 +128,11 @@ def run_agent_task(
         output_preview = (
             response.content[:500] + "..." if len(response.content) > 500 else response.content
         )
-        tasks.append_progress_log(task_id, f"Agent output:\n{output_preview}")
+        log_task_event(task_id, f"Agent output:\n{output_preview}")
 
         # 9. Mark task as completed (for now - Phase 6 will add criterion-by-criterion)
         tasks.update_task_status(task_id, "completed")
-        tasks.append_progress_log(task_id, "Task completed successfully")
+        log_task_event(task_id, "Task completed successfully")
 
         logger.info(
             "agent_task_completed",
@@ -152,7 +152,7 @@ def run_agent_task(
     except Exception as e:
         logger.error("agent_task_unexpected_error", task_id=task_id, error=str(e))
         tasks.update_task_status(task_id, "failed", error_message=str(e))
-        tasks.append_progress_log(task_id, f"ERROR: Unexpected error: {e}")
+        log_task_event(task_id, f"ERROR: Unexpected error: {e}")
         return {"status": "error", "error": str(e)}
 
 

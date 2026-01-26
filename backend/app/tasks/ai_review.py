@@ -27,6 +27,7 @@ from app.constants import AGENT_REVIEWER
 from app.logging_config import get_logger
 from app.services.agent_hub_client import get_agent
 from app.services.autonomous.reviewer import opus_review
+from app.storage import log_task_event
 from app.storage import tasks as task_store
 
 logger = get_logger(__name__)
@@ -798,12 +799,12 @@ def _auto_merge_pr(task_id: str, pr_url: str, project_path: Path) -> bool:
 
         if result.returncode == 0:
             logger.info("pr_auto_merged", task_id=task_id, pr_url=pr_url)
-            task_store.append_progress_log(task_id, f"PR merged: {pr_url}")
+            log_task_event(task_id, f"PR merged: {pr_url}")
             return True
         else:
             error = result.stderr.strip() or "Unknown error"
             logger.warning("pr_auto_merge_failed", task_id=task_id, pr_url=pr_url, error=error)
-            task_store.append_progress_log(task_id, f"Auto-merge failed: {error}")
+            log_task_event(task_id, f"Auto-merge failed: {error}")
             return False
 
     except subprocess.TimeoutExpired:
@@ -1011,7 +1012,7 @@ def review_pull_request(
             logger.info("review_passed", task_id=task_id)
         elif verdict == ReviewVerdict.NEEDS_FIX:
             # Needs work: keep in ai_reviewing for now, log issues
-            task_store.append_progress_log(
+            log_task_event(
                 task_id,
                 f"AI Review needs fixes: {', '.join(all_issues[:3])}",
             )

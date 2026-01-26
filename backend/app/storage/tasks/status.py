@@ -24,7 +24,6 @@ Kanban column mapping (5 columns per decision d2):
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from ..connection import get_connection
@@ -189,37 +188,6 @@ def update_task_status(
             ),
         )
 
-        row = cur.fetchone()
-        conn.commit()
-
-    if not row:
-        return None
-    return _row_to_dict(row)
-
-
-def append_progress_log(task_id: str, entry: str) -> dict[str, Any] | None:
-    """Append an entry to the task's progress log.
-
-    Args:
-        task_id: Task ID
-        entry: Log entry to append (timestamp is auto-added)
-
-    Returns:
-        Updated task dict or None if not found.
-    """
-    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"[{timestamp}] {entry}\n"
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            UPDATE tasks
-            SET progress_log = COALESCE(progress_log, '') || %s
-            WHERE id = %s
-            RETURNING {TASK_COLUMNS}
-            """,
-            (log_entry, task_id),
-        )
         row = cur.fetchone()
         conn.commit()
 

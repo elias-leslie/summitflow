@@ -13,12 +13,13 @@ from psycopg.rows import TupleRow
 
 from ..connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (38 columns)
+# Column list for all task SELECT/RETURNING queries (37 columns)
 # Order must match _row_to_dict index mapping
 # Note: Migration 072 dropped: plan_content, labels, objective, spirit_anti,
 #       decisions, constraints, done_when (moved to task_spirit/task_labels)
+# Note: Migration 099 dropped: progress_log (moved to events table)
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
-    progress_log, error_message, branch_name, commits, pull_request_url,
+    error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
     priority, task_type, parent_task_id, feature_id,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
@@ -29,7 +30,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.progress_log, t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.error_message, t.branch_name, t.commits, t.pull_request_url,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.task_type, t.parent_task_id, t.feature_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
@@ -38,12 +39,12 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.complexity, t.autonomous,
     t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues"""
 
-EXPECTED_TASK_COLUMNS = 38
+EXPECTED_TASK_COLUMNS = 37
 
-# Columns for queries that JOIN with task_spirit (44 columns total)
+# Columns for queries that JOIN with task_spirit (43 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.progress_log, t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.error_message, t.branch_name, t.commits, t.pull_request_url,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.task_type, t.parent_task_id, t.feature_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
@@ -53,7 +54,7 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 43
 
 
 def _generate_task_id() -> str:
@@ -64,27 +65,27 @@ def _generate_task_id() -> str:
 def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (44 columns):
-        First 38 columns are standard task columns (see _row_to_dict).
+    Column order (43 columns):
+        First 37 columns are standard task columns (see _row_to_dict).
         Then 6 spirit columns:
-        38: objective, 39: spirit_anti, 40: decisions, 41: constraints,
-        42: done_when, 43: plan_status
+        37: objective, 38: spirit_anti, 39: decisions, 40: constraints,
+        41: done_when, 42: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
     if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
-    # Build base task dict from first 38 columns
+    # Build base task dict from first 37 columns
     task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
 
-    # Add spirit fields (columns 38-43)
-    task["objective"] = row[38]
-    task["spirit_anti"] = row[39]
-    task["decisions"] = row[40] if row[40] else []
-    task["constraints"] = row[41] if row[41] else []
-    task["done_when"] = row[42] if row[42] else []
-    task["plan_status"] = row[43]
+    # Add spirit fields (columns 37-42)
+    task["objective"] = row[37]
+    task["spirit_anti"] = row[38]
+    task["decisions"] = row[39] if row[39] else []
+    task["constraints"] = row[40] if row[40] else []
+    task["done_when"] = row[41] if row[41] else []
+    task["plan_status"] = row[42]
 
     return task
 
@@ -92,9 +93,9 @@ def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (38 columns):
+    Column order (37 columns):
         id, project_id, capability_id, title, description, status,
-        progress_log, error_message, branch_name, commits, pull_request_url,
+        error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
         priority, task_type, parent_task_id, feature_id,
         claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
@@ -105,6 +106,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
 
     Note: Migration 072 dropped plan_content, labels, objective, spirit_anti,
           decisions, constraints, done_when (now in task_spirit/task_labels)
+    Note: Migration 099 dropped progress_log (now in events table)
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -117,38 +119,37 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "title": row[3],
         "description": row[4],
         "status": row[5],
-        "progress_log": row[6],
-        "error_message": row[7],
-        "branch_name": row[8],
-        "commits": row[9] or [],
-        "pull_request_url": row[10],
-        "total_sessions": row[11],
-        "total_tokens_used": row[12],
-        "created_at": row[13],
-        "started_at": row[14],
-        "completed_at": row[15],
-        "priority": row[16],
-        "task_type": row[17],
-        "parent_task_id": row[18],
-        "feature_id": row[19],
-        "claimed_by": row[20],
-        "claimed_at": row[21],
-        "lock_expires_at": row[22],
-        "tier": row[23],
-        "pre_merge_sha": row[24],
-        "review_result": row[25],
-        "current_phase": row[26],
-        "verification_result": row[27],
-        "raw_request": row[28],
-        "enrichment_status": row[29],
-        "enriched_by": row[30],
-        "enriched_at": row[31],
-        "complexity": row[32],
-        "autonomous": row[33] or False,
-        "qa_status": row[34] or "pending",
-        "qa_signoff_at": row[35],
-        "qa_signoff_by": row[36],
-        "qa_issues": row[37] or [],
+        "error_message": row[6],
+        "branch_name": row[7],
+        "commits": row[8] or [],
+        "pull_request_url": row[9],
+        "total_sessions": row[10],
+        "total_tokens_used": row[11],
+        "created_at": row[12],
+        "started_at": row[13],
+        "completed_at": row[14],
+        "priority": row[15],
+        "task_type": row[16],
+        "parent_task_id": row[17],
+        "feature_id": row[18],
+        "claimed_by": row[19],
+        "claimed_at": row[20],
+        "lock_expires_at": row[21],
+        "tier": row[22],
+        "pre_merge_sha": row[23],
+        "review_result": row[24],
+        "current_phase": row[25],
+        "verification_result": row[26],
+        "raw_request": row[27],
+        "enrichment_status": row[28],
+        "enriched_by": row[29],
+        "enriched_at": row[30],
+        "complexity": row[31],
+        "autonomous": row[32] or False,
+        "qa_status": row[33] or "pending",
+        "qa_signoff_at": row[34],
+        "qa_signoff_by": row[35],
+        "qa_issues": row[36] or [],
     }
 
 
@@ -276,12 +277,12 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
 
     # Note: objective, spirit_anti, decisions, constraints, done_when, labels
     # are now in task_spirit/task_labels tables (migration 072)
+    # Note: progress_log moved to events table (migration 099)
     allowed_fields = {
         "project_id",  # Allow moving task between projects
         "title",
         "description",
         "status",
-        "progress_log",
         "error_message",
         "branch_name",
         "commits",

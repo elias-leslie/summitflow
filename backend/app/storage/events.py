@@ -335,3 +335,51 @@ def get_events_with_filters(
             total=total,
             summary=summary,
         )
+
+
+def log_task_event(
+    task_id: str,
+    message: str,
+    *,
+    source: str = "system",
+    level: EventLevel = "info",
+    event_type: str = "log",
+    visibility: EventVisibility = "user",
+    attributes: dict[str, Any] | None = None,
+) -> Event | None:
+    """Log an event for a task (simpler API for progress logging).
+
+    This is a convenience wrapper around create_event that automatically
+    looks up the project_id from the task.
+
+    Args:
+        task_id: Task ID (used as trace_id)
+        message: Human-readable log message
+        source: Event source (system, worker, orchestrator, etc)
+        level: Log level (info, warning, error, debug)
+        event_type: Type of event (log, progress, state_change, etc)
+        visibility: Visibility scope (user, internal, debug)
+        attributes: Optional structured metadata
+
+    Returns:
+        Created Event or None if task not found
+    """
+    from .tasks.core import get_task
+
+    task = get_task(task_id)
+    if not task:
+        logger.warning("Task %s not found, cannot log event", task_id)
+        return None
+
+    project_id = task["project_id"]
+
+    return create_event(
+        project_id=project_id,
+        trace_id=task_id,
+        event_type=event_type,
+        source=source,
+        level=level,
+        visibility=visibility,
+        message=message,
+        attributes=attributes,
+    )

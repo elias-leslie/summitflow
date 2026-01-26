@@ -24,6 +24,7 @@ from ...schemas.tasks import (
     ValidationResultResponse,
 )
 from ...services.task_validation import validate_task_ready
+from ...storage import log_task_event
 from ...storage import tasks as task_store
 from .core import _get_task_or_404, _task_to_response, _verify_task_project
 
@@ -71,7 +72,7 @@ async def append_task_log(project_id: str, task_id: str, log_entry: TaskLogEntry
     """
     _verify_task_project(task_id, project_id)
 
-    updated = task_store.append_progress_log(task_id, log_entry.entry)
+    updated = log_task_event(task_id, log_entry.entry)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to append to progress log")
 
@@ -222,7 +223,7 @@ async def append_task_log_global(task_id: str, log_entry: TaskLogEntry) -> dict[
     """
     task = _get_task_or_404(task_id)
 
-    updated = task_store.append_progress_log(task_id, log_entry.entry)
+    updated = log_task_event(task_id, log_entry.entry)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to append to progress log")
 

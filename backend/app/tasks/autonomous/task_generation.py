@@ -7,6 +7,7 @@ from typing import Any
 
 from app.celery_app import celery_app
 from app.services.task_issue_mapper import link_issue_to_task
+from app.storage import log_task_event
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
@@ -261,10 +262,11 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
                 task_store.update_task(
                     task_id,
                     status="cancelled",
-                    progress_log=(
-                        f"Auto-cancelled: No activity for {max_age_days}+ days. "
-                        "Stale auto-generated task archived."
-                    ),
+                )
+                log_task_event(
+                    task_id,
+                    f"Auto-cancelled: No activity for {max_age_days}+ days. "
+                    "Stale auto-generated task archived.",
                 )
                 cancelled += 1
                 logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
