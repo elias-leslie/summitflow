@@ -66,18 +66,19 @@ class ConnectionManager:
 
     Features:
     - Per-task subscriptions
-    - Message queue for replay on reconnection (last 100 messages)
+    - Ephemeral Redis cache for instant reconnect (last 100 messages)
+    - DB query for historical events on initial connect
     - Broadcast to all subscribers of a task
     """
 
-    # Maximum messages to keep for replay
+    # Maximum messages to keep in ephemeral cache (performance optimization)
     MAX_REPLAY_MESSAGES = 100
 
     def __init__(self) -> None:
         # task_id -> list of WebSocket connections
         self._connections: dict[str, list[WebSocket]] = defaultdict(list)
-        # task_id -> list of recent messages for replay
-        self._message_queues: dict[str, list[Message]] = defaultdict(list)
+        # task_id -> ephemeral cache of recent messages (populated from live Redis stream)
+        self._redis_cache: dict[str, list[Message]] = defaultdict(list)
         # task_id -> sequence counter
         self._sequences: dict[str, int] = defaultdict(int)
         # Lock for thread-safe operations
@@ -109,12 +110,12 @@ class ConnectionManager:
             self._sequences[task_id] += 1
             message.sequence = self._sequences[task_id]
 
-            # Add to replay queue
-            queue = self._message_queues[task_id]
-            queue.append(message)
+            # Add to ephemeral Redis cache (for instant reconnect)
+            cache = self._redis_cache[task_id]
+            cache.append(message)
             # Trim to max size
-            if len(queue) > self.MAX_REPLAY_MESSAGES:
-                self._message_queues[task_id] = queue[-self.MAX_REPLAY_MESSAGES :]
+            if len(cache) > self.MAX_REPLAY_MESSAGES:
+                self._redis_cache[task_id] = cache[-self.MAX_REPLAY_MESSAGES :]
 
         # Send to all connected clients
         connections = self._connections.get(task_id, [])
@@ -129,17 +130,48 @@ class ConnectionManager:
         for ws in disconnected:
             await self.disconnect(ws, task_id)
 
-    async def replay(self, websocket: WebSocket, task_id: str, from_sequence: int) -> None:
+    async def replay(
+        self, websocket: WebSocket, task_id: str, from_sequence: int, trace_id: str | None = None
+    ) -> None:
         """Replay missed messages to a reconnecting client.
+
+        Queries events table for historical events, then checks ephemeral cache
+        for very recent messages not yet in DB.
 
         Args:
             websocket: The WebSocket to send messages to
             task_id: The task to replay messages for
             from_sequence: Send messages after this sequence number
+            trace_id: Trace ID for DB query (defaults to task_id)
         """
+        from ..storage.events import get_events_by_trace
+
+        if trace_id is None:
+            trace_id = task_id
+
+        # Query DB for historical events
+        db_events = get_events_by_trace(trace_id, visibility="user", limit=self.MAX_REPLAY_MESSAGES)
+        for event in db_events:
+            try:
+                await websocket.send_json({
+                    "type": event["event_type"],
+                    "task_id": task_id,
+                    "data": {
+                        "message": event["message"],
+                        "level": event["level"],
+                        "source": event["source"],
+                        **event["attributes"],
+                    },
+                    "timestamp": event["timestamp"].isoformat(),
+                    "sequence": 0,  # Historical events don't have sequence
+                })
+            except Exception:
+                break
+
+        # Check ephemeral cache for very recent messages
         async with self._lock:
-            queue = self._message_queues.get(task_id, [])
-            messages_to_replay = [m for m in queue if m.sequence > from_sequence]
+            cache = self._redis_cache.get(task_id, [])
+            messages_to_replay = [m for m in cache if m.sequence > from_sequence]
 
         for message in messages_to_replay:
             try:
