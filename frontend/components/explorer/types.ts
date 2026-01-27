@@ -41,7 +41,7 @@ export interface ExplorerColumn<T = ExplorerItem> {
   label: string
   width?: string
   align?: 'left' | 'center' | 'right'
-  render: (item: T) => React.ReactNode
+  render?: (item: T) => React.ReactNode
 }
 
 // Filter state

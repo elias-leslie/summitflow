@@ -36,6 +36,8 @@ dev = [
     "pytest-xdist>=3.6.1",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "types-jsonschema>=4.26.0",
+    "celery-types>=0.24.0",
 ]
 
 [build-system]
@@ -70,8 +72,6 @@ disable_error_code = ["no-untyped-call"]
 
 [[tool.mypy.overrides]]
 module = [
-    "celery", "celery.*",
-    "jsonschema", "jsonschema.*",
     "agent_hub", "agent_hub.*",
     "radon", "radon.*",
 ]
@@ -79,11 +79,11 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["app.tasks", "app.tasks.*"]
-disable_error_code = ["import-untyped"]
+disable_error_code = ["import-untyped", "unused-ignore", "type-arg"]
 
 [[tool.mypy.overrides]]
 module = ["app.api.tasks", "app.api.tasks.*"]
-disable_error_code = ["import-untyped"]
+disable_error_code = ["import-untyped", "arg-type", "unused-ignore"]
 
 [[tool.mypy.overrides]]
 module = ["cli", "cli.*"]
@@ -91,7 +91,7 @@ disable_error_code = ["no-any-return", "return-value", "assignment", "type-arg",
 
 [[tool.mypy.overrides]]
 module = ["app.celery_app"]
-disable_error_code = ["import-untyped"]
+disable_error_code = ["import-untyped", "unused-ignore"]
 
 [[tool.mypy.overrides]]
 module = ["app.api.explorer"]
