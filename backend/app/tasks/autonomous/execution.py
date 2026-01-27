@@ -300,10 +300,9 @@ def _execute_subtask(
         task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id
     )
 
-    prompt = _build_subtask_prompt(task_id, subtask)
-
     try:
         worktree_path = _get_worktree_path(project_id, task_id)
+        prompt = _build_subtask_prompt(task_id, subtask, project_id, worktree_path)
         logger.info(
             "Executing in worktree",
             subtask_id=subtask_short_id,
@@ -385,7 +384,12 @@ def _execute_subtask(
         }
 
 
-def _build_subtask_prompt(task_id: str, subtask: dict[str, Any]) -> str:
+def _build_subtask_prompt(
+    task_id: str,
+    subtask: dict[str, Any],
+    project_id: str,
+    worktree_path: str,
+) -> str:
     """Build subtask prompt with fresh context: objective + spirit/anti + subtask + handoff."""
     spirit = get_task_spirit(task_id)
     objective = spirit.get("objective", "") if spirit else ""
@@ -420,6 +424,14 @@ def _build_subtask_prompt(task_id: str, subtask: dict[str, Any]) -> str:
                 prompt_parts.append(f"   Verify: {verify}")
             if expect:
                 prompt_parts.append(f"   Expected: {expect}")
+
+    prompt_parts.append(f"""
+# Execution Context
+task_id: {task_id}
+subtask_id: {subtask_short_id}
+project_id: {project_id}
+worktree_path: {worktree_path}
+api_base: http://localhost:8001""")
 
     return "\n".join(prompt_parts)
 
