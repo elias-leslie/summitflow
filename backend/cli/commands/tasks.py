@@ -162,6 +162,10 @@ def create(
         str | None,
         typer.Option("--blocked-by", help="Task ID that blocks this task"),
     ] = None,
+    autonomous: Annotated[
+        bool,
+        typer.Option("--autonomous", help="Enable autonomous execution for this task"),
+    ] = False,
 ) -> None:
     """Create a new task or batch create from file.
 
@@ -169,6 +173,7 @@ def create(
         st create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
         st create "Add feature" -t feature -p 1 --parent task-abc123
         st create "Implement X" --blocked-by task-abc123
+        st create "AutoTest" --autonomous  # Enable autonomous execution
         st create --from-file tasks.json
         st create --from-file tasks.json --dry-run
     """
@@ -199,6 +204,8 @@ def create(
         data["labels"] = labels.split(",")
     if parent:
         data["parent_task_id"] = parent
+    if autonomous:
+        data["autonomous"] = True
 
     try:
         task = client.create_task(data)
@@ -650,6 +657,9 @@ def update(
     constraints_json: Annotated[
         str | None, typer.Option("--constraints", help="Constraints as JSON array")
     ] = None,
+    autonomous: Annotated[
+        bool | None, typer.Option("--autonomous/--no-autonomous", help="Enable/disable autonomous execution")
+    ] = None,
 ) -> None:
     """Update a task.
 
@@ -661,6 +671,8 @@ def update(
         st update -p 1 -l "complexity:large"
         st update --add-label auto-generated
         st update --objective "Enable X to do Y"
+        st update --autonomous                        # Enable autonomous
+        st update --no-autonomous                     # Disable autonomous
     """
     from ..context import require_task_id
 
@@ -747,6 +759,8 @@ def update(
         except json.JSONDecodeError as e:
             output_error(f"Invalid constraints JSON: {e}")
             raise typer.Exit(1) from None
+    if autonomous is not None:
+        updates["autonomous"] = autonomous
 
     # Handle dependency operations (can be standalone or combined with other updates)
     dep_result = {}
