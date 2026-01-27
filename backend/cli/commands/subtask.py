@@ -281,12 +281,14 @@ def delete_subtask(
 
 
 @app.command("citations")
-def log_citations(
+def log_citations_cmd(
     citations: Annotated[
-        list[str], typer.Argument(help="Citations in suffix notation (M:abc123+ G:def456-)")
-    ],
+        list[str] | None,
+        typer.Argument(help="Citations in suffix notation (M:abc123+ G:def456-)"),
+    ] = None,
     subtask_id: Annotated[str | None, typer.Option("--subtask", "-s", help="Subtask ID")] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
+    none: Annotated[bool, typer.Option("--none", help="Confirm no memories were needed")] = False,
 ) -> None:
     """Log episode citations with suffix notation ratings.
 
@@ -295,11 +297,14 @@ def log_citations(
     - G:def67890-  -> guardrail harmful (demotes episode)
     - M:xyz99999   -> used/neutral (no suffix)
 
+    Use --none to confirm no memories were needed (requires honest confirmation).
+
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
         st subtask citations M:abc12345+ G:def67890- M:xyz99999 --subtask 1.1
         st subtask citations M:85bf4635+ --subtask 2.1  # Uses active context
+        st subtask citations --none --subtask 1.1      # Confirm no memories needed
     """
     from ..context import require_task_id
 
@@ -308,13 +313,42 @@ def log_citations(
         output_error("Subtask ID required (--subtask/-s)")
         raise typer.Exit(1)
 
+    if none and citations:
+        output_error("Cannot use --none with citations. Choose one.")
+        raise typer.Exit(1)
+
+    if not none and not citations:
+        output_error("Provide citations or use --none to confirm none were needed.")
+        raise typer.Exit(1)
+
     client = STClient()
 
-    try:
-        result = client.log_citations(task_id, subtask_id, citations)
-    except APIError as e:
-        handle_api_error(e)
-        return
+    if none:
+        confirm = typer.prompt(
+            "Honestly: no memories helped with this task? [y/N]",
+            default="n",
+        )
+        if confirm.lower() != "y":
+            output_error("Use: st subtask citations M:xxx+ G:yyy- --subtask X.Y")
+            raise typer.Exit(1)
 
-    logged = result.get("logged", 0)
-    output_success(f"Logged {logged} citations for subtask {subtask_id}")
+        try:
+            result = client.acknowledge_no_citations(task_id, subtask_id)
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+        if result.get("acknowledged"):
+            output_success(f"Acknowledged: no memories needed for subtask {subtask_id}")
+        else:
+            output_error("Failed to acknowledge")
+            raise typer.Exit(1)
+    else:
+        try:
+            result = client.log_citations(task_id, subtask_id, citations)
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+        logged = result.get("logged", 0)
+        output_success(f"Logged {logged} citations for subtask {subtask_id}")

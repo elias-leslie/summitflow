@@ -602,3 +602,33 @@ class CitationLogResponse(BaseModel):
 
     logged: int = Field(..., description="Number of citations logged")
     subtask_id: str = Field(..., description="Subtask ID citations were logged for")
+
+
+class CitationAcknowledgeRequest(BaseModel):
+    """Request model for acknowledging no citations needed.
+
+    Requires explicit confirmation to create friction that makes
+    the agent reflect before claiming no memories were helpful.
+    """
+
+    honestly_none: bool = Field(
+        ...,
+        description="Explicit confirmation: no injected memories helped with this subtask",
+    )
+
+    @field_validator("honestly_none")
+    @classmethod
+    def validate_honestly_none(cls, v: bool) -> bool:
+        """Require true - false is invalid (just don't call the endpoint)."""
+        if not v:
+            raise ValueError(
+                "honestly_none must be true. If memories helped, use POST /citations instead."
+            )
+        return v
+
+
+class CitationAcknowledgeResponse(BaseModel):
+    """Response model for acknowledging no citations needed."""
+
+    acknowledged: bool = Field(..., description="Whether acknowledgment was recorded")
+    subtask_id: str = Field(..., description="Subtask ID that was acknowledged")

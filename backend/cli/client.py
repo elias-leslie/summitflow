@@ -501,6 +501,24 @@ class STClient:
         )
         return self._handle_response(response)
 
+    def acknowledge_no_citations(self, task_id: str, subtask_id: str) -> dict[str, Any]:
+        """Acknowledge that no memories were needed for a subtask.
+
+        Requires explicit confirmation via honestly_none=true body.
+
+        Args:
+            task_id: Task ID
+            subtask_id: Subtask ID (e.g., "1.1")
+
+        Returns:
+            Dict with acknowledged status.
+        """
+        response = self._client.post(
+            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations/acknowledge-none"),
+            json={"honestly_none": True},
+        )
+        return self._handle_response(response)
+
     # Steps
 
     def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:

@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Query
 from ...constants import DEFAULT_GEMINI_MODEL
 from ...logging_config import get_logger
 from ...schemas.tasks import (
+    CitationAcknowledgeRequest,
+    CitationAcknowledgeResponse,
     CitationLogRequest,
     CitationLogResponse,
     CleanupPromptRequest,
@@ -424,5 +426,39 @@ async def log_subtask_citations(
 
     return CitationLogResponse(
         logged=logged,
+        subtask_id=subtask_id,
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/subtasks/{subtask_id}/citations/acknowledge-none",
+    response_model=CitationAcknowledgeResponse,
+)
+async def acknowledge_no_citations(
+    task_id: str,
+    subtask_id: str,
+    request: CitationAcknowledgeRequest,
+) -> CitationAcknowledgeResponse:
+    """Acknowledge that no memories were needed for this subtask.
+
+    Requires {"honestly_none": true} body to create friction that makes
+    the agent reflect before claiming no memories were helpful.
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: CitationAcknowledgeRequest with honestly_none=true
+
+    Returns:
+        CitationAcknowledgeResponse with acknowledgment status
+    """
+    _get_task_or_404(task_id)
+
+    from ...storage.subtasks import acknowledge_no_citations
+
+    acknowledged = acknowledge_no_citations(task_id, subtask_id)
+
+    return CitationAcknowledgeResponse(
+        acknowledged=acknowledged,
         subtask_id=subtask_id,
     )

@@ -17,14 +17,15 @@ from .steps import bulk_create_steps
 
 logger = logging.getLogger(__name__)
 
-# Column list for all subtask SELECT/RETURNING queries (10 columns)
+# Column list for all subtask SELECT/RETURNING queries (11 columns)
 # Note: steps column was dropped in migration 045 - steps are in task_subtask_steps table
 # Note: details column added in migration 061 - stores rich implementation specs
+# Note: citations_acknowledged_at added in migration 100 - tracks memory reflection
 SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description,
-    details, passes, passed_at, display_order, created_at"""
+    details, passes, passed_at, display_order, created_at, citations_acknowledged_at"""
 
 # Expected column count for row validation
-EXPECTED_SUBTASK_COLUMNS = 10
+EXPECTED_SUBTASK_COLUMNS = 11
 
 
 def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
@@ -38,9 +39,9 @@ def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a subtask dict.
 
-    Column order (10 columns):
+    Column order (11 columns):
         id, task_id, subtask_id, phase, description,
-        details, passes, passed_at, display_order, created_at
+        details, passes, passed_at, display_order, created_at, citations_acknowledged_at
 
     Note: steps field is always [] - steps are in task_subtask_steps table
     """
@@ -60,6 +61,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "passed_at": row[7].isoformat() if row[7] else None,
         "display_order": row[8],
         "created_at": row[9].isoformat() if row[9] else None,
+        "citations_acknowledged_at": row[10].isoformat() if row[10] else None,
     }
 
 
@@ -344,23 +346,24 @@ def update_subtask_passes(
             plan_defects,
         )
 
-    # Gate: Must log citations before subtask can be marked as passed
+    # Gate: Must acknowledge memory usage before subtask can pass
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM subtask_citations WHERE subtask_id = %s",
+            "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s",
             (table_id,),
         )
         row = cur.fetchone()
-        citation_count = row[0] if row else 0
+        acknowledged_at = row[0] if row else None
 
-    if citation_count == 0:
+    if acknowledged_at is None:
         raise SubtaskGateError(
-            f"Cannot pass subtask {subtask_id}: must log citations first. "
-            "Use 'st subtask citations M:uuid+ G:uuid- --subtask X.Y' to log memory citations used.",
+            f"Before completing subtask {subtask_id}, please reflect: "
+            "Did any memories help? Use 'st subtask citations M:xxx+' to cite them, "
+            "or 'st subtask citations --none' to confirm none were needed.",
             incomplete_steps=[],
         )
 
-    # All steps passed - mark subtask as passed
+    # All steps passed and citations acknowledged - mark subtask as passed
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -858,6 +861,7 @@ def log_citations(
 
     Parses suffix notation and stores in subtask_citations table.
     Also sends ratings to Agent Hub for ACE-aligned tier optimization.
+    Sets citations_acknowledged_at to mark that agent reflected on memory usage.
 
     Args:
         task_id: Task ID
@@ -868,10 +872,10 @@ def log_citations(
     Returns:
         Number of citations logged
     """
+    table_id = _generate_subtask_id(task_id, subtask_id)
+
     if not citations:
         return 0
-
-    table_id = _generate_subtask_id(task_id, subtask_id)
 
     # Parse citations - support both suffix notation (M:abc12345+) and plain UUIDs
     parsed: list[tuple[str, str]] = []
@@ -879,9 +883,9 @@ def log_citations(
         if ":" in c:
             parsed.append(parse_citation(c))
         else:
-            # Plain UUID from Agent Hub - default to "used"
             parsed.append((c, "used"))
 
+    now = datetime.now(UTC)
     with get_connection() as conn, conn.cursor() as cur:
         for uuid_prefix, rating in parsed:
             cur.execute(
@@ -891,6 +895,12 @@ def log_citations(
                 """,
                 (table_id, uuid_prefix, rating),
             )
+        cur.execute(
+            """
+            UPDATE task_subtasks SET citations_acknowledged_at = %s WHERE id = %s
+            """,
+            (now, table_id),
+        )
         conn.commit()
 
     # Send ratings to Agent Hub for ACE-aligned tier optimization
@@ -903,3 +913,37 @@ def log_citations(
 
     logger.info("Logged %d citations for subtask %s", len(parsed), subtask_id)
     return len(parsed)
+
+
+def acknowledge_no_citations(task_id: str, subtask_id: str) -> bool:
+    """Acknowledge that no memories were needed for this subtask.
+
+    Called when agent confirms they didn't use any provided memories.
+    Sets citations_acknowledged_at without creating citation records.
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+
+    Returns:
+        True if acknowledged successfully
+    """
+    table_id = _generate_subtask_id(task_id, subtask_id)
+    now = datetime.now(UTC)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE task_subtasks SET citations_acknowledged_at = %s
+            WHERE id = %s
+            RETURNING id
+            """,
+            (now, table_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if row:
+        logger.info("Acknowledged no citations for subtask %s", subtask_id)
+        return True
+    return False
