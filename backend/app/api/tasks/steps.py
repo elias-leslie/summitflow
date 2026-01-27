@@ -38,6 +38,39 @@ def _get_subtask_table_id(task_id: str, subtask_id: str) -> str:
     return f"{task_id}-{subtask_id}"
 
 
+def _get_verification_cwd(project_id: str, task_id: str) -> str | None:
+    """Get the working directory for step verification.
+
+    If a worktree exists for this task, use the worktree path.
+    Otherwise, fall back to the project root.
+
+    This enables seamless verification for worktree-based execution
+    where subagents work in isolated worktrees.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        Path to use as cwd for verification commands
+    """
+    from ...services.worktree_manager import WorktreeManager
+    from ...storage.projects import get_project_root_path
+
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        return None
+
+    # Check if worktree exists for this task
+    manager = WorktreeManager(project_root)
+    worktree_path = manager.get_worktree_path(project_id, task_id)
+
+    if worktree_path.exists():
+        return str(worktree_path)
+
+    return project_root
+
+
 def _convert_steps_to_storage_format(
     steps: list[str | Any],
 ) -> list[str | dict[str, Any]]:
@@ -443,15 +476,14 @@ async def update_step(
     """
     _verify_task_project(task_id, project_id)
 
-    from ...storage.projects import get_project_root_path
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
-    project_root = get_project_root_path(project_id)
+    verification_cwd = _get_verification_cwd(project_id, task_id)
 
     try:
         updated = update_step_passes(
-            table_id, step_number, request.passes, project_root=project_root
+            table_id, step_number, request.passes, project_root=verification_cwd
         )
     except StepGateError as e:
         raise HTTPException(
@@ -639,16 +671,15 @@ async def update_step_global(
     """
     task = _get_task_or_404(task_id)
 
-    from ...storage.projects import get_project_root_path
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     table_id = _get_subtask_table_id(task_id, subtask_id)
     project_id = task.get("project_id")
-    project_root = get_project_root_path(project_id) if project_id else None
+    verification_cwd = _get_verification_cwd(project_id, task_id) if project_id else None
 
     try:
         updated = update_step_passes(
-            table_id, step_number, passes=request.passes, project_root=project_root
+            table_id, step_number, passes=request.passes, project_root=verification_cwd
         )
     except StepGateError as e:
         raise HTTPException(
