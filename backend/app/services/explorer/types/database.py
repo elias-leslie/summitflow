@@ -33,6 +33,7 @@ from ....logging_config import get_logger
 from ..base import BaseScanner
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
+from .schema_violations import SchemaViolationDetector
 
 logger = get_logger(__name__)
 
@@ -116,6 +117,7 @@ class DatabaseScanner(BaseScanner):
     def __init__(self, project_id: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(project_id, config)
         self.db_url: str | None = None
+        self._violation_detector = SchemaViolationDetector()
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan database tables and return entries."""
@@ -218,6 +220,26 @@ class DatabaseScanner(BaseScanner):
             if fk.get("referred_columns")
         ]
 
+        # Get indexes for schema violation detection
+        indexes = inspector.get_indexes(table_name)
+
+        # Detect schema violations
+        schema_violations = self._violation_detector.detect_violations(
+            table_name=table_name,
+            columns=columns,
+            foreign_keys=fks,
+            indexes=indexes,
+        )
+
+        violations = [
+            {
+                "type": v.violation_type.value,
+                "detail": v.detail,
+                "severity": v.severity,
+            }
+            for v in schema_violations
+        ]
+
         category = categorize_table(table_name)
 
         return ExplorerEntryCreate(
@@ -237,6 +259,7 @@ class DatabaseScanner(BaseScanner):
                     "references": references,
                     "referenced_by": [],  # Populated later if needed
                 },
+                "violations": violations,
             },
         )
 
