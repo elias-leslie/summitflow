@@ -31,6 +31,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from ....logging_config import get_logger
 from ..base import BaseScanner
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
@@ -241,25 +242,4 @@ class DatabaseScanner(BaseScanner):
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a table entry."""
-        meta = entry.metadata
-
-        row_count = meta.get("row_count", 0)
-        completeness = meta.get("completeness_pct", 0)
-        freshness_days = meta.get("freshness_days")
-
-        # Empty table
-        if row_count == 0:
-            return "warning"
-
-        # Low completeness
-        if completeness < 50:
-            return "warning"
-
-        # Stale data (>30 days)
-        if freshness_days is not None:
-            if freshness_days > 30:
-                return "error"
-            if freshness_days > 7:
-                return "warning"
-
-        return "healthy"
+        return calculate_health_for_entry(self.entry_type, entry.metadata)

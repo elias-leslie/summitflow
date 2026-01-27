@@ -26,6 +26,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
@@ -265,24 +266,4 @@ class EndpointScanner(BaseScanner):
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for an endpoint entry."""
-        meta = entry.metadata
-
-        # Check if health check data is available
-        http_status = meta.get("http_status")
-
-        if http_status is not None:
-            if http_status >= 500:
-                return "error"
-            if http_status >= 400 and http_status != 404:
-                return "error"
-            if http_status == 404:
-                return "warning"
-
-        # Check for orphaned endpoints (no table dependencies and not called by frontend)
-        depends_on = meta.get("depends_on_tables", [])
-        called_by = meta.get("called_by_frontend", [])
-
-        if not depends_on and not called_by:
-            return "warning"
-
-        return "healthy"
+        return calculate_health_for_entry(self.entry_type, entry.metadata)

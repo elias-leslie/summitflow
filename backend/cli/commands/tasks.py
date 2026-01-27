@@ -658,7 +658,8 @@ def update(
         str | None, typer.Option("--constraints", help="Constraints as JSON array")
     ] = None,
     autonomous: Annotated[
-        bool | None, typer.Option("--autonomous/--no-autonomous", help="Enable/disable autonomous execution")
+        bool | None,
+        typer.Option("--autonomous/--no-autonomous", help="Enable/disable autonomous execution"),
     ] = None,
 ) -> None:
     """Update a task.

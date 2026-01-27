@@ -337,6 +337,7 @@ def _execute_subtask(
         # Log citations from Agent Hub response for ACE-aligned feedback
         if response.cited_uuids:
             from ...storage.subtasks import log_citations
+
             log_citations(task_id, subtask_short_id, response.cited_uuids, client=client)
 
         steps = subtask.get("steps_from_table", [])

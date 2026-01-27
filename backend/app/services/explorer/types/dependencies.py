@@ -28,6 +28,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
@@ -139,7 +140,7 @@ class DependencyScanner(BaseScanner):
                     }
 
                     # Determine health
-                    health = self._calculate_dependency_health(metadata)
+                    health = calculate_health_for_entry(self.entry_type, metadata)
 
                     # Path format: python/{source_dir}/{package_name}
                     rel_source = pyproject_path.parent.relative_to(self.root_path)
@@ -422,7 +423,7 @@ class DependencyScanner(BaseScanner):
                         "source_file": str(pkg_path),
                     }
 
-                    health = self._calculate_dependency_health(metadata)
+                    health = calculate_health_for_entry(self.entry_type, metadata)
 
                     # Path format: nodejs/{package_dir}/{dep_name}
                     rel_source = pkg_path.parent.relative_to(self.root_path)
@@ -695,31 +696,6 @@ class DependencyScanner(BaseScanner):
 
         return results
 
-    # -------------------------------------------------------------------------
-    # Health Calculation
-    # -------------------------------------------------------------------------
-
-    def _calculate_dependency_health(self, metadata: dict[str, Any]) -> str:
-        """Calculate health status based on vulnerabilities and outdated status."""
-        vulns = metadata.get("vulnerabilities", {})
-        critical = vulns.get("critical", 0)
-        high = vulns.get("high", 0)
-        medium = vulns.get("medium", 0)
-
-        # Critical or high vulnerabilities = error
-        if critical > 0 or high > 0:
-            return "error"
-
-        # Medium vulnerabilities or significantly outdated = warning
-        if medium > 0:
-            return "warning"
-
-        # Outdated but no vulns = warning
-        if metadata.get("is_outdated", False):
-            return "warning"
-
-        return "healthy"
-
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
-        """Override to use dependency-specific health calculation."""
-        return self._calculate_dependency_health(entry.metadata)
+        """Determine health status for a dependency entry."""
+        return calculate_health_for_entry(self.entry_type, entry.metadata)

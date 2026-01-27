@@ -7,6 +7,48 @@ various criteria (staleness, errors, completeness, etc.).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
+
+HEALTH_CONFIG: dict[str, dict[str, Any]] = {
+    "file": {
+        "bloat_critical": "error",
+        "bloat_warning": "warning",
+        "stale_status": "warning",
+        "health_flags_error": ["has_long_functions", "has_large_classes", "deep_nesting"],
+    },
+    "table": {
+        "empty_table": "warning",
+        "completeness_threshold": 50,
+        "completeness_below": "warning",
+        "freshness_error_days": 30,
+        "freshness_warning_days": 7,
+        "violations_error_threshold": 3,
+        "violations_warning_threshold": 1,
+    },
+    "task": {
+        "success_rate_error": 50,
+        "success_rate_warning": 90,
+        "unknown_schedule": "warning",
+    },
+    "endpoint": {
+        "http_5xx": "error",
+        "http_4xx_not_404": "error",
+        "http_404": "warning",
+        "orphaned": "warning",
+    },
+    "page": {
+        "http_5xx": "error",
+        "http_4xx_not_404": "error",
+        "http_404": "warning",
+        "console_errors": "warning",
+    },
+    "dependency": {
+        "vuln_critical": "error",
+        "vuln_high": "error",
+        "vuln_medium": "warning",
+        "is_outdated": "warning",
+    },
+}
 
 
 def calculate_health(
@@ -61,6 +103,169 @@ def calculate_health(
 
     if warnings:
         return "warning"
+
+    return "healthy"
+
+
+def calculate_health_for_entry(entry_type: str, metadata: dict[str, Any]) -> str:
+    """Calculate health status for an entry using type-specific config.
+
+    Uses HEALTH_CONFIG to apply appropriate thresholds for each entry type.
+
+    Args:
+        entry_type: The type of entry (file, table, task, endpoint, page, dependency)
+        metadata: Entry metadata dictionary
+
+    Returns:
+        Health status: 'healthy', 'warning', 'error', or 'unknown'
+    """
+    config = HEALTH_CONFIG.get(entry_type, {})
+
+    if entry_type == "file":
+        return _calculate_file_health(metadata, config)
+    elif entry_type == "table":
+        return _calculate_table_health(metadata, config)
+    elif entry_type == "task":
+        return _calculate_task_health(metadata, config)
+    elif entry_type == "endpoint":
+        return _calculate_endpoint_health(metadata, config)
+    elif entry_type == "page":
+        return _calculate_page_health(metadata, config)
+    elif entry_type == "dependency":
+        return _calculate_dependency_health(metadata, config)
+    else:
+        return "unknown"
+
+
+def _calculate_file_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for file entries."""
+    if metadata.get("is_directory"):
+        return "healthy"
+
+    bloat = metadata.get("bloat_level")
+    if bloat == "critical":
+        return str(config.get("bloat_critical", "error"))
+    if bloat == "warning":
+        return str(config.get("bloat_warning", "warning"))
+
+    stale = metadata.get("stale_status")
+    if stale == "stale":
+        return str(config.get("stale_status", "warning"))
+
+    health_flags = metadata.get("health_flags", {})
+    error_flags = config.get("health_flags_error", [])
+    for flag in error_flags:
+        if health_flags.get(flag):
+            return "warning"
+
+    return "healthy"
+
+
+def _calculate_table_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for table entries."""
+    row_count = metadata.get("row_count", 0)
+    completeness = metadata.get("completeness_pct", 0)
+    freshness_days = metadata.get("freshness_days")
+    violations = metadata.get("violations", [])
+
+    if row_count == 0:
+        return str(config.get("empty_table", "warning"))
+
+    threshold = int(config.get("completeness_threshold", 50))
+    if completeness < threshold:
+        return str(config.get("completeness_below", "warning"))
+
+    if freshness_days is not None:
+        error_days = int(config.get("freshness_error_days", 30))
+        warning_days = int(config.get("freshness_warning_days", 7))
+        if freshness_days > error_days:
+            return "error"
+        if freshness_days > warning_days:
+            return "warning"
+
+    if violations:
+        error_threshold = int(config.get("violations_error_threshold", 3))
+        warning_threshold = int(config.get("violations_warning_threshold", 1))
+        if len(violations) >= error_threshold:
+            return "error"
+        if len(violations) >= warning_threshold:
+            return "warning"
+
+    return "healthy"
+
+
+def _calculate_task_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for task entries."""
+    success_rate = metadata.get("success_rate_pct")
+    if success_rate is not None:
+        error_threshold = int(config.get("success_rate_error", 50))
+        warning_threshold = int(config.get("success_rate_warning", 90))
+        if success_rate < error_threshold:
+            return "error"
+        if success_rate < warning_threshold:
+            return "warning"
+
+    schedule_type = metadata.get("schedule_type")
+    if schedule_type == "unknown":
+        return str(config.get("unknown_schedule", "warning"))
+
+    return "healthy"
+
+
+def _calculate_endpoint_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for endpoint entries."""
+    http_status = metadata.get("http_status")
+
+    if http_status is not None:
+        if http_status >= 500:
+            return str(config.get("http_5xx", "error"))
+        if http_status >= 400 and http_status != 404:
+            return str(config.get("http_4xx_not_404", "error"))
+        if http_status == 404:
+            return str(config.get("http_404", "warning"))
+
+    depends_on = metadata.get("depends_on_tables", [])
+    called_by = metadata.get("called_by_frontend", [])
+    if not depends_on and not called_by:
+        return str(config.get("orphaned", "warning"))
+
+    return "healthy"
+
+
+def _calculate_page_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for page entries."""
+    http_status = metadata.get("http_status")
+    console_errors = metadata.get("console_errors")
+
+    if http_status is not None:
+        if http_status >= 500:
+            return str(config.get("http_5xx", "error"))
+        if http_status >= 400 and http_status != 404:
+            return str(config.get("http_4xx_not_404", "error"))
+        if http_status == 404:
+            return str(config.get("http_404", "warning"))
+
+    if console_errors is not None and console_errors > 0:
+        return str(config.get("console_errors", "warning"))
+
+    return "healthy"
+
+
+def _calculate_dependency_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for dependency entries."""
+    vulns = metadata.get("vulnerabilities", {})
+    critical = vulns.get("critical", 0)
+    high = vulns.get("high", 0)
+    medium = vulns.get("medium", 0)
+
+    if critical > 0:
+        return str(config.get("vuln_critical", "error"))
+    if high > 0:
+        return str(config.get("vuln_high", "error"))
+    if medium > 0:
+        return str(config.get("vuln_medium", "warning"))
+    if metadata.get("is_outdated", False):
+        return str(config.get("is_outdated", "warning"))
 
     return "healthy"
 

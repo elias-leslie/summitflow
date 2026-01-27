@@ -35,6 +35,7 @@ from typing import Any
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
 from ..constants import SKIP_DIRS
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 from .file_constants import (
     BLOAT_THRESHOLDS,
@@ -633,22 +634,4 @@ class FileScanner(BaseScanner):
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a file entry."""
-        meta = entry.metadata
-
-        # Directories are always healthy
-        if meta.get("is_directory"):
-            return "healthy"
-
-        # Check bloat level
-        bloat = meta.get("bloat_level")
-        if bloat == "critical":
-            return "error"
-        if bloat == "warning":
-            return "warning"
-
-        # Check stale status
-        stale = meta.get("stale_status")
-        if stale == "stale":
-            return "warning"
-
-        return "healthy"
+        return calculate_health_for_entry(self.entry_type, entry.metadata)

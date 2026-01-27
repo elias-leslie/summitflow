@@ -32,6 +32,7 @@ import httpx
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
@@ -260,19 +261,4 @@ class TaskScanner(BaseScanner):
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a task entry."""
-        meta = entry.metadata
-
-        # Check success rate if available
-        success_rate = meta.get("success_rate_pct")
-        if success_rate is not None:
-            if success_rate < 50:
-                return "error"
-            if success_rate < 90:
-                return "warning"
-
-        # Check if task has schedule (unscheduled = unknown)
-        schedule_type = meta.get("schedule_type")
-        if schedule_type == "unknown":
-            return "warning"
-
-        return "healthy"
+        return calculate_health_for_entry(self.entry_type, entry.metadata)

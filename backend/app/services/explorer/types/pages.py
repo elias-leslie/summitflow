@@ -27,6 +27,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
+from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
@@ -189,25 +190,7 @@ class PageScanner(BaseScanner):
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a page entry."""
-        meta = entry.metadata
-
-        # Check if health check data is available
-        http_status = meta.get("http_status")
-        console_errors = meta.get("console_errors")
-
-        if http_status is not None:
-            if http_status >= 500:
-                return "error"
-            if http_status >= 400 and http_status != 404:
-                return "error"
-            if http_status == 404:
-                return "warning"
-
-        if console_errors is not None and console_errors > 0:
-            return "warning"
-
-        # Pages are healthy by default if no errors detected
-        return "healthy"
+        return calculate_health_for_entry(self.entry_type, entry.metadata)
 
 
 def _calculate_level(path: str) -> int:

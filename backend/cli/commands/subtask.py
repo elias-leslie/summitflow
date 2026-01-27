@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Annotated, Any
 
 import typer
@@ -298,13 +299,16 @@ def log_citations_cmd(
     - M:xyz99999   -> used/neutral (no suffix)
 
     Use --none to confirm no memories were needed (requires honest confirmation).
+    NOTE: --none requires interactive TTY - cannot be run in background mode.
+    AI agents: Do NOT run this with --none in background. Either cite memories
+    that helped, or run interactively when --none is genuinely true.
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
         st subtask citations M:abc12345+ G:def67890- M:xyz99999 --subtask 1.1
         st subtask citations M:85bf4635+ --subtask 2.1  # Uses active context
-        st subtask citations --none --subtask 1.1      # Confirm no memories needed
+        st subtask citations --none --subtask 1.1      # Interactive only!
     """
     from ..context import require_task_id
 
@@ -324,6 +328,13 @@ def log_citations_cmd(
     client = STClient()
 
     if none:
+        if not sys.stdin.isatty():
+            output_error(
+                "--none requires interactive confirmation (cannot run in background).\n"
+                "If no memories helped, run interactively: st subtask citations --none -s X.Y\n"
+                "If memories DID help, cite them: st subtask citations M:abc123+ -s X.Y"
+            )
+            raise typer.Exit(1)
         confirm = typer.prompt(
             "Honestly: no memories helped with this task? [y/N]",
             default="n",
