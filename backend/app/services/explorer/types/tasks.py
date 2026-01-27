@@ -12,12 +12,7 @@ Metadata schema (per architecture doc):
   "last_run_at": "2025-12-18T10:00:00Z",
   "success_count_7d": 1440,
   "failure_count_7d": 2,
-  "success_rate_pct": 99.8,
-  "avg_duration_ms": 1200,
-  "reads_tables": ["orders", "payments"],
-  "writes_tables": ["payment_logs"],
-  "depends_on_tasks": [],
-  "called_by": ["api.process_order"]
+  "success_rate_pct": 99.8
 }
 """
 
@@ -25,15 +20,18 @@ from __future__ import annotations
 
 import contextlib
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from sqlalchemy import create_engine, text
 
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
+from .database import get_db_url_for_project
 
 logger = get_logger(__name__)
 
@@ -74,6 +72,63 @@ class TaskScanner(BaseScanner):
         self.root_path: Path | None = None
         self.backend_dir: str = "backend"
         self.beat_schedule_endpoint: str | None = None
+        self._task_stats: dict[str, dict[str, Any]] = {}
+
+    def _fetch_task_stats(self) -> dict[str, dict[str, Any]]:
+        """Fetch task execution stats from celery_taskmeta for the last 7 days.
+
+        Returns dict mapping task_name -> {last_run_at, success_count, failure_count, success_rate_pct}
+        """
+        db_url = get_db_url_for_project(self.project_id)
+        if not db_url:
+            logger.debug(f"No DB URL for {self.project_id}, skipping task stats")
+            return {}
+
+        stats: dict[str, dict[str, Any]] = {}
+        seven_days_ago = datetime.now(UTC) - timedelta(days=7)
+
+        try:
+            engine = create_engine(db_url)
+            with engine.connect() as conn:
+                result = conn.execute(
+                    text("""
+                        SELECT
+                            name,
+                            MAX(date_done) as last_run,
+                            COUNT(*) FILTER (WHERE status = 'SUCCESS') as success_count,
+                            COUNT(*) FILTER (WHERE status = 'FAILURE') as failure_count,
+                            COUNT(*) as total_count
+                        FROM celery_taskmeta
+                        WHERE date_done >= :since AND name IS NOT NULL
+                        GROUP BY name
+                    """),
+                    {"since": seven_days_ago},
+                )
+
+                for row in result:
+                    task_name = row[0]
+                    last_run = row[1]
+                    success_count = row[2]
+                    failure_count = row[3]
+                    total_count = row[4]
+
+                    success_rate = (
+                        round(success_count / total_count * 100, 1) if total_count > 0 else None
+                    )
+
+                    stats[task_name] = {
+                        "last_run_at": last_run.isoformat() if last_run else None,
+                        "success_count_7d": success_count,
+                        "failure_count_7d": failure_count,
+                        "success_rate_pct": success_rate,
+                    }
+
+            logger.info(f"Fetched stats for {len(stats)} tasks from celery_taskmeta")
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch task stats: {e}")
+
+        return stats
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan Celery beat schedule and return task entries."""
@@ -104,6 +159,9 @@ class TaskScanner(BaseScanner):
         if not beat_schedule:
             logger.warning(f"No beat schedule found for {self.project_id}")
             return []
+
+        # Fetch execution stats from celery_taskmeta
+        self._task_stats = self._fetch_task_stats()
 
         entries: list[ExplorerEntryCreate] = []
 
@@ -224,6 +282,9 @@ class TaskScanner(BaseScanner):
 
         category = categorize_task(task_name)
 
+        # Get stats from celery_taskmeta (match by task path)
+        task_stats = self._task_stats.get(task_path, {})
+
         return ExplorerEntryCreate(
             path=task_name,
             name=function_name,
@@ -235,14 +296,10 @@ class TaskScanner(BaseScanner):
                 "schedule_value": schedule_value,
                 "schedule_human": schedule_human,
                 "category": category,
-                "last_run_at": None,
-                "success_count_7d": 0,
-                "failure_count_7d": 0,
-                "success_rate_pct": None,
-                "reads_tables": [],
-                "writes_tables": [],
-                "depends_on_tasks": [],
-                "called_by": [],
+                "last_run_at": task_stats.get("last_run_at"),
+                "success_count_7d": task_stats.get("success_count_7d", 0),
+                "failure_count_7d": task_stats.get("failure_count_7d", 0),
+                "success_rate_pct": task_stats.get("success_rate_pct"),
             },
         )
 
