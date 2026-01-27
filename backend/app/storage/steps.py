@@ -260,16 +260,35 @@ def _parse_expected(expected: str | None) -> tuple[str, str | None]:
         (check_type, value) where check_type is one of:
         - "exit_code": Check returncode == 0 (no output check)
         - "contains": Check value in output
+
+    Exit code patterns (all mean "just check exit code = 0"):
+        - "exit code 0", "exit code: 0"
+        - "exit 0", "exit: 0", "exit:0"
+        - "exit_code", "exitcode"
+        - "success", "ok", "pass"
+        - "lint:ok", "types:ok", "test:ok"
     """
     if not expected:
         return ("exit_code", None)
 
     expected_lower = expected.lower().strip()
 
-    if expected_lower.startswith("exit code"):
-        return ("exit_code", None)
-
-    if expected_lower in ("lint:ok", "types:ok", "test:ok"):
+    # Exit code patterns - just check returncode == 0
+    exit_code_patterns = (
+        "exit code",  # "exit code 0", "exit code: 0"
+        "exit 0",
+        "exit: 0",
+        "exit:0",
+        "exit_code",
+        "exitcode",
+        "success",
+        "ok",
+        "pass",
+        "lint:ok",
+        "types:ok",
+        "test:ok",
+    )
+    if any(expected_lower.startswith(p) or expected_lower == p for p in exit_code_patterns):
         return ("exit_code", None)
 
     if expected_lower.startswith("contains:"):
