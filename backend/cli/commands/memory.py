@@ -126,7 +126,7 @@ def _format_list_compact(result: dict[str, Any]) -> None:
       uuid name content_preview
     """
     episodes = result.get("episodes", [])
-    cursor = result.get("next_cursor")
+    cursor = result.get("cursor")
 
     cursor_str = f"cursor={cursor[:20]}..." if cursor else "cursor=none"
     print(f"EPISODES[{len(episodes)}]:{cursor_str}")
@@ -154,7 +154,7 @@ def _format_search_compact(result: dict[str, Any]) -> None:
 
     for r in results[:20]:  # Limit output
         uuid = r.get("uuid", "?")[:8]
-        score = r.get("score", 0.0)
+        score = r.get("relevance_score", 0.0)
         content = r.get("content", "-")[:50]
         if len(content) == 50:
             content += "..."
