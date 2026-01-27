@@ -495,6 +495,10 @@ class BatchTaskCreate(BaseModel):
     subtasks: list[SubtaskCreate] | None = Field(
         default=None, description="Nested subtasks to create with the task"
     )
+    autonomous: bool = Field(
+        default=False,
+        description="Enable autonomous execution for this task",
+    )
 
 
 class BatchTaskRequest(BaseModel):

@@ -642,6 +642,7 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         task_type=task.task_type,
         parent_task_id=task.parent_task_id,
         complexity=task.complexity,
+        autonomous=task.autonomous,
     )
 
     # Save spirit fields to task_spirit table
@@ -698,6 +699,7 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                 task_type=item.task_type,
                 parent_task_id=item.parent_task_id,
                 complexity=item.complexity,
+                autonomous=item.autonomous,
             )
 
             # Save spirit fields to task_spirit table
