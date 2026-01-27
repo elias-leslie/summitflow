@@ -13,6 +13,7 @@ from .commands import (
     deps,
     git,
     health,
+    memory,
     projects,
     sessions,
     step,
@@ -133,6 +134,7 @@ app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(health.app, name="health")
+app.add_typer(memory.app, name="memory")
 
 
 @app.callback()
