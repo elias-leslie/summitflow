@@ -398,7 +398,7 @@ class TaskListResponse(BaseModel):
 class StartTaskRequest(BaseModel):
     """Request model for starting task execution."""
 
-    agent_type: str  # claude or gemini
+    agent_type: Literal["claude", "gemini"]
     model: str | None = None
     allow_delegation: bool = False
 

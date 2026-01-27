@@ -171,7 +171,7 @@ def _check_cache_health() -> ComponentHealth:
     start_time = time.time()
     try:
         # Connect to Redis DB 1 (same as used by Celery and rate limiter)
-        r = redis.from_url(f"{REDIS_URL}/1")
+        r = redis.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
         r.ping()
         response_time_ms = (time.time() - start_time) * 1000
         return ComponentHealth(

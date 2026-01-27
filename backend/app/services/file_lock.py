@@ -155,7 +155,7 @@ class FileLock:
         return self
 
     def __exit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
+        self, _exc_type: type[BaseException] | None, _exc_val: BaseException | None, _exc_tb: object
     ) -> None:
         """Context manager exit."""
         self._release_lock()

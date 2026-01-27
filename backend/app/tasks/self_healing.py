@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 MAX_TASKS_PER_RUN = 10
 
 
-@shared_task(name="summitflow.monitor_browser_errors")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.monitor_browser_errors")
 def monitor_browser_errors(
     project_id: str = "summitflow",
     max_tasks: int = MAX_TASKS_PER_RUN,
@@ -105,7 +105,7 @@ def monitor_browser_errors(
     return results
 
 
-@shared_task(name="summitflow.monitor_systemd_errors")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.monitor_systemd_errors")
 def monitor_systemd_errors(
     project_id: str = "summitflow",
     since: str = "5 minutes ago",
@@ -190,7 +190,7 @@ DEFAULT_MAX_ERRORS = 20
 DEFAULT_ENABLED = True
 
 
-@shared_task(name="summitflow.orchestrate_self_healing")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.orchestrate_self_healing")
 def orchestrate_self_healing(
     max_errors: int = DEFAULT_MAX_ERRORS,
     enabled: bool = DEFAULT_ENABLED,

@@ -6,12 +6,15 @@ import asyncio
 import os
 import subprocess
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
+if TYPE_CHECKING:
+    from app.services.worktree_manager import WorktreeManager
+
 from ..config import get_config
-from ..context import get_active_context, require_task_id
+from ..context import require_task_id
 from ..output import output_error, output_json, output_success
 
 app = typer.Typer(help="Git worktree management")
@@ -198,7 +201,7 @@ def prune(
         raise typer.Exit(1) from None
 
 
-def _get_worktree_manager() -> "WorktreeManager":
+def _get_worktree_manager() -> WorktreeManager:
     """Get WorktreeManager instance for current project."""
     from app.services.worktree_manager import WorktreeManager
 

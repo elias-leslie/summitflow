@@ -144,7 +144,7 @@ celery_app.conf.beat_schedule = {
 
 
 # Configure Celery logging
-@after_setup_logger.connect  # type: ignore[untyped-decorator]
+@after_setup_logger.connect
 def setup_celery_logger(logger: logging.Logger, *args: Any, **kwargs: Any) -> None:
     """Configure Celery logger with proper formatting.
 
@@ -160,7 +160,7 @@ def setup_celery_logger(logger: logging.Logger, *args: Any, **kwargs: Any) -> No
         )
 
 
-@after_setup_task_logger.connect  # type: ignore[untyped-decorator]
+@after_setup_task_logger.connect
 def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) -> None:
     """Configure Celery task logger with proper formatting."""
     log_level = _parse_log_level(os.getenv("LOG_LEVEL"))

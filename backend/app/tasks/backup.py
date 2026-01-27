@@ -27,7 +27,7 @@ BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
 RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
 
 
-@shared_task(name="summitflow.create_backup", bind=True)  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.create_backup", bind=True)
 def create_backup(
     self: Any,
     project_id: str,
@@ -157,7 +157,7 @@ def create_backup(
         return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
 
-@shared_task(name="summitflow.restore_backup", bind=True)  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.restore_backup", bind=True)
 def restore_backup(
     self: Any,
     project_id: str,
@@ -259,7 +259,7 @@ def restore_backup(
         return {"status": "failed", "error": str(e)}
 
 
-@shared_task(name="summitflow.run_scheduled_backups")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.run_scheduled_backups")
 def run_scheduled_backups() -> dict[str, Any]:
     """Check and run due scheduled backups.
 

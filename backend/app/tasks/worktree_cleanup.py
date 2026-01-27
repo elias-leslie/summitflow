@@ -20,7 +20,7 @@ DEFAULT_WARNING_THRESHOLD = 10
 DEFAULT_CRITICAL_THRESHOLD = 25
 
 
-@celery_app.task(name="summitflow.cleanup_worktrees")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.cleanup_worktrees")
 def cleanup_worktrees(
     project_id: str | None = None,
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
@@ -91,7 +91,7 @@ def cleanup_worktrees(
     return results
 
 
-@celery_app.task(name="summitflow.check_worktree_thresholds")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.check_worktree_thresholds")
 def check_worktree_thresholds(
     warning_threshold: int = DEFAULT_WARNING_THRESHOLD,
     critical_threshold: int = DEFAULT_CRITICAL_THRESHOLD,

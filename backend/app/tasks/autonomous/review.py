@@ -11,8 +11,7 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
-from celery import Task as CeleryTask
-from celery import shared_task
+from celery import Task, shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
@@ -22,8 +21,8 @@ from ...storage import tasks as task_store
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.ai_review")  # type: ignore[untyped-decorator]
-def ai_review(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]:
+@shared_task(bind=True, name="autonomous.ai_review")
+def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Run AI review on completed task using reviewer agent (Opus).
 
     Reviews the git diff and provides approval/rejection verdict.

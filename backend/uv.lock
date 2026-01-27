@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agent-hub-client"
-version = "0.1.0"
+version = "0.2.0"
 source = { directory = "../../agent-hub/packages/agent-hub-client" }
 dependencies = [
     { name = "httpx" },
@@ -160,6 +160,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/9d/3d13596519cfa7207a6f9834f4b082554845eb3cd2684b5f8535d50c7c44/celery-5.6.2.tar.gz", hash = "sha256:4a8921c3fcf2ad76317d3b29020772103581ed2454c4c042cc55dcc43585009b", size = 1718802, upload-time = "2026-01-04T12:35:58.012Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/bd/9ecd619e456ae4ba73b6583cc313f26152afae13e9a82ac4fe7f8856bfd1/celery-5.6.2-py3-none-any.whl", hash = "sha256:3ffafacbe056951b629c7abcf9064c4a2366de0bdfc9fdba421b97ebb68619a5", size = 445502, upload-time = "2026-01-04T12:35:55.894Z" },
+]
+
+[[package]]
+name = "celery-types"
+version = "0.24.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/25/2276a1f00f8ab9fc88128c939333933a24db7df1d75aa57ecc27b7dd3a22/celery_types-0.24.0.tar.gz", hash = "sha256:c93fbcd0b04a9e9c2f55d5540aca4aa1ea4cc06a870c0c8dee5062fdd59663fe", size = 33148, upload-time = "2025-12-23T17:16:30.847Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/7e/3252cba5f5c9a65a3f52a69734d8e51e023db8981022b503e8183cf0225e/celery_types-0.24.0-py3-none-any.whl", hash = "sha256:a21e04681e68719a208335e556a79909da4be9c5e0d6d2fd0dd4c5615954b3fd", size = 60473, upload-time = "2025-12-23T17:16:29.89Z" },
 ]
 
 [[package]]
@@ -2793,12 +2805,14 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "celery-types" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "types-jsonschema" },
 ]
 
 [package.metadata]
@@ -2806,6 +2820,7 @@ requires-dist = [
     { name = "agent-hub-client", directory = "../../agent-hub/packages/agent-hub-client" },
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "celery", specifier = ">=5.4.0" },
+    { name = "celery-types", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.17" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "google-adk", specifier = ">=1.21.0" },
@@ -2827,6 +2842,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "typer", specifier = ">=0.15.0" },
+    { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.26.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 provides-extras = ["dev"]
@@ -2853,6 +2869,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
+]
+
+[[package]]
+name = "types-jsonschema"
+version = "4.26.0.20260109"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "referencing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/03/a1509b0c13fc7a1fca1494c84bde8cce8a5c0582b6255b9640ebd3034017/types_jsonschema-4.26.0.20260109.tar.gz", hash = "sha256:340fe91e6ea517900d6ababb6262a86c176473b5bf8455b96e85a89e3cfb5daa", size = 15886, upload-time = "2026-01-09T03:21:45.464Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/d6/3db3134f35f1e4bf9a13517d759c1ae64086eddb8ad0047caee140021e64/types_jsonschema-4.26.0.20260109-py3-none-any.whl", hash = "sha256:e0276640d228732fb75d883905d607359b24a4ff745ba7f9a5f50e6fda891926", size = 15923, upload-time = "2026-01-09T03:21:43.828Z" },
 ]
 
 [[package]]

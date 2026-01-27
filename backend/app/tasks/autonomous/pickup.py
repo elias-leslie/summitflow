@@ -119,7 +119,7 @@ def _determine_next_stage(task_id: str) -> str:
     return "unknown"
 
 
-@celery_app.task(name="summitflow.autonomous_work_pickup")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.autonomous_work_pickup")
 def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     """Pick up queued autonomous tasks and dispatch to appropriate pipeline stage.
 
@@ -177,7 +177,7 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     return {"project_id": project_id, "dispatched": total, "breakdown": dispatched}
 
 
-@celery_app.task(name="summitflow.review_pending_tasks")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.review_pending_tasks")
 def review_pending_tasks(project_id: str) -> dict[str, Any]:
     """Pick up tasks awaiting AI review and dispatch to reviewer.
 

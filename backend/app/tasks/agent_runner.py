@@ -17,7 +17,7 @@ from ..storage import log_task_event, tasks
 logger = get_logger(__name__)
 
 
-@shared_task(  # type: ignore[untyped-decorator]
+@shared_task(
     name="summitflow.run_agent_task",
     bind=True,
     max_retries=3,

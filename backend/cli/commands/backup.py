@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -17,14 +17,15 @@ def _format_size(size_bytes: int | None) -> str:
     """Format bytes to human readable."""
     if size_bytes is None or size_bytes == 0:
         return "-"
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f}{unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f}TB"
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
 
 
-def _format_compact_backup(backup: dict) -> str:
+def _format_compact_backup(backup: dict[str, Any]) -> str:
     """Format backup as compact one-liner.
 
     Format: <id> <status:9> <size:8> <created> <note:30>
@@ -37,7 +38,7 @@ def _format_compact_backup(backup: dict) -> str:
     return f"{backup_id} {status} {size} {created} {note}"
 
 
-def _output_backups(backups: list[dict], total: int) -> None:
+def _output_backups(backups: list[dict[str, Any]], total: int) -> None:
     """Output backup list."""
     if is_compact():
         print(f"BACKUPS[{total}]")
@@ -63,7 +64,7 @@ def list_backups(
     client = STClient()
 
     try:
-        params = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status
         result = client.get(
@@ -293,7 +294,7 @@ def backup_schedule(
                 f"{client.base_url}/projects/{config.project_id}/backups/schedule",
                 timeout=30.0,
             )
-            current = {}
+            current: dict[str, Any] = {}
             if current_response.status_code == 200 and current_response.text != "null":
                 current = current_response.json() or {}
 

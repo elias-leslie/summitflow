@@ -14,7 +14,7 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
-@shared_task(  # type: ignore[untyped-decorator]
+@shared_task(
     name="enrich_task_async",
     bind=True,
     autoretry_for=(Exception,),

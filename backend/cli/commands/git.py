@@ -153,7 +153,7 @@ def _format_compact_repo(repo: dict[str, Any]) -> str:
 
 @app.command()
 def status(
-    all_repos: Annotated[
+    _all_repos: Annotated[
         bool,
         typer.Option("--all", "-a", help="Show all known managed repos"),
     ] = True,
@@ -185,7 +185,7 @@ def status(
 
 @app.command()
 def sync(
-    pull_only: Annotated[
+    _pull_only: Annotated[
         bool,
         typer.Option("--pull-only", help="Only pull, don't push (default)"),
     ] = True,

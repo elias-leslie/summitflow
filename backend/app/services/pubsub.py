@@ -99,7 +99,7 @@ def publish_ws_event(
             logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
 
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         channel = get_channel_name(task_id)
         message = json.dumps(event)
         r.publish(channel, message)
@@ -126,7 +126,7 @@ async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, Any]]:
     pubsub: aioredis.client.PubSub | None = None
 
     try:
-        r = await aioredis.from_url(REDIS_URL)
+        r = await aioredis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         pubsub = r.pubsub()
         channel = get_channel_name(task_id)
 

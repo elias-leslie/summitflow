@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -39,7 +39,7 @@ def pass_step(
         client.update_step(task_id, subtask_id, step_number, passes=True)
     except APIError as e:
         # Check if this is a verification failure
-        detail = e.detail if isinstance(e.detail, dict) else {}
+        detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {}
         if detail.get("verification_failed"):
             # TOON-efficient verification failure output
             exit_code = detail.get("exit_code", 1)

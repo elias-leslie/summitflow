@@ -547,7 +547,7 @@ def export(
         subtasks = subtask_data.get("subtasks", [])
 
         # Criteria system removed - verification now at step level
-        criteria: list[dict] = []
+        criteria: list[dict[str, Any]] = []
 
         # Fetch dependencies
         deps = client.list_dependencies(task_id)
@@ -681,7 +681,8 @@ def update(
     client = STClient()
 
     # Build update data
-    updates: dict = {}
+    updates: dict[str, Any] = {}
+    task: dict[str, Any] | None = None
     status_to_update = status  # Handle status with other updates, not separately
 
     if priority is not None:
@@ -793,8 +794,6 @@ def update(
     if not updates and not status_to_update:
         output_error("No updates specified")
         raise typer.Exit(1)
-
-    task = None
     # Apply field updates first
     if updates:
         try:
@@ -1034,7 +1033,7 @@ def bug(
         if label not in all_labels:
             all_labels.append(label)
 
-    data: dict = {
+    data: dict[str, Any] = {
         "title": title,
         "task_type": "bug",
         "priority": priority,

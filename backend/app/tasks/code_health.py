@@ -26,7 +26,7 @@ from ..storage import code_health_lists
 logger = get_logger(__name__)
 
 
-@shared_task(  # type: ignore[untyped-decorator]
+@shared_task(
     name="summitflow.daily_code_health_scan",
     bind=True,
     autoretry_for=(Exception,),
@@ -189,7 +189,7 @@ def daily_code_health_scan(
     return summary
 
 
-@shared_task(  # type: ignore[untyped-decorator]
+@shared_task(
     name="summitflow.weekly_deep_scan",
     bind=True,
     autoretry_for=(Exception,),

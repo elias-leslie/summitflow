@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 INTER_PROJECT_DELAY = 5
 
 
-@shared_task(name="summitflow.scan_all_projects")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.scan_all_projects")
 def scan_all_projects(
     project_id: str | None = None,
     entry_type: str | None = None,
@@ -337,7 +337,7 @@ def _error_issue_still_exists(
     return True
 
 
-@shared_task(name="summitflow.check_resolved_issues")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.check_resolved_issues")
 def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[str, Any]:
     """Celery task to check for resolved issues after a scan.
 
@@ -372,7 +372,7 @@ def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[s
 HEALTH_CHECK_DELAY = 1
 
 
-@shared_task(name="summitflow.run_page_health_checks")  # type: ignore[untyped-decorator]
+@shared_task(name="summitflow.run_page_health_checks")
 def run_page_health_checks(project_id: str) -> dict[str, Any]:
     """Run health checks on all page entries for a project.
 

@@ -8,8 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from celery import Task as CeleryTask
-from celery import shared_task
+from celery import Task, shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
@@ -22,8 +21,8 @@ from ...storage.task_spirit import create_task_spirit, get_task_spirit
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.create_plan")  # type: ignore[untyped-decorator]
-def create_plan(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]:
+@shared_task(bind=True, name="autonomous.create_plan")
+def create_plan(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Create an implementation plan using the planner agent.
 
     Uses Agent Hub run_agent() with the planner agent to:

@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import Task as CeleryTask
-from celery import shared_task
+from celery import Task, shared_task
 
 from ...constants import (
     QA_SUPERVISOR_STUCK_THRESHOLD,
@@ -48,9 +47,9 @@ def check_escalation_needed(
     }
 
 
-@shared_task(bind=True, name="autonomous.supervisor_guidance")  # type: ignore[untyped-decorator]
+@shared_task(bind=True, name="autonomous.supervisor_guidance")
 def supervisor_guidance(
-    self: CeleryTask,
+    self: Task[..., dict[str, Any]],
     task_id: str,
     subtask_id: str,
     issue_description: str,
@@ -186,9 +185,9 @@ Please review and approve a direction to proceed."""
 
 
 def check_worker_stuck(
-    task_id: str,
-    subtask_id: str,
-    issue_hash: str,
+    _task_id: str,
+    _subtask_id: str,
+    _issue_hash: str,
     current_failures: int,
 ) -> tuple[bool, str]:
     """Check if worker is stuck on the same issue.

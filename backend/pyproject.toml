@@ -68,7 +68,6 @@ unfixable = ["F401"]
 python_version = "3.12"
 strict = true
 warn_unused_ignores = true
-disable_error_code = ["no-untyped-call"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -77,26 +76,3 @@ module = [
 ]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = ["app.tasks", "app.tasks.*"]
-disable_error_code = ["import-untyped", "unused-ignore", "type-arg"]
-
-[[tool.mypy.overrides]]
-module = ["app.api.tasks", "app.api.tasks.*"]
-disable_error_code = ["import-untyped", "arg-type", "unused-ignore"]
-
-[[tool.mypy.overrides]]
-module = ["cli", "cli.*"]
-disable_error_code = ["no-any-return", "return-value", "assignment", "type-arg", "var-annotated", "arg-type", "type-var"]
-
-[[tool.mypy.overrides]]
-module = ["app.celery_app"]
-disable_error_code = ["import-untyped", "unused-ignore"]
-
-[[tool.mypy.overrides]]
-module = ["app.api.explorer"]
-disable_error_code = ["import-untyped"]
-
-[[tool.mypy.overrides]]
-module = ["app.services", "app.services.*"]
-disable_error_code = ["import-untyped"]

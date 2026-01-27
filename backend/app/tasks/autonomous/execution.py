@@ -10,8 +10,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from celery import Task as CeleryTask
-from celery import shared_task
+from celery import Task, shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
@@ -19,6 +18,7 @@ from ...services.pubsub import publish_ws_event
 from ...services.worktree_manager import get_worktree_manager
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from ...storage.events import EventVisibility
 from ...storage.projects import get_project_root_path
 from ...storage.steps import get_steps_for_subtask, update_step_passes
 from ...storage.subtasks import (
@@ -58,7 +58,7 @@ def _emit_log(
     source: str = "execution",
     *,
     project_id: str | None = None,
-    visibility: str = "user",
+    visibility: EventVisibility = "user",
 ) -> None:
     """Emit a log event via Redis pub/sub."""
     from ...storage.events import EventLevel
@@ -83,7 +83,7 @@ def _emit_log(
         trace_id=task_id,
         source=source,
         level=level_map.get(level, "info"),
-        visibility=visibility,  # type: ignore[arg-type]
+        visibility=visibility,
     )
 
 
@@ -179,8 +179,8 @@ def _compute_issue_id(error: str) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()[:8]
 
 
-@shared_task(bind=True, name="autonomous.start_execution")  # type: ignore[untyped-decorator]
-def start_execution(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]:
+@shared_task(bind=True, name="autonomous.start_execution")
+def start_execution(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Start autonomous execution of a task.
 
     Executes subtasks in order with fresh context per subtask.

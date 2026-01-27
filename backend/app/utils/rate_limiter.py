@@ -43,7 +43,7 @@ def get_global_extraction_settings() -> GlobalExtractionSettings:
         GlobalExtractionSettings with enabled and rpm_limit
     """
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         data = r.get(GLOBAL_EXTRACTION_KEY)
         if data:
             settings = json.loads(data)
@@ -77,7 +77,7 @@ def set_global_extraction_settings(
         current["rpm_limit"] = rpm_limit
 
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         r.set(GLOBAL_EXTRACTION_KEY, json.dumps(current))
         logger.info(
             "global_extraction_settings_updated",
@@ -144,7 +144,7 @@ def check_extraction_rate() -> RateLimitResult:
         )
 
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         # Global key - not per-project
         key = f"{RATE_LIMIT_PREFIX}global"
         now = time.time()
@@ -229,7 +229,7 @@ def get_extraction_metrics() -> dict[str, int]:
         Dict with current_minute_count and requests_today
     """
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         key = f"{RATE_LIMIT_PREFIX}global"
         now = time.time()
         window_start = now - 60
@@ -259,7 +259,7 @@ def increment_daily_counter() -> None:
     Resets at midnight UTC.
     """
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         daily_key = f"{RATE_LIMIT_PREFIX}daily:global"
 
         # Increment and set expiry to end of day
@@ -318,7 +318,7 @@ def get_cleanup_settings() -> CleanupSettings:
         CleanupSettings with level and derived thresholds
     """
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         data = r.get(CLEANUP_SETTINGS_KEY)
         if data:
             settings = json.loads(data)
@@ -361,7 +361,7 @@ def set_cleanup_settings(level: int) -> CleanupSettings:
     }
 
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
         r.set(CLEANUP_SETTINGS_KEY, json.dumps(settings))
         logger.info(
             "cleanup_settings_updated",

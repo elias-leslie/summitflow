@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import httpx
 import typer
@@ -63,7 +63,7 @@ def _agent_hub_request(
                 output_error(f"API error ({response.status_code}): {detail}")
                 raise typer.Exit(1) from None
 
-            return response.json()
+            return cast(dict[str, Any], response.json())
     except httpx.ConnectError:
         output_error("Cannot connect to Agent Hub at localhost:8003")
         raise typer.Exit(1) from None

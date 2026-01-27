@@ -11,6 +11,7 @@ Handles:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -62,7 +63,7 @@ def _get_verification_cwd(project_id: str, task_id: str) -> str | None:
         return None
 
     # Check if worktree exists for this task
-    manager = WorktreeManager(project_root)
+    manager = WorktreeManager(Path(project_root))
     worktree_path = manager.get_worktree_path(project_id, task_id)
 
     if worktree_path.exists():

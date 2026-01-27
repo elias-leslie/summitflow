@@ -117,7 +117,8 @@ app = typer.Typer(
 
 # Register task commands at root level
 for cmd in tasks.app.registered_commands:
-    app.command(name=cmd.name)(cmd.callback)
+    if cmd.callback is not None:
+        app.command(name=cmd.name)(cmd.callback)
 
 # Also register task as a subcommand group for `st task verify` / `st task import`
 app.add_typer(tasks.app, name="task", hidden=True)

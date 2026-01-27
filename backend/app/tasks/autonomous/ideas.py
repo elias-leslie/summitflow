@@ -112,7 +112,7 @@ def update_idea_status(idea_id: str, status: str) -> None:
         conn.commit()
 
 
-@celery_app.task(name="summitflow.process_crowdsourced_ideas")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.process_crowdsourced_ideas")
 def process_crowdsourced_ideas(project_id: str) -> dict[str, Any]:
     """Process approved crowdsourced ideas for a project.
 

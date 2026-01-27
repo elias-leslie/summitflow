@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -139,7 +139,7 @@ def create_subtask(
     task_id = require_task_id(task_id)
 
     # Validate steps - must have verify_command and expected_output
-    final_steps: list[dict] | list[str] | None = None
+    final_steps: list[dict[str, Any]] | list[str] | None = None
 
     if steps_json:
         try:
@@ -187,7 +187,7 @@ def create_subtask(
             subtask_id=subtask_id,
             description=description,
             phase=phase,
-            steps=final_steps,
+            steps=cast(list[str | dict[str, Any]] | None, final_steps),
         )
     except APIError as e:
         handle_api_error(e)
@@ -341,6 +341,7 @@ def log_citations_cmd(
             output_error("Failed to acknowledge")
             raise typer.Exit(1)
     else:
+        assert citations is not None
         try:
             result = client.log_citations(task_id, subtask_id, citations)
         except APIError as e:

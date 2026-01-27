@@ -215,6 +215,9 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
 
     Worktrees don't include virtualenvs, so we need to point to the main repo.
 
+    For multi-project tasks, if the command explicitly `cd`s to a different
+    project's directory, we use that project's venv instead.
+
     Args:
         cmd: Command that may contain .venv references
         cwd: Working directory (may be worktree or main repo)
@@ -228,13 +231,24 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
     if not cwd:
         return cmd
 
+    from .projects import get_project_root_path
+
+    # Check if command explicitly cd's to a different project's backend
+    # Pattern: cd /home/kasadis/<project>/backend or cd /home/kasadis/<project>
+    cd_match = re.search(r"cd\s+(/home/kasadis/([^/\s]+)(?:/backend)?)\s*&&", cmd)
+    if cd_match:
+        explicit_project = cd_match.group(2)
+        explicit_repo = get_project_root_path(explicit_project)
+        if explicit_repo:
+            explicit_venv = Path(explicit_repo) / "backend" / ".venv"
+            if explicit_venv.exists():
+                return cmd.replace(".venv/bin/", f"{explicit_venv}/bin/")
+
     # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
     worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", cwd)
     if worktree_match:
         project_id = worktree_match.group(1)
         # Look up main repo path
-        from .projects import get_project_root_path
-
         main_repo = get_project_root_path(project_id)
         if main_repo:
             main_backend_venv = Path(main_repo) / "backend" / ".venv"

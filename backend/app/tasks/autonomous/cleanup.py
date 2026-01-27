@@ -13,7 +13,7 @@ from app.storage import tasks as task_store
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="summitflow.reset_expired_task_claims")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.reset_expired_task_claims")
 def reset_expired_task_claims() -> dict[str, int | str]:
     """Reset tasks with expired claim locks.
 
@@ -37,7 +37,7 @@ def reset_expired_task_claims() -> dict[str, int | str]:
         return {"error": str(e), "reset_count": 0}
 
 
-@celery_app.task(name="summitflow.cleanup_orphaned_worktrees")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.cleanup_orphaned_worktrees")
 def cleanup_orphaned_worktrees(max_age_hours: int = 24) -> dict[str, Any]:
     """Clean up orphaned worktrees that are older than max_age_hours.
 

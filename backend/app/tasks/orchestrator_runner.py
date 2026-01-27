@@ -138,7 +138,7 @@ def _result_to_dict(result: OrchestrationResult) -> dict[str, Any]:
     }
 
 
-@celery_app.task(  # type: ignore[untyped-decorator]
+@celery_app.task(
     name="summitflow.execute_orchestrator",
     bind=True,
     max_retries=1,

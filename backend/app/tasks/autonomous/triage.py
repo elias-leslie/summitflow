@@ -8,8 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from celery import Task as CeleryTask
-from celery import shared_task
+from celery import Task, shared_task
 
 from ...constants import AGENT_IDEA_INTAKE
 from ...logging_config import get_logger
@@ -21,8 +20,8 @@ from ...storage.task_spirit import create_task_spirit
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.triage_idea")  # type: ignore[untyped-decorator]
-def triage_idea(self: CeleryTask, task_id: str, project_id: str) -> dict[str, Any]:
+@shared_task(bind=True, name="autonomous.triage_idea")
+def triage_idea(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Triage an idea task using the idea-intake agent.
 
     Uses Agent Hub complete() with the idea-intake agent to assess:

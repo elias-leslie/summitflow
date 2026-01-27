@@ -290,7 +290,7 @@ def escalate_to_human(
         return None
 
 
-def _read_file_content(file_path: Path, context_lines: int = 10) -> str | None:
+def _read_file_content(file_path: Path, _context_lines: int = 10) -> str | None:
     """Read file content with surrounding context.
 
     Args:

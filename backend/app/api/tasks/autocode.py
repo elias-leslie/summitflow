@@ -154,8 +154,8 @@ def start_autocode(
         health = qcr_store.get_project_health_summary(conn, project_id)
         if not health["overall_pass"] and health["total_unfixed"] > 0:
             # Auto-trigger fix agent
-            from ..services.quality_gate import fix_unfixed_errors
-            from ..services.quality_gate.test_fix_agent import fix_failing_tests
+            from app.services.quality_gate import fix_unfixed_errors
+            from app.services.quality_gate.test_fix_agent import fix_failing_tests
 
             logger.info(
                 "quality_gate_auto_fix_triggered",

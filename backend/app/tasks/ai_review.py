@@ -815,7 +815,7 @@ def _auto_merge_pr(task_id: str, pr_url: str, project_path: Path) -> bool:
         return False
 
 
-@celery_app.task(  # type: ignore[untyped-decorator]
+@celery_app.task(
     name="summitflow.review_pull_request",
     bind=True,
     max_retries=3,

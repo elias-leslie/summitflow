@@ -18,7 +18,7 @@ from app.storage.task_spirit import approve_plan, create_task_spirit
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="summitflow.generate_tasks_from_scan")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.generate_tasks_from_scan")
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results.
 
@@ -208,7 +208,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_bug_tasks")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.generate_bug_tasks")
 def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     """Generate bug tasks from runtime errors.
 
@@ -225,7 +225,7 @@ def generate_bug_tasks(project_id: str) -> dict[str, Any]:
     return {"status": "disabled", "reason": "Use self-healing system instead"}
 
 
-@celery_app.task(name="summitflow.cleanup_stale_tasks")  # type: ignore[untyped-decorator]
+@celery_app.task(name="summitflow.cleanup_stale_tasks")
 def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
     """Archive auto-generated tasks that have been pending without activity.
 

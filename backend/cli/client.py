@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import socket
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -67,7 +67,7 @@ class STClient:
             except Exception:
                 detail = response.text
             raise APIError(response.status_code, detail)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def get(self, url: str) -> dict[str, Any]:
         """Generic GET request to any URL.
@@ -320,7 +320,7 @@ class STClient:
             List of dependency dicts.
         """
         response = self._client.get(self._global_url(f"/tasks/{task_id}/dependencies"))
-        return self._handle_response(response)
+        return cast(list[dict[str, Any]], self._handle_response(response))
 
     def remove_dependency(
         self,
@@ -361,7 +361,7 @@ class STClient:
         if test_type:
             params["type"] = test_type
         response = self._client.get(self._url("/tests"), params=params)
-        return self._handle_response(response)
+        return cast(list[dict[str, Any]], self._handle_response(response))
 
     def import_tests(self, framework: str) -> dict[str, Any]:
         """Import tests from a framework.
@@ -532,7 +532,7 @@ class STClient:
             List of step dicts.
         """
         response = self._client.get(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"))
-        return self._handle_response(response)
+        return cast(list[dict[str, Any]], self._handle_response(response))
 
     def bulk_create_steps(
         self,
@@ -732,7 +732,7 @@ class STClient:
         Returns:
             Updated step dict.
         """
-        data = {"status": status}
+        data: dict[str, Any] = {"status": status}
         if fix_step_number is not None:
             data["fix_step_number"] = fix_step_number
 
@@ -805,7 +805,7 @@ class STClient:
             List of session dicts.
         """
         response = self._client.get(self._url("/sessions"))
-        return self._handle_response(response)
+        return cast(list[dict[str, Any]], self._handle_response(response))
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         """Get a specific session.
