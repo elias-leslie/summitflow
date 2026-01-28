@@ -903,6 +903,7 @@ class STClient:
         project_id: str,
         task_id: str,
         limit: int = 50,
+        include_debug: bool = False,
     ) -> dict[str, Any]:
         """Get execution events for a task.
 
@@ -910,11 +911,14 @@ class STClient:
             project_id: Project ID
             task_id: Task ID (trace_id)
             limit: Maximum events to return
+            include_debug: Include debug-level visibility events
 
         Returns:
             Dict with events list and summary.
         """
-        params = {"trace_id": task_id, "limit": limit}
+        params: dict[str, Any] = {"trace_id": task_id, "limit": limit}
+        if not include_debug:
+            params["visibility"] = "user"
         response = self._client.get(
             f"{self.base_url}/projects/{project_id}/events",
             params=params,

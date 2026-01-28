@@ -12,6 +12,13 @@ from typing import Any
 
 from celery import Task, shared_task
 
+from ...core.debug import (
+    debug,
+    debug_detailed,
+    debug_error,
+    debug_section,
+    debug_success,
+)
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.pubsub import publish_ws_event
@@ -193,6 +200,7 @@ def start_execution(self: Task[..., dict[str, Any]], task_id: str, project_id: s
     Returns:
         Execution result with status
     """
+    debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
     _emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
 
@@ -303,6 +311,14 @@ def _execute_subtask(
     subtask_short_id = subtask.get("subtask_id", "")
     subtask_desc = subtask.get("description", "")[:60]
 
+    debug_section(f"Subtask {subtask_short_id}", task_id=task_id, project_id=project_id)
+    debug(
+        "Starting subtask execution",
+        task_id=task_id,
+        project_id=project_id,
+        subtask_id=subtask_short_id,
+        description=subtask_desc,
+    )
     logger.info("Executing subtask", task_id=task_id, subtask_id=subtask_short_id)
     _emit_log(
         task_id,
@@ -338,6 +354,13 @@ def _execute_subtask(
             source="orchestrator",
             project_id=project_id,
         )
+        debug_detailed(
+            "Agent input prepared",
+            task_id=task_id,
+            project_id=project_id,
+            prompt_length=len(prompt),
+            prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
+        )
         logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
         response = client.run_agent(
             task=prompt,
@@ -353,6 +376,14 @@ def _execute_subtask(
             response_length=len(response.content) if response.content else 0,
             session_id=response.session_id,
             cited_uuids=len(response.cited_uuids) if response.cited_uuids else 0,
+        )
+        debug_detailed(
+            "Agent output received",
+            task_id=task_id,
+            project_id=project_id,
+            response_length=len(response.content) if response.content else 0,
+            session_id=response.session_id,
+            citations=len(response.cited_uuids) if response.cited_uuids else 0,
         )
 
         # Emit agent completion with summary
@@ -408,6 +439,12 @@ def _execute_subtask(
                 f"Subtask {subtask_short_id} PASSED ({duration_str})",
                 project_id=project_id,
             )
+            debug_success(
+                f"Subtask {subtask_short_id} verified",
+                task_id=task_id,
+                project_id=project_id,
+                duration_ms=duration * 1000,
+            )
         else:
             failed_steps = [r for r in step_results if not r["passed"]]
             for fail in failed_steps:
@@ -419,6 +456,13 @@ def _execute_subtask(
                 "warn",
                 f"Subtask {subtask_short_id} FAILED: {len(failed_steps)} step(s) ({duration_str})",
                 project_id=project_id,
+            )
+            debug_error(
+                f"Subtask {subtask_short_id} verification failed",
+                task_id=task_id,
+                project_id=project_id,
+                failed_steps=len(failed_steps),
+                duration_ms=duration * 1000,
             )
 
         return {
@@ -435,6 +479,13 @@ def _execute_subtask(
         issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
         _emit_error(
             task_id, f"Subtask {subtask_short_id} error: {error_str}", project_id=project_id
+        )
+        debug_error(
+            f"Subtask {subtask_short_id} exception",
+            task_id=task_id,
+            project_id=project_id,
+            error=error_str,
+            issue_id=issue_id,
         )
         return {
             "subtask_id": subtask_short_id,

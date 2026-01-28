@@ -258,11 +258,19 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
     # Not a worktree - check if cwd has backend/.venv
     cwd_path = Path(cwd)
     if (cwd_path / "backend" / ".venv").exists():
-        return cmd.replace(".venv/bin/", f"{cwd_path}/backend/.venv/bin/")
+        abs_venv = f"{cwd_path}/backend/.venv/bin/"
+        # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
+        if "backend/.venv/bin/" in cmd:
+            return cmd.replace("backend/.venv/bin/", abs_venv)
+        return cmd.replace(".venv/bin/", abs_venv)
 
     # Try parent directory (for when cwd is backend/)
     if cwd_path.name == "backend" and (cwd_path / ".venv").exists():
-        return cmd.replace(".venv/bin/", f"{cwd_path}/.venv/bin/")
+        abs_venv = f"{cwd_path}/.venv/bin/"
+        if "backend/.venv/bin/" in cmd:
+            # Strip redundant backend/ since we're already in backend/
+            return cmd.replace("backend/.venv/bin/", abs_venv)
+        return cmd.replace(".venv/bin/", abs_venv)
 
     return cmd
 

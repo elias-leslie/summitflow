@@ -26,6 +26,14 @@ def exec_monitor(
         int,
         typer.Option("-n", "--limit", help="Maximum events to show"),
     ] = 50,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Include debug-level events with timing and attributes"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON (one event per line, for agent parsing)"),
+    ] = False,
     task_id: Annotated[
         str | None,
         typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
@@ -40,6 +48,8 @@ def exec_monitor(
         st exec-monitor task-abc123 -f      # Follow mode
         st exec-monitor -n 100 task-abc123  # Show more events
         st exec-monitor -f                  # Uses active context, follow mode
+        st exec-monitor --debug             # Include debug events with timing
+        st exec-monitor --json              # JSON output for agent parsing
     """
     task_id = require_task_id(task_id)
     client = STClient()
@@ -50,12 +60,12 @@ def exec_monitor(
         project_id = task.get("project_id", "unknown")
 
         # Get events from API
-        events = client.get_events(project_id, task_id, limit=limit)
+        events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
     except APIError as e:
         handle_api_error(e)
         return
 
-    _display_events(task, events, follow, client, limit)
+    _display_events(task, events, follow, client, limit, debug, json_output)
 
 
 def _display_events(
@@ -64,8 +74,11 @@ def _display_events(
     follow: bool,
     client: STClient,
     limit: int,
+    debug: bool = False,
+    json_output: bool = False,
 ) -> None:
     """Display events for a task."""
+    import json
     import time
 
     task_id = task.get("id", "unknown")
@@ -73,25 +86,29 @@ def _display_events(
     title = task.get("title", "Unknown")[:50]
     status = task.get("status", "unknown")
 
-    # Header
-    if is_compact():
-        print(f"EXEC:{task_id}|{status}|{title}")
-    else:
-        print(f"Task: {task_id}")
-        print(f"Title: {title}")
-        print(f"Status: {status}")
-        print("-" * 60)
+    # Header (skip for JSON output)
+    if not json_output:
+        if is_compact():
+            print(f"EXEC:{task_id}|{status}|{title}")
+        else:
+            print(f"Task: {task_id}")
+            print(f"Title: {title}")
+            print(f"Status: {status}")
+            if debug:
+                print("Mode: debug (showing all visibility levels)")
+            print("-" * 60)
 
     # Initial events
     events_list = events.get("events", []) if isinstance(events, dict) else events
-    _print_events(events_list)
+    _print_events(events_list, debug, json_output)
 
     if not follow:
         return
 
     # Follow mode - poll for new events
     last_event_id = events_list[-1].get("id") if events_list else None
-    print("\n[Following... Press Ctrl+C to stop]\n")
+    if not json_output:
+        print("\n[Following... Press Ctrl+C to stop]\n")
 
     try:
         while True:
@@ -104,14 +121,20 @@ def _display_events(
 
                 if new_status != status:
                     status = new_status
-                    print(f"\n[Status changed: {status}]")
+                    if json_output:
+                        print(json.dumps({"type": "status_change", "status": status}))
+                    else:
+                        print(f"\n[Status changed: {status}]")
 
                 if status in ("completed", "cancelled", "failed", "closed"):
-                    print(f"\n[Task {status}]")
+                    if json_output:
+                        print(json.dumps({"type": "task_ended", "status": status}))
+                    else:
+                        print(f"\n[Task {status}]")
                     break
 
                 # Get new events
-                new_events = client.get_events(project_id, task_id, limit=10)
+                new_events = client.get_events(project_id, task_id, limit=10, include_debug=debug)
                 events_list = (
                     new_events.get("events", [])
                     if isinstance(new_events, dict)
@@ -126,7 +149,7 @@ def _display_events(
                         ]
                         # Check if we have events newer than last
                         if new_only and events_list[0].get("id") != last_event_id:
-                            _print_events(new_only)
+                            _print_events(new_only, debug, json_output)
                             last_event_id = events_list[0].get("id")
                     else:
                         last_event_id = events_list[0].get("id")
@@ -135,16 +158,26 @@ def _display_events(
                 pass
 
     except KeyboardInterrupt:
-        print("\n[Stopped]")
+        if not json_output:
+            print("\n[Stopped]")
 
 
-def _print_events(events: list) -> None:
+def _print_events(events: list, debug: bool = False, json_output: bool = False) -> None:
     """Print a list of events."""
+    import json
+
     for event in reversed(events):  # Show oldest first
+        if json_output:
+            # One JSON object per line for agent parsing
+            print(json.dumps(event))
+            continue
+
         timestamp = event.get("timestamp", "")[:19]  # Truncate to seconds
         level = event.get("level", "info")[:4].upper()
         message = event.get("message", "")
         source = event.get("source", "")
+        visibility = event.get("visibility", "user")
+        attributes = event.get("attributes", {})
 
         # Level colors for terminal
         level_prefix = {
@@ -154,10 +187,28 @@ def _print_events(events: list) -> None:
             "ERRO": "X",
         }.get(level, " ")
 
+        # Debug visibility indicator
+        vis_indicator = ""
+        if debug and visibility == "debug":
+            vis_indicator = "[D] "
+        elif debug and visibility == "internal":
+            vis_indicator = "[I] "
+
         if is_compact():
             # TOON format: timestamp|level|message
-            print(f"{timestamp}|{level}|{message[:80]}")
+            print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
         else:
             # Human-readable format
             source_str = f" [{source}]" if source else ""
-            print(f"{level_prefix} {timestamp} {message}{source_str}")
+            print(f"{level_prefix} {timestamp} {vis_indicator}{message}{source_str}")
+
+            # Show attributes in debug mode
+            if debug and attributes:
+                elapsed = attributes.get("elapsed_ms")
+                if elapsed is not None:
+                    print(f"    elapsed: {elapsed:.1f}ms")
+                for key, value in attributes.items():
+                    if key not in ("elapsed_ms", "level", "message", "source"):
+                        if isinstance(value, str) and len(value) > 60:
+                            value = value[:60] + "..."
+                        print(f"    {key}: {value}")

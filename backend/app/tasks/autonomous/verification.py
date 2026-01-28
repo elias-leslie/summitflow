@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ...core.debug import debug_error, debug_success
 from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
 
@@ -50,6 +51,10 @@ def _resolve_venv_paths(cmd: str, project_id: str) -> str:
     if not main_backend_venv.exists():
         return cmd
 
+    # Handle both "backend/.venv/bin/" and bare ".venv/bin/" patterns
+    # Must check backend/ prefix first to avoid double-replacement
+    if "backend/.venv/bin/" in cmd:
+        return cmd.replace("backend/.venv/bin/", f"{main_backend_venv}/bin/")
     return cmd.replace(".venv/bin/", f"{main_backend_venv}/bin/")
 
 
@@ -178,6 +183,22 @@ def verify_step(
             reason=reason,
             output_preview=full_output[:200] if full_output else "(empty)",
         )
+
+        if passed:
+            debug_success(
+                f"Step {step_num} verified",
+                step=step_num,
+                check_type=check_type,
+                output_preview=full_output[:100] if full_output else "(empty)",
+            )
+        else:
+            debug_error(
+                f"Step {step_num} failed",
+                step=step_num,
+                check_type=check_type,
+                reason=reason,
+                output_preview=full_output[:200] if full_output else "(empty)",
+            )
 
         return VerificationResult(
             passed=passed,
