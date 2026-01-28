@@ -16,7 +16,6 @@ AGENT_HUB_URL = "http://localhost:8003"
 
 def _load_credentials() -> tuple[str, str, str]:
     """Load credentials from ~/.env.local."""
-    import os
     from pathlib import Path
 
     env_file = Path.home() / ".env.local"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, cast
 
 import httpx
@@ -15,6 +16,30 @@ app = typer.Typer(help="Memory system commands (Agent Hub)")
 AGENT_HUB_URL = "http://localhost:8003"
 
 
+def _load_credentials() -> tuple[str, str, str]:
+    """Load credentials from ~/.env.local."""
+    env_file = Path.home() / ".env.local"
+    if not env_file.exists():
+        output_error("~/.env.local not found - required for Agent Hub authentication")
+        raise typer.Exit(1)
+
+    creds: dict[str, str] = {}
+    for line in env_file.read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, val = line.split("=", 1)
+            creds[key.strip()] = val.strip()
+
+    client_id = creds.get("SUMMITFLOW_CLIENT_ID")
+    client_secret = creds.get("SUMMITFLOW_CLIENT_SECRET")
+    request_source = "st-memory"
+
+    if not client_id or not client_secret:
+        output_error("Missing SUMMITFLOW_CLIENT_ID/SECRET in ~/.env.local")
+        raise typer.Exit(1)
+
+    return client_id, client_secret, request_source
+
+
 def _agent_hub_request(
     method: str,
     path: str,
@@ -23,16 +48,18 @@ def _agent_hub_request(
     json: dict[str, Any] | None = None,
     scope: str = "global",
     scope_id: str | None = None,
+    tool_name: str = "st memory",
 ) -> dict[str, Any]:
-    """Make a request to Agent Hub API.
+    """Make a request to Agent Hub API with proper authentication.
 
     Args:
-        method: HTTP method (GET, POST).
+        method: HTTP method (GET, POST, DELETE).
         path: API path (e.g., "/api/memory/stats").
         params: Query parameters.
         json: JSON body for POST requests.
         scope: Memory scope ("global" or "project").
         scope_id: Scope identifier when scope is "project".
+        tool_name: Specific command name for tracking.
 
     Returns:
         Response JSON as dict.
@@ -40,7 +67,15 @@ def _agent_hub_request(
     Raises:
         typer.Exit: On API error.
     """
-    headers = {"X-Source-Client": "st-cli"}
+    client_id, client_secret, request_source = _load_credentials()
+
+    headers = {
+        "X-Client-Id": client_id,
+        "X-Client-Secret": client_secret,
+        "X-Request-Source": request_source,
+        "X-Source-Client": "st-cli",
+        "X-Tool-Name": tool_name,
+    }
     if scope != "global":
         headers["X-Memory-Scope"] = scope
     if scope_id:
@@ -199,6 +234,7 @@ def stats(
         "/api/memory/stats",
         scope=scope,
         scope_id=scope_id,
+        tool_name="st memory stats",
     )
 
     if is_compact():
@@ -267,6 +303,7 @@ def save(
         json=payload,
         scope=scope,
         scope_id=scope_id,
+        tool_name="st memory save",
     )
 
     if is_compact():
@@ -322,6 +359,7 @@ def list_cmd(
         params=params,
         scope=scope,
         scope_id=scope_id,
+        tool_name="st memory list",
     )
 
     if is_compact():
@@ -374,6 +412,7 @@ def search(
         params=params,
         scope=scope,
         scope_id=scope_id,
+        tool_name="st memory search",
     )
 
     if is_compact():
@@ -400,11 +439,12 @@ def get(
     result = _agent_hub_request(
         "GET",
         f"/api/memory/episode/{uuid}",
+        tool_name="st memory get",
     )
 
     if "detail" in result:
         # Handle error response
-        console.print(f"[red]Error:[/red] {result['detail']}")
+        output_error(result["detail"])
         raise typer.Exit(1)
 
     if is_compact():
@@ -468,6 +508,7 @@ def delete(
         result = _agent_hub_request(
             "DELETE",
             f"/api/memory/episode/{uuid}",
+            tool_name="st memory delete",
         )
         if result.get("success"):
             typer.echo(f"Deleted: {uuid[:8]}")
@@ -513,7 +554,7 @@ def update(
         raise typer.Exit(1)
 
     # Get existing episode details
-    existing = _agent_hub_request("GET", f"/api/memory/episode/{uuid}")
+    existing = _agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
     if "detail" in existing:
         typer.echo(f"Error: {existing['detail']}")
         raise typer.Exit(1)
@@ -536,7 +577,7 @@ def update(
             raise typer.Exit(0)
 
     # Delete existing
-    delete_result = _agent_hub_request("DELETE", f"/api/memory/episode/{uuid}")
+    delete_result = _agent_hub_request("DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update")
     if not delete_result.get("success"):
         typer.echo(f"Error deleting: {delete_result.get('detail', 'Unknown error')}")
         raise typer.Exit(1)
@@ -550,6 +591,7 @@ def update(
             "name": existing.get("name", "updated_episode"),
             "injection_tier": new_tier,
         },
+        tool_name="st memory update",
     )
 
     new_uuid = create_result.get("uuid")
