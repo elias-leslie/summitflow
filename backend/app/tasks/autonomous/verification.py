@@ -90,8 +90,9 @@ def parse_expected(expected: str | None) -> tuple[str, str | None]:
     if expected_lower.startswith("exit code"):
         return ("exit_code", None)
 
-    if expected_lower in ("lint:ok", "types:ok", "test:ok"):
-        return ("exit_code", None)
+    # Note: "lint:ok", "types:ok", "test:ok" are now checked as output content
+    # Previously only checked exit code, which caused false positives when
+    # commands failed but pipeline exit code was 0
 
     if expected_lower.startswith("contains:"):
         return ("contains", expected[9:].strip())
