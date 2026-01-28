@@ -11,6 +11,7 @@ from .commands import (
     autonomous,
     backup,
     deps,
+    exec_monitor,
     git,
     health,
     memory,
@@ -136,6 +137,7 @@ app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(health.app, name="health")
 app.add_typer(memory.app, name="memory")
+app.add_typer(exec_monitor.app, name="exec-monitor")
 
 
 @app.callback()

@@ -895,3 +895,28 @@ class STClient:
         """
         response = self._client.post(self._url(f"/tasks/{task_id}/autocode/{execution_id}/abort"))
         return self._handle_response(response)
+
+    # Events
+
+    def get_events(
+        self,
+        project_id: str,
+        task_id: str,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Get execution events for a task.
+
+        Args:
+            project_id: Project ID
+            task_id: Task ID (trace_id)
+            limit: Maximum events to return
+
+        Returns:
+            Dict with events list and summary.
+        """
+        params = {"trace_id": task_id, "limit": limit}
+        response = self._client.get(
+            f"{self.base_url}/projects/{project_id}/events",
+            params=params,
+        )
+        return self._handle_response(response)

@@ -80,6 +80,7 @@ function AccordionItem({
             <div className="px-4 pb-4">
               <ExecutionTimeline
                 taskId={task.id}
+                projectId={task.project_id}
                 autoConnect
                 showChatInput
                 chatEnabled={task.status === 'running'}

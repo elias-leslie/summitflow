@@ -298,6 +298,7 @@ export function TaskModal({
                 >
                   <ExecutionTimeline
                     taskId={task.id}
+                    projectId={task.project_id}
                     autoConnect={isRunning || isAiReviewing}
                     showChatInput={true}
                     chatEnabled={isRunning}

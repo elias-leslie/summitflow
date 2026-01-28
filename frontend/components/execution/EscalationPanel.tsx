@@ -149,6 +149,7 @@ export function EscalationPanel({
               <div className="flex-1 overflow-hidden">
                 <ExecutionTimeline
                   taskId={task.id}
+                  projectId={task.project_id}
                   autoConnect
                   showChatInput={false}
                   className="h-full"
