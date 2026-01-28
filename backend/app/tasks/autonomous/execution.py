@@ -291,11 +291,20 @@ def _execute_subtask(
     issue_counts: dict[str, int],
 ) -> dict[str, Any]:
     """Execute a single subtask with fresh context."""
+    import time
+
+    start_time = time.time()
     subtask_id = subtask.get("id", "")
     subtask_short_id = subtask.get("subtask_id", "")
+    subtask_desc = subtask.get("description", "")[:60]
 
     logger.info("Executing subtask", task_id=task_id, subtask_id=subtask_short_id)
-    _emit_log(task_id, "info", f"Starting subtask {subtask_short_id}", project_id=project_id)
+    _emit_log(
+        task_id,
+        "info",
+        f"Starting subtask {subtask_short_id}: {subtask_desc}",
+        project_id=project_id,
+    )
     _emit_progress(
         task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id
     )
@@ -317,6 +326,13 @@ def _execute_subtask(
             visibility="internal",
         )
         client = get_sync_client()
+        _emit_log(
+            task_id,
+            "info",
+            f"Calling agent (coder) for subtask {subtask_short_id}...",
+            source="orchestrator",
+            project_id=project_id,
+        )
         logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
         response = client.run_agent(
             task=prompt,
@@ -334,6 +350,37 @@ def _execute_subtask(
             cited_uuids=len(response.cited_uuids) if response.cited_uuids else 0,
         )
 
+        # Emit agent completion with summary
+        response_preview = response.content[:300] if response.content else "(no response)"
+        _emit_log(
+            task_id,
+            "info",
+            f"Agent completed subtask {subtask_short_id}",
+            source="agent",
+            project_id=project_id,
+        )
+        _emit_log(
+            task_id,
+            "debug",
+            f"Agent response: {response_preview}",
+            source="agent",
+            project_id=project_id,
+            visibility="internal",
+        )
+
+        # Log memory citations used
+        if response.cited_uuids:
+            citations_str = ", ".join(response.cited_uuids[:5])
+            if len(response.cited_uuids) > 5:
+                citations_str += f" (+{len(response.cited_uuids) - 5} more)"
+            _emit_log(
+                task_id,
+                "info",
+                f"Memory cited: {citations_str}",
+                source="memory",
+                project_id=project_id,
+            )
+
         # Log citations from Agent Hub response for ACE-aligned feedback
         if response.cited_uuids:
             from ...storage.subtasks import log_citations
@@ -344,10 +391,18 @@ def _execute_subtask(
         step_results = _verify_steps(task_id, subtask_id, steps, worktree_path, project_id)
 
         all_passed = all(r["passed"] for r in step_results)
+        duration = time.time() - start_time
+        duration_str = f"{duration:.1f}s"
+
         if all_passed:
             update_subtask_passes(task_id, subtask_short_id, passes=True)
             _extract_handoff_summary(subtask_id, response.content)
-            _emit_log(task_id, "info", f"Subtask {subtask_short_id} passed", project_id=project_id)
+            _emit_log(
+                task_id,
+                "info",
+                f"Subtask {subtask_short_id} PASSED ({duration_str})",
+                project_id=project_id,
+            )
         else:
             failed_steps = [r for r in step_results if not r["passed"]]
             for fail in failed_steps:
@@ -357,7 +412,7 @@ def _execute_subtask(
             _emit_log(
                 task_id,
                 "warn",
-                f"Subtask {subtask_short_id} failed: {len(failed_steps)} step(s)",
+                f"Subtask {subtask_short_id} FAILED: {len(failed_steps)} step(s) ({duration_str})",
                 project_id=project_id,
             )
 
@@ -454,13 +509,46 @@ def _verify_steps(
 
         update_step_passes(subtask_id, step_num, result.passed, project_root=worktree_path)
         status = "passed" if result.passed else "failed"
+
+        # Emit detailed verification result
+        step_desc = step.get("description", "")[:50]
+        verify_cmd = step.get("verify_command", "")[:60]
+        output_preview = result.output[:200] if result.output else "(no output)"
+
         _emit_log(
             task_id,
             "info" if result.passed else "warn",
-            f"Step {step_num}: {status}",
+            f"Step {step_num} ({step_desc}): {status}",
             source="verify",
+            project_id=project_id,
         )
-        _emit_progress(task_id, subtask_id=subtask_id, step=step_num, status=status)
+
+        # Log verification details (command, output, reason)
+        _emit_log(
+            task_id,
+            "debug",
+            f"  cmd: {verify_cmd}",
+            source="verify",
+            project_id=project_id,
+            visibility="internal",
+        )
+        _emit_log(
+            task_id,
+            "debug" if result.passed else "warn",
+            f"  output: {output_preview}",
+            source="verify",
+            project_id=project_id,
+        )
+        if not result.passed and result.reason:
+            _emit_log(
+                task_id,
+                "warn",
+                f"  reason: {result.reason}",
+                source="verify",
+                project_id=project_id,
+            )
+
+        _emit_progress(task_id, subtask_id=subtask_id, step=step_num, status=status, project_id=project_id)
 
         results.append(
             {

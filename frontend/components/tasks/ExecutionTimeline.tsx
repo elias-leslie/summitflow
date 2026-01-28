@@ -3,8 +3,6 @@
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -12,7 +10,6 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -250,7 +247,6 @@ export function ExecutionTimeline({
   )
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showPrevious, setShowPrevious] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -261,6 +257,9 @@ export function ExecutionTimeline({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttemptRef = useRef<number>(0)
   const maxReconnectDelay = 30000 // Cap at 30 seconds
+
+  // Combine historical and live events into unified timeline
+  const allEvents = [...historicalEvents, ...messages]
 
   // Convert Event from API to TimelineMessage format
   const eventToTimelineMessage = useCallback(
@@ -441,74 +440,27 @@ export function ExecutionTimeline({
         </div>
       </div>
 
-      {/* Historical events toggle */}
-      {historicalEvents.length > 0 && (
-        <>
-          <button
-            onClick={() => setShowPrevious(!showPrevious)}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-400 hover:bg-slate-800/30"
-          >
-            {showPrevious ? (
-              <ChevronUp className="h-3 w-3" />
-            ) : (
-              <ChevronDown className="h-3 w-3" />
-            )}
-            Historical Events ({historicalEvents.length})
-          </button>
-
-          <AnimatePresence>
-            {showPrevious && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="border-b border-slate-800 bg-slate-900/50 overflow-hidden max-h-[300px] overflow-y-auto"
-              >
-                <div className="py-2">
-                  {historicalEvents.map((message, idx) => (
-                    <TimelineEvent
-                      key={`hist-${message.sequence}-${idx}`}
-                      message={message}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </>
-      )}
-
-      {/* Timeline content */}
+      {/* Unified Timeline - historical + live events in one view */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto min-h-[200px] max-h-[400px] bg-slate-950/30"
       >
-        {messages.length === 0 ? (
+        {isLoadingHistory ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600 py-8">
-            {isLoadingHistory ? (
+            <Loader2 className="h-5 w-5 animate-spin mb-2" />
+            <span className="text-sm">Loading events...</span>
+          </div>
+        ) : allEvents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-600 py-8">
+            {error ? (
               <>
-                <Loader2 className="h-5 w-5 animate-spin mb-2" />
-                <span className="text-sm">Loading history...</span>
+                <AlertCircle className="h-5 w-5 mb-2 text-amber-500" />
+                <span className="text-sm text-amber-500">{error}</span>
               </>
             ) : isConnected ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin mb-2" />
                 <span className="text-sm">Waiting for execution events...</span>
-              </>
-            ) : error ? (
-              <>
-                <AlertCircle className="h-5 w-5 mb-2 text-amber-500" />
-                <span className="text-sm text-amber-500">{error}</span>
-              </>
-            ) : autoConnect ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin mb-2" />
-                <span className="text-sm">Connecting...</span>
-              </>
-            ) : historicalEvents.length > 0 ? (
-              <>
-                <CheckCircle2 className="h-5 w-5 mb-2 text-slate-500" />
-                <span className="text-sm">Expand "Historical Events" above to view execution history</span>
               </>
             ) : (
               <span className="text-sm">No execution events recorded</span>
@@ -516,7 +468,7 @@ export function ExecutionTimeline({
           </div>
         ) : (
           <div className="py-2">
-            {messages.map((message, idx) => (
+            {allEvents.map((message, idx) => (
               <TimelineEvent
                 key={`${message.sequence}-${idx}`}
                 message={message}
