@@ -52,6 +52,8 @@ def _agent_hub_request(
         with httpx.Client(timeout=30.0) as client:
             if method == "GET":
                 response = client.get(url, params=params, headers=headers)
+            elif method == "DELETE":
+                response = client.delete(url, headers=headers)
             else:
                 response = client.post(url, json=json, headers=headers)
 
@@ -150,7 +152,7 @@ def _format_search_compact(result: dict[str, Any]) -> None:
     results = result.get("results", [])
     query = result.get("query", "")
 
-    print(f"RESULTS[{len(results)}]:query=\"{query[:30]}\"")
+    print(f'RESULTS[{len(results)}]:query="{query[:30]}"')
 
     for r in results[:20]:  # Limit output
         uuid = r.get("uuid", "?")[:8]
@@ -378,3 +380,182 @@ def search(
         _format_search_compact(result)
     else:
         output_json(result)
+
+
+@app.command()
+def get(
+    uuid: Annotated[
+        str,
+        typer.Argument(help="Episode UUID to retrieve"),
+    ],
+) -> None:
+    """Get details for a single episode by UUID.
+
+    Returns full episode information including usage statistics
+    (helpful_count, harmful_count, loaded_count, referenced_count).
+
+    Examples:
+        st memory get abc12345-full-uuid-here
+    """
+    result = _agent_hub_request(
+        "GET",
+        f"/api/memory/episode/{uuid}",
+    )
+
+    if "detail" in result:
+        # Handle error response
+        console.print(f"[red]Error:[/red] {result['detail']}")
+        raise typer.Exit(1)
+
+    if is_compact():
+        _format_get_compact(result)
+    else:
+        output_json(result)
+
+
+def _format_get_compact(result: dict[str, Any]) -> None:
+    """Format single episode details in compact mode."""
+    uuid_short = result.get("uuid", "")[:8]
+    tier = result.get("injection_tier", "unknown")
+    content = result.get("content", "")[:60]
+    helpful = result.get("helpful_count", 0)
+    harmful = result.get("harmful_count", 0)
+    loaded = result.get("loaded_count", 0)
+    referenced = result.get("referenced_count", 0)
+
+    # First line: UUID, tier, content preview
+    typer.echo(f"{uuid_short} [{tier}] {content}...")
+    # Second line: usage stats
+    typer.echo(
+        f"  Stats: loaded={loaded} referenced={referenced} helpful={helpful} harmful={harmful}"
+    )
+
+
+@app.command()
+def delete(
+    uuids: Annotated[
+        list[str],
+        typer.Argument(help="Episode UUID(s) to delete"),
+    ],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt"),
+    ] = False,
+) -> None:
+    """Delete one or more episodes from memory.
+
+    Removes episodes and cleans up orphaned entities/edges
+    that were only connected through these episodes.
+
+    Examples:
+        st memory delete abc12345-uuid
+        st memory delete uuid1 uuid2 uuid3 --yes
+    """
+    if not yes:
+        # Show what will be deleted
+        typer.echo(f"Will delete {len(uuids)} episode(s):")
+        for uuid in uuids:
+            typer.echo(f"  - {uuid[:8]}...")
+
+        if not typer.confirm("Proceed with deletion?"):
+            typer.echo("Cancelled.")
+            raise typer.Exit(0)
+
+    deleted = 0
+    failed = 0
+
+    for uuid in uuids:
+        result = _agent_hub_request(
+            "DELETE",
+            f"/api/memory/episode/{uuid}",
+        )
+        if result.get("success"):
+            typer.echo(f"Deleted: {uuid[:8]}")
+            deleted += 1
+        else:
+            typer.echo(f"Failed: {uuid[:8]} - {result.get('detail', 'Unknown error')}")
+            failed += 1
+
+    typer.echo(f"\nDeleted: {deleted}, Failed: {failed}")
+
+
+@app.command()
+def update(
+    uuid: Annotated[
+        str,
+        typer.Argument(help="Episode UUID to update"),
+    ],
+    content: Annotated[
+        str | None,
+        typer.Option("--content", "-c", help="New content for the episode"),
+    ] = None,
+    tier: Annotated[
+        str | None,
+        typer.Option("--tier", "-t", help="New tier (mandate/guardrail/reference)"),
+    ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt"),
+    ] = False,
+) -> None:
+    """Update an episode (delete + recreate).
+
+    Note: Graphiti has no native update - this deletes and recreates.
+    Usage stats (helpful_count, harmful_count, etc.) will be RESET.
+
+    Examples:
+        st memory update abc12345 --content "New content here"
+        st memory update abc12345 --tier mandate
+        st memory update abc12345 --content "New" --tier guardrail --yes
+    """
+    if not content and not tier:
+        typer.echo("Error: Must specify --content and/or --tier")
+        raise typer.Exit(1)
+
+    # Get existing episode details
+    existing = _agent_hub_request("GET", f"/api/memory/episode/{uuid}")
+    if "detail" in existing:
+        typer.echo(f"Error: {existing['detail']}")
+        raise typer.Exit(1)
+
+    old_tier = existing.get("injection_tier", "reference")
+    old_content = existing.get("content", "")
+
+    new_content = content if content else old_content
+    new_tier = tier if tier else old_tier
+
+    if not yes:
+        typer.echo("WARNING: Update will RESET usage stats (helpful_count, etc.)")
+        typer.echo(f"  UUID: {uuid[:8]}...")
+        typer.echo(f"  Tier: {old_tier} -> {new_tier}")
+        if content:
+            typer.echo(f"  Content: {old_content[:40]}... -> {new_content[:40]}...")
+
+        if not typer.confirm("Proceed with update?"):
+            typer.echo("Cancelled.")
+            raise typer.Exit(0)
+
+    # Delete existing
+    delete_result = _agent_hub_request("DELETE", f"/api/memory/episode/{uuid}")
+    if not delete_result.get("success"):
+        typer.echo(f"Error deleting: {delete_result.get('detail', 'Unknown error')}")
+        raise typer.Exit(1)
+
+    # Create new
+    create_result = _agent_hub_request(
+        "POST",
+        "/api/memory/add",
+        json={
+            "content": new_content,
+            "name": existing.get("name", "updated_episode"),
+            "injection_tier": new_tier,
+        },
+    )
+
+    new_uuid = create_result.get("uuid")
+    if new_uuid:
+        typer.echo(f"Updated: {uuid[:8]} -> {new_uuid[:8]}")
+        typer.echo(f"  Tier: {new_tier}")
+    else:
+        typer.echo(f"Error creating new episode: {create_result}")
+        raise typer.Exit(1)

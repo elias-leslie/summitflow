@@ -111,16 +111,34 @@ Agent Hub:  8003 (API), 3003 (UI)
 Based on [Agentic Context Engineering (ACE) paper](https://arxiv.org/pdf/2510.04618) - see `references/ace_review.md`
 
 ```bash
-# Save learning (provisional 70-89, canonical 90-99)
+# Save learning via API
 curl -X POST http://localhost:8003/api/memory/save-learning \
-  -d '{"content": "...", "category": "coding_standard", "confidence": 85}'
+  -H "Content-Type: application/json" \
+  -d '{"content": "...", "injection_tier": "reference", "confidence": 85}'
 
-# Golden standard (mandate, always injected)
-curl -X POST http://localhost:8003/api/memory/golden-standards \
-  -d '{"content": "...", "category": "coding_standard"}'
+# Or via st command (preferred)
+st memory save "Always use async for DB ops" --tier reference --confidence 85
 ```
 
-**Categories**: coding_standard, troubleshooting_guide, operational_context, system_design, domain_knowledge
+**Injection Tiers**:
+- `mandate` - Always injected, highest priority (M: citation prefix)
+- `guardrail` - Always injected, prevent mistakes (G: citation prefix)
+- `reference` - On-demand via /api/memory/search
+
+**Confidence**: 70+ is provisional, 90+ is canonical (eligible for promotion)
+
+### Memory CRUD Operations
+
+| Operation | st command | API endpoint | Behavior |
+|-----------|------------|--------------|----------|
+| Create | `st memory save "..."` | POST /api/memory/add | Creates episode + extracts entities + creates edges via Graphiti |
+| Read | `st memory get <uuid>` | GET /api/memory/episode/{uuid} | Returns episode with usage stats (helpful/harmful counts) |
+| Update | `st memory update <uuid>` | DELETE + POST /add | Deletes then recreates (resets usage stats - no native update) |
+| Delete | `st memory delete <uuid>` | DELETE /api/memory/episode/{uuid} | Removes episode + orphaned entities/edges |
+| List | `st memory list` | GET /api/memory/list | Paginated episode listing |
+| Search | `st memory search "query"` | GET /api/memory/search | Semantic search across episodes |
+
+**Important**: Graphiti has NO native update. `st memory update` deletes and recreates, which resets usage stats.
 
 ### Citation Tracking (ACE Model)
 
@@ -140,6 +158,34 @@ run_agent() → memory injection → agent cites [M:uuid8] → log_citations(+/-
     → close_session() → retrospective → extract_learnings() → future injection
 ```
 
+## Monitoring
+
+### Execution Timeline (UI)
+Real-time WebSocket streaming in Kanban task drawer. Shows subtask progress, verification results, agent output.
+
+### Sessions (Agent Hub UI)
+LLM session tracking at https://agent.summitflow.dev/sessions - tokens, cost, message transcripts.
+
+### st exec-monitor (CLI)
+
+```bash
+st exec-monitor <task-id>        # Show last 50 events
+st exec-monitor <task-id> -f     # Follow mode (poll every 2s)
+st exec-monitor <task-id> -n 100 # Show last 100 events
+```
+
+**Level prefixes**: `.` (debug), ` ` (info), `!` (warn), `X` (error)
+
+**Current limitations**: Polling-based (not WebSocket), no colors.
+
+### Event Visibility Levels
+
+| Level | Purpose | Example |
+|-------|---------|---------|
+| `user` | User-visible progress | "Subtask 1.1 passed" |
+| `internal` | Debug info | "Worktree path: /tmp/..." |
+| `debug` | Detailed diagnostics | "Agent input: ..." (truncated) |
+
 ## Common Gotchas
 
 | Gotcha | Fix |
@@ -149,6 +195,7 @@ run_agent() → memory injection → agent cites [M:uuid8] → log_citations(+/-
 | agent-browser session not shared | Use `AGENT_BROWSER_SESSION=name` env var |
 | Frontend 90s shutdown delay | Add `TimeoutStopSec=10 KillMode=mixed` to service |
 | verify_commands run from /home/kasadis/summitflow | Prefix with `cd <project-root> &&` |
+| Python logger vs event system | `logger.info()` → stdout only; `_emit_log()` → events + Redis |
 
 ## Anti-Patterns
 
@@ -170,4 +217,4 @@ run_agent() → memory injection → agent cites [M:uuid8] → log_citations(+/-
 
 ---
 
-*Updated: 2026-01-26 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details*
+*Updated: 2026-01-27 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details*

@@ -234,15 +234,17 @@ def create_worktree(
         manager = _get_worktree_manager()
         info = manager.get_or_create_worktree(config.project_id, resolved_task_id)
 
-        output_json({
-            "path": str(info.path),
-            "branch": info.branch,
-            "task_id": info.task_id,
-            "project_id": info.project_id,
-            "base_branch": info.base_branch,
-            "is_active": info.is_active,
-            "created": not manager.worktree_exists(config.project_id, resolved_task_id),
-        })
+        output_json(
+            {
+                "path": str(info.path),
+                "branch": info.branch,
+                "task_id": info.task_id,
+                "project_id": info.project_id,
+                "base_branch": info.base_branch,
+                "is_active": info.is_active,
+                "created": not manager.worktree_exists(config.project_id, resolved_task_id),
+            }
+        )
         output_success(f"Worktree ready at {info.path}")
 
     except Exception as e:
@@ -273,31 +275,35 @@ def worktree_status(
         info = manager.get_worktree_info(config.project_id, resolved_task_id)
 
         if not info:
-            output_json({
-                "exists": False,
-                "task_id": resolved_task_id,
-                "project_id": config.project_id,
-            })
+            output_json(
+                {
+                    "exists": False,
+                    "task_id": resolved_task_id,
+                    "project_id": config.project_id,
+                }
+            )
             output_error(f"No worktree exists for task {resolved_task_id}")
             raise typer.Exit(1)
 
         # Get changed files list
         changed_files = manager.get_changed_files(config.project_id, resolved_task_id)
 
-        output_json({
-            "exists": True,
-            "path": str(info.path),
-            "branch": info.branch,
-            "task_id": info.task_id,
-            "project_id": info.project_id,
-            "base_branch": info.base_branch,
-            "is_active": info.is_active,
-            "commit_count": info.commit_count,
-            "files_changed": info.files_changed,
-            "additions": info.additions,
-            "deletions": info.deletions,
-            "changed_files": [{"status": s, "path": p} for s, p in changed_files],
-        })
+        output_json(
+            {
+                "exists": True,
+                "path": str(info.path),
+                "branch": info.branch,
+                "task_id": info.task_id,
+                "project_id": info.project_id,
+                "base_branch": info.base_branch,
+                "is_active": info.is_active,
+                "commit_count": info.commit_count,
+                "files_changed": info.files_changed,
+                "additions": info.additions,
+                "deletions": info.deletions,
+                "changed_files": [{"status": s, "path": p} for s, p in changed_files],
+            }
+        )
 
     except typer.Exit:
         raise
@@ -322,7 +328,9 @@ def merge_worktree(
     ] = False,
     check_blast_radius: Annotated[
         bool,
-        typer.Option("--check-blast-radius/--no-check-blast-radius", help="Check blast radius before merge"),
+        typer.Option(
+            "--check-blast-radius/--no-check-blast-radius", help="Check blast radius before merge"
+        ),
     ] = True,
 ) -> None:
     """Merge worktree branch back to main branch.
@@ -350,12 +358,14 @@ def merge_worktree(
         if check_blast_radius:
             blast = manager.check_blast_radius(config.project_id, resolved_task_id)
             if not blast["passed"]:
-                output_json({
-                    "blast_radius_exceeded": True,
-                    "files_changed": blast["files_changed"],
-                    "deletions": blast["deletions"],
-                    "reason": blast["reason"],
-                })
+                output_json(
+                    {
+                        "blast_radius_exceeded": True,
+                        "files_changed": blast["files_changed"],
+                        "deletions": blast["deletions"],
+                        "reason": blast["reason"],
+                    }
+                )
                 output_error(f"Blast radius check failed: {blast['reason']}")
                 output_error("Use --no-check-blast-radius to force merge")
                 raise typer.Exit(1)
@@ -363,11 +373,15 @@ def merge_worktree(
         # Check for merge conflicts
         conflicts = manager.check_merge_conflicts(config.project_id, resolved_task_id)
         if conflicts["has_conflicts"]:
-            output_json({
-                "has_conflicts": True,
-                "conflicting_files": conflicts["conflicting_files"],
-            })
-            output_error(f"Merge conflicts detected in: {', '.join(conflicts['conflicting_files'])}")
+            output_json(
+                {
+                    "has_conflicts": True,
+                    "conflicting_files": conflicts["conflicting_files"],
+                }
+            )
+            output_error(
+                f"Merge conflicts detected in: {', '.join(conflicts['conflicting_files'])}"
+            )
             raise typer.Exit(1)
 
         # Perform the merge
@@ -381,13 +395,15 @@ def merge_worktree(
         )
 
         if success:
-            output_json({
-                "merged": True,
-                "branch": info.branch,
-                "base_branch": info.base_branch,
-                "worktree_removed": not keep,
-                "committed": not no_commit,
-            })
+            output_json(
+                {
+                    "merged": True,
+                    "branch": info.branch,
+                    "base_branch": info.base_branch,
+                    "worktree_removed": not keep,
+                    "committed": not no_commit,
+                }
+            )
             if no_commit:
                 output_success(f"Changes from {info.branch} staged for review")
             else:
@@ -436,10 +452,12 @@ def remove_worktree(
         info = manager.get_worktree_info(config.project_id, resolved_task_id)
 
         if not info:
-            output_json({
-                "exists": False,
-                "task_id": resolved_task_id,
-            })
+            output_json(
+                {
+                    "exists": False,
+                    "task_id": resolved_task_id,
+                }
+            )
             output_error(f"No worktree exists for task {resolved_task_id}")
             raise typer.Exit(1)
 
@@ -453,10 +471,12 @@ def remove_worktree(
                 cwd=str(info.path),
             )
             if result.stdout.strip():
-                output_json({
-                    "has_uncommitted_changes": True,
-                    "path": str(info.path),
-                })
+                output_json(
+                    {
+                        "has_uncommitted_changes": True,
+                        "path": str(info.path),
+                    }
+                )
                 output_error("Worktree has uncommitted changes. Use --force to remove anyway.")
                 raise typer.Exit(1)
 
@@ -466,12 +486,14 @@ def remove_worktree(
             delete_branch=not keep_branch,
         )
 
-        output_json({
-            "removed": True,
-            "path": str(info.path),
-            "branch": info.branch,
-            "branch_deleted": not keep_branch,
-        })
+        output_json(
+            {
+                "removed": True,
+                "path": str(info.path),
+                "branch": info.branch,
+                "branch_deleted": not keep_branch,
+            }
+        )
         output_success(f"Removed worktree at {info.path}")
 
     except typer.Exit:

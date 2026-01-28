@@ -38,8 +38,9 @@
    - [3.7 Error Handling](#37-error-handling)
    - [3.8 Deployment](#38-deployment)
 4. [Integration](#4-integration)
-5. [Live System State](#5-live-system-state)
-6. [Key File Paths](#6-key-file-paths)
+5. [Logging & Monitoring](#5-logging--monitoring)
+6. [Live System State](#6-live-system-state)
+7. [Key File Paths](#7-key-file-paths)
 
 ---
 
@@ -302,6 +303,7 @@ st close                     # Uses active task (no ID needed)
 | `st backup` | list, create, restore, status, schedule | Backup management |
 | `st autonomous` | enable, disable, status | Autonomous settings |
 | `st health` | (no subcommands) | Quality gate status |
+| `st exec-monitor` | (task-id) -f -n | Execution monitoring (see 5.7) |
 
 **Output modes**: `--compact` (TOON), `--human` (pretty JSON), `--no-compact` (raw JSON)
 
@@ -824,7 +826,199 @@ SummitFlow                          Agent Hub
 
 ---
 
-## 5. Live System State
+## 5. Logging & Monitoring
+
+### 5.1 System Overview
+
+Three separate monitoring systems serve different purposes:
+
+| System | Location | Purpose | Consumer | Data Store |
+|--------|----------|---------|----------|------------|
+| **Agent Hub Sessions** | agent-hub `/sessions` | LLM session tracking (tokens, cost, messages) | Human (UI) | PostgreSQL `sessions`, `messages` |
+| **SummitFlow Execution Timeline** | summitflow Kanban | Task execution events (subtasks, steps, verification) | Human + Agents | PostgreSQL `events` + Redis Pub/Sub |
+| **st exec-monitor CLI** | Terminal | Execution monitoring for agents | Agents (CLI) | REST polling from `events` API |
+
+### 5.2 Event System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ EXECUTION ORCHESTRATOR (execution.py)                                        │
+│  _emit_log() / _emit_progress() / _emit_error()                              │
+│           │                                                                  │
+│           ▼                                                                  │
+│  ┌─────────────────┐                                                         │
+│  │ publish_ws_event│ (pubsub.py)                                             │
+│  └────────┬────────┘                                                         │
+│           │                                                                  │
+│     ┌─────┴─────┐                                                            │
+│     ▼           ▼                                                            │
+│  PostgreSQL   Redis Pub/Sub                                                  │
+│  (persist)    (live stream)                                                  │
+│     │           │                                                            │
+│     │           └─────────────────────────────────────────┐                  │
+│     │                                                     │                  │
+│     ▼                                                     ▼                  │
+│  REST API                                            WebSocket               │
+│  /api/events/by-trace/{trace_id}                     /ws/execution/{task_id} │
+│     │                                                     │                  │
+│     ▼                                                     ▼                  │
+│  st exec-monitor (polling, 2s)                       ExecutionTimeline (UI)  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 5.3 Event Schema
+
+```python
+Event:
+  id: UUID
+  project_id: str
+  trace_id: str         # Task ID for correlation
+  span_id: str          # 16 hex chars
+  parent_span_id: str | None
+  event_type: str       # "log", "progress", "error", "state_change"
+  source: str           # "orchestrator", "worker", "agent", "system", "verify", "memory"
+  level: str            # "error", "warning", "info", "debug"
+  visibility: str       # "user", "internal", "debug"
+  message: str
+  attributes: dict      # JSONB for structured data
+  timestamp: datetime
+```
+
+### 5.4 SummitFlow Events API
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/events` | Filtered query with pagination |
+| GET | `/api/projects/{id}/events/by-trace/{trace_id}` | All events for task (up to 5000) |
+| WS | `/ws/execution/{task_id}` | Real-time streaming via Redis Pub/Sub |
+
+**Query Parameters**:
+- `trace_id`, `level`, `source`, `visibility`, `search`
+- Returns: `{events: [...], total: N, summary: {info: N, warn: N, error: N}}`
+
+### 5.5 Execution Timeline (Frontend)
+
+**File**: `/home/kasadis/summitflow/frontend/components/tasks/ExecutionTimeline.tsx` (525 lines)
+
+**Features**:
+- WebSocket-based live streaming via `ws/execution/{taskId}`
+- Hybrid view: historical events (REST) + live events (WebSocket)
+- Auto-reconnect with exponential backoff
+- Visibility filters (user/internal/debug)
+- Event types: `log`, `progress`, `model_change`, `chat_message`, `error`, `connected`
+
+**Level Colors**:
+- debug: slate-500
+- info: slate-400
+- warning: amber-400
+- error: red-400
+
+### 5.6 Agent Hub Sessions (Frontend)
+
+**Files**:
+- `/home/kasadis/agent-hub/frontend/src/app/sessions/page.tsx` (1358 lines)
+- `/home/kasadis/agent-hub/frontend/src/app/sessions/[id]/page.tsx` (377 lines)
+
+**Features**:
+- Session list with sorting (project, model, status, tokens, cost, time)
+- Real-time live view via `useSessionEvents` hook
+- Expandable rows with 3-pane layout (Metrics | Transcript | Meta)
+- Cost estimation per model
+- Context usage visualization
+- Auto-refresh intervals (5s, 15s, 30s, 60s)
+
+**Session Data**:
+- Token breakdown (input/output)
+- Estimated cost by model
+- Message transcript with collapsible system prompts
+- Agent breakdown (multi-agent sessions)
+- Context usage percentage
+
+### 5.7 st exec-monitor CLI
+
+**File**: `/home/kasadis/summitflow/backend/cli/commands/exec_monitor.py` (164 lines)
+
+```bash
+# Show recent events
+st exec-monitor <task-id>              # Last 50 events
+st exec-monitor <task-id> -n 100       # Last 100 events
+
+# Follow mode (polling every 2s)
+st exec-monitor <task-id> -f           # Poll until completion
+
+# Output formats
+st exec-monitor <task-id> --compact    # TOON format
+st exec-monitor <task-id> --human      # Pretty JSON
+```
+
+**Display Format** (compact):
+```
+. 10:30:45 Starting subtask 1.1                    [orchestrator]
+  10:30:46 Executing step 1: Create migration      [agent]
+! 10:30:50 Warning: Large file detected            [verify]
+X 10:31:02 Step verification failed                [verify]
+```
+
+**Level Prefixes**: `.` (debug), ` ` (info), `!` (warn), `X` (error)
+
+**Current Limitations**:
+- Polling-based (2s interval), not WebSocket streaming
+- No colored terminal output
+- Minimal filtering options
+
+### 5.8 Python Logging
+
+**File**: `/home/kasadis/summitflow/backend/app/logging_config.py` (87 lines)
+
+```python
+from app.logging_config import get_logger
+logger = get_logger(__name__)
+logger.info("message", key=value)
+```
+
+**Configuration**:
+- Format: `%(asctime)s - %(name)s - %(levelname)s - %(message)s`
+- Output: stdout only (no file, no persistence)
+- Level: `LOG_LEVEL` env var (default: INFO)
+
+**Limitations**:
+- No structured logging (string concatenation)
+- No colored terminal output
+- No debug levels (1/2/3)
+- No session/trace correlation
+- Disconnected from event system
+
+### 5.9 Gap Analysis vs References
+
+Compared to Auto-Claude and Automaker reference implementations:
+
+| Feature | Auto-Claude | Automaker | SummitFlow | Gap |
+|---------|-------------|-----------|------------|-----|
+| Debug mode toggle | `DEBUG=true` | `LOG_LEVEL=debug` | `LOG_LEVEL` only | Partial |
+| Verbosity levels | 1/2/3 | 4 levels | Standard only | **Missing** |
+| Colored terminal | ANSI codes | ANSI + CSS | None | **Missing** |
+| File output | `DEBUG_LOG_FILE` | None | None | **Missing** |
+| Timing decorators | `@debug_timer` | None | None | **Missing** |
+| Section headers | `debug_section()` | None | None | **Missing** |
+| Structured kwargs | Yes | Yes | Partial | **Weak** |
+| Real-time streaming | None | WebSocket | WebSocket + Redis | OK |
+| Persistent storage | Log file | None | PostgreSQL events | OK |
+
+**Reference Files**:
+- `/home/kasadis/summitflow/references/Auto-Claude/apps/backend/core/debug.py` (350 lines)
+- `/home/kasadis/summitflow/references/automaker/libs/utils/src/logger.ts` (248 lines)
+
+### 5.10 Critical Integration Gaps
+
+1. **Python logging ≠ Event system**: `logger.info()` writes to stdout only. Execution orchestrator uses `_emit_log()` which creates events, but other services use `logger.info()` directly.
+
+2. **Agent Hub sessions ≠ SummitFlow events**: Agent Hub tracks LLM sessions (tokens, messages). SummitFlow tracks task execution (subtasks, steps). **No correlation** between them.
+
+3. **CLI polling vs WebSocket**: `st exec-monitor -f` polls every 2s. Frontend uses WebSocket for real-time. Agents using CLI miss events.
+
+---
+
+## 6. Live System State
 
 ### Active Databases
 
@@ -875,7 +1069,7 @@ Scope: Global (126) + Project (35)
 
 ---
 
-## 6. Key File Paths
+## 7. Key File Paths
 
 ### SummitFlow Backend
 
@@ -888,7 +1082,12 @@ Scope: Global (126) + Project (35)
 | `/home/kasadis/summitflow/backend/app/services/worktree_manager.py` | Git isolation |
 | `/home/kasadis/summitflow/backend/app/services/agent_hub_client.py` | Agent Hub integration |
 | `/home/kasadis/summitflow/backend/app/services/evidence_manager.py` | Evidence capture |
-| `/home/kasadis/summitflow/backend/app/tasks/autonomous/execution.py` | Autonomous pickup |
+| `/home/kasadis/summitflow/backend/app/tasks/autonomous/execution.py` | Autonomous execution |
+| `/home/kasadis/summitflow/backend/app/logging_config.py` | Python logging config |
+| `/home/kasadis/summitflow/backend/app/services/pubsub.py` | Event pub/sub (Redis + PostgreSQL) |
+| `/home/kasadis/summitflow/backend/app/storage/events.py` | Event persistence |
+| `/home/kasadis/summitflow/backend/app/api/events.py` | Events REST API |
+| `/home/kasadis/summitflow/backend/cli/commands/exec_monitor.py` | CLI execution monitor |
 | `/home/kasadis/summitflow/backend/migrations/` | 85 migrations |
 
 ### SummitFlow Frontend
@@ -898,6 +1097,7 @@ Scope: Global (126) + Project (35)
 | `/home/kasadis/summitflow/frontend/app/page.tsx` | Dashboard |
 | `/home/kasadis/summitflow/frontend/app/projects/[id]/design/page.tsx` | Design page |
 | `/home/kasadis/summitflow/frontend/components/kanban/` | Kanban board |
+| `/home/kasadis/summitflow/frontend/components/tasks/ExecutionTimeline.tsx` | Execution timeline UI |
 | `/home/kasadis/summitflow/frontend/components/explorer/` | Explorer UI |
 | `/home/kasadis/summitflow/frontend/lib/api/` | API clients |
 
@@ -924,6 +1124,9 @@ Scope: Global (126) + Project (35)
 | `/home/kasadis/agent-hub/frontend/src/app/chat/page.tsx` | Chat UI |
 | `/home/kasadis/agent-hub/frontend/src/app/agents/page.tsx` | Agents list |
 | `/home/kasadis/agent-hub/frontend/src/app/memory/page.tsx` | Memory browser |
+| `/home/kasadis/agent-hub/frontend/src/app/sessions/page.tsx` | Sessions list (monitoring) |
+| `/home/kasadis/agent-hub/frontend/src/app/sessions/[id]/page.tsx` | Session detail |
+| `/home/kasadis/agent-hub/frontend/src/hooks/use-session-events.ts` | Session events hook |
 | `/home/kasadis/agent-hub/frontend/src/app/admin/page.tsx` | Admin panel |
 
 ### Configuration
@@ -951,6 +1154,14 @@ Scope: Global (126) + Project (35)
 |------|---------|
 | `/home/kasadis/summitflow/references/ace_review.md` | ACE paper review (memory system design basis) |
 | `/home/kasadis/agent-hub/tasks/task-181399fe/plan.json` | Learning loop completion plan |
+
+### Reference Implementations (Logging)
+
+| Path | Purpose |
+|------|---------|
+| `/home/kasadis/summitflow/references/Auto-Claude/apps/backend/core/debug.py` | Auto-Claude debug logging (3-level, colors, file output) |
+| `/home/kasadis/summitflow/references/Auto-Claude/apps/backend/task_logger/logger.py` | Auto-Claude phase-based task logger |
+| `/home/kasadis/summitflow/references/automaker/libs/utils/src/logger.ts` | Automaker cross-platform logger (Node + Browser) |
 
 ---
 
@@ -1001,6 +1212,11 @@ st import plan.json              # Create task from plan
 st backup create                 # Create backup
 st autonomous status             # Check autonomous settings
 st health                        # Quality gate status
+
+# Monitoring
+st exec-monitor <task-id>        # Show last 50 events
+st exec-monitor <task-id> -f     # Follow mode (poll every 2s)
+st exec-monitor <task-id> -n 100 # Show last 100 events
 ```
 
 ### Memory API Quick Reference
@@ -1016,4 +1232,4 @@ curl -X POST "http://localhost:8003/api/memory/save-learning" \
 
 ---
 
-*Generated: 2026-01-26 | Companion: QUICK_REFERENCE.md*
+*Generated: 2026-01-27 | Companion: QUICK_REFERENCE.md*

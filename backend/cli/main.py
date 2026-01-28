@@ -10,6 +10,7 @@ from app.storage.connection import close_pool
 from .commands import (
     autonomous,
     backup,
+    complete,
     deps,
     exec_monitor,
     git,
@@ -21,6 +22,7 @@ from .commands import (
     subtask,
     tasks,
     tests,
+    tools,
     worktree,
 )
 from .config import set_project_override
@@ -137,6 +139,8 @@ app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(health.app, name="health")
 app.add_typer(memory.app, name="memory")
+app.add_typer(complete.app, name="complete")
+app.add_typer(tools.app, name="tools")
 app.command("exec-monitor")(exec_monitor.exec_monitor_command)
 
 

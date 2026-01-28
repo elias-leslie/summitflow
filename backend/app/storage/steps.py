@@ -242,7 +242,11 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
         if explicit_repo:
             explicit_venv = Path(explicit_repo) / "backend" / ".venv"
             if explicit_venv.exists():
-                return cmd.replace(".venv/bin/", f"{explicit_venv}/bin/")
+                abs_venv = f"{explicit_venv}/bin/"
+                # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
+                if "backend/.venv/bin/" in cmd:
+                    return cmd.replace("backend/.venv/bin/", abs_venv)
+                return cmd.replace(".venv/bin/", abs_venv)
 
     # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
     worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", cwd)
@@ -253,7 +257,11 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
         if main_repo:
             main_backend_venv = Path(main_repo) / "backend" / ".venv"
             if main_backend_venv.exists():
-                return cmd.replace(".venv/bin/", f"{main_backend_venv}/bin/")
+                abs_venv = f"{main_backend_venv}/bin/"
+                # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
+                if "backend/.venv/bin/" in cmd:
+                    return cmd.replace("backend/.venv/bin/", abs_venv)
+                return cmd.replace(".venv/bin/", abs_venv)
 
     # Not a worktree - check if cwd has backend/.venv
     cwd_path = Path(cwd)

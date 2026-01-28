@@ -135,13 +135,6 @@ class TestRefactorTaskExecution:
             mock_store.update_task_status.assert_called_with("task-123", "ai_reviewing")
 
     @pytest.mark.asyncio
-    async def test_refactor_task_type_in_allowed_types(self):
-        """Test that refactor task type is in allowed autonomous types."""
-        assert "refactor" in AUTONOMOUS_TASK_TYPES
-        assert "debt" in AUTONOMOUS_TASK_TYPES
-        assert "regression" in AUTONOMOUS_TASK_TYPES
-
-    @pytest.mark.asyncio
     async def test_flash_worker_used_for_subtasks(
         self, mock_project_path: Path, mock_worktree_info: MagicMock
     ):

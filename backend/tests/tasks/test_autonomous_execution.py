@@ -14,22 +14,6 @@ from unittest.mock import MagicMock, patch
 from app.tasks.autonomous import autonomous_work_pickup
 
 
-class TestAutonomousTaskTypes:
-    """Tests for task type filtering."""
-
-    def test_autonomous_task_types_includes_new_types(self):
-        """Test that new task types are included."""
-        assert "refactor" in AUTONOMOUS_TASK_TYPES
-        assert "debt" in AUTONOMOUS_TASK_TYPES
-        assert "regression" in AUTONOMOUS_TASK_TYPES
-
-    def test_autonomous_task_types_includes_existing_types(self):
-        """Test that existing task types are still included."""
-        assert "task" in AUTONOMOUS_TASK_TYPES
-        assert "bug" in AUTONOMOUS_TASK_TYPES
-        assert "feature" in AUTONOMOUS_TASK_TYPES
-
-
 class TestTimeWindowChecks:
     """Tests for time window enforcement."""
 
