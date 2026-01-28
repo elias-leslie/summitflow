@@ -137,7 +137,7 @@ app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(health.app, name="health")
 app.add_typer(memory.app, name="memory")
-app.add_typer(exec_monitor.app, name="exec-monitor")
+app.command("exec-monitor")(exec_monitor.exec_monitor_command)
 
 
 @app.callback()

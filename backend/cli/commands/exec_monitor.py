@@ -13,11 +13,12 @@ from ..client import APIError, STClient
 from ..context import require_task_id
 from ..output import handle_api_error, is_compact
 
-app = typer.Typer(help="Monitor execution progress in real-time", invoke_without_command=True)
 
-
-@app.callback(invoke_without_command=True)
-def exec_monitor(
+def exec_monitor_command(
+    task_id: Annotated[
+        str | None,
+        typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
+    ] = None,
     follow: Annotated[
         bool,
         typer.Option("-f", "--follow", help="Follow events in real-time (poll)"),
@@ -34,10 +35,6 @@ def exec_monitor(
         bool,
         typer.Option("--json", help="Output as JSON (one event per line, for agent parsing)"),
     ] = False,
-    task_id: Annotated[
-        str | None,
-        typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
-    ] = None,
 ) -> None:
     """Monitor execution progress for a task.
 
@@ -136,17 +133,13 @@ def _display_events(
                 # Get new events
                 new_events = client.get_events(project_id, task_id, limit=10, include_debug=debug)
                 events_list = (
-                    new_events.get("events", [])
-                    if isinstance(new_events, dict)
-                    else new_events
+                    new_events.get("events", []) if isinstance(new_events, dict) else new_events
                 )
 
                 if events_list:
                     # Filter to only new events
                     if last_event_id:
-                        new_only = [
-                            e for e in events_list if e.get("id") != last_event_id
-                        ]
+                        new_only = [e for e in events_list if e.get("id") != last_event_id]
                         # Check if we have events newer than last
                         if new_only and events_list[0].get("id") != last_event_id:
                             _print_events(new_only, debug, json_output)
