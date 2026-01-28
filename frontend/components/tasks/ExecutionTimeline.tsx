@@ -433,8 +433,10 @@ export function ExecutionTimeline({
               <RefreshCw className="h-3 w-3" />
               Reconnect
             </button>
-          ) : (
+          ) : autoConnect ? (
             <span className="text-xs text-slate-600">Connecting...</span>
+          ) : (
+            <span className="text-xs text-slate-600">History</span>
           )}
         </div>
       </div>
@@ -498,11 +500,18 @@ export function ExecutionTimeline({
                 <AlertCircle className="h-5 w-5 mb-2 text-amber-500" />
                 <span className="text-sm text-amber-500">{error}</span>
               </>
-            ) : (
+            ) : autoConnect ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin mb-2" />
                 <span className="text-sm">Connecting...</span>
               </>
+            ) : historicalEvents.length > 0 ? (
+              <>
+                <CheckCircle2 className="h-5 w-5 mb-2 text-slate-500" />
+                <span className="text-sm">Expand "Historical Events" above to view execution history</span>
+              </>
+            ) : (
+              <span className="text-sm">No execution events recorded</span>
             )}
           </div>
         ) : (

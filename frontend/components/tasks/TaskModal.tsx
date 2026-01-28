@@ -131,9 +131,10 @@ export function TaskModal({
   const isRunning = task?.status === 'running'
   const isPaused = task?.status === 'paused'
   const isAiReviewing = task?.status === 'ai_reviewing'
+  const isCompleted = task?.status === 'completed'
 
-  // Show timeline when task is in an active execution state
-  const showTimeline = isRunning || isPaused || isAiReviewing
+  // Show timeline for active tasks AND completed tasks (to view execution history)
+  const showTimeline = isRunning || isPaused || isAiReviewing || isCompleted
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

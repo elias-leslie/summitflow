@@ -13,16 +13,11 @@ from ..client import APIError, STClient
 from ..context import require_task_id
 from ..output import handle_api_error, is_compact
 
-app = typer.Typer(help="Monitor execution progress in real-time")
+app = typer.Typer(help="Monitor execution progress in real-time", invoke_without_command=True)
 
 
 @app.callback(invoke_without_command=True)
-def exec_monitor_default(
-    ctx: typer.Context,
-    task_id: Annotated[
-        str | None,
-        typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
-    ] = None,
+def exec_monitor(
     follow: Annotated[
         bool,
         typer.Option("-f", "--follow", help="Follow events in real-time (poll)"),
@@ -31,6 +26,10 @@ def exec_monitor_default(
         int,
         typer.Option("-n", "--limit", help="Maximum events to show"),
     ] = 50,
+    task_id: Annotated[
+        str | None,
+        typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
+    ] = None,
 ) -> None:
     """Monitor execution progress for a task.
 
@@ -38,12 +37,10 @@ def exec_monitor_default(
 
     Examples:
         st exec-monitor task-abc123
+        st exec-monitor task-abc123 -f      # Follow mode
+        st exec-monitor -n 100 task-abc123  # Show more events
         st exec-monitor -f                  # Uses active context, follow mode
-        st exec-monitor --limit 100         # Show more events
     """
-    if ctx.invoked_subcommand is not None:
-        return
-
     task_id = require_task_id(task_id)
     client = STClient()
 
