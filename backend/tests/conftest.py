@@ -10,6 +10,16 @@ from app.main import app
 from app.storage.connection import get_connection
 
 
+def pytest_addoption(parser):
+    """Add custom pytest command-line options."""
+    parser.addoption(
+        "--run-live-agent-hub",
+        action="store_true",
+        default=False,
+        help="Run live integration tests against Agent Hub (uses tokens)",
+    )
+
+
 @pytest.fixture
 def client():
     """FastAPI test client."""
