@@ -12,17 +12,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.constants import CLAUDE_SONNET, GEMINI_FLASH, GEMINI_PRO
-from app.services.quality_gate.fix_agent import (
+from app.services.quality_gate.escalation import (
     MAX_FIX_ATTEMPTS,
     SUPERVISOR_ATTEMPTS,
     WORKER_ATTEMPTS,
-    _build_fix_prompt,
-    _format_attempt_history_for_prompt,
-    _format_patterns_for_prompt,
-    _get_similar_patterns,
-    _store_successful_pattern,
     get_escalation_level,
     get_supervisor_model,
+)
+from app.services.quality_gate.fix_prompts import build_fix_prompt
+from app.services.quality_gate.pattern_memory_utils import (
+    format_attempt_history_for_prompt,
+    format_patterns_for_prompt,
+    get_similar_patterns,
+    store_successful_pattern,
 )
 from app.services.self_healing.pattern_memory import StoredPattern
 
@@ -60,7 +62,7 @@ class TestFormatPatternsForPrompt:
 
     def test_empty_patterns(self) -> None:
         """Empty pattern list returns empty string."""
-        result = _format_patterns_for_prompt([])
+        result = format_patterns_for_prompt([])
         assert result == ""
 
     def test_single_pattern(self) -> None:
@@ -77,7 +79,7 @@ class TestFormatPatternsForPrompt:
             )
         ]
 
-        result = _format_patterns_for_prompt(patterns)
+        result = format_patterns_for_prompt(patterns)
 
         assert "## Previous Successful Fixes for Similar Errors" in result
         assert "### Fix #1 (similarity: 85%)" in result
@@ -107,7 +109,7 @@ class TestFormatPatternsForPrompt:
             ),
         ]
 
-        result = _format_patterns_for_prompt(patterns)
+        result = format_patterns_for_prompt(patterns)
 
         assert "### Fix #1 (similarity: 90%)" in result
         assert "### Fix #2 (similarity: 70%)" in result
@@ -128,7 +130,7 @@ class TestFormatPatternsForPrompt:
             )
         ]
 
-        result = _format_patterns_for_prompt(patterns)
+        result = format_patterns_for_prompt(patterns)
 
         assert "Added type annotation" in result
         # Empty diff should not show diff section
@@ -151,7 +153,7 @@ class TestBuildFixPrompt:
 
     def test_basic_prompt_structure(self, base_check_result: dict[str, Any]) -> None:
         """Prompt contains required sections."""
-        prompt = _build_fix_prompt(
+        prompt = build_fix_prompt(
             check_result=base_check_result,
             file_content="import os\n\nprint('hello')",
             project_path=Path("/project"),
@@ -179,7 +181,7 @@ class TestBuildFixPrompt:
             )
         ]
 
-        prompt = _build_fix_prompt(
+        prompt = build_fix_prompt(
             check_result=base_check_result,
             file_content="import os\n",
             project_path=Path("/project"),
@@ -192,7 +194,7 @@ class TestBuildFixPrompt:
 
     def test_ruff_specific_instructions(self, base_check_result: dict[str, Any]) -> None:
         """Ruff-specific instructions are included."""
-        prompt = _build_fix_prompt(
+        prompt = build_fix_prompt(
             check_result=base_check_result,
             file_content="import os\n",
             project_path=Path("/project"),
@@ -206,7 +208,7 @@ class TestBuildFixPrompt:
         base_check_result["check_type"] = "mypy"
         base_check_result["check_name"] = "arg-type"
 
-        prompt = _build_fix_prompt(
+        prompt = build_fix_prompt(
             check_result=base_check_result,
             file_content="def foo(x): pass\n",
             project_path=Path("/project"),
@@ -222,7 +224,7 @@ class TestPatternRetrieval:
 
     @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
     @patch("app.services.quality_gate.fix_agent._run_async")
-    def test_get_similar_patterns_success(
+    def testget_similar_patterns_success(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
         """Successful pattern retrieval."""
@@ -239,20 +241,20 @@ class TestPatternRetrieval:
         ]
         mock_run_async.return_value = expected_patterns
 
-        result = _get_similar_patterns("ruff", "F401", "test error")
+        result = get_similar_patterns("ruff", "F401", "test error")
 
         assert result == expected_patterns
         mock_run_async.assert_called_once()
 
     @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
     @patch("app.services.quality_gate.fix_agent._run_async")
-    def test_get_similar_patterns_failure_returns_empty(
+    def testget_similar_patterns_failure_returns_empty(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
         """Pattern retrieval failure returns empty list."""
         mock_run_async.side_effect = Exception("API error")
 
-        result = _get_similar_patterns("ruff", "F401", "test error")
+        result = get_similar_patterns("ruff", "F401", "test error")
 
         assert result == []
 
@@ -262,13 +264,13 @@ class TestPatternStorage:
 
     @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
     @patch("app.services.quality_gate.fix_agent._run_async")
-    def test_store_successful_pattern(
+    def teststore_successful_pattern(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
         """Successful fix triggers pattern storage."""
         mock_run_async.return_value = {"success": True}
 
-        _store_successful_pattern(
+        store_successful_pattern(
             check_type="ruff",
             check_name="F401",
             error_message="'os' imported but unused",
@@ -291,7 +293,7 @@ class TestPatternStorage:
         mock_run_async.side_effect = Exception("Storage failed")
 
         # Should not raise
-        _store_successful_pattern(
+        store_successful_pattern(
             check_type="ruff",
             check_name="F401",
             error_message="test",
@@ -313,7 +315,7 @@ class TestPatternStorage:
         original = "import os\n\nprint('hello')"
         fixed = "print('hello')"
 
-        _store_successful_pattern(
+        store_successful_pattern(
             check_type="ruff",
             check_name="F401",
             error_message="unused import",
@@ -384,7 +386,7 @@ class TestAttemptHistoryFormatting:
 
     def test_empty_approaches(self) -> None:
         """Empty approach list returns empty string."""
-        result = _format_attempt_history_for_prompt([])
+        result = format_attempt_history_for_prompt([])
         assert result == ""
 
     def test_single_approach(self) -> None:
@@ -399,7 +401,7 @@ class TestAttemptHistoryFormatting:
             }
         ]
 
-        result = _format_attempt_history_for_prompt(approaches)
+        result = format_attempt_history_for_prompt(approaches)
 
         assert "## Previous Fix Attempts (ALL FAILED)" in result
         assert "### Attempt #1 (WORKER - gemini-flash)" in result
@@ -432,7 +434,7 @@ class TestAttemptHistoryFormatting:
             },
         ]
 
-        result = _format_attempt_history_for_prompt(approaches)
+        result = format_attempt_history_for_prompt(approaches)
 
         assert "### Attempt #1" in result
         assert "### Attempt #2" in result
@@ -451,7 +453,7 @@ class TestAttemptHistoryFormatting:
             }
         ]
 
-        result = _format_attempt_history_for_prompt(approaches)
+        result = format_attempt_history_for_prompt(approaches)
 
         assert "Find a DIFFERENT approach" in result
 
@@ -465,7 +467,7 @@ class TestEscalateToHumanWorktree:
         self, mock_create_task: MagicMock, mock_qcr: MagicMock
     ) -> None:
         """Escalation task includes worktree path when provided."""
-        from app.services.quality_gate.fix_agent import escalate_to_human
+        from app.services.quality_gate.escalation import escalate_to_human
 
         mock_qcr.get_check_result.return_value = {
             "id": 1,
@@ -498,7 +500,7 @@ class TestEscalateToHumanWorktree:
         self, mock_create_task: MagicMock, mock_qcr: MagicMock
     ) -> None:
         """Escalation works without worktree path."""
-        from app.services.quality_gate.fix_agent import escalate_to_human
+        from app.services.quality_gate.escalation import escalate_to_human
 
         mock_qcr.get_check_result.return_value = {
             "id": 1,

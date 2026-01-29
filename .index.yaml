@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-01-29 02:12 UTC
+generated_at: 2026-01-29 14:28 UTC
 pages:
 - / (app)
 - /about (about)
@@ -15,7 +15,6 @@ pages:
 - /projects/new (new)
 endpoints:
 - DELETE /projects/{project_id}/backups/{backup_id} (delete_backup)
-- DELETE /{project_id} (delete_project)
 - GET /activity (get_activity_feed)
 - GET /notifications (get_user_notifications)
 - GET /projects/{project_id}/backups/{backup_id}/restore/preview (preview_restore)
@@ -53,6 +52,7 @@ endpoints:
 - POST /projects/{project_id}/quality/results/{result_id}/mark-fixed (mark_result_fixed)
 - POST /projects/{project_id}/quality/sync (sync_results)
 - POST /{project_id}/explorer/regenerate-index (regenerate_index)
+- POST /{project_id}/explorer/regenerate-refactor-tasks (regenerate_refactor_tasks)
 - POST /{project_id}/explorer/scan (trigger_scan)
 - POST /{project_id}/refactor-sessions (create_session)
 - POST /{project_id}/refactor-sessions/{task_id}/complete (complete_session)
@@ -112,11 +112,11 @@ tasks:
 folders:
   (root): 26 files - services, tests
   .claude: 3 files
-  .dev-tools: 13 files - tests
+  .dev-tools: 22 files - tests
   .qna-session: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 439 files - api, services, tests
+  backend: 459 files - api, services, tests
   docs: 64 files - tests
   frontend: 217 files - api, components, tests
   mockups: 7 files

@@ -17,7 +17,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
-from .fix_agent import escalate_to_human
+from .escalation import escalate_to_human
 
 logger = get_logger(__name__)
 

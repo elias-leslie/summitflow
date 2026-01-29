@@ -135,7 +135,7 @@ def get_all_commit_counts_90d(root_path: Path) -> dict[str, int]:
 
 
 def apply_git_info_to_entry(
-    entry_metadata: dict,
+    entry_metadata: dict[str, any],
     path: str,
     last_commit_map: dict[str, tuple[int, str, str]],
     commit_count_map: dict[str, int],

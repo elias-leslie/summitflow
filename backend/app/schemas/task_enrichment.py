@@ -86,12 +86,3 @@ class BlockerInfo(BaseModel):
     title: str
     status: str
     priority: int
-
-
-# Forward reference imports for type hints
-from .task_base import TaskResponse  # noqa: E402
-from .task_criteria import AcceptanceCriterion  # noqa: E402
-
-# Update forward references
-DiscussionResponse.model_rebuild()
-CapabilityContext.model_rebuild()

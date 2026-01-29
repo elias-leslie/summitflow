@@ -20,6 +20,7 @@ from ..services.code_health.classifier import (
     Finding,
 )
 from ..services.explorer.base import get_project_config
+from ..services.explorer.types.file_detection import detect_compat_cruft, detect_magic_strings
 from ..services.explorer.types.files import FileScanner
 from ..storage import code_health_lists
 
@@ -91,7 +92,7 @@ def daily_code_health_scan(
             rel_path = str(py_file.relative_to(root_path))
 
             # Check for compat cruft
-            compat_cruft = scanner._detect_compat_cruft(rel_path, content)
+            compat_cruft = detect_compat_cruft(rel_path, content)
             for category, count in (compat_cruft or {}).items():
                 # Check if pattern is in allow list
                 pattern = f"{category}:{rel_path}"
@@ -109,7 +110,7 @@ def daily_code_health_scan(
                 )
 
             # Check for magic strings
-            magic_strings = scanner._detect_magic_strings(rel_path, content)
+            magic_strings = detect_magic_strings(rel_path, content)
             for category, count in (magic_strings or {}).items():
                 pattern = f"{category}:{rel_path}"
                 if code_health_lists.is_pattern_allowed(project_id, category, pattern):
