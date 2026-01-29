@@ -80,7 +80,7 @@ def test_permission_prompt_flow():
         yolo_mode=False,
     )
     print(f"Created session: {session_id}")
-    print(f"  tools_enabled=True, write_enabled=True, yolo_mode=False")
+    print("  tools_enabled=True, write_enabled=True, yolo_mode=False")
 
     test_file = '/home/kasadis/summitflow/test-permission-prompt.txt'
     message = f"Please create a file at {test_file} with content 'Testing permission prompt flow'."
@@ -118,10 +118,10 @@ def test_permission_prompt_flow():
                     print(f"\n  -> Auto-approving permission: {perm_id}")
                     success = resolve_permission(session_id, perm_id, True)
                     if success:
-                        print(f"  -> Permission resolved successfully")
+                        print("  -> Permission resolved successfully")
                         permission_resolved = True
                     else:
-                        print(f"  -> Permission resolution failed")
+                        print("  -> Permission resolution failed")
             time.sleep(0.1)  # Check more frequently
 
     # Start background thread for auto-approval
@@ -204,12 +204,12 @@ def test_permission_prompt_flow():
         # Check if file was created (should be if approved)
         import os
         if os.path.exists(test_file):
-            print(f"\nPASS: File was created after approval!")
+            print("\nPASS: File was created after approval!")
             os.remove(test_file)
             print("  (cleaned up)")
             return True
         else:
-            print(f"\nWARN: File was not created (agent may have declined)")
+            print("\nWARN: File was not created (agent may have declined)")
             return True
     else:
         print("\nFAIL: No permission_request events received")
@@ -217,7 +217,7 @@ def test_permission_prompt_flow():
         # Check if file was created anyway (would be a bug)
         import os
         if os.path.exists(test_file):
-            print(f"\nBUG: File was created without permission prompt!")
+            print("\nBUG: File was created without permission prompt!")
             os.remove(test_file)
             return False
         else:

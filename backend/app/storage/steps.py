@@ -42,8 +42,9 @@ VALID_STEP_STATUSES = {
     STEP_STATUS_PLAN_DEFECT,
 }
 
-# Timeout for verify_command execution (30 seconds)
-VERIFY_COMMAND_TIMEOUT = 30
+# Timeout for verify_command execution (120 seconds / 2 minutes)
+# Increased from 30s to allow full test suites to complete
+VERIFY_COMMAND_TIMEOUT = 120
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:

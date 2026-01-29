@@ -15,7 +15,6 @@ Endpoints:
 - GET /api/projects/{id}/explorer/children - Get children for tree nav
 """
 
-import json
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -23,130 +22,50 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from ..services import explorer
 from ..storage import explorer as explorer_storage
 from ..storage import scan_history
-from ..storage.connection import get_connection
+from . import explorer_helpers as helpers
 
 router = APIRouter()
-
-
-def _validate_entry_type(entry_type: str) -> None:
-    """Validate entry type parameter."""
-    valid_types = {"file", "table", "task", "endpoint", "page", "dependency"}
-    if entry_type not in valid_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid entry type: {entry_type}. Must be one of: {', '.join(sorted(valid_types))}",
-        )
-
-
-def _validate_project_exists(project_id: str) -> None:
-    """Validate project exists in database."""
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
 
 @router.get("/{project_id}/explorer")
 async def list_entries(
     project_id: str,
-    type: str | None = Query(
-        None, description="Filter by entry type (file, table, task, endpoint)"
-    ),
-    health: str | None = Query(
-        None, description="Filter by health status (healthy, warning, error, unknown)"
-    ),
+    type: str | None = Query(None, description="Filter by entry type (file, table, task, endpoint)"),
+    health: str | None = Query(None, description="Filter by health status (healthy, warning, error, unknown)"),
     path: str | None = Query(None, description="Filter by path prefix"),
-    association: str | None = Query(
-        None,
-        description="Filter by association status (orphan, is_component). Note: 'linked' is accepted for backwards compat but treated as 'orphan'",
-    ),
+    association: str | None = Query(None, description="Filter by association status (orphan, is_component)"),
     sort: str = Query("path", description="Sort field: path, name, health_status, last_scanned_at"),
     dir: str = Query("asc", description="Sort direction: asc, desc"),
     limit: int = Query(1000, ge=1, le=10000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
-    """List explorer entries with filtering, sorting, and pagination.
-
-    Returns entries with association_status field and statistics.
-    """
-    _validate_project_exists(project_id)
+    """List explorer entries with filtering, sorting, and pagination."""
+    helpers.validate_project_exists(project_id)
 
     if type:
-        _validate_entry_type(type)
+        helpers.validate_entry_type(type)
 
-    if association and association not in {"orphan", "linked", "is_component"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid association: {association}. Must be: orphan, linked, is_component",
-        )
+    if association:
+        helpers.validate_association(association)
 
-    # Build filters dict
-    filters = {
-        "type": type,
-        "health": health,
-        "path": path,
-        "association": association,
-        "sort": sort,
-        "dir": dir,
-        "limit": limit,
-        "offset": offset,
-    }
-    # Remove None values
-    filters = {k: v for k, v in filters.items() if v is not None}
-
+    filters = helpers.build_filters(type, health, path, association, sort, dir, limit, offset)
     entries = explorer.get_entries(project_id, filters)
 
     # For page entries, include sub_elements if any exist
-    if type == "page" or not type:
-        from ..storage import explorer_sub_elements
-
-        for entry in entries:
-            if entry.get("entry_type") == "page":
-                sub_els = explorer_sub_elements.get_elements_for_entry(entry["id"])
-                entry["sub_elements"] = [
-                    {
-                        "id": el["id"],
-                        "selector": el["selector"],
-                        "element_type": el["element_type"],
-                        "label": el.get("label"),
-                        "last_captured_at": el.get("last_captured_at"),
-                        "capture_count": el.get("capture_count", 0),
-                    }
-                    for el in sub_els
-                ]
+    helpers.enrich_page_entries_with_sub_elements(entries, type)
 
     # Get stats filtered by type if type filter is applied
     stats = explorer.get_stats(project_id, entry_type=type)
 
-    return {
-        "entries": entries,
-        "total": stats["total"],
-        "stats": {
-            "byHealth": stats["by_health"],
-            "byType": stats["by_type"],
-            "lastScanned": stats["last_scanned"],
-        },
-    }
+    return helpers.format_list_entries_response(entries, stats)
 
 
 @router.get("/{project_id}/explorer/stats")
 async def get_stats(project_id: str) -> dict[str, Any]:
-    """Get aggregated statistics for explorer entries.
-
-    Returns counts by type, by health status, total, and last scanned timestamp.
-    """
-    _validate_project_exists(project_id)
-
+    """Get aggregated statistics for explorer entries."""
+    helpers.validate_project_exists(project_id)
     stats = explorer.get_stats(project_id)
-
-    return {
-        "byType": stats["by_type"],
-        "byHealth": stats["by_health"],
-        "total": stats["total"],
-        "lastScanned": stats["last_scanned"],
-    }
+    return helpers.format_stats_response(stats)
 
 
 @router.get("/{project_id}/explorer/children")
@@ -155,25 +74,16 @@ async def get_children(
     type: str = Query(..., description="Entry type (file, table, task, endpoint)"),
     path: str = Query("", description="Parent path (empty for root level)"),
 ) -> list[dict[str, Any]]:
-    """Get direct children of a path for tree navigation.
-
-    Returns immediate children only (not recursive).
-    """
-    _validate_project_exists(project_id)
-    _validate_entry_type(type)
-
+    """Get direct children of a path for tree navigation."""
+    helpers.validate_project_exists(project_id)
+    helpers.validate_entry_type(type)
     return explorer.get_children(project_id, type, path)
 
 
 @router.get("/{project_id}/explorer/scan/status")
 async def get_scan_status(project_id: str) -> dict[str, Any]:
-    """Get current scan status for polling.
-
-    Returns status, progress, and timing information.
-    Poll this endpoint to track scan completion.
-    """
-    _validate_project_exists(project_id)
-
+    """Get current scan status for polling."""
+    helpers.validate_project_exists(project_id)
     return explorer.get_scan_status(project_id)
 
 
@@ -181,41 +91,18 @@ async def get_scan_status(project_id: str) -> dict[str, Any]:
 async def trigger_scan(
     project_id: str,
     background_tasks: BackgroundTasks,
-    type: str | None = Query(
-        None,
-        description="Entry type to scan (file, table, task, endpoint). Scans all if not specified.",
-    ),
-    triggered_by: str = Query(
-        "manual",
-        description="Source that initiated the scan (manual, refactor_it, daily_qa_scan, audit_it)",
-    ),
-    triggered_by_session: str | None = Query(
-        None,
-        description="Claude session ID if applicable",
-    ),
-    trigger_context_json: str | None = Query(
-        None,
-        description="JSON-encoded additional context about the trigger (phase, goal, etc.)",
-        alias="trigger_context",
-    ),
+    type: str | None = Query(None, description="Entry type to scan. Scans all if not specified."),
+    triggered_by: str = Query("manual", description="Source that initiated the scan"),
+    triggered_by_session: str | None = Query(None, description="Claude session ID if applicable"),
+    trigger_context_json: str | None = Query(None, description="JSON-encoded additional context", alias="trigger_context"),
 ) -> dict[str, Any]:
-    """Trigger a scan for explorer entries.
-
-    Runs in background. Returns immediately with scan status and scan_id.
-    Poll GET /scan/status for completion.
-    """
-    _validate_project_exists(project_id)
+    """Trigger a scan for explorer entries. Runs in background."""
+    helpers.validate_project_exists(project_id)
 
     if type:
-        _validate_entry_type(type)
+        helpers.validate_entry_type(type)
 
-    # Parse trigger context if provided
-    trigger_context: dict[str, Any] | None = None
-    if trigger_context_json:
-        try:
-            trigger_context = json.loads(trigger_context_json)
-        except json.JSONDecodeError:
-            trigger_context = None
+    trigger_context = helpers.parse_trigger_context(trigger_context_json)
 
     # Record scan in history
     scan_type = type or "full"
@@ -232,7 +119,7 @@ async def trigger_scan(
 
     # Run scan with progress tracking in background (pass scan_id for completion recording)
     background_tasks.add_task(
-        _run_scan_and_record,
+        helpers.run_scan_and_record,
         project_id,
         type,
         scan_id,
@@ -247,91 +134,18 @@ async def trigger_scan(
     }
 
 
-def _get_total_complexity(project_id: str) -> float:
-    """Calculate total complexity score from file entries.
-
-    Called after scan completion to snapshot the current complexity state.
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-                SELECT COALESCE(SUM((metadata->>'complexity_score')::float), 0)
-                FROM explorer_entries
-                WHERE project_id = %s
-                  AND entry_type = 'file'
-                  AND metadata->>'complexity_score' IS NOT NULL
-                """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-        return round(row[0], 2) if row and row[0] else 0.0
-
-
-async def _run_scan_and_record(
-    project_id: str,
-    entry_type: str | None,
-    scan_id: int,
-) -> None:
-    """Run scan and record completion in scan_history."""
-    try:
-        # Run the actual scan with tracking
-        explorer.run_scan_with_tracking(project_id, entry_type)
-
-        # Get scan results from scan_states
-        scan_status = explorer.get_scan_status(project_id)
-        results = scan_status.get("results", [])
-
-        # Calculate totals
-        entries_found = sum(r.get("entries_found", 0) for r in results)
-        entries_saved = sum(r.get("entries_saved", 0) for r in results)
-
-        # Calculate total complexity from file entries (snapshot at scan time)
-        total_complexity = _get_total_complexity(project_id)
-
-        # Build metrics from results
-        metrics = {
-            "types_scanned": len(results),
-            "by_type": {r["entry_type"]: r for r in results},
-            "complexity": total_complexity,  # Snapshot for sparkline trend
-        }
-
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="completed" if scan_status.get("status") == "completed" else "failed",
-            error_message=scan_status.get("error"),
-            metrics=metrics,
-            entries_found=entries_found,
-            entries_saved=entries_saved,
-        )
-    except Exception as e:
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="failed",
-            error_message=str(e),
-        )
-
-
 @router.get("/{project_id}/explorer/scan-history")
 async def get_scan_history(
     project_id: str,
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     scan_type: str | None = Query(None, description="Filter by scan type"),
 ) -> dict[str, Any]:
-    """Get scan history with sparkline data and summary.
-
-    Returns list of scans, aggregated chart data, and summary statistics.
-    Cached for 60 seconds.
-    """
-    _validate_project_exists(project_id)
-
-    scans = scan_history.get_scan_history(project_id, days=days, scan_type=scan_type)
-    sparkline = scan_history.get_sparkline_data(project_id, days=days)
-    summary = scan_history.get_summary(project_id, days=days)
-
+    """Get scan history with sparkline data and summary."""
+    helpers.validate_project_exists(project_id)
     return {
-        "scans": scans,
-        "sparkline_data": sparkline,
-        "summary": summary,
+        "scans": scan_history.get_scan_history(project_id, days=days, scan_type=scan_type),
+        "sparkline_data": scan_history.get_sparkline_data(project_id, days=days),
+        "summary": scan_history.get_summary(project_id, days=days),
     }
 
 
@@ -341,38 +155,23 @@ async def get_scan_comparison(
     before: int = Query(..., description="Scan ID for 'before' snapshot"),
     after: int = Query(..., description="Scan ID for 'after' snapshot"),
 ) -> dict[str, Any]:
-    """Compare two scans with metrics delta.
-
-    Returns both scans with computed differences.
-    """
-    _validate_project_exists(project_id)
-
+    """Compare two scans with metrics delta."""
+    helpers.validate_project_exists(project_id)
     comparison = scan_history.get_scan_comparison(before, after)
     if not comparison:
         raise HTTPException(status_code=404, detail="One or both scans not found")
-
     return comparison
 
 
 @router.get("/{project_id}/explorer/entry/{entry_id}")
-async def get_entry_by_id(
-    project_id: str,
-    entry_id: int,
-) -> dict[str, Any]:
-    """Get a single explorer entry by ID.
-
-    Returns full entry dict.
-    """
-    _validate_project_exists(project_id)
-
+async def get_entry_by_id(project_id: str, entry_id: int) -> dict[str, Any]:
+    """Get a single explorer entry by ID."""
+    helpers.validate_project_exists(project_id)
     entry = explorer_storage.get_entry_by_id(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
-
-    # Verify entry belongs to project
     if entry.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found in project")
-
     return entry
 
 
@@ -383,21 +182,14 @@ async def get_refactor_targets(
     min_complexity: float | None = Query(None, description="Minimum complexity score"),
     min_lines: int | None = Query(None, description="Minimum lines of code"),
     limit: int = Query(50, ge=1, le=200, description="Max results"),
-    code_only: bool = Query(True, description="Filter to code files only (.py, .ts, etc)"),
+    code_only: bool = Query(True, description="Filter to code files only"),
     extensions: str | None = Query(None, description="Comma-separated extensions (.py,.ts)"),
 ) -> dict[str, Any]:
-    """Get files that are candidates for refactoring.
+    """Get files that are candidates for refactoring."""
+    helpers.validate_project_exists(project_id)
 
-    Returns files with high complexity or line count, sorted by priority.
-    By default, only returns code files (Python, TypeScript, JavaScript).
-    """
-    _validate_project_exists(project_id)
-
-    if priority and priority not in {"high", "medium"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid priority: {priority}. Must be: high, medium",
-        )
+    if priority:
+        helpers.validate_priority(priority)
 
     ext_list = extensions.split(",") if extensions else None
 
@@ -411,162 +203,65 @@ async def get_refactor_targets(
         extensions=ext_list,
     )
 
-    # Add stale metadata warning if applicable
-    stale_count = explorer_storage.count_stale_metadata_entries(project_id)
-    if stale_count > 0:
-        result["warning"] = {
-            "message": f"{stale_count} files have outdated metadata. Run a fresh scan.",
-            "stale_count": stale_count,
-        }
-
+    helpers.add_stale_metadata_warning(result, project_id)
     return result
 
 
 @router.get("/{project_id}/analysis/coverage-gaps")
 async def get_coverage_gaps(project_id: str) -> dict[str, Any]:
-    """Get endpoints, pages, and tables without capability links.
-
-    Returns entities that are not covered by any capability,
-    indicating potential gaps in TDD coverage.
-    """
-    _validate_project_exists(project_id)
-
+    """Get endpoints, pages, and tables without capability links."""
+    helpers.validate_project_exists(project_id)
     return explorer_storage.get_coverage_gaps(project_id)
 
 
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")
-async def get_entry(
-    project_id: str,
-    entry_type: str,
-    path: str,
-) -> dict[str, Any]:
-    """Get a single explorer entry by type and path.
-
-    Returns full entry details including metadata.
-    """
-    _validate_project_exists(project_id)
-    _validate_entry_type(entry_type)
-
+async def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any]:
+    """Get a single explorer entry by type and path."""
+    helpers.validate_project_exists(project_id)
+    helpers.validate_entry_type(entry_type)
     entry = explorer.get_entry(project_id, entry_type, path)
     if not entry:
         raise HTTPException(
             status_code=404,
             detail=f"Entry not found: {entry_type}/{path}",
         )
-
     return entry
 
 
 @router.post("/{project_id}/explorer/health-check")
-async def trigger_health_check(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, Any]:
-    """Trigger health checks for all page entries.
-
-    Runs ba check on each page to verify:
-    - HTTP response status
-    - Console errors
-    - Response time
-
-    Returns immediately with task ID for polling.
-    """
-    _validate_project_exists(project_id)
-
-    from celery import current_app
-
-    result = current_app.send_task(
+async def trigger_health_check(project_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Trigger health checks for all page entries."""
+    helpers.validate_project_exists(project_id)
+    return helpers.dispatch_celery_task(
         "summitflow.run_page_health_checks",
-        args=[project_id],
+        project_id,
+        "Health check started. Results will update page entries.",
     )
-
-    return {
-        "status": "started",
-        "project_id": project_id,
-        "task_id": result.id,
-        "message": "Health check started. Results will update page entries.",
-    }
 
 
 @router.post("/{project_id}/explorer/regenerate-index")
 async def regenerate_index(project_id: str) -> dict[str, Any]:
-    """Regenerate .index.yaml file for a project.
-
-    Creates/updates the index file at project root with:
-    - Health summary
-    - Hotspots (refactor targets)
-    - Pages, endpoints, tables, tasks
-    - Dependencies summary
-    - Folder structure
-    """
-    _validate_project_exists(project_id)
-
+    """Regenerate .index.yaml file for a project."""
+    helpers.validate_project_exists(project_id)
     from ..services.explorer import write_index_file
 
-    result = write_index_file(project_id)
-
-    if result:
-        return {
-            "status": "success",
-            "project_id": project_id,
-            "path": result,
-        }
-    else:
-        return {
-            "status": "failed",
-            "project_id": project_id,
-            "error": "Could not write index file (check project root_path)",
-        }
+    return helpers.format_index_regeneration_response(project_id, write_index_file(project_id))
 
 
 @router.post("/explorer/regenerate-all-indexes")
 async def regenerate_all_indexes() -> dict[str, Any]:
-    """Regenerate .index.yaml files for all projects.
-
-    Useful for refreshing all project indexes after schema changes.
-    """
+    """Regenerate .index.yaml files for all projects."""
     from ..services.explorer import write_all_index_files
 
-    results = write_all_index_files()
-
-    success = [k for k, v in results.items() if v is not None]
-    failed = [k for k, v in results.items() if v is None]
-
-    return {
-        "status": "completed",
-        "success_count": len(success),
-        "failed_count": len(failed),
-        "success": success,
-        "failed": failed,
-    }
+    return helpers.format_all_indexes_response(write_all_index_files())
 
 
 @router.post("/{project_id}/explorer/regenerate-refactor-tasks")
-async def regenerate_refactor_tasks(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, Any]:
-    """Delete existing refactor tasks and regenerate from current scan.
-
-    This is a clean-slate approach that:
-    1. Deletes ALL existing refactor tasks for the project
-    2. Creates new tasks with proper verification commands (line count targets)
-
-    Use this when you want to refresh refactor tasks to reflect current codebase state.
-    For incremental task generation (skips existing), use the scheduled scan instead.
-    """
-    _validate_project_exists(project_id)
-
-    from celery import current_app
-
-    result = current_app.send_task(
+async def regenerate_refactor_tasks(project_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Delete existing refactor tasks and regenerate from current scan."""
+    helpers.validate_project_exists(project_id)
+    return helpers.dispatch_celery_task(
         "summitflow.regenerate_refactor_tasks",
-        args=[project_id],
+        project_id,
+        "Refactor task regeneration started. Existing tasks will be deleted and new ones created.",
     )
-
-    return {
-        "status": "started",
-        "project_id": project_id,
-        "task_id": result.id,
-        "message": "Refactor task regeneration started. Existing tasks will be deleted and new ones created.",
-    }

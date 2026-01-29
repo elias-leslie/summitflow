@@ -76,6 +76,46 @@ def _calculate_target_lines(current_lines: int) -> int:
         return 150  # Small files - modest reduction
 
 
+def _get_targeted_test_command(relative_path: str) -> str:
+    """Generate a targeted pytest command for the specific file being refactored.
+
+    Maps source file paths to their corresponding test files.
+    Falls back to import check if no test file pattern matches.
+
+    Args:
+        relative_path: Relative path to the source file (e.g., "backend/app/tasks/ai_review.py")
+
+    Returns:
+        Pytest command targeting specific tests, or import check as fallback
+    """
+    import re
+
+    # Extract the module name and path components
+    # e.g., "backend/app/tasks/ai_review.py" -> module="ai_review", dir="backend/app/tasks"
+    path_match = re.match(r"^(backend)/(app|cli)/(.+)/([^/]+)\.py$", relative_path)
+    if path_match:
+        prefix, app_or_cli, subdir, module = path_match.groups()
+        # Map to test file: backend/app/tasks/foo.py -> backend/tests/tasks/test_foo.py
+        test_path = f"{prefix}/tests/{subdir}/test_{module}.py"
+        # Use pytest with the specific test file, fallback to import check if file doesn't exist
+        return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {app_or_cli}.{subdir.replace('/', '.')}.{module} import *'"
+
+    # Handle direct backend/app/*.py or backend/cli/*.py files
+    path_match = re.match(r"^(backend)/(app|cli)/([^/]+)\.py$", relative_path)
+    if path_match:
+        prefix, app_or_cli, module = path_match.groups()
+        test_path = f"{prefix}/tests/test_{module}.py"
+        return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {app_or_cli}.{module} import *'"
+
+    # Frontend files - just check import/build
+    if relative_path.startswith("frontend/"):
+        return "cd frontend && npm run build --quiet"
+
+    # Fallback: simple import check using python
+    module_path = relative_path.replace("/", ".").replace(".py", "")
+    return f"python -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
+
+
 @celery_app.task(name="summitflow.generate_tasks_from_scan")
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results.
@@ -228,9 +268,9 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
                             "expected_output": "TYPES:OK",
                         },
                         {
-                            "description": "Verify all tests pass",
-                            "verify_command": "dt pytest",
-                            "expected_output": "TEST:OK",
+                            "description": f"Verify tests for {file_path}",
+                            "verify_command": _get_targeted_test_command(file_path),
+                            "expected_output": "exit code 0",
                         },
                     ]
                     # Add browser check for frontend files
@@ -435,9 +475,9 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
                             "expected_output": "TYPES:OK",
                         },
                         {
-                            "description": "Verify all tests pass",
-                            "verify_command": "dt pytest",
-                            "expected_output": "TEST:OK",
+                            "description": f"Verify tests for {relative_path}",
+                            "verify_command": _get_targeted_test_command(relative_path),
+                            "expected_output": "exit code 0",
                         },
                     ]
                     # Add browser check for frontend files

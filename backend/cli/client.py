@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-import socket
 from typing import Any, cast
 
 import httpx
 
+from . import _client_dependencies as deps_ops
+from . import _client_execution as exec_ops
+from . import _client_steps as steps_ops
+from . import _client_subtasks as subtasks_ops
+from . import _client_tasks as tasks_ops
+from . import _client_tests as tests_ops
 from .config import get_config
 
 
@@ -26,17 +31,9 @@ class STClient:
         self,
         base_url: str | None = None,
         project_id: str | None = None,
-        timeout: float = 30.0,
+        timeout: float = 150.0,  # Allow time for verify_command (120s) + API overhead
         require_project: bool = True,
     ) -> None:
-        """Initialize the client.
-
-        Args:
-            base_url: API base URL (default from ST_API_BASE)
-            project_id: Project ID (default from ST_PROJECT_ID)
-            timeout: Request timeout in seconds
-            require_project: If False, allow operations without project context
-        """
         from .config import get_config_optional
 
         if require_project:
@@ -70,57 +67,19 @@ class STClient:
         return cast(dict[str, Any], response.json())
 
     def get(self, url: str) -> dict[str, Any]:
-        """Generic GET request to any URL.
-
-        Args:
-            url: Full URL to request
-
-        Returns:
-            Response JSON as dict.
-        """
+        """Generic GET request to any URL."""
         response = self._client.get(url)
         return self._handle_response(response)
 
-    # Task CRUD operations
-
+    # Task operations
     def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a new task.
-
-        Args:
-            data: Task data (title, description, priority, labels, task_type, etc.)
-
-        Returns:
-            Created task dict.
-        """
-        response = self._client.post(self._url("/tasks"), json=data)
-        return self._handle_response(response)
+        return tasks_ops.create_task(self._client, self._url, self._handle_response, data)
 
     def batch_create_tasks(self, items: list[dict[str, Any]]) -> dict[str, Any]:
-        """Create multiple tasks in batch.
-
-        Args:
-            items: List of task dicts (title, description, priority, labels, task_type, etc.)
-
-        Returns:
-            Dict with 'created' list and 'errors' list.
-        """
-        response = self._client.post(self._url("/tasks/batch"), json={"items": items})
-        return self._handle_response(response)
+        return tasks_ops.batch_create_tasks(self._client, self._url, self._handle_response, items)
 
     def get_task(self, task_id: str) -> dict[str, Any]:
-        """Get a task by ID (global lookup, no project context required).
-
-        Task IDs are globally unique, so this uses the non-project-scoped
-        endpoint for lookups that don't need project validation.
-
-        Args:
-            task_id: Task ID
-
-        Returns:
-            Task dict.
-        """
-        response = self._client.get(self._global_url(f"/tasks/{task_id}"))
-        return self._handle_response(response)
+        return tasks_ops.get_task(self._client, self._global_url, self._handle_response, task_id)
 
     def list_tasks(
         self,
@@ -131,269 +90,62 @@ class STClient:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """List tasks with optional filters.
-
-        Args:
-            status: Filter by status
-            task_type: Filter by type (feature, bug, task)
-            priority: Filter by priority (0-4)
-            labels: Filter by labels
-            limit: Results per page
-            offset: Results offset
-
-        Returns:
-            Dict with tasks list and total count.
-        """
-        params: dict[str, Any] = {"limit": limit, "offset": offset}
-        if status:
-            params["status"] = status
-        if task_type:
-            params["type"] = task_type
-        if priority is not None:
-            params["priority"] = priority
-        if labels:
-            params["labels"] = ",".join(labels)
-
-        response = self._client.get(self._url("/tasks"), params=params)
-        return self._handle_response(response)
+        return tasks_ops.list_tasks(
+            self._client, self._url, self._handle_response,
+            status, task_type, priority, labels, limit, offset
+        )
 
     def list_ready(self, limit: int = 50) -> dict[str, Any]:
-        """List tasks ready to work on (no blocking dependencies).
-
-        Args:
-            limit: Max results
-
-        Returns:
-            Dict with tasks list and total count.
-        """
-        response = self._client.get(self._url("/tasks/ready"), params={"limit": limit})
-        return self._handle_response(response)
+        return tasks_ops.list_ready(self._client, self._url, self._handle_response, limit)
 
     def update_task(self, task_id: str, **updates: Any) -> dict[str, Any]:
-        """Update a task.
-
-        Args:
-            task_id: Task ID
-            **updates: Fields to update
-
-        Returns:
-            Updated task dict.
-        """
-        response = self._client.patch(self._url(f"/tasks/{task_id}"), json=updates)
-        return self._handle_response(response)
+        return tasks_ops.update_task(self._client, self._url, self._handle_response, task_id, **updates)
 
     def update_status(
-        self,
-        task_id: str,
-        status: str,
-        error_message: str | None = None,
-        reason: str | None = None,
+        self, task_id: str, status: str, error_message: str | None = None, reason: str | None = None
     ) -> dict[str, Any]:
-        """Update task status.
+        return tasks_ops.update_status(
+            self._client, self._url, self._handle_response, task_id, status, error_message, reason
+        )
 
-        Args:
-            task_id: Task ID
-            status: New status
-            error_message: Optional error message
-            reason: Optional completion reason (stored in progress_log)
-
-        Returns:
-            Updated task dict.
-        """
-        data: dict[str, Any] = {"status": status}
-        if error_message:
-            data["error_message"] = error_message
-        if reason:
-            data["reason"] = reason
-
-        response = self._client.patch(self._url(f"/tasks/{task_id}/status"), json=data)
-        return self._handle_response(response)
-
-    def close_task(
-        self,
-        task_id: str,
-        reason: str | None = None,
-    ) -> dict[str, Any]:
-        """Close a task (mark as completed).
-
-        All subtasks must be complete and acceptance criteria verified.
-        There is no bypass - complete the work first.
-
-        Args:
-            task_id: Task ID
-            reason: Completion reason (stored in progress_log)
-
-        Returns:
-            Updated task dict.
-        """
+    def close_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
         return self.update_status(task_id, "completed", reason=reason)
 
     def cancel_task(self, task_id: str) -> dict[str, Any]:
-        """Cancel a task (mark as cancelled from any non-terminal state).
-
-        Args:
-            task_id: Task ID
-
-        Returns:
-            Updated task dict.
-        """
         return self.update_status(task_id, "cancelled")
 
     def delete_task(self, task_id: str) -> dict[str, Any]:
-        """Delete a task.
+        return tasks_ops.delete_task(self._client, self._url, self._handle_response, task_id)
 
-        Args:
-            task_id: Task ID
-
-        Returns:
-            Deletion confirmation dict.
-        """
-        response = self._client.delete(self._url(f"/tasks/{task_id}"))
-        return self._handle_response(response)
-
-    # Task claim/release
-
-    def claim_task(
-        self,
-        task_id: str,
-        lock_minutes: int = 30,
-        worker_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Claim a task for exclusive execution.
-
-        Args:
-            task_id: Task ID
-            lock_minutes: How long to hold the lock
-            worker_id: Worker identifier (defaults to hostname)
-
-        Returns:
-            Claimed task dict.
-        """
-        if worker_id is None:
-            worker_id = socket.gethostname()
-
-        data = {"worker_id": worker_id, "lock_minutes": lock_minutes}
-        response = self._client.post(self._url(f"/tasks/{task_id}/claim"), json=data)
-        return self._handle_response(response)
+    def claim_task(self, task_id: str, lock_minutes: int = 30, worker_id: str | None = None) -> dict[str, Any]:
+        return tasks_ops.claim_task(self._client, self._url, self._handle_response, task_id, lock_minutes, worker_id)
 
     def release_task(self, task_id: str) -> dict[str, Any]:
-        """Release a claimed task.
+        return tasks_ops.release_task(self._client, self._url, self._handle_response, task_id)
 
-        Args:
-            task_id: Task ID
-
-        Returns:
-            Released task dict.
-        """
-        response = self._client.post(self._url(f"/tasks/{task_id}/release"))
-        return self._handle_response(response)
+    def append_log(self, task_id: str, entry: str) -> dict[str, Any]:
+        return tasks_ops.append_log(self._client, self._global_url, self._handle_response, task_id, entry)
 
     # Dependencies
-
-    def add_dependency(
-        self,
-        task_id: str,
-        depends_on: str,
-        dep_type: str = "blocks",
-    ) -> dict[str, Any]:
-        """Add a dependency to a task.
-
-        Args:
-            task_id: Task that depends on another
-            depends_on: Task ID being depended on
-            dep_type: Dependency type (blocks, discovered-from)
-
-        Returns:
-            Created dependency dict.
-        """
-        data = {"depends_on_task_id": depends_on, "dependency_type": dep_type}
-        response = self._client.post(self._url(f"/tasks/{task_id}/dependencies"), json=data)
-        return self._handle_response(response)
+    def add_dependency(self, task_id: str, depends_on: str, dep_type: str = "blocks") -> dict[str, Any]:
+        return deps_ops.add_dependency(self._client, self._url, self._handle_response, task_id, depends_on, dep_type)
 
     def list_dependencies(self, task_id: str) -> list[dict[str, Any]]:
-        """List dependencies for a task.
+        return deps_ops.list_dependencies(self._client, self._global_url, self._handle_response, task_id)
 
-        Args:
-            task_id: Task ID
-
-        Returns:
-            List of dependency dicts.
-        """
-        response = self._client.get(self._global_url(f"/tasks/{task_id}/dependencies"))
-        return cast(list[dict[str, Any]], self._handle_response(response))
-
-    def remove_dependency(
-        self,
-        task_id: str,
-        depends_on: str,
-        dep_type: str | None = None,
-    ) -> dict[str, Any]:
-        """Remove a dependency from a task.
-
-        Args:
-            task_id: Task ID
-            depends_on: Task ID being depended on
-            dep_type: Dependency type (optional, removes all if not specified)
-
-        Returns:
-            Status dict.
-        """
-        url = f"/tasks/{task_id}/dependencies/{depends_on}"
-        params = {}
-        if dep_type:
-            params["dependency_type"] = dep_type
-        response = self._client.delete(self._url(url), params=params)
-        return self._handle_response(response)
+    def remove_dependency(self, task_id: str, depends_on: str, dep_type: str | None = None) -> dict[str, Any]:
+        return deps_ops.remove_dependency(self._client, self._url, self._handle_response, task_id, depends_on, dep_type)
 
     # Tests
-
     def list_tests(self, test_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-        """List tests for the project.
-
-        Args:
-            test_type: Filter by test type
-            limit: Max results to return
-
-        Returns:
-            List of test dicts.
-        """
-        params: dict[str, Any] = {"limit": limit}
-        if test_type:
-            params["type"] = test_type
-        response = self._client.get(self._url("/tests"), params=params)
-        return cast(list[dict[str, Any]], self._handle_response(response))
+        return tests_ops.list_tests(self._client, self._url, self._handle_response, test_type, limit)
 
     def import_tests(self, framework: str) -> dict[str, Any]:
-        """Import tests from a framework.
-
-        Args:
-            framework: Framework to import from (pytest, mypy, ruff, etc.)
-
-        Returns:
-            Import result dict.
-        """
-        response = self._client.post(self._url("/tests/import"), json={"framework": framework})
-        return self._handle_response(response)
+        return tests_ops.import_tests(self._client, self._url, self._handle_response, framework)
 
     # Subtasks
-
-    def get_subtasks(
-        self,
-        task_id: str,
-        include_steps: bool = False,
-    ) -> dict[str, Any]:
-        """Get subtasks for a task.
-
-        Args:
-            task_id: Task ID
-            include_steps: Include steps from table
-
-        Returns:
-            Dict with subtasks list and summary.
-        """
-        params = {"include_steps": str(include_steps).lower()}
-        response = self._client.get(self._global_url(f"/tasks/{task_id}/subtasks"), params=params)
-        return self._handle_response(response)
+    def get_subtasks(self, task_id: str, include_steps: bool = False) -> dict[str, Any]:
+        return subtasks_ops.get_subtasks(self._client, self._global_url, self._handle_response, task_id, include_steps)
 
     def create_subtask(
         self,
@@ -404,523 +156,98 @@ class STClient:
         steps: list[str | dict[str, Any]] | None = None,
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Create a subtask for a task.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            description: Subtask description
-            phase: Phase name (e.g., "backend", "frontend")
-            steps: Optional list of steps - strings or {description, spec} dicts
-            details: Optional rich implementation spec from plan.json (deprecated)
-
-        Returns:
-            Created subtask dict.
-        """
-        data: dict[str, Any] = {
-            "subtask_id": subtask_id,
-            "description": description,
-            "phase": phase,
-        }
-        if steps:
-            data["steps"] = steps
-        if details:
-            data["details"] = details
-        response = self._client.post(self._url(f"/tasks/{task_id}/subtasks"), json=data)
-        return self._handle_response(response)
-
-    def bulk_create_subtasks(
-        self,
-        task_id: str,
-        subtasks: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Create multiple subtasks for a task in batch.
-
-        Args:
-            task_id: Task ID
-            subtasks: List of subtask dicts with subtask_id, description, phase, steps
-
-        Returns:
-            Dict with created list and errors list.
-        """
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/batch"),
-            json={"subtasks": subtasks},
+        return subtasks_ops.create_subtask(
+            self._client, self._url, self._handle_response, task_id, subtask_id, description, phase, steps, details
         )
-        return self._handle_response(response)
 
-    def update_subtask(
-        self,
-        task_id: str,
-        subtask_id: str,
-        passes: bool,
-    ) -> dict[str, Any]:
-        """Update a subtask's passes status.
+    def bulk_create_subtasks(self, task_id: str, subtasks: list[dict[str, Any]]) -> dict[str, Any]:
+        return subtasks_ops.bulk_create_subtasks(self._client, self._url, self._handle_response, task_id, subtasks)
 
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            passes: Whether subtask passes
-
-        Returns:
-            Updated subtask dict.
-        """
-        data = {"passes": passes}
-        response = self._client.patch(
-            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data
-        )
-        return self._handle_response(response)
+    def update_subtask(self, task_id: str, subtask_id: str, passes: bool) -> dict[str, Any]:
+        return subtasks_ops.update_subtask(self._client, self._global_url, self._handle_response, task_id, subtask_id, passes)
 
     def delete_subtask(self, task_id: str, subtask_id: str) -> dict[str, Any]:
-        """Delete a subtask and all its steps.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "99.1")
-
-        Returns:
-            Deletion confirmation dict.
-        """
-        response = self._client.delete(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}"))
-        return self._handle_response(response)
+        return subtasks_ops.delete_subtask(self._client, self._url, self._handle_response, task_id, subtask_id)
 
     def log_citations(self, task_id: str, subtask_id: str, citations: list[str]) -> dict[str, Any]:
-        """Log episode citations for a subtask with suffix notation ratings.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            citations: List of citations in suffix notation (M:abc123+ G:def456-)
-
-        Returns:
-            Dict with logged count and subtask_id.
-        """
-        response = self._client.post(
-            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
-            json={"citations": citations},
-        )
-        return self._handle_response(response)
+        return subtasks_ops.log_citations(self._client, self._global_url, self._handle_response, task_id, subtask_id, citations)
 
     def acknowledge_no_citations(self, task_id: str, subtask_id: str) -> dict[str, Any]:
-        """Acknowledge that no memories were needed for a subtask.
-
-        Requires explicit confirmation via honestly_none=true body.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-
-        Returns:
-            Dict with acknowledged status.
-        """
-        response = self._client.post(
-            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/citations/acknowledge-none"),
-            json={"honestly_none": True},
-        )
-        return self._handle_response(response)
+        return subtasks_ops.acknowledge_no_citations(self._client, self._global_url, self._handle_response, task_id, subtask_id)
 
     # Steps
-
     def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:
-        """Get steps for a subtask.
+        return steps_ops.get_steps(self._client, self._url, self._handle_response, task_id, subtask_id)
 
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
+    def bulk_create_steps(self, task_id: str, subtask_id: str, descriptions: list[str]) -> dict[str, Any]:
+        return steps_ops.bulk_create_steps(self._client, self._url, self._handle_response, task_id, subtask_id, descriptions)
 
-        Returns:
-            List of step dicts.
-        """
-        response = self._client.get(self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"))
-        return cast(list[dict[str, Any]], self._handle_response(response))
+    def append_steps(self, task_id: str, subtask_id: str, descriptions: list[str]) -> dict[str, Any]:
+        return steps_ops.append_steps(self._client, self._url, self._handle_response, task_id, subtask_id, descriptions)
 
-    def bulk_create_steps(
-        self,
-        task_id: str,
-        subtask_id: str,
-        descriptions: list[str],
-    ) -> dict[str, Any]:
-        """Create multiple steps for a subtask in batch.
+    def update_step(self, task_id: str, subtask_id: str, step_number: int, passes: bool) -> dict[str, Any]:
+        return steps_ops.update_step(self._client, self._global_url, self._handle_response, task_id, subtask_id, step_number, passes)
 
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            descriptions: List of step descriptions
+    def delete_step(self, task_id: str, subtask_id: str, step_number: int) -> dict[str, Any]:
+        return steps_ops.delete_step(self._client, self._url, self._handle_response, task_id, subtask_id, step_number)
 
-        Returns:
-            Dict with created list.
-        """
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/batch"),
-            json={"steps": descriptions},
-        )
-        return self._handle_response(response)
-
-    def append_steps(
-        self,
-        task_id: str,
-        subtask_id: str,
-        descriptions: list[str],
-    ) -> dict[str, Any]:
-        """Append steps to a subtask, continuing from highest existing step number.
-
-        Unlike bulk_create_steps which starts at 1, this finds the max step_number
-        and continues from there. Safe to call on subtasks with existing steps.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            descriptions: List of step descriptions to append
-
-        Returns:
-            Dict with created list.
-        """
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/append"),
-            json={"steps": descriptions},
-        )
-        return self._handle_response(response)
-
-    def update_step(
-        self,
-        task_id: str,
-        subtask_id: str,
-        step_number: int,
-        passes: bool,
-    ) -> dict[str, Any]:
-        """Update a step's passes status.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            step_number: Step number (1-indexed)
-            passes: Whether step passes
-
-        Returns:
-            Updated step dict.
-        """
-        data = {"passes": passes}
-        response = self._client.patch(
-            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
-            json=data,
-        )
-        return self._handle_response(response)
-
-    def delete_step(
-        self,
-        task_id: str,
-        subtask_id: str,
-        step_number: int,
-    ) -> dict[str, Any]:
-        """Delete a step from a subtask.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            step_number: Step number to delete (1-indexed)
-
-        Returns:
-            Deletion confirmation dict.
-        """
-        response = self._client.delete(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}")
-        )
-        return self._handle_response(response)
-
-    def insert_step(
-        self,
-        task_id: str,
-        subtask_id: str,
-        position: int,
-        description: str,
-    ) -> dict[str, Any]:
-        """Insert a step at a specific position, shifting existing steps down.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            position: Position to insert at (1-indexed)
-            description: Step description
-
-        Returns:
-            Created step dict.
-        """
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{position}/insert"),
-            json={"description": description},
-        )
-        return self._handle_response(response)
+    def insert_step(self, task_id: str, subtask_id: str, position: int, description: str) -> dict[str, Any]:
+        return steps_ops.insert_step(self._client, self._url, self._handle_response, task_id, subtask_id, position, description)
 
     def create_step_with_verification(
-        self,
-        task_id: str,
-        subtask_id: str,
-        description: str,
-        verify_command: str,
-        expected_output: str,
+        self, task_id: str, subtask_id: str, description: str, verify_command: str, expected_output: str
     ) -> dict[str, Any]:
-        """Create a single step with required verification.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            description: Step description
-            verify_command: Bash command to verify completion (exit 0 = pass)
-            expected_output: Description of what success looks like
-
-        Returns:
-            Created step dict.
-        """
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"),
-            json={
-                "description": description,
-                "verify_command": verify_command,
-                "expected_output": expected_output,
-            },
+        return steps_ops.create_step_with_verification(
+            self._client, self._url, self._handle_response, task_id, subtask_id, description, verify_command, expected_output
         )
-        return self._handle_response(response)
 
     def update_step_fields(
-        self,
-        task_id: str,
-        subtask_id: str,
-        step_number: int,
-        description: str | None = None,
+        self, task_id: str, subtask_id: str, step_number: int, description: str | None = None
     ) -> dict[str, Any]:
-        """Update step description.
-
-        NOTE: verify_command and expected_output are immutable after creation.
-        Only the description field can be updated.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            step_number: Step number (1-indexed)
-            description: Step description
-
-        Returns:
-            Updated step dict.
-        """
-        data: dict[str, Any] = {}
-        if description is not None:
-            data["description"] = description
-
-        response = self._client.patch(
-            self._url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/fields"),
-            json=data,
+        return steps_ops.update_step_fields(
+            self._client, self._url, self._handle_response, task_id, subtask_id, step_number, description
         )
-        return self._handle_response(response)
 
     def update_step_status(
-        self,
-        task_id: str,
-        subtask_id: str,
-        step_number: int,
-        status: str,
-        fix_step_number: int | None = None,
+        self, task_id: str, subtask_id: str, step_number: int, status: str, fix_step_number: int | None = None
     ) -> dict[str, Any]:
-        """Update step status.
-
-        Args:
-            task_id: Task ID
-            subtask_id: Subtask ID (e.g., "1.1")
-            step_number: Step number (1-indexed)
-            status: New status (pending, passed, failed, plan_defect)
-            fix_step_number: For plan_defect: step number of the passed fix step
-
-        Returns:
-            Updated step dict.
-        """
-        data: dict[str, Any] = {"status": status}
-        if fix_step_number is not None:
-            data["fix_step_number"] = fix_step_number
-
-        response = self._client.patch(
-            self._global_url(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}/status"),
-            json=data,
+        return steps_ops.update_step_status(
+            self._client, self._global_url, self._handle_response, task_id, subtask_id, step_number, status, fix_step_number
         )
-        return self._handle_response(response)
 
     # Execution
-
-    def start_execution(
-        self,
-        task_id: str,
-        agent_type: str = "claude",
-        use_worktree: bool = False,
-    ) -> dict[str, Any]:
-        """Start execution of a task.
-
-        Args:
-            task_id: Task ID
-            agent_type: Agent to use (claude/gemini)
-            use_worktree: Execute in isolated git worktree
-
-        Returns:
-            Session info with session_id, status, worktree_path.
-        """
-        data = {"agent_type": agent_type, "use_worktree": use_worktree}
-        response = self._client.post(self._url(f"/tasks/{task_id}/execute/start"), json=data)
-        return self._handle_response(response)
+    def start_execution(self, task_id: str, agent_type: str = "claude", use_worktree: bool = False) -> dict[str, Any]:
+        return exec_ops.start_execution(self._client, self._url, self._handle_response, task_id, agent_type, use_worktree)
 
     # Autonomous
-
     def get_autonomous_settings(self) -> dict[str, Any]:
-        """Get autonomous execution settings.
-
-        Returns:
-            Settings dict with enabled, frequency_minutes, etc.
-        """
-        response = self._client.get(self._url("/autonomous/settings"))
-        return self._handle_response(response)
+        return exec_ops.get_autonomous_settings(self._client, self._url, self._handle_response)
 
     def update_autonomous_settings(self, **updates: Any) -> dict[str, Any]:
-        """Update autonomous execution settings.
-
-        Args:
-            **updates: Fields to update (enabled, frequency_minutes, etc.)
-
-        Returns:
-            Updated settings dict.
-        """
-        response = self._client.patch(self._url("/autonomous/settings"), json=updates)
-        return self._handle_response(response)
+        return exec_ops.update_autonomous_settings(self._client, self._url, self._handle_response, **updates)
 
     def get_autonomous_status(self) -> dict[str, Any]:
-        """Get autonomous execution status and metrics.
-
-        Returns:
-            Status dict with execution counts, recent activity, etc.
-        """
-        response = self._client.get(self._url("/autonomous/status"))
-        return self._handle_response(response)
+        return exec_ops.get_autonomous_status(self._client, self._url, self._handle_response)
 
     # Sessions
-
     def list_sessions(self) -> list[dict[str, Any]]:
-        """List agent sessions for the project.
-
-        Returns:
-            List of session dicts.
-        """
-        response = self._client.get(self._url("/sessions"))
-        return cast(list[dict[str, Any]], self._handle_response(response))
+        return exec_ops.list_sessions(self._client, self._url, self._handle_response)
 
     def get_session(self, session_id: str) -> dict[str, Any]:
-        """Get a specific session.
-
-        Args:
-            session_id: Session ID
-
-        Returns:
-            Session dict.
-        """
-        response = self._client.get(self._url(f"/sessions/{session_id}"))
-        return self._handle_response(response)
-
-    def append_log(self, task_id: str, entry: str) -> dict[str, Any]:
-        """Append an entry to the task's progress log.
-
-        Args:
-            task_id: Task ID
-            entry: Log entry text
-
-        Returns:
-            Status dict confirming append.
-        """
-        data = {"entry": entry}
-        response = self._client.post(self._global_url(f"/tasks/{task_id}/log"), json=data)
-        return self._handle_response(response)
+        return exec_ops.get_session(self._client, self._url, self._handle_response, session_id)
 
     # Autocode
+    def start_autocode(self, task_id: str, model: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+        return exec_ops.start_autocode(self._client, self._url, self._handle_response, task_id, model, dry_run)
 
-    def start_autocode(
-        self,
-        task_id: str,
-        model: str | None = None,
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
-        """Start autocode execution for a task.
+    def get_autocode_status(self, task_id: str, execution_id: str) -> dict[str, Any]:
+        return exec_ops.get_autocode_status(self._client, self._url, self._handle_response, task_id, execution_id)
 
-        Args:
-            task_id: Task ID
-            model: Model to use for execution
-            dry_run: If true, validate but don't execute
-
-        Returns:
-            Dict with execution_id, task_id, subtask_id, status.
-        """
-        data: dict[str, Any] = {"dry_run": dry_run}
-        if model:
-            data["model"] = model
-        # Autocode requests can take 10+ minutes with Claude OAuth for complex tasks
-        response = self._client.post(
-            self._url(f"/tasks/{task_id}/autocode"),
-            json=data,
-            timeout=600.0,
-        )
-        return self._handle_response(response)
-
-    def get_autocode_status(
-        self,
-        task_id: str,
-        execution_id: str,
-    ) -> dict[str, Any]:
-        """Get status of an autocode execution.
-
-        Args:
-            task_id: Task ID
-            execution_id: Execution ID
-
-        Returns:
-            Dict with execution status and evidence if complete.
-        """
-        response = self._client.get(self._url(f"/tasks/{task_id}/autocode/{execution_id}"))
-        return self._handle_response(response)
-
-    def abort_autocode(
-        self,
-        task_id: str,
-        execution_id: str,
-    ) -> dict[str, Any]:
-        """Abort a running autocode execution.
-
-        Args:
-            task_id: Task ID
-            execution_id: Execution ID to abort
-
-        Returns:
-            Dict with abort confirmation.
-        """
-        response = self._client.post(self._url(f"/tasks/{task_id}/autocode/{execution_id}/abort"))
-        return self._handle_response(response)
+    def abort_autocode(self, task_id: str, execution_id: str) -> dict[str, Any]:
+        return exec_ops.abort_autocode(self._client, self._url, self._handle_response, task_id, execution_id)
 
     # Events
-
     def get_events(
-        self,
-        project_id: str,
-        task_id: str,
-        limit: int = 50,
-        include_debug: bool = False,
+        self, project_id: str, task_id: str, limit: int = 50, include_debug: bool = False
     ) -> dict[str, Any]:
-        """Get execution events for a task.
-
-        Args:
-            project_id: Project ID
-            task_id: Task ID (trace_id)
-            limit: Maximum events to return
-            include_debug: Include debug-level visibility events
-
-        Returns:
-            Dict with events list and summary.
-        """
-        params: dict[str, Any] = {"trace_id": task_id, "limit": limit}
-        if not include_debug:
-            params["visibility"] = "user"
-        response = self._client.get(
-            f"{self.base_url}/projects/{project_id}/events",
-            params=params,
-        )
-        return self._handle_response(response)
+        return exec_ops.get_events(self._client, self.base_url, self._handle_response, project_id, task_id, limit, include_debug)

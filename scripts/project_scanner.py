@@ -38,9 +38,7 @@ warnings.warn(
 
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime

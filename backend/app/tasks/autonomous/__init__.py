@@ -16,6 +16,7 @@ from .execution import start_execution
 from .pickup import autonomous_work_pickup, review_pending_tasks
 from .planning import create_plan
 from .review import ai_review
+from .task_generation import generate_tasks_from_scan, regenerate_refactor_tasks
 from .triage import triage_idea
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "autonomous_work_pickup",
     "check_worker_stuck",
     "create_plan",
+    "generate_tasks_from_scan",
+    "regenerate_refactor_tasks",
     "review_pending_tasks",
     "start_execution",
     "supervisor_guidance",
