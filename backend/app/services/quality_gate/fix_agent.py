@@ -37,8 +37,6 @@ from .pattern_memory_utils import get_similar_patterns, store_successful_pattern
 
 logger = get_logger(__name__)
 
-__all__ = ["fix_error", "escalate_to_human"]
-
 
 def fix_lint_type_error(
     conn: psycopg.Connection[Any],
