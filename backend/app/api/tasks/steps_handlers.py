@@ -92,9 +92,7 @@ def handle_update_step_passes(
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     try:
-        updated = update_step_passes(
-            table_id, step_number, passes, project_root=project_root
-        )
+        updated = update_step_passes(table_id, step_number, passes, project_root=project_root)
     except StepGateError as e:
         raise HTTPException(
             status_code=400,

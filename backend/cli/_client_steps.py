@@ -8,7 +8,9 @@ if TYPE_CHECKING:
     import httpx
 
 
-def get_steps(client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, subtask_id: str) -> list[dict[str, Any]]:
+def get_steps(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, subtask_id: str
+) -> list[dict[str, Any]]:
     """Get steps for a subtask."""
     response = client.get(url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/steps"))
     return cast(list[dict[str, Any]], handle_response(response))

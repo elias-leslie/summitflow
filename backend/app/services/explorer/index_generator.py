@@ -51,7 +51,7 @@ def _extract_port_from_service_content(content: str) -> int | None:
         return int(port_match.group(1))
 
     # Try PORT=XXXX pattern (environment variable)
-    env_match = re.search(r'PORT=(\d+)', content)
+    env_match = re.search(r"PORT=(\d+)", content)
     if env_match:
         return int(env_match.group(1))
 
@@ -193,7 +193,9 @@ def _sync_ports_to_db(project_id: str, backend_port: int | None, frontend_port: 
         )
         conn.commit()
 
-    logger.debug(f"Synced ports to DB for {project_id}: backend={backend_port}, frontend={frontend_port}")
+    logger.debug(
+        f"Synced ports to DB for {project_id}: backend={backend_port}, frontend={frontend_port}"
+    )
 
 
 def _get_services(project_id: str) -> dict[str, Any]:

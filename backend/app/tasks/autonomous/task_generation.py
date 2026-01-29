@@ -335,7 +335,12 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
         project_root = get_project_root_path(project_id)
         if not project_root:
             logger.error(f"Project {project_id} not found or has no root_path")
-            return {"error": f"Project {project_id} not found", "deleted_count": 0, "created_count": 0, "scanned_count": 0}
+            return {
+                "error": f"Project {project_id} not found",
+                "deleted_count": 0,
+                "created_count": 0,
+                "scanned_count": 0,
+            }
 
         # Clean slate: delete all existing refactor tasks
         deleted_count = _delete_existing_refactor_tasks(project_id)
@@ -499,9 +504,7 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
                     bulk_create_steps(subtask_full_id, steps)
 
                 created += 1
-                logger.info(
-                    f"Created refactor task {task_id} with line verification: {title}"
-                )
+                logger.info(f"Created refactor task {task_id} with line verification: {title}")
 
         logger.info(
             f"Refactor task regeneration complete for {project_id}: "

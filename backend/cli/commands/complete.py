@@ -33,7 +33,9 @@ def _load_credentials() -> tuple[str, str, str]:
     request_source = creds.get("CONSULT_REQUEST_SOURCE", "st-complete")
 
     if not client_id or not client_secret:
-        output_error("Missing CONSULT_CLIENT_ID/SECRET or SUMMITFLOW_CLIENT_ID/SECRET in ~/.env.local")
+        output_error(
+            "Missing CONSULT_CLIENT_ID/SECRET or SUMMITFLOW_CLIENT_ID/SECRET in ~/.env.local"
+        )
         raise typer.Exit(1)
 
     return client_id, client_secret, request_source
@@ -98,7 +100,9 @@ def complete_default(
     message: Annotated[str | None, typer.Argument(help="Message to send")] = None,
     agent: Annotated[str, typer.Option("--agent", "-a", help="Agent slug")] = "validator",
     project: Annotated[str, typer.Option("--project", "-p", help="Project ID")] = "st-cli",
-    source: Annotated[str, typer.Option("--source", "-s", help="Source client identifier")] = "st-cli",
+    source: Annotated[
+        str, typer.Option("--source", "-s", help="Source client identifier")
+    ] = "st-cli",
     raw: Annotated[bool, typer.Option("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.

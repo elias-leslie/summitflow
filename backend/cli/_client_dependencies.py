@@ -22,7 +22,9 @@ def add_dependency(
     return cast(dict[str, Any], handle_response(response))
 
 
-def list_dependencies(client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str) -> list[dict[str, Any]]:
+def list_dependencies(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
+) -> list[dict[str, Any]]:
     """List dependencies for a task."""
     response = client.get(global_url_fn(f"/tasks/{task_id}/dependencies"))
     return cast(list[dict[str, Any]], handle_response(response))

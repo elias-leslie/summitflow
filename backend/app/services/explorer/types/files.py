@@ -206,7 +206,9 @@ class FileScanner(BaseScanner):
             if entry.metadata.get("is_directory"):
                 continue
 
-            apply_git_info_to_entry(entry.metadata, entry.path, last_commit_map, commit_count_map, now)
+            apply_git_info_to_entry(
+                entry.metadata, entry.path, last_commit_map, commit_count_map, now
+            )
 
             # Check if test file exists (filesystem check - fast)
             entry.metadata["test_file_exists"] = has_test_file(

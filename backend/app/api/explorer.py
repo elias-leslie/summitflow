@@ -30,10 +30,16 @@ router = APIRouter()
 @router.get("/{project_id}/explorer")
 async def list_entries(
     project_id: str,
-    type: str | None = Query(None, description="Filter by entry type (file, table, task, endpoint)"),
-    health: str | None = Query(None, description="Filter by health status (healthy, warning, error, unknown)"),
+    type: str | None = Query(
+        None, description="Filter by entry type (file, table, task, endpoint)"
+    ),
+    health: str | None = Query(
+        None, description="Filter by health status (healthy, warning, error, unknown)"
+    ),
     path: str | None = Query(None, description="Filter by path prefix"),
-    association: str | None = Query(None, description="Filter by association status (orphan, is_component)"),
+    association: str | None = Query(
+        None, description="Filter by association status (orphan, is_component)"
+    ),
     sort: str = Query("path", description="Sort field: path, name, health_status, last_scanned_at"),
     dir: str = Query("asc", description="Sort direction: asc, desc"),
     limit: int = Query(1000, ge=1, le=10000, description="Results per page"),
@@ -94,7 +100,9 @@ async def trigger_scan(
     type: str | None = Query(None, description="Entry type to scan. Scans all if not specified."),
     triggered_by: str = Query("manual", description="Source that initiated the scan"),
     triggered_by_session: str | None = Query(None, description="Claude session ID if applicable"),
-    trigger_context_json: str | None = Query(None, description="JSON-encoded additional context", alias="trigger_context"),
+    trigger_context_json: str | None = Query(
+        None, description="JSON-encoded additional context", alias="trigger_context"
+    ),
 ) -> dict[str, Any]:
     """Trigger a scan for explorer entries. Runs in background."""
     helpers.validate_project_exists(project_id)
@@ -229,7 +237,9 @@ async def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, An
 
 
 @router.post("/{project_id}/explorer/health-check")
-async def trigger_health_check(project_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+async def trigger_health_check(
+    project_id: str, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     """Trigger health checks for all page entries."""
     helpers.validate_project_exists(project_id)
     return helpers.dispatch_celery_task(
@@ -257,7 +267,9 @@ async def regenerate_all_indexes() -> dict[str, Any]:
 
 
 @router.post("/{project_id}/explorer/regenerate-refactor-tasks")
-async def regenerate_refactor_tasks(project_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+async def regenerate_refactor_tasks(
+    project_id: str, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     """Delete existing refactor tasks and regenerate from current scan."""
     helpers.validate_project_exists(project_id)
     return helpers.dispatch_celery_task(

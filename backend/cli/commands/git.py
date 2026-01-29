@@ -21,6 +21,7 @@ def _get_summitflow_api_url() -> str:
     api_base = os.getenv("ST_API_BASE", "http://localhost:8001/api")
     return f"{api_base}/projects"
 
+
 # Config repos always included (not SummitFlow projects)
 CONFIG_REPOS = [Path.home() / ".claude"]
 

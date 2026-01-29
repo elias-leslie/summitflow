@@ -141,9 +141,7 @@ def merge_worktree_impl(
                 "conflicting_files": conflicts["conflicting_files"],
             }
         )
-        output_error(
-            f"Merge conflicts detected in: {', '.join(conflicts['conflicting_files'])}"
-        )
+        output_error(f"Merge conflicts detected in: {', '.join(conflicts['conflicting_files'])}")
         return False
 
     # Perform the merge

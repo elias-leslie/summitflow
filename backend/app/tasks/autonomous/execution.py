@@ -187,7 +187,9 @@ def _compute_issue_id(error: str) -> str:
 
 
 @shared_task(bind=True, name="autonomous.start_execution")
-def start_execution(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
+def start_execution(
+    self: Task[..., dict[str, Any]], task_id: str, project_id: str
+) -> dict[str, Any]:
     """Start autonomous execution of a task.
 
     Executes subtasks in order with fresh context per subtask.
@@ -292,7 +294,9 @@ def start_execution(self: Task[..., dict[str, Any]], task_id: str, project_id: s
     else:
         # Some subtasks failed - mark as blocked (not stuck in "running")
         task_store.update_task_status(task_id, "blocked")
-        _emit_log(task_id, "info", "Execution paused - subtask verification failed", project_id=project_id)
+        _emit_log(
+            task_id, "info", "Execution paused - subtask verification failed", project_id=project_id
+        )
 
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
@@ -604,7 +608,9 @@ def _verify_steps(
                 project_id=project_id,
             )
 
-        _emit_progress(task_id, subtask_id=subtask_id, step=step_num, status=status, project_id=project_id)
+        _emit_progress(
+            task_id, subtask_id=subtask_id, step=step_num, status=status, project_id=project_id
+        )
 
         results.append(
             {

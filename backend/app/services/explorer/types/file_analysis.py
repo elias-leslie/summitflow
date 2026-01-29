@@ -70,9 +70,7 @@ def count_matches(ext: str, patterns: dict[str, re.Pattern[str]], content: str) 
     return len(pattern.findall(content))
 
 
-def calculate_basic_metrics(
-    ext: str, content: str
-) -> tuple[int, int, int]:
+def calculate_basic_metrics(ext: str, content: str) -> tuple[int, int, int]:
     """Calculate basic code metrics (functions, classes, imports).
 
     Args:

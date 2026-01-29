@@ -9,19 +9,25 @@ if TYPE_CHECKING:
     import httpx
 
 
-def create_task(client: httpx.Client, url_fn: Any, handle_response: Any, data: dict[str, Any]) -> dict[str, Any]:
+def create_task(
+    client: httpx.Client, url_fn: Any, handle_response: Any, data: dict[str, Any]
+) -> dict[str, Any]:
     """Create a new task."""
     response = client.post(url_fn("/tasks"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
-def batch_create_tasks(client: httpx.Client, url_fn: Any, handle_response: Any, items: list[dict[str, Any]]) -> dict[str, Any]:
+def batch_create_tasks(
+    client: httpx.Client, url_fn: Any, handle_response: Any, items: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Create multiple tasks in batch."""
     response = client.post(url_fn("/tasks/batch"), json={"items": items})
     return cast(dict[str, Any], handle_response(response))
 
 
-def get_task(client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str) -> dict[str, Any]:
+def get_task(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
     """Get a task by ID (global lookup)."""
     response = client.get(global_url_fn(f"/tasks/{task_id}"))
     return cast(dict[str, Any], handle_response(response))
@@ -53,13 +59,17 @@ def list_tasks(
     return cast(dict[str, Any], handle_response(response))
 
 
-def list_ready(client: httpx.Client, url_fn: Any, handle_response: Any, limit: int = 50) -> dict[str, Any]:
+def list_ready(
+    client: httpx.Client, url_fn: Any, handle_response: Any, limit: int = 50
+) -> dict[str, Any]:
     """List tasks ready to work on."""
     response = client.get(url_fn("/tasks/ready"), params={"limit": limit})
     return cast(dict[str, Any], handle_response(response))
 
 
-def update_task(client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, **updates: Any) -> dict[str, Any]:
+def update_task(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, **updates: Any
+) -> dict[str, Any]:
     """Update a task."""
     response = client.patch(url_fn(f"/tasks/{task_id}"), json=updates)
     return cast(dict[str, Any], handle_response(response))
@@ -85,7 +95,9 @@ def update_status(
     return cast(dict[str, Any], handle_response(response))
 
 
-def delete_task(client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str) -> dict[str, Any]:
+def delete_task(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
     """Delete a task."""
     response = client.delete(url_fn(f"/tasks/{task_id}"))
     return cast(dict[str, Any], handle_response(response))
@@ -108,13 +120,17 @@ def claim_task(
     return cast(dict[str, Any], handle_response(response))
 
 
-def release_task(client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str) -> dict[str, Any]:
+def release_task(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
     """Release a claimed task."""
     response = client.post(url_fn(f"/tasks/{task_id}/release"))
     return cast(dict[str, Any], handle_response(response))
 
 
-def append_log(client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str, entry: str) -> dict[str, Any]:
+def append_log(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str, entry: str
+) -> dict[str, Any]:
     """Append an entry to the task's progress log."""
     data = {"entry": entry}
     response = client.post(global_url_fn(f"/tasks/{task_id}/log"), json=data)

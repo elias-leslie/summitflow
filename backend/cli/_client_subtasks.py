@@ -71,19 +71,26 @@ def update_subtask(
 ) -> dict[str, Any]:
     """Update a subtask's passes status."""
     data = {"passes": passes}
-    response = client.patch(
-        global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data
-    )
+    response = client.patch(global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
-def delete_subtask(client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, subtask_id: str) -> dict[str, Any]:
+def delete_subtask(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, subtask_id: str
+) -> dict[str, Any]:
     """Delete a subtask and all its steps."""
     response = client.delete(url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}"))
     return cast(dict[str, Any], handle_response(response))
 
 
-def log_citations(client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str, subtask_id: str, citations: list[str]) -> dict[str, Any]:
+def log_citations(
+    client: httpx.Client,
+    global_url_fn: Any,
+    handle_response: Any,
+    task_id: str,
+    subtask_id: str,
+    citations: list[str],
+) -> dict[str, Any]:
     """Log episode citations for a subtask."""
     response = client.post(
         global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
@@ -92,7 +99,9 @@ def log_citations(client: httpx.Client, global_url_fn: Any, handle_response: Any
     return cast(dict[str, Any], handle_response(response))
 
 
-def acknowledge_no_citations(client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str, subtask_id: str) -> dict[str, Any]:
+def acknowledge_no_citations(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str, subtask_id: str
+) -> dict[str, Any]:
     """Acknowledge that no memories were needed for a subtask."""
     response = client.post(
         global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/citations/acknowledge-none"),

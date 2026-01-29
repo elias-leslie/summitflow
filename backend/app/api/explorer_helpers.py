@@ -87,7 +87,9 @@ def parse_trigger_context(trigger_context_json: str | None) -> dict[str, Any] | 
         return None
 
 
-def enrich_page_entries_with_sub_elements(entries: list[dict[str, Any]], type_filter: str | None) -> None:
+def enrich_page_entries_with_sub_elements(
+    entries: list[dict[str, Any]], type_filter: str | None
+) -> None:
     """Add sub_elements to page entries in-place.
 
     Args:
