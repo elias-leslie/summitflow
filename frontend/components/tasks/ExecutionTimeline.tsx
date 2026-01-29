@@ -1,48 +1,13 @@
 'use client'
 
-import clsx from 'clsx'
-import {
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  MessageSquare,
-  Mic,
-  MicOff,
-  RefreshCw,
-  Send,
-  XCircle,
-  Zap,
-} from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { getWsUrl, getVoiceWsUrl } from '@/lib/api-config'
-import {
-  getEventsByTask,
-  type Event,
-  type EventVisibility,
-} from '@/lib/api/events'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface TimelineMessage {
-  type:
-    | 'log'
-    | 'progress'
-    | 'model_change'
-    | 'chat_message'
-    | 'error'
-    | 'connected'
-  task_id: string
-  data: Record<string, unknown>
-  timestamp: string
-  sequence: number
-  trace_id?: string
-  span_id?: string | null
-  visibility?: EventVisibility
-}
+import { AlertCircle, Loader2 } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+import { TimelineEvent, type TimelineMessage } from './TimelineEvent'
+import { TimelineHeader } from './TimelineHeader'
+import { TimelineChatInput } from './TimelineChatInput'
+import { useExecutionWebSocket } from './hooks/useExecutionWebSocket'
+import { useTimelineHistory } from './hooks/useTimelineHistory'
+import { useVoiceRecording } from './hooks/useVoiceRecording'
 
 interface ExecutionTimelineProps {
   taskId: string
@@ -58,184 +23,6 @@ interface ExecutionTimelineProps {
   className?: string
 }
 
-// ============================================================================
-// WebSocket URL helper
-// ============================================================================
-
-function getWebSocketUrl(taskId: string, fromSequence?: number): string {
-  const path = `/ws/execution/${taskId}${fromSequence ? `?from_sequence=${fromSequence}` : ''}`
-  return getWsUrl(path)
-}
-
-// ============================================================================
-// Message Component
-// ============================================================================
-
-function TimelineEvent({ message }: { message: TimelineMessage }) {
-  const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-
-  // Log message
-  if (message.type === 'log') {
-    const level = message.data.level as string
-    const text = message.data.message as string
-    const source = message.data.source as string
-
-    const levelColors: Record<string, string> = {
-      debug: 'text-slate-500',
-      info: 'text-slate-400',
-      warning: 'text-amber-400',
-      error: 'text-red-400',
-    }
-
-    return (
-      <div className="flex gap-3 py-1.5 px-3 hover:bg-slate-800/30">
-        <span className="text-2xs text-slate-600 mono shrink-0 w-16">
-          {time}
-        </span>
-        <span
-          className={`text-2xs mono shrink-0 w-12 ${levelColors[level] || 'text-slate-400'}`}
-        >
-          {level.toUpperCase()}
-        </span>
-        <span className="text-sm text-slate-300 break-words">{text}</span>
-        {source && source !== 'orchestrator' && (
-          <span className="text-2xs text-slate-600 ml-auto shrink-0">
-            [{source}]
-          </span>
-        )}
-      </div>
-    )
-  }
-
-  // Progress update
-  if (message.type === 'progress') {
-    const subtaskId = message.data.subtask_id as string | null
-    const step = message.data.step as number | null
-    const status = message.data.status as string
-    const completed = message.data.completed_subtasks as number | null
-    const total = message.data.total_subtasks as number | null
-
-    const statusIcons: Record<string, React.ReactNode> = {
-      in_progress: <Loader2 className="h-3 w-3 animate-spin text-blue-400" />,
-      completed: <CheckCircle2 className="h-3 w-3 text-phosphor-400" />,
-      failed: <XCircle className="h-3 w-3 text-red-400" />,
-    }
-
-    return (
-      <div className="flex items-center gap-3 py-1.5 px-3 bg-slate-800/20">
-        <span className="text-2xs text-slate-600 mono shrink-0 w-16">
-          {time}
-        </span>
-        {statusIcons[status] || <div className="w-3" />}
-        <span className="text-sm text-slate-300">
-          {subtaskId && (
-            <>
-              <span className="text-slate-500">Subtask</span>{' '}
-              <span className="mono text-phosphor-400">{subtaskId}</span>
-              {step !== null && (
-                <>
-                  {' '}
-                  <span className="text-slate-500">step</span>{' '}
-                  <span className="mono">{step}</span>
-                </>
-              )}
-            </>
-          )}
-          {completed !== null && total !== null && (
-            <span className="text-slate-500 ml-2">
-              ({completed}/{total} subtasks)
-            </span>
-          )}
-        </span>
-      </div>
-    )
-  }
-
-  // Model change
-  if (message.type === 'model_change') {
-    const model = message.data.model as string
-    const reason = message.data.reason as string
-
-    return (
-      <div className="flex items-center gap-3 py-1.5 px-3 bg-purple-950/20 border-l-2 border-purple-500">
-        <span className="text-2xs text-slate-600 mono shrink-0 w-16">
-          {time}
-        </span>
-        <Zap className="h-3 w-3 text-purple-400" />
-        <span className="text-sm text-purple-300">
-          Switched to <span className="font-medium">{model}</span>
-          {reason && (
-            <span className="text-purple-400/70 ml-1">— {reason}</span>
-          )}
-        </span>
-      </div>
-    )
-  }
-
-  // Chat message
-  if (message.type === 'chat_message') {
-    const text = message.data.message as string
-    const sender = message.data.sender as string | undefined
-    const isUser = sender === 'user' || !sender
-
-    return (
-      <div className="flex gap-3 py-2 px-3 bg-blue-950/20 border-l-2 border-blue-500">
-        <span className="text-2xs text-slate-600 mono shrink-0 w-16">
-          {time}
-        </span>
-        <MessageSquare className="h-3 w-3 text-blue-400 mt-0.5" />
-        <div className="flex-1">
-          <span className="text-xs font-medium text-blue-400">
-            {isUser ? 'You:' : 'Agent:'}
-          </span>
-          <p className="text-sm text-slate-300 mt-0.5">{text}</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Error
-  if (message.type === 'error') {
-    const error = message.data.error as string
-    const recoverable = message.data.recoverable as boolean
-
-    return (
-      <div className="flex items-center gap-3 py-2 px-3 bg-red-950/20 border-l-2 border-red-500">
-        <span className="text-2xs text-slate-600 mono shrink-0 w-16">
-          {time}
-        </span>
-        <AlertCircle className="h-3 w-3 text-red-400" />
-        <span className="text-sm text-red-300">{error}</span>
-        {!recoverable && (
-          <span className="text-2xs px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded">
-            Fatal
-          </span>
-        )}
-      </div>
-    )
-  }
-
-  // Connected
-  if (message.type === 'connected') {
-    return (
-      <div className="flex items-center gap-3 py-1 px-3 text-xs text-slate-600">
-        <span className="mono shrink-0 w-16">{time}</span>
-        <span>Connected to execution stream</span>
-      </div>
-    )
-  }
-
-  return null
-}
-
-// ============================================================================
-// Execution Timeline Component
-// ============================================================================
-
 export function ExecutionTimeline({
   taskId,
   projectId,
@@ -245,83 +32,7 @@ export function ExecutionTimeline({
   className = '',
 }: ExecutionTimelineProps) {
   const [messages, setMessages] = useState<TimelineMessage[]>([])
-  const [historicalEvents, setHistoricalEvents] = useState<TimelineMessage[]>(
-    [],
-  )
-  const [isConnected, setIsConnected] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [chatInput, setChatInput] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
-  const [voiceError, setVoiceError] = useState<string | null>(null)
-
-  const wsRef = useRef<WebSocket | null>(null)
-  const voiceWsRef = useRef<WebSocket | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lastSequenceRef = useRef<number>(0)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const reconnectAttemptRef = useRef<number>(0)
-  const maxReconnectDelay = 30000 // Cap at 30 seconds
-
-  // Combine historical and live events into unified timeline
-  const allEvents = [...historicalEvents, ...messages]
-
-  // Convert Event from API to TimelineMessage format
-  const eventToTimelineMessage = useCallback(
-    (event: Event, index: number): TimelineMessage => {
-      const typeMap: Record<string, TimelineMessage['type']> = {
-        log: 'log',
-        progress: 'progress',
-        model_change: 'model_change',
-        chat_message: 'chat_message',
-        error: 'error',
-      }
-      return {
-        type: typeMap[event.event_type] || 'log',
-        task_id: event.trace_id,
-        data: {
-          message: event.message,
-          level: event.level,
-          source: event.source,
-          ...event.attributes,
-        },
-        timestamp: event.timestamp,
-        sequence: index,
-        trace_id: event.trace_id,
-        span_id: event.span_id,
-        visibility: event.visibility,
-      }
-    },
-    [],
-  )
-
-  // Fetch historical events on mount
-  useEffect(() => {
-    if (!projectId) return
-
-    const fetchHistory = async () => {
-      setIsLoadingHistory(true)
-      try {
-        const events = await getEventsByTask(projectId, taskId, {
-          visibility: 'user',
-          limit: 500,
-        })
-        const converted = events.map(eventToTimelineMessage)
-        setHistoricalEvents(converted)
-        if (converted.length > 0) {
-          lastSequenceRef.current = converted.length
-        }
-      } catch (err) {
-        console.error('Failed to fetch historical events:', err)
-      } finally {
-        setIsLoadingHistory(false)
-      }
-    }
-
-    fetchHistory()
-  }, [projectId, taskId, eventToTimelineMessage])
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -330,209 +41,55 @@ export function ExecutionTimeline({
     }
   }, [])
 
+  // Handle new WebSocket message
+  const handleMessage = useCallback((message: TimelineMessage) => {
+    setMessages((prev) => [...prev, message])
+  }, [])
+
+  // Fetch historical events
+  const { historicalEvents, isLoading: isLoadingHistory } = useTimelineHistory({
+    taskId,
+    projectId,
+    onLastSequence: (seq) => {
+      setLastSequence(seq)
+    },
+  })
+
   // Connect to WebSocket
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
+  const {
+    isConnected,
+    error,
+    connect,
+    sendChatMessage,
+    setLastSequence,
+  } = useExecutionWebSocket({
+    taskId,
+    autoConnect,
+    onMessage: handleMessage,
+    onScrollToBottom: scrollToBottom,
+  })
 
-    try {
-      const ws = new WebSocket(getWebSocketUrl(taskId, lastSequenceRef.current))
+  // Voice recording
+  const {
+    isRecording,
+    error: voiceError,
+    toggleRecording,
+  } = useVoiceRecording({
+    onTranscription: sendChatMessage,
+  })
 
-      ws.onopen = () => {
-        setIsConnected(true)
-        setError(null)
-        reconnectAttemptRef.current = 0 // Reset on successful connection
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data) as TimelineMessage
-          lastSequenceRef.current = Math.max(
-            lastSequenceRef.current,
-            message.sequence,
-          )
-          setMessages((prev) => [...prev, message])
-          // Auto-scroll after DOM update
-          setTimeout(scrollToBottom, 10)
-        } catch (err) {
-          console.error('Failed to parse message:', err)
-        }
-      }
-
-      ws.onerror = () => {
-        setError('Connection error')
-        setIsConnected(false)
-      }
-
-      ws.onclose = () => {
-        setIsConnected(false)
-        // Auto-reconnect with exponential backoff
-        if (autoConnect) {
-          const attempt = reconnectAttemptRef.current
-          const delay = Math.min(1000 * 2 ** attempt, maxReconnectDelay)
-          reconnectAttemptRef.current = attempt + 1
-          reconnectTimeoutRef.current = setTimeout(connect, delay)
-        }
-      }
-
-      wsRef.current = ws
-    } catch (err) {
-      console.error('Failed to connect:', err)
-      setError('Failed to connect to execution stream')
-    }
-  }, [taskId, autoConnect, scrollToBottom])
-
-  // Disconnect from WebSocket
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
-    }
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-  }, [])
-
-  // Connect on mount if autoConnect is true
-  useEffect(() => {
-    if (autoConnect) {
-      connect()
-    }
-    return () => {
-      disconnect()
-    }
-  }, [autoConnect, connect, disconnect])
-
-  // Send chat message
-  const sendChatMessage = useCallback((text: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'chat_message',
-          data: { message: text, sender: 'user' },
-        }),
-      )
-    }
-  }, [])
-
-  // Voice recording functions
-  const startVoiceRecording = useCallback(async () => {
-    try {
-      setVoiceError(null)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-      // Connect to voice WebSocket
-      const voiceUrl = getVoiceWsUrl()
-      if (!voiceUrl) {
-        setVoiceError('Voice service not configured')
-        return
-      }
-
-      const voiceWs = new WebSocket(voiceUrl)
-      voiceWsRef.current = voiceWs
-
-      voiceWs.onopen = () => {
-        setIsRecording(true)
-      }
-
-      voiceWs.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'transcription' && data.text) {
-            // Send transcribed text as chat message
-            sendChatMessage(data.text)
-          }
-        } catch (err) {
-          console.error('Failed to parse voice response:', err)
-        }
-      }
-
-      voiceWs.onerror = () => {
-        setVoiceError('Voice connection error')
-        stopVoiceRecording()
-      }
-
-      voiceWs.onclose = () => {
-        setIsRecording(false)
-      }
-
-      // Start recording
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && voiceWs.readyState === WebSocket.OPEN) {
-          voiceWs.send(event.data)
-        }
-      }
-
-      mediaRecorder.start(250) // Send chunks every 250ms
-    } catch (err) {
-      console.error('Failed to start voice recording:', err)
-      setVoiceError('Microphone access denied')
-    }
-  }, [sendChatMessage])
-
-  const stopVoiceRecording = useCallback(() => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
-      mediaRecorderRef.current = null
-    }
-
-    if (voiceWsRef.current) {
-      voiceWsRef.current.close()
-      voiceWsRef.current = null
-    }
-
-    setIsRecording(false)
-  }, [])
-
-  const toggleVoiceRecording = useCallback(() => {
-    if (isRecording) {
-      stopVoiceRecording()
-    } else {
-      startVoiceRecording()
-    }
-  }, [isRecording, startVoiceRecording, stopVoiceRecording])
-
-  // Cleanup voice on unmount
-  useEffect(() => {
-    return () => {
-      stopVoiceRecording()
-    }
-  }, [stopVoiceRecording])
+  // Combine historical and live events
+  const allEvents = [...historicalEvents, ...messages]
 
   return (
     <div className={`flex flex-col ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-400">
-          Execution Timeline
-        </h3>
-        <div className="flex items-center gap-2">
-          {isConnected ? (
-            <span className="flex items-center gap-1 text-xs text-phosphor-400">
-              <span className="w-1.5 h-1.5 bg-phosphor-400 rounded-full animate-pulse" />
-              Live
-            </span>
-          ) : error ? (
-            <button
-              onClick={connect}
-              className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Reconnect
-            </button>
-          ) : autoConnect ? (
-            <span className="text-xs text-slate-600">Connecting...</span>
-          ) : (
-            <span className="text-xs text-slate-600">History</span>
-          )}
-        </div>
-      </div>
+      <TimelineHeader
+        isConnected={isConnected}
+        error={error}
+        autoConnect={autoConnect}
+        onReconnect={connect}
+      />
 
-      {/* Unified Timeline - historical + live events in one view */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto min-h-[200px] max-h-[400px] bg-slate-950/30"
@@ -570,79 +127,14 @@ export function ExecutionTimeline({
         )}
       </div>
 
-      {/* Chat Input */}
       {showChatInput && (
-        <div className="border-t border-slate-700 px-3 py-2">
-          {voiceError && (
-            <div className="mb-2 text-xs text-amber-400 bg-amber-950/30 px-2 py-1 rounded">
-              {voiceError}
-            </div>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (!chatInput.trim() || !chatEnabled || isSending) return
-              setIsSending(true)
-              sendChatMessage(chatInput.trim())
-              setChatInput('')
-              setIsSending(false)
-            }}
-            className="flex items-center gap-2"
-          >
-            {/* Voice Button */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={toggleVoiceRecording}
-              disabled={!chatEnabled}
-              className={clsx(
-                'h-8 px-3 transition-all duration-200',
-                isRecording &&
-                  'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse'
-              )}
-              title={
-                isRecording
-                  ? 'Stop recording'
-                  : chatEnabled
-                    ? 'Start voice input'
-                    : 'Chat disabled'
-              }
-            >
-              {isRecording ? (
-                <MicOff className="h-4 w-4" />
-              ) : (
-                <Mic className="h-4 w-4" />
-              )}
-            </Button>
-
-            {/* Text Input */}
-            <Input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder={
-                isRecording
-                  ? 'Recording...'
-                  : chatEnabled
-                    ? 'Type or use voice...'
-                    : 'Chat disabled (not executing)'
-              }
-              disabled={!chatEnabled || isRecording}
-              className="flex-1 h-8 text-sm"
-            />
-
-            {/* Send Button */}
-            <Button
-              type="submit"
-              variant="outline"
-              size="sm"
-              disabled={!chatEnabled || !chatInput.trim() || isSending || isRecording}
-              className="h-8 px-3"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
-        </div>
+        <TimelineChatInput
+          chatEnabled={chatEnabled}
+          isRecording={isRecording}
+          voiceError={voiceError}
+          onSendMessage={sendChatMessage}
+          onToggleVoiceRecording={toggleRecording}
+        />
       )}
     </div>
   )
@@ -650,4 +142,4 @@ export function ExecutionTimeline({
 
 // Export helper types and methods for external use
 export type { TimelineMessage }
-export { getWebSocketUrl }
+export { getWebSocketUrl } from './hooks/useExecutionWebSocket'
