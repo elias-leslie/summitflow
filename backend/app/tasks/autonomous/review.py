@@ -153,7 +153,7 @@ def _route_based_on_verdict(
             task_store.update_task_status(task_id, "completed")
             log_task_event(
                 task_id,
-                f"AI Review: APPROVED - Auto-merged (SIMPLE)",
+                "AI Review: APPROVED - Auto-merged (SIMPLE)",
             )
             logger.info("QA approved, auto-merged SIMPLE task", task_id=task_id)
         else:
@@ -163,7 +163,9 @@ def _route_based_on_verdict(
                 task_id,
                 f"AI Review: APPROVED - Requires human review ({complexity})",
             )
-            logger.info("QA approved, human review required", task_id=task_id, complexity=complexity)
+            logger.info(
+                "QA approved, human review required", task_id=task_id, complexity=complexity
+            )
 
     elif verdict in ("NEEDS_FIX", "REJECT", "REJECTED"):
         _create_fix_subtask(task_id, review_result)

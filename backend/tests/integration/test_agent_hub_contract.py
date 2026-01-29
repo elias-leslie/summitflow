@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_hub.exceptions import (
     AgentHubError,
     AuthenticationError,
@@ -31,7 +30,6 @@ from agent_hub.exceptions import (
     ServerError,
     ValidationError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract Schemas - Define expected API shapes
@@ -42,8 +40,8 @@ from agent_hub.exceptions import (
 class CompletionRequestContract:
     """Expected shape of completion request to Agent Hub."""
 
-    required_fields = {"messages", "project_id"}
-    optional_fields = {
+    required_fields: ClassVar[set[str]] = {"messages", "project_id"}
+    optional_fields: ClassVar[set[str]] = {
         "model",
         "agent_slug",
         "temperature",
@@ -77,13 +75,9 @@ class CompletionRequestContract:
                     if not isinstance(msg, dict):
                         violations.append(f"messages[{i}] must be a dict")
                     elif "role" not in msg or "content" not in msg:
-                        violations.append(
-                            f"messages[{i}] must have 'role' and 'content'"
-                        )
+                        violations.append(f"messages[{i}] must have 'role' and 'content'")
                     elif msg.get("role") not in ("user", "assistant", "system"):
-                        violations.append(
-                            f"messages[{i}].role must be user/assistant/system"
-                        )
+                        violations.append(f"messages[{i}].role must be user/assistant/system")
 
         return violations
 
@@ -92,8 +86,8 @@ class CompletionRequestContract:
 class CompletionResponseContract:
     """Expected shape of completion response from Agent Hub."""
 
-    required_fields = {"content", "model", "provider", "usage", "session_id"}
-    usage_required_fields = {"input_tokens", "output_tokens", "total_tokens"}
+    required_fields: ClassVar[set[str]] = {"content", "model", "provider", "usage", "session_id"}
+    usage_required_fields: ClassVar[set[str]] = {"input_tokens", "output_tokens", "total_tokens"}
 
     @classmethod
     def validate_response(cls, response: Any) -> list[str]:
@@ -115,13 +109,9 @@ class CompletionResponseContract:
         # Validate types
         if hasattr(response, "content") and not isinstance(response.content, str):
             violations.append("content must be a string")
-        if hasattr(response, "session_id") and not isinstance(
-            response.session_id, str
-        ):
+        if hasattr(response, "session_id") and not isinstance(response.session_id, str):
             violations.append("session_id must be a string")
-        if hasattr(response, "from_cache") and not isinstance(
-            response.from_cache, bool
-        ):
+        if hasattr(response, "from_cache") and not isinstance(response.from_cache, bool):
             violations.append("from_cache must be a boolean")
 
         return violations
@@ -131,7 +121,7 @@ class CompletionResponseContract:
 class SessionResponseContract:
     """Expected shape of session response from Agent Hub."""
 
-    required_fields = {"id", "status"}
+    required_fields: ClassVar[set[str]] = {"id", "status"}
 
     @classmethod
     def validate_response(cls, response: Any) -> list[str]:
@@ -360,9 +350,7 @@ class TestErrorHandlingContract:
         """Verify AuthenticationError (401) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
-        mock_agent_hub_client.complete.side_effect = AuthenticationError(
-            "Invalid credentials"
-        )
+        mock_agent_hub_client.complete.side_effect = AuthenticationError("Invalid credentials")
 
         with patch(
             "app.services.agent_hub_client.AgentHubClient",
@@ -392,9 +380,7 @@ class TestErrorHandlingContract:
         """Verify ValidationError (422) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
-        mock_agent_hub_client.complete.side_effect = ValidationError(
-            "Invalid request format"
-        )
+        mock_agent_hub_client.complete.side_effect = ValidationError("Invalid request format")
 
         with patch(
             "app.services.agent_hub_client.AgentHubClient",
@@ -496,35 +482,22 @@ class TestClientConfigurationContract:
         """Verify client credentials are injected from environment."""
         # Test that get_sync_client uses module-level credential constants
         # by checking the call args include the expected credential fields
-        with patch("app.services.agent_hub_client.AgentHubClient") as mock_class:
-            # Patch the module-level constants directly
-            with patch.object(
-                __import__(
-                    "app.services.agent_hub_client", fromlist=[""]
-                ),
-                "SUMMITFLOW_CLIENT_ID",
-                "test-client-id",
-            ), patch.object(
-                __import__(
-                    "app.services.agent_hub_client", fromlist=[""]
-                ),
-                "SUMMITFLOW_CLIENT_SECRET",
-                "test-secret",
-            ), patch.object(
-                __import__(
-                    "app.services.agent_hub_client", fromlist=[""]
-                ),
-                "SUMMITFLOW_REQUEST_SOURCE",
-                "test-source",
-            ):
-                from app.services.agent_hub_client import get_sync_client
+        agent_hub_module = __import__("app.services.agent_hub_client", fromlist=[""])
 
-                get_sync_client()
+        with (
+            patch("app.services.agent_hub_client.AgentHubClient") as mock_class,
+            patch.object(agent_hub_module, "SUMMITFLOW_CLIENT_ID", "test-client-id"),
+            patch.object(agent_hub_module, "SUMMITFLOW_CLIENT_SECRET", "test-secret"),
+            patch.object(agent_hub_module, "SUMMITFLOW_REQUEST_SOURCE", "test-source"),
+        ):
+            from app.services.agent_hub_client import get_sync_client
 
-                call_kwargs = mock_class.call_args.kwargs
-                assert call_kwargs["client_id"] == "test-client-id"
-                assert call_kwargs["client_secret"] == "test-secret"
-                assert call_kwargs["request_source"] == "test-source"
+            get_sync_client()
+
+            call_kwargs = mock_class.call_args.kwargs
+            assert call_kwargs["client_id"] == "test-client-id"
+            assert call_kwargs["client_secret"] == "test-secret"
+            assert call_kwargs["request_source"] == "test-source"
 
 
 class TestProviderDetectionContract:

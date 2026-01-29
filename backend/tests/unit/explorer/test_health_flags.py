@@ -25,17 +25,13 @@ class TestHealthFlagComputation:
     def test_too_many_classes_flag(self) -> None:
         """Test too_many_classes flag when class count exceeds threshold."""
         max_classes = CODE_HEALTH_THRESHOLDS["max_classes_per_file"]
-        flags = compute_health_flags(
-            Path("/tmp/test.py"), ".py", 0, max_classes + 1, 0
-        )
+        flags = compute_health_flags(Path("/tmp/test.py"), ".py", 0, max_classes + 1, 0)
         assert flags.get("too_many_classes") is True
 
     def test_too_many_imports_flag(self) -> None:
         """Test too_many_imports flag when import count exceeds threshold."""
         max_imports = CODE_HEALTH_THRESHOLDS["max_imports"]
-        flags = compute_health_flags(
-            Path("/tmp/test.py"), ".py", 0, 0, max_imports + 1
-        )
+        flags = compute_health_flags(Path("/tmp/test.py"), ".py", 0, 0, max_imports + 1)
         assert flags.get("too_many_imports") is True
 
     def test_no_flags_when_all_under_thresholds(self) -> None:

@@ -2783,6 +2783,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-hub-client" },
+    { name = "alembic" },
     { name = "anthropic" },
     { name = "celery" },
     { name = "claude-agent-sdk" },
@@ -2818,6 +2819,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-hub-client", directory = "../../agent-hub/packages/agent-hub-client" },
+    { name = "alembic", specifier = ">=1.13.0" },
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "celery", specifier = ">=5.4.0" },
     { name = "celery-types", marker = "extra == 'dev'", specifier = ">=0.24.0" },

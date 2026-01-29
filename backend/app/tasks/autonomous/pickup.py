@@ -6,9 +6,8 @@ through the autonomous execution pipeline.
 
 from __future__ import annotations
 
-from typing import Any
-
 from datetime import datetime
+from typing import Any
 
 from app.celery_app import celery_app
 from app.logging_config import get_logger
@@ -141,16 +140,16 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     logger.info("Starting autonomous work pickup", project_id=project_id)
 
     # Check if autonomous is enabled
-    if not agent_configs.is_autonomous_enabled():
+    if not agent_configs.is_autonomous_enabled(project_id):
         return {
             "status": "disabled",
             "reason": "autonomous_enabled=false",
         }
 
     # Check if within autonomous time window
-    if not agent_configs.is_within_autonomous_hours():
-        schedule = agent_configs.get_autonomous_schedule()
-        current_hour = datetime.now().hour
+    current_hour = datetime.now().hour
+    if not agent_configs.is_within_autonomous_hours(project_id, current_hour):
+        schedule = agent_configs.get_autonomous_schedule(project_id)
         return {
             "status": "outside_hours",
             "current_hour": current_hour,
@@ -159,7 +158,7 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
         }
 
     # Check concurrency limit
-    schedule = agent_configs.get_autonomous_schedule()
+    schedule = agent_configs.get_autonomous_schedule(project_id)
     max_concurrent = schedule.get("max_concurrent", 1)
     running_count = task_store.count_running_tasks(project_id)
     if running_count >= max_concurrent:

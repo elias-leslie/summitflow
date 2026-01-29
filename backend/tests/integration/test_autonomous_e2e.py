@@ -49,9 +49,7 @@ def test_project_id() -> str:
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"], cwd=root_path, capture_output=True
         )
-        subprocess.run(
-            ["git", "config", "user.name", "Test"], cwd=root_path, capture_output=True
-        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=root_path, capture_output=True)
         # Create an initial commit so we have a branch
         subprocess.run(["touch", ".gitkeep"], cwd=root_path, capture_output=True)
         subprocess.run(["git", "add", "."], cwd=root_path, capture_output=True)
@@ -116,10 +114,7 @@ def task_events_contain(task_id: str, substring: str) -> bool:
     Events use trace_id to store task_id.
     """
     events = get_events_by_trace(task_id, limit=100)
-    for event in events:
-        if substring in (event.get("message") or ""):
-            return True
-    return False
+    return any(substring in (event.get("message") or "") for event in events)
 
 
 class TestTriageE2E:

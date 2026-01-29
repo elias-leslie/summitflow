@@ -16,13 +16,12 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import pytest
-
-import urllib.request
-import urllib.error
 
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection

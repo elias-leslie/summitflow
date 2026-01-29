@@ -50,6 +50,7 @@ class TestGenerateIndex:
                 if filters.get("type") == "file":
                     return file_entries
                 return []
+
             mock_storage.get_entries.side_effect = get_entries_side_effect
             mock_env.return_value = {}
             mock_services.return_value = {}
@@ -79,10 +80,12 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator._get_services") as mock_services,
             patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
         ):
+
             def get_entries_side_effect(project_id, filters):
                 if filters.get("type") == "file":
                     return file_entries
                 return []
+
             mock_storage.get_entries.side_effect = get_entries_side_effect
             mock_env.return_value = {}
             mock_services.return_value = {}
@@ -111,10 +114,12 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator._get_services") as mock_services,
             patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
         ):
+
             def get_entries_side_effect(project_id, filters):
                 if filters.get("type") == "file":
                     return entries
                 return []
+
             mock_storage.get_entries.side_effect = get_entries_side_effect
             mock_env.return_value = {}
             mock_services.return_value = {}
@@ -152,10 +157,12 @@ class TestWriteIndexFile:
             patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
         ):
             mock_root.return_value = str(tmp_path)
+
             def get_entries_side_effect(project_id, filters):
                 if filters.get("type") == "file":
                     return file_entries
                 return []
+
             mock_storage.get_entries.side_effect = get_entries_side_effect
             mock_env.return_value = {}
             mock_services.return_value = {}
