@@ -2,86 +2,25 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
 import subprocess
-from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated
 
 import typer
-
-if TYPE_CHECKING:
-    from app.services.worktree_manager import WorktreeManager
 
 from ..config import get_config
 from ..context import require_task_id
 from ..output import output_error, output_json, output_success
+from .worktree_commands import (
+    create_worktree_impl,
+    list_worktrees_impl,
+    merge_worktree_impl,
+    remove_worktree_impl,
+    worktree_status_impl,
+)
+from .worktree_git_ops import get_project_root
+from .worktree_helpers import cleanup_empty_directories
 
 app = typer.Typer(help="Git worktree management")
-
-# Base directory for all worktrees (project-agnostic)
-# Note: WorktreeManager uses /tmp/summitflow-worktrees by default
-WORKTREE_BASE = Path("/tmp/st-worktrees")
-
-
-def _get_project_root() -> Path:
-    """Get the current project's root directory."""
-    config = get_config()
-    if config.project_root:
-        return Path(config.project_root)
-    # Fallback: try to find git root from cwd
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            cwd=Path.cwd(),
-        )
-        if result.returncode == 0:
-            return Path(result.stdout.strip())
-    except Exception:
-        pass
-    # Last resort: use cwd
-    return Path.cwd()
-
-
-def _get_worktrees_from_git(project_root: Path) -> list[dict[str, Any]]:
-    """Get worktrees from git worktree list.
-
-    Args:
-        project_root: Root directory of the git repository
-    """
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            cwd=str(project_root),
-        )
-        if result.returncode != 0:
-            return []
-
-        worktrees: list[dict[str, Any]] = []
-        current: dict[str, Any] = {}
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                if current:
-                    worktrees.append(current)
-                    current = {}
-                continue
-            if line.startswith("worktree "):
-                current["path"] = line[9:]
-            elif line.startswith("HEAD "):
-                current["head"] = line[5:]
-            elif line.startswith("branch "):
-                current["branch"] = line[7:]
-
-        if current:
-            worktrees.append(current)
-
-        return worktrees
-    except Exception:
-        return []
 
 
 @app.command("list")
@@ -99,37 +38,8 @@ def list_worktrees(
         st worktree list --all
     """
     config = get_config()
-    project_root = _get_project_root()
-
-    # Get worktrees from git
-    git_worktrees = _get_worktrees_from_git(project_root)
-
-    # Filter to st-worktrees
-    if all_projects:
-        # Show all worktrees under st-worktrees base
-        worktrees = [w for w in git_worktrees if "st-worktrees" in w.get("path", "")]
-    else:
-        # Filter to current project's worktrees
-        project_worktree_dir = str(WORKTREE_BASE / config.project_id)
-        worktrees = [w for w in git_worktrees if w.get("path", "").startswith(project_worktree_dir)]
-
-    # Extract task_id and project_id from worktree directory names
-    for w in worktrees:
-        path = w.get("path", "")
-        # Worktree directories are named like: /tmp/st-worktrees/{project_id}/{task_id}
-        parts = path.split("/")
-        if len(parts) >= 2:
-            potential_task_id = parts[-1]
-            if potential_task_id.startswith("task-"):
-                w["task_id"] = potential_task_id
-            # Project ID is second to last
-            if len(parts) >= 3:
-                w["project_id"] = parts[-2]
-
-        # Add status
-        w["status"] = "active" if os.path.exists(path) else "orphaned"
-
-    output_json({"worktrees": worktrees, "project_id": config.project_id})
+    project_root = get_project_root()
+    list_worktrees_impl(config, project_root, all_projects)
 
 
 @app.command()
@@ -148,7 +58,8 @@ def prune(
         st worktree prune --dry-run
         st worktree prune --all
     """
-    project_root = _get_project_root()
+    config = get_config()
+    project_root = get_project_root()
 
     # Run git worktree prune
     try:
@@ -170,26 +81,7 @@ def prune(
                 output_success("Pruned orphaned worktree metadata")
 
                 # Also clean up empty directories in worktree base
-                removed_dirs = []
-                if WORKTREE_BASE.exists():
-                    config = get_config()
-                    if all_projects:
-                        # Clean all project directories
-                        dirs_to_check = list(WORKTREE_BASE.iterdir())
-                    else:
-                        # Only clean current project's directory
-                        project_dir = WORKTREE_BASE / config.project_id
-                        dirs_to_check = [project_dir] if project_dir.exists() else []
-
-                    for project_dir in dirs_to_check:
-                        if project_dir.is_dir():
-                            for task_dir in project_dir.iterdir():
-                                if task_dir.is_dir() and not any(task_dir.iterdir()):
-                                    task_dir.rmdir()
-                                    removed_dirs.append(str(task_dir))
-                            if not any(project_dir.iterdir()):
-                                project_dir.rmdir()
-                                removed_dirs.append(str(project_dir))
+                removed_dirs = cleanup_empty_directories(config.project_id, all_projects)
 
                 if removed_dirs:
                     output_json({"removed_empty_dirs": removed_dirs})
@@ -199,14 +91,6 @@ def prune(
     except Exception as e:
         output_error(f"Failed to prune worktrees: {e}")
         raise typer.Exit(1) from None
-
-
-def _get_worktree_manager() -> WorktreeManager:
-    """Get WorktreeManager instance for current project."""
-    from app.services.worktree_manager import WorktreeManager
-
-    project_root = _get_project_root()
-    return WorktreeManager(project_root)
 
 
 @app.command("create")
@@ -231,22 +115,7 @@ def create_worktree(
     resolved_task_id = require_task_id(task_id)
 
     try:
-        manager = _get_worktree_manager()
-        info = manager.get_or_create_worktree(config.project_id, resolved_task_id)
-
-        output_json(
-            {
-                "path": str(info.path),
-                "branch": info.branch,
-                "task_id": info.task_id,
-                "project_id": info.project_id,
-                "base_branch": info.base_branch,
-                "is_active": info.is_active,
-                "created": not manager.worktree_exists(config.project_id, resolved_task_id),
-            }
-        )
-        output_success(f"Worktree ready at {info.path}")
-
+        create_worktree_impl(config, resolved_task_id)
     except Exception as e:
         output_error(f"Failed to create worktree: {e}")
         raise typer.Exit(1) from None
@@ -271,40 +140,13 @@ def worktree_status(
     resolved_task_id = require_task_id(task_id)
 
     try:
-        manager = _get_worktree_manager()
-        info = manager.get_worktree_info(config.project_id, resolved_task_id)
+        worktree_status_impl(config, resolved_task_id)
+        # Exit with error if worktree doesn't exist
+        from .worktree_helpers import get_worktree_manager
 
-        if not info:
-            output_json(
-                {
-                    "exists": False,
-                    "task_id": resolved_task_id,
-                    "project_id": config.project_id,
-                }
-            )
-            output_error(f"No worktree exists for task {resolved_task_id}")
+        manager = get_worktree_manager()
+        if not manager.get_worktree_info(config.project_id, resolved_task_id):
             raise typer.Exit(1)
-
-        # Get changed files list
-        changed_files = manager.get_changed_files(config.project_id, resolved_task_id)
-
-        output_json(
-            {
-                "exists": True,
-                "path": str(info.path),
-                "branch": info.branch,
-                "task_id": info.task_id,
-                "project_id": info.project_id,
-                "base_branch": info.base_branch,
-                "is_active": info.is_active,
-                "commit_count": info.commit_count,
-                "files_changed": info.files_changed,
-                "additions": info.additions,
-                "deletions": info.deletions,
-                "changed_files": [{"status": s, "path": p} for s, p in changed_files],
-            }
-        )
-
     except typer.Exit:
         raise
     except Exception as e:
@@ -347,71 +189,9 @@ def merge_worktree(
     resolved_task_id = require_task_id(task_id)
 
     try:
-        manager = _get_worktree_manager()
-        info = manager.get_worktree_info(config.project_id, resolved_task_id)
-
-        if not info:
-            output_error(f"No worktree exists for task {resolved_task_id}")
+        success = merge_worktree_impl(config, resolved_task_id, keep, no_commit, check_blast_radius)
+        if not success:
             raise typer.Exit(1)
-
-        # Check blast radius if enabled
-        if check_blast_radius:
-            blast = manager.check_blast_radius(config.project_id, resolved_task_id)
-            if not blast["passed"]:
-                output_json(
-                    {
-                        "blast_radius_exceeded": True,
-                        "files_changed": blast["files_changed"],
-                        "deletions": blast["deletions"],
-                        "reason": blast["reason"],
-                    }
-                )
-                output_error(f"Blast radius check failed: {blast['reason']}")
-                output_error("Use --no-check-blast-radius to force merge")
-                raise typer.Exit(1)
-
-        # Check for merge conflicts
-        conflicts = manager.check_merge_conflicts(config.project_id, resolved_task_id)
-        if conflicts["has_conflicts"]:
-            output_json(
-                {
-                    "has_conflicts": True,
-                    "conflicting_files": conflicts["conflicting_files"],
-                }
-            )
-            output_error(
-                f"Merge conflicts detected in: {', '.join(conflicts['conflicting_files'])}"
-            )
-            raise typer.Exit(1)
-
-        # Perform the merge
-        success = asyncio.run(
-            manager.merge_worktree(
-                config.project_id,
-                resolved_task_id,
-                delete_after=not keep,
-                no_commit=no_commit,
-            )
-        )
-
-        if success:
-            output_json(
-                {
-                    "merged": True,
-                    "branch": info.branch,
-                    "base_branch": info.base_branch,
-                    "worktree_removed": not keep,
-                    "committed": not no_commit,
-                }
-            )
-            if no_commit:
-                output_success(f"Changes from {info.branch} staged for review")
-            else:
-                output_success(f"Merged {info.branch} into {info.base_branch}")
-        else:
-            output_error("Merge failed - check git status for details")
-            raise typer.Exit(1)
-
     except typer.Exit:
         raise
     except Exception as e:
@@ -448,54 +228,9 @@ def remove_worktree(
     resolved_task_id = require_task_id(task_id)
 
     try:
-        manager = _get_worktree_manager()
-        info = manager.get_worktree_info(config.project_id, resolved_task_id)
-
-        if not info:
-            output_json(
-                {
-                    "exists": False,
-                    "task_id": resolved_task_id,
-                }
-            )
-            output_error(f"No worktree exists for task {resolved_task_id}")
+        success = remove_worktree_impl(config, resolved_task_id, force, keep_branch)
+        if not success:
             raise typer.Exit(1)
-
-        # Check for uncommitted changes if not forcing
-        if not force:
-            # Check for staged/unstaged changes in worktree (excluding untracked)
-            result = subprocess.run(
-                ["git", "status", "--porcelain", "-uno"],
-                capture_output=True,
-                text=True,
-                cwd=str(info.path),
-            )
-            if result.stdout.strip():
-                output_json(
-                    {
-                        "has_uncommitted_changes": True,
-                        "path": str(info.path),
-                    }
-                )
-                output_error("Worktree has uncommitted changes. Use --force to remove anyway.")
-                raise typer.Exit(1)
-
-        manager.remove_worktree(
-            config.project_id,
-            resolved_task_id,
-            delete_branch=not keep_branch,
-        )
-
-        output_json(
-            {
-                "removed": True,
-                "path": str(info.path),
-                "branch": info.branch,
-                "branch_deleted": not keep_branch,
-            }
-        )
-        output_success(f"Removed worktree at {info.path}")
-
     except typer.Exit:
         raise
     except Exception as e:
