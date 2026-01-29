@@ -1,9 +1,10 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   CheckCircle2,
+  CheckSquare,
   Clock,
   Filter,
   Grid3X3,
@@ -13,11 +14,13 @@ import {
   Palette,
   Search,
   Sparkles,
+  Trash2,
+  X,
   XCircle,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
-import { fetchMockups, fetchMockupStats, type Mockup } from '@/lib/api/mockups'
+import { deleteMockup, fetchMockups, fetchMockupStats, type Mockup } from '@/lib/api/mockups'
 import { MockupCard } from '@/components/design/MockupCard'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
@@ -43,6 +46,13 @@ export default function DesignPage() {
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
+
+  // Multi-select delete state
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedMockups, setSelectedMockups] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const queryClient = useQueryClient()
 
   // Fetch mockups
   const {
@@ -71,9 +81,53 @@ export default function DesignPage() {
   const mockups = mockupsData?.items ?? []
   const totalCount = mockupsData?.total ?? 0
 
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (mockupIds: string[]) => {
+      await Promise.all(mockupIds.map(id => deleteMockup(projectId, id)))
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
+      setSelectedMockups(new Set())
+      setSelectMode(false)
+      setShowDeleteConfirm(false)
+    },
+  })
+
   const handleMockupClick = (mockup: Mockup) => {
-    setSelectedMockup(mockup)
-    setModalOpen(true)
+    if (selectMode) {
+      toggleMockupSelection(mockup.mockup_id)
+    } else {
+      setSelectedMockup(mockup)
+      setModalOpen(true)
+    }
+  }
+
+  const toggleMockupSelection = (mockupId: string) => {
+    setSelectedMockups(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(mockupId)) {
+        newSet.delete(mockupId)
+      } else {
+        newSet.add(mockupId)
+      }
+      return newSet
+    })
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedMockups.size === 0) return
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = () => {
+    deleteMutation.mutate(Array.from(selectedMockups))
+  }
+
+  const cancelSelectMode = () => {
+    setSelectMode(false)
+    setSelectedMockups(new Set())
   }
 
   const statusIcons: Record<string, React.ReactNode> = {
@@ -103,37 +157,56 @@ export default function DesignPage() {
         {/* Actions */}
         <div className="flex items-center gap-4">
           {/* Generate button */}
-          <button
-            onClick={() => setGenerateDialogOpen(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            Generate Mockup
-          </button>
+          {!selectMode && (
+            <button
+              onClick={() => setGenerateDialogOpen(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Generate Mockup
+            </button>
+          )}
+
+          {/* Select mode toggle */}
+          {mockups.length > 0 && (
+            <button
+              onClick={() => selectMode ? cancelSelectMode() : setSelectMode(true)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
+                selectMode
+                  ? 'bg-outrun-500/20 text-outrun-400 border border-outrun-500/50'
+                  : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+              }`}
+            >
+              {selectMode ? <X className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+              {selectMode ? 'Cancel' : 'Select'}
+            </button>
+          )}
 
           {/* View toggle */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded ${
-                viewMode === 'grid'
-                  ? 'bg-outrun-500/20 text-outrun-400'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Grid3X3 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded ${
-                viewMode === 'list'
-                  ? 'bg-outrun-500/20 text-outrun-400'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <List className="w-4 h-4" />
-            </button>
-          </div>
+          {!selectMode && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded ${
+                  viewMode === 'grid'
+                    ? 'bg-outrun-500/20 text-outrun-400'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded ${
+                  viewMode === 'list'
+                    ? 'bg-outrun-500/20 text-outrun-400'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -213,6 +286,33 @@ export default function DesignPage() {
         </select>
       </div>
 
+      {/* Bulk action bar */}
+      {selectMode && selectedMockups.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-4">
+          <div className="bg-slate-900 border-2 border-outrun-500/50 rounded-xl px-6 py-4 shadow-2xl shadow-outrun-500/20 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-5 h-5 text-outrun-400" />
+              <span className="text-white font-medium">
+                {selectedMockups.size} selected
+              </span>
+            </div>
+            <div className="h-6 w-px bg-slate-700" />
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleteMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-all border border-rose-500/30 hover:border-rose-500/50 disabled:opacity-50"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Delete {selectedMockups.size > 1 ? 'All' : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Loading state */}
       {isLoading && (
         <div className="flex-1 flex items-center justify-center">
@@ -266,6 +366,8 @@ export default function DesignPage() {
                 mockup={mockup}
                 viewMode={viewMode}
                 onClick={() => handleMockupClick(mockup)}
+                selectMode={selectMode}
+                isSelected={selectedMockups.has(mockup.mockup_id)}
               />
             ))}
           </div>
@@ -314,6 +416,60 @@ export default function DesignPage() {
         open={generateDialogOpen}
         onOpenChange={setGenerateDialogOpen}
       />
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/80"
+            onClick={() => setShowDeleteConfirm(false)}
+          />
+
+          {/* Dialog */}
+          <div className="relative bg-slate-900 rounded-xl w-full max-w-md mx-4 p-6 border border-rose-500/30">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-rose-500/10 rounded-lg">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Delete {selectedMockups.size} mockup{selectedMockups.size > 1 ? 's' : ''}?
+                </h3>
+                <p className="text-slate-400 text-sm mb-6">
+                  This action cannot be undone. The selected mockup{selectedMockups.size > 1 ? 's' : ''} will be permanently deleted.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="btn-secondary"
+                    disabled={deleteMutation.isPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    disabled={deleteMutation.isPending}
+                    className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {deleteMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Design Standards Sidebar */}

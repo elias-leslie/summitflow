@@ -1,6 +1,8 @@
 'use client'
 
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { LinkedCapabilitySection } from '@/components/tasks/LinkedCapabilitySection'
@@ -13,6 +15,7 @@ import { useTaskModal } from '@/components/tasks/useTaskModal'
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import type { Task } from '@/lib/api/tasks'
+import { deleteTask } from '@/lib/api/tasks'
 
 // ============================================================================
 // Collapsible Section Component
@@ -121,6 +124,29 @@ export function TaskModal({
     onTaskUpdate,
   })
 
+  // Delete state and handlers
+  const queryClient = useQueryClient()
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteTask(projectId, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+      onOpenChange(false)
+      setDeleteConfirm(false)
+    },
+  })
+
+  const handleDeleteClick = () => {
+    setDeleteConfirm(true)
+  }
+
+  const handleDeleteConfirm = () => {
+    if (taskId) {
+      deleteMutation.mutate(taskId)
+    }
+  }
+
   // Don't render if no task ID
   if (!taskId) return null
 
@@ -195,6 +221,7 @@ export function TaskModal({
                 onEditStart={handleEditStart}
                 onEditCancel={handleEditCancel}
                 onEditSave={handleEditSave}
+                onDelete={handleDeleteClick}
               />
 
               {/* Objective Section - Always visible at top */}
@@ -331,6 +358,68 @@ export function TaskModal({
               <TaskMetadata task={task} />
             </div>
           </>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        {deleteConfirm && task && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+            onClick={() => setDeleteConfirm(false)}
+          >
+            <div
+              className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                    Delete Task
+                  </h3>
+                  <p className="text-sm text-slate-300 mb-2">
+                    Are you sure you want to delete this task?
+                  </p>
+                  <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
+                    {task.id}: {task.title}
+                  </div>
+                  <p className="text-sm text-red-400">
+                    This will permanently delete the task and all its subtasks,
+                    criteria, and dependencies. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  disabled={deleteMutation.isPending}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleteMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleteMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete'
+                  )}
+                </button>
+              </div>
+
+              {deleteMutation.isError && (
+                <p className="mt-3 text-sm text-red-400">
+                  Failed to delete task. Please try again.
+                </p>
+              )}
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>

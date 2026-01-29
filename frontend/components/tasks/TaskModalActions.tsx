@@ -9,6 +9,7 @@ import {
   Play,
   Save,
   Square,
+  Trash2,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ interface TaskModalActionsProps {
   onEditStart: () => void
   onEditCancel: () => void
   onEditSave: () => void
+  onDelete?: () => void
 }
 
 export function TaskModalActions({
@@ -42,6 +44,7 @@ export function TaskModalActions({
   onEditStart,
   onEditCancel,
   onEditSave,
+  onDelete,
 }: TaskModalActionsProps) {
   const isRunning = task.status === 'running'
   const isPaused = task.status === 'paused'
@@ -177,9 +180,22 @@ export function TaskModalActions({
             </Button>
           </>
         ) : (
-          <Button variant="outline" size="sm" onClick={onEditStart}>
-            <Edit2 className="h-4 w-4" />
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={onEditStart}>
+              <Edit2 className="h-4 w-4" />
+            </Button>
+            {onDelete && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onDelete}
+                className="border-red-600 text-red-400 hover:bg-red-500/20"
+                title="Delete task"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>

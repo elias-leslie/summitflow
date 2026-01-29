@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   CheckCircle2,
@@ -14,12 +14,14 @@ import {
   LayoutTemplate,
   Loader2,
   Sparkles,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
 import {
+  deleteMockup,
   fetchMockupHistory,
   getMockupImageUrl,
   getScreenshotUrl,
@@ -94,9 +96,22 @@ export function MockupDetailModal({
   const [updating, setUpdating] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showComparison, setShowComparison] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const queryClient = useQueryClient()
 
   // Check if this mockup supports comparison (design-analyzer mockups have screenshots)
   const canCompare = hasScreenshot(mockup)
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteMockup(projectId, mockup.mockup_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
+      onOpenChange(false)
+    },
+  })
 
   // Fetch history
   const { data: history } = useQuery({
@@ -230,6 +245,14 @@ export function MockupDetailModal({
                 >
                   <History className="w-4 h-4" />
                   History
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
                 </button>
               </div>
           </div>
@@ -400,6 +423,53 @@ export function MockupDetailModal({
             </div>
           </div>
         </div>
+
+        {/* Delete confirmation dialog */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-slate-900 rounded-xl w-full max-w-md mx-4 p-6 border border-rose-500/30 shadow-2xl">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-rose-500/10 rounded-lg">
+                  <Trash2 className="w-6 h-6 text-rose-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    Delete mockup?
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-6">
+                    Are you sure you want to delete "{mockup.name}"? This action cannot be undone.
+                  </p>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="btn-secondary"
+                      disabled={deleteMutation.isPending}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => deleteMutation.mutate()}
+                      disabled={deleteMutation.isPending}
+                      className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {deleteMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

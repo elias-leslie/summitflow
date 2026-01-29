@@ -1,22 +1,27 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
 import {
   AlertTriangle,
+  Archive,
   ArrowDownCircle,
   Bug,
   CheckSquare,
+  GitBranch,
   Info,
+  LayoutGrid,
   Package,
   RefreshCw,
   Search,
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { fetchTasks, type Task, type TaskType } from '@/lib/api'
+import { GlobalAutoExecDropdown } from './GlobalAutoExecDropdown'
 import { useSelectedProject } from './ProjectSelector'
 
 const SUMMITFLOW_PROJECT_ID = 'summitflow'
@@ -36,8 +41,34 @@ const typeIcons: Record<TaskType, React.ReactNode> = {
   regression: <ArrowDownCircle className="h-3.5 w-3.5 text-orange-400" />,
 }
 
+// Navigation items configuration
+const navItems = [
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    href: '/',
+    icon: LayoutGrid,
+    activeColor: 'outrun',
+  },
+  {
+    id: 'git',
+    label: 'Git',
+    href: '/git',
+    icon: GitBranch,
+    activeColor: 'violet',
+  },
+  {
+    id: 'backups',
+    label: 'Backups',
+    href: '/backups',
+    icon: Archive,
+    activeColor: 'indigo',
+  },
+] as const
+
 export function TopBar() {
   const router = useRouter()
+  const pathname = usePathname()
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -220,8 +251,51 @@ export function TopBar() {
           />
         </button>
 
+        {/* Global Navigation */}
+        <nav className="hidden lg:flex items-center gap-1 ml-4">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href ||
+              (item.href !== '/' && pathname.startsWith(item.href))
+
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={clsx(
+                  'group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
+                  isActive
+                    ? item.activeColor === 'outrun'
+                      ? 'bg-outrun-500/15 text-outrun-400'
+                      : item.activeColor === 'violet'
+                        ? 'bg-violet-500/15 text-violet-400'
+                        : 'bg-indigo-500/15 text-indigo-400'
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300'
+                )}
+              >
+                <Icon
+                  className={clsx(
+                    'w-4 h-4 transition-colors duration-200',
+                    isActive
+                      ? item.activeColor === 'outrun'
+                        ? 'text-outrun-400'
+                        : item.activeColor === 'violet'
+                          ? 'text-violet-400'
+                          : 'text-indigo-400'
+                      : 'text-slate-500 group-hover:text-slate-400'
+                  )}
+                />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Global Auto-exec Dropdown */}
+        <GlobalAutoExecDropdown />
 
         {/* Search */}
         <div className="hidden md:block" ref={searchRef}>

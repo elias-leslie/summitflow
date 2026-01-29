@@ -292,10 +292,18 @@ def _issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
 
     # Check issue type-specific criteria
     if issue_type == "complexity":
-        # Check if complexity is still above threshold
-        # Threshold matches task generation: tier 1 starts at complexity > 10
-        metadata = entry.get("metadata", {})
-        complexity = metadata.get("complexity_score", 0)
+        # Check if complexity is still above threshold OR line count still above target
+        entry_metadata = entry.get("metadata", {})
+        complexity = entry_metadata.get("complexity_score", 0)
+        lines = entry_metadata.get("lines_of_code", 0)
+
+        # If issue has a target_lines in metadata, use that for line count check
+        target_lines = issue_metadata.get("target_lines")
+        if target_lines and lines >= target_lines:
+            # File still above target line count - issue persists
+            return True
+
+        # Fall back to complexity check (threshold matches task generation: tier 1 starts at complexity > 10)
         return bool(complexity >= 10)
 
     elif issue_type == "stale_file":

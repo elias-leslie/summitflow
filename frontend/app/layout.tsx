@@ -4,7 +4,6 @@ import './globals.css'
 import { AppShell } from '@/components/layout/AppShell'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
-import { VoiceOverlayWrapper } from '@/components/VoiceOverlayWrapper'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
@@ -52,7 +51,6 @@ export default function RootLayout({
                 <main className="flex-1 overflow-auto bg-grid">{children}</main>
               </div>
             </AppShell>
-            <VoiceOverlayWrapper />
           </div>
         </Providers>
         <Script

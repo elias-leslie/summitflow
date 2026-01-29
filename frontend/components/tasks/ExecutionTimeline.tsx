@@ -1,10 +1,13 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   AlertCircle,
   CheckCircle2,
   Loader2,
   MessageSquare,
+  Mic,
+  MicOff,
   RefreshCw,
   Send,
   XCircle,
@@ -13,7 +16,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getWsUrl } from '@/lib/api-config'
+import { getWsUrl, getVoiceWsUrl } from '@/lib/api-config'
 import {
   getEventsByTask,
   type Event,
@@ -250,8 +253,12 @@ export function ExecutionTimeline({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const voiceWsRef = useRef<WebSocket | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastSequenceRef = useRef<number>(0)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -408,8 +415,93 @@ export function ExecutionTimeline({
     }
   }, [])
 
-  // Expose methods via ref if needed
-  // We'll add this later when integrating with TaskModal
+  // Voice recording functions
+  const startVoiceRecording = useCallback(async () => {
+    try {
+      setVoiceError(null)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+      // Connect to voice WebSocket
+      const voiceUrl = getVoiceWsUrl()
+      if (!voiceUrl) {
+        setVoiceError('Voice service not configured')
+        return
+      }
+
+      const voiceWs = new WebSocket(voiceUrl)
+      voiceWsRef.current = voiceWs
+
+      voiceWs.onopen = () => {
+        setIsRecording(true)
+      }
+
+      voiceWs.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === 'transcription' && data.text) {
+            // Send transcribed text as chat message
+            sendChatMessage(data.text)
+          }
+        } catch (err) {
+          console.error('Failed to parse voice response:', err)
+        }
+      }
+
+      voiceWs.onerror = () => {
+        setVoiceError('Voice connection error')
+        stopVoiceRecording()
+      }
+
+      voiceWs.onclose = () => {
+        setIsRecording(false)
+      }
+
+      // Start recording
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && voiceWs.readyState === WebSocket.OPEN) {
+          voiceWs.send(event.data)
+        }
+      }
+
+      mediaRecorder.start(250) // Send chunks every 250ms
+    } catch (err) {
+      console.error('Failed to start voice recording:', err)
+      setVoiceError('Microphone access denied')
+    }
+  }, [sendChatMessage])
+
+  const stopVoiceRecording = useCallback(() => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
+      mediaRecorderRef.current = null
+    }
+
+    if (voiceWsRef.current) {
+      voiceWsRef.current.close()
+      voiceWsRef.current = null
+    }
+
+    setIsRecording(false)
+  }, [])
+
+  const toggleVoiceRecording = useCallback(() => {
+    if (isRecording) {
+      stopVoiceRecording()
+    } else {
+      startVoiceRecording()
+    }
+  }, [isRecording, startVoiceRecording, stopVoiceRecording])
+
+  // Cleanup voice on unmount
+  useEffect(() => {
+    return () => {
+      stopVoiceRecording()
+    }
+  }, [stopVoiceRecording])
 
   return (
     <div className={`flex flex-col ${className}`}>
@@ -481,6 +573,11 @@ export function ExecutionTimeline({
       {/* Chat Input */}
       {showChatInput && (
         <div className="border-t border-slate-700 px-3 py-2">
+          {voiceError && (
+            <div className="mb-2 text-xs text-amber-400 bg-amber-950/30 px-2 py-1 rounded">
+              {voiceError}
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -492,22 +589,54 @@ export function ExecutionTimeline({
             }}
             className="flex items-center gap-2"
           >
+            {/* Voice Button */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggleVoiceRecording}
+              disabled={!chatEnabled}
+              className={clsx(
+                'h-8 px-3 transition-all duration-200',
+                isRecording &&
+                  'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse'
+              )}
+              title={
+                isRecording
+                  ? 'Stop recording'
+                  : chatEnabled
+                    ? 'Start voice input'
+                    : 'Chat disabled'
+              }
+            >
+              {isRecording ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
+            </Button>
+
+            {/* Text Input */}
             <Input
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               placeholder={
-                chatEnabled
-                  ? 'Send direction to agent...'
-                  : 'Chat disabled (not executing)'
+                isRecording
+                  ? 'Recording...'
+                  : chatEnabled
+                    ? 'Type or use voice...'
+                    : 'Chat disabled (not executing)'
               }
-              disabled={!chatEnabled}
+              disabled={!chatEnabled || isRecording}
               className="flex-1 h-8 text-sm"
             />
+
+            {/* Send Button */}
             <Button
               type="submit"
               variant="outline"
               size="sm"
-              disabled={!chatEnabled || !chatInput.trim() || isSending}
+              disabled={!chatEnabled || !chatInput.trim() || isSending || isRecording}
               className="h-8 px-3"
             >
               <Send className="h-4 w-4" />

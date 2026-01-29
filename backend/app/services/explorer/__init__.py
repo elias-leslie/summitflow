@@ -108,7 +108,7 @@ def get_scan_status(project_id: str) -> dict[str, Any]:
         "started_at": state.get("started_at"),
         "completed_at": state.get("completed_at"),
         "error": state.get("error"),
-        "results": state.get("results", {}).get("scans", []),
+        "results": (state.get("results") or {}).get("scans", []),
     }
 
 

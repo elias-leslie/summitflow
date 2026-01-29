@@ -1,16 +1,18 @@
 'use client'
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Scan,
   Sparkles,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { analyzePage, type AnalyzePageResponse } from '@/lib/api/mockups'
+import { fetchExplorerEntries, type ExplorerEntry } from '@/lib/api/explorer'
 
 interface GenerateMockupDialogProps {
   projectId: string
@@ -26,8 +28,48 @@ export function GenerateMockupDialog({
   defaultUrl = '',
 }: GenerateMockupDialogProps) {
   const [pageUrl, setPageUrl] = useState(defaultUrl)
+  const [selectedPage, setSelectedPage] = useState<ExplorerEntry | null>(null)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [result, setResult] = useState<AnalyzePageResponse | null>(null)
   const queryClient = useQueryClient()
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Fetch pages from explorer
+  const { data: pagesData, isLoading: isPagesLoading } = useQuery({
+    queryKey: ['explorer-pages', projectId],
+    queryFn: () => fetchExplorerEntries(projectId, { type: 'page', sort: 'path', dir: 'asc' }),
+    enabled: open,
+  })
+
+  const pages = pagesData?.entries || []
+
+  // Build full URL from page entry
+  const buildPageUrl = (page: ExplorerEntry): string => {
+    const port = page.metadata.port || 3001
+    const path = page.path
+    return `http://localhost:${port}${path}`
+  }
+
+  // Handle page selection
+  const handlePageSelect = (page: ExplorerEntry) => {
+    setSelectedPage(page)
+    setPageUrl(buildPageUrl(page))
+    setIsDropdownOpen(false)
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isDropdownOpen])
 
   const analyzeMutation = useMutation({
     mutationFn: () => analyzePage(projectId, pageUrl),
@@ -65,7 +107,7 @@ export function GenerateMockupDialog({
       />
 
       {/* Dialog */}
-      <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4 overflow-hidden">
+      <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -93,38 +135,106 @@ export function GenerateMockupDialog({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Page URL
+                Select Page
               </label>
-              <input
-                type="url"
-                value={pageUrl}
-                onChange={(e) => setPageUrl(e.target.value)}
-                placeholder="http://localhost:3001/projects/summitflow/settings"
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-outrun-500"
-                disabled={analyzeMutation.isPending}
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Enter the full URL of the page you want to analyze
-              </p>
-            </div>
 
-            {/* Quick URLs */}
-            <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-slate-400">Quick select:</span>
-              {[
-                { label: 'Settings', url: 'http://localhost:3001/projects/summitflow/settings' },
-                { label: 'Design', url: 'http://localhost:3001/projects/summitflow/design' },
-                { label: 'Tasks', url: 'http://localhost:3001/projects/summitflow/tasks' },
-              ].map((item) => (
+              {/* Custom Dropdown */}
+              <div className="relative" ref={dropdownRef}>
                 <button
-                  key={item.label}
                   type="button"
-                  onClick={() => setPageUrl(item.url)}
-                  className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded"
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  disabled={analyzeMutation.isPending || isPagesLoading}
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-left text-white hover:border-outrun-500/50 focus:outline-none focus:ring-2 focus:ring-outrun-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
                 >
-                  {item.label}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      {isPagesLoading ? (
+                        <span className="text-slate-400">Loading pages...</span>
+                      ) : selectedPage ? (
+                        <div className="space-y-0.5">
+                          <div className="text-sm font-medium text-outrun-400">
+                            {selectedPage.name}
+                          </div>
+                          <div className="text-xs text-slate-400 font-mono truncate">
+                            {selectedPage.path}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">Choose a page to analyze...</span>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={`w-5 h-5 text-slate-400 ml-3 transition-transform duration-200 ${
+                        isDropdownOpen ? 'rotate-180 text-outrun-400' : ''
+                      }`}
+                    />
+                  </div>
                 </button>
-              ))}
+
+                {/* Dropdown Menu */}
+                {isDropdownOpen && !isPagesLoading && (
+                  <div className="absolute z-10 w-full mt-2 bg-slate-850 border border-slate-700 rounded-lg shadow-2xl overflow-hidden">
+                    <div className="max-h-[28rem] overflow-y-auto custom-scrollbar">
+                      {pages.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-slate-400">
+                          <p className="text-sm">No pages found</p>
+                          <p className="text-xs mt-1">Run an explorer scan to discover pages</p>
+                        </div>
+                      ) : (
+                        <div className="py-1">
+                          {pages.map((page) => (
+                            <button
+                              key={page.id}
+                              type="button"
+                              onClick={() => handlePageSelect(page)}
+                              className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors duration-150 group border-b border-slate-800/50 last:border-b-0"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-white group-hover:text-outrun-400 transition-colors">
+                                    {page.name}
+                                  </div>
+                                  <div className="text-xs text-slate-400 font-mono truncate">
+                                    {page.path}
+                                  </div>
+                                  {page.metadata.route_params && page.metadata.route_params.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {(page.metadata.route_params as string[]).map((param) => (
+                                        <span
+                                          key={param}
+                                          className="text-2xs px-1.5 py-0.5 bg-slate-900 text-phosphor-400 rounded border border-slate-700"
+                                        >
+                                          {param}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className={`px-2 py-0.5 rounded text-2xs font-medium shrink-0 ${
+                                  page.healthStatus === 'healthy' ? 'bg-emerald-950/50 text-emerald-400' :
+                                  page.healthStatus === 'warning' ? 'bg-amber-950/50 text-amber-400' :
+                                  page.healthStatus === 'error' ? 'bg-rose-950/50 text-rose-400' :
+                                  'bg-slate-800 text-slate-500'
+                                }`}>
+                                  {page.healthStatus}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-2 text-xs text-slate-500">
+                {selectedPage ? (
+                  <span className="font-mono text-phosphor-500">{pageUrl}</span>
+                ) : (
+                  'Select a page from your project to analyze its design'
+                )}
+              </p>
             </div>
 
             {/* Submit button */}

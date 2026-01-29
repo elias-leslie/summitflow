@@ -5,7 +5,7 @@ Provides live monitoring of task execution via the events API.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -66,8 +66,8 @@ def exec_monitor_command(
 
 
 def _display_events(
-    task: dict,
-    events: list,
+    task: dict[str, Any],
+    events: dict[str, Any],
     follow: bool,
     client: STClient,
     limit: int,
@@ -155,7 +155,7 @@ def _display_events(
             print("\n[Stopped]")
 
 
-def _print_events(events: list, debug: bool = False, json_output: bool = False) -> None:
+def _print_events(events: list[Any], debug: bool = False, json_output: bool = False) -> None:
     """Print a list of events."""
     import json
 

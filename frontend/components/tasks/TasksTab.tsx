@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
   AlertTriangle,
@@ -23,6 +23,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Trash2,
   XCircle,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -35,6 +36,7 @@ import {
   type TaskStatus,
   type TaskType,
 } from '@/lib/api'
+import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import type { Subtask } from '@/lib/api/tasks'
 import { cn } from '@/lib/utils'
 import { CriteriaProgress } from './CriteriaProgress'
@@ -187,11 +189,17 @@ function TaskRow({
   task,
   isExpanded,
   onToggle,
+  onDelete,
+  isSelected,
+  onToggleSelect,
   subtasks,
 }: {
   task: Task
   isExpanded: boolean
   onToggle: () => void
+  onDelete?: (taskId: string) => void
+  isSelected?: boolean
+  onToggleSelect?: (taskId: string) => void
   onTaskUpdated?: (task: Task) => void
   onTaskDeleted?: () => void
   subtasks: Subtask[]
@@ -244,13 +252,25 @@ function TaskRow({
     <>
       <tr
         className={cn(
-          'border-b border-slate-800 hover:bg-slate-800/30 transition-colors cursor-pointer',
+          'border-b border-slate-800 hover:bg-slate-800/30 transition-colors',
           isExpanded && 'bg-slate-800/50',
+          isSelected && 'bg-blue-500/10',
         )}
-        onClick={onToggle}
       >
+        {/* Checkbox */}
+        {onToggleSelect && (
+          <td className="w-8 px-2 py-3" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelect(task.id)}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0 cursor-pointer"
+            />
+          </td>
+        )}
+
         {/* Expand */}
-        <td className="w-8 px-2 py-3">
+        <td className="w-8 px-2 py-3 cursor-pointer" onClick={onToggle}>
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-slate-500" />
           ) : (
@@ -259,7 +279,7 @@ function TaskRow({
         </td>
 
         {/* Priority */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span
             className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityStyle.className}`}
           >
@@ -268,7 +288,7 @@ function TaskRow({
         </td>
 
         {/* Type */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span className={`flex items-center gap-1.5 ${typeStyle.className}`}>
             {typeStyle.icon}
             <span className="text-xs">{typeStyle.label}</span>
@@ -276,12 +296,12 @@ function TaskRow({
         </td>
 
         {/* ID */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span className="text-xs mono text-slate-500">{task.id}</span>
         </td>
 
         {/* Title + Warning */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-200 line-clamp-1">
               {task.title}
@@ -295,7 +315,7 @@ function TaskRow({
         </td>
 
         {/* Phase Badge */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span
             className={`text-2xs px-1.5 py-0.5 rounded font-medium ${phaseStyle.className}`}
           >
@@ -304,7 +324,7 @@ function TaskRow({
         </td>
 
         {/* Progress Indicators */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <div className="flex items-center gap-3">
             {/* Criteria Progress */}
             {task.acceptance_criteria &&
@@ -324,7 +344,7 @@ function TaskRow({
         </td>
 
         {/* Status */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span
             className={`flex items-center gap-1.5 ${statusStyle.className}`}
           >
@@ -334,11 +354,24 @@ function TaskRow({
         </td>
 
         {/* Created */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
           <span className="text-xs text-slate-500">
             {task.created_at ? formatRelativeTime(task.created_at) : '-'}
           </span>
         </td>
+
+        {/* Actions */}
+        {onDelete && (
+          <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onDelete(task.id)}
+              className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
+              title="Delete task"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </td>
+        )}
       </tr>
 
       {/* Expanded inline view removed - now using TaskModal */}
@@ -364,6 +397,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
   const [modalOpen, setModalOpen] = useState(!!urlTaskId)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showCreate, setShowCreate] = useState(urlModal === 'create-task')
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
+  const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
 
   // Helper to update URL params
   const updateUrlParams = useCallback(
@@ -528,6 +564,65 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     refetch()
   }, [refetch])
 
+  // Delete mutations
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => deleteTask(projectId, taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+      setDeleteConfirmTask(null)
+      setSelectedTaskIds(new Set())
+    },
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (taskIds: string[]) => deleteTasks(projectId, taskIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+      setBulkDeleteConfirm(false)
+      setSelectedTaskIds(new Set())
+    },
+  })
+
+  // Delete handlers
+  const handleDeleteClick = (taskId: string) => {
+    const task = filteredTasks.find((t) => t.id === taskId)
+    if (task) {
+      setDeleteConfirmTask(task)
+    }
+  }
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirmTask) {
+      deleteMutation.mutate(deleteConfirmTask.id)
+    }
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedTaskIds.size > 0) {
+      bulkDeleteMutation.mutate(Array.from(selectedTaskIds))
+    }
+  }
+
+  const handleToggleSelect = (taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
+  }
+
+  const handleToggleSelectAll = () => {
+    if (selectedTaskIds.size === filteredTasks.length) {
+      setSelectedTaskIds(new Set())
+    } else {
+      setSelectedTaskIds(new Set(filteredTasks.map((t) => t.id)))
+    }
+  }
+
   // Apply client-side filters and sorting
   const filteredTasks = useMemo(() => {
     // For "blocked" status, use the blocked tasks endpoint data
@@ -607,6 +702,17 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           onChange={setFilters}
         />
         <div className="flex items-center gap-2">
+          {selectedTaskIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDeleteConfirm(true)}
+              className="border-red-600 text-red-400 hover:bg-red-500/20"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -649,6 +755,14 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
+                <th className="w-8 px-2 py-2">
+                  <input
+                    type="checkbox"
+                    checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
+                    onChange={handleToggleSelectAll}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0 cursor-pointer"
+                  />
+                </th>
                 <th className="w-8 px-2 py-2"></th>
                 <th
                   className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16 cursor-pointer hover:text-slate-200 select-none"
@@ -694,6 +808,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                   Created
                   <SortIndicator field="created_at" />
                 </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -708,6 +825,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                     setModalOpen(true)
                     updateUrlParams({ task: task.id })
                   }}
+                  onDelete={handleDeleteClick}
+                  isSelected={selectedTaskIds.has(task.id)}
+                  onToggleSelect={handleToggleSelect}
                   onTaskUpdated={handleTaskUpdated}
                   onTaskDeleted={handleTaskDeleted}
                   subtasks={[]}
@@ -794,6 +914,137 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
           onAccept={handleTaskAccepted}
           onDiscard={() => setReviewingTask(null)}
         />
+      )}
+
+      {/* Single Delete Confirmation Dialog */}
+      {deleteConfirmTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setDeleteConfirmTask(null)}
+        >
+          <div
+            className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                  Delete Task
+                </h3>
+                <p className="text-sm text-slate-300 mb-2">
+                  Are you sure you want to delete this task?
+                </p>
+                <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
+                  {deleteConfirmTask.id}: {deleteConfirmTask.title}
+                </div>
+                <p className="text-sm text-red-400">
+                  This will permanently delete the task and all its subtasks,
+                  criteria, and dependencies. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirmTask(null)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
+
+            {deleteMutation.isError && (
+              <p className="mt-3 text-sm text-red-400">
+                Failed to delete task. Please try again.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      {bulkDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setBulkDeleteConfirm(false)}
+        >
+          <div
+            className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                  Delete {selectedTaskIds.size} Task{selectedTaskIds.size !== 1 ? 's' : ''}
+                </h3>
+                <p className="text-sm text-slate-300 mb-3">
+                  Are you sure you want to delete these tasks?
+                </p>
+                <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3 max-h-32 overflow-y-auto">
+                  {Array.from(selectedTaskIds).slice(0, 5).map((id) => (
+                    <div key={id}>{id}</div>
+                  ))}
+                  {selectedTaskIds.size > 5 && (
+                    <div className="text-slate-500 italic">
+                      ...and {selectedTaskIds.size - 5} more
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-red-400">
+                  This will permanently delete all selected tasks and their
+                  subtasks, criteria, and dependencies. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setBulkDeleteConfirm(false)}
+                disabled={bulkDeleteMutation.isPending}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleteMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {bulkDeleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  `Delete ${selectedTaskIds.size}`
+                )}
+              </button>
+            </div>
+
+            {bulkDeleteMutation.isError && (
+              <p className="mt-3 text-sm text-red-400">
+                Failed to delete tasks. Please try again.
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

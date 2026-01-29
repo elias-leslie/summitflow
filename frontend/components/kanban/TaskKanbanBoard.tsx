@@ -18,9 +18,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
-import { executeTask } from '@/lib/api/tasks'
+import { deleteTask, executeTask } from '@/lib/api/tasks'
 import { DragOverlayTaskCard, TaskCard } from './TaskCard'
 
 // ============================================================================
@@ -150,6 +152,7 @@ interface DroppableColumnProps {
   tasks: Task[]
   onTaskClick?: (task: Task) => void
   onExecuteNow?: (taskId: string) => void
+  onDelete?: (taskId: string) => void
   executingTaskId?: string | null
   // WebSocket execution state for running tasks
   runningTaskId?: string | null
@@ -161,6 +164,7 @@ function DroppableColumn({
   tasks,
   onTaskClick,
   onExecuteNow,
+  onDelete,
   executingTaskId,
   runningTaskId,
   executionHook,
@@ -247,6 +251,7 @@ function DroppableColumn({
                     onExecuteNow={
                       column.id === 'ideas' ? onExecuteNow : undefined
                     }
+                    onDelete={onDelete}
                     isExecuting={executingTaskId === task.id}
                     execution={
                       isRunningTask ? executionHook?.execution : undefined
@@ -285,8 +290,10 @@ export function TaskKanbanBoard({
   onStatusChange,
   onTaskClick,
 }: TaskKanbanBoardProps) {
+  const queryClient = useQueryClient()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [executingTaskId, setExecutingTaskId] = useState<string | null>(null)
+  const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
 
   // Find the first running task to connect WebSocket
   const runningTask = useMemo(
@@ -310,6 +317,27 @@ export function TaskKanbanBoard({
       // Could show toast notification here
     } finally {
       setExecutingTaskId(null)
+    }
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => deleteTask(projectId, taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+      setDeleteConfirmTask(null)
+    },
+  })
+
+  const handleDeleteClick = (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId)
+    if (task) {
+      setDeleteConfirmTask(task)
+    }
+  }
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirmTask) {
+      deleteMutation.mutate(deleteConfirmTask.id)
     }
   }
 
@@ -443,6 +471,7 @@ export function TaskKanbanBoard({
               tasks={tasksByColumn[column.id]}
               onTaskClick={onTaskClick}
               onExecuteNow={handleExecuteNow}
+              onDelete={handleDeleteClick}
               executingTaskId={executingTaskId}
               runningTaskId={runningTask?.id}
               executionHook={executionHook}
@@ -455,6 +484,68 @@ export function TaskKanbanBoard({
           {activeTask && <DragOverlayTaskCard task={activeTask} />}
         </DragOverlay>
       </DndContext>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setDeleteConfirmTask(null)}
+        >
+          <div
+            className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                  Delete Task
+                </h3>
+                <p className="text-sm text-slate-300 mb-2">
+                  Are you sure you want to delete this task?
+                </p>
+                <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
+                  {deleteConfirmTask.id}: {deleteConfirmTask.title}
+                </div>
+                <p className="text-sm text-red-400">
+                  This will permanently delete the task and all its subtasks,
+                  criteria, and dependencies. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirmTask(null)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
+
+            {deleteMutation.isError && (
+              <p className="mt-3 text-sm text-red-400">
+                Failed to delete task. Please try again.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

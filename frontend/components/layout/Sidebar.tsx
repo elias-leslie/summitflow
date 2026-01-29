@@ -1,20 +1,17 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   Activity,
-  Archive,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Compass,
   FolderKanban,
-  GitBranch,
-  Globe,
   Kanban,
-  LayoutGrid,
   ListTodo,
+  Loader2,
   Palette,
   Settings2,
   Zap,
@@ -22,18 +19,18 @@ import {
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchProject, fetchProjects, getAutonomousSettings } from '@/lib/api'
+import {
+  fetchProject,
+  fetchProjects,
+  getAutonomousSettings,
+  updateAutonomousSettings,
+} from '@/lib/api'
 
 // =============================================================================
 // Types & Constants
 // =============================================================================
 
-type SidebarMode = 'global' | 'projects'
 type NavItemId =
-  | 'dashboard'
-  | 'git'
-  | 'backups'
-  | 'settings'
   | 'kanban'
   | 'tasks'
   | 'explorer'
@@ -50,50 +47,6 @@ interface NavItemConfig {
   iconActiveClasses: string
   iconInactiveClasses: string
 }
-
-// Global navigation items (shown in Global mode)
-const globalNavItems: NavItemConfig[] = [
-  {
-    id: 'dashboard',
-    label: 'Dashboard',
-    href: '/',
-    icon: LayoutGrid,
-    activeClasses: 'bg-outrun-500/15 text-outrun-400',
-    inactiveClasses: 'text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400',
-    iconActiveClasses: 'text-outrun-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-outrun-400',
-  },
-  {
-    id: 'git',
-    label: 'Git',
-    href: '/git',
-    icon: GitBranch,
-    activeClasses: 'bg-violet-500/15 text-violet-400',
-    inactiveClasses: 'text-slate-400 hover:bg-violet-500/10 hover:text-violet-400',
-    iconActiveClasses: 'text-violet-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-violet-400',
-  },
-  {
-    id: 'backups',
-    label: 'Backups',
-    href: '/backups',
-    icon: Archive,
-    activeClasses: 'bg-indigo-500/15 text-indigo-400',
-    inactiveClasses: 'text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400',
-    iconActiveClasses: 'text-indigo-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-indigo-400',
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    href: '/settings',
-    icon: Settings2,
-    activeClasses: 'bg-slate-500/15 text-slate-300',
-    inactiveClasses: 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
-    iconActiveClasses: 'text-slate-300',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-slate-300',
-  },
-]
 
 // Project-specific navigation items (shown when project expanded)
 const projectNavItems: NavItemConfig[] = [
@@ -150,121 +103,55 @@ const projectNavItems: NavItemConfig[] = [
 ]
 
 const COLLAPSED_KEY = 'summitflow_sidebar_collapsed'
-const MODE_KEY = 'summitflow_sidebar_mode'
 
 // =============================================================================
-// Segmented Toggle Component
+// Sidebar Header Component
 // =============================================================================
 
-interface ModeToggleProps {
-  mode: SidebarMode
-  onChange: (mode: SidebarMode) => void
+interface SidebarHeaderProps {
   isCollapsed: boolean
 }
 
-function ModeToggle({ mode, onChange, isCollapsed }: ModeToggleProps) {
+function SidebarHeader({ isCollapsed }: SidebarHeaderProps) {
   if (isCollapsed) {
-    // Show stacked icons when collapsed
     return (
-      <div className="flex flex-col items-center gap-1 py-2">
-        <button
-          onClick={() => onChange('global')}
-          className={clsx(
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200',
-            mode === 'global'
-              ? 'bg-gradient-to-br from-phosphor-500/30 to-phosphor-600/20 text-phosphor-400 shadow-[0_0_12px_rgba(0,245,255,0.3)]'
-              : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800/50',
-          )}
-          title="Global"
-        >
-          <Globe className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => onChange('projects')}
-          className={clsx(
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200',
-            mode === 'projects'
-              ? 'bg-gradient-to-br from-outrun-500/30 to-outrun-600/20 text-outrun-400 shadow-[0_0_12px_rgba(255,0,102,0.3)]'
-              : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800/50',
-          )}
-          title="Projects"
-        >
-          <FolderKanban className="w-4 h-4" />
-        </button>
+      <div className="flex items-center justify-center py-3">
+        <FolderKanban className="w-5 h-5 text-outrun-400" />
       </div>
     )
   }
 
   return (
-    <div
-      data-testid="sidebar-mode-toggle"
-      className="relative flex p-1 rounded-xl bg-slate-900/80 border border-slate-700/50"
-    >
-      {/* Animated pill background */}
-      <div
-        className={clsx(
-          'absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg transition-all duration-250 ease-out',
-          mode === 'global'
-            ? 'left-1 bg-gradient-to-r from-phosphor-500/25 to-phosphor-600/15 shadow-[0_0_16px_rgba(0,245,255,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]'
-            : 'left-[calc(50%+2px)] bg-gradient-to-r from-outrun-500/25 to-outrun-600/15 shadow-[0_0_16px_rgba(255,0,102,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]',
-        )}
-      />
-
-      {/* Global button */}
-      <button
-        onClick={() => onChange('global')}
-        className={clsx(
-          'relative z-10 flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold tracking-wide uppercase transition-colors duration-200',
-          mode === 'global'
-            ? 'text-phosphor-400'
-            : 'text-slate-500 hover:text-slate-400',
-        )}
-      >
-        <Globe className="w-3.5 h-3.5" />
-        <span>Global</span>
-      </button>
-
-      {/* Projects button */}
-      <button
-        onClick={() => onChange('projects')}
-        className={clsx(
-          'relative z-10 flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold tracking-wide uppercase transition-colors duration-200',
-          mode === 'projects'
-            ? 'text-outrun-400'
-            : 'text-slate-500 hover:text-slate-400',
-        )}
-      >
-        <FolderKanban className="w-3.5 h-3.5" />
-        <span>Projects</span>
-      </button>
+    <div className="flex items-center gap-2 px-3 py-3">
+      <FolderKanban className="w-5 h-5 text-outrun-400" />
+      <span className="text-sm font-semibold tracking-wide uppercase text-slate-300">
+        Projects
+      </span>
     </div>
   )
 }
 
+
 // =============================================================================
-// Auto-exec Status Component
+// Project Auto-exec Toggle Component
 // =============================================================================
 
-interface AutoExecStatusProps {
-  isCollapsed: boolean
+interface ProjectAutoExecToggleProps {
+  projectId: string
+  isActive: boolean
 }
 
-function AutoExecStatus({ isCollapsed }: AutoExecStatusProps) {
-  const pathname = usePathname()
+function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
+  const queryClient = useQueryClient()
 
-  // Extract project ID from pathname
-  const projectMatch = pathname.match(/^\/projects\/([^/]+)/)
-  const selectedProjectId = projectMatch ? projectMatch[1] : null
-
-  const { data: autonomousSettings } = useQuery({
-    queryKey: ['autonomous-settings', selectedProjectId],
-    queryFn: () => getAutonomousSettings(selectedProjectId!),
-    enabled: !!selectedProjectId,
+  const { data: autonomousSettings, isLoading } = useQuery({
+    queryKey: ['autonomous-settings', projectId],
+    queryFn: () => getAutonomousSettings(projectId),
     staleTime: 60000,
     refetchInterval: 60000,
   })
 
-  // Calculate if currently in execution window (client-side only to avoid hydration mismatch)
+  // Calculate if currently in execution window
   const [isInTimeWindow, setIsInTimeWindow] = useState(false)
   useEffect(() => {
     if (!autonomousSettings) {
@@ -290,84 +177,81 @@ function AutoExecStatus({ isCollapsed }: AutoExecStatusProps) {
     return { label: 'Active', color: 'phosphor', active: true }
   }, [autonomousSettings, isInTimeWindow])
 
-  const href = selectedProjectId ? `/projects/${selectedProjectId}/settings` : '/settings'
+  const toggleMutation = useMutation({
+    mutationFn: () =>
+      updateAutonomousSettings(projectId, {
+        enabled: !autonomousSettings?.enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['autonomous-settings', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['all-autonomous-settings'] })
+    },
+  })
 
-  if (isCollapsed) {
-    return (
-      <Link
-        href={href}
-        data-testid="auto-exec-status"
-        className={clsx(
-          'flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-200',
-          status.active
-            ? 'bg-phosphor-500/15 text-phosphor-400 shadow-[0_0_8px_rgba(0,245,255,0.2)]'
-            : status.color === 'amber'
-              ? 'bg-amber-500/10 text-amber-400'
-              : 'bg-slate-800/50 text-slate-500 hover:text-slate-400',
-        )}
-        title={`Auto-exec: ${status.label}`}
-      >
-        <Zap className={clsx('w-4 h-4', status.active && 'animate-pulse')} />
-      </Link>
-    )
+  const handleToggle = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isLoading && autonomousSettings) {
+      toggleMutation.mutate()
+    }
   }
 
+  const isItemActive = false // Auto-exec toggle doesn't have an active state like other nav items
+
   return (
-    <Link
-      href={href}
-      data-testid="auto-exec-status"
+    <button
+      onClick={handleToggle}
+      disabled={isLoading || toggleMutation.isPending}
       className={clsx(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group',
-        status.active
-          ? 'bg-phosphor-500/10 hover:bg-phosphor-500/15'
-          : status.color === 'amber'
-            ? 'bg-amber-500/5 hover:bg-amber-500/10'
-            : 'hover:bg-slate-800/50',
+        'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 w-full',
+        isItemActive
+          ? 'bg-slate-500/15 text-slate-300'
+          : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
+        (isLoading || toggleMutation.isPending) && 'opacity-50 cursor-not-allowed'
       )}
     >
       <div
         className={clsx(
-          'flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200',
+          'flex items-center justify-center w-4 h-4 flex-shrink-0 transition-colors duration-200',
           status.active
-            ? 'bg-phosphor-500/20 shadow-[0_0_12px_rgba(0,245,255,0.25)]'
+            ? 'text-phosphor-400'
             : status.color === 'amber'
-              ? 'bg-amber-500/15'
-              : 'bg-slate-800',
+              ? 'text-amber-400'
+              : 'text-slate-500 group-hover:text-slate-300'
         )}
       >
-        <Zap
-          className={clsx(
-            'w-4 h-4 transition-colors',
-            status.active
-              ? 'text-phosphor-400'
-              : status.color === 'amber'
-                ? 'text-amber-400'
-                : 'text-slate-500 group-hover:text-slate-400',
-            status.active && 'animate-pulse',
-          )}
-        />
+        {isLoading || toggleMutation.isPending ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Zap className={clsx('w-4 h-4', status.active && 'animate-pulse')} />
+        )}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          Auto-exec
-        </div>
+      <span className="truncate">Auto-exec</span>
+      <div className="ml-auto flex items-center gap-1.5">
         <div
           className={clsx(
-            'text-sm font-semibold',
+            'w-1.5 h-1.5 rounded-full',
+            status.active
+              ? 'bg-phosphor-400 shadow-[0_0_6px_rgba(0,245,255,0.5)]'
+              : status.color === 'amber'
+                ? 'bg-amber-400'
+                : 'bg-slate-600'
+          )}
+        />
+        <span
+          className={clsx(
+            'text-2xs font-medium uppercase tracking-wider',
             status.active
               ? 'text-phosphor-400'
               : status.color === 'amber'
                 ? 'text-amber-400'
-                : 'text-slate-500',
+                : 'text-slate-600'
           )}
         >
           {status.label}
-        </div>
+        </span>
       </div>
-      {status.active && (
-        <div className="w-2 h-2 rounded-full bg-phosphor-400 shadow-[0_0_8px_rgba(0,245,255,0.6)] animate-pulse" />
-      )}
-    </Link>
+    </button>
   )
 }
 
@@ -564,6 +448,9 @@ function ProjectsAccordion({
                   )
                 })}
 
+                {/* Auto-exec Toggle */}
+                <ProjectAutoExecToggle projectId={p.id} isActive={isActive} />
+
                 {/* Settings link */}
                 <Link
                   href={`/projects/${p.id}/settings`}
@@ -593,49 +480,6 @@ function ProjectsAccordion({
   )
 }
 
-// =============================================================================
-// Global Nav Component
-// =============================================================================
-
-interface GlobalNavProps {
-  isCollapsed: boolean
-}
-
-function GlobalNav({ isCollapsed }: GlobalNavProps) {
-  const pathname = usePathname()
-
-  return (
-    <div className="space-y-1" data-testid="global-nav">
-      {globalNavItems.map((item) => {
-        const isActive = pathname === item.href ||
-          (item.href !== '/' && pathname.startsWith(item.href))
-        const Icon = item.icon
-
-        return (
-          <Link
-            key={item.id}
-            href={item.href}
-            data-testid={`global-nav-${item.id}`}
-            className={clsx(
-              'group flex items-center rounded-lg text-sm font-medium transition-all duration-200',
-              isCollapsed ? 'px-3 py-3 justify-center' : 'px-3 py-2.5 gap-3',
-              isActive ? item.activeClasses : item.inactiveClasses,
-            )}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <Icon
-              className={clsx(
-                'w-5 h-5 flex-shrink-0 transition-colors duration-200',
-                isActive ? item.iconActiveClasses : item.iconInactiveClasses,
-              )}
-            />
-            {!isCollapsed && <span className="truncate">{item.label}</span>}
-          </Link>
-        )
-      })}
-    </div>
-  )
-}
 
 // =============================================================================
 // Main Sidebar Component
@@ -644,7 +488,6 @@ function GlobalNav({ isCollapsed }: GlobalNavProps) {
 function SidebarContent() {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [mode, setMode] = useState<SidebarMode>('global')
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
 
@@ -655,24 +498,18 @@ function SidebarContent() {
   // Initialize state from localStorage
   useEffect(() => {
     const storedCollapsed = localStorage.getItem(COLLAPSED_KEY)
-    const storedMode = localStorage.getItem(MODE_KEY) as SidebarMode | null
 
     if (storedCollapsed !== null) {
       setIsCollapsed(storedCollapsed === 'true')
     }
-    if (storedMode && (storedMode === 'global' || storedMode === 'projects')) {
-      setMode(storedMode)
-    }
     setMounted(true)
   }, [])
 
-  // Auto-switch mode based on URL (subtask 1.5)
+  // Auto-expand current project
   useEffect(() => {
     if (!mounted) return
 
     if (currentProjectId) {
-      // On project page - switch to projects mode and expand current project
-      setMode('projects')
       setExpandedProjectId(currentProjectId)
     }
   }, [currentProjectId, mounted])
@@ -681,15 +518,6 @@ function SidebarContent() {
     const newValue = !isCollapsed
     setIsCollapsed(newValue)
     localStorage.setItem(COLLAPSED_KEY, String(newValue))
-  }
-
-  const handleModeChange = (newMode: SidebarMode) => {
-    setMode(newMode)
-    localStorage.setItem(MODE_KEY, newMode)
-    // Reset expanded project when switching to global
-    if (newMode === 'global') {
-      setExpandedProjectId(null)
-    }
   }
 
   // Loading state
@@ -713,38 +541,18 @@ function SidebarContent() {
         'hidden md:flex',
       )}
     >
-      {/* Mode Toggle */}
-      <div className={clsx('p-2 border-b border-slate-700/50', isCollapsed && 'px-1')}>
-        <ModeToggle mode={mode} onChange={handleModeChange} isCollapsed={isCollapsed} />
+      {/* Header */}
+      <div className={clsx('border-b border-slate-700/50', isCollapsed && 'px-1')}>
+        <SidebarHeader isCollapsed={isCollapsed} />
       </div>
 
-      {/* Navigation Content */}
+      {/* Projects List */}
       <div className="flex-1 overflow-y-auto py-3 px-2">
-        <div
-          className={clsx(
-            'transition-all duration-250 ease-out',
-            mode === 'global' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden',
-          )}
-        >
-          <GlobalNav isCollapsed={isCollapsed} />
-        </div>
-        <div
-          className={clsx(
-            'transition-all duration-250 ease-out',
-            mode === 'projects' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden',
-          )}
-        >
-          <ProjectsAccordion
-            isCollapsed={isCollapsed}
-            expandedProjectId={expandedProjectId}
-            onExpandProject={setExpandedProjectId}
-          />
-        </div>
-      </div>
-
-      {/* Auto-exec Status - Always visible */}
-      <div className="p-2 border-t border-slate-700/50">
-        <AutoExecStatus isCollapsed={isCollapsed} />
+        <ProjectsAccordion
+          isCollapsed={isCollapsed}
+          expandedProjectId={expandedProjectId}
+          onExpandProject={setExpandedProjectId}
+        />
       </div>
 
       {/* Collapse Toggle */}

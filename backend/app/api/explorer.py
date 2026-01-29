@@ -539,3 +539,34 @@ async def regenerate_all_indexes() -> dict[str, Any]:
         "success": success,
         "failed": failed,
     }
+
+
+@router.post("/{project_id}/explorer/regenerate-refactor-tasks")
+async def regenerate_refactor_tasks(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Delete existing refactor tasks and regenerate from current scan.
+
+    This is a clean-slate approach that:
+    1. Deletes ALL existing refactor tasks for the project
+    2. Creates new tasks with proper verification commands (line count targets)
+
+    Use this when you want to refresh refactor tasks to reflect current codebase state.
+    For incremental task generation (skips existing), use the scheduled scan instead.
+    """
+    _validate_project_exists(project_id)
+
+    from celery import current_app
+
+    result = current_app.send_task(
+        "summitflow.regenerate_refactor_tasks",
+        args=[project_id],
+    )
+
+    return {
+        "status": "started",
+        "project_id": project_id,
+        "task_id": result.id,
+        "message": "Refactor task regeneration started. Existing tasks will be deleted and new ones created.",
+    }

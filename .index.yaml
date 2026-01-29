@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-01-24 07:07 UTC
+generated_at: 2026-01-29 02:12 UTC
 pages:
 - / (app)
 - /about (about)
@@ -13,13 +13,14 @@ pages:
 - /projects/:id/git/worktrees (worktrees)
 - /projects/:id/settings (settings)
 - /projects/new (new)
-- /settings (settings)
 endpoints:
 - DELETE /projects/{project_id}/backups/{backup_id} (delete_backup)
 - DELETE /{project_id} (delete_project)
 - GET /activity (get_activity_feed)
 - GET /notifications (get_user_notifications)
 - GET /projects/{project_id}/backups/{backup_id}/restore/preview (preview_restore)
+- GET /projects/{project_id}/events (get_events)
+- GET /projects/{project_id}/events/by-trace/{trace_id} (get_events_for_trace)
 - GET /projects/{project_id}/ideas (list_ideas)
 - GET /projects/{project_id}/ideas/{idea_id} (get_idea)
 - GET /projects/{project_id}/quality/results (list_check_results)
@@ -40,6 +41,7 @@ endpoints:
 - GET /{project_id}/refactor-sessions/active (get_active_session)
 - GET /{project_id}/refactor-sessions/{task_id} (get_session)
 - PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
+- POST /explorer/regenerate-all-indexes (regenerate_all_indexes)
 - POST /projects/{project_id}/errors/console (capture_console_error)
 - POST /projects/{project_id}/ideas/execute-now (execute_ideas_now)
 - POST /projects/{project_id}/ideas/{idea_id}/approve (approve_idea)
@@ -50,6 +52,7 @@ endpoints:
 - POST /projects/{project_id}/quality/results/{result_id}/fix-attempt (record_fix_attempt)
 - POST /projects/{project_id}/quality/results/{result_id}/mark-fixed (mark_result_fixed)
 - POST /projects/{project_id}/quality/sync (sync_results)
+- POST /{project_id}/explorer/regenerate-index (regenerate_index)
 - POST /{project_id}/explorer/scan (trigger_scan)
 - POST /{project_id}/refactor-sessions (create_session)
 - POST /{project_id}/refactor-sessions/{task_id}/complete (complete_session)
@@ -61,6 +64,7 @@ tables:
 - code_health_lists
 - design_rules
 - design_standards
+- events
 - explorer_entries
 - explorer_relationships
 - explorer_sub_elements
@@ -76,7 +80,9 @@ tables:
 - scan_history
 - scan_states
 - sitemap_entries
+- subtask_citations
 - subtask_dependencies
+- subtask_summaries
 - task_dependencies
 - task_labels
 - task_spirit
@@ -104,19 +110,19 @@ tasks:
 - scan_all_projects (every 6 hours)
 - weekly_deep_scan (every 7 days)
 folders:
-  (root): 25 files - services, tests
+  (root): 26 files - services, tests
   .claude: 3 files
-  .dev-tools: 12 files - tests
+  .dev-tools: 13 files - tests
   .qna-session: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 407 files - api, services, tests
-  docs: 62 files - tests
-  frontend: 213 files - api, components, tests
+  backend: 439 files - api, services, tests
+  docs: 64 files - tests
+  frontend: 217 files - api, components, tests
   mockups: 7 files
   project_review: 11 files
   scripts: 33 files - services, tests
   services: 4 files - services
   spec: 2 files - tests
-  tasks: 465 files - api, components, services, tests
+  tasks: 496 files - api, components, services, tests
   tests: 2 files - tests

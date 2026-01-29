@@ -3,6 +3,7 @@
 import {
   ArrowUpCircle,
   Box,
+  Check,
   CheckCircle2,
   Clock,
   Code2,
@@ -18,6 +19,8 @@ interface MockupCardProps {
   mockup: Mockup
   viewMode: 'grid' | 'list'
   onClick: () => void
+  selectMode?: boolean
+  isSelected?: boolean
 }
 
 const statusConfig = {
@@ -67,7 +70,7 @@ const typeIcons = {
   illustration: ImageIcon,
 }
 
-export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
+export function MockupCard({ mockup, viewMode, onClick, selectMode = false, isSelected = false }: MockupCardProps) {
   const status = statusConfig[mockup.status as keyof typeof statusConfig] ?? statusConfig.generated
   const StatusIcon = status.icon
   const TypeIcon = typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
@@ -86,8 +89,25 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
     return (
       <div
         onClick={onClick}
-        className="card p-4 flex items-center gap-4 cursor-pointer hover:bg-slate-700/50 transition-colors"
+        className={`card p-4 flex items-center gap-4 cursor-pointer transition-colors ${
+          selectMode && isSelected
+            ? 'bg-outrun-500/10 border-outrun-500/50 ring-2 ring-outrun-500/30'
+            : 'hover:bg-slate-700/50'
+        }`}
       >
+        {/* Checkbox */}
+        {selectMode && (
+          <div
+            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+              isSelected
+                ? 'bg-outrun-500 border-outrun-500'
+                : 'border-slate-600 hover:border-outrun-400'
+            }`}
+          >
+            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+          </div>
+        )}
+
         {/* Thumbnail placeholder */}
         <div className="w-16 h-12 bg-slate-700 rounded flex items-center justify-center flex-shrink-0">
           <TypeIcon className="w-6 h-6 text-slate-500" />
@@ -129,10 +149,28 @@ export function MockupCard({ mockup, viewMode, onClick }: MockupCardProps) {
   return (
     <div
       onClick={onClick}
-      className="card overflow-hidden cursor-pointer hover:ring-2 hover:ring-outrun-500/50 transition-all group"
+      className={`card overflow-hidden cursor-pointer transition-all group ${
+        selectMode && isSelected
+          ? 'ring-2 ring-outrun-500 bg-outrun-500/5'
+          : 'hover:ring-2 hover:ring-outrun-500/50'
+      }`}
     >
       {/* Thumbnail */}
       <div className="aspect-video bg-slate-800 flex items-center justify-center relative">
+        {/* Checkbox overlay */}
+        {selectMode && (
+          <div className="absolute top-2 left-2 z-10">
+            <div
+              className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all backdrop-blur-sm ${
+                isSelected
+                  ? 'bg-outrun-500 border-outrun-500 shadow-lg shadow-outrun-500/50'
+                  : 'bg-slate-900/80 border-slate-600 hover:border-outrun-400'
+              }`}
+            >
+              {isSelected && <Check className="w-4 h-4 text-white" />}
+            </div>
+          </div>
+        )}
         {mockup.file_path ? (
           <Image
             src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}

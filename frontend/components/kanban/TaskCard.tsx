@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Link2,
   Loader2,
+  Trash2,
   Zap,
 } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
@@ -93,6 +94,7 @@ interface TaskCardProps {
   onClick?: () => void
   onExecuteNow?: (taskId: string) => void
   isExecuting?: boolean
+  onDelete?: (taskId: string) => void
   // Execution panel props
   execution?: ExecutionState
   wsConnected?: boolean
@@ -117,6 +119,7 @@ export function TaskCard({
   onClick,
   onExecuteNow,
   isExecuting,
+  onDelete,
   execution,
   wsConnected = false,
   onStopExecution,
@@ -180,6 +183,20 @@ export function TaskCard({
       >
         <GripVertical className="h-4 w-4 text-slate-500" />
       </div>
+
+      {/* Delete Button */}
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(task.id)
+          }}
+          className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400"
+          title="Delete task"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {/* Card Content */}
       <div className="pl-4">

@@ -152,7 +152,7 @@ def _calculate_file_health(metadata: dict[str, Any], config: dict[str, Any]) -> 
     if stale == "stale":
         return str(config.get("stale_status", "warning"))
 
-    health_flags = metadata.get("health_flags", {})
+    health_flags = metadata.get("health_flags") or {}
     error_flags = config.get("health_flags_error", [])
     for flag in error_flags:
         if health_flags.get(flag):

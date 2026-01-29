@@ -637,3 +637,38 @@ export async function verifyTaskCriterion(
     },
   )
 }
+
+// ============================================================================
+// Task Deletion
+// ============================================================================
+
+export interface DeleteTaskResponse {
+  status: string
+  project_id: string
+  task_id: string
+}
+
+/**
+ * Delete a task (hard delete with cascading).
+ */
+export async function deleteTask(
+  projectId: string,
+  taskId: string,
+): Promise<DeleteTaskResponse> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
+    method: 'DELETE',
+    errorMessage: 'Failed to delete task',
+  })
+}
+
+/**
+ * Delete multiple tasks in bulk.
+ */
+export async function deleteTasks(
+  projectId: string,
+  taskIds: string[],
+): Promise<DeleteTaskResponse[]> {
+  return Promise.all(
+    taskIds.map((taskId) => deleteTask(projectId, taskId))
+  )
+}
