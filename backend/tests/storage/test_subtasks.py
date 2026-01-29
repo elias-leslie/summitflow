@@ -216,6 +216,9 @@ class TestUpdateSubtaskPasses:
         # Complete step first
         step_store.update_step_passes(subtask["id"], 1, True)
 
+        # Acknowledge citations (required before completing subtask)
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
+
         updated = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
         assert updated is not None
@@ -231,6 +234,7 @@ class TestUpdateSubtaskPasses:
 
         # Complete step and subtask
         step_store.update_step_passes(subtask["id"], 1, True)
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
         subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
         # Now clear pass status
@@ -249,6 +253,9 @@ class TestUpdateSubtaskPasses:
 
         # Complete step
         step_store.update_step_passes(subtask["id"], 1, True)
+
+        # Acknowledge citations before first pass
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
 
         # On
         u1 = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
@@ -474,6 +481,7 @@ class TestGetSubtaskSummary:
 
         # Complete step and subtask for first one only
         step_store.update_step_passes(subtask1["id"], 1, True)
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
         subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
         summary = subtask_store.get_subtask_summary(test_task["id"])
@@ -497,8 +505,10 @@ class TestGetSubtaskSummary:
         step_store.update_step_passes(subtask1["id"], 1, True)
         step_store.update_step_passes(subtask2["id"], 1, True)
 
-        # Now subtasks can be marked complete
+        # Acknowledge citations and mark subtasks complete
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
         subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.2")
         subtask_store.update_subtask_passes(test_task["id"], "1.2", True)
 
         summary = subtask_store.get_subtask_summary(test_task["id"])
@@ -542,7 +552,8 @@ class TestSubtaskGates:
         step_store.update_step_passes(subtask["id"], 1, True)
         step_store.update_step_passes(subtask["id"], 2, True)
 
-        # Now subtask should pass
+        # Acknowledge citations and mark subtask as passed
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result["passes"] is True
 

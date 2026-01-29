@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+# Import AcceptanceCriterion at runtime for Pydantic validation
+from .task_criteria import AcceptanceCriterion
+
 if TYPE_CHECKING:
-    from .task_criteria import AcceptanceCriterion
     from .task_enrichment import BlockerInfo, CapabilityContext
     from .task_subtasks import SubtaskResponse, SubtaskSummary
 

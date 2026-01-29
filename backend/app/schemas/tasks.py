@@ -78,6 +78,13 @@ from .task_subtasks import (
     SubtaskUpdate,
 )
 
+# Rebuild models with forward references now that all types are imported
+TaskResponse.model_rebuild()
+TaskCreate.model_rebuild()
+TaskUpdate.model_rebuild()
+CapabilityContext.model_rebuild()
+DiscussionResponse.model_rebuild()
+
 __all__ = [
     # Acceptance criteria
     "AcceptanceCriterion",
