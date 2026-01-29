@@ -17,7 +17,7 @@ client = TestClient(app)
 class TestAutomationSettings:
     """Tests for GET/PUT /api/projects/{id}/settings/automation."""
 
-    @patch("app.api.projects.get_connection")
+    @patch("app.api.projects.automation.get_connection")
     def test_get_automation_settings(self, mock_conn: MagicMock):
         """Test fetching automation settings."""
         mock_cursor = MagicMock()
@@ -44,7 +44,7 @@ class TestAutomationSettings:
         assert data["daily_budget_usd"] == 5.0
         assert data["enabled"] is False
 
-    @patch("app.api.projects.get_connection")
+    @patch("app.api.projects.automation.get_connection")
     def test_update_automation_settings(self, mock_conn: MagicMock):
         """Test updating automation settings."""
         mock_cursor = MagicMock()
@@ -71,7 +71,7 @@ class TestAutomationSettings:
         assert data["daily_budget_usd"] == 10.0
         assert data["enabled"] is True
 
-    @patch("app.api.projects.get_connection")
+    @patch("app.api.projects.automation.get_connection")
     def test_budget_validation(self, mock_conn: MagicMock):
         """Test that negative budget is rejected."""
         mock_cursor = MagicMock()
