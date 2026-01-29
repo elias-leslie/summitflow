@@ -2,10 +2,8 @@
 
 import pytest
 
-from app.services.explorer.types.files import (
-    MAGIC_STRING_PATTERNS,
-    FileScanner,
-)
+from app.services.explorer.types.file_constants import MAGIC_STRING_PATTERNS
+from app.services.explorer.types.files import FileScanner
 
 
 class TestMagicStringPatterns:

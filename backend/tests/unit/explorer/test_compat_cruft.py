@@ -1,6 +1,6 @@
 """Unit tests for compat cruft detection in FileScanner."""
 
-from app.services.explorer.types.files import (
+from app.services.explorer.types.file_constants import (
     COMPAT_CRUFT_EXCLUDE_PATTERNS,
     COMPAT_CRUFT_PATTERNS,
 )

@@ -3,7 +3,8 @@
 import tempfile
 from pathlib import Path
 
-from app.services.explorer.types.files import CODE_HEALTH_THRESHOLDS, FileScanner
+from app.services.explorer.types.file_constants import CODE_HEALTH_THRESHOLDS
+from app.services.explorer.types.files import FileScanner
 
 
 class TestHealthFlagComputation:
