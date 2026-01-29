@@ -10,6 +10,7 @@ import subprocess
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ....logging_config import get_logger
 from .file_constants import STALE_THRESHOLD_DAYS
@@ -135,7 +136,7 @@ def get_all_commit_counts_90d(root_path: Path) -> dict[str, int]:
 
 
 def apply_git_info_to_entry(
-    entry_metadata: dict[str, any],
+    entry_metadata: dict[str, Any],
     path: str,
     last_commit_map: dict[str, tuple[int, str, str]],
     commit_count_map: dict[str, int],
