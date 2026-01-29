@@ -7,17 +7,17 @@ from typing import Annotated, Any, cast
 import httpx
 import typer
 
+from ..config import get_agent_hub_url
 from ..output import is_compact, output_error, output_json
 
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
 
-AGENT_HUB_URL = "http://localhost:8003"
-
 
 def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Make request to Agent Hub admin API."""
+    agent_hub_url = get_agent_hub_url()
     headers = {"X-Agent-Hub-Internal": "agent-hub-internal-v1"}
-    url = f"{AGENT_HUB_URL}{path}"
+    url = f"{agent_hub_url}{path}"
 
     try:
         with httpx.Client(timeout=30.0) as client:
@@ -33,7 +33,7 @@ def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, A
 
             return cast(dict[str, Any], response.json())
     except httpx.ConnectError:
-        output_error("Cannot connect to Agent Hub at localhost:8003")
+        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
         raise typer.Exit(1) from None
     except typer.Exit:
         raise

@@ -7,11 +7,10 @@ from typing import Annotated, Any, cast
 import httpx
 import typer
 
+from ..config import get_agent_hub_url
 from ..output import output_error, output_json
 
 app = typer.Typer(help="Agent Hub completion API")
-
-AGENT_HUB_URL = "http://localhost:8003"
 
 
 def _load_credentials() -> tuple[str, str, str]:
@@ -64,10 +63,12 @@ def _complete(
         "messages": [{"role": "user", "content": message}],
     }
 
+    agent_hub_url = get_agent_hub_url()
+
     try:
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
-                f"{AGENT_HUB_URL}/api/complete",
+                f"{agent_hub_url}/api/complete",
                 json=payload,
                 headers=headers,
             )
@@ -82,7 +83,7 @@ def _complete(
 
             return cast(dict[str, Any], response.json())
     except httpx.ConnectError:
-        output_error("Cannot connect to Agent Hub at localhost:8003")
+        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
         raise typer.Exit(1) from None
     except typer.Exit:
         raise

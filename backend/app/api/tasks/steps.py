@@ -184,11 +184,17 @@ async def delete_step_endpoint(
     task_id: str,
     subtask_id: str,
     step_number: int,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """Delete a single step from a subtask."""
+    """Delete a single step from a subtask.
+
+    Deleting passed steps requires force=True and will invalidate the parent
+    subtask's passes status. This is a safeguard against gaming the verification
+    system by deleting steps that have already been verified.
+    """
     _verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
-    return delete_step_handler(table_id, step_number, project_id, task_id, subtask_id)
+    return delete_step_handler(table_id, step_number, project_id, task_id, subtask_id, force=force)
 
 
 @router.get(

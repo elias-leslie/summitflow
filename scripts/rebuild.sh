@@ -148,6 +148,20 @@ main() {
         verify_frontend || ((errors++))
     fi
 
+    # Regenerate project index (keeps .index.yaml ports in sync with systemd)
+    # Only if backend was rebuilt and SummitFlow API is available
+    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ $errors -eq 0 ]; then
+        local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
+        log "Regenerating project index..."
+        local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
+        if echo "$index_result" | grep -q '"status":"success"'; then
+            log_success "Index regenerated"
+        else
+            # Non-fatal - index regeneration is optional
+            log "Index regeneration skipped (API may not be SummitFlow)"
+        fi
+    fi
+
     # Summary
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))

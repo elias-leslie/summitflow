@@ -10,6 +10,15 @@ from pathlib import Path
 import httpx
 
 
+def get_agent_hub_url() -> str:
+    """Get Agent Hub API URL.
+
+    Uses AGENT_HUB_URL environment variable with fallback to localhost:8003.
+    This is the single source of truth for Agent Hub URL in the CLI.
+    """
+    return os.getenv("AGENT_HUB_URL", "http://localhost:8003")
+
+
 @dataclass(frozen=True)
 class Config:
     """CLI configuration loaded from environment variables or auto-detected."""

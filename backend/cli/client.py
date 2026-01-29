@@ -188,8 +188,8 @@ class STClient:
     def update_step(self, task_id: str, subtask_id: str, step_number: int, passes: bool) -> dict[str, Any]:
         return steps_ops.update_step(self._client, self._global_url, self._handle_response, task_id, subtask_id, step_number, passes)
 
-    def delete_step(self, task_id: str, subtask_id: str, step_number: int) -> dict[str, Any]:
-        return steps_ops.delete_step(self._client, self._url, self._handle_response, task_id, subtask_id, step_number)
+    def delete_step(self, task_id: str, subtask_id: str, step_number: int, force: bool = False) -> dict[str, Any]:
+        return steps_ops.delete_step(self._client, self._url, self._handle_response, task_id, subtask_id, step_number, force=force)
 
     def insert_step(self, task_id: str, subtask_id: str, position: int, description: str) -> dict[str, Any]:
         return steps_ops.insert_step(self._client, self._url, self._handle_response, task_id, subtask_id, position, description)

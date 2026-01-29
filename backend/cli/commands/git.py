@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Annotated, Any
@@ -14,8 +15,11 @@ from ..output import is_compact, output_error, output_json
 
 app = typer.Typer(help="Git repository management")
 
-# SummitFlow API for dynamic repo discovery
-SUMMITFLOW_API = "http://localhost:8001/api/projects"
+
+def _get_summitflow_api_url() -> str:
+    """Get SummitFlow API URL for projects endpoint."""
+    api_base = os.getenv("ST_API_BASE", "http://localhost:8001/api")
+    return f"{api_base}/projects"
 
 # Config repos always included (not SummitFlow projects)
 CONFIG_REPOS = [Path.home() / ".claude"]
@@ -39,7 +43,7 @@ def _get_managed_repos() -> list[Path]:
 
     # Try SummitFlow API first
     try:
-        response = httpx.get(SUMMITFLOW_API, timeout=2.0)
+        response = httpx.get(_get_summitflow_api_url(), timeout=2.0)
         if response.status_code == 200:
             projects = response.json()
             for project in projects:

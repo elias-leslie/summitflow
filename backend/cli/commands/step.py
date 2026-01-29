@@ -266,14 +266,23 @@ def delete_step(
     subtask_id: str,
     step_number: int,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Force deletion of passed steps (invalidates subtask)"),
+    ] = False,
 ) -> None:
     """Delete a step from a subtask.
+
+    If the step has already passed verification, --force is required.
+    Deleting passed steps will INVALIDATE the parent subtask's passes status
+    as a safeguard against gaming the verification system.
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
         st step delete 1.1 3 --task task-abc123
-        st step delete 1.1 3    # Uses active context
+        st step delete 1.1 3             # Uses active context
+        st step delete 1.1 3 --force     # Force delete passed step
     """
     from ..context import require_task_id
 
@@ -281,12 +290,34 @@ def delete_step(
     client = STClient()
 
     try:
-        client.delete_step(task_id, subtask_id, step_number)
+        result = client.delete_step(task_id, subtask_id, step_number, force=force)
     except APIError as e:
+        # Check if this is a force-required error
+        detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {}
+        if detail.get("requires_force"):
+            typer.echo(
+                f"BLOCKED: Step {subtask_id}.{step_number} has passed verification.\n"
+                f"  Use --force to delete (will invalidate subtask passes status).\n"
+                f"  This is a safeguard against gaming the verification system.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
         handle_api_error(e)
         return
 
-    print(f"DEL {subtask_id}.{step_number}")
+    # Show deletion with audit info
+    was_passed = result.get("was_passed", False)
+    subtask_invalidated = result.get("subtask_invalidated", False)
+
+    if subtask_invalidated:
+        typer.echo(
+            f"DEL {subtask_id}.{step_number} (was passed, subtask invalidated)",
+            err=True,
+        )
+    elif was_passed:
+        typer.echo(f"DEL {subtask_id}.{step_number} (was passed)")
+    else:
+        print(f"DEL {subtask_id}.{step_number}")
 
 
 @app.command("insert")

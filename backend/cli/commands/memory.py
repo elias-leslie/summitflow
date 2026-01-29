@@ -8,12 +8,10 @@ from typing import Annotated, Any, cast
 import httpx
 import typer
 
+from ..config import get_agent_hub_url
 from ..output import is_compact, output_error, output_json
 
 app = typer.Typer(help="Memory system commands (Agent Hub)")
-
-# Agent Hub API base URL
-AGENT_HUB_URL = "http://localhost:8003"
 
 
 def _load_credentials() -> tuple[str, str, str]:
@@ -81,7 +79,8 @@ def _agent_hub_request(
     if scope_id:
         headers["X-Scope-Id"] = scope_id
 
-    url = f"{AGENT_HUB_URL}{path}"
+    agent_hub_url = get_agent_hub_url()
+    url = f"{agent_hub_url}{path}"
 
     try:
         with httpx.Client(timeout=30.0) as client:
@@ -102,7 +101,7 @@ def _agent_hub_request(
 
             return cast(dict[str, Any], response.json())
     except httpx.ConnectError:
-        output_error("Cannot connect to Agent Hub at localhost:8003")
+        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
         raise typer.Exit(1) from None
     except typer.Exit:
         raise
@@ -477,9 +476,9 @@ def delete(
         list[str],
         typer.Argument(help="Episode UUID(s) to delete"),
     ],
-    yes: Annotated[
+    confirm: Annotated[
         bool,
-        typer.Option("--yes", "-y", help="Skip confirmation prompt"),
+        typer.Option("--confirm", help="Require confirmation prompt (default: no confirmation)"),
     ] = False,
 ) -> None:
     """Delete one or more episodes from memory.
@@ -489,9 +488,10 @@ def delete(
 
     Examples:
         st memory delete abc12345-uuid
-        st memory delete uuid1 uuid2 uuid3 --yes
+        st memory delete uuid1 uuid2 uuid3
+        st memory delete uuid1 --confirm  # Require confirmation
     """
-    if not yes:
+    if confirm:
         # Show what will be deleted
         typer.echo(f"Will delete {len(uuids)} episode(s):")
         for uuid in uuids:
@@ -534,55 +534,52 @@ def update(
         str | None,
         typer.Option("--tier", "-t", help="New tier (mandate/guardrail/reference)"),
     ] = None,
-    yes: Annotated[
+    confirm: Annotated[
         bool,
-        typer.Option("--yes", "-y", help="Skip confirmation prompt"),
+        typer.Option("--confirm", help="Require confirmation prompt (default: no confirmation)"),
     ] = False,
 ) -> None:
     """Update an episode (delete + recreate).
 
     Note: Graphiti has no native update - this deletes and recreates.
-    Usage stats (helpful_count, harmful_count, etc.) will be RESET.
+    Usage stats (helpful_count, harmful_count, etc.) are PRESERVED.
 
     Examples:
         st memory update abc12345 --content "New content here"
         st memory update abc12345 --tier mandate
-        st memory update abc12345 --content "New" --tier guardrail --yes
+        st memory update abc12345 --content "New" --tier guardrail
     """
     if not content and not tier:
         typer.echo("Error: Must specify --content and/or --tier")
         raise typer.Exit(1)
 
     # Get existing episode details
-    existing = _agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
+    existing = _agent_hub_request(
+        "GET", f"/api/memory/episode/{uuid}", tool_name="st memory update"
+    )
     if "detail" in existing:
         typer.echo(f"Error: {existing['detail']}")
         raise typer.Exit(1)
 
     old_tier = existing.get("injection_tier", "reference")
     old_content = existing.get("content", "")
+    full_uuid = existing.get("uuid", uuid)  # Get full UUID for stats preservation
 
     new_content = content if content else old_content
     new_tier = tier if tier else old_tier
 
-    if not yes:
-        typer.echo("WARNING: Update will RESET usage stats (helpful_count, etc.)")
+    if confirm:
         typer.echo(f"  UUID: {uuid[:8]}...")
         typer.echo(f"  Tier: {old_tier} -> {new_tier}")
         if content:
             typer.echo(f"  Content: {old_content[:40]}... -> {new_content[:40]}...")
+        typer.echo("  Usage stats will be preserved.")
 
         if not typer.confirm("Proceed with update?"):
             typer.echo("Cancelled.")
             raise typer.Exit(0)
 
-    # Delete existing
-    delete_result = _agent_hub_request("DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update")
-    if not delete_result.get("success"):
-        typer.echo(f"Error deleting: {delete_result.get('detail', 'Unknown error')}")
-        raise typer.Exit(1)
-
-    # Create new
+    # Create new episode first (with stats preservation from original)
     create_result = _agent_hub_request(
         "POST",
         "/api/memory/add",
@@ -590,14 +587,28 @@ def update(
             "content": new_content,
             "name": existing.get("name", "updated_episode"),
             "injection_tier": new_tier,
+            "preserve_stats_from": full_uuid,
         },
         tool_name="st memory update",
     )
 
     new_uuid = create_result.get("uuid")
-    if new_uuid:
-        typer.echo(f"Updated: {uuid[:8]} -> {new_uuid[:8]}")
-        typer.echo(f"  Tier: {new_tier}")
-    else:
+    if not new_uuid:
         typer.echo(f"Error creating new episode: {create_result}")
         raise typer.Exit(1)
+
+    # Delete original after new one is created
+    delete_result = _agent_hub_request(
+        "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update"
+    )
+    if not delete_result.get("success"):
+        typer.echo(
+            f"Warning: Failed to delete original: {delete_result.get('detail', 'Unknown error')}"
+        )
+        typer.echo(f"New episode created: {new_uuid[:8]}")
+        typer.echo(f"Please manually delete: {uuid[:8]}")
+        raise typer.Exit(1)
+
+    typer.echo(f"Updated: {uuid[:8]} -> {new_uuid[:8]}")
+    typer.echo(f"  Tier: {new_tier}")
+    typer.echo("  Stats preserved from original")

@@ -1,5 +1,25 @@
 project: summitflow
-generated_at: 2026-01-29 14:28 UTC
+generated_at: 2026-01-29 16:32 UTC
+environment:
+  python_version: '>=3.12'
+  venv_path: backend/.venv
+  package_manager: npm
+services:
+  backend_port: 8001
+  frontend_port: 3001
+  infrastructure:
+    neo4j: 7687
+    postgres: 5432
+    redis: 6379
+cli:
+  primary_command: st
+  help_command: st --help
+  common_commands:
+  - 'st work <task-id>  # Set active task context'
+  - 'st context         # Show current task details'
+  - 'st step pass <subtask> <N>  # Mark step as passed'
+  - 'st subtask pass    # Mark subtask as passed'
+  - 'st close           # Close completed task'
 pages:
 - / (app)
 - /about (about)
@@ -116,9 +136,9 @@ folders:
   .qna-session: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 459 files - api, services, tests
+  backend: 479 files - api, services, tests
   docs: 64 files - tests
-  frontend: 217 files - api, components, tests
+  frontend: 224 files - api, components, tests
   mockups: 7 files
   project_review: 11 files
   scripts: 33 files - services, tests

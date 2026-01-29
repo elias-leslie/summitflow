@@ -219,8 +219,12 @@ def delete_step_handler(
     project_id: str,
     task_id: str,
     subtask_id: str,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Delete a step.
+
+    Deleting passed steps requires force=True and will invalidate the parent
+    subtask's passes status as a safeguard against gaming the verification system.
 
     Args:
         table_id: Subtask table ID
@@ -228,14 +232,26 @@ def delete_step_handler(
         project_id: Project ID for response
         task_id: Task ID for response
         subtask_id: Subtask ID for error messages
+        force: If True, allow deletion of passed steps
 
     Returns:
-        Deletion confirmation dict
+        Deletion confirmation dict with audit info
     """
-    from ...storage.steps import delete_step
+    from ...storage.steps import StepGateError, delete_step
 
-    deleted = delete_step(table_id, step_number)
-    if not deleted:
+    try:
+        result = delete_step(table_id, step_number, force=force)
+    except StepGateError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(e),
+                "step_number": step_number,
+                "requires_force": True,
+            },
+        ) from None
+
+    if not result.deleted:
         raise HTTPException(
             status_code=404,
             detail=f"Step {step_number} not found for subtask {subtask_id}",
@@ -247,6 +263,8 @@ def delete_step_handler(
         "task_id": task_id,
         "subtask_id": subtask_id,
         "step_number": step_number,
+        "was_passed": result.was_passed,
+        "subtask_invalidated": result.subtask_invalidated,
     }
 
 

@@ -71,10 +71,26 @@ def delete_step(
     task_id: str,
     subtask_id: str,
     step_number: int,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """Delete a step from a subtask."""
+    """Delete a step from a subtask.
+
+    Args:
+        client: HTTP client
+        url_fn: URL builder function
+        handle_response: Response handler function
+        task_id: Task ID
+        subtask_id: Subtask ID
+        step_number: Step number to delete
+        force: If True, allow deletion of passed steps
+
+    Returns:
+        Deletion result with audit info
+    """
+    params = {"force": "true"} if force else {}
     response = client.delete(
-        url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}")
+        url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
+        params=params,
     )
     return cast(dict[str, Any], handle_response(response))
 

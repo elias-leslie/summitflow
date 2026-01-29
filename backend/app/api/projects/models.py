@@ -13,6 +13,8 @@ class ProjectCreate(BaseModel):
     base_url: str
     health_endpoint: str = "/health"
     root_path: str | None = None  # Filesystem path for file scanning
+    frontend_port: int | None = None  # Canonical frontend port
+    backend_port: int | None = None  # Canonical backend port
 
 
 class ProjectResponse(BaseModel):

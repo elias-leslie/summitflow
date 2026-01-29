@@ -1738,6 +1738,47 @@ def import_plan(
     typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks")
 
 
+def _display_triggered_references(task_type: str) -> None:
+    """Fetch and display references triggered by the task's type.
+
+    Calls Agent Hub to get reference episodes where task_type matches
+    their trigger_task_types. Outputs to console so the agent sees them.
+    """
+    from ..config import get_config_optional
+
+    config = get_config_optional()
+    if not config.agent_hub_base:
+        return
+
+    import httpx
+
+    try:
+        response = httpx.get(
+            f"{config.agent_hub_base}/api/memory/triggered-references",
+            params={"task_type": task_type},
+            timeout=10.0,
+        )
+        if response.status_code != 200:
+            return
+
+        data = response.json()
+        refs = data.get("references", [])
+        if not refs:
+            return
+
+        typer.echo(f"\nREFERENCES[{len(refs)}] for task_type={task_type}:")
+        for ref in refs:
+            content = ref.get("content", "")
+            # Truncate long content but preserve structure
+            if len(content) > 500:
+                content = content[:500] + "..."
+            typer.echo(f"---\n{content}\n---")
+
+    except Exception:
+        # Silently fail - references are optional enhancement
+        pass
+
+
 @app.command()
 def work(
     task_id: Annotated[str | None, typer.Argument()] = None,
@@ -1812,3 +1853,8 @@ def work(
     status = task.get("status", "unknown")
     title = task.get("title", "")[:50]
     typer.echo(f"ACTIVE:{task_id}|{status}|{title}")
+
+    # Fetch and display triggered references for this task's type
+    task_type = task.get("task_type")
+    if task_type:
+        _display_triggered_references(task_type)
