@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import datetime
+
 from app.celery_app import celery_app
 from app.logging_config import get_logger
+from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.subtasks import get_subtasks_for_task
@@ -124,9 +127,10 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     """Pick up queued autonomous tasks and dispatch to appropriate pipeline stage.
 
     This task runs periodically to:
-    1. Find tasks in 'queue' status with autonomous=True
-    2. Determine which stage each needs (triage, planning, execution)
-    3. Dispatch to the appropriate Celery task
+    1. Check if within autonomous hours
+    2. Find tasks in 'queue' status with autonomous=True
+    3. Determine which stage each needs (triage, planning, execution)
+    4. Dispatch to the appropriate Celery task
 
     Args:
         project_id: Project ID to process
@@ -135,6 +139,35 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
         Dict with dispatch counts
     """
     logger.info("Starting autonomous work pickup", project_id=project_id)
+
+    # Check if autonomous is enabled
+    if not agent_configs.is_autonomous_enabled():
+        return {
+            "status": "disabled",
+            "reason": "autonomous_enabled=false",
+        }
+
+    # Check if within autonomous time window
+    if not agent_configs.is_within_autonomous_hours():
+        schedule = agent_configs.get_autonomous_schedule()
+        current_hour = datetime.now().hour
+        return {
+            "status": "outside_hours",
+            "current_hour": current_hour,
+            "start_hour": schedule.get("start_hour", 0),
+            "end_hour": schedule.get("end_hour", 24),
+        }
+
+    # Check concurrency limit
+    schedule = agent_configs.get_autonomous_schedule()
+    max_concurrent = schedule.get("max_concurrent", 1)
+    running_count = task_store.count_running_tasks(project_id)
+    if running_count >= max_concurrent:
+        return {
+            "status": "concurrency_limit",
+            "running_count": running_count,
+            "max_concurrent": max_concurrent,
+        }
 
     tasks = _get_queued_autonomous_tasks(project_id)
     if not tasks:

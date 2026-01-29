@@ -1,36 +1,31 @@
-"""Unit tests for health flag computation in FileScanner."""
+"""Unit tests for health flag computation."""
 
 import tempfile
 from pathlib import Path
 
 from app.services.explorer.types.file_constants import CODE_HEALTH_THRESHOLDS
-from app.services.explorer.types.files import FileScanner
+from app.services.explorer.types.file_detection import compute_health_flags
 
 
 class TestHealthFlagComputation:
-    """Test the _compute_health_flags method."""
-
-    def setup_method(self) -> None:
-        """Create a scanner instance for testing."""
-        self.scanner = FileScanner("test-project")
-        self.scanner.root_path = Path(tempfile.gettempdir())
+    """Test the compute_health_flags function."""
 
     def test_too_many_functions_flag(self) -> None:
         """Test too_many_functions flag when function count exceeds threshold."""
         max_funcs = CODE_HEALTH_THRESHOLDS["max_functions_per_file"]
-        flags = self.scanner._compute_health_flags(Path("/tmp/test.py"), ".py", max_funcs + 1, 0, 0)
+        flags = compute_health_flags(Path("/tmp/test.py"), ".py", max_funcs + 1, 0, 0)
         assert flags.get("too_many_functions") is True
 
     def test_too_many_functions_not_set_when_under_threshold(self) -> None:
         """Test too_many_functions not set when under threshold."""
         max_funcs = CODE_HEALTH_THRESHOLDS["max_functions_per_file"]
-        flags = self.scanner._compute_health_flags(Path("/tmp/test.py"), ".py", max_funcs, 0, 0)
+        flags = compute_health_flags(Path("/tmp/test.py"), ".py", max_funcs, 0, 0)
         assert "too_many_functions" not in flags
 
     def test_too_many_classes_flag(self) -> None:
         """Test too_many_classes flag when class count exceeds threshold."""
         max_classes = CODE_HEALTH_THRESHOLDS["max_classes_per_file"]
-        flags = self.scanner._compute_health_flags(
+        flags = compute_health_flags(
             Path("/tmp/test.py"), ".py", 0, max_classes + 1, 0
         )
         assert flags.get("too_many_classes") is True
@@ -38,14 +33,14 @@ class TestHealthFlagComputation:
     def test_too_many_imports_flag(self) -> None:
         """Test too_many_imports flag when import count exceeds threshold."""
         max_imports = CODE_HEALTH_THRESHOLDS["max_imports"]
-        flags = self.scanner._compute_health_flags(
+        flags = compute_health_flags(
             Path("/tmp/test.py"), ".py", 0, 0, max_imports + 1
         )
         assert flags.get("too_many_imports") is True
 
     def test_no_flags_when_all_under_thresholds(self) -> None:
         """Test no flags set when all counts are under thresholds."""
-        flags = self.scanner._compute_health_flags(Path("/tmp/test.py"), ".py", 5, 2, 10)
+        flags = compute_health_flags(Path("/tmp/test.py"), ".py", 5, 2, 10)
         # Should have no basic flags
         assert "too_many_functions" not in flags
         assert "too_many_classes" not in flags
@@ -53,7 +48,7 @@ class TestHealthFlagComputation:
 
     def test_non_python_file_skips_ast_analysis(self) -> None:
         """Test that non-Python files skip AST analysis."""
-        flags = self.scanner._compute_health_flags(Path("/tmp/test.js"), ".js", 25, 0, 0)
+        flags = compute_health_flags(Path("/tmp/test.js"), ".js", 25, 0, 0)
         # Should have basic flag but no AST-based flags
         assert flags.get("too_many_functions") is True
         assert "has_long_functions" not in flags
@@ -63,11 +58,6 @@ class TestHealthFlagComputation:
 class TestHealthFlagsWithRealFiles:
     """Test health flags with actual Python files."""
 
-    def setup_method(self) -> None:
-        """Create a scanner instance for testing."""
-        self.scanner = FileScanner("test-project")
-        self.scanner.root_path = Path(tempfile.gettempdir())
-
     def test_has_long_functions_flag_with_long_function(self) -> None:
         """Test has_long_functions flag detected for file with long function."""
         # Create a Python file with a long function (>50 lines)
@@ -76,7 +66,7 @@ class TestHealthFlagsWithRealFiles:
             f.write(long_function)
             f.flush()
 
-            flags = self.scanner._compute_health_flags(Path(f.name), ".py", 1, 0, 0)
+            flags = compute_health_flags(Path(f.name), ".py", 1, 0, 0)
             assert flags.get("has_long_functions") is True
 
     def test_has_large_classes_flag_with_many_methods(self) -> None:
@@ -88,7 +78,7 @@ class TestHealthFlagsWithRealFiles:
             f.write(code)
             f.flush()
 
-            flags = self.scanner._compute_health_flags(Path(f.name), ".py", 0, 1, 0)
+            flags = compute_health_flags(Path(f.name), ".py", 0, 1, 0)
             assert flags.get("has_large_classes") is True
 
     def test_deep_nesting_flag_with_nested_code(self) -> None:
@@ -106,7 +96,7 @@ def func():
             f.write(code)
             f.flush()
 
-            flags = self.scanner._compute_health_flags(Path(f.name), ".py", 1, 0, 0)
+            flags = compute_health_flags(Path(f.name), ".py", 1, 0, 0)
             assert flags.get("deep_nesting") is True
 
     def test_no_ast_flags_for_clean_code(self) -> None:
@@ -126,7 +116,7 @@ class SmallClass:
             f.write(code)
             f.flush()
 
-            flags = self.scanner._compute_health_flags(Path(f.name), ".py", 1, 1, 0)
+            flags = compute_health_flags(Path(f.name), ".py", 1, 1, 0)
             # Should have no flags
             assert "has_long_functions" not in flags
             assert "has_large_classes" not in flags

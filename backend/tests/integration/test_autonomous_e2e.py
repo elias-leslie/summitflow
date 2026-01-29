@@ -20,6 +20,7 @@ import pytest
 from app.services.complexity_assessor import ComplexityTier
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.events import get_events_by_trace
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.task_spirit import create_task_spirit, get_task_spirit
 from app.tasks.autonomous.escalation import check_escalation_needed
@@ -32,11 +33,38 @@ from app.tasks.autonomous.triage import triage_idea
 @pytest.fixture
 def test_project_id() -> str:
     """Ensure test project exists in database."""
+    import os
+    import subprocess
+
     project_id = "e2e-test-project"
+    root_path = "/tmp/e2e-test"
+
+    # Create the root_path directory if it doesn't exist
+    os.makedirs(root_path, exist_ok=True)
+
+    # Initialize git repo if not already initialized
+    git_dir = os.path.join(root_path, ".git")
+    if not os.path.exists(git_dir):
+        subprocess.run(["git", "init"], cwd=root_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=root_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=root_path, capture_output=True
+        )
+        # Create an initial commit so we have a branch
+        subprocess.run(["touch", ".gitkeep"], cwd=root_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=root_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"], cwd=root_path, capture_output=True
+        )
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (project_id, "E2E Test Project", "http://localhost:3001"),
+            """INSERT INTO projects (id, name, base_url, root_path)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET root_path = EXCLUDED.root_path""",
+            (project_id, "E2E Test Project", "http://localhost:3001", root_path),
         )
         conn.commit()
     return project_id
@@ -69,11 +97,29 @@ def cleanup_tasks():
             conn.commit()
 
 
-def create_mock_agent_response(content: str) -> MagicMock:
-    """Create a mock Agent Hub response."""
+def create_mock_agent_response(content: str, session_id: str = "test-session") -> MagicMock:
+    """Create a mock Agent Hub response.
+
+    Includes all fields used by execution code: content, session_id, cited_uuids.
+    """
     mock_response = MagicMock()
     mock_response.content = content
+    mock_response.session_id = session_id
+    mock_response.cited_uuids = []
     return mock_response
+
+
+def task_events_contain(task_id: str, substring: str) -> bool:
+    """Check if any event for a task contains the given substring.
+
+    Note: progress_log was moved to events table in migration 099.
+    Events use trace_id to store task_id.
+    """
+    events = get_events_by_trace(task_id, limit=100)
+    for event in events:
+        if substring in (event.get("message") or ""):
+            return True
+    return False
 
 
 class TestTriageE2E:
@@ -117,7 +163,7 @@ class TestTriageE2E:
         assert updated_task is not None
         assert updated_task["status"] == "queue"
         assert updated_task["complexity"] == "SIMPLE"
-        assert "Triage complete: CLEAR" in (updated_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "Triage complete: CLEAR")
 
     def test_unclear_idea_moves_to_blocked(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -156,7 +202,7 @@ class TestTriageE2E:
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
         assert updated_task["status"] == "blocked"
-        assert "What specifically needs to be faster?" in (updated_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "What specifically needs to be faster?")
 
     def test_missing_task_returns_error(self, test_project_id: str) -> None:
         """Triage on missing task should return error (not raise)."""
@@ -221,7 +267,7 @@ class TestPlanningE2E:
             patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
             patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
         ):
-            mock_client.return_value.run_agent.return_value = mock_response
+            mock_client.return_value.complete.return_value = mock_response
             mock_assessor_instance = MagicMock()
             mock_assessor_instance.assess_sync.return_value = MagicMock(
                 tier=ComplexityTier.SIMPLE,
@@ -289,7 +335,7 @@ class TestPlanningE2E:
             patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
             patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
         ):
-            mock_client.return_value.run_agent.return_value = mock_response
+            mock_client.return_value.complete.return_value = mock_response
             mock_assessor_instance = MagicMock()
             mock_assessor_instance.assess_sync.return_value = MagicMock(
                 tier=ComplexityTier.COMPLEX,
@@ -305,7 +351,7 @@ class TestPlanningE2E:
         assert updated_task is not None
         assert updated_task["status"] == "human_review"
         assert updated_task["complexity"] == "COMPLEX"
-        assert "Human Review" in (updated_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "Human Review")
 
 
 class TestExecutionE2E:
@@ -413,7 +459,8 @@ class TestExecutionE2E:
 
         subtasks = get_subtasks_for_task(task_id, include_steps=True)
         assert subtasks[0]["passes"] is not True
-        assert subtasks[1]["passes"] is None
+        # Subtask 1.2 should not have run (passes defaults to False in DB)
+        assert subtasks[1]["passes"] is False
 
 
 class TestAIReviewE2E:
@@ -438,7 +485,7 @@ class TestAIReviewE2E:
 
         review_json = json.dumps(
             {
-                "verdict": "APPROVE",
+                "verdict": "APPROVED",
                 "summary": "Simple typo fix, looks good",
                 "concerns": [],
                 "recommendation": "Merge it",
@@ -457,12 +504,12 @@ class TestAIReviewE2E:
             result = ai_review(task_id, test_project_id)
 
         assert result["status"] == "reviewed"
-        assert result["verdict"] == "APPROVE"
+        assert result["verdict"] == "APPROVED"
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
         assert updated_task["status"] == "completed"
-        assert "Auto-merged (SIMPLE)" in (updated_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "Auto-merged (SIMPLE)")
 
     def test_standard_approved_goes_to_human_review(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -483,7 +530,7 @@ class TestAIReviewE2E:
 
         review_json = json.dumps(
             {
-                "verdict": "APPROVE",
+                "verdict": "APPROVED",
                 "summary": "New endpoint follows patterns, tests included",
                 "concerns": [],
                 "recommendation": "Good to merge after human review",
@@ -502,12 +549,12 @@ class TestAIReviewE2E:
             result = ai_review(task_id, test_project_id)
 
         assert result["status"] == "reviewed"
-        assert result["verdict"] == "APPROVE"
+        assert result["verdict"] == "APPROVED"
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
         assert updated_task["status"] == "human_review"
-        assert "STANDARD" in (updated_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "STANDARD")
 
     def test_rejected_creates_fix_subtask(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -551,8 +598,9 @@ class TestAIReviewE2E:
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
-        assert updated_task["status"] == "queue"
-        assert "REJECTED" in (updated_task.get("progress_log") or "")
+        # REJECT verdict transitions to running (ready for re-execution)
+        assert updated_task["status"] == "running"
+        assert task_events_contain(task_id, "REJECT")
 
         subtasks = get_subtasks_for_task(task_id, include_steps=True)
         fix_subtasks = [s for s in subtasks if s["subtask_id"] == "99.1"]
@@ -658,7 +706,8 @@ class TestFullAutonomousPipeline:
             patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
             patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
         ):
-            mock_client.return_value.run_agent.return_value = plan_response
+            # Planning uses client.complete(), not run_agent()
+            mock_client.return_value.complete.return_value = plan_response
             mock_assessor_instance = MagicMock()
             mock_assessor_instance.assess_sync.return_value = MagicMock(
                 tier=ComplexityTier.SIMPLE,
@@ -683,7 +732,7 @@ class TestFullAutonomousPipeline:
         review_response = create_mock_agent_response(
             json.dumps(
                 {
-                    "verdict": "APPROVE",
+                    "verdict": "APPROVED",
                     "summary": "Simple logging addition",
                     "concerns": [],
                 }
@@ -700,9 +749,9 @@ class TestFullAutonomousPipeline:
             review_result = ai_review(task_id, test_project_id)
 
         assert review_result["status"] == "reviewed"
-        assert review_result["verdict"] == "APPROVE"
+        assert review_result["verdict"] == "APPROVED"
 
         final_task = task_store.get_task(task_id)
         assert final_task is not None
         assert final_task["status"] == "completed"
-        assert "Auto-merged (SIMPLE)" in (final_task.get("progress_log") or "")
+        assert task_events_contain(task_id, "Auto-merged (SIMPLE)")

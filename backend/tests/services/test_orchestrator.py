@@ -302,7 +302,9 @@ class TestDispatchToFlash:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock()
 
-        with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
+        with patch(
+            "app.services.agent_hub_client.get_async_client", return_value=mock_client
+        ):
             success, error = await orchestrator._dispatch_to_flash(
                 subtask={"id": "1.1", "description": "Test subtask", "steps": ["Step 1"]},
                 model=AGENT_WORKER,
@@ -331,7 +333,9 @@ class TestDispatchToFlash:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock()
 
-        with patch("agent_hub.AsyncAgentHubClient", return_value=mock_client):
+        with patch(
+            "app.services.agent_hub_client.get_async_client", return_value=mock_client
+        ):
             success, error = await orchestrator._dispatch_to_flash(
                 subtask={"id": "1.1", "description": "Test"},
                 model=AGENT_WORKER,

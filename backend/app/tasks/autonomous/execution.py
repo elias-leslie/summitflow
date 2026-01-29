@@ -422,10 +422,16 @@ def _execute_subtask(
             )
 
         # Log citations from Agent Hub response for ACE-aligned feedback
+        # Must acknowledge citations (or lack thereof) before subtask can pass
         if response.cited_uuids:
             from ...storage.subtasks import log_citations
 
             log_citations(task_id, subtask_short_id, response.cited_uuids, client=client)
+        else:
+            # No citations used - acknowledge this for the citation gate
+            from ...storage.subtasks import acknowledge_no_citations
+
+            acknowledge_no_citations(task_id, subtask_short_id)
 
         steps = subtask.get("steps_from_table", [])
         step_results = _verify_steps(task_id, subtask_id, steps, worktree_path, project_id)

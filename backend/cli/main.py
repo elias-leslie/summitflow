@@ -55,6 +55,8 @@ TASKS:
   claim <id> [--lock 30] [--release]       # lock task for N minutes
   log <id> <message>
   autocode <id> [--sync] [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
+  verify <plan.json>                       # validate plan file against schema
+  exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
 
 SUBTASK:
   subtask list <task-id>
@@ -95,6 +97,10 @@ BACKUP:
 SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status
+
+MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
+
+TOOLS: tools status [--hours N]
 
 HEALTH (quality gate):
   health                                   # show quality gate summary (default)

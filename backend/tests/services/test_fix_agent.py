@@ -222,8 +222,8 @@ class TestBuildFixPrompt:
 class TestPatternRetrieval:
     """Tests for pattern retrieval integration."""
 
-    @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
-    @patch("app.services.quality_gate.fix_agent._run_async")
+    @patch("app.services.quality_gate.pattern_memory_utils._get_pattern_memory")
+    @patch("app.services.quality_gate.pattern_memory_utils._run_async")
     def testget_similar_patterns_success(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
@@ -246,8 +246,8 @@ class TestPatternRetrieval:
         assert result == expected_patterns
         mock_run_async.assert_called_once()
 
-    @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
-    @patch("app.services.quality_gate.fix_agent._run_async")
+    @patch("app.services.quality_gate.pattern_memory_utils._get_pattern_memory")
+    @patch("app.services.quality_gate.pattern_memory_utils._run_async")
     def testget_similar_patterns_failure_returns_empty(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
@@ -262,8 +262,8 @@ class TestPatternRetrieval:
 class TestPatternStorage:
     """Tests for pattern storage on successful fixes."""
 
-    @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
-    @patch("app.services.quality_gate.fix_agent._run_async")
+    @patch("app.services.quality_gate.pattern_memory_utils._get_pattern_memory")
+    @patch("app.services.quality_gate.pattern_memory_utils._run_async")
     def teststore_successful_pattern(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
@@ -284,8 +284,8 @@ class TestPatternStorage:
         call_args = mock_run_async.call_args
         assert call_args is not None
 
-    @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
-    @patch("app.services.quality_gate.fix_agent._run_async")
+    @patch("app.services.quality_gate.pattern_memory_utils._get_pattern_memory")
+    @patch("app.services.quality_gate.pattern_memory_utils._run_async")
     def test_store_pattern_failure_does_not_raise(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
@@ -302,8 +302,8 @@ class TestPatternStorage:
             fixed_content="new",
         )
 
-    @patch("app.services.quality_gate.fix_agent._get_pattern_memory")
-    @patch("app.services.quality_gate.fix_agent._run_async")
+    @patch("app.services.quality_gate.pattern_memory_utils._get_pattern_memory")
+    @patch("app.services.quality_gate.pattern_memory_utils._run_async")
     def test_store_pattern_computes_diff(
         self, mock_run_async: MagicMock, mock_get_pm: MagicMock
     ) -> None:
@@ -461,8 +461,8 @@ class TestAttemptHistoryFormatting:
 class TestEscalateToHumanWorktree:
     """Tests for worktree preservation on HUMAN escalation."""
 
-    @patch("app.services.quality_gate.fix_agent.qcr_store")
-    @patch("app.services.quality_gate.fix_agent.create_task")
+    @patch("app.services.quality_gate.escalation.qcr_store")
+    @patch("app.services.quality_gate.escalation.create_task")
     def test_escalation_includes_worktree_path(
         self, mock_create_task: MagicMock, mock_qcr: MagicMock
     ) -> None:
@@ -494,8 +494,8 @@ class TestEscalateToHumanWorktree:
         assert "attempt_history.json" in description
         assert "git log" in description
 
-    @patch("app.services.quality_gate.fix_agent.qcr_store")
-    @patch("app.services.quality_gate.fix_agent.create_task")
+    @patch("app.services.quality_gate.escalation.qcr_store")
+    @patch("app.services.quality_gate.escalation.create_task")
     def test_escalation_without_worktree_path(
         self, mock_create_task: MagicMock, mock_qcr: MagicMock
     ) -> None:

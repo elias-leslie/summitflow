@@ -140,7 +140,7 @@ def _route_based_on_verdict(
     """Route task based on AI review verdict.
 
     Verdicts:
-    - APPROVED: Move to pr_created (ready for merge)
+    - APPROVED: SIMPLE → completed (auto-merge), others → human_review
     - NEEDS_FIX: Log issues, create fix subtask, retry execution
     - PLAN_DEFECT: Add fix step, mark original as defect, retry
     - ESCALATE: Move to human_review
@@ -148,25 +148,37 @@ def _route_based_on_verdict(
     verdict = review_result.get("verdict", "").upper()
 
     if verdict == "APPROVED":
-        task_store.update_task_status(task_id, "pr_created")
-        log_task_event(
-            task_id,
-            f"AI Review: APPROVED - Ready for merge ({complexity})",
-        )
-        logger.info("QA approved, moving to pr_created", task_id=task_id)
+        if complexity == "SIMPLE":
+            # SIMPLE tasks auto-merge after AI approval
+            task_store.update_task_status(task_id, "completed")
+            log_task_event(
+                task_id,
+                f"AI Review: APPROVED - Auto-merged (SIMPLE)",
+            )
+            logger.info("QA approved, auto-merged SIMPLE task", task_id=task_id)
+        else:
+            # STANDARD/COMPLEX tasks need human review
+            task_store.update_task_status(task_id, "human_review")
+            log_task_event(
+                task_id,
+                f"AI Review: APPROVED - Requires human review ({complexity})",
+            )
+            logger.info("QA approved, human review required", task_id=task_id, complexity=complexity)
 
-    elif verdict == "NEEDS_FIX":
+    elif verdict in ("NEEDS_FIX", "REJECT", "REJECTED"):
         _create_fix_subtask(task_id, review_result)
-        task_store.update_task_status(task_id, "queue")
+        # Transition to running (ai_reviewing → running is valid)
+        task_store.update_task_status(task_id, "running")
         log_task_event(
             task_id,
-            f"AI Review: NEEDS_FIX - Created fix subtask. Issues: {review_result.get('concerns', [])}",
+            f"AI Review: {verdict} - Created fix subtask. Issues: {review_result.get('concerns', [])}",
         )
-        logger.info("QA needs fix, queued for retry", task_id=task_id)
+        logger.info("QA needs fix, returning to execution", task_id=task_id)
 
     elif verdict == "PLAN_DEFECT":
         _handle_plan_defect(task_id, review_result)
-        task_store.update_task_status(task_id, "queue")
+        # Transition to running (ai_reviewing → running is valid)
+        task_store.update_task_status(task_id, "running")
         log_task_event(
             task_id,
             "AI Review: PLAN_DEFECT - Added fix step with correct verification",

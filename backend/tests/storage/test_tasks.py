@@ -222,33 +222,6 @@ class TestListTasks:
                 task_store.delete_task(t["id"])
 
 
-class TestAppendProgressLog:
-    """Tests for append_progress_log function."""
-
-    def test_append_progress_log_adds_entry(self, test_task):
-        """Test that append_progress_log adds timestamped entry."""
-        result = task_store.append_progress_log(test_task["id"], "Test log entry")
-
-        assert result is not None
-        assert "Test log entry" in result["progress_log"]
-        assert "]" in result["progress_log"]  # Has timestamp brackets
-
-    def test_append_progress_log_multiple_entries(self, test_task):
-        """Test appending multiple log entries."""
-        task_store.append_progress_log(test_task["id"], "Entry 1")
-        task_store.append_progress_log(test_task["id"], "Entry 2")
-        result = task_store.append_progress_log(test_task["id"], "Entry 3")
-
-        assert "Entry 1" in result["progress_log"]
-        assert "Entry 2" in result["progress_log"]
-        assert "Entry 3" in result["progress_log"]
-
-    def test_append_progress_log_nonexistent_task(self):
-        """Test appending to nonexistent task returns None."""
-        result = task_store.append_progress_log("nonexistent-id", "Entry")
-        assert result is None
-
-
 class TestDeleteTask:
     """Tests for delete_task function."""
 

@@ -21,12 +21,31 @@ from typing import Any
 
 import pytest
 
+import urllib.request
+import urllib.error
+
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
+
+def _backend_available() -> bool:
+    """Check if the backend API server is running."""
+    try:
+        urllib.request.urlopen("http://127.0.0.1:5000/api/health", timeout=2)
+        return True
+    except (urllib.error.URLError, TimeoutError):
+        return False
+
+
+@pytest.fixture
+def requires_backend():
+    """Skip test if backend server is not running."""
+    if not _backend_available():
+        pytest.skip("Backend server not running (required for this E2E test)")
 
 
 @pytest.fixture
@@ -786,7 +805,7 @@ class TestCloseGate:
 class TestHappyPath:
     """Test the complete happy path: import → execute → close."""
 
-    def test_full_lifecycle_via_import(self, project_id, cleanup_tasks):
+    def test_full_lifecycle_via_import(self, project_id, cleanup_tasks, requires_backend):
         """Test complete task lifecycle: import valid plan → complete steps → close."""
         # 1. Create and import valid plan
         plan_file = create_plan_file(valid_plan())
@@ -845,7 +864,7 @@ class TestHappyPath:
         result = run_cli(["show", task_id])
         assert "completed" in result.stdout.lower()
 
-    def test_gate_sequence_prevents_shortcuts(self, project_id, cleanup_tasks):
+    def test_gate_sequence_prevents_shortcuts(self, project_id, cleanup_tasks, requires_backend):
         """Test that you cannot skip gates in the lifecycle."""
         # Create task
         task = task_store.create_task(
@@ -887,9 +906,13 @@ class TestHappyPath:
         result = run_cli(["subtask", "pass", "1.1", "--task", task["id"]])
         assert result.returncode == 1, "Should not be able to pass subtask with incomplete steps"
 
-        # Now do it properly: pass step → pass subtask → close
+        # Now do it properly: pass step → acknowledge citations → pass subtask → close
         result = run_cli(["step", "pass", "1.1", "1", "--task", task["id"]])
         assert result.returncode == 0, f"Step pass failed: {result.stderr}"
+
+        # Acknowledge no citations used (citation gate requirement)
+        result = run_cli(["subtask", "citations", "--none", "-s", "1.1", "-t", task["id"]])
+        assert result.returncode == 0, f"Citations acknowledge failed: {result.stderr}"
 
         result = run_cli(["subtask", "pass", "1.1", "--task", task["id"]])
         assert result.returncode == 0, f"Subtask pass failed: {result.stderr}"

@@ -142,8 +142,10 @@ class TestCleanupStaleTasks:
 
     @patch("app.storage.tasks.get_stale_tasks")
     @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.task_generation.log_task_event")
     def test_sets_cancelled_status_with_message(
         self,
+        mock_log_event: MagicMock,
         mock_store: MagicMock,
         mock_get_stale: MagicMock,
     ):
@@ -154,12 +156,18 @@ class TestCleanupStaleTasks:
 
         cleanup_stale_tasks(max_age_days=45)
 
+        # Verify update_task was called with cancelled status
         call_args = mock_store.update_task.call_args
         assert call_args is not None
         args, kwargs = call_args
         assert args[0] == "task-1"
         assert kwargs["status"] == "cancelled"
-        assert "45+ days" in kwargs["progress_log"]
+
+        # Verify log_task_event was called with the message
+        mock_log_event.assert_called_once()
+        event_args = mock_log_event.call_args
+        assert event_args[0][0] == "task-1"
+        assert "45+ days" in event_args[0][1]
 
     @patch("app.storage.tasks.get_stale_tasks")
     @patch("app.tasks.autonomous.task_generation.task_store")

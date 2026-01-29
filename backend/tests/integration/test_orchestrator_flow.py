@@ -460,15 +460,6 @@ class TestTimeWindowRespected:
 
     def test_within_hours_proceeds(self):
         """Test that autonomous pickup proceeds when within time window."""
-        mock_task = {
-            "id": "task-123",
-            "title": "Test task",
-            "task_type": "refactor",
-            "tier": 2,
-            "status": "pending",
-            "autonomous": True,  # Required for autonomous execution
-        }
-
         with (
             patch("app.storage.agent_configs.is_autonomous_enabled", return_value=True),
             patch("app.storage.agent_configs.is_within_autonomous_hours", return_value=True),
@@ -476,29 +467,17 @@ class TestTimeWindowRespected:
                 "app.storage.agent_configs.get_autonomous_schedule",
                 return_value={"start_hour": 0, "end_hour": 24, "max_concurrent": 1},
             ),
-            patch("app.tasks.autonomous.execution.task_store") as mock_store,
-            patch("app.tasks.autonomous.execution.check_exclusion", return_value=None),
-            patch("app.tasks.autonomous.execution.get_project_repo_path", return_value="/tmp"),
-            patch("app.services.orchestrator.OrchestratorService") as mock_orch,
+            patch(
+                "app.tasks.autonomous.pickup._get_queued_autonomous_tasks",
+                return_value=[],
+            ),
         ):
-            mock_store.count_running_tasks.return_value = 0
-            mock_store.list_ready_tasks.return_value = [mock_task]
-
-            # Mock orchestrator execution
-            mock_instance = MagicMock()
-            mock_orch.return_value = mock_instance
-
-            async def mock_coordinate(task_id: str) -> OrchestrationResult:
-                return OrchestrationResult(
-                    task_id=task_id, success=True, state=ExecutionState.COMPLETED
-                )
-
-            mock_instance.coordinate = mock_coordinate
-
             result = autonomous_work_pickup("test-project")
 
-            assert result["status"] == "success"
-            assert result["task_id"] == "task-123"
+            # Should proceed (not return outside_hours)
+            assert result.get("status") != "outside_hours"
+            assert result["project_id"] == "test-project"
+            assert result["dispatched"] == 0
 
 
 class TestConcurrencyLimitRespected:
@@ -513,7 +492,7 @@ class TestConcurrencyLimitRespected:
                 "app.storage.agent_configs.get_autonomous_schedule",
                 return_value={"start_hour": 0, "end_hour": 24, "max_concurrent": 2},
             ),
-            patch("app.tasks.autonomous.execution.task_store") as mock_store,
+            patch("app.tasks.autonomous.pickup.task_store") as mock_store,
         ):
             mock_store.count_running_tasks.return_value = 2  # At limit
 
@@ -525,15 +504,6 @@ class TestConcurrencyLimitRespected:
 
     def test_under_concurrency_limit_proceeds(self):
         """Test that tasks proceed when under concurrency limit."""
-        mock_task = {
-            "id": "task-123",
-            "title": "Test task",
-            "task_type": "debt",
-            "tier": 2,
-            "status": "pending",
-            "autonomous": True,  # Required for autonomous execution
-        }
-
         with (
             patch("app.storage.agent_configs.is_autonomous_enabled", return_value=True),
             patch("app.storage.agent_configs.is_within_autonomous_hours", return_value=True),
@@ -541,27 +511,19 @@ class TestConcurrencyLimitRespected:
                 "app.storage.agent_configs.get_autonomous_schedule",
                 return_value={"start_hour": 0, "end_hour": 24, "max_concurrent": 3},
             ),
-            patch("app.tasks.autonomous.execution.task_store") as mock_store,
-            patch("app.tasks.autonomous.execution.check_exclusion", return_value=None),
-            patch("app.tasks.autonomous.execution.get_project_repo_path", return_value="/tmp"),
-            patch("app.services.orchestrator.OrchestratorService") as mock_orch,
+            patch("app.tasks.autonomous.pickup.task_store") as mock_store,
+            patch(
+                "app.tasks.autonomous.pickup._get_queued_autonomous_tasks",
+                return_value=[],
+            ),
         ):
             mock_store.count_running_tasks.return_value = 1  # Under limit
-            mock_store.list_ready_tasks.return_value = [mock_task]
-
-            mock_instance = MagicMock()
-            mock_orch.return_value = mock_instance
-
-            async def mock_coordinate(task_id: str) -> OrchestrationResult:
-                return OrchestrationResult(
-                    task_id=task_id, success=True, state=ExecutionState.COMPLETED
-                )
-
-            mock_instance.coordinate = mock_coordinate
 
             result = autonomous_work_pickup("test-project")
 
-            assert result["status"] == "success"
+            # Should proceed (not return concurrency_limit)
+            assert result.get("status") != "concurrency_limit"
+            assert result["project_id"] == "test-project"
 
 
 class TestAutonomousDisabled:
@@ -577,61 +539,38 @@ class TestAutonomousDisabled:
 
 
 class TestTaskTypeFiltering:
-    """Test: task type filtering for autonomous execution."""
+    """Test: task type filtering for autonomous execution.
 
-    def test_only_allowed_task_types_picked(self):
-        """Test that only allowed task types are picked for execution."""
-        tasks = [
-            {
-                "id": "t1",
-                "task_type": "refactor",
-                "tier": 2,
-                "status": "pending",
-                "autonomous": True,
-            },
-            {
-                "id": "t2",
-                "task_type": "feature",
-                "tier": 2,
-                "status": "pending",
-                "autonomous": True,
-            },
-            {
-                "id": "t3",
-                "task_type": "unknown",
-                "tier": 2,
-                "status": "pending",
-                "autonomous": True,
-            },  # Not allowed (type)
-        ]
+    Note: Task type filtering is done at the database level via the
+    _get_queued_autonomous_tasks query which filters by autonomous=TRUE.
+    """
 
+    def test_only_autonomous_tasks_queried(self):
+        """Test that only autonomous tasks are queried from database."""
+        # Task filtering happens in SQL query, test verifies pickup behavior
         with (
             patch("app.storage.agent_configs.is_autonomous_enabled", return_value=True),
             patch("app.storage.agent_configs.is_within_autonomous_hours", return_value=True),
             patch(
                 "app.storage.agent_configs.get_autonomous_schedule",
-                return_value={"start_hour": 0, "end_hour": 24, "max_concurrent": 1},
+                return_value={"start_hour": 0, "end_hour": 24, "max_concurrent": 3},
             ),
-            patch("app.tasks.autonomous.execution.task_store") as mock_store,
-            patch("app.tasks.autonomous.execution.check_exclusion", return_value=None),
-            patch("app.tasks.autonomous.execution.get_project_repo_path", return_value="/tmp"),
-            patch("app.services.orchestrator.OrchestratorService") as mock_orch,
+            patch("app.tasks.autonomous.pickup.task_store") as mock_store,
+            patch(
+                "app.tasks.autonomous.pickup._get_queued_autonomous_tasks",
+                return_value=[
+                    {"id": "t1", "title": "Test", "task_type": "refactor"},
+                ],
+            ) as mock_get_tasks,
+            patch("app.tasks.autonomous.pickup._determine_next_stage", return_value="planning"),
+            patch("app.tasks.autonomous.pickup.create_plan") as mock_plan,
         ):
             mock_store.count_running_tasks.return_value = 0
-            mock_store.list_ready_tasks.return_value = tasks
-
-            mock_instance = MagicMock()
-            mock_orch.return_value = mock_instance
-
-            async def mock_coordinate(task_id: str) -> OrchestrationResult:
-                return OrchestrationResult(
-                    task_id=task_id, success=True, state=ExecutionState.COMPLETED
-                )
-
-            mock_instance.coordinate = mock_coordinate
+            mock_plan.delay = MagicMock()
 
             result = autonomous_work_pickup("test-project")
 
-            # First matching task should be picked
-            assert result["status"] == "success"
-            assert result["task_id"] == "t1"
+            # Verify task query was called and tasks were dispatched
+            mock_get_tasks.assert_called_once_with("test-project")
+            assert result["dispatched"] == 1
+            assert result["breakdown"]["planning"] == 1

@@ -3,8 +3,8 @@
 Covers:
 - Time window checks
 - Concurrency limit checks
-- Task type filtering (refactor, debt, regression)
-- OrchestratorService integration
+- Task dispatching
+- Disabled state handling
 """
 
 from __future__ import annotations
@@ -45,9 +45,11 @@ class TestTimeWindowChecks:
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
     def test_within_hours_continues_execution(
         self,
+        mock_get_tasks: MagicMock,
         mock_store: MagicMock,
         mock_schedule: MagicMock,
         mock_within_hours: MagicMock,
@@ -63,12 +65,13 @@ class TestTimeWindowChecks:
             "max_concurrent": 1,
         }
         mock_store.count_running_tasks.return_value = 0
-        mock_store.list_ready_tasks.return_value = []
+        mock_get_tasks.return_value = []
 
         result = autonomous_work_pickup("test-project")
 
-        # Should get to "no_work" status (no tasks available)
-        assert result["status"] == "no_work"
+        # Should return no tasks message (no tasks available)
+        assert result["dispatched"] == 0
+        assert result["message"] == "No tasks in queue"
 
 
 class TestConcurrencyLimitChecks:
@@ -77,7 +80,7 @@ class TestConcurrencyLimitChecks:
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.pickup.task_store")
     def test_concurrency_limit_reached_returns_limit_status(
         self,
         mock_store: MagicMock,
@@ -105,9 +108,11 @@ class TestConcurrencyLimitChecks:
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
     def test_under_concurrency_limit_continues_execution(
         self,
+        mock_get_tasks: MagicMock,
         mock_store: MagicMock,
         mock_schedule: MagicMock,
         mock_within_hours: MagicMock,
@@ -123,32 +128,36 @@ class TestConcurrencyLimitChecks:
             "max_concurrent": 3,
         }
         mock_store.count_running_tasks.return_value = 1  # Under limit
-        mock_store.list_ready_tasks.return_value = []
+        mock_get_tasks.return_value = []
 
         result = autonomous_work_pickup("test-project")
 
-        # Should get to "no_work" status (no tasks available)
-        assert result["status"] == "no_work"
+        # Should return no tasks message (no tasks available)
+        assert result["dispatched"] == 0
+        assert result["message"] == "No tasks in queue"
 
 
-class TestTaskTypeFiltering:
-    """Tests for task type filtering in execution."""
+class TestTaskDispatching:
+    """Tests for task dispatching to pipeline stages."""
 
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
-    @patch("app.tasks.autonomous.task_filters.check_exclusion")
-    @patch("app.tasks.autonomous.execution.AUTONOMOUS_DRY_RUN", True)
-    def test_refactor_task_is_picked_up(
+    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup._determine_next_stage")
+    @patch("app.tasks.autonomous.pickup.triage_idea")
+    def test_task_dispatched_to_triage(
         self,
-        mock_exclusion: MagicMock,
+        mock_triage: MagicMock,
+        mock_stage: MagicMock,
+        mock_get_tasks: MagicMock,
         mock_store: MagicMock,
         mock_schedule: MagicMock,
         mock_within_hours: MagicMock,
         mock_enabled: MagicMock,
     ):
-        """Test that refactor tasks are picked up for execution."""
+        """Test that tasks needing triage are dispatched to triage."""
         mock_enabled.return_value = True
         mock_within_hours.return_value = True
         mock_schedule.return_value = {
@@ -158,36 +167,37 @@ class TestTaskTypeFiltering:
             "max_concurrent": 1,
         }
         mock_store.count_running_tasks.return_value = 0
-        mock_store.list_ready_tasks.return_value = [
+        mock_get_tasks.return_value = [
             {
                 "id": "task-123",
                 "title": "Refactor: clean up module",
-                "status": "pending",
-                "tier": 2,
                 "task_type": "refactor",
-                "autonomous": True,  # Required for pickup
+                "complexity": "low",
+                "status": "queue",
             }
         ]
-        mock_exclusion.return_value = None
+        mock_stage.return_value = "triage"
 
         result = autonomous_work_pickup("test-project")
 
-        assert result["status"] == "dry_run"
-        assert result["task_id"] == "task-123"
-        assert result["task_type"] == "refactor"
+        mock_triage.delay.assert_called_once_with("task-123", "test-project")
+        assert result["dispatched"] == 1
+        assert result["breakdown"]["triage"] == 1
 
     @patch("app.storage.agent_configs.is_autonomous_enabled")
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
-    def test_task_without_autonomous_flag_is_filtered(
+    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    def test_no_tasks_returns_zero_dispatched(
         self,
+        mock_get_tasks: MagicMock,
         mock_store: MagicMock,
         mock_schedule: MagicMock,
         mock_within_hours: MagicMock,
         mock_enabled: MagicMock,
     ):
-        """Test that tasks without autonomous=True are not picked up."""
+        """Test that empty queue returns zero dispatched."""
         mock_enabled.return_value = True
         mock_within_hours.return_value = True
         mock_schedule.return_value = {
@@ -197,56 +207,12 @@ class TestTaskTypeFiltering:
             "max_concurrent": 1,
         }
         mock_store.count_running_tasks.return_value = 0
-        mock_store.list_ready_tasks.return_value = [
-            {
-                "id": "task-123",
-                "title": "Refactor: clean up module",
-                "status": "pending",
-                "tier": 2,
-                "task_type": "refactor",
-                "autonomous": False,  # Not enabled for autonomous
-            }
-        ]
+        mock_get_tasks.return_value = []
 
         result = autonomous_work_pickup("test-project")
 
-        # Should be filtered out even though task_type is valid
-        assert result["status"] == "no_work"
-
-    @patch("app.storage.agent_configs.is_autonomous_enabled")
-    @patch("app.storage.agent_configs.is_within_autonomous_hours")
-    @patch("app.storage.agent_configs.get_autonomous_schedule")
-    @patch("app.tasks.autonomous.execution.task_store")
-    def test_unknown_task_type_is_filtered_out(
-        self,
-        mock_store: MagicMock,
-        mock_schedule: MagicMock,
-        mock_within_hours: MagicMock,
-        mock_enabled: MagicMock,
-    ):
-        """Test that unknown task types are not picked up."""
-        mock_enabled.return_value = True
-        mock_within_hours.return_value = True
-        mock_schedule.return_value = {
-            "enabled": True,
-            "start_hour": 0,
-            "end_hour": 24,
-            "max_concurrent": 1,
-        }
-        mock_store.count_running_tasks.return_value = 0
-        mock_store.list_ready_tasks.return_value = [
-            {
-                "id": "task-123",
-                "title": "Unknown type task",
-                "status": "pending",
-                "tier": 2,
-                "task_type": "unknown_type",  # Not in AUTONOMOUS_TASK_TYPES
-            }
-        ]
-
-        result = autonomous_work_pickup("test-project")
-
-        assert result["status"] == "no_work"
+        assert result["dispatched"] == 0
+        assert result["message"] == "No tasks in queue"
 
 
 class TestDisabledAutonomous:
