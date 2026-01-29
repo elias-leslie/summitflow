@@ -5,19 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.tasks.ai_review import (
-    ARCHITECTURE_KEYWORDS,
-    SECURITY_KEYWORDS,
-    ReviewResult,
-    ReviewVerdict,
+from app.tasks.ai_review import review_pull_request
+from app.tasks.ai_review_checks import (
     _has_frontend_changes,
     _run_mypy,
     _run_precommit,
     _run_pytest,
-    _should_escalate_for_security,
     _verify_acceptance_criteria,
-    review_pull_request,
 )
+from app.tasks.ai_review_constants import ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS
+from app.tasks.ai_review_models import ReviewResult, ReviewVerdict
+from app.tasks.ai_review_utils import _should_escalate_for_security
 
 # Silence linter about unused imports - they're used in TestSecurityEscalation
 _ = ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS, _should_escalate_for_security
@@ -122,14 +120,14 @@ class TestRunPytest:
 class TestRunPrecommit:
     """Tests for _run_precommit helper."""
 
-    @patch("app.tasks.ai_review._run_command")
+    @patch("app.tasks.ai_review_checks._run_command")
     def test_precommit_pass(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.return_value = (True, "All passed!")
         result = _run_precommit(tmp_path)
         assert result["status"] == "pass"
         mock_run.assert_called_once()
 
-    @patch("app.tasks.ai_review._run_command")
+    @patch("app.tasks.ai_review_checks._run_command")
     def test_precommit_fail(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.return_value = (False, "Linting failed")
         result = _run_precommit(tmp_path)
