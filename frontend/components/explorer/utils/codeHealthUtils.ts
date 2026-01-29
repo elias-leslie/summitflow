@@ -4,7 +4,11 @@
 
 import type { RefactorTarget } from './codeHealthApi'
 
-export type SortField = 'path' | 'complexity_score' | 'lines_of_code' | 'priority'
+export type SortField =
+  | 'path'
+  | 'complexity_score'
+  | 'lines_of_code'
+  | 'priority'
 export type SortDir = 'asc' | 'desc'
 export type PriorityFilter = 'all' | 'high' | 'medium'
 

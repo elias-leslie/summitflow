@@ -18,7 +18,11 @@ export * from './pages'
 export * from './tasks'
 
 import { TableDetail, TableRow, tableColumns } from './database'
-import { DependencyDetail, DependencyRow, dependencyColumns } from './dependencies'
+import {
+  DependencyDetail,
+  DependencyRow,
+  dependencyColumns,
+} from './dependencies'
 import { EndpointDetail, EndpointRow, endpointColumns } from './endpoints'
 // Import columns
 // Import row/detail components

@@ -158,7 +158,9 @@ export function getTaskTypeConfig(taskType: TaskType): TaskTypeConfig {
   return taskTypeConfig[taskType] || taskTypeConfig.task
 }
 
-export function getTaskTypeConfigSmall(taskType: TaskType): TaskTypeConfigSmall {
+export function getTaskTypeConfigSmall(
+  taskType: TaskType,
+): TaskTypeConfigSmall {
   return taskTypeConfigSmall[taskType] || taskTypeConfigSmall.task
 }
 
@@ -292,6 +294,8 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
   },
 }
 
-export function getTaskStatusCardConfig(status: TaskStatus): TaskStatusCardConfig {
+export function getTaskStatusCardConfig(
+  status: TaskStatus,
+): TaskStatusCardConfig {
   return taskStatusCardConfig[status] || taskStatusCardConfig.pending
 }

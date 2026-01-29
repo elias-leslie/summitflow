@@ -188,9 +188,16 @@ export function useTaskModal({
     async (subtaskId: string, passes: boolean) => {
       if (!task) return
       try {
-        const updated = await updateSubtask(projectId, task.id, subtaskId, passes)
+        const updated = await updateSubtask(
+          projectId,
+          task.id,
+          subtaskId,
+          passes,
+        )
         setSubtasks((prev) =>
-          prev.map((s) => (s.subtask_id === subtaskId ? { ...s, ...updated } : s)),
+          prev.map((s) =>
+            s.subtask_id === subtaskId ? { ...s, ...updated } : s,
+          ),
         )
       } catch (err) {
         console.error('Failed to update subtask:', err)

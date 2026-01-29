@@ -70,10 +70,19 @@ const typeIcons = {
   illustration: ImageIcon,
 }
 
-export function MockupCard({ mockup, viewMode, onClick, selectMode = false, isSelected = false }: MockupCardProps) {
-  const status = statusConfig[mockup.status as keyof typeof statusConfig] ?? statusConfig.generated
+export function MockupCard({
+  mockup,
+  viewMode,
+  onClick,
+  selectMode = false,
+  isSelected = false,
+}: MockupCardProps) {
+  const status =
+    statusConfig[mockup.status as keyof typeof statusConfig] ??
+    statusConfig.generated
   const StatusIcon = status.icon
-  const TypeIcon = typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
+  const TypeIcon =
+    typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
   const isImprovement = hasScreenshot(mockup)
 
   const formattedDate = mockup.created_at
@@ -117,7 +126,9 @@ export function MockupCard({ mockup, viewMode, onClick, selectMode = false, isSe
         <div className="flex-1 min-w-0">
           <h3 className="text-white font-medium truncate">{mockup.name}</h3>
           {mockup.description && (
-            <p className="text-slate-400 text-sm truncate">{mockup.description}</p>
+            <p className="text-slate-400 text-sm truncate">
+              {mockup.description}
+            </p>
           )}
         </div>
 
@@ -129,7 +140,9 @@ export function MockupCard({ mockup, viewMode, onClick, selectMode = false, isSe
               <span className="text-xs text-amber-400">Improvement</span>
             </div>
           )}
-          <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}>
+          <div
+            className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}
+          >
             <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
             <span className={`text-xs ${status.color}`}>{status.label}</span>
           </div>
@@ -213,7 +226,9 @@ export function MockupCard({ mockup, viewMode, onClick, selectMode = false, isSe
           {mockup.name}
         </h3>
         {mockup.description && (
-          <p className="text-slate-400 text-sm truncate mt-1">{mockup.description}</p>
+          <p className="text-slate-400 text-sm truncate mt-1">
+            {mockup.description}
+          </p>
         )}
         <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
           <span className="capitalize">{mockup.mockup_type}</span>

@@ -4,13 +4,13 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Minimize2,
   Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
-import type { Task } from '@/lib/api'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
+import type { Task } from '@/lib/api'
 
 interface RunningTaskInfo {
   task: Task
@@ -100,7 +100,7 @@ export function BottomExecutionDock({
 }: BottomExecutionDockProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(
-    runningTasks[0]?.task.id || null
+    runningTasks[0]?.task.id || null,
   )
 
   if (runningTasks.length === 0) {
@@ -158,7 +158,7 @@ export function BottomExecutionDock({
                       setExpandedTaskId(
                         expandedTaskId === taskInfo.task.id
                           ? null
-                          : taskInfo.task.id
+                          : taskInfo.task.id,
                       )
                     }
                     onClose={

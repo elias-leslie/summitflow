@@ -48,7 +48,7 @@ export function TimelineChatInput({
           className={clsx(
             'h-8 px-3 transition-all duration-200',
             isRecording &&
-              'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse'
+              'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse',
           )}
           title={
             isRecording
@@ -83,7 +83,9 @@ export function TimelineChatInput({
           type="submit"
           variant="outline"
           size="sm"
-          disabled={!chatEnabled || !chatInput.trim() || isSending || isRecording}
+          disabled={
+            !chatEnabled || !chatInput.trim() || isSending || isRecording
+          }
           className="h-8 px-3"
         >
           <Send className="h-4 w-4" />

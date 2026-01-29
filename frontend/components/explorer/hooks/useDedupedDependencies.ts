@@ -22,8 +22,14 @@ export interface DedupedDependency extends ExplorerEntry {
  * Returns positive if a > b, negative if a < b, 0 if equal.
  */
 function compareVersions(a: string, b: string): number {
-  const partsA = a.replace(/[^0-9.]/g, '').split('.').map(Number)
-  const partsB = b.replace(/[^0-9.]/g, '').split('.').map(Number)
+  const partsA = a
+    .replace(/[^0-9.]/g, '')
+    .split('.')
+    .map(Number)
+  const partsB = b
+    .replace(/[^0-9.]/g, '')
+    .split('.')
+    .map(Number)
 
   for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
     const numA = partsA[i] ?? 0

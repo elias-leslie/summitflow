@@ -36,8 +36,8 @@ import {
   type TaskStatus,
   type TaskType,
 } from '@/lib/api'
-import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import type { Subtask } from '@/lib/api/tasks'
+import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import { cn } from '@/lib/utils'
 import { CriteriaProgress } from './CriteriaProgress'
 import { EnrichmentProgress } from './EnrichmentProgress'
@@ -710,7 +710,8 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
               className="border-red-600 text-red-400 hover:bg-red-500/20"
             >
               <Trash2 className="w-4 h-4 mr-1" />
-              Delete {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''}
+              Delete {selectedTaskIds.size} task
+              {selectedTaskIds.size !== 1 ? 's' : ''}
             </Button>
           )}
           <Button
@@ -758,7 +759,10 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
                 <th className="w-8 px-2 py-2">
                   <input
                     type="checkbox"
-                    checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
+                    checked={
+                      filteredTasks.length > 0 &&
+                      selectedTaskIds.size === filteredTasks.length
+                    }
                     onChange={handleToggleSelectAll}
                     className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0 cursor-pointer"
                   />
@@ -992,15 +996,18 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
               <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-lg font-semibold text-slate-100 mb-2">
-                  Delete {selectedTaskIds.size} Task{selectedTaskIds.size !== 1 ? 's' : ''}
+                  Delete {selectedTaskIds.size} Task
+                  {selectedTaskIds.size !== 1 ? 's' : ''}
                 </h3>
                 <p className="text-sm text-slate-300 mb-3">
                   Are you sure you want to delete these tasks?
                 </p>
                 <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3 max-h-32 overflow-y-auto">
-                  {Array.from(selectedTaskIds).slice(0, 5).map((id) => (
-                    <div key={id}>{id}</div>
-                  ))}
+                  {Array.from(selectedTaskIds)
+                    .slice(0, 5)
+                    .map((id) => (
+                      <div key={id}>{id}</div>
+                    ))}
                   {selectedTaskIds.size > 5 && (
                     <div className="text-slate-500 italic">
                       ...and {selectedTaskIds.size - 5} more

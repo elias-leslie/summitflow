@@ -55,7 +55,12 @@ export interface QualityGateHealth {
   total_unfixed: number
   checks: Record<
     string,
-    { status: string; error_count: number; warning_count: number; unfixed_count: number }
+    {
+      status: string
+      error_count: number
+      warning_count: number
+      unfixed_count: number
+    }
   >
 }
 
@@ -119,7 +124,9 @@ export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   })
 }
 
-export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth> {
+export async function fetchQualityGateHealth(
+  id: string,
+): Promise<QualityGateHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/quality/health`, {
     errorMessage: 'Failed to fetch quality gate health',
   })

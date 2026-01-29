@@ -158,7 +158,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
                   : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]',
               )}
-              title={health.healthy ? 'Service healthy' : `Service error: ${health.error}`}
+              title={
+                health.healthy
+                  ? 'Service healthy'
+                  : `Service error: ${health.error}`
+              }
               data-testid="project-health-indicator"
             />
           ) : (

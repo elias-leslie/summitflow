@@ -5,7 +5,9 @@ interface UseVoiceRecordingOptions {
   onTranscription: (text: string) => void
 }
 
-export function useVoiceRecording({ onTranscription }: UseVoiceRecordingOptions) {
+export function useVoiceRecording({
+  onTranscription,
+}: UseVoiceRecordingOptions) {
   const [isRecording, setIsRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -15,7 +17,9 @@ export function useVoiceRecording({ onTranscription }: UseVoiceRecordingOptions)
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop())
       mediaRecorderRef.current = null
     }
 

@@ -103,7 +103,14 @@ export function TypeNavigator({
   counts,
   className,
 }: TypeNavigatorProps) {
-  const types: ExplorerType[] = ['files', 'database', 'celery', 'api', 'pages', 'dependencies']
+  const types: ExplorerType[] = [
+    'files',
+    'database',
+    'celery',
+    'api',
+    'pages',
+    'dependencies',
+  ]
   const filters: (HealthStatus | 'all')[] = ['all', 'fresh', 'stale', 'orphan']
 
   return (

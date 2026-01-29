@@ -10,10 +10,10 @@ import {
 } from '../utils/codeHealthApi'
 import {
   filterByPriority,
-  sortTargets,
   type PriorityFilter,
   type SortDir,
   type SortField,
+  sortTargets,
 } from '../utils/codeHealthUtils'
 
 export function useRefactorTargets(projectId: string) {

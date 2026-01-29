@@ -27,14 +27,20 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
 
 // Model options for dropdowns
 export const CLAUDE_MODEL_OPTIONS = [
-  { id: 'default', label: `Default (${MODEL_DISPLAY_NAMES[DEFAULT_CLAUDE_MODEL]})` },
+  {
+    id: 'default',
+    label: `Default (${MODEL_DISPLAY_NAMES[DEFAULT_CLAUDE_MODEL]})`,
+  },
   { id: CLAUDE_OPUS, label: MODEL_DISPLAY_NAMES[CLAUDE_OPUS] },
   { id: CLAUDE_SONNET, label: MODEL_DISPLAY_NAMES[CLAUDE_SONNET] },
   { id: CLAUDE_HAIKU, label: MODEL_DISPLAY_NAMES[CLAUDE_HAIKU] },
 ]
 
 export const GEMINI_MODEL_OPTIONS = [
-  { id: 'default', label: `Default (${MODEL_DISPLAY_NAMES[DEFAULT_GEMINI_MODEL]})` },
+  {
+    id: 'default',
+    label: `Default (${MODEL_DISPLAY_NAMES[DEFAULT_GEMINI_MODEL]})`,
+  },
   { id: GEMINI_PRO, label: MODEL_DISPLAY_NAMES[GEMINI_PRO] },
   { id: GEMINI_FLASH, label: MODEL_DISPLAY_NAMES[GEMINI_FLASH] },
 ]

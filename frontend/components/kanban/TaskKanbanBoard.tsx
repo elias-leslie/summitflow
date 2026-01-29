@@ -17,9 +17,9 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'

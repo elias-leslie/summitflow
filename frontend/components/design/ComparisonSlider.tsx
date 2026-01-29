@@ -38,30 +38,42 @@ export function ComparisonSlider({
     setSliderPosition(percentage)
   }, [])
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-    updateSliderPosition(e.clientX)
-  }, [updateSliderPosition])
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      setIsDragging(true)
+      updateSliderPosition(e.clientX)
+    },
+    [updateSliderPosition],
+  )
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging) return
-    updateSliderPosition(e.clientX)
-  }, [isDragging, updateSliderPosition])
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging) return
+      updateSliderPosition(e.clientX)
+    },
+    [isDragging, updateSliderPosition],
+  )
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false)
   }, [])
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    setIsDragging(true)
-    updateSliderPosition(e.touches[0].clientX)
-  }, [updateSliderPosition])
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      setIsDragging(true)
+      updateSliderPosition(e.touches[0].clientX)
+    },
+    [updateSliderPosition],
+  )
 
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDragging) return
-    updateSliderPosition(e.touches[0].clientX)
-  }, [isDragging, updateSliderPosition])
+  const handleTouchMove = useCallback(
+    (e: TouchEvent) => {
+      if (!isDragging) return
+      updateSliderPosition(e.touches[0].clientX)
+    },
+    [isDragging, updateSliderPosition],
+  )
 
   const handleTouchEnd = useCallback(() => {
     setIsDragging(false)
@@ -82,7 +94,13 @@ export function ComparisonSlider({
       window.removeEventListener('touchmove', handleTouchMove)
       window.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [isDragging, handleMouseMove, handleMouseUp, handleTouchMove, handleTouchEnd])
+  }, [
+    isDragging,
+    handleMouseMove,
+    handleMouseUp,
+    handleTouchMove,
+    handleTouchEnd,
+  ])
 
   return (
     <div
@@ -108,7 +126,10 @@ export function ComparisonSlider({
         className="absolute inset-0 overflow-hidden"
         style={{ width: `${sliderPosition}%` }}
       >
-        <div className="relative w-full h-full" style={{ width: `${100 / (sliderPosition / 100)}%` }}>
+        <div
+          className="relative w-full h-full"
+          style={{ width: `${100 / (sliderPosition / 100)}%` }}
+        >
           <Image
             src={beforeImageUrl}
             alt={beforeAlt}

@@ -5,7 +5,15 @@
  * vulnerability indicators, outdated status, and source file count.
  */
 
-import { AlertTriangle, CheckCircle, Files, Package, Shield, ShieldAlert, ShieldX } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle,
+  Files,
+  Package,
+  Shield,
+  ShieldAlert,
+  ShieldX,
+} from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
@@ -21,7 +29,11 @@ const typeBadgeStyles = {
 } as const
 
 // Vulnerability badge logic
-function getVulnBadge(vulns: { critical?: number; high?: number; medium?: number; low?: number } | undefined) {
+function getVulnBadge(
+  vulns:
+    | { critical?: number; high?: number; medium?: number; low?: number }
+    | undefined,
+) {
   if (!vulns) return { icon: Shield, color: 'text-slate-500', label: '-' }
 
   const critical = vulns.critical ?? 0
@@ -68,9 +80,13 @@ export function DependencyRow({ entry }: DependencyRowProps) {
   const isOutdated = meta.is_outdated as boolean
   const isWorkspaceRef = meta.is_workspace_ref as boolean
   const isDevDep = meta.is_dev_dependency as boolean
-  const vulns = meta.vulnerabilities as { critical?: number; high?: number; medium?: number; low?: number } | undefined
+  const vulns = meta.vulnerabilities as
+    | { critical?: number; high?: number; medium?: number; low?: number }
+    | undefined
   // Support both deduplicated (source_files) and raw (source_file) entries
-  const sourceFiles = (meta.source_files as string[] | undefined) || (meta.source_file ? [meta.source_file as string] : [])
+  const sourceFiles =
+    (meta.source_files as string[] | undefined) ||
+    (meta.source_file ? [meta.source_file as string] : [])
   const versionConflict = meta.version_conflict as boolean | undefined
 
   const vulnBadge = getVulnBadge(vulns)
@@ -106,7 +122,12 @@ export function DependencyRow({ entry }: DependencyRowProps) {
       </div>
 
       {/* Version */}
-      <ColumnValue width="100px" mono muted={!lockedVersion} className="text-xs">
+      <ColumnValue
+        width="100px"
+        mono
+        muted={!lockedVersion}
+        className="text-xs"
+      >
         {lockedVersion || '-'}
       </ColumnValue>
 

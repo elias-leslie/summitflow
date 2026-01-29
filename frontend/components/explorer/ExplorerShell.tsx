@@ -22,9 +22,9 @@ import {
   triggerExplorerScan,
 } from '@/lib/api/explorer'
 import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
-import { explorerKeys } from './hooks/useExplorerData'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
+import { explorerKeys } from './hooks/useExplorerData'
 import { ScanningOverlay, SummaryBar } from './SummaryBar'
 import { TypeNavigator } from './TypeNavigator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
@@ -126,7 +126,13 @@ export function ExplorerShell({
         celery: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
         pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
-        dependencies: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+        dependencies: {
+          total: 0,
+          fresh: 0,
+          stale: 0,
+          orphan: 0,
+          lastScan: null,
+        },
       }
 
       for (const type of types) {

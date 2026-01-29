@@ -1,7 +1,6 @@
 'use client'
 
 import { clsx } from 'clsx'
-import { buildApiUrl } from '@/lib/api-config'
 import {
   CheckCircle,
   ChevronDown,
@@ -14,6 +13,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { useState } from 'react'
+import { buildApiUrl } from '@/lib/api-config'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
@@ -66,7 +66,9 @@ export function CheckpointViewer({
     setLoadingPrompt(true)
     try {
       const response = await fetch(
-        buildApiUrl(`/api/projects/${checkpoint.project_id}/checkpoints/${checkpoint.id}/resume`),
+        buildApiUrl(
+          `/api/projects/${checkpoint.project_id}/checkpoints/${checkpoint.id}/resume`,
+        ),
         { method: 'POST' },
       )
       if (response.ok) {

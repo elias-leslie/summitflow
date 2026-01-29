@@ -1,7 +1,7 @@
 'use client'
 
-import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
@@ -70,9 +70,6 @@ interface TaskModalProps {
   /** Initial task data to avoid refetch if available */
   initialTask?: Task | null
 }
-
-
-
 
 // ============================================================================
 // Task Modal Component

@@ -14,7 +14,12 @@ import type { ExplorerEntry } from '@/lib/api/explorer'
 import { DataList } from './DataList'
 import { DataRow } from './DataRow'
 import { ExplorerShell } from './ExplorerShell'
-import { useDedupedDependencies, useExplorerData, useExplorerFilters, useExplorerState } from './hooks'
+import {
+  useDedupedDependencies,
+  useExplorerData,
+  useExplorerFilters,
+  useExplorerState,
+} from './hooks'
 import type { ExplorerType, HealthStatus } from './types'
 import { getTypeConfig, uiTypeToEntryType } from './types/index'
 
@@ -84,7 +89,11 @@ function ExplorerContent({
   })
 
   // Fetch data
-  const { entries: rawEntries, isLoading, isError } = useExplorerData({
+  const {
+    entries: rawEntries,
+    isLoading,
+    isError,
+  } = useExplorerData({
     projectId,
     filters: {
       ...filters,

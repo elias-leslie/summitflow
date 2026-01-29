@@ -9,13 +9,13 @@
  */
 
 export {
+  type DedupedDependency,
+  useDedupedDependencies,
+} from './useDedupedDependencies'
+export {
   explorerKeys,
   useExplorerChildren,
   useExplorerData,
 } from './useExplorerData'
 export { useExplorerFilters } from './useExplorerFilters'
 export { useExplorerState } from './useExplorerState'
-export {
-  useDedupedDependencies,
-  type DedupedDependency,
-} from './useDedupedDependencies'

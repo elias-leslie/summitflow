@@ -185,9 +185,7 @@ async def analyze_page_design(
     generation_time_ms = int((time.monotonic() - start_time) * 1000)
 
     # Use mockup image as primary if available
-    primary_file = (
-        str(mockup_image_path) if mockup_image_path.exists() else str(screenshot_path)
-    )
+    primary_file = str(mockup_image_path) if mockup_image_path.exists() else str(screenshot_path)
 
     mockup = mockups_storage.create_mockup(
         project_id=project_id,
@@ -215,9 +213,7 @@ async def analyze_page_design(
         success=True,
         mockup_id=mockup["mockup_id"],
         screenshot_path=str(screenshot_path),
-        mockup_image_path=(
-            str(mockup_image_path) if mockup_image_path.exists() else None
-        ),
+        mockup_image_path=(str(mockup_image_path) if mockup_image_path.exists() else None),
         recommendations=recommendations,
         issues_found=issues_count,
         generation_time_ms=generation_time_ms,

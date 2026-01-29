@@ -11,8 +11,8 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { analyzePage, type AnalyzePageResponse } from '@/lib/api/mockups'
-import { fetchExplorerEntries, type ExplorerEntry } from '@/lib/api/explorer'
+import { type ExplorerEntry, fetchExplorerEntries } from '@/lib/api/explorer'
+import { type AnalyzePageResponse, analyzePage } from '@/lib/api/mockups'
 
 interface GenerateMockupDialogProps {
   projectId: string
@@ -37,7 +37,12 @@ export function GenerateMockupDialog({
   // Fetch pages from explorer
   const { data: pagesData, isLoading: isPagesLoading } = useQuery({
     queryKey: ['explorer-pages', projectId],
-    queryFn: () => fetchExplorerEntries(projectId, { type: 'page', sort: 'path', dir: 'asc' }),
+    queryFn: () =>
+      fetchExplorerEntries(projectId, {
+        type: 'page',
+        sort: 'path',
+        dir: 'asc',
+      }),
     enabled: open,
   })
 
@@ -60,7 +65,10 @@ export function GenerateMockupDialog({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsDropdownOpen(false)
       }
     }
@@ -101,10 +109,7 @@ export function GenerateMockupDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/80"
-        onClick={handleClose}
-      />
+      <div className="absolute inset-0 bg-black/80" onClick={handleClose} />
 
       {/* Dialog */}
       <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4">
@@ -160,7 +165,9 @@ export function GenerateMockupDialog({
                           </div>
                         </div>
                       ) : (
-                        <span className="text-slate-400">Choose a page to analyze...</span>
+                        <span className="text-slate-400">
+                          Choose a page to analyze...
+                        </span>
                       )}
                     </div>
                     <ChevronDown
@@ -178,7 +185,9 @@ export function GenerateMockupDialog({
                       {pages.length === 0 ? (
                         <div className="px-4 py-8 text-center text-slate-400">
                           <p className="text-sm">No pages found</p>
-                          <p className="text-xs mt-1">Run an explorer scan to discover pages</p>
+                          <p className="text-xs mt-1">
+                            Run an explorer scan to discover pages
+                          </p>
                         </div>
                       ) : (
                         <div className="py-1">
@@ -197,25 +206,33 @@ export function GenerateMockupDialog({
                                   <div className="text-xs text-slate-400 font-mono truncate">
                                     {page.path}
                                   </div>
-                                  {page.metadata.route_params && page.metadata.route_params.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {(page.metadata.route_params as string[]).map((param) => (
-                                        <span
-                                          key={param}
-                                          className="text-2xs px-1.5 py-0.5 bg-slate-900 text-phosphor-400 rounded border border-slate-700"
-                                        >
-                                          {param}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {page.metadata.route_params &&
+                                    page.metadata.route_params.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {(
+                                          page.metadata.route_params as string[]
+                                        ).map((param) => (
+                                          <span
+                                            key={param}
+                                            className="text-2xs px-1.5 py-0.5 bg-slate-900 text-phosphor-400 rounded border border-slate-700"
+                                          >
+                                            {param}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
                                 </div>
-                                <div className={`px-2 py-0.5 rounded text-2xs font-medium shrink-0 ${
-                                  page.healthStatus === 'healthy' ? 'bg-emerald-950/50 text-emerald-400' :
-                                  page.healthStatus === 'warning' ? 'bg-amber-950/50 text-amber-400' :
-                                  page.healthStatus === 'error' ? 'bg-rose-950/50 text-rose-400' :
-                                  'bg-slate-800 text-slate-500'
-                                }`}>
+                                <div
+                                  className={`px-2 py-0.5 rounded text-2xs font-medium shrink-0 ${
+                                    page.healthStatus === 'healthy'
+                                      ? 'bg-emerald-950/50 text-emerald-400'
+                                      : page.healthStatus === 'warning'
+                                        ? 'bg-amber-950/50 text-amber-400'
+                                        : page.healthStatus === 'error'
+                                          ? 'bg-rose-950/50 text-rose-400'
+                                          : 'bg-slate-800 text-slate-500'
+                                  }`}
+                                >
                                   {page.healthStatus}
                                 </div>
                               </div>
@@ -274,7 +291,9 @@ export function GenerateMockupDialog({
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-emerald-400">
                     <CheckCircle2 className="w-5 h-5" />
-                    <span className="font-medium">Analysis & Mockup Complete</span>
+                    <span className="font-medium">
+                      Analysis & Mockup Complete
+                    </span>
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="card p-3">

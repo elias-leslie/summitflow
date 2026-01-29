@@ -10,10 +10,7 @@ import {
   GitBranch,
   RefreshCw,
 } from 'lucide-react'
-import {
-  fetchGitStatus,
-  type RepoStatus,
-} from '@/lib/api'
+import { fetchGitStatus, type RepoStatus } from '@/lib/api'
 
 function getStateInfo(state: RepoStatus['state']) {
   switch (state) {
@@ -102,7 +99,9 @@ function GitProjectCard({ repo }: { repo: RepoStatus }) {
 
       {/* Branch */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs text-slate-500 uppercase tracking-wider">Branch:</span>
+        <span className="text-xs text-slate-500 uppercase tracking-wider">
+          Branch:
+        </span>
         <span className="text-sm text-slate-300 mono">{repo.branch}</span>
       </div>
 
@@ -110,7 +109,9 @@ function GitProjectCard({ repo }: { repo: RepoStatus }) {
       <div className="flex items-center gap-4 text-sm">
         {repo.uncommitted > 0 && (
           <div className="flex items-center gap-1.5">
-            <span className="text-amber-400 font-medium">{repo.uncommitted}</span>
+            <span className="text-amber-400 font-medium">
+              {repo.uncommitted}
+            </span>
             <span className="text-slate-500">uncommitted</span>
           </div>
         )}
@@ -135,7 +136,9 @@ function GitProjectCard({ repo }: { repo: RepoStatus }) {
 
       {/* Action buttons placeholder for future CRUD */}
       <div className="mt-4 pt-4 border-t border-slate-700/50 flex items-center gap-2">
-        <span className="text-xs text-slate-600 italic">Actions coming soon...</span>
+        <span className="text-xs text-slate-600 italic">
+          Actions coming soon...
+        </span>
       </div>
     </div>
   )
@@ -167,7 +170,9 @@ export default function GitPage() {
             onClick={() => refetch()}
             className="btn-secondary flex items-center gap-2 text-sm"
           >
-            <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
+            <RefreshCw
+              className={clsx('w-4 h-4', isLoading && 'animate-spin')}
+            />
             Refresh
           </button>
         </div>
@@ -182,17 +187,25 @@ export default function GitPage() {
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-slate-500">Total:</span>
-              <span className="text-white font-semibold">{gitStatus.total} repos</span>
+              <span className="text-white font-semibold">
+                {gitStatus.total} repos
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-emerald-400 font-semibold">
-                {gitStatus.repositories.filter((r) => r.state === 'clean').length}
+                {
+                  gitStatus.repositories.filter((r) => r.state === 'clean')
+                    .length
+                }
               </span>
               <span className="text-slate-500">clean</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-amber-400 font-semibold">
-                {gitStatus.repositories.filter((r) => r.state === 'dirty').length}
+                {
+                  gitStatus.repositories.filter((r) => r.state === 'dirty')
+                    .length
+                }
               </span>
               <span className="text-slate-500">dirty</span>
             </div>

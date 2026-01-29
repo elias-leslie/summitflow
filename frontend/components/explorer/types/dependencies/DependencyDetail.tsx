@@ -33,10 +33,14 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
   const isWorkspaceRef = meta.is_workspace_ref as boolean
   const isDevDep = meta.is_dev_dependency as boolean
   // Support both deduplicated (source_files) and raw (source_file) entries
-  const sourceFiles = (meta.source_files as string[] | undefined) || (meta.source_file ? [meta.source_file as string] : [])
+  const sourceFiles =
+    (meta.source_files as string[] | undefined) ||
+    (meta.source_file ? [meta.source_file as string] : [])
   const versionConflict = meta.version_conflict as boolean | undefined
   const allVersions = (meta.all_versions as string[] | undefined) || []
-  const vulns = meta.vulnerabilities as { critical?: number; high?: number; medium?: number; low?: number } | undefined
+  const vulns = meta.vulnerabilities as
+    | { critical?: number; high?: number; medium?: number; low?: number }
+    | undefined
   const advisories = (meta.audit_advisories as string[]) || []
 
   const critical = vulns?.critical ?? 0
@@ -153,7 +157,8 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
           ) : (
             <span className="flex items-center gap-1 text-xs text-red-400">
               <ShieldX className="w-3.5 h-3.5" />
-              {totalVulns} {totalVulns === 1 ? 'vulnerability' : 'vulnerabilities'}
+              {totalVulns}{' '}
+              {totalVulns === 1 ? 'vulnerability' : 'vulnerabilities'}
             </span>
           )}
         </div>
@@ -236,7 +241,9 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
       {sourceFiles.length > 0 && (
         <div className="pt-2 border-t border-slate-700/50">
           <span className="text-xs text-slate-500 uppercase tracking-wide">
-            {sourceFiles.length === 1 ? 'Source File' : `Source Files (${sourceFiles.length})`}
+            {sourceFiles.length === 1
+              ? 'Source File'
+              : `Source Files (${sourceFiles.length})`}
           </span>
           <div className="mt-2 space-y-1.5">
             {sourceFiles.map((file, idx) => (

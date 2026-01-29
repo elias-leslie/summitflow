@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getEventsByTask, type Event } from '@/lib/api/events'
+import { type Event, getEventsByTask } from '@/lib/api/events'
 import type { TimelineMessage } from '../TimelineEvent'
 
 interface UseTimelineHistoryOptions {
@@ -13,7 +13,9 @@ export function useTimelineHistory({
   projectId,
   onLastSequence,
 }: UseTimelineHistoryOptions) {
-  const [historicalEvents, setHistoricalEvents] = useState<TimelineMessage[]>([])
+  const [historicalEvents, setHistoricalEvents] = useState<TimelineMessage[]>(
+    [],
+  )
   const [isLoading, setIsLoading] = useState(false)
 
   const eventToTimelineMessage = useCallback(

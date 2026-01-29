@@ -10,9 +10,9 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
+import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import type { Task } from '@/lib/api'
 
 interface SupervisorRecommendation {

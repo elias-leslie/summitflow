@@ -5,7 +5,13 @@
  * Files, Database, Celery Tasks, API Endpoints, and Pages.
  */
 
-export type ExplorerType = 'files' | 'database' | 'celery' | 'api' | 'pages' | 'dependencies'
+export type ExplorerType =
+  | 'files'
+  | 'database'
+  | 'celery'
+  | 'api'
+  | 'pages'
+  | 'dependencies'
 
 export type HealthStatus = 'fresh' | 'active' | 'stale' | 'orphan' | 'unknown'
 

@@ -8,8 +8,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchProjects,
   getAutonomousSettings,
-  updateAutonomousSettings,
   type Project,
+  updateAutonomousSettings,
 } from '@/lib/api'
 
 // ============================================================================
@@ -31,7 +31,7 @@ interface ProjectAutoExecStatus {
 function calculateTimeWindowStatus(
   enabled: boolean,
   startHour: number,
-  endHour: number
+  endHour: number,
 ): boolean {
   if (!enabled) return false
 
@@ -92,7 +92,7 @@ function ProjectAutoExecToggle({
                 ? 'bg-phosphor-400 shadow-[0_0_6px_rgba(0,245,255,0.5)]'
                 : status.status === 'paused'
                   ? 'bg-amber-400'
-                  : 'bg-slate-600'
+                  : 'bg-slate-600',
             )}
           />
           <span
@@ -102,7 +102,7 @@ function ProjectAutoExecToggle({
                 ? 'text-phosphor-400'
                 : status.status === 'paused'
                   ? 'text-amber-400'
-                  : 'text-slate-500'
+                  : 'text-slate-500',
             )}
           >
             {status.status === 'active'
@@ -120,9 +120,7 @@ function ProjectAutoExecToggle({
         disabled={isUpdating}
         className={clsx(
           'relative w-11 h-6 rounded-full transition-all duration-200 disabled:opacity-50',
-          status.enabled
-            ? 'bg-phosphor-500/30'
-            : 'bg-slate-700/50'
+          status.enabled ? 'bg-phosphor-500/30' : 'bg-slate-700/50',
         )}
       >
         <div
@@ -130,7 +128,7 @@ function ProjectAutoExecToggle({
             'absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200 shadow-lg',
             status.enabled
               ? 'left-[22px] bg-phosphor-400'
-              : 'left-0.5 bg-slate-500'
+              : 'left-0.5 bg-slate-500',
           )}
         >
           {isUpdating && (
@@ -173,7 +171,7 @@ export function GlobalAutoExecDropdown() {
     queryFn: async () => {
       if (!projects) return []
       const settingsPromises = projects.map((p) =>
-        getAutonomousSettings(p.id).catch(() => null)
+        getAutonomousSettings(p.id).catch(() => null),
       )
       return Promise.all(settingsPromises)
     },
@@ -195,7 +193,7 @@ export function GlobalAutoExecDropdown() {
         ? calculateTimeWindowStatus(
             settings.enabled,
             settings.start_hour,
-            settings.end_hour
+            settings.end_hour,
           )
         : false
 
@@ -246,7 +244,10 @@ export function GlobalAutoExecDropdown() {
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false)
       }
     }
@@ -272,7 +273,7 @@ export function GlobalAutoExecDropdown() {
             ? 'bg-phosphor-500/15 text-phosphor-400 hover:bg-phosphor-500/20'
             : globalStatus.color === 'yellow'
               ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/20'
-              : 'bg-red-500/15 text-red-400 hover:bg-red-500/20'
+              : 'bg-red-500/15 text-red-400 hover:bg-red-500/20',
         )}
       >
         <Zap
@@ -282,14 +283,14 @@ export function GlobalAutoExecDropdown() {
               ? 'text-phosphor-400'
               : globalStatus.color === 'yellow'
                 ? 'text-amber-400'
-                : 'text-red-400'
+                : 'text-red-400',
           )}
         />
         <span className="hidden xl:inline">Auto-exec</span>
         <ChevronDown
           className={clsx(
             'w-3.5 h-3.5 transition-transform duration-200',
-            isOpen && 'rotate-180'
+            isOpen && 'rotate-180',
           )}
         />
       </button>

@@ -12,13 +12,7 @@ import {
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
-type TabId =
-  | 'kanban'
-  | 'tasks'
-  | 'explorer'
-  | 'git'
-  | 'backups'
-  | 'settings'
+type TabId = 'kanban' | 'tasks' | 'explorer' | 'git' | 'backups' | 'settings'
 
 interface TabConfig {
   id: TabId

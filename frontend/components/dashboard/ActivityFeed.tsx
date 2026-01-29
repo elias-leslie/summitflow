@@ -11,7 +11,7 @@ import {
   Loader2,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { type ReactElement, useEffect, useRef, useState } from 'react'
 import { List, type RowComponentProps } from 'react-window'
 import {
   type ActivityEvent,
@@ -84,7 +84,12 @@ function ActivityRow({
       className="px-4 flex items-center gap-3 hover:bg-slate-800/30 transition-colors border-b border-slate-800/50"
       data-testid={`activity-item-${event.type}`}
     >
-      <div className={clsx('p-2 rounded-lg flex-shrink-0', config.color.split(' ')[1])}>
+      <div
+        className={clsx(
+          'p-2 rounded-lg flex-shrink-0',
+          config.color.split(' ')[1],
+        )}
+      >
         {isFailed ? (
           <XCircle className="w-4 h-4 text-red-400" />
         ) : (
@@ -126,12 +131,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
 
-  const {
-    data,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['activity-feed'],
     queryFn: () => fetchActivity({ limit: 100 }),
     refetchInterval: 30000,

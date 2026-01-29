@@ -26,8 +26,8 @@ import {
   getMockupImageUrl,
   getScreenshotUrl,
   hasScreenshot,
-  updateMockupStatus,
   type Mockup,
+  updateMockupStatus,
 } from '@/lib/api/mockups'
 import { ComparisonSlider } from './ComparisonSlider'
 
@@ -122,9 +122,12 @@ export function MockupDetailModal({
 
   if (!open) return null
 
-  const status = statusConfig[mockup.status as keyof typeof statusConfig] ?? statusConfig.generated
+  const status =
+    statusConfig[mockup.status as keyof typeof statusConfig] ??
+    statusConfig.generated
   const StatusIcon = status.icon
-  const TypeIcon = typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
+  const TypeIcon =
+    typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
 
   const handleStatusChange = async (newStatus: string) => {
     setUpdating(true)
@@ -165,7 +168,9 @@ export function MockupDetailModal({
           <div className="flex items-center gap-3">
             <TypeIcon className="w-5 h-5 text-outrun-400" />
             <h2 className="text-lg font-semibold text-white">{mockup.name}</h2>
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}>
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}
+            >
               <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
               <span className={`text-xs ${status.color}`}>{status.label}</span>
             </div>
@@ -209,52 +214,52 @@ export function MockupDetailModal({
 
             {/* Actions below image */}
             <div className="flex items-center gap-2 mt-3 flex-shrink-0">
-                {canCompare && (
-                  <button
-                    onClick={() => setShowComparison(!showComparison)}
-                    className={`btn-secondary flex items-center gap-2 ${showComparison ? 'bg-amber-500/20 text-amber-400' : ''}`}
-                  >
-                    <GitCompare className="w-4 h-4" />
-                    {showComparison ? 'Exit Compare' : 'Compare'}
-                  </button>
-                )}
-                {mockup.file_path && (
-                  <a
-                    href={getMockupImageUrl(projectId, mockup.mockup_id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-secondary flex items-center gap-2"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open
-                  </a>
-                )}
-                {mockup.file_path && (
-                  <a
-                    href={getMockupImageUrl(projectId, mockup.mockup_id)}
-                    download={`${mockup.mockup_id}.png`}
-                    className="btn-secondary flex items-center gap-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </a>
-                )}
+              {canCompare && (
                 <button
-                  onClick={() => setShowHistory(!showHistory)}
-                  className={`btn-secondary flex items-center gap-2 ${showHistory ? 'bg-outrun-500/20' : ''}`}
+                  onClick={() => setShowComparison(!showComparison)}
+                  className={`btn-secondary flex items-center gap-2 ${showComparison ? 'bg-amber-500/20 text-amber-400' : ''}`}
                 >
-                  <History className="w-4 h-4" />
-                  History
+                  <GitCompare className="w-4 h-4" />
+                  {showComparison ? 'Exit Compare' : 'Compare'}
                 </button>
-                <div className="flex-1" />
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+              )}
+              {mockup.file_path && (
+                <a
+                  href={getMockupImageUrl(projectId, mockup.mockup_id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary flex items-center gap-2"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-              </div>
+                  <ExternalLink className="w-4 h-4" />
+                  Open
+                </a>
+              )}
+              {mockup.file_path && (
+                <a
+                  href={getMockupImageUrl(projectId, mockup.mockup_id)}
+                  download={`${mockup.mockup_id}.png`}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </a>
+              )}
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`btn-secondary flex items-center gap-2 ${showHistory ? 'bg-outrun-500/20' : ''}`}
+              >
+                <History className="w-4 h-4" />
+                History
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+            </div>
           </div>
 
           {/* Details Sidebar */}
@@ -273,15 +278,21 @@ export function MockupDetailModal({
               {/* Metadata */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Type</h3>
+                  <h3 className="text-sm font-medium text-slate-400 mb-1">
+                    Type
+                  </h3>
                   <p className="text-white capitalize">{mockup.mockup_type}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Version</h3>
+                  <h3 className="text-sm font-medium text-slate-400 mb-1">
+                    Version
+                  </h3>
                   <p className="text-white">{mockup.version}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">Created</h3>
+                  <h3 className="text-sm font-medium text-slate-400 mb-1">
+                    Created
+                  </h3>
                   <p className="text-white">{formattedDate}</p>
                 </div>
                 <div>
@@ -353,18 +364,27 @@ export function MockupDetailModal({
                       disabled={updating}
                       className="btn-secondary flex items-center gap-2"
                     >
-                      {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                      {updating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Clock className="w-4 h-4" />
+                      )}
                       Submit for Review
                     </button>
                   )}
-                  {(mockup.status === 'generated' || mockup.status === 'pending_approval') && (
+                  {(mockup.status === 'generated' ||
+                    mockup.status === 'pending_approval') && (
                     <>
                       <button
                         onClick={() => handleStatusChange('approved')}
                         disabled={updating}
                         className="btn-primary flex items-center gap-2"
                       >
-                        {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        {updating ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
                         Approve
                       </button>
                       <button
@@ -372,7 +392,11 @@ export function MockupDetailModal({
                         disabled={updating}
                         className="btn-secondary text-rose-400 hover:bg-rose-500/10 flex items-center gap-2"
                       >
-                        {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                        {updating ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <XCircle className="w-4 h-4" />
+                        )}
                         Reject
                       </button>
                     </>
@@ -383,7 +407,11 @@ export function MockupDetailModal({
                       disabled={updating}
                       className="btn-primary flex items-center gap-2"
                     >
-                      {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}
+                      {updating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Box className="w-4 h-4" />
+                      )}
                       Mark as Applied
                     </button>
                   )}
@@ -437,7 +465,8 @@ export function MockupDetailModal({
                     Delete mockup?
                   </h3>
                   <p className="text-slate-400 text-sm mb-6">
-                    Are you sure you want to delete "{mockup.name}"? This action cannot be undone.
+                    Are you sure you want to delete "{mockup.name}"? This action
+                    cannot be undone.
                   </p>
                   <div className="flex justify-end gap-3">
                     <button

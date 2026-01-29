@@ -668,7 +668,5 @@ export async function deleteTasks(
   projectId: string,
   taskIds: string[],
 ): Promise<DeleteTaskResponse[]> {
-  return Promise.all(
-    taskIds.map((taskId) => deleteTask(projectId, taskId))
-  )
+  return Promise.all(taskIds.map((taskId) => deleteTask(projectId, taskId)))
 }

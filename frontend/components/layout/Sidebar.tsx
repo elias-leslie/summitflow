@@ -30,12 +30,7 @@ import {
 // Types & Constants
 // =============================================================================
 
-type NavItemId =
-  | 'kanban'
-  | 'tasks'
-  | 'explorer'
-  | 'health'
-  | 'design'
+type NavItemId = 'kanban' | 'tasks' | 'explorer' | 'health' | 'design'
 
 interface NavItemConfig {
   id: NavItemId
@@ -66,7 +61,8 @@ const projectNavItems: NavItemConfig[] = [
     href: '',
     icon: ListTodo,
     activeClasses: 'bg-orange-500/15 text-orange-400',
-    inactiveClasses: 'text-slate-400 hover:bg-orange-500/10 hover:text-orange-400',
+    inactiveClasses:
+      'text-slate-400 hover:bg-orange-500/10 hover:text-orange-400',
     iconActiveClasses: 'text-orange-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-orange-400',
   },
@@ -86,7 +82,8 @@ const projectNavItems: NavItemConfig[] = [
     href: '',
     icon: Activity,
     activeClasses: 'bg-purple-500/15 text-purple-400',
-    inactiveClasses: 'text-slate-400 hover:bg-purple-500/10 hover:text-purple-400',
+    inactiveClasses:
+      'text-slate-400 hover:bg-purple-500/10 hover:text-purple-400',
     iconActiveClasses: 'text-purple-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-purple-400',
   },
@@ -96,7 +93,8 @@ const projectNavItems: NavItemConfig[] = [
     href: '/design',
     icon: Palette,
     activeClasses: 'bg-fuchsia-500/15 text-fuchsia-400',
-    inactiveClasses: 'text-slate-400 hover:bg-fuchsia-500/10 hover:text-fuchsia-400',
+    inactiveClasses:
+      'text-slate-400 hover:bg-fuchsia-500/10 hover:text-fuchsia-400',
     iconActiveClasses: 'text-fuchsia-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-fuchsia-400',
   },
@@ -130,7 +128,6 @@ function SidebarHeader({ isCollapsed }: SidebarHeaderProps) {
     </div>
   )
 }
-
 
 // =============================================================================
 // Project Auto-exec Toggle Component
@@ -171,9 +168,12 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
   }, [autonomousSettings])
 
   const status = useMemo(() => {
-    if (!autonomousSettings) return { label: 'Off', color: 'slate', active: false }
-    if (!autonomousSettings.enabled) return { label: 'Off', color: 'slate', active: false }
-    if (!isInTimeWindow) return { label: 'Paused', color: 'amber', active: false }
+    if (!autonomousSettings)
+      return { label: 'Off', color: 'slate', active: false }
+    if (!autonomousSettings.enabled)
+      return { label: 'Off', color: 'slate', active: false }
+    if (!isInTimeWindow)
+      return { label: 'Paused', color: 'amber', active: false }
     return { label: 'Active', color: 'phosphor', active: true }
   }, [autonomousSettings, isInTimeWindow])
 
@@ -183,7 +183,9 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
         enabled: !autonomousSettings?.enabled,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['autonomous-settings', projectId] })
+      queryClient.invalidateQueries({
+        queryKey: ['autonomous-settings', projectId],
+      })
       queryClient.invalidateQueries({ queryKey: ['all-autonomous-settings'] })
     },
   })
@@ -207,7 +209,8 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
         isItemActive
           ? 'bg-slate-500/15 text-slate-300'
           : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
-        (isLoading || toggleMutation.isPending) && 'opacity-50 cursor-not-allowed'
+        (isLoading || toggleMutation.isPending) &&
+          'opacity-50 cursor-not-allowed',
       )}
     >
       <div
@@ -217,7 +220,7 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
             ? 'text-phosphor-400'
             : status.color === 'amber'
               ? 'text-amber-400'
-              : 'text-slate-500 group-hover:text-slate-300'
+              : 'text-slate-500 group-hover:text-slate-300',
         )}
       >
         {isLoading || toggleMutation.isPending ? (
@@ -235,7 +238,7 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
               ? 'bg-phosphor-400 shadow-[0_0_6px_rgba(0,245,255,0.5)]'
               : status.color === 'amber'
                 ? 'bg-amber-400'
-                : 'bg-slate-600'
+                : 'bg-slate-600',
           )}
         />
         <span
@@ -245,7 +248,7 @@ function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
               ? 'text-phosphor-400'
               : status.color === 'amber'
                 ? 'text-amber-400'
-                : 'text-slate-600'
+                : 'text-slate-600',
           )}
         >
           {status.label}
@@ -328,7 +331,9 @@ function ProjectsAccordion({
             )}
             title={p.name}
           >
-            <span className="text-xs font-bold">{p.name.charAt(0).toUpperCase()}</span>
+            <span className="text-xs font-bold">
+              {p.name.charAt(0).toUpperCase()}
+            </span>
           </Link>
         ))}
         {projects && projects.length > 5 && (
@@ -341,7 +346,11 @@ function ProjectsAccordion({
   }
 
   return (
-    <div ref={accordionRef} className="space-y-1" data-testid="projects-accordion">
+    <div
+      ref={accordionRef}
+      className="space-y-1"
+      data-testid="projects-accordion"
+    >
       {projects?.map((p) => {
         const isExpanded = expandedProjectId === p.id
         const isActive = currentProjectId === p.id
@@ -359,9 +368,7 @@ function ProjectsAccordion({
               data-testid={`project-accordion-${p.id}`}
               className={clsx(
                 'w-full flex items-center gap-2.5 px-3 py-2.5 transition-all duration-200 group',
-                isActive
-                  ? 'bg-outrun-500/10'
-                  : 'hover:bg-slate-800/50',
+                isActive ? 'bg-outrun-500/10' : 'hover:bg-slate-800/50',
               )}
             >
               {/* Project icon with health indicator */}
@@ -377,7 +384,9 @@ function ProjectsAccordion({
                   <span
                     className={clsx(
                       'text-xs font-bold transition-colors',
-                      isActive ? 'text-outrun-400' : 'text-slate-400 group-hover:text-slate-300',
+                      isActive
+                        ? 'text-outrun-400'
+                        : 'text-slate-400 group-hover:text-slate-300',
                     )}
                   >
                     {p.name.charAt(0).toUpperCase()}
@@ -399,7 +408,9 @@ function ProjectsAccordion({
                 <div
                   className={clsx(
                     'text-sm font-medium truncate transition-colors',
-                    isActive ? 'text-white' : 'text-slate-300 group-hover:text-white',
+                    isActive
+                      ? 'text-white'
+                      : 'text-slate-300 group-hover:text-white',
                   )}
                 >
                   {p.name}
@@ -410,7 +421,9 @@ function ProjectsAccordion({
               <ChevronDown
                 className={clsx(
                   'w-4 h-4 transition-all duration-250 flex-shrink-0',
-                  isExpanded ? 'rotate-180 text-outrun-400' : 'text-slate-500 group-hover:text-slate-400',
+                  isExpanded
+                    ? 'rotate-180 text-outrun-400'
+                    : 'text-slate-500 group-hover:text-slate-400',
                 )}
               />
             </button>
@@ -434,13 +447,17 @@ function ProjectsAccordion({
                       href={href}
                       className={clsx(
                         'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                        isItemActive ? item.activeClasses : item.inactiveClasses,
+                        isItemActive
+                          ? item.activeClasses
+                          : item.inactiveClasses,
                       )}
                     >
                       <Icon
                         className={clsx(
                           'w-4 h-4 flex-shrink-0 transition-colors duration-200',
-                          isItemActive ? item.iconActiveClasses : item.iconInactiveClasses,
+                          isItemActive
+                            ? item.iconActiveClasses
+                            : item.iconInactiveClasses,
                         )}
                       />
                       <span className="truncate">{item.label}</span>
@@ -480,7 +497,6 @@ function ProjectsAccordion({
   )
 }
 
-
 // =============================================================================
 // Main Sidebar Component
 // =============================================================================
@@ -488,7 +504,9 @@ function ProjectsAccordion({
 function SidebarContent() {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(
+    null,
+  )
   const [mounted, setMounted] = useState(false)
 
   // Extract current project ID from URL
@@ -542,7 +560,9 @@ function SidebarContent() {
       )}
     >
       {/* Header */}
-      <div className={clsx('border-b border-slate-700/50', isCollapsed && 'px-1')}>
+      <div
+        className={clsx('border-b border-slate-700/50', isCollapsed && 'px-1')}
+      >
         <SidebarHeader isCollapsed={isCollapsed} />
       </div>
 

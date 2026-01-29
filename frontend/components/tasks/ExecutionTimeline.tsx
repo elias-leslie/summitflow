@@ -2,12 +2,12 @@
 
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
-import { TimelineEvent, type TimelineMessage } from './TimelineEvent'
-import { TimelineHeader } from './TimelineHeader'
-import { TimelineChatInput } from './TimelineChatInput'
 import { useExecutionWebSocket } from './hooks/useExecutionWebSocket'
 import { useTimelineHistory } from './hooks/useTimelineHistory'
 import { useVoiceRecording } from './hooks/useVoiceRecording'
+import { TimelineChatInput } from './TimelineChatInput'
+import { TimelineEvent, type TimelineMessage } from './TimelineEvent'
+import { TimelineHeader } from './TimelineHeader'
 
 interface ExecutionTimelineProps {
   taskId: string
@@ -56,18 +56,13 @@ export function ExecutionTimeline({
   })
 
   // Connect to WebSocket
-  const {
-    isConnected,
-    error,
-    connect,
-    sendChatMessage,
-    setLastSequence,
-  } = useExecutionWebSocket({
-    taskId,
-    autoConnect,
-    onMessage: handleMessage,
-    onScrollToBottom: scrollToBottom,
-  })
+  const { isConnected, error, connect, sendChatMessage, setLastSequence } =
+    useExecutionWebSocket({
+      taskId,
+      autoConnect,
+      onMessage: handleMessage,
+      onScrollToBottom: scrollToBottom,
+    })
 
   // Voice recording
   const {

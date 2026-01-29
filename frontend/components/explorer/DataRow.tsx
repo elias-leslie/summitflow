@@ -162,7 +162,9 @@ export function DataRowSkeleton({ count = 5 }: { count?: number }) {
           <div className="w-4 h-4 rounded bg-slate-800" />
           <div
             className="h-4 rounded bg-slate-800"
-            style={{ width: `${SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]}px` }}
+            style={{
+              width: `${SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]}px`,
+            }}
           />
           <div className="flex-1" />
           <div className="w-16 h-4 rounded bg-slate-800" />

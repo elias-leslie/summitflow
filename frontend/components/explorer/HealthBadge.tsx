@@ -74,9 +74,24 @@ const statusConfig: Record<
 }
 
 const sizeConfig = {
-  sm: { dot: 'w-1.5 h-1.5', text: 'text-[10px]', gap: 'gap-1', padding: 'px-1.5 py-0.5' },
-  md: { dot: 'w-2 h-2', text: 'text-xs', gap: 'gap-1.5', padding: 'px-2 py-0.5' },
-  lg: { dot: 'w-2.5 h-2.5', text: 'text-sm', gap: 'gap-2', padding: 'px-2.5 py-1' },
+  sm: {
+    dot: 'w-1.5 h-1.5',
+    text: 'text-[10px]',
+    gap: 'gap-1',
+    padding: 'px-1.5 py-0.5',
+  },
+  md: {
+    dot: 'w-2 h-2',
+    text: 'text-xs',
+    gap: 'gap-1.5',
+    padding: 'px-2 py-0.5',
+  },
+  lg: {
+    dot: 'w-2.5 h-2.5',
+    text: 'text-sm',
+    gap: 'gap-2',
+    padding: 'px-2.5 py-1',
+  },
 }
 
 const typeThresholds: Record<EntryType, string> = {
@@ -125,7 +140,13 @@ export function HealthBadge({
         )}
       />
       {showLabel && (
-        <span className={cn(sizes.text, config.textClass, 'font-medium tracking-wide')}>
+        <span
+          className={cn(
+            sizes.text,
+            config.textClass,
+            'font-medium tracking-wide',
+          )}
+        >
           {config.label}
           {count !== undefined && count > 0 && (
             <span className="ml-1 opacity-70">({count})</span>

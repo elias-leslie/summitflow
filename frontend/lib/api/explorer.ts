@@ -9,7 +9,13 @@
 // Types - Aligned with backend API contract (docs/explorer-architecture.md)
 // ============================================================================
 
-export type ExplorerEntryType = 'file' | 'table' | 'task' | 'endpoint' | 'page' | 'dependency'
+export type ExplorerEntryType =
+  | 'file'
+  | 'table'
+  | 'task'
+  | 'endpoint'
+  | 'page'
+  | 'dependency'
 export type ExplorerHealthStatus = 'healthy' | 'warning' | 'error' | 'unknown'
 
 export interface ExplorerEntryMetadata {

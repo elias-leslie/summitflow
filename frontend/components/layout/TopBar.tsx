@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { fetchTasks, type Task, type TaskType } from '@/lib/api'
@@ -255,7 +255,8 @@ export function TopBar() {
         <nav className="hidden lg:flex items-center gap-1 ml-4">
           {navItems.map((item) => {
             const Icon = item.icon
-            const isActive = pathname === item.href ||
+            const isActive =
+              pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href))
 
             return (
@@ -270,7 +271,7 @@ export function TopBar() {
                       : item.activeColor === 'violet'
                         ? 'bg-violet-500/15 text-violet-400'
                         : 'bg-indigo-500/15 text-indigo-400'
-                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300'
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
                 )}
               >
                 <Icon
@@ -282,7 +283,7 @@ export function TopBar() {
                         : item.activeColor === 'violet'
                           ? 'text-violet-400'
                           : 'text-indigo-400'
-                      : 'text-slate-500 group-hover:text-slate-400'
+                      : 'text-slate-500 group-hover:text-slate-400',
                   )}
                 />
                 <span>{item.label}</span>

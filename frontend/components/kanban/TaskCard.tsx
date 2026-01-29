@@ -25,7 +25,13 @@ import {
 } from '@/lib/task-config'
 import { ExecutionPanel, type ExecutionState } from './ExecutionPanel'
 
-const EXECUTION_PHASES = ['Triage', 'Plan', 'Queue', 'Execute', 'Review'] as const
+const EXECUTION_PHASES = [
+  'Triage',
+  'Plan',
+  'Queue',
+  'Execute',
+  'Review',
+] as const
 type ExecutionPhase = (typeof EXECUTION_PHASES)[number]
 
 function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
@@ -83,7 +89,6 @@ function StepProgressIndicator({ status }: { status: TaskStatus }) {
     </div>
   )
 }
-
 
 // ============================================================================
 // Types
@@ -236,7 +241,9 @@ export function TaskCard({
         {isRunning && currentStep && (
           <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-blue-500/10 border border-blue-500/20">
             <Loader2 className="h-3 w-3 animate-spin text-blue-400 shrink-0" />
-            <span className="text-xs text-blue-300 truncate">{currentStep}</span>
+            <span className="text-xs text-blue-300 truncate">
+              {currentStep}
+            </span>
           </div>
         )}
 
