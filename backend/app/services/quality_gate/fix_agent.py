@@ -126,7 +126,7 @@ IMPORTANT: Previous attempts failed. Consider:
 """
 
     # Select agent based on escalation level
-    agent_slug = "worker" if level == "WORKER" else "fixer"
+    agent_slug = "worker" if level == "WORKER" else "supervisor"
 
     logger.info(
         "fix_attempt",
