@@ -1278,9 +1278,9 @@ def autocode(
         str | None,
         typer.Option("--abort", help="Abort execution by ID"),
     ] = None,
-    model: Annotated[
+    agent_slug: Annotated[
         str | None,
-        typer.Option("--model", "-m", help="Model to use for execution"),
+        typer.Option("--agent-slug", "-a", help="Agent Hub agent slug (e.g., 'coder', 'planner')"),
     ] = None,
     dry_run: Annotated[
         bool,
@@ -1301,7 +1301,7 @@ def autocode(
         st autocode task-abc123 --sync       # Run synchronously (blocks)
         st autocode --dry-run                # Validate without executing
         st autocode --status exec-12345      # Check execution status
-        st autocode --model claude-opus-4-5  # Specify model
+        st autocode -a coder                 # Specify agent
     """
     from ..context import require_task_id
 
@@ -1397,7 +1397,7 @@ def autocode(
 
     # Sync mode: Direct API call (single subtask, blocks)
     try:
-        result = client.start_autocode(task_id, model=model, dry_run=dry_run)
+        result = client.start_autocode(task_id, agent_slug=agent_slug, dry_run=dry_run)
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None

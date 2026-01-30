@@ -65,13 +65,13 @@ def start_autocode(
     url_fn: Any,
     handle_response: Any,
     task_id: str,
-    model: str | None = None,
+    agent_slug: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Start autocode execution for a task."""
     data: dict[str, Any] = {"dry_run": dry_run}
-    if model:
-        data["model"] = model
+    if agent_slug:
+        data["agent_slug"] = agent_slug
     # Autocode requests can take 10+ minutes with Claude OAuth for complex tasks
     response = client.post(
         url_fn(f"/tasks/{task_id}/autocode"),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Annotated, Any, cast
 
 import httpx
@@ -42,7 +43,7 @@ def _load_credentials() -> tuple[str, str, str]:
 
 
 def _complete(
-    agent_slug: str,
+    agent_slug: str | None,
     message: str,
     project_id: str = "st-cli",
     source_client: str = "st-cli",
@@ -62,10 +63,11 @@ def _complete(
     }
 
     payload: dict[str, Any] = {
-        "agent_slug": agent_slug,
         "project_id": project_id,
         "messages": [{"role": "user", "content": message}],
     }
+    if agent_slug:
+        payload["agent_slug"] = agent_slug
 
     if use_memory:
         payload["use_memory"] = True
@@ -87,6 +89,18 @@ def _complete(
                     detail = response.json().get("detail", response.text)
                 except Exception:
                     detail = response.text
+
+                # Handle agent_slug validation errors with available_agents
+                if isinstance(detail, dict):
+                    message = detail.get("message", str(detail))
+                    available_agents = detail.get("available_agents", [])
+                    if available_agents:
+                        output_error(message)
+                        print("\nAvailable agents:", file=sys.stderr)
+                        for agent_info in available_agents:
+                            print(f"  {agent_info}", file=sys.stderr)
+                        raise typer.Exit(1) from None
+
                 output_error(f"API error ({response.status_code}): {detail}")
                 raise typer.Exit(1) from None
 
@@ -105,7 +119,7 @@ def _complete(
 def complete_default(
     ctx: typer.Context,
     message: Annotated[str | None, typer.Argument(help="Message to send")] = None,
-    agent: Annotated[str, typer.Option("--agent", "-a", help="Agent slug")] = "validator",
+    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Agent slug (required)")] = None,
     project: Annotated[str, typer.Option("--project", "-p", help="Project ID")] = "st-cli",
     source: Annotated[
         str, typer.Option("--source", "-s", help="Source client identifier")

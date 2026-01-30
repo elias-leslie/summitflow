@@ -361,10 +361,10 @@ class STClient:
 
     # Autocode
     def start_autocode(
-        self, task_id: str, model: str | None = None, dry_run: bool = False
+        self, task_id: str, agent_slug: str | None = None, dry_run: bool = False
     ) -> dict[str, Any]:
         return exec_ops.start_autocode(
-            self._client, self._url, self._handle_response, task_id, model, dry_run
+            self._client, self._url, self._handle_response, task_id, agent_slug, dry_run
         )
 
     def get_autocode_status(self, task_id: str, execution_id: str) -> dict[str, Any]:

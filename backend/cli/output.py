@@ -267,8 +267,24 @@ def handle_api_error(e: APIError) -> None:
 
     Args:
         e: APIError exception from client
+
+    Special handling for agent_slug errors to display available agents.
     """
-    output_error(e.detail)
+    detail = e.detail
+
+    # Check if detail is a dict with available_agents (from agent_slug validation)
+    if isinstance(detail, dict):
+        message = detail.get("message", str(detail))
+        available_agents = detail.get("available_agents", [])
+
+        if available_agents:
+            output_error(message)
+            print("\nAvailable agents:", file=sys.stderr)
+            for agent in available_agents:
+                print(f"  {agent}", file=sys.stderr)
+            raise typer.Exit(1)
+
+    output_error(detail)
     raise typer.Exit(1)
 
 
