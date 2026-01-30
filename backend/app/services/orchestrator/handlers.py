@@ -37,9 +37,11 @@ async def handle_failure(
     Returns:
         True if worktree was reverted successfully
     """
+
     async def _log(level: str, message: str) -> None:
         if callable(send_log):
-            await send_log(level, message, "orchestrator")  
+            await send_log(level, message, "orchestrator")
+
     await _log("warning", f"Reverting worktree after failure: {subtask_result.error}")
 
     try:
@@ -86,9 +88,11 @@ async def handle_interruption(
         project_id: Project ID
         send_log: Async function to send log messages
     """
+
     async def _log(level: str, message: str) -> None:
         if callable(send_log):
-            await send_log(level, message, "orchestrator")  
+            await send_log(level, message, "orchestrator")
+
     await _log("info", "Handling interruption - saving progress")
 
     if chat_messages:
@@ -151,9 +155,11 @@ async def create_draft_pr(
     Returns:
         PR URL if created, None if failed (non-blocking)
     """
+
     async def _log(level: str, message: str) -> None:
         if callable(send_log):
-            await send_log(level, message, "orchestrator")  
+            await send_log(level, message, "orchestrator")
+
     if not current_worktree_path:
         await _log("warning", "No worktree path - skipping PR creation")
         return None
@@ -226,9 +232,11 @@ async def trigger_opus_review(
         pr_url: Optional PR URL for reference
         send_log: Async function to send log messages
     """
+
     async def _log(level: str, message: str) -> None:
         if callable(send_log):
-            await send_log(level, message, "orchestrator")  
+            await send_log(level, message, "orchestrator")
+
     from ...tasks.ai_review import review_pull_request
 
     try:

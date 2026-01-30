@@ -175,14 +175,10 @@ async def dispatch_to_worker(
 
             for progress in result.progress_log:
                 if progress.status == "running":
-                    await _log(
-                        "info", f"Turn {progress.turn}: {progress.message}", source="worker"
-                    )
+                    await _log("info", f"Turn {progress.turn}: {progress.message}", source="worker")
                 elif progress.status == "tool_use":
                     tool_names = [tc.get("name", "?") for tc in progress.tool_calls]
-                    await _log(
-                        "info", f"Tool calls: {', '.join(tool_names)}", source="worker"
-                    )
+                    await _log("info", f"Tool calls: {', '.join(tool_names)}", source="worker")
                 elif progress.status == "complete":
                     await _log(
                         "info",
