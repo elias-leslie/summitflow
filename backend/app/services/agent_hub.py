@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..constants import DEFAULT_CLAUDE_MODEL
 from ..logging_config import get_logger
 from .agent_hub_client import AgentHubLLMClient, LLMResponse
 
@@ -137,11 +136,11 @@ class AgentHubService:
     def __init__(
         self,
         project_id: str,
-        model: str | None = None,
+        agent_slug: str,
         repo_path: Path | None = None,
     ) -> None:
         self.project_id = project_id
-        self.model = model or DEFAULT_CLAUDE_MODEL
+        self.agent_slug = agent_slug
         self.repo_path = repo_path or self._get_repo_path()
         self._client: AgentHubLLMClient | None = None
         self._executions: dict[str, ExecutionState] = {}
@@ -159,7 +158,8 @@ class AgentHubService:
         """Get or create Agent Hub client."""
         if self._client is None:
             self._client = AgentHubLLMClient(
-                model=self.model,
+                agent_slug=self.agent_slug,
+                project_id=self.project_id,
             )
         return self._client
 
@@ -200,7 +200,7 @@ class AgentHubService:
 
                 if evidence.status == "completed":
                     evidence.iterations = iterations
-                    evidence.model_used = self.model
+                    evidence.model_used = response.model
                     evidence.tokens_used = total_tokens
                     evidence.duration_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -250,7 +250,7 @@ class AgentHubService:
             },
             error=last_error or "Failed after max retries",
             iterations=iterations,
-            model_used=self.model,
+            model_used=f"agent:{self.agent_slug}",
             tokens_used=total_tokens,
             duration_ms=duration_ms,
         )
@@ -576,7 +576,7 @@ RULES:
 def dispatch_task(
     project_id: str,
     task_context: TaskContext,
-    model: str | None = None,
+    agent_slug: str,
 ) -> EvidenceContract:
     """Dispatch a task to Agent Hub worker.
 
@@ -585,12 +585,12 @@ def dispatch_task(
     Args:
         project_id: Project ID
         task_context: Task context for execution
-        model: Optional model override
+        agent_slug: Agent Hub agent slug
 
     Returns:
         EvidenceContract with execution results
     """
-    service = AgentHubService(project_id, model=model)
+    service = AgentHubService(project_id, agent_slug=agent_slug)
     try:
         return service.dispatch_task(task_context)
     finally:

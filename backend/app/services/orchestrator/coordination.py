@@ -75,7 +75,8 @@ async def do_coordinate(
 
     try:
         worktree_info = orch.worktree_manager.create_worktree(  # type: ignore[attr-defined]
-            orch.project_id, task_id  # type: ignore[attr-defined]
+            orch.project_id,
+            task_id,  # type: ignore[attr-defined]
         )
         orch._current_worktree_path = worktree_info.path  # type: ignore[attr-defined]
         logger.info(
@@ -151,7 +152,9 @@ async def do_coordinate(
     await orch._send_log("info", "All subtasks complete, creating draft PR")  # type: ignore[attr-defined]
 
     pr_url = await create_draft_pr(
-        task_id, orch._current_worktree_path, orch._send_log  # type: ignore[attr-defined]
+        task_id,
+        orch._current_worktree_path,
+        orch._send_log,  # type: ignore[attr-defined]
     )
     if pr_url:
         result.merge_sha = pr_url
@@ -220,7 +223,8 @@ async def execute_subtask(
 
         result.model_used = model
         await orch._send_log(  # type: ignore[attr-defined]
-            "info", f"Attempt {attempt + 1}/{orch.MAX_RETRIES} with {model}"  # type: ignore[attr-defined]
+            "info",
+            f"Attempt {attempt + 1}/{orch.MAX_RETRIES} with {model}",  # type: ignore[attr-defined]
         )
 
         try:
@@ -235,7 +239,9 @@ async def execute_subtask(
             if success:
                 commit_message = f"auto({subtask_id}): {str(description)[:50]}"
                 committed = orch.worktree_manager.commit_in_worktree(  # type: ignore[attr-defined]
-                    orch.project_id, task_id, commit_message  # type: ignore[attr-defined]
+                    orch.project_id,
+                    task_id,
+                    commit_message,  # type: ignore[attr-defined]
                 )
 
                 if committed:

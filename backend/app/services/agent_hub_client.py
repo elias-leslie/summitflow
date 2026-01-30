@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
 from agent_hub.exceptions import AgentHubError
@@ -111,8 +111,6 @@ SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
 SUMMITFLOW_CLIENT_SECRET = os.getenv("SUMMITFLOW_CLIENT_SECRET")
 SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
 
-AgentType = Literal["claude", "gemini"]
-
 
 def get_sync_client(
     base_url: str | None = None,
@@ -199,45 +197,35 @@ class AgentHubLLMClient(LLMClient):
 
     def __init__(
         self,
-        model: str,
-        provider: str | None = None,
+        agent_slug: str,
+        project_id: str = "summitflow",
+        use_memory: bool = True,
+        memory_group_id: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        project_id: str = "summitflow",
     ) -> None:
         """Initialize Agent Hub client.
 
         Args:
-            model: Model identifier (e.g., "claude-sonnet-4-5", "agent:coder")
-            provider: Optional provider override (auto-detected from model)
+            agent_slug: Agent slug for routing (required). See /api/agents for available agents.
+            project_id: Project ID for session tracking
+            use_memory: Enable memory injection (mandates, guardrails). Default True.
+            memory_group_id: Memory group ID for scoping (e.g., "global", "project:xyz").
             base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
             api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
-            project_id: Project ID for session tracking
         """
-        self.model = model
-        self.provider = provider or self._detect_provider(model)
+        if not agent_slug:
+            raise ValueError(
+                "agent_slug is required. See Agent Hub /api/agents for available agents."
+            )
+
+        self.agent_slug = agent_slug
         self.base_url = base_url or AGENT_HUB_URL
         self.api_key = api_key or AGENT_HUB_API_KEY
         self.project_id = project_id
+        self.use_memory = use_memory
+        self.memory_group_id = memory_group_id
         self._client: AgentHubClient | None = None
-
-    def _detect_provider(self, model: str) -> str:
-        """Detect provider from model name.
-
-        For agent:X models, provider detection happens on the Agent Hub side
-        based on the agent's configured primary model.
-        """
-        model_lower = model.lower()
-        if model_lower.startswith("agent:"):
-            # Agent Hub agents are provider-agnostic; they have their own model configs
-            return "agent"
-        elif "claude" in model_lower:
-            return "claude"
-        elif "gemini" in model_lower:
-            return "gemini"
-        else:
-            # Default to Claude
-            return "claude"
 
     def _get_client(self) -> AgentHubClient:
         """Get or create Agent Hub client."""
@@ -267,8 +255,8 @@ class AgentHubLLMClient(LLMClient):
             return False
 
     def get_model_name(self) -> str:
-        """Get the model identifier."""
-        return self.model
+        """Get the model/agent identifier."""
+        return f"agent:{self.agent_slug}"
 
     def generate(
         self,
@@ -277,6 +265,8 @@ class AgentHubLLMClient(LLMClient):
         temperature: float = 1.0,
         purpose: str | None = None,
         task_id: str | None = None,
+        use_memory: bool | None = None,
+        memory_group_id: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion via Agent Hub.
@@ -287,6 +277,8 @@ class AgentHubLLMClient(LLMClient):
             temperature: Sampling temperature
             purpose: Purpose of this request (task_enrichment, code_generation, etc.)
             task_id: Task ID for session linkage (stored as external_id in Agent Hub)
+            use_memory: Override memory injection setting (defaults to instance setting)
+            memory_group_id: Override memory group ID (defaults to instance setting)
             **kwargs: Additional options (session_id, enable_caching, etc.)
 
         Returns:
@@ -303,9 +295,13 @@ class AgentHubLLMClient(LLMClient):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        # Use instance defaults if not overridden
+        effective_use_memory = use_memory if use_memory is not None else self.use_memory
+        effective_memory_group = memory_group_id or self.memory_group_id
+
         try:
             response = client.complete(
-                model=self.model,
+                agent_slug=self.agent_slug,
                 messages=messages,
                 temperature=temperature,
                 project_id=self.project_id,
@@ -313,6 +309,8 @@ class AgentHubLLMClient(LLMClient):
                 purpose=purpose,
                 external_id=task_id,  # Link session to task for memory extraction
                 enable_caching=kwargs.get("enable_caching", True),
+                use_memory=effective_use_memory,
+                memory_group_id=effective_memory_group,
             )
             return _response_to_llm_response(response)
         except AgentHubError as e:
@@ -329,126 +327,21 @@ class AgentHubLLMClient(LLMClient):
             self._client = None
 
 
-def get_agent(
-    agent_type: AgentType,
-    model: str | None = None,
-) -> AgentHubLLMClient:
-    """Get an Agent Hub client by type.
+def get_agent(agent_slug: str) -> AgentHubLLMClient:
+    """Get an Agent Hub client for the specified agent.
 
     Args:
-        agent_type: Either "claude" or "gemini"
-        model: Optional model override
+        agent_slug: Agent slug (e.g., "coder", "analyst", "planner", "auditor", "reviewer").
+            See Agent Hub /api/agents for available agents.
 
     Returns:
         Configured AgentHubLLMClient instance
     """
-    from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
-
-    if agent_type == "claude":
-        return AgentHubLLMClient(
-            model=model or DEFAULT_CLAUDE_MODEL,
-            provider="claude",
-        )
-    elif agent_type == "gemini":
-        return AgentHubLLMClient(
-            model=model or DEFAULT_GEMINI_MODEL,
-            provider="gemini",
-        )
-    else:
-        raise ValueError(f"Unknown agent type: {agent_type}. Use 'claude' or 'gemini'.")
-
-
-class DualProviderClient(LLMClient):
-    """Single provider client using Agent Hub.
-
-    DEPRECATED: Named 'DualProviderClient' for backwards compatibility only.
-    Fallback logic has been removed - uses primary provider only via Agent Hub.
-    For new code, use AgentHubLLMClient directly.
-    """
-
-    def __init__(
-        self,
-        primary: AgentType = "gemini",
-        claude_model: str | None = None,
-        gemini_model: str | None = None,
-    ) -> None:
-        """Initialize client with primary provider.
-
-        Args:
-            primary: Which provider to use ("claude" or "gemini")
-            claude_model: Model for Claude (used if primary="claude")
-            gemini_model: Model for Gemini (used if primary="gemini")
-        """
-        from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
-
-        self.primary = primary
-        if primary == "claude":
-            self._model = claude_model or DEFAULT_CLAUDE_MODEL
-        else:
-            self._model = gemini_model or DEFAULT_GEMINI_MODEL
-
-        self._client: AgentHubLLMClient | None = None
-
-    def _ensure_initialized(self) -> None:
-        """Initialize client on first use."""
-        if self._client is not None:
-            return
-
-        self._client = AgentHubLLMClient(
-            model=self._model,
-            provider=self.primary,
-        )
-
-    def is_available(self) -> bool:
-        """Check if provider is available."""
-        try:
-            self._ensure_initialized()
-            return self._client.is_available() if self._client else False
-        except Exception:
-            return False
-
-    def get_model_name(self) -> str:
-        """Get the model identifier."""
-        self._ensure_initialized()
-        return self._client.get_model_name() if self._client else self._model
-
-    def generate(
-        self,
-        prompt: str,
-        system: str | None = None,
-        temperature: float = 1.0,
-        purpose: str | None = None,
-        task_id: str | None = None,
-        **kwargs: Any,
-    ) -> LLMResponse:
-        """Generate using primary provider via Agent Hub.
-
-        No fallback - if primary fails, error is raised.
-        """
-        self._ensure_initialized()
-        if not self._client:
-            raise RuntimeError("Client not initialized")
-
-        return self._client.generate(
-            prompt=prompt,
-            system=system,
-            temperature=temperature,
-            purpose=purpose,
-            task_id=task_id,
-            **kwargs,
-        )
-
-    def close(self) -> None:
-        """Close the client connection."""
-        if self._client:
-            self._client.close()
-            self._client = None
+    return AgentHubLLMClient(agent_slug=agent_slug)
 
 
 __all__ = [
     "AgentHubLLMClient",
-    "AgentType",
-    "DualProviderClient",
     "LLMClient",
     "LLMResponse",
     "get_agent",

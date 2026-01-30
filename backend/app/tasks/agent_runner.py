@@ -11,7 +11,7 @@ from typing import Any
 from celery import shared_task
 
 from ..logging_config import get_logger
-from ..services.agent_hub_client import AgentType, get_agent
+from ..services.agent_hub_client import get_agent
 from ..storage import log_task_event, tasks
 
 logger = get_logger(__name__)
@@ -28,8 +28,7 @@ logger = get_logger(__name__)
 def run_agent_task(
     self: Any,
     task_id: str,
-    agent_type: AgentType,
-    model: str | None = None,
+    agent_slug: str,
 ) -> dict[str, Any]:
     """Execute an agent on a specific task.
 
@@ -40,8 +39,7 @@ def run_agent_task(
     Args:
         self: Celery task instance (for retry support)
         task_id: The task ID to execute
-        agent_type: Either "claude" or "gemini"
-        model: Optional model override
+        agent_slug: Agent Hub agent slug
 
     Returns:
         Summary dict with status, tokens_used, and completion info
@@ -49,8 +47,7 @@ def run_agent_task(
     logger.info(
         "agent_task_started",
         task_id=task_id,
-        agent_type=agent_type,
-        model=model,
+        agent_slug=agent_slug,
     )
 
     # 1. Load task from database
@@ -63,17 +60,17 @@ def run_agent_task(
 
     # 2. Update task status to running
     tasks.update_task_status(task_id, "running")
-    log_task_event(task_id, f"Starting agent execution with {agent_type}")
+    log_task_event(task_id, f"Starting agent execution with {agent_slug}")
 
     try:
         # 3. Initialize agent
         try:
-            agent = get_agent(agent_type, model)
+            agent = get_agent(agent_slug)
             if not agent.is_available():
-                raise RuntimeError(f"{agent_type} agent is not available")
-            log_task_event(task_id, f"Initialized {agent_type} agent ({agent.get_model_name()})")
+                raise RuntimeError(f"{agent_slug} agent is not available")
+            log_task_event(task_id, f"Initialized {agent_slug} agent ({agent.get_model_name()})")
         except Exception as e:
-            logger.error("agent_init_failed", agent_type=agent_type, error=str(e))
+            logger.error("agent_init_failed", agent_slug=agent_slug, error=str(e))
             tasks.update_task_status(task_id, "failed", error_message=str(e))
             log_task_event(task_id, f"ERROR: Failed to initialize agent: {e}")
             return {"status": "error", "error": f"Agent init failed: {e}"}
@@ -143,7 +140,7 @@ def run_agent_task(
             "task_id": task_id,
             "tokens_used": total_tokens,
             "output_length": len(response.content),
-            "agent": agent_type,
+            "agent_slug": agent_slug,
             "model": agent.get_model_name(),
         }
 

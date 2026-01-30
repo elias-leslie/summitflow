@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ...constants import DEFAULT_GEMINI_MODEL, GEMINI_PRO
+from ...constants import DEFAULT_GEMINI_MODEL
 from ...logging_config import get_logger
 from ..agent_hub_client import get_agent
 
@@ -42,7 +42,7 @@ def execute_agent(
     )
 
     try:
-        agent = get_agent(provider, model_id)
+        agent = get_agent("coder")
 
         # Use working_dir for Claude to enable file operations
         working_dir_str = str(working_dir) if provider == "claude" and working_dir else None
@@ -92,10 +92,8 @@ def consult_alternate(
     Returns:
         Advice string from alternate model
     """
-    # Always use Gemini for consultation (Claude is primary for coding)
-    # Gemini has large context window (1-2M) useful for analyzing errors
-    alt_provider = "gemini"
-    alt_model = GEMINI_PRO  # Pro for better reasoning
+    # Always use analyst agent for consultation (routes to appropriate model)
+    alt_provider = "analyst"
 
     logger.info(
         "consulting_alternate",
@@ -105,7 +103,7 @@ def consult_alternate(
     )
 
     try:
-        agent = get_agent(alt_provider, alt_model)  # type: ignore[arg-type]
+        agent = get_agent("analyst")
 
         prompt = f"""A code implementation task is failing repeatedly with the same error.
 

@@ -16,7 +16,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from ...constants import CLAUDE_OPUS_FULL, DEFAULT_GEMINI_MODEL
+from ...constants import CLAUDE_OPUS_FULL
 from ..context_gatherer import gather_all_context
 from .discussion import apply_discussion_changes, discuss_task
 from .models import (
@@ -57,7 +57,7 @@ def enrich_task(
 
     from ..agent_hub_client import AgentHubLLMClient
 
-    client = AgentHubLLMClient(model=CLAUDE_OPUS_FULL)
+    client = AgentHubLLMClient(agent_slug="planner")
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 
@@ -158,7 +158,7 @@ Return ONLY valid JSON matching the output format in the prompt above."""
     try:
         from ..agent_hub_client import AgentHubLLMClient
 
-        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL)
+        client = AgentHubLLMClient(agent_slug="auditor")
         if not client.is_available():
             logger.warning("Gemini not available for validation, skipping")
             return ValidationResult(

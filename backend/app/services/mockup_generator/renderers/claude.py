@@ -6,7 +6,6 @@ import time
 from typing import Any
 
 from ...agent_hub_client import get_agent
-from ...constants import CLAUDE_SONNET
 from ...logging_config import get_logger
 from ...storage import mockups as mockups_storage
 from ..models import MockupResult
@@ -40,7 +39,7 @@ def generate_mockup_claude_fallback(
     start_time = time.monotonic()
 
     try:
-        claude = get_agent("claude", model=CLAUDE_SONNET)
+        agent = get_agent("coder")
         prompt = build_mockup_prompt(page_info, design_standard, design_direction)
 
         # Modify prompt for HTML output
@@ -54,7 +53,7 @@ Since I cannot generate images, create a complete HTML/CSS mockup that:
 
 Output ONLY the HTML code, no explanation."""
 
-        response = claude.generate(
+        response = agent.generate(
             prompt=html_prompt,
             system="You are a UI designer creating HTML/CSS prototypes. Output only valid HTML.",
             temperature=0.7,

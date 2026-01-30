@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from ...constants import CLAUDE_OPUS
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...services.git_service import capture_diff, get_diff_stats, revert_to
@@ -274,8 +273,8 @@ def opus_review(
     prompt = _build_review_prompt(diff, diff_stats, task, rules)
 
     try:
-        opus = get_agent("claude", model=CLAUDE_OPUS)
-        response = opus.generate(
+        agent = get_agent("reviewer")
+        response = agent.generate(
             prompt=prompt,
             system="You are a senior code reviewer. Be thorough but fair. Output only valid JSON.",
             temperature=0.3,  # Lower temperature for more consistent reviews

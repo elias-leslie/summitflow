@@ -10,7 +10,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..constants import DEFAULT_GEMINI_MODEL
 from ..storage.explorer_entries import get_entries
 from ..storage.projects import get_project_root_path
 
@@ -292,7 +291,7 @@ def gather_gemini_context(project_id: str, query: str) -> str:
     try:
         from ..services.agent_hub_client import AgentHubLLMClient
 
-        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL)
+        client = AgentHubLLMClient(agent_slug="analyst")
         if not client.is_available():
             logger.warning("Gemini not available for context gathering")
             return ""

@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-from ...constants import CLAUDE_OPUS_FULL
 from .models import DiscussionResponse
 from .parsers import load_prompt, parse_enrichment_response
 
@@ -73,7 +72,7 @@ Return ONLY valid JSON matching the response format in the prompt above."""
 
     from ..agent_hub_client import AgentHubLLMClient
 
-    client = AgentHubLLMClient(model=CLAUDE_OPUS_FULL)
+    client = AgentHubLLMClient(agent_slug="planner")
     if not client.is_available():
         raise RuntimeError("Claude API not available")
 

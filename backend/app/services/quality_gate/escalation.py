@@ -13,9 +13,7 @@ from typing import Any, Literal
 
 import psycopg
 
-from ...constants import CLAUDE_SONNET, GEMINI_PRO
 from ...logging_config import get_logger
-from ...services.agent_hub_client import AgentType
 from ...storage import quality_check_results as qcr_store
 from ...storage.tasks.core import create_task
 
@@ -56,27 +54,6 @@ def get_escalation_level(attempts: int) -> str:
         return "SUPERVISOR"
     else:
         return "HUMAN"
-
-
-def get_supervisor_model(attempts: int) -> tuple[str, AgentType]:
-    """Get model for SUPERVISOR level based on attempt number.
-
-    SUPERVISOR uses dual-model approach:
-    - Attempt 4 (first SUPERVISOR): Claude Sonnet
-    - Attempt 5 (second SUPERVISOR): Gemini Pro
-
-    Args:
-        attempts: Number of fix attempts made (0-indexed before this attempt)
-
-    Returns:
-        Tuple of (model_id, provider)
-    """
-    # Attempt 4 = first supervisor attempt (index 3)
-    supervisor_attempt = attempts - WORKER_ATTEMPTS + 1
-    if supervisor_attempt == 1:
-        return CLAUDE_SONNET, "claude"
-    else:
-        return GEMINI_PRO, "gemini"
 
 
 def escalate_to_human(

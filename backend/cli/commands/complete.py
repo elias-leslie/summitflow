@@ -46,6 +46,8 @@ def _complete(
     message: str,
     project_id: str = "st-cli",
     source_client: str = "st-cli",
+    use_memory: bool = True,
+    memory_group_id: str | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, client_secret, request_source = _load_credentials()
@@ -59,11 +61,16 @@ def _complete(
         "X-Tool-Name": "st complete",
     }
 
-    payload = {
+    payload: dict[str, Any] = {
         "agent_slug": agent_slug,
         "project_id": project_id,
         "messages": [{"role": "user", "content": message}],
     }
+
+    if use_memory:
+        payload["use_memory"] = True
+    if memory_group_id:
+        payload["memory_group_id"] = memory_group_id
 
     agent_hub_url = get_agent_hub_url()
 
@@ -103,6 +110,10 @@ def complete_default(
     source: Annotated[
         str, typer.Option("--source", "-s", help="Source client identifier")
     ] = "st-cli",
+    memory: Annotated[bool, typer.Option("--memory", "-m", help="Enable memory injection")] = True,
+    memory_group: Annotated[
+        str | None, typer.Option("--memory-group", "-g", help="Memory group ID")
+    ] = None,
     raw: Annotated[bool, typer.Option("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.
@@ -110,14 +121,15 @@ def complete_default(
     Examples:
         st complete "Say hello"
         st complete "Analyze this" -a reasoner
-        st complete "Test" -s st-cli-test --raw
+        st complete "Test" -m --raw
+        st complete "Test" --no-memory
     """
     if ctx.invoked_subcommand is None:
         if not message:
             typer.echo(ctx.get_help())
             return
 
-        result = _complete(agent, message, project, source)
+        result = _complete(agent, message, project, source, memory, memory_group)
 
         if raw:
             output_json(result)

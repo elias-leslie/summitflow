@@ -52,7 +52,7 @@ def save(
     summary: Annotated[
         str,
         typer.Option(
-            "--summary", "-S", help="REQUIRED: Short action phrase (~20 chars) for TOON index"
+            "--summary", "-S", help="REQUIRED: Short action phrase (~35 chars) for TOON index"
         ),
     ],
     tier: Annotated[
@@ -172,6 +172,10 @@ def update(
         str | None,
         typer.Option("--tier", "-t", help="New tier (mandate/guardrail/reference)"),
     ] = None,
+    summary: Annotated[
+        str | None,
+        typer.Option("--summary", "-S", help="Update summary (~35 chars for TOON index)"),
+    ] = None,
     trigger_types: Annotated[
         str | None,
         typer.Option(
@@ -190,7 +194,7 @@ def update(
     ] = False,
 ) -> None:
     """Update an episode (delete + recreate for content/tier, PATCH for properties)."""
-    update_impl(uuid, content, tier, trigger_types, pinned, confirm)
+    update_impl(uuid, content, tier, summary, trigger_types, pinned, confirm)
 
 
 @app.command("batch-tier")
@@ -228,8 +232,18 @@ def export_cmd(
     ] = None,
     output: Annotated[
         Path | None,
-        typer.Option("--output", "-o", help="Output file (default: stdout)"),
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output file or directory (no extension = directory with tier-split files)",
+        ),
     ] = None,
+    full: Annotated[
+        bool,
+        typer.Option(
+            "--full", "-f", help="Export all fields (default: minimal fields for tune_it)"
+        ),
+    ] = False,
     scope: Annotated[
         str,
         typer.Option("--scope", "-s", help="Memory scope (global or project)"),
@@ -239,23 +253,23 @@ def export_cmd(
         typer.Option("--scope-id", help="Scope identifier (e.g., project ID)"),
     ] = None,
 ) -> None:
-    """Export all episodes as JSON for batch operations."""
-    export_impl(tier, uuids, output, scope, scope_id)
+    """Export episodes as JSON. Use directory path (no extension) for tier-split files."""
+    export_impl(tier, uuids, output, scope, scope_id, full)
 
 
 @app.command("import")
 def import_cmd(
-    input_file: Annotated[
+    input_path: Annotated[
         Path,
-        typer.Argument(help="JSON file to import (from st memory export)"),
+        typer.Argument(help="JSON file or directory to import (from st memory export)"),
     ],
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Show what would change without applying"),
     ] = False,
 ) -> None:
-    """Import episodes from JSON and update changed fields."""
-    import_impl(input_file, dry_run)
+    """Import episodes from JSON file or directory. Directories process all .json files."""
+    import_impl(input_path, dry_run)
 
 
 @app.command("cleanup")

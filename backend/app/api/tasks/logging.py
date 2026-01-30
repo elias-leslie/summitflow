@@ -14,7 +14,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ...constants import VALID_AGENT_TYPES
 from ...logging_config import get_logger
 from ...schemas.tasks import (
     ClaimTaskRequest,
@@ -26,6 +25,7 @@ from ...schemas.tasks import (
 from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from .autocode_handlers import _validate_agent_slug
 from .core import _get_task_or_404, _task_to_response, _verify_task_project
 
 logger = get_logger(__name__)
@@ -100,6 +100,9 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
     """
     from ...tasks.agent_runner import run_agent_task
 
+    # Validate agent_slug is provided
+    agent_slug = _validate_agent_slug(request.agent_slug)
+
     task = _verify_task_project(task_id, project_id)
 
     # Check task is in a valid state to start
@@ -110,24 +113,16 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
             f"Must be pending, paused, or failed.",
         )
 
-    # Validate agent type
-    if request.agent_type not in VALID_AGENT_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid agent_type '{request.agent_type}'. Must be one of: {VALID_AGENT_TYPES}",
-        )
-
     # Start the Celery task
     celery_task = run_agent_task.delay(
         task_id=task_id,
-        agent_type=request.agent_type,
-        model=request.model,
+        agent_slug=agent_slug,
     )
 
     logger.info(
         "task_execution_started",
         task_id=task_id,
-        agent_type=request.agent_type,
+        agent_slug=agent_slug,
         celery_task_id=celery_task.id,
     )
 
@@ -135,7 +130,7 @@ async def start_task(project_id: str, task_id: str, request: StartTaskRequest) -
         "status": "started",
         "task_id": task_id,
         "celery_task_id": celery_task.id,
-        "agent_type": request.agent_type,
+        "agent_slug": agent_slug,
     }
 
 

@@ -59,13 +59,17 @@ def save_impl(
         raise typer.Exit(1)
 
     if not summary or not summary.strip():
-        output_error("--summary is required. Provide a short action phrase (~20 chars).")
+        output_error("--summary is required. Provide a short action phrase (~35 chars).")
         raise typer.Exit(1)
 
     summary = summary.strip()
-    if len(summary) > 30:
-        output_error(f"Summary too long ({len(summary)} chars). Keep it under 30 chars.")
+    if len(summary) > 40:
+        output_error(f"Summary too long ({len(summary)} chars). Keep it under 40 chars.")
         raise typer.Exit(1)
+
+    if content.count(".") > 3 or len(content) > 500:
+        typer.echo("Hint: Long content detected. Is this ONE rule or multiple?")
+        typer.echo("      Multiple rules = split into separate episodes for clarity.")
 
     payload: dict[str, Any] = {
         "content": content,
@@ -225,14 +229,19 @@ def update_impl(
     uuid: str,
     content: str | None,
     tier: str | None,
+    summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
     confirm: bool,
 ) -> None:
-    if not any([content, tier, trigger_types, pinned is not None]):
+    if not any([content, tier, summary, trigger_types, pinned is not None]):
         typer.echo(
-            "Error: Must specify at least one of: --content, --tier, --trigger-types, --pinned"
+            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --pinned"
         )
+        raise typer.Exit(1)
+
+    if summary and len(summary) > 40:
+        typer.echo(f"Error: Summary too long ({len(summary)} chars). Keep it under 40 chars.")
         raise typer.Exit(1)
 
     existing = agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
@@ -245,7 +254,11 @@ def update_impl(
     old_content = existing.get("content", "")
 
     content_or_tier_changed = bool(content or tier)
-    properties_changed = bool(trigger_types or pinned is not None)
+    properties_changed = bool(summary or trigger_types or pinned is not None)
+
+    if content and (content.count(".") > 3 or len(content) > 500):
+        typer.echo("Hint: Long content detected. Is this ONE rule or multiple?")
+        typer.echo("      Multiple rules = split into separate episodes for clarity.")
 
     if confirm:
         typer.echo(f"  UUID: {uuid[:8]}...")
@@ -254,6 +267,8 @@ def update_impl(
         if content:
             typer.echo(f"  Old content: {old_content}")
             typer.echo(f"  New content: {content}")
+        if summary:
+            typer.echo(f"  Summary: {summary}")
         if trigger_types:
             typer.echo(f"  Trigger types: {trigger_types}")
         if pinned is not None:
@@ -306,6 +321,8 @@ def update_impl(
 
     if properties_changed:
         props: dict[str, Any] = {}
+        if summary:
+            props["summary"] = summary
         if trigger_types:
             props["trigger_task_types"] = [t.strip() for t in trigger_types.split(",")]
         if pinned is not None:
@@ -323,6 +340,8 @@ def update_impl(
                 f"Warning: Failed to update properties: {patch_result.get('message', 'Unknown')}"
             )
         else:
+            if summary:
+                typer.echo(f"  Summary: {summary}")
             if trigger_types:
                 typer.echo(f"  Trigger types: {props['trigger_task_types']}")
             if pinned is not None:
@@ -345,10 +364,16 @@ def batch_tier_impl(
             typer.echo(f"Error: File not found: {input_file}")
             raise typer.Exit(1)
         raw_updates = json_lib.loads(input_file.read_text())
-        updates = [{"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))} for u in raw_updates]
+        updates = [
+            {"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))}
+            for u in raw_updates
+        ]
     elif json_input:
         raw_updates = json_lib.loads(json_input)
-        updates = [{"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))} for u in raw_updates]
+        updates = [
+            {"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))}
+            for u in raw_updates
+        ]
     elif tier and uuids:
         updates = [{"uuid": u, "injection_tier": tier} for u in uuids]
     else:
@@ -377,12 +402,46 @@ def batch_tier_impl(
                     typer.echo(f"  {r['uuid'][:8]}: {r.get('error', 'Unknown')}")
 
 
+MINIMAL_EXPORT_FIELDS = [
+    "uuid",
+    "name",
+    "content",
+    "category",
+    "summary",
+    "scope",
+    "scope_id",
+    "pinned",
+]
+SPLIT_THRESHOLD = 25
+
+
+def _filter_episode_fields(episode: dict[str, Any], full: bool) -> dict[str, Any]:
+    """Filter episode to minimal fields unless full export requested."""
+    if full:
+        return episode
+    return {k: v for k, v in episode.items() if k in MINIMAL_EXPORT_FIELDS}
+
+
+def _write_export_file(path: Path, episodes: list[dict[str, Any]], full: bool) -> None:
+    """Write episodes to a JSON file with metadata."""
+    from datetime import UTC
+
+    filtered = [_filter_episode_fields(ep, full) for ep in episodes]
+    export_data = {
+        "exported_at": datetime.datetime.now(UTC).isoformat(),
+        "count": len(filtered),
+        "episodes": filtered,
+    }
+    path.write_text(json_lib.dumps(export_data, indent=2, default=str))
+
+
 def export_impl(
     tier: str | None,
     uuids: list[str] | None,
     output: Path | None,
     scope: str,
     scope_id: str | None,
+    full: bool = False,
 ) -> None:
     episodes: list[dict[str, Any]] = []
 
@@ -423,85 +482,211 @@ def export_impl(
             )
             episodes.extend(result.get("episodes", []))
 
-    export_data = {
-        "exported_at": datetime.datetime.now().isoformat(),
-        "count": len(episodes),
-        "episodes": episodes,
-    }
+    if output and output.suffix == "":
+        output.mkdir(parents=True, exist_ok=True)
 
-    json_output = json_lib.dumps(export_data, indent=2, default=str)
+        by_tier: dict[str, list[dict[str, Any]]] = {"mandate": [], "guardrail": [], "reference": []}
+        for ep in episodes:
+            ep_tier = ep.get("category") or ep.get("injection_tier", "reference")
+            if ep_tier in by_tier:
+                by_tier[ep_tier].append(ep)
+            else:
+                by_tier["reference"].append(ep)
 
-    if output:
-        output.write_text(json_output)
-        typer.echo(f"Exported {len(episodes)} episodes to {output}")
+        files_written = []
+        for tier_name, tier_episodes in by_tier.items():
+            if not tier_episodes:
+                continue
+
+            if len(tier_episodes) <= SPLIT_THRESHOLD:
+                file_path = output / f"{tier_name}s.json"
+                _write_export_file(file_path, tier_episodes, full)
+                files_written.append(f"{tier_name}s.json ({len(tier_episodes)})")
+            else:
+                for i, chunk_start in enumerate(range(0, len(tier_episodes), SPLIT_THRESHOLD), 1):
+                    chunk = tier_episodes[chunk_start : chunk_start + SPLIT_THRESHOLD]
+                    file_path = output / f"{tier_name}s-{i}.json"
+                    _write_export_file(file_path, chunk, full)
+                    files_written.append(f"{tier_name}s-{i}.json ({len(chunk)})")
+
+        typer.echo(f"Exported {len(episodes)} episodes to {output}/")
+        for f in files_written:
+            typer.echo(f"  {f}")
     else:
-        typer.echo(json_output)
+        filtered = [_filter_episode_fields(ep, full) for ep in episodes]
+        export_data = {
+            "exported_at": datetime.datetime.now().isoformat(),
+            "count": len(filtered),
+            "episodes": filtered,
+        }
+
+        json_output = json_lib.dumps(export_data, indent=2, default=str)
+
+        if output:
+            output.write_text(json_output)
+            typer.echo(f"Exported {len(episodes)} episodes to {output}")
+        else:
+            typer.echo(json_output)
 
 
-def import_impl(input_file: Path, dry_run: bool) -> None:
-    if not input_file.exists():
-        output_error(f"File not found: {input_file}")
+def import_impl(input_path: Path, dry_run: bool) -> None:
+    if not input_path.exists():
+        output_error(f"Path not found: {input_path}")
         raise typer.Exit(1)
 
-    data = json_lib.loads(input_file.read_text())
-    episodes = data.get("episodes", [])
+    all_episodes: list[dict[str, Any]] = []
+
+    if input_path.is_dir():
+        json_files = sorted(input_path.glob("*.json"))
+        if not json_files:
+            output_error(f"No .json files found in {input_path}")
+            raise typer.Exit(1)
+        for json_file in json_files:
+            data = json_lib.loads(json_file.read_text())
+            all_episodes.extend(data.get("episodes", []))
+        typer.echo(
+            f"Loaded {len(all_episodes)} episodes from {len(json_files)} files in {input_path}/"
+        )
+    else:
+        data = json_lib.loads(input_path.read_text())
+        all_episodes = data.get("episodes", [])
+
+    episodes = all_episodes
 
     if not episodes:
         typer.echo("No episodes to import")
         return
 
-    updates: list[dict[str, Any]] = []
-    for ep in episodes:
-        uuid = ep.get("uuid")
-        if not uuid:
+    imported_by_uuid = {ep["uuid"]: ep for ep in episodes if ep.get("uuid")}
+
+    current_result = agent_hub_request(
+        "GET",
+        "/api/memory/list",
+        params={"limit": 300},
+        tool_name="st memory import",
+    )
+    current_episodes = current_result.get("episodes", [])
+    current_by_uuid = {ep["uuid"]: ep for ep in current_episodes}
+
+    content_changes: list[dict[str, Any]] = []
+    property_updates: list[dict[str, Any]] = []
+
+    for uuid, imported_ep in imported_by_uuid.items():
+        current_ep = current_by_uuid.get(uuid)
+        if not current_ep:
+            continue
+
+        imported_content = imported_ep.get("content", "")
+        current_content = current_ep.get("content", "")
+
+        if imported_content != current_content:
+            content_changes.append(
+                {
+                    "uuid": uuid,
+                    "old_content": current_content,
+                    "new_content": imported_content,
+                    "name": current_ep.get("name", "imported_episode"),
+                    "tier": imported_ep.get("category")
+                    or current_ep.get("injection_tier", "reference"),
+                }
+            )
             continue
 
         update: dict[str, Any] = {"uuid": uuid}
-        if ep.get("injection_tier"):
-            update["injection_tier"] = ep["injection_tier"]
-        if ep.get("summary") is not None:
-            update["summary"] = ep["summary"]
-        if ep.get("trigger_task_types") is not None:
-            update["trigger_task_types"] = ep["trigger_task_types"]
-        if ep.get("pinned") is not None:
-            update["pinned"] = ep["pinned"]
-        if ep.get("auto_inject") is not None:
-            update["auto_inject"] = ep["auto_inject"]
-        if ep.get("display_order") is not None:
-            update["display_order"] = ep["display_order"]
+        if imported_ep.get("injection_tier"):
+            update["injection_tier"] = imported_ep["injection_tier"]
+        if imported_ep.get("summary") is not None:
+            update["summary"] = imported_ep["summary"]
+        if imported_ep.get("trigger_task_types") is not None:
+            update["trigger_task_types"] = imported_ep["trigger_task_types"]
+        if imported_ep.get("pinned") is not None:
+            update["pinned"] = imported_ep["pinned"]
+        if imported_ep.get("auto_inject") is not None:
+            update["auto_inject"] = imported_ep["auto_inject"]
+        if imported_ep.get("display_order") is not None:
+            update["display_order"] = imported_ep["display_order"]
 
         if len(update) > 1:
-            updates.append(update)
+            property_updates.append(update)
 
     if dry_run:
-        typer.echo(f"DRY RUN: Would update {len(updates)} episodes")
-        for u in updates:
-            fields = [k for k in u if k != "uuid"]
-            typer.echo(f"  {u['uuid'][:8]}: {', '.join(fields)}")
+        typer.echo(
+            f"DRY RUN: {len(content_changes)} content changes, {len(property_updates)} property updates"
+        )
+        if content_changes:
+            typer.echo("Content changes (delete+recreate):")
+            for c in content_changes:
+                typer.echo(f"  {c['uuid'][:8]}: content changed")
+        if property_updates:
+            typer.echo("Property updates (batch):")
+            for u in property_updates:
+                fields = [k for k in u if k != "uuid"]
+                typer.echo(f"  {u['uuid'][:8]}: {', '.join(fields)}")
         return
 
-    if not updates:
+    if not content_changes and not property_updates:
         typer.echo("No updates needed")
         return
 
-    result = agent_hub_request(
-        "POST",
-        "/api/memory/batch-update",
-        json={"updates": updates},
-        tool_name="st memory import",
-    )
+    content_success = 0
+    content_failed = 0
+    for change in content_changes:
+        try:
+            create_result = agent_hub_request(
+                "POST",
+                "/api/memory/add",
+                json={
+                    "content": change["new_content"],
+                    "name": change["name"],
+                    "injection_tier": change["tier"],
+                    "preserve_stats_from": change["uuid"],
+                },
+                tool_name="st memory import",
+            )
+            new_uuid = create_result.get("uuid")
+            if not new_uuid:
+                typer.echo(f"  {change['uuid'][:8]}: failed to create - {create_result}")
+                content_failed += 1
+                continue
+
+            delete_result = agent_hub_request(
+                "DELETE",
+                f"/api/memory/episode/{change['uuid']}",
+                tool_name="st memory import",
+            )
+            if delete_result.get("success"):
+                typer.echo(f"  {change['uuid'][:8]} -> {new_uuid[:8]}: content updated")
+                content_success += 1
+            else:
+                typer.echo(
+                    f"  {change['uuid'][:8]}: created {new_uuid[:8]} but failed to delete original"
+                )
+                content_failed += 1
+        except Exception as e:
+            typer.echo(f"  {change['uuid'][:8]}: error - {e}")
+            content_failed += 1
+
+    prop_updated = 0
+    prop_failed = 0
+    if property_updates:
+        result = agent_hub_request(
+            "POST",
+            "/api/memory/batch-update",
+            json={"updates": property_updates},
+            tool_name="st memory import",
+        )
+        prop_updated = result.get("updated", 0)
+        prop_failed = result.get("failed", 0)
 
     if is_compact():
-        updated = result.get("updated", 0)
-        failed = result.get("failed", 0)
-        typer.echo(f"IMPORT[{len(updates)}]:updated={updated}|failed={failed}")
+        typer.echo(
+            f"IMPORT:content={content_success}/{len(content_changes)}|props={prop_updated}/{len(property_updates)}"
+        )
     else:
-        typer.echo(f"Updated: {result.get('updated', 0)}/{result.get('total', 0)}")
-        if result.get("failed", 0) > 0:
-            typer.echo("Failed updates:")
-            for r in result.get("results", []):
-                if not r.get("success"):
-                    typer.echo(f"  {r['uuid'][:8]}: {r.get('error', 'Unknown')}")
+        typer.echo(f"Content updates: {content_success}/{len(content_changes)}")
+        typer.echo(f"Property updates: {prop_updated}/{len(property_updates)}")
+        if content_failed > 0 or prop_failed > 0:
+            typer.echo(f"Failed: {content_failed + prop_failed}")
 
 
 def cleanup_impl(

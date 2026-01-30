@@ -5,10 +5,12 @@ Business logic for autocode API endpoints.
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
@@ -46,6 +48,52 @@ from .autocode_validation import (
 logger = get_logger(__name__)
 
 
+def _fetch_available_agents() -> list[str]:
+    """Fetch available agents from Agent Hub.
+
+    Returns:
+        List of "slug: description" strings
+    """
+    agent_hub_url = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
+
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{agent_hub_url}/api/agents?active_only=true&limit=50")
+            if response.status_code == 200:
+                data = response.json()
+                agents = data.get("agents", data) if isinstance(data, dict) else data
+                return [f"{a['slug']}: {a.get('description') or a.get('name', '')}" for a in agents]
+    except Exception:
+        pass
+    return []
+
+
+def _validate_agent_slug(agent_slug: str | None) -> str:
+    """Validate agent_slug is provided, raise helpful error if not.
+
+    Args:
+        agent_slug: The agent slug from request
+
+    Returns:
+        The validated agent_slug
+
+    Raises:
+        HTTPException: If agent_slug is missing
+    """
+    if not agent_slug:
+        available_agents = _fetch_available_agents()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "agent_slug_required",
+                "message": "'agent_slug' is required.",
+                "available_agents": available_agents,
+                "docs": "/api/agents (Agent Hub)",
+            },
+        )
+    return agent_slug
+
+
 def handle_start_autocode(
     project_id: str,
     task_id: str,
@@ -61,6 +109,9 @@ def handle_start_autocode(
     Returns:
         AutocodeResponse
     """
+    # Validate agent_slug is provided
+    agent_slug = _validate_agent_slug(request.agent_slug)
+
     # Verify task exists and belongs to project
     task = task_store.get_task(task_id)
     validate_task_exists(task, task_id)
@@ -105,7 +156,7 @@ def handle_start_autocode(
     task_context = build_task_context(task, incomplete_subtask)
 
     try:
-        service = get_or_create_service(project_id, model=request.model)
+        service = get_or_create_service(project_id, agent_slug=agent_slug)
         state = create_execution_state(
             execution_id,
             task_id,

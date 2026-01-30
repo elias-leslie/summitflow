@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from ..constants import GEMINI_FLASH
 from ..storage.connection import get_connection
 from .agent_hub_client import AgentHubLLMClient
 
@@ -79,7 +78,7 @@ def refine_idea(
     if additional_context:
         prompt += f"\n\nAdditional context: {additional_context}"
 
-    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini", project_id=project_id)
+    client = AgentHubLLMClient(agent_slug="analyst", project_id=project_id)
     try:
         response = client.generate(
             prompt=prompt,
@@ -158,7 +157,7 @@ def score_idea(
 Category: {category}
 Complexity: {complexity}"""
 
-    client = AgentHubLLMClient(model=GEMINI_FLASH, provider="gemini", project_id=project_id)
+    client = AgentHubLLMClient(agent_slug="analyst", project_id=project_id)
     try:
         response = client.generate(
             prompt=prompt,

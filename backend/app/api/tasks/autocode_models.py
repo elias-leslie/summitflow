@@ -13,7 +13,10 @@ from pydantic import BaseModel, Field
 class AutocodeRequest(BaseModel):
     """Request to start autocode execution."""
 
-    model: str | None = Field(default=None, description="Model to use for execution")
+    agent_slug: str | None = Field(
+        default=None,
+        description="Agent Hub agent slug (e.g., 'coder', 'planner'). Required.",
+    )
     dry_run: bool = Field(default=False, description="If true, validate but don't execute")
 
 

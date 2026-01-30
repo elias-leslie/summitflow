@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from app.constants import AGENT_REVIEWER
 from app.logging_config import get_logger
 from app.services.agent_hub_client import get_agent
 from app.services.autonomous.reviewer import opus_review
@@ -222,7 +221,7 @@ def _run_ui_review(
         return {"status": "skip", "reason": "No frontend changes"}
 
     try:
-        reviewer = get_agent("claude", model=AGENT_REVIEWER)
+        reviewer = get_agent("reviewer")
 
         prompt = f"""Review this UI/frontend task for design quality:
 

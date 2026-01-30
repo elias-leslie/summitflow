@@ -17,9 +17,8 @@ from typing import Any
 
 import psycopg
 
-from ...constants import GEMINI_FLASH
 from ...logging_config import get_logger
-from ...services.agent_hub_client import AgentType, get_agent
+from ...services.agent_hub_client import get_agent
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
 from .cost_estimator import estimate_cost_from_response
@@ -29,7 +28,6 @@ from .escalation import (
     FixAttemptResult,
     escalate_to_human,
     get_escalation_level,
-    get_supervisor_model,
 )
 from .fix_execution import apply_fix, read_file_content, verify_fix
 from .fix_prompts import build_fix_prompt
@@ -127,28 +125,22 @@ IMPORTANT: Previous attempts failed. Consider:
 - Verify the fix actually addresses the root cause
 """
 
-    # Select model based on escalation level
-    provider: AgentType
-    model: str
-    if level == "WORKER":
-        model = GEMINI_FLASH
-        provider = "gemini"
-    else:  # SUPERVISOR - dual model approach
-        model, provider = get_supervisor_model(attempts)
+    # Select agent based on escalation level
+    agent_slug = "worker" if level == "WORKER" else "fixer"
 
     logger.info(
         "fix_attempt",
         result_id=result_id,
         escalation_level=level,
         attempt=attempts + 1,
-        model=model,
+        agent_slug=agent_slug,
     )
 
     # Track cost for budget enforcement
     cost_usd = 0.0
 
     try:
-        agent = get_agent(provider, model=model)
+        agent = get_agent(agent_slug)
         response = agent.generate(
             prompt=prompt,
             system="You are a code fix agent. Output only the fixed code, no explanations.",
@@ -159,7 +151,7 @@ IMPORTANT: Previous attempts failed. Consider:
 
         # Calculate cost from response
         cost_usd = estimate_cost_from_response(response)
-        logger.debug("fix_attempt_cost", cost_usd=cost_usd, model=model)
+        logger.debug("fix_attempt_cost", cost_usd=cost_usd, agent_slug=agent_slug)
     except Exception as e:
         logger.error("llm_failed", error=str(e))
         return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
@@ -176,8 +168,10 @@ IMPORTANT: Previous attempts failed. Consider:
 
     # Verify the fix worked
     if verify_fix(project_path, check_type, file_rel_path):
-        qcr_store.mark_fixed(conn, result_id, fixed_by=model)
-        logger.info("fix_successful", result_id=result_id, check_type=check_type, model=model)
+        qcr_store.mark_fixed(conn, result_id, fixed_by=agent_slug)
+        logger.info(
+            "fix_successful", result_id=result_id, check_type=check_type, agent_slug=agent_slug
+        )
 
         # Store successful fix pattern for future retrieval
         store_successful_pattern(

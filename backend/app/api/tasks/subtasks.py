@@ -15,7 +15,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...constants import DEFAULT_GEMINI_MODEL
 from ...logging_config import get_logger
 from ...schemas.tasks import (
     CitationAcknowledgeRequest,
@@ -267,7 +266,7 @@ async def cleanup_prompt_endpoint(
     try:
         from ...services.agent_hub_client import AgentHubLLMClient
 
-        client = AgentHubLLMClient(model=DEFAULT_GEMINI_MODEL, provider="gemini")
+        client = AgentHubLLMClient(agent_slug="analyst")
         if not client.is_available():
             # Return unchanged if Gemini unavailable
             return CleanupPromptResponse(

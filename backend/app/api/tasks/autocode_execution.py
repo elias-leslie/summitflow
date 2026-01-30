@@ -83,19 +83,19 @@ def generate_execution_id() -> str:
 
 def get_or_create_service(
     project_id: str,
-    model: str | None = None,
+    agent_slug: str,
 ) -> AgentHubService:
     """Get or create Agent Hub service for project.
 
     Args:
         project_id: Project ID
-        model: Optional model override
+        agent_slug: Agent Hub agent slug
 
     Returns:
         AgentHubService instance
     """
     if project_id not in _services:
-        _services[project_id] = AgentHubService(project_id, model=model)
+        _services[project_id] = AgentHubService(project_id, agent_slug=agent_slug)
     return _services[project_id]
 
 

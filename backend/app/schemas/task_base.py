@@ -103,8 +103,10 @@ class TaskLogEntry(BaseModel):
 class StartTaskRequest(BaseModel):
     """Request model for starting task execution."""
 
-    agent_type: Literal["claude", "gemini"]
-    model: str | None = None
+    agent_slug: str | None = Field(
+        default=None,
+        description="Agent Hub agent slug (e.g., 'coder', 'planner'). Required.",
+    )
     allow_delegation: bool = False
 
 

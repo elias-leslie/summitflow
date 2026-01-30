@@ -12,7 +12,6 @@ from typing import Any, Literal
 
 import psycopg
 
-from ...constants import CLAUDE_SONNET
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...storage import quality_check_results as qcr_store
@@ -310,7 +309,7 @@ def fix_test_failure(
     prompt = _build_test_fix_prompt(check_result, test_content, source_content, project_path)
 
     try:
-        agent = get_agent("claude", model=CLAUDE_SONNET)
+        agent = get_agent("coder")
         response = agent.generate(
             prompt=prompt,
             system="You are a test debugging expert. Analyze failures and provide minimal, correct fixes.",
