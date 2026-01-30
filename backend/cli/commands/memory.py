@@ -94,7 +94,7 @@ def save(
 def list_cmd(
     limit: Annotated[
         int,
-        typer.Option("--limit", "-l", help="Max episodes to return (1-100)"),
+        typer.Option("--limit", "-l", help="Max episodes to return (1-300)"),
     ] = 50,
     cursor: Annotated[
         str | None,
@@ -122,7 +122,7 @@ def search(
     query: Annotated[str, typer.Argument(help="Search query")],
     limit: Annotated[
         int,
-        typer.Option("--limit", "-l", help="Max results (1-100)"),
+        typer.Option("--limit", "-l", help="Max results (1-300)"),
     ] = 10,
     min_score: Annotated[
         float,
@@ -222,10 +222,6 @@ def export_cmd(
         str | None,
         typer.Option("--tier", "-t", help="Filter by tier (mandate, guardrail, reference)"),
     ] = None,
-    limit: Annotated[
-        int,
-        typer.Option("--limit", "-l", help="Max episodes to export (default: all)"),
-    ] = 500,
     uuids: Annotated[
         list[str] | None,
         typer.Argument(help="Specific UUIDs to export (optional)"),
@@ -243,8 +239,8 @@ def export_cmd(
         typer.Option("--scope-id", help="Scope identifier (e.g., project ID)"),
     ] = None,
 ) -> None:
-    """Export episodes as JSON for batch operations."""
-    export_impl(tier, limit, uuids, output, scope, scope_id)
+    """Export all episodes as JSON for batch operations."""
+    export_impl(tier, uuids, output, scope, scope_id)
 
 
 @app.command("import")

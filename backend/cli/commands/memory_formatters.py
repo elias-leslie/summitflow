@@ -39,7 +39,7 @@ def format_save_compact(result: dict[str, Any]) -> None:
     else:
         status = result.get("status", "rejected")
         message = result.get("message", "")
-        print(f"REJECTED:{status}:{message[:50]}")
+        print(f"REJECTED:{status}:{message}")
 
 
 def format_list_compact(result: dict[str, Any]) -> None:
@@ -47,16 +47,16 @@ def format_list_compact(result: dict[str, Any]) -> None:
     episodes = result.get("episodes", [])
     cursor = result.get("cursor")
 
-    cursor_str = f"cursor={cursor[:20]}..." if cursor else "cursor=none"
+    cursor_str = f"cursor={cursor}" if cursor else "cursor=none"
     print(f"EPISODES[{len(episodes)}]:{cursor_str}")
 
-    for ep in episodes[:20]:
+    for ep in episodes:
         uuid = ep.get("uuid", "?")[:8]
-        name = ep.get("name", "-")[:20]
-        content = ep.get("content", "-")[:50]
-        if len(content) == 50:
-            content += "..."
-        print(f"  {uuid} {name} {content}")
+        tier = ep.get("injection_tier", "?")
+        summary = ep.get("summary", "")
+        content = ep.get("content", "")
+        print(f"  {uuid} [{tier}] summary={summary}")
+        print(f"    {content}")
 
 
 def format_search_compact(result: dict[str, Any]) -> None:
@@ -64,15 +64,14 @@ def format_search_compact(result: dict[str, Any]) -> None:
     results = result.get("results", [])
     query = result.get("query", "")
 
-    print(f'RESULTS[{len(results)}]:query="{query[:30]}"')
+    print(f'RESULTS[{len(results)}]:query="{query}"')
 
-    for r in results[:20]:
+    for r in results:
         uuid = r.get("uuid", "?")[:8]
         score = r.get("relevance_score", 0.0)
-        content = r.get("content", "-")[:50]
-        if len(content) == 50:
-            content += "..."
-        print(f"  {uuid} {score:.2f} {content}")
+        content = r.get("content", "")
+        print(f"  {uuid} {score:.2f}")
+        print(f"    {content}")
 
 
 def format_get_compact(result: dict[str, Any]) -> None:
@@ -99,24 +98,31 @@ def format_get_compact(result: dict[str, Any]) -> None:
 
 
 def format_batch_get_compact(result: dict[str, Any]) -> None:
-    """Format batch get results in TOON style."""
+    """Format batch get results - shows FULL content for each episode."""
     episodes = result.get("episodes", {})
     found = result.get("found", 0)
     missing = result.get("missing", [])
 
     total_requested = found + len(missing)
-    print(f"GET[{found}/{total_requested}]:missing={len(missing)}")
+    typer.echo(f"GET[{found}/{total_requested}]:missing={len(missing)}")
 
     for uuid, ep in episodes.items():
         uuid_short = uuid[:8]
         tier = ep.get("injection_tier", "?")
-        content = ep.get("content", "-")[:50]
-        if len(content) == 50:
-            content += "..."
-        print(f"  {uuid_short} [{tier}] {content}")
+        content = ep.get("content", "")
+        helpful = ep.get("helpful_count", 0)
+        harmful = ep.get("harmful_count", 0)
+        loaded = ep.get("loaded_count", 0)
+        summary = ep.get("summary")
+
+        typer.echo("")
+        typer.echo(f"{uuid_short} [{tier}] loaded={loaded} helpful={helpful} harmful={harmful}")
+        if summary:
+            typer.echo(f"Summary: {summary}")
+        typer.echo(content)
 
     if missing:
-        print(f"  MISSING: {', '.join(u[:8] for u in missing)}")
+        typer.echo(f"\nMISSING: {', '.join(u[:8] for u in missing)}")
 
 
 def format_batch_tier_compact(result: dict[str, Any]) -> None:

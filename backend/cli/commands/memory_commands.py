@@ -195,23 +195,30 @@ def delete_impl(uuids: list[str], confirm: bool) -> None:
             typer.echo("Cancelled.")
             raise typer.Exit(0)
 
-    deleted = 0
-    failed = 0
-
-    for uuid in uuids:
+    if len(uuids) == 1:
         result = agent_hub_request(
             "DELETE",
-            f"/api/memory/episode/{uuid}",
+            f"/api/memory/episode/{uuids[0]}",
             tool_name="st memory delete",
         )
         if result.get("success"):
-            typer.echo(f"Deleted: {uuid[:8]}")
-            deleted += 1
+            typer.echo(f"Deleted: {uuids[0][:8]}")
+            typer.echo("\nDeleted: 1, Failed: 0")
         else:
-            typer.echo(f"Failed: {uuid[:8]} - {result.get('detail', 'Unknown error')}")
-            failed += 1
-
-    typer.echo(f"\nDeleted: {deleted}, Failed: {failed}")
+            typer.echo(f"Failed: {uuids[0][:8]} - {result.get('detail', 'Unknown error')}")
+            typer.echo("\nDeleted: 0, Failed: 1")
+    else:
+        result = agent_hub_request(
+            "POST",
+            "/api/memory/bulk-delete",
+            json={"ids": uuids},
+            tool_name="st memory delete",
+        )
+        deleted = result.get("deleted", 0)
+        failed = result.get("failed", 0)
+        for error in result.get("errors", []):
+            typer.echo(f"Failed: {error['id'][:8]} - {error.get('error', 'Unknown')}")
+        typer.echo(f"\nDeleted: {deleted}, Failed: {failed}")
 
 
 def update_impl(
@@ -245,7 +252,8 @@ def update_impl(
         if tier:
             typer.echo(f"  Tier: {old_tier} -> {tier}")
         if content:
-            typer.echo(f"  Content: {old_content[:40]}... -> {content[:40]}...")
+            typer.echo(f"  Old content: {old_content}")
+            typer.echo(f"  New content: {content}")
         if trigger_types:
             typer.echo(f"  Trigger types: {trigger_types}")
         if pinned is not None:
@@ -336,11 +344,13 @@ def batch_tier_impl(
         if not input_file.exists():
             typer.echo(f"Error: File not found: {input_file}")
             raise typer.Exit(1)
-        updates = json_lib.loads(input_file.read_text())
+        raw_updates = json_lib.loads(input_file.read_text())
+        updates = [{"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))} for u in raw_updates]
     elif json_input:
-        updates = json_lib.loads(json_input)
+        raw_updates = json_lib.loads(json_input)
+        updates = [{"uuid": u["uuid"], "injection_tier": u.get("tier", u.get("injection_tier"))} for u in raw_updates]
     elif tier and uuids:
-        updates = [{"uuid": u, "tier": tier} for u in uuids]
+        updates = [{"uuid": u, "injection_tier": tier} for u in uuids]
     else:
         typer.echo("Error: Provide --file, --json, or (UUIDs with --tier)")
         raise typer.Exit(1)
@@ -351,7 +361,7 @@ def batch_tier_impl(
 
     result = agent_hub_request(
         "POST",
-        "/api/memory/batch-update-tier",
+        "/api/memory/batch-update",
         json={"updates": updates},
         tool_name="st memory batch-tier",
     )
@@ -369,7 +379,6 @@ def batch_tier_impl(
 
 def export_impl(
     tier: str | None,
-    limit: int,
     uuids: list[str] | None,
     output: Path | None,
     scope: str,
@@ -388,7 +397,7 @@ def export_impl(
         )
         episodes = list(result.get("episodes", {}).values())
     else:
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {"limit": 100}
         if tier:
             params["category"] = tier
 
@@ -402,9 +411,8 @@ def export_impl(
         )
         episodes = result.get("episodes", [])
 
-        cursor = result.get("cursor")
-        while cursor and len(episodes) < limit:
-            params["cursor"] = cursor
+        while result.get("has_more"):
+            params["cursor"] = result.get("cursor")
             result = agent_hub_request(
                 "GET",
                 "/api/memory/list",
@@ -414,9 +422,6 @@ def export_impl(
                 tool_name="st memory export",
             )
             episodes.extend(result.get("episodes", []))
-            cursor = result.get("cursor")
-            if not result.get("has_more"):
-                break
 
     export_data = {
         "exported_at": datetime.datetime.now().isoformat(),
@@ -470,11 +475,9 @@ def import_impl(input_file: Path, dry_run: bool) -> None:
 
     if dry_run:
         typer.echo(f"DRY RUN: Would update {len(updates)} episodes")
-        for u in updates[:10]:
+        for u in updates:
             fields = [k for k in u if k != "uuid"]
             typer.echo(f"  {u['uuid'][:8]}: {', '.join(fields)}")
-        if len(updates) > 10:
-            typer.echo(f"  ... and {len(updates) - 10} more")
         return
 
     if not updates:
