@@ -491,10 +491,10 @@ def _run_breaking_change_detection(
     return result
 
 
-def _verify_acceptance_criteria(task: dict[str, Any]) -> dict[str, Any]:
+def _verify_step_completion(task: dict[str, Any]) -> dict[str, Any]:
     """Verify task completion by checking step status.
 
-    Verification now happens at the step level via verify_command.
+    Verification happens at the step level via verify_command.
     This function checks if all steps across all subtasks are passed.
 
     Args:

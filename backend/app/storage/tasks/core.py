@@ -191,7 +191,7 @@ def create_task(
         - objective, spirit_anti, decisions, constraints, done_when are stored
           in task_spirit table. Use storage.task_spirit functions.
         - labels are stored in task_labels table. Use storage.task_labels functions.
-        - Acceptance criteria are in task_acceptance_criteria. Use storage.criteria functions.
+        - Verification happens at step level via verify_command. See storage.steps.
 
     Returns:
         The created task dict with all columns.

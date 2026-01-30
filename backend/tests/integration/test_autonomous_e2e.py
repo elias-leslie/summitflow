@@ -117,6 +117,7 @@ def task_events_contain(task_id: str, substring: str) -> bool:
     return any(substring in (event.get("message") or "") for event in events)
 
 
+@pytest.mark.e2e
 class TestTriageE2E:
     """End-to-end tests for idea triage flow."""
 
@@ -206,6 +207,7 @@ class TestTriageE2E:
         assert "not found" in result["message"].lower()
 
 
+@pytest.mark.e2e
 class TestPlanningE2E:
     """End-to-end tests for autonomous planning flow."""
 
@@ -349,6 +351,7 @@ class TestPlanningE2E:
         assert task_events_contain(task_id, "Human Review")
 
 
+@pytest.mark.e2e
 class TestExecutionE2E:
     """End-to-end tests for subtask execution flow."""
 
@@ -458,6 +461,7 @@ class TestExecutionE2E:
         assert subtasks[1]["passes"] is False
 
 
+@pytest.mark.e2e
 class TestAIReviewE2E:
     """End-to-end tests for AI review and auto-merge flow."""
 
@@ -603,6 +607,7 @@ class TestAIReviewE2E:
         assert "email" in fix_subtasks[0]["description"].lower()
 
 
+@pytest.mark.e2e
 class TestEscalationE2E:
     """End-to-end tests for 3-2-1 escalation pattern."""
 
@@ -641,6 +646,7 @@ class TestEscalationE2E:
         assert SUPERVISOR_MAX_ATTEMPTS == 2
 
 
+@pytest.mark.e2e
 class TestFullAutonomousPipeline:
     """Integration tests for the complete autonomous pipeline."""
 

@@ -11,7 +11,7 @@ from app.tasks.ai_review_checks import (
     _run_mypy,
     _run_precommit,
     _run_pytest,
-    _verify_acceptance_criteria,
+    _verify_step_completion,
 )
 from app.tasks.ai_review_constants import ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS
 from app.tasks.ai_review_models import ReviewResult, ReviewVerdict
@@ -148,24 +148,24 @@ class TestRunMypy:
         assert result["status"] == "skip"
 
 
-class TestVerifyAcceptanceCriteria:
-    """Tests for _verify_acceptance_criteria helper.
+class TestVerifyStepCompletion:
+    """Tests for _verify_step_completion helper.
 
-    Note: Verification now happens at step level. done_when is no longer checked.
-    Instead, the function checks if all subtask steps have passed.
+    Verification happens at step level via verify_command.
+    This function checks if all subtask steps have passed.
     """
 
     def test_no_subtasks(self) -> None:
         """Task with no subtasks should skip verification."""
         task: dict = {"id": "task-123"}
-        result = _verify_acceptance_criteria(task)
+        result = _verify_step_completion(task)
         assert result["status"] == "skip"
         assert "No subtasks defined" in result["reason"]
 
     def test_no_task_id(self) -> None:
         """Task without ID should error."""
         task: dict = {"done_when": ["tests pass"]}
-        result = _verify_acceptance_criteria(task)
+        result = _verify_step_completion(task)
         assert result["status"] == "error"
 
 
@@ -196,7 +196,7 @@ class TestReviewPullRequest:
     @patch("app.tasks.ai_review._run_mypy")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
-    @patch("app.tasks.ai_review._verify_acceptance_criteria")
+    @patch("app.tasks.ai_review._verify_step_completion")
     @patch("app.tasks.ai_review.task_store")
     def test_all_checks_pass(
         self,
@@ -238,7 +238,7 @@ class TestReviewPullRequest:
     @patch("app.tasks.ai_review._run_mypy")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
-    @patch("app.tasks.ai_review._verify_acceptance_criteria")
+    @patch("app.tasks.ai_review._verify_step_completion")
     @patch("app.tasks.ai_review.task_store")
     def test_pytest_fails(
         self,
@@ -368,7 +368,7 @@ class TestEscalationToHumanReview:
     @patch("app.tasks.ai_review._run_mypy")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
-    @patch("app.tasks.ai_review._verify_acceptance_criteria")
+    @patch("app.tasks.ai_review._verify_step_completion")
     @patch("app.tasks.ai_review.task_store")
     def test_security_issue_escalates_immediately(
         self,
@@ -412,7 +412,7 @@ class TestEscalationToHumanReview:
     @patch("app.tasks.ai_review._run_mypy")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
-    @patch("app.tasks.ai_review._verify_acceptance_criteria")
+    @patch("app.tasks.ai_review._verify_step_completion")
     @patch("app.tasks.ai_review.task_store")
     def test_error_check_triggers_retry(
         self,

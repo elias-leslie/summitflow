@@ -145,7 +145,7 @@ def run_verification(
     return result
 
 
-def check_acceptance_criteria(project_id: str, task: dict[str, Any]) -> dict[str, Any]:
+def check_step_completion(project_id: str, task: dict[str, Any]) -> dict[str, Any]:
     """Check if all steps are verified (step-level verification).
 
     Checks that all steps across all subtasks are marked as passed.

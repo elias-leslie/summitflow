@@ -27,7 +27,7 @@ from .agent import consult_alternate, execute_agent, parse_and_apply_changes
 from .context import build_context
 from .subtasks import get_next_task_from_subtasks
 from .types import ExecutionResult
-from .verification import check_acceptance_criteria, compute_error_signature, run_verification
+from .verification import check_step_completion, compute_error_signature, run_verification
 
 logger = get_logger(__name__)
 
@@ -472,7 +472,7 @@ class ImplementationExecutor:
             self._mark_subtask_complete(current_task)
 
         self._update_phase(task_id, "verify", build_state)
-        criteria_check = check_acceptance_criteria(self.project_id, task)
+        step_check = check_step_completion(self.project_id, task)
 
         execution_time = (datetime.now(UTC) - execution_start).total_seconds()
         task_store.update_task(
@@ -485,21 +485,21 @@ class ImplementationExecutor:
                 "handoff": was_handoff,
                 "reason": "success",
                 "execution_time_seconds": round(execution_time, 2),
-                "criteria_verified": criteria_check["verified_count"],
-                "criteria_total": criteria_check["total"],
-                "unverified_criteria": criteria_check["unverified"],
+                "steps_verified": step_check["verified_count"],
+                "steps_total": step_check["total"],
+                "unverified_steps": step_check["unverified"],
             },
         )
 
-        if criteria_check["all_verified"]:
+        if step_check["all_verified"]:
             self._update_phase(task_id, "complete", build_state)
             task_store.update_task_status(task_id, "completed")
             logger.info("task_completed", task_id=task_id)
         else:
             logger.warning(
-                "criteria_not_verified",
+                "steps_not_verified",
                 task_id=task_id,
-                unverified=criteria_check["unverified"],
+                unverified=step_check["unverified"],
             )
 
         return ExecutionResult(

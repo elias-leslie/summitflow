@@ -9,7 +9,7 @@ Review Pipeline:
 3. Type check (mypy)
 4. Code quality scan (Claude Opus 4.5)
 5. UI review (Gemini 3 Pro for frontend changes)
-6. Acceptance criteria verification
+6. Step completion verification
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .ai_review_checks import (
     _run_pytest,
     _run_security_risk_classification,
     _run_ui_review,
-    _verify_acceptance_criteria,
+    _verify_step_completion,
 )
 from .ai_review_models import ReviewResult, ReviewVerdict, RiskLevel
 from .ai_review_utils import (
@@ -183,11 +183,11 @@ def review_pull_request(
             all_issues.extend(checks["ui_review"].get("issues", []))
             all_suggestions.extend(checks["ui_review"].get("suggestions", []))
 
-        logger.info("verifying_criteria", task_id=task_id)
-        checks["acceptance_criteria"] = _verify_acceptance_criteria(task)
-        if checks["acceptance_criteria"].get("status") == "fail":
-            missing = checks["acceptance_criteria"].get("missing", [])
-            all_issues.append(f"Unverified criteria: {len(missing)}")
+        logger.info("verifying_step_completion", task_id=task_id)
+        checks["step_completion"] = _verify_step_completion(task)
+        if checks["step_completion"].get("status") == "fail":
+            missing = checks["step_completion"].get("missing", [])
+            all_issues.append(f"Incomplete steps: {len(missing)}")
 
         # Check for security concerns that require immediate escalation
         security_escalation = _should_escalate_for_security(checks, all_issues)
