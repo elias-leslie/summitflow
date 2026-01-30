@@ -228,9 +228,7 @@ def update_impl(
         )
         raise typer.Exit(1)
 
-    existing = agent_hub_request(
-        "GET", f"/api/memory/episode/{uuid}", tool_name="st memory update"
-    )
+    existing = agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
     if "detail" in existing:
         typer.echo(f"Error: {existing['detail']}")
         raise typer.Exit(1)
