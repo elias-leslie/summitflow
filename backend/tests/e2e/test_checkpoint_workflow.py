@@ -105,6 +105,7 @@ def run_cli(
     check: bool = False,
     timeout: int = 60,
     project_id: str | None = TEST_PROJECT_ID,
+    stdin_input: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Run st CLI command and return result.
 
@@ -113,6 +114,7 @@ def run_cli(
         check: Raise exception on non-zero exit
         timeout: Command timeout in seconds
         project_id: Project ID to set via ST_PROJECT_ID env var
+        stdin_input: Optional input to send to stdin (for interactive prompts)
     """
     env = os.environ.copy()
     if project_id:
@@ -120,6 +122,7 @@ def run_cli(
 
     result = subprocess.run(
         ["st", *args],
+        input=stdin_input,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -206,6 +209,10 @@ class TestHappyPath:
 
             result = run_cli(["step", "pass", subtask_id, "1", "-t", task["id"]])
             assert result.returncode == 0, f"Step pass failed: {result.stderr}"
+
+            # Acknowledge citations (required before done)
+            result = run_cli(["subtask", "citations", "--none", subtask_id, "-t", task["id"]])
+            assert result.returncode == 0, f"Citations ack failed: {result.stderr}"
 
             result = run_cli(["done", subtask_id, "-t", task["id"]])
             assert result.returncode == 0, f"Subtask done failed: {result.stderr}"
@@ -326,9 +333,13 @@ class TestResumeAfterInterruption:
         run_cli(["claim", task["id"]], check=True)
         run_cli(["claim", "1.1", "-t", task["id"]], check=True)
 
-        result = run_cli(["claim", task["id"]])
-        assert result.returncode == 0
-        assert "already" in result.stdout.lower() or "existing" in result.stdout.lower() or "claimed" in result.stdout.lower()
+        # Re-claim should detect existing checkpoint and prompt for resume
+        # Provide "y\n" to confirm resume via stdin
+        result = run_cli(["claim", task["id"]], stdin_input="y\n")
+        assert result.returncode == 0, f"Resume failed: {result.stderr}"
+        # Should show either "existing checkpoint" message or "resumed"
+        output = result.stdout.lower()
+        assert "existing" in output or "resumed" in output or "checkpoint" in output, f"Expected resume detection: {result.stdout}"
 
 
 class TestRemovedCommands:
