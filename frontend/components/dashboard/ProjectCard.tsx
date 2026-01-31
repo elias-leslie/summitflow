@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { AlertCircle, Bug, Clock, ListTodo, Target } from 'lucide-react'
+import { AlertCircle, Bug, Clock, Database, ListTodo, Target } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -12,6 +12,7 @@ import {
   fetchQualityGateHealth,
   type ProjectWithStats,
 } from '@/lib/api'
+import { getActiveCheckpoint, type Checkpoint } from '@/lib/api/checkpoints'
 
 interface ProjectCardProps {
   project: ProjectWithStats
@@ -33,6 +34,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
     queryFn: () => fetchQualityGateHealth(project.id),
     enabled: showHealth,
     refetchInterval: showHealth ? 30000 : false,
+  })
+
+  // Check for active checkpoint (running task)
+  const { data: checkpoint } = useQuery({
+    queryKey: ['active-checkpoint', project.id],
+    queryFn: () => getActiveCheckpoint(project.id),
+    enabled: showHealth,
+    staleTime: 30000,
   })
 
   // Generate gradient based on first letter (used as fallback if no logo)
@@ -117,6 +126,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <h3 className="font-medium text-white group-hover:text-phosphor-400 transition-colors">
               {project.name}
             </h3>
+            {/* Active checkpoint indicator */}
+            {checkpoint && (
+              <div className="flex items-center gap-1.5 mt-1 text-xs text-cyan-400">
+                <Database className="w-3 h-3" />
+                <span className="font-mono">{checkpoint.task_id}</span>
+                <span className="text-slate-500">({checkpoint.age})</span>
+              </div>
+            )}
           </div>
         </div>
 

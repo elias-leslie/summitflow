@@ -464,14 +464,34 @@ def format_context_log(progress_log: list[str] | str | None) -> str:
     return "\n".join(lines)
 
 
+def format_context_references(references: list[dict[str, Any]], header: str = "REFERENCES") -> str:
+    """Format triggered references for context output.
+
+    Format: REFERENCES[N]
+    <uuid8>:<summary or first 50 chars of content>
+    """
+    if not references:
+        return ""
+
+    lines = [f"{header}[{len(references)}]"]
+    for ref in references:
+        uuid = ref.get("uuid", "?")[:8]
+        # Use summary if available, otherwise truncate content
+        summary = ref.get("summary") or _truncate(ref.get("content", ""), 50)
+        lines.append(f"  {uuid}:{summary}")
+
+    return "\n".join(lines)
+
+
 def output_context(
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]] | None = None,
+    references: list[dict[str, Any]] | None = None,
 ) -> None:
     """Output full task context in TOON format.
 
-    Combines task header, decisions, subtasks with steps, and blockers.
+    Combines task header, decisions, subtasks with steps, blockers, and references.
     """
     if _compact_output:
         sections = [
@@ -483,6 +503,9 @@ def output_context(
         if blockers:
             sections.append(format_context_blockers(blockers))
 
+        if references:
+            sections.append(format_context_references(references))
+
         if task.get("progress_log"):
             sections.append(format_context_log(task["progress_log"]))
 
@@ -493,5 +516,135 @@ def output_context(
                 "task": task,
                 "subtasks": subtasks,
                 "blockers": blockers or [],
+                "references": references or [],
+            }
+        )
+
+
+def format_subtask_context_task_summary(task: dict[str, Any]) -> str:
+    """Format task summary for subtask-scoped context.
+
+    Shows the "why" - objective, spirit_anti, done_when - not full task details.
+    """
+    lines = []
+    task_id = task.get("id", "unknown")
+    title = task.get("title", "")
+
+    lines.append(f"TASK:{task_id}|{title}")
+
+    if objective := task.get("objective"):
+        lines.append(f"OBJECTIVE:{objective}")
+
+    if spirit_anti := task.get("spirit_anti"):
+        lines.append(f"SPIRIT_ANTI:{spirit_anti}")
+
+    done_when = task.get("done_when") or []
+    if done_when:
+        lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
+
+    return "\n".join(lines)
+
+
+def format_subtask_context_subtask(subtask: dict[str, Any]) -> str:
+    """Format subtask details with all steps and verification info.
+
+    Format:
+    SUBTASK:<subtask_id>|<phase>|<PASS|____>
+    DESCRIPTION:<full description>
+    STEPS[N]
+      1. <PASS|____> <step_desc>
+         verify: <command>
+         expect: <expected_output>
+    """
+    lines = []
+    subtask_id = subtask.get("subtask_id", "?")
+    phase = subtask.get("phase") or ""
+    passes = "PASS" if subtask.get("passes") else "____"
+    desc = subtask.get("description") or ""
+
+    lines.append(f"SUBTASK:{subtask_id}|{phase}|{passes}")
+    lines.append(f"DESCRIPTION:{desc}")
+
+    steps = subtask.get("steps") or subtask.get("steps_from_table") or []
+    if steps:
+        done = sum(1 for s in steps if s.get("passes"))
+        total = len(steps)
+        pct = (done / total * 100) if total > 0 else 0
+        lines.append(f"STEPS[{total}]:{done}/{total}:{pct:.0f}%")
+
+        for step in steps:
+            step_num = step.get("step_number", 0)
+            step_pass = "PASS" if step.get("passes") else "____"
+            step_desc = step.get("description") or ""
+            lines.append(f"  {step_num}. {step_pass} {step_desc}")
+
+            verify_cmd = step.get("verify_command")
+            expected_out = step.get("expected_output")
+            if verify_cmd:
+                lines.append(f"       verify: {verify_cmd}")
+            if expected_out:
+                lines.append(f"       expect: {expected_out}")
+
+    return "\n".join(lines)
+
+
+def format_subtask_context_dependencies(dependencies: list[dict[str, Any]]) -> str:
+    """Format subtask dependencies with status.
+
+    Format: DEPENDS_ON[N]
+    <subtask_id> [DONE|PENDING]
+    """
+    if not dependencies:
+        return ""
+
+    lines = [f"DEPENDS_ON[{len(dependencies)}]"]
+    for dep in dependencies:
+        dep_id = dep.get("subtask_id", "?")
+        status = dep.get("status", "PENDING")
+        lines.append(f"  {dep_id} [{status}]")
+
+    return "\n".join(lines)
+
+
+def output_subtask_context(
+    task: dict[str, Any],
+    subtask: dict[str, Any],
+    dependencies: list[dict[str, Any]],
+    references: list[dict[str, Any]] | None = None,
+) -> None:
+    """Output subtask-scoped context in TOON format.
+
+    Shows:
+    - Task summary (objective, spirit_anti, done_when) - the "why"
+    - Subtask details with all steps and verify_commands
+    - Dependencies with status
+    - Phase-triggered references
+    """
+    if _compact_output:
+        sections = [
+            format_subtask_context_task_summary(task),
+            format_subtask_context_subtask(subtask),
+        ]
+
+        if dependencies:
+            sections.append(format_subtask_context_dependencies(dependencies))
+
+        if references:
+            sections.append(format_context_references(references, header="PHASE_REFS"))
+
+        print("\n".join(s for s in sections if s))
+    else:
+        output_json(
+            {
+                "task_summary": {
+                    "id": task.get("id"),
+                    "title": task.get("title"),
+                    "objective": task.get("objective"),
+                    "spirit_anti": task.get("spirit_anti"),
+                    "done_when": task.get("done_when"),
+                },
+                "subtask": subtask,
+                "dependencies": dependencies,
+                "references": references or [],
             }
         )

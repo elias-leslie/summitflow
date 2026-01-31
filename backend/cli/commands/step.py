@@ -7,7 +7,7 @@ from typing import Annotated, Any
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_steps, output_success
+from ..output import handle_api_error, output_success
 
 app = typer.Typer(help="Step management commands")
 
@@ -165,55 +165,28 @@ def update_step(
     output_success(f"{subtask_id}.{step_number}")
 
 
-@app.command("create")
-def create_steps(
-    subtask_id: str,
-    descriptions: Annotated[list[str], typer.Argument()],
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-) -> None:
-    """Create steps for a subtask in batch (no verification).
-
-    Pass multiple step descriptions as arguments.
-    NOTE: Steps created this way have no verify_command and cannot be passed
-    until verification is added with 'st step update'.
-
-    For steps with verification, use 'st step new' instead.
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st step create 1.1 "Step 1" "Step 2" "Step 3" --task task-abc123
-        st step create 1.1 "Step 1" "Step 2"    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        result = client.bulk_create_steps(task_id, subtask_id, descriptions)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    created = result.get("created", [])
-    output_success(f"{subtask_id}|{len(created)} steps")
-
-
 @app.command("add")
 def add_steps(
     subtask_id: str,
     descriptions: Annotated[list[str], typer.Argument()],
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+    at_position: Annotated[
+        int | None,
+        typer.Option("--at", help="Insert at specific position (shifts existing steps)"),
+    ] = None,
 ) -> None:
-    """Append steps to a subtask with existing steps.
+    """Add steps to a subtask.
 
-    Unlike 'create' which starts at step 1, 'add' finds the highest
-    existing step number and continues from there.
+    By default, appends steps after the last existing step.
+    Use --at N to insert at a specific position (shifts existing steps).
+
+    If no steps exist, starts at step 1.
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step add 1.1 "New step 6" "New step 7" --task task-abc123
-        st step add 1.1 "New step 6" "New step 7"    # Uses active context
+        st step add 1.1 "Step 1" "Step 2" --task task-abc123  # Creates/appends
+        st step add 1.1 "New step" --at 3                     # Insert at position 3
+        st step add 1.1 "Step A" "Step B"                     # Uses active context
     """
     from ..context import require_task_id
 
@@ -221,44 +194,28 @@ def add_steps(
     client = STClient()
 
     try:
-        result = client.append_steps(task_id, subtask_id, descriptions)
+        if at_position is not None:
+            # Insert at position - one step at a time with shift
+            created = []
+            for i, desc in enumerate(descriptions):
+                result = client.insert_step(task_id, subtask_id, at_position + i, desc)
+                created.append(result)
+            if created:
+                output_success(f"{subtask_id}|+{len(created)} at {at_position}")
+            else:
+                output_success(f"{subtask_id}|+0")
+        else:
+            # Append after existing steps
+            result = client.append_steps(task_id, subtask_id, descriptions)
+            created = result.get("created", [])
+            if created:
+                start_num = created[0].get("step_number", "?")
+                output_success(f"{subtask_id}|+{len(created)} from {start_num}")
+            else:
+                output_success(f"{subtask_id}|+0")
     except APIError as e:
         handle_api_error(e)
         return
-
-    created = result.get("created", [])
-    if created:
-        start_num = created[0].get("step_number", "?")
-        output_success(f"{subtask_id}|+{len(created)} from {start_num}")
-    else:
-        output_success(f"{subtask_id}|+0")
-
-
-@app.command("list")
-def list_steps(
-    subtask_id: str,
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-) -> None:
-    """List steps for a subtask.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st step list 1.1 --task task-abc123
-        st step list 1.1    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        steps = client.get_steps(task_id, subtask_id)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    output_steps(steps, subtask_id)
 
 
 @app.command("delete")
@@ -320,38 +277,6 @@ def delete_step(
         print(f"DEL {subtask_id}.{step_number}")
 
 
-@app.command("insert")
-def insert_step(
-    subtask_id: str,
-    position: int,
-    description: str,
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-) -> None:
-    """Insert a step at a specific position, shifting existing steps down.
-
-    Use this to add work before an incomplete step. All steps at the
-    insertion position and after are renumbered (incremented by 1).
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st step insert 1.1 3 "Complete dark mode cleanup" --task task-abc123
-        st step insert 1.1 3 "Complete dark mode cleanup"    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        result = client.insert_step(task_id, subtask_id, position, description)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    step_num = result.get("step_number", position)
-    output_success(f"{subtask_id}.{step_num}")
-
-
 @app.command("defect")
 def mark_plan_defect(
     subtask_id: str,
@@ -396,3 +321,31 @@ def mark_plan_defect(
         return
 
     output_success(f"{subtask_id}.{step_number}|defect→{fix_step}")
+
+
+# Error stubs for removed commands - provide helpful redirects
+@app.command("list", hidden=True)
+def list_removed() -> None:
+    """Removed: use st context --subtask instead."""
+    typer.echo("Command 'step list' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st context <task-id> --subtask X.Y    - Shows subtask with all steps", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("create", hidden=True)
+def create_removed() -> None:
+    """Removed: use st step new instead."""
+    typer.echo("Command 'step create' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st step new <subtask> <desc> -v <verify_cmd> -e <expected>", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("insert", hidden=True)
+def insert_removed() -> None:
+    """Removed: use st step add with --at instead."""
+    typer.echo("Command 'step insert' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st step add <subtask> <desc> --at N    - Insert at position N", err=True)
+    raise typer.Exit(1)

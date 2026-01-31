@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
+import { CheckpointStatus } from '@/components/tasks/CheckpointStatus'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { LinkedCapabilitySection } from '@/components/tasks/LinkedCapabilitySection'
@@ -219,6 +220,13 @@ export function TaskModal({
                 onEditCancel={handleEditCancel}
                 onEditSave={handleEditSave}
                 onDelete={handleDeleteClick}
+              />
+
+              {/* Checkpoint Status - Shows when task is running with active checkpoint */}
+              <CheckpointStatus
+                taskId={task.id}
+                projectId={projectId}
+                taskStatus={task.status}
               />
 
               {/* Objective Section - Always visible at top */}

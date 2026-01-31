@@ -10,8 +10,6 @@ from ..client import APIError, STClient
 from ..output import (
     handle_api_error,
     output_error,
-    output_json,
-    output_subtasks,
     output_success,
 )
 
@@ -40,73 +38,6 @@ def is_step_resolved(step: dict[str, Any], step_passes: dict[int, bool]) -> bool
         if fix_num and step_passes.get(fix_num, False):
             return True
     return False
-
-
-@app.command("list")
-def list_subtasks(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-) -> None:
-    """List subtasks for a task with progress.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st subtask list task-abc123
-        st subtask list    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        result = client.get_subtasks(task_id, include_steps=True)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    subtasks = result.get("subtasks", [])
-    summary = result.get("summary", {})
-
-    output_subtasks(subtasks, summary)
-
-
-@app.command("show")
-def show_subtask(
-    subtask_id: str,
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-) -> None:
-    """Show details of a specific subtask.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st subtask show 1.1 --task task-abc123
-        st subtask show 1.1    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        result = client.get_subtasks(task_id, include_steps=True)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    subtasks = result.get("subtasks", [])
-    target = None
-    for s in subtasks:
-        if s.get("subtask_id") == subtask_id:
-            target = s
-            break
-
-    if target is None:
-        output_error(f"Subtask {subtask_id} not found for task {task_id}")
-        raise typer.Exit(1)
-
-    output_json(target)
 
 
 @app.command("create")
@@ -350,3 +281,22 @@ def log_citations_cmd(
 
         logged = result.get("logged", 0)
         output_success(f"Logged {logged} citations for subtask {subtask_id}")
+
+
+# Error stubs for removed commands - provide helpful redirects
+@app.command("list", hidden=True)
+def list_removed() -> None:
+    """Removed: use st context instead."""
+    typer.echo("Command 'subtask list' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st context <task-id>    - Shows all subtasks with steps", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("show", hidden=True)
+def show_removed() -> None:
+    """Removed: use st context --subtask instead."""
+    typer.echo("Command 'subtask show' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st context <task-id> --subtask X.Y    - Subtask-scoped context", err=True)
+    raise typer.Exit(1)

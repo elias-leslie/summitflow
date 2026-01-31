@@ -334,109 +334,67 @@ def ready(
         return
 
 
-@app.command()
-def show(
-    task_ids: Annotated[list[str], typer.Argument(help="One or more task IDs")],
-    full: Annotated[
-        bool, typer.Option("--full", "-f", help="Show everything: subtasks, steps, progress log")
-    ] = False,
-    summary: Annotated[
-        bool, typer.Option("--summary", "-s", help="One-liner: id|title|status|done/total|priority")
-    ] = False,
-) -> None:
-    """Show task details with subtask progress.
+def _fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
+    """Fetch task-type triggered references from Agent Hub."""
+    from ..config import get_agent_hub_url
 
-    Supports multiple task IDs for batch inspection in a single call.
-    Works from any directory - no project context required.
+    import httpx
 
-    Examples:
-        st show task-abc123
-        st show task-abc123 --summary  # One-liner with title and priority
-        st show task-abc123 --full     # Shows all details including progress log
-        st show task-abc123 task-def456  # Multiple tasks
-    """
-    # Use require_project=False since show uses global task lookup
-    client = STClient(require_project=False)
+    try:
+        url = f"{get_agent_hub_url()}/api/memory/triggered-references"
+        response = httpx.get(url, params={"task_type": task_type}, timeout=5.0)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("references", [])
+    except Exception:
+        pass
+    return []
 
-    for task_id in task_ids:
-        try:
-            task = client.get_task(task_id)
 
-            # Fetch task_spirit for context summary
-            from app.storage.task_spirit import get_task_spirit
+def _fetch_phase_triggered_references(phase: str) -> list[dict[str, Any]]:
+    """Fetch phase-triggered references from Agent Hub."""
+    from ..config import get_agent_hub_url
 
-            spirit = get_task_spirit(task_id)
-            if spirit:
-                task["plan_status"] = spirit.get("plan_status", "draft")
-                task["context"] = spirit.get("context")
-                # Merge spirit fields if available
-                if spirit.get("objective"):
-                    task["objective"] = spirit["objective"]
-                if spirit.get("spirit_anti"):
-                    task["spirit_anti"] = spirit["spirit_anti"]
-                if spirit.get("decisions"):
-                    task["decisions"] = spirit["decisions"]
-                if spirit.get("constraints"):
-                    task["constraints"] = spirit["constraints"]
-                if spirit.get("done_when"):
-                    task["done_when"] = spirit["done_when"]
+    import httpx
 
-            # Subtasks endpoint is project-scoped, so use task's project_id
-            task_project_id = task.get("project_id")
-            if task_project_id and client.project_id != task_project_id:
-                # Create a project-scoped client for subtasks
-                subtask_client = STClient(project_id=task_project_id, require_project=False)
-                subtask_data = subtask_client.get_subtasks(task_id, include_steps=True)
-            else:
-                subtask_data = client.get_subtasks(task_id, include_steps=True)
-        except APIError as e:
-            handle_api_error(e)
-            continue
-
-        # Summary mode: one-liner output
-        if summary:
-            ss = subtask_data.get("summary", {})
-            done = ss.get("completed", 0)
-            total = ss.get("total", 0)
-            title = task.get("title", "")[:40]  # Truncate long titles
-            status = task.get("status", "unknown")
-            priority = task.get("priority", 2)
-            typer.echo(f"{task_id}|{title}|{status}|{done}/{total}|P{priority}")
-            continue
-
-        # Merge subtask info into task for output
-        subtasks = subtask_data.get("subtasks", [])
-        summary_data = subtask_data.get("summary", {})
-
-        task["subtasks"] = subtasks
-        task["subtask_summary"] = summary_data
-
-        # Include full details if requested
-        if full:
-            task["full_mode"] = True
-
-        output_task(task)
-
-        # Add separator between tasks if multiple
-        if len(task_ids) > 1 and task_id != task_ids[-1]:
-            typer.echo("---")
+    try:
+        url = f"{get_agent_hub_url()}/api/memory/phase-triggered-references"
+        response = httpx.get(url, params={"phase": phase}, timeout=5.0)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("references", [])
+    except Exception:
+        pass
+    return []
 
 
 @app.command()
 def context(
     task_id: Annotated[str, typer.Argument(help="Task ID (required)")],
+    subtask: Annotated[
+        str | None,
+        typer.Option("--subtask", "-s", help="Subtask ID for scoped context (e.g., 1.1)"),
+    ] = None,
 ) -> None:
-    """Get full task context in a single call.
+    """Get task or subtask context in a single call.
 
-    Returns task details, subtasks with steps, decisions, and blockers
-    in TOON format (with --compact) or JSON.
+    Full task context (default):
+        Returns task details, all subtasks with steps, decisions, blockers,
+        and task-type triggered references from memory.
 
-    This is optimized for /do_it workflow - one command instead of multiple calls.
+    Subtask-scoped context (--subtask X.Y):
+        Returns task summary (objective, spirit, done_when), subtask details
+        with steps, subtask dependencies with status, and phase-triggered
+        references from memory.
+
+    This is THE command for agents to get task/subtask information.
 
     Examples:
-        st --compact context task-abc123
-        st context task-abc123
+        st context task-abc123                  # Full task context
+        st context task-abc123 --subtask 1.1   # Subtask-scoped context
     """
+    from ..output import output_context, output_subtask_context
+
     client = STClient(require_project=False)
 
     try:
@@ -448,13 +406,10 @@ def context(
 
         spirit = get_task_spirit(task_id)
         if spirit:
-            # Merge task_spirit fields into task dict for output
             task["plan_status"] = spirit.get("plan_status", "draft")
             task["plan_approved_at"] = spirit.get("plan_approved_at")
             task["plan_approved_by"] = spirit.get("plan_approved_by")
             task["context"] = spirit.get("context")
-            # Also update spirit fields if they came from task_spirit
-            # (these may override values from tasks table during migration)
             if spirit.get("objective"):
                 task["objective"] = spirit["objective"]
             if spirit.get("spirit_anti"):
@@ -468,32 +423,67 @@ def context(
             if spirit.get("complexity"):
                 task["complexity"] = spirit["complexity"]
 
-        # Fetch subtasks with steps (global endpoint, no project context needed)
+        # Fetch subtasks with steps
         subtask_data = client.get_subtasks(task_id, include_steps=True)
         subtasks = subtask_data.get("subtasks", [])
 
-        # Fetch blockers (dependencies where this task is blocked by others)
-        deps = client.list_dependencies(task_id)
-        blockers = []
-        for d in deps:
-            if d.get("dependency_type") == "blocks" and d.get("depends_on_status") not in (
-                "completed",
-                "cancelled",
-            ):
-                # Fetch blocker task details
-                blocker_id = d.get("depends_on_task_id")
-                if blocker_id:
-                    try:
-                        blocker_task = client.get_task(blocker_id)
-                        blockers.append(blocker_task)
-                    except APIError:
-                        blockers.append({"id": blocker_id, "status": "unknown", "title": "?"})
+        if subtask:
+            # Subtask-scoped context
+            from app.storage.subtask_dependencies import get_dependencies
+
+            # Find the specific subtask
+            target_subtask = None
+            for st in subtasks:
+                if st.get("subtask_id") == subtask:
+                    target_subtask = st
+                    break
+
+            if not target_subtask:
+                typer.echo(f"Error: Subtask {subtask} not found in task {task_id}", err=True)
+                raise typer.Exit(1)
+
+            # Get subtask dependencies with status
+            deps = get_dependencies(target_subtask.get("id", ""))
+            dep_status = []
+            for dep_id in deps:
+                for st in subtasks:
+                    if st.get("id") == dep_id:
+                        status = "DONE" if st.get("passes") else "PENDING"
+                        dep_status.append({"subtask_id": st.get("subtask_id"), "status": status})
+                        break
+
+            # Fetch phase-triggered references
+            phase = target_subtask.get("phase", "")
+            phase_refs = _fetch_phase_triggered_references(phase) if phase else []
+
+            output_subtask_context(task, target_subtask, dep_status, phase_refs)
+        else:
+            # Full task context
+            # Fetch blockers
+            deps = client.list_dependencies(task_id)
+            blockers = []
+            for d in deps:
+                if d.get("dependency_type") == "blocks" and d.get("depends_on_status") not in (
+                    "completed",
+                    "cancelled",
+                ):
+                    blocker_id = d.get("depends_on_task_id")
+                    if blocker_id:
+                        try:
+                            blocker_task = client.get_task(blocker_id)
+                            blockers.append(blocker_task)
+                        except APIError:
+                            blockers.append({"id": blocker_id, "status": "unknown", "title": "?"})
+
+            # Fetch task-type triggered references
+            task_type = task.get("task_type", "")
+            task_refs = _fetch_triggered_references(task_type) if task_type else []
+
+            output_context(task, subtasks, blockers, task_refs)
 
     except APIError as e:
         handle_api_error(e)
         return
-
-    output_context(task, subtasks, blockers)
 
 
 @app.command()
@@ -607,260 +597,6 @@ def export(
 
 
 @app.command()
-def update(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    status: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    add_label: Annotated[list[str] | None, typer.Option("--add-label")] = None,
-    remove_label: Annotated[list[str] | None, typer.Option("--remove-label")] = None,
-    task_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
-    title: Annotated[str | None, typer.Option("--title")] = None,
-    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    move_to: Annotated[str | None, typer.Option("--move-to")] = None,
-    plan: Annotated[str | None, typer.Option("--plan")] = None,
-    objective: Annotated[
-        str | None, typer.Option("--objective", help="Task objective (spirit statement)")
-    ] = None,
-    branch: Annotated[str | None, typer.Option("--branch", help="Git branch name")] = None,
-    pr_url: Annotated[str | None, typer.Option("--pr-url", help="Pull request URL")] = None,
-    parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID")] = None,
-    blocked_by: Annotated[
-        str | None, typer.Option("--blocked-by", help="Add blocking dependency on task ID")
-    ] = None,
-    unblock: Annotated[
-        str | None, typer.Option("--unblock", help="Remove blocking dependency on task ID")
-    ] = None,
-    spirit_anti: Annotated[str | None, typer.Option("--spirit-anti", help="What NOT to do")] = None,
-    done_when: Annotated[
-        list[str] | None, typer.Option("--done-when", help="Completion conditions (repeatable)")
-    ] = None,
-    complexity: Annotated[
-        str | None, typer.Option("--complexity", help="SIMPLE, STANDARD, or COMPLEX")
-    ] = None,
-    decisions_json: Annotated[
-        str | None, typer.Option("--decisions", help="Decisions as JSON array")
-    ] = None,
-    constraints_json: Annotated[
-        str | None, typer.Option("--constraints", help="Constraints as JSON array")
-    ] = None,
-    autonomous: Annotated[
-        bool | None,
-        typer.Option("--autonomous/--no-autonomous", help="Enable/disable autonomous execution"),
-    ] = None,
-) -> None:
-    """Update a task.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st update task-abc123 --status running
-        st update --status running                    # Uses active context
-        st update -p 1 -l "complexity:large"
-        st update --add-label auto-generated
-        st update --objective "Enable X to do Y"
-        st update --autonomous                        # Enable autonomous
-        st update --no-autonomous                     # Disable autonomous
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    # Build update data
-    updates: dict[str, Any] = {}
-    task: dict[str, Any] | None = None
-    status_to_update = status  # Handle status with other updates, not separately
-
-    if priority is not None:
-        updates["priority"] = priority
-
-    # Handle label modifications
-    if add_label or remove_label:
-        # Fetch current task to get existing labels
-        try:
-            current_task = client.get_task(task_id)
-            current_labels = set(current_task.get("labels", []) or [])
-        except APIError as e:
-            handle_api_error(e)
-            return
-
-        # Remove labels first, then add
-        if remove_label:
-            for label in remove_label:
-                current_labels.discard(label)
-
-        if add_label:
-            for label in add_label:
-                current_labels.add(label)
-
-        updates["labels"] = list(current_labels)
-    elif labels:
-        # Full replacement
-        updates["labels"] = labels.split(",")
-
-    if task_type:
-        updates["task_type"] = task_type
-    if title:
-        updates["title"] = title
-    if description:
-        updates["description"] = description
-    if move_to:
-        updates["project_id"] = move_to
-    if plan:
-        import json
-
-        try:
-            updates["plan_content"] = json.loads(plan)
-        except json.JSONDecodeError as e:
-            output_error(f"Invalid plan JSON: {e}")
-            raise typer.Exit(1) from None
-    if objective:
-        updates["objective"] = objective
-    if branch:
-        updates["branch_name"] = branch
-    if pr_url:
-        updates["pull_request_url"] = pr_url
-    if parent:
-        updates["parent_task_id"] = parent
-    if spirit_anti:
-        updates["spirit_anti"] = spirit_anti
-    if done_when:
-        updates["done_when"] = done_when
-    if complexity:
-        if complexity.upper() not in ("SIMPLE", "STANDARD", "COMPLEX"):
-            output_error("complexity must be SIMPLE, STANDARD, or COMPLEX")
-            raise typer.Exit(1)
-        updates["complexity"] = complexity.upper()
-    if decisions_json:
-        import json
-
-        try:
-            updates["decisions"] = json.loads(decisions_json)
-        except json.JSONDecodeError as e:
-            output_error(f"Invalid decisions JSON: {e}")
-            raise typer.Exit(1) from None
-    if constraints_json:
-        import json
-
-        try:
-            updates["constraints"] = json.loads(constraints_json)
-        except json.JSONDecodeError as e:
-            output_error(f"Invalid constraints JSON: {e}")
-            raise typer.Exit(1) from None
-    if autonomous is not None:
-        updates["autonomous"] = autonomous
-
-    # Handle dependency operations (can be standalone or combined with other updates)
-    dep_result = {}
-    if blocked_by:
-        try:
-            client.add_dependency(task_id, blocked_by, dep_type="blocks")
-            dep_result["blocked_by_added"] = blocked_by
-        except APIError as e:
-            dep_result["blocked_by_error"] = e.detail
-
-    if unblock:
-        try:
-            client.remove_dependency(task_id, unblock)
-            dep_result["unblocked"] = unblock
-        except APIError as e:
-            dep_result["unblock_error"] = e.detail
-
-    # If only dependency operations (no other updates, no status)
-    if not updates and not status_to_update and (blocked_by or unblock):
-        try:
-            task = client.get_task(task_id)
-            task.update(dep_result)
-            output_task(task)
-            return
-        except APIError as e:
-            handle_api_error(e)
-            return
-
-    if not updates and not status_to_update:
-        output_error("No updates specified")
-        raise typer.Exit(1)
-    # Apply field updates first
-    if updates:
-        try:
-            task = client.update_task(task_id, **updates)
-        except APIError as e:
-            handle_api_error(e)
-            return
-
-    # Apply status update (uses separate endpoint)
-    if status_to_update:
-        try:
-            task = client.update_status(task_id, status_to_update)
-        except APIError as e:
-            handle_api_error(e)
-            return
-
-    # Fetch task if neither update was done but we have dep operations
-    if task is None:
-        try:
-            task = client.get_task(task_id)
-        except APIError as e:
-            handle_api_error(e)
-            return
-
-    task.update(dep_result)
-    output_task(task)
-
-
-@app.command()
-def close(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    reason: Annotated[str | None, typer.Option("-r", "--reason")] = None,
-) -> None:
-    """Close a task (mark as completed).
-
-    All subtasks must be complete. If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st close task-abc123 -r "All subtasks completed"
-        st close -r "Done"    # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        task = client.close_task(task_id, reason=reason)
-    except APIError as e:
-        # Parse error detail - might be dict with what_to_do instructions
-        detail = e.detail
-        if isinstance(detail, dict):
-            # Structured error with guidance
-            output_json(
-                {
-                    "error": detail.get("message", "Task close failed"),
-                    "what_to_do": detail.get("what_to_do", []),
-                    "incomplete_subtasks": detail.get("incomplete_subtasks", []),
-                    "unverified_criteria": detail.get("unverified_criteria", []),
-                }
-            )
-        else:
-            # Simple string error
-            detail_lower = detail.lower() if isinstance(detail, str) else ""
-            hints: list[str] = []
-
-            if "status" in detail_lower or "transition" in detail_lower:
-                hints.append("Check task status with 'st show <id>'")
-                hints.append("Use 'st cancel <id>' for non-terminal states")
-
-            if "not found" in detail_lower:
-                hints.append("Verify task ID with 'st list'")
-
-            output_json({"error": detail, "hints": hints})
-        raise typer.Exit(1) from None
-
-    output_task(task)
-
-
-@app.command()
 def cancel(
     task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str, typer.Option("-r", "--reason")] = "",
@@ -889,40 +625,6 @@ def cancel(
 
     # Include the reason in the output
     task["cancel_reason"] = reason
-    output_task(task)
-
-
-@app.command()
-def claim(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    lock: Annotated[int, typer.Option("--lock")] = 30,
-    release: Annotated[bool, typer.Option("--release")] = False,
-) -> None:
-    """Claim or release a task.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st claim task-abc123 --lock 60
-        st claim --release                # Uses active context
-    """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        if release:
-            task = client.release_task(task_id)
-            task["action"] = "released"
-        else:
-            task = client.claim_task(task_id, lock_minutes=lock)
-            task["action"] = "claimed"
-            task["lock_minutes"] = lock
-    except APIError as e:
-        handle_api_error(e)
-        return
-
     output_task(task)
 
 
@@ -1633,4 +1335,44 @@ def import_plan(
     # Final TOON summary
     typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks")
 
+
+# Error stubs for removed commands - provide helpful redirects
+@app.command("work", hidden=True)
+def work_removed() -> None:
+    """Removed: use st claim + st context instead."""
+    typer.echo("Command 'work' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st claim <id>    - Start work (creates checkpoint)", err=True)
+    typer.echo("  st context <id>  - Get task/subtask details", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("show", hidden=True)
+def show_removed() -> None:
+    """Removed: use st context instead."""
+    typer.echo("Command 'show' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st context <task-id>                  - Full task context", err=True)
+    typer.echo("  st context <task-id> --subtask X.Y    - Subtask-scoped context", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("close", hidden=True)
+def close_removed() -> None:
+    """Removed: use st done instead."""
+    typer.echo("Command 'close' has been removed.\n", err=True)
+    typer.echo("Use instead:", err=True)
+    typer.echo("  st done <id>     - Complete task (verifies, merges, removes checkpoint)", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("update", hidden=True)
+def update_removed() -> None:
+    """Removed: use lifecycle commands instead."""
+    typer.echo("Command 'update' has been removed.\n", err=True)
+    typer.echo("Use lifecycle commands instead:", err=True)
+    typer.echo("  st claim <id>    - Start work (creates checkpoint)", err=True)
+    typer.echo("  st done <id>     - Complete work (merges, removes checkpoint)", err=True)
+    typer.echo("  st abandon <id>  - Rollback work (restores checkpoint)", err=True)
+    raise typer.Exit(1)
 

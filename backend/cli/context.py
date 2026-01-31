@@ -225,6 +225,6 @@ def require_task_id(explicit_task_id: str | None) -> str:
 
     output_error(
         "No task specified and no active context.\n"
-        "Either provide a task_id argument or set context: st work <task-id>"
+        "Either provide a task_id or use -t/--task flag."
     )
     raise typer.Exit(1)

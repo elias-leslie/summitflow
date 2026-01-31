@@ -8,10 +8,14 @@ import typer
 from app.storage.connection import close_pool
 
 from .commands import (
+    abandon,
     autonomous,
     backup,
+    checkpoints,
+    claim,
     complete,
     deps,
+    done,
     exec_monitor,
     git,
     health,
@@ -37,25 +41,28 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks
 FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty JSON) | --project/-P <id> | --progress-only
        Default output: compact TOON format. Use --no-compact for raw JSON.
 
-WORKFLOW: ready → update <id> --status running → subtask list <id> → [work] → step pass → subtask pass → close <id> --reason "..."
+WORKFLOW: ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
+          Alternative: abandon <id> to rollback
 
 TASKS:
   create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]
   list [--status S] [--type T] [--priority P]
   ready                                    # unblocked tasks
-  show <id>... [--full] [--summary]        # --summary=one-liner
-  context <id>                             # full task context (TOON format)
+  context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
-  update <id> [--status S] [-d desc] [-p 0-4] [--objective text] [--blocked-by id] [--unblock id]
-  close <id> --reason <text>
-  cancel <id> --reason <text>
-  delete <id>
-  bug <title> [-p 0-4] [-d desc]           # shorthand: create -t bug
-  claim <id> [--lock 30] [--release]       # lock task for N minutes
   log <id> <message>
   autocode <id> [--dry-run]                # queue for autonomous execution
   verify <plan.json>                       # validate plan file against schema
   exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
+
+CHECKPOINT (claim → done | abandon):
+  claim <id> [--force]                     # claim task, create checkpoint (DB+git)
+  claim <subtask> -t <task>                # claim subtask, create branch
+  done <subtask> -t <task>                 # complete subtask, merge branch
+  done <task>                              # complete task, merge to main, remove checkpoint
+  abandon <subtask> -t <task>              # abandon subtask, delete branch
+  abandon <task> [--force]                 # abandon task, restore DB, delete branches
+  checkpoints [-p project] [-d task]       # show active checkpoints
 
 SUBTASK:
   subtask list <task-id>
@@ -107,12 +114,14 @@ HEALTH (quality gate):
 
 EXAMPLES:
   st ready                                 # find work (compact by default)
-  st update task-abc --status running      # claim
-  st subtask list task-abc                 # view subtasks
-  st step pass task-abc 1.1 1              # mark step 1 done
-  st subtask pass task-abc 1.1             # mark subtask done
-  st close task-abc --reason "Done"        # complete task
-  st --human show task-abc                 # verbose JSON output
+  st claim task-abc                        # claim task, create checkpoint
+  st context task-abc                      # view full context
+  st context task-abc --subtask 1.1        # view subtask context
+  st step pass 1.1 1 -t task-abc           # mark step 1 done
+  st done 1.1 -t task-abc                  # complete subtask, merge branch
+  st done task-abc                         # complete task, remove checkpoint
+  st abandon task-abc --force              # rollback everything
+  st checkpoints                           # show active checkpoints
 """
 
 app = typer.Typer(
@@ -144,6 +153,21 @@ app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
 app.add_typer(tools.app, name="tools")
 app.command("exec-monitor")(exec_monitor.exec_monitor_command)
+
+# Register checkpoint-aware commands (override old claim from tasks.py)
+# These are defined with @app.command() in their modules, so access via module.app
+for cmd in claim.app.registered_commands:
+    if cmd.callback is not None and cmd.name == "claim":
+        app.command(name="claim")(cmd.callback)
+for cmd in checkpoints.app.registered_commands:
+    if cmd.callback is not None and cmd.name == "checkpoints":
+        app.command(name="checkpoints")(cmd.callback)
+for cmd in done.app.registered_commands:
+    if cmd.callback is not None and cmd.name == "done":
+        app.command(name="done")(cmd.callback)
+for cmd in abandon.app.registered_commands:
+    if cmd.callback is not None and cmd.name == "abandon":
+        app.command(name="abandon")(cmd.callback)
 
 
 @app.callback()
