@@ -52,6 +52,7 @@ TASKS:
   context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   log <id> <message>
+  cancel <id> [-r reason]                  # cancel a task (from any state)
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   verify <plan.json>                       # validate plan file against schema
   exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
@@ -140,7 +141,7 @@ app = typer.Typer(
 # Register task commands at root level
 for cmd in tasks.app.registered_commands:
     if cmd.callback is not None:
-        app.command(name=cmd.name)(cmd.callback)
+        app.command(name=cmd.name, hidden=cmd.hidden)(cmd.callback)
 
 # Also register task as a subcommand group for `st task verify` / `st task import`
 app.add_typer(tasks.app, name="task", hidden=True)

@@ -39,6 +39,9 @@ class TestCLIReferenceComplete:
         missing = []
         for cmd in app.registered_commands:
             name = cmd.name or cmd.callback.__name__
+            # Skip hidden commands (deprecated/removed commands)
+            if getattr(cmd, "hidden", False):
+                continue
             # Check if command name appears in reference (with reasonable context)
             if name not in CLI_REFERENCE:
                 missing.append(name)
@@ -70,11 +73,11 @@ class TestCLIReferenceComplete:
         """Verify core workflow commands have examples in CLI_REFERENCE."""
         core_commands = [
             "ready",
-            "update",
+            "claim",
             "subtask list",
             "step pass",
             "subtask pass",
-            "close",
+            "done",
         ]
         examples_section = (
             CLI_REFERENCE.split("EXAMPLES:")[1] if "EXAMPLES:" in CLI_REFERENCE else ""

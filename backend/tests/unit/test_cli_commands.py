@@ -509,20 +509,26 @@ class TestStepCreate:
         """Test creating steps for a subtask."""
         pass
 
-    def test_step_create_invalid_task(self):
+    def test_step_new_invalid_task(self):
         """Test error when creating steps for non-existent task."""
         from cli.client import APIError
 
         mock_client = MagicMock()
-        mock_client.bulk_create_steps = MagicMock(side_effect=APIError(404, "Task not found"))
+        mock_client.create_step_with_verification = MagicMock(
+            side_effect=APIError(404, "Task not found")
+        )
 
         with patch("cli.commands.step.STClient", return_value=mock_client):
             result = runner.invoke(
                 step_app,
                 [
-                    "create",
+                    "new",
                     "1.1",  # subtask_id
                     "Step one",  # description
+                    "-v",
+                    "echo ok",  # verify_command
+                    "-e",
+                    "ok",  # expected_output
                     "--task",
                     "task-nonexistent",
                 ],

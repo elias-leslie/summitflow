@@ -232,7 +232,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             client.generate(
                 prompt="Hello",
                 system="You are a helpful assistant",
@@ -264,7 +264,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             client.generate(prompt="Hello")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -290,7 +290,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             result = client.generate(prompt="Hello")
 
         # Verify LLMResponse fields are correctly populated
@@ -320,7 +320,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             client.generate(prompt="Hello", task_id="task-12345678")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -336,7 +336,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             client.generate(prompt="Hello")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -356,7 +356,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -372,7 +372,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -386,7 +386,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -400,7 +400,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -416,7 +416,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -430,7 +430,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -500,54 +500,6 @@ class TestClientConfigurationContract:
             assert call_kwargs["request_source"] == "test-source"
 
 
-class TestProviderDetectionContract:
-    """Tests for model-to-provider detection logic."""
-
-    def test_claude_model_detection(self):
-        """Verify Claude models are detected correctly."""
-        from app.services.agent_hub_client import AgentHubLLMClient
-
-        client = AgentHubLLMClient(model="claude-sonnet-4-5")
-        assert client.provider == "claude"
-
-        client = AgentHubLLMClient(model="claude-opus-4")
-        assert client.provider == "claude"
-
-    def test_gemini_model_detection(self):
-        """Verify Gemini models are detected correctly."""
-        from app.services.agent_hub_client import AgentHubLLMClient
-
-        client = AgentHubLLMClient(model="gemini-2.5-flash")
-        assert client.provider == "gemini"
-
-        client = AgentHubLLMClient(model="gemini-pro")
-        assert client.provider == "gemini"
-
-    def test_agent_slug_detection(self):
-        """Verify agent:X slugs are detected as 'agent' provider."""
-        from app.services.agent_hub_client import AgentHubLLMClient
-
-        client = AgentHubLLMClient(model="agent:coder")
-        assert client.provider == "agent"
-
-        client = AgentHubLLMClient(model="agent:reviewer")
-        assert client.provider == "agent"
-
-    def test_unknown_model_defaults_to_claude(self):
-        """Verify unknown models default to Claude provider."""
-        from app.services.agent_hub_client import AgentHubLLMClient
-
-        client = AgentHubLLMClient(model="unknown-model")
-        assert client.provider == "claude"
-
-    def test_provider_override(self):
-        """Verify explicit provider override works."""
-        from app.services.agent_hub_client import AgentHubLLMClient
-
-        client = AgentHubLLMClient(model="some-model", provider="gemini")
-        assert client.provider == "gemini"
-
-
 class TestSessionContract:
     """Tests for session management contract."""
 
@@ -561,7 +513,7 @@ class TestSessionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             result = client.is_available()
 
         assert result is True
@@ -577,7 +529,7 @@ class TestSessionContract:
             "app.services.agent_hub_client.AgentHubClient",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(model="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             result = client.is_available()
 
         assert result is False
