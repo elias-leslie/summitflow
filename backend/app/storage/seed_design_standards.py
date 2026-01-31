@@ -73,20 +73,47 @@ def seed_base_standard(force: bool = False) -> dict[str, Any] | None:
     return standard
 
 
+SEED_LOCK_ID = 1234567891  # Different from schema lock
+
+
 def ensure_base_standard() -> dict[str, Any]:
     """Ensure base standard exists, creating if needed.
 
-    This is safe to call multiple times - it will only create if missing.
+    Uses PostgreSQL advisory lock to prevent race conditions when multiple
+    workers start simultaneously.
 
     Returns:
         The base standard dict
     """
-    standard = seed_base_standard(force=False)
-    if not standard:
-        standard = design_standards.get_base_standard()
-    if not standard:
-        raise RuntimeError("Failed to create or retrieve base standard")
-    return standard
+    from .connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Try to acquire advisory lock (non-blocking)
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (SEED_LOCK_ID,))
+        got_lock = cur.fetchone()[0]
+
+        if not got_lock:
+            # Another worker is seeding, wait for them to finish
+            logger.info("Design standards seeding in progress by another worker, waiting...")
+            cur.execute("SELECT pg_advisory_lock(%s)", (SEED_LOCK_ID,))
+            cur.execute("SELECT pg_advisory_unlock(%s)", (SEED_LOCK_ID,))
+            conn.commit()
+            # They're done, just return the existing standard
+            standard = design_standards.get_base_standard()
+            if not standard:
+                raise RuntimeError("Failed to retrieve base standard after wait")
+            return standard
+
+        try:
+            standard = seed_base_standard(force=False)
+            if not standard:
+                standard = design_standards.get_base_standard()
+            if not standard:
+                raise RuntimeError("Failed to create or retrieve base standard")
+            return standard
+        finally:
+            cur.execute("SELECT pg_advisory_unlock(%s)", (SEED_LOCK_ID,))
+            conn.commit()
 
 
 if __name__ == "__main__":
