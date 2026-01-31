@@ -10,6 +10,9 @@ import json
 import os
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -283,6 +286,19 @@ def restore_task_snapshot(task_id: str) -> bool:
         )
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to start service: {e.stderr}", file=sys.stderr)
+
+    # Wait for backend to be ready (up to 30 seconds)
+    print("Waiting for backend to be ready...")
+    for _ in range(30):
+        try:
+            req = urllib.request.Request("http://localhost:8001/health", method="GET")
+            with urllib.request.urlopen(req, timeout=1):
+                print("Backend ready.")
+                break
+        except (urllib.error.URLError, TimeoutError):
+            time.sleep(1)
+    else:
+        print("Warning: Backend may not be fully ready yet", file=sys.stderr)
 
     # Checkout base branch and delete task branches
     print(f"Switching to {base_branch} branch...")
