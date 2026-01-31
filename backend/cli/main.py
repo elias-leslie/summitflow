@@ -23,7 +23,6 @@ from .commands import (
     tasks,
     tests,
     tools,
-    worktree,
 )
 from .config import set_project_override
 from .output import set_compact_output, set_human_output, set_progress_only
@@ -81,8 +80,6 @@ PROJECTS: projects list | projects current
 
 TEST: test list [--type T] | import --framework pytest|vitest
 
-WORKTREE: worktree list | worktree prune
-
 GIT: git status | git sync
 
 BACKUP:
@@ -139,7 +136,6 @@ app.add_typer(subtask.app, name="subtask")
 app.add_typer(step.app, name="step")
 app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
-app.add_typer(worktree.app, name="worktree")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")

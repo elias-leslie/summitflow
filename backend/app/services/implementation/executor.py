@@ -22,7 +22,6 @@ from ...storage.subtasks import update_subtask_passes
 from ..autonomous.prompt_builder import build_execution_prompt
 from ..autonomous.tier_classifier import classify_tier, select_model_for_tier
 from ..git_service import commit_changes, get_current_commit, revert_to
-from ..worktree_manager import WorktreeManager, get_worktree_manager
 from .agent import consult_alternate, execute_agent, parse_and_apply_changes
 from .context import build_context
 from .subtasks import get_next_task_from_subtasks
@@ -39,14 +38,12 @@ class ImplementationExecutor:
         self,
         project_id: str,
         repo_path: Path | None = None,
-        use_worktree: bool = False,
     ):
         """Initialize executor.
 
         Args:
             project_id: Project ID
             repo_path: Path to git repository. If None, looks up from projects table.
-            use_worktree: If True, execute tasks in isolated git worktrees
         """
         self.project_id = project_id
         if repo_path:
@@ -58,21 +55,6 @@ class ImplementationExecutor:
             if not root:
                 raise ValueError(f"Project {project_id} not found or has no root_path")
             self.repo_path = Path(root)
-        self.use_worktree = use_worktree
-        self._worktree_manager: WorktreeManager | None = None
-        self._current_worktree_path: Path | None = None
-
-    @property
-    def worktree_manager(self) -> WorktreeManager:
-        """Get or create WorktreeManager instance."""
-        if self._worktree_manager is None:
-            self._worktree_manager = get_worktree_manager(self.repo_path)
-        return self._worktree_manager
-
-    @property
-    def effective_repo_path(self) -> Path:
-        """Get the effective repo path (worktree if active, else main repo)."""
-        return self._current_worktree_path or self.repo_path
 
     def start_execution(
         self,
@@ -82,7 +64,6 @@ class ImplementationExecutor:
         """Start execution of a task.
 
         Creates a new agent session with initialized build_state.
-        If use_worktree=True, creates an isolated worktree for the task.
 
         Args:
             task_id: Task ID to execute
@@ -104,21 +85,7 @@ class ImplementationExecutor:
             "iteration": 0,
             "pre_merge_sha": None,
             "started_at": datetime.now(UTC).isoformat(),
-            "worktree_enabled": self.use_worktree,
-            "worktree_path": None,
         }
-
-        if self.use_worktree:
-            worktree_info = self.worktree_manager.create_worktree(self.project_id, task_id)
-            self._current_worktree_path = worktree_info.path
-            build_state["worktree_path"] = str(worktree_info.path)
-            build_state["worktree_branch"] = worktree_info.branch
-            logger.info(
-                "worktree_initialized",
-                task_id=task_id,
-                path=str(worktree_info.path),
-                branch=worktree_info.branch,
-            )
 
         task_store.update_task(task_id, current_phase="implement")
 
@@ -133,7 +100,6 @@ class ImplementationExecutor:
             "execution_started",
             task_id=task_id,
             session_id=session_id,
-            worktree=build_state.get("worktree_path"),
         )
 
         return session_id
@@ -160,7 +126,6 @@ class ImplementationExecutor:
             raise ValueError(f"Session {session_id} not found")
 
         build_state = session.get("build_state") or {}
-        self._restore_worktree_from_state(build_state)
 
         task_id = session.get("context", {}).get("task_id") or build_state.get("task_id")
         if not task_id:
@@ -252,17 +217,6 @@ class ImplementationExecutor:
 
         return session_id
 
-    def _restore_worktree_from_state(self, build_state: dict[str, Any]) -> None:
-        """Restore worktree path from build_state if resuming."""
-        if build_state.get("worktree_enabled") and build_state.get("worktree_path"):
-            self._current_worktree_path = Path(build_state["worktree_path"])
-            self.use_worktree = True
-            logger.info(
-                "worktree_restored",
-                path=str(self._current_worktree_path),
-                exists=self._current_worktree_path.exists(),
-            )
-
     def _run_iteration_loop(
         self,
         session_id: str,
@@ -325,7 +279,7 @@ class ImplementationExecutor:
             )
 
             try:
-                output = execute_agent(current_model, prompt, self.effective_repo_path)
+                output = execute_agent(current_model, prompt, self.repo_path)
             except TimeoutError:
                 iteration_context = {
                     "test_failures": "Agent execution timed out",
@@ -336,9 +290,7 @@ class ImplementationExecutor:
                 iteration_context = {"test_failures": f"Agent error: {e}", "static_failures": ""}
                 continue
 
-            if not output or not parse_and_apply_changes(
-                output, self.effective_repo_path, self.use_worktree
-            ):
+            if not output or not parse_and_apply_changes(output, self.repo_path, False):
                 iteration_context = {
                     "test_failures": "No valid code changes in output",
                     "static_failures": "",
@@ -356,7 +308,7 @@ class ImplementationExecutor:
                 continue
 
             self._update_phase(task_id, "test", build_state)
-            test_result = run_verification(self.effective_repo_path, files, capability_id)
+            test_result = run_verification(self.repo_path, files, capability_id)
 
             if test_result["success"]:
                 return self._handle_success(
@@ -433,18 +385,11 @@ class ImplementationExecutor:
         return primary_model, was_consulted, was_handoff, iteration_context
 
     def _commit_changes(self, task_id: str, current_task: dict[str, Any], iteration: int) -> None:
-        """Commit changes in worktree or main repo."""
-        if self.use_worktree and self._current_worktree_path:
-            self.worktree_manager.commit_in_worktree(
-                self.project_id,
-                task_id,
-                f"Task {current_task.get('id')} - iteration {iteration}",
-            )
-        else:
-            commit_changes(
-                f"Task {current_task.get('id')} - iteration {iteration}",
-                self.repo_path,
-            )
+        """Commit changes in repo."""
+        commit_changes(
+            f"Task {current_task.get('id')} - iteration {iteration}",
+            self.repo_path,
+        )
 
     def _handle_success(
         self,

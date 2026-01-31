@@ -81,12 +81,6 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 30,  # Every 30 minutes
         "kwargs": {"project_id": "summitflow"},
     },
-    # Worktree cleanup - remove orphaned worktrees from failed/abandoned executions
-    "cleanup-orphaned-worktrees": {
-        "task": "summitflow.cleanup_orphaned_worktrees",
-        "schedule": 60 * 60 * 6,  # Every 6 hours
-        "kwargs": {"max_age_hours": 24},
-    },
     # Code health - daily scan at 2am UTC
     "daily-code-health-scan": {
         "task": "summitflow.daily_code_health_scan",

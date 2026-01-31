@@ -7,10 +7,8 @@ from .branches import checkout_branch, create_task_branch, get_current_branch, s
 from .commits import capture_diff, commit_changes, get_current_commit, get_diff_stats
 from .pull_requests import auto_create_pr, create_pull_request
 from .utils import get_blob_shas, get_head_sha, push_branch, revert_to
-from .worktrees import auto_claim_with_worktree, get_worktree_changes
 
 __all__ = [
-    "auto_claim_with_worktree",
     "auto_create_pr",
     "capture_diff",
     "checkout_branch",
@@ -22,7 +20,6 @@ __all__ = [
     "get_current_commit",
     "get_diff_stats",
     "get_head_sha",
-    "get_worktree_changes",
     "push_branch",
     "revert_to",
     "slugify",

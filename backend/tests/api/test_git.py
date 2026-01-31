@@ -60,21 +60,6 @@ class TestGitSync:
         assert data["skipped"] > 0 or data["success"] >= 0
 
 
-class TestWorktrees:
-    """Tests for /api/projects/{project_id}/worktrees endpoints."""
-
-    def test_list_worktrees_invalid_project(self):
-        """Test 404 for invalid project."""
-        response = client.get("/api/projects/nonexistent/worktrees")
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
-
-    def test_delete_worktree_invalid_project(self):
-        """Test 404 for invalid project."""
-        response = client.delete("/api/projects/nonexistent/worktrees/task-123")
-        assert response.status_code == 404
-
-
 class TestPREndpoints:
     """Tests for /api/tasks/{task_id}/pr endpoints."""
 

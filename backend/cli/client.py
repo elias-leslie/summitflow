@@ -332,14 +332,6 @@ class STClient:
             fix_step_number,
         )
 
-    # Execution
-    def start_execution(
-        self, task_id: str, agent_type: str = "claude", use_worktree: bool = False
-    ) -> dict[str, Any]:
-        return exec_ops.start_execution(
-            self._client, self._url, self._handle_response, task_id, agent_type, use_worktree
-        )
-
     # Autonomous
     def get_autonomous_settings(self) -> dict[str, Any]:
         return exec_ops.get_autonomous_settings(self._client, self._url, self._handle_response)

@@ -86,28 +86,6 @@ class TestGitSync:
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
 
 
-class TestGitCleanup:
-    """Tests for st git cleanup command."""
-
-    def test_cleanup_help(self):
-        """Verify help text displays."""
-        result = runner.invoke(app, ["cleanup", "--help"])
-        assert result.exit_code == 0
-        assert "Remove stale git worktrees" in result.stdout
-        assert "--dry-run" in result.stdout
-        assert "--max-age" in result.stdout
-
-
-class TestGitWorktrees:
-    """Tests for st git worktrees command."""
-
-    def test_worktrees_help(self):
-        """Verify help text displays."""
-        result = runner.invoke(app, ["worktrees", "--help"])
-        assert result.exit_code == 0
-        assert "List all active worktrees" in result.stdout
-
-
 class TestFormatCompactRepo:
     """Tests for TOON format helper."""
 

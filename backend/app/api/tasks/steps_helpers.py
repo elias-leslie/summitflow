@@ -5,7 +5,6 @@ This module contains utility functions used by the steps API endpoints.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 
@@ -27,34 +26,18 @@ def get_subtask_table_id(task_id: str, subtask_id: str) -> str:
 def get_verification_cwd(project_id: str, task_id: str) -> str | None:
     """Get the working directory for step verification.
 
-    If a worktree exists for this task, use the worktree path.
-    Otherwise, fall back to the project root.
-
-    This enables seamless verification for worktree-based execution
-    where subagents work in isolated worktrees.
+    Returns the project root path for verification commands.
 
     Args:
         project_id: Project ID
-        task_id: Task ID
+        task_id: Task ID (unused, kept for API compatibility)
 
     Returns:
         Path to use as cwd for verification commands
     """
-    from ...services.worktree_manager import WorktreeManager
     from ...storage.projects import get_project_root_path
 
-    project_root = get_project_root_path(project_id)
-    if not project_root:
-        return None
-
-    # Check if worktree exists for this task
-    manager = WorktreeManager(Path(project_root))
-    worktree_path = manager.get_worktree_path(project_id, task_id)
-
-    if worktree_path.exists():
-        return str(worktree_path)
-
-    return project_root
+    return get_project_root_path(project_id)
 
 
 def convert_steps_to_storage_format(

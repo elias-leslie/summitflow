@@ -25,7 +25,6 @@ from ...core.debug import (
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.pubsub import publish_ws_event
-from ...services.worktree_manager import get_worktree_manager
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.events import EventVisibility
@@ -139,17 +138,12 @@ def check_pristine_codebase(project_id: str) -> None:
 WORKER_STUCK_THRESHOLD = 3
 
 
-def _get_worktree_path(project_id: str, task_id: str) -> str:
-    """Get or create worktree for task execution, protecting main branch."""
-    from pathlib import Path
-
+def _get_project_path(project_id: str) -> str:
+    """Get project root path for task execution."""
     project_root = get_project_root_path(project_id)
     if not project_root:
         raise ValueError(f"Project {project_id} has no root_path configured")
-
-    manager = get_worktree_manager(Path(project_root))
-    worktree = manager.get_or_create_worktree(project_id, task_id)
-    return str(worktree.path)
+    return project_root
 
 
 def _emit_log(
@@ -447,20 +441,13 @@ def _execute_subtask(
     )
 
     try:
-        worktree_path = _get_worktree_path(project_id, task_id)
-        prompt = _build_subtask_prompt(task_id, subtask, project_id, worktree_path)
+        project_path = _get_project_path(project_id)
+        prompt = _build_subtask_prompt(task_id, subtask, project_id, project_path)
         logger.info(
-            "Executing in worktree",
+            "Executing in project",
             subtask_id=subtask_short_id,
-            worktree_path=worktree_path,
+            project_path=project_path,
             prompt_length=len(prompt),
-        )
-        _emit_log(
-            task_id,
-            "info",
-            f"Using worktree: {worktree_path}",
-            project_id=project_id,
-            visibility="internal",
         )
         client = get_sync_client()
         _emit_log(
@@ -481,7 +468,7 @@ def _execute_subtask(
         response = client.run_agent(
             task=prompt,
             agent_slug="coder",
-            working_dir=worktree_path,
+            working_dir=project_path,
             max_turns=30,
             project_id=project_id,
             use_memory=True,
@@ -546,7 +533,7 @@ def _execute_subtask(
             acknowledge_no_citations(task_id, subtask_short_id)
 
         steps = subtask.get("steps_from_table", [])
-        step_results = _verify_steps(task_id, subtask_id, steps, worktree_path, project_id)
+        step_results = _verify_steps(task_id, subtask_id, steps, project_path, project_id)
 
         all_passed = all(r["passed"] for r in step_results)
         duration = time.time() - start_time
@@ -622,7 +609,7 @@ def _build_subtask_prompt(
     task_id: str,
     subtask: dict[str, Any],
     project_id: str,
-    worktree_path: str,
+    project_path: str,
 ) -> str:
     """Build subtask prompt with fresh context: objective + spirit/anti + subtask + handoff."""
     spirit = get_task_spirit(task_id)
@@ -664,7 +651,7 @@ def _build_subtask_prompt(
 task_id: {task_id}
 subtask_id: {subtask_short_id}
 project_id: {project_id}
-worktree_path: {worktree_path}
+project_path: {project_path}
 api_base: http://localhost:8001""")
 
     return "\n".join(prompt_parts)
@@ -674,7 +661,7 @@ def _verify_steps(
     task_id: str,
     subtask_id: str,
     steps: list[dict[str, Any]],
-    worktree_path: str,
+    project_path: str,
     project_id: str,
 ) -> list[dict[str, Any]]:
     """Run verify_command for each step and check expected_output."""
@@ -683,9 +670,9 @@ def _verify_steps(
     for step in steps:
         step_num = step.get("step_number", 0)
 
-        result = verify_step(step, worktree_path, project_id=project_id)
+        result = verify_step(step, project_path, project_id=project_id)
 
-        update_step_passes(subtask_id, step_num, result.passed, project_root=worktree_path)
+        update_step_passes(subtask_id, step_num, result.passed, project_root=project_path)
         status = "passed" if result.passed else "failed"
 
         # Emit detailed verification result
