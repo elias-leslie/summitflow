@@ -359,24 +359,6 @@ class STClient:
     def get_session(self, session_id: str) -> dict[str, Any]:
         return exec_ops.get_session(self._client, self._url, self._handle_response, session_id)
 
-    # Autocode
-    def start_autocode(
-        self, task_id: str, agent_slug: str | None = None, dry_run: bool = False
-    ) -> dict[str, Any]:
-        return exec_ops.start_autocode(
-            self._client, self._url, self._handle_response, task_id, agent_slug, dry_run
-        )
-
-    def get_autocode_status(self, task_id: str, execution_id: str) -> dict[str, Any]:
-        return exec_ops.get_autocode_status(
-            self._client, self._url, self._handle_response, task_id, execution_id
-        )
-
-    def abort_autocode(self, task_id: str, execution_id: str) -> dict[str, Any]:
-        return exec_ops.abort_autocode(
-            self._client, self._url, self._handle_response, task_id, execution_id
-        )
-
     # Events
     def get_events(
         self, project_id: str, task_id: str, limit: int = 50, include_debug: bool = False

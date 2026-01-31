@@ -54,7 +54,7 @@ TASKS:
   bug <title> [-p 0-4] [-d desc]           # shorthand: create -t bug
   claim <id> [--lock 30] [--release]       # lock task for N minutes
   log <id> <message>
-  autocode <id> [--sync] [--status exec-id] [--abort exec-id] [--model M] [--dry-run]
+  autocode <id> [--dry-run]                # queue for autonomous execution
   verify <plan.json>                       # validate plan file against schema
   exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
 

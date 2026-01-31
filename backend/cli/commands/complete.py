@@ -119,7 +119,9 @@ def _complete(
 def complete_default(
     ctx: typer.Context,
     message: Annotated[str | None, typer.Argument(help="Message to send")] = None,
-    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Agent slug (required)")] = None,
+    agent: Annotated[
+        str | None, typer.Option("--agent", "-a", help="Agent slug (required)")
+    ] = None,
     project: Annotated[str, typer.Option("--project", "-p", help="Project ID")] = "st-cli",
     source: Annotated[
         str, typer.Option("--source", "-s", help="Source client identifier")

@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
+import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from celery import Task, shared_task
@@ -42,6 +45,97 @@ from .verification import verify_step
 logger = get_logger(__name__)
 
 MAX_ITERATIONS = 50
+
+
+class PristineCheckError(Exception):
+    """Raised when codebase is not in pristine state."""
+
+    pass
+
+
+def _find_dev_tools() -> str | None:
+    """Find dt command or dev-tools.sh script.
+
+    Returns path to dt (if in PATH) or None if not found.
+    """
+    dt_path = shutil.which("dt")
+    if dt_path:
+        return dt_path
+    return None
+
+
+def check_pristine_codebase(project_id: str) -> None:
+    """Verify codebase passes quality gates before automated execution.
+
+    Runs lint, types, and tests to ensure no pre-existing failures that would
+    cause false breaking change detection.
+
+    Args:
+        project_id: Project to check
+
+    Raises:
+        PristineCheckError: If quality gates fail
+    """
+    root_path = get_project_root_path(project_id)
+    if not root_path:
+        raise PristineCheckError(f"Project {project_id} not found or has no root_path")
+
+    repo_path = Path(root_path)
+
+    dt_cmd = _find_dev_tools()
+    if dt_cmd:
+        cmd = [dt_cmd, "--check"]
+    else:
+        dev_tools_script = repo_path / "scripts" / "dev-tools.sh"
+        if not dev_tools_script.exists():
+            logger.warning(
+                "pristine_check_skipped",
+                project_id=project_id,
+                reason="dt command and scripts/dev-tools.sh not found",
+            )
+            return
+        cmd = [str(dev_tools_script), "--check"]
+
+    logger.info("pristine_check_started", project_id=project_id, cmd=cmd[0])
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minutes max
+        )
+
+        if result.returncode != 0:
+            output = result.stdout + result.stderr
+            logger.error(
+                "pristine_check_failed",
+                project_id=project_id,
+                exit_code=result.returncode,
+                output=output[:2000],
+            )
+            raise PristineCheckError(
+                f"Codebase quality gates failed (exit code {result.returncode}). "
+                f"Fix lint/type/test errors before running automated execution. "
+                f"Run 'dt --check' to see details."
+            )
+
+        logger.info("pristine_check_passed", project_id=project_id)
+
+    except subprocess.TimeoutExpired as e:
+        raise PristineCheckError(
+            "Pristine check timed out after 10 minutes. Run 'dt --check' manually to investigate."
+        ) from e
+    except FileNotFoundError as e:
+        logger.warning(
+            "pristine_check_skipped",
+            project_id=project_id,
+            reason=f"Command not found: {e}",
+        )
+        return
+
+
 WORKER_STUCK_THRESHOLD = 3
 
 
@@ -210,6 +304,24 @@ def start_execution(
     if not task:
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    # Verify codebase is pristine before automated execution
+    try:
+        _emit_log(task_id, "info", "Running pristine check (dt --check)...", project_id=project_id)
+        check_pristine_codebase(project_id)
+        _emit_log(task_id, "info", "Pristine check passed", project_id=project_id)
+    except PristineCheckError as e:
+        logger.error("pristine_check_failed", task_id=task_id, error=str(e))
+        task_store.update_task_status(task_id, "blocked", error_message=str(e))
+        _emit_error(
+            task_id, f"Pristine check failed: {e}", recoverable=False, project_id=project_id
+        )
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "error": str(e),
+            "reason": "pristine_check_failed",
+        }
 
     task_store.update_task_status(task_id, "running")
 

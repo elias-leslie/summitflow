@@ -18,7 +18,6 @@ from .api import (
     design_standards,
     explorer,
     git,
-    implementation,
     mockups,
     notifications,
     projects,
@@ -87,7 +86,6 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
-app.include_router(implementation.router, prefix="/api/projects", tags=["implementation"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])

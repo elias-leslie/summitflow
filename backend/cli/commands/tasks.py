@@ -1266,144 +1266,79 @@ def verify_plan(
 @app.command()
 def autocode(
     task_id: Annotated[str | None, typer.Argument()] = None,
-    sync: Annotated[
-        bool,
-        typer.Option("--sync", help="Run synchronously (blocks until complete)"),
-    ] = False,
-    status: Annotated[
-        str | None,
-        typer.Option("--status", help="Get status of execution by ID"),
-    ] = None,
-    abort: Annotated[
-        str | None,
-        typer.Option("--abort", help="Abort execution by ID"),
-    ] = None,
-    agent_slug: Annotated[
-        str | None,
-        typer.Option("--agent-slug", "-a", help="Agent Hub agent slug (e.g., 'coder', 'planner')"),
-    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Validate only, don't execute"),
     ] = False,
 ) -> None:
-    """Execute task via Agent Hub.
+    """Queue task for autonomous execution via Celery.
 
-    Default: Queues task for async Celery execution with full pipeline
-    (worktree isolation, multi-subtask, review gates, self-healing).
-
-    Use --sync for immediate single-subtask execution (useful for debugging).
+    Executes the full autonomous pipeline:
+    - Pristine codebase check (dt --check)
+    - Worktree isolation per task
+    - Multi-subtask execution with fresh context
+    - Step verification via verify_command
+    - 3-2-1 escalation (worker → supervisor → human)
+    - AI review and auto-merge
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st autocode task-abc123              # Queue for async execution
-        st autocode task-abc123 --sync       # Run synchronously (blocks)
-        st autocode --dry-run                # Validate without executing
-        st autocode --status exec-12345      # Check execution status
-        st autocode -a coder                 # Specify agent
+        st autocode task-abc123    # Queue for autonomous execution
+        st autocode --dry-run      # Validate without executing
     """
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
     client = STClient()
 
-    # Status check mode
-    if status:
-        try:
-            result = client.get_autocode_status(task_id, status)
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
-
-        # Format evidence summary if present
-        evidence = result.get("evidence")
-        if evidence:
-            files = evidence.get("evidence", {}).get("files_modified", [])
-            verifications = evidence.get("evidence", {}).get("verifications", [])
-            passed = sum(1 for v in verifications if v.get("passed"))
-            result["evidence_summary"] = {
-                "files_modified": len(files),
-                "verifications": f"{passed}/{len(verifications)}",
-            }
-            del result["evidence"]  # Remove full evidence for cleaner output
-
-        output_json(result)
-        return
-
-    # Abort mode
-    if abort:
-        try:
-            result = client.abort_autocode(task_id, abort)
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
-
-        output_json(result)
-        return
-
-    # Async mode (default): Queue for Celery execution
-    if not sync:
-        try:
-            task = client.get_task(task_id)
-            subtasks_response = client.get_subtasks(task_id)
-            subtasks = subtasks_response.get("subtasks", [])
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
-
-        if not subtasks:
-            output_error(f"Task {task_id} has no subtasks. Run /plan_it first.")
-            raise typer.Exit(1)
-
-        current_status = task.get("status", "pending")
-        if current_status in ("running", "queue"):
-            output_error(f"Task {task_id} is already {current_status}.")
-            raise typer.Exit(1)
-        if current_status in ("completed", "merged", "pr_created"):
-            output_error(f"Task {task_id} is already {current_status}.")
-            raise typer.Exit(1)
-
-        if dry_run:
-            incomplete = [s for s in subtasks if not s.get("passes")]
-            output_json(
-                {
-                    "task_id": task_id,
-                    "status": "dry_run",
-                    "mode": "async",
-                    "subtasks_total": len(subtasks),
-                    "subtasks_incomplete": len(incomplete),
-                    "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
-                    "message": f"Would queue {task_id} for autonomous execution",
-                }
-            )
-            return
-
-        try:
-            client.update_status(task_id, status="queue")
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
-
-        output_json(
-            {
-                "task_id": task_id,
-                "status": "queued",
-                "mode": "async",
-                "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
-            }
-        )
-        return
-
-    # Sync mode: Direct API call (single subtask, blocks)
     try:
-        result = client.start_autocode(task_id, agent_slug=agent_slug, dry_run=dry_run)
+        task = client.get_task(task_id)
+        subtasks_response = client.get_subtasks(task_id)
+        subtasks = subtasks_response.get("subtasks", [])
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    result["mode"] = "sync"
-    output_json(result)
+    if not subtasks:
+        output_error(f"Task {task_id} has no subtasks. Run /plan_it first.")
+        raise typer.Exit(1)
+
+    current_status = task.get("status", "pending")
+    if current_status in ("running", "queue"):
+        output_error(f"Task {task_id} is already {current_status}.")
+        raise typer.Exit(1)
+    if current_status in ("completed", "merged", "pr_created"):
+        output_error(f"Task {task_id} is already {current_status}.")
+        raise typer.Exit(1)
+
+    if dry_run:
+        incomplete = [s for s in subtasks if not s.get("passes")]
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "dry_run",
+                "subtasks_total": len(subtasks),
+                "subtasks_incomplete": len(incomplete),
+                "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
+                "message": f"Would queue {task_id} for autonomous execution",
+            }
+        )
+        return
+
+    try:
+        client.update_status(task_id, status="queue")
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    output_json(
+        {
+            "task_id": task_id,
+            "status": "queued",
+            "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
+        }
+    )
 
 
 @app.command("import")

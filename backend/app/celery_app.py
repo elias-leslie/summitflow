@@ -174,12 +174,10 @@ def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) 
 
 # Import tasks to register them with Celery
 from app.tasks import (  # noqa: F401, E402
-    agent_runner,
     autonomous,
     backup,
     enrichment,
     explorer_tasks,
-    orchestrator_runner,
     self_healing,
 )
 from app.tasks.autonomous import ideas  # noqa: F401, E402

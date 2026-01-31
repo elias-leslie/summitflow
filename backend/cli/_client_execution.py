@@ -8,20 +8,6 @@ if TYPE_CHECKING:
     import httpx
 
 
-def start_execution(
-    client: httpx.Client,
-    url_fn: Any,
-    handle_response: Any,
-    task_id: str,
-    agent_type: str = "claude",
-    use_worktree: bool = False,
-) -> dict[str, Any]:
-    """Start execution of a task."""
-    data = {"agent_type": agent_type, "use_worktree": use_worktree}
-    response = client.post(url_fn(f"/tasks/{task_id}/execute/start"), json=data)
-    return cast(dict[str, Any], handle_response(response))
-
-
 def get_autonomous_settings(
     client: httpx.Client, url_fn: Any, handle_response: Any
 ) -> dict[str, Any]:
@@ -57,51 +43,6 @@ def get_session(
 ) -> dict[str, Any]:
     """Get a specific session."""
     response = client.get(url_fn(f"/sessions/{session_id}"))
-    return cast(dict[str, Any], handle_response(response))
-
-
-def start_autocode(
-    client: httpx.Client,
-    url_fn: Any,
-    handle_response: Any,
-    task_id: str,
-    agent_slug: str | None = None,
-    dry_run: bool = False,
-) -> dict[str, Any]:
-    """Start autocode execution for a task."""
-    data: dict[str, Any] = {"dry_run": dry_run}
-    if agent_slug:
-        data["agent_slug"] = agent_slug
-    # Autocode requests can take 10+ minutes with Claude OAuth for complex tasks
-    response = client.post(
-        url_fn(f"/tasks/{task_id}/autocode"),
-        json=data,
-        timeout=600.0,
-    )
-    return cast(dict[str, Any], handle_response(response))
-
-
-def get_autocode_status(
-    client: httpx.Client,
-    url_fn: Any,
-    handle_response: Any,
-    task_id: str,
-    execution_id: str,
-) -> dict[str, Any]:
-    """Get status of an autocode execution."""
-    response = client.get(url_fn(f"/tasks/{task_id}/autocode/{execution_id}"))
-    return cast(dict[str, Any], handle_response(response))
-
-
-def abort_autocode(
-    client: httpx.Client,
-    url_fn: Any,
-    handle_response: Any,
-    task_id: str,
-    execution_id: str,
-) -> dict[str, Any]:
-    """Abort a running autocode execution."""
-    response = client.post(url_fn(f"/tasks/{task_id}/autocode/{execution_id}/abort"))
     return cast(dict[str, Any], handle_response(response))
 
 

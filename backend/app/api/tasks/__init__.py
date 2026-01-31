@@ -7,12 +7,11 @@ Split from monolithic tasks.py (1981 lines) into focused modules:
 - subtasks.py: Subtask management
 - steps.py: Step management within subtasks (with verify_command support)
 - logging.py: Progress logging, SSE streaming, task claiming
-- autocode.py: AI worker execution endpoint
+- workflow.py: Task workflow automation
 """
 
 from fastapi import APIRouter
 
-from .autocode import router as autocode_router
 from .core import router as core_router
 from .dependencies import router as dependencies_router
 from .enrichment import router as enrichment_router
@@ -30,7 +29,6 @@ router.include_router(enrichment_router)
 router.include_router(subtasks_router)
 router.include_router(steps_router)
 router.include_router(logging_router)
-router.include_router(autocode_router)
 router.include_router(workflow_router)
 
 __all__ = ["router"]
