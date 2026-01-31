@@ -90,7 +90,8 @@ def ensure_base_standard() -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
         # Try to acquire advisory lock (non-blocking)
         cur.execute("SELECT pg_try_advisory_lock(%s)", (SEED_LOCK_ID,))
-        got_lock = cur.fetchone()[0]
+        row = cur.fetchone()
+        got_lock = row[0] if row else False
 
         if not got_lock:
             # Another worker is seeding, wait for them to finish

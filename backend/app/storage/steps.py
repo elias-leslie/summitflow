@@ -106,6 +106,11 @@ def create_step(
             f"""
             INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
             VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (subtask_id, step_number) DO UPDATE SET
+                description = EXCLUDED.description,
+                spec = EXCLUDED.spec,
+                verify_command = EXCLUDED.verify_command,
+                expected_output = EXCLUDED.expected_output
             RETURNING {STEP_COLUMNS}
             """,
             (subtask_id, step_number, description, spec_json, verify_command, expected_output),
@@ -644,6 +649,11 @@ def bulk_create_steps(
                 f"""
                 INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (subtask_id, step_number) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    spec = EXCLUDED.spec,
+                    verify_command = EXCLUDED.verify_command,
+                    expected_output = EXCLUDED.expected_output
                 RETURNING {STEP_COLUMNS}
                 """,
                 (subtask_id, idx, description, spec_json, verify_command, expected_output),
@@ -707,6 +717,11 @@ def append_steps(
                 f"""
                 INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (subtask_id, step_number) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    spec = EXCLUDED.spec,
+                    verify_command = EXCLUDED.verify_command,
+                    expected_output = EXCLUDED.expected_output
                 RETURNING {STEP_COLUMNS}
                 """,
                 (subtask_id, idx, description, spec_json, verify_command, expected_output),

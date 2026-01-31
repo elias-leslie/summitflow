@@ -108,6 +108,11 @@ def create_subtask(
             INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
                                        details, display_order)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (task_id, subtask_id) DO UPDATE SET
+                phase = EXCLUDED.phase,
+                description = EXCLUDED.description,
+                details = EXCLUDED.details,
+                display_order = EXCLUDED.display_order
             RETURNING {SUBTASK_COLUMNS}
             """,
             (
@@ -495,6 +500,11 @@ def bulk_create_subtasks(
                 INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
                                            details, display_order)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (task_id, subtask_id) DO UPDATE SET
+                    phase = EXCLUDED.phase,
+                    description = EXCLUDED.description,
+                    details = EXCLUDED.details,
+                    display_order = EXCLUDED.display_order
                 RETURNING {SUBTASK_COLUMNS}
                 """,
                 (

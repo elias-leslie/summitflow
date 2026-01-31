@@ -73,13 +73,20 @@ def cleanup_tasks():
             pass  # Task may already be deleted
 
 
-def run_cli(args: list[str], check: bool = False) -> subprocess.CompletedProcess:
+def run_cli(
+    args: list[str], check: bool = False, project_id: str = "summitflow"
+) -> subprocess.CompletedProcess:
     """Run st CLI command and return result."""
+    import os
+
+    env = os.environ.copy()
+    env["ST_PROJECT_ID"] = project_id
     result = subprocess.run(
         ["st", *args],
         capture_output=True,
         text=True,
         timeout=30,
+        env=env,
     )
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)

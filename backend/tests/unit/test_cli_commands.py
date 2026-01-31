@@ -544,6 +544,11 @@ class TestBackupCommands:
     These tests check backup commands work - they read from DB but don't create tasks.
     """
 
+    @pytest.fixture(autouse=True)
+    def set_project_env(self, monkeypatch):
+        """Set ST_PROJECT_ID for all backup tests."""
+        monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
+
     def test_backup_list(self):
         """Test st backup list command."""
         from cli.commands.backup import app as backup_app
