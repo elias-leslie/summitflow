@@ -336,9 +336,9 @@ def ready(
 
 def _fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
     """Fetch task-type triggered references from Agent Hub."""
-    from ..config import get_agent_hub_url
-
     import httpx
+
+    from ..config import get_agent_hub_url
 
     try:
         url = f"{get_agent_hub_url()}/api/memory/triggered-references"
@@ -353,9 +353,9 @@ def _fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
 
 def _fetch_phase_triggered_references(phase: str) -> list[dict[str, Any]]:
     """Fetch phase-triggered references from Agent Hub."""
-    from ..config import get_agent_hub_url
-
     import httpx
+
+    from ..config import get_agent_hub_url
 
     try:
         url = f"{get_agent_hub_url()}/api/memory/phase-triggered-references"
@@ -393,7 +393,7 @@ def context(
         st context task-abc123                  # Full task context
         st context task-abc123 --subtask 1.1   # Subtask-scoped context
     """
-    from ..output import output_context, output_subtask_context
+    from ..output import output_subtask_context
 
     client = STClient(require_project=False)
 
@@ -507,6 +507,7 @@ def export(
         st export task-abc123 -o task.json        # Write to file
     """
     from datetime import datetime
+
     client = STClient(require_project=False)
 
     try:
@@ -1408,7 +1409,9 @@ def close_removed() -> None:
     """Removed: use st done instead."""
     typer.echo("Command 'close' has been removed.\n", err=True)
     typer.echo("Use instead:", err=True)
-    typer.echo("  st done <id>     - Complete task (verifies, merges, removes checkpoint)", err=True)
+    typer.echo(
+        "  st done <id>     - Complete task (verifies, merges, removes checkpoint)", err=True
+    )
     raise typer.Exit(1)
 
 
@@ -1421,4 +1424,3 @@ def update_removed() -> None:
     typer.echo("  st done <id>     - Complete work (merges, removes checkpoint)", err=True)
     typer.echo("  st abandon <id>  - Rollback work (restores checkpoint)", err=True)
     raise typer.Exit(1)
-

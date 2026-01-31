@@ -66,9 +66,7 @@ def _get_task_branches(task_id: str, project_path: Path) -> list[dict[str, str]]
                 if "/" in branch:
                     parts = branch.split("/")
                     subtask_id = parts[-1] if len(parts) > 1 else ""
-                    branches.append(
-                        {"branch": branch, "subtask_id": subtask_id, "type": "subtask"}
-                    )
+                    branches.append({"branch": branch, "subtask_id": subtask_id, "type": "subtask"})
                 else:
                     branches.append({"branch": branch, "subtask_id": "", "type": "task"})
     except subprocess.CalledProcessError:
