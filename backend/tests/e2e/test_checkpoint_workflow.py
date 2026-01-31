@@ -211,7 +211,7 @@ class TestHappyPath:
             assert result.returncode == 0, f"Step pass failed: {result.stderr}"
 
             # Acknowledge citations (required before done)
-            result = run_cli(["subtask", "citations", "--none", subtask_id, "-t", task["id"]])
+            result = run_cli(["subtask", "citations", "--none", "-s", subtask_id, "-t", task["id"]])
             assert result.returncode == 0, f"Citations ack failed: {result.stderr}"
 
             result = run_cli(["done", subtask_id, "-t", task["id"]])
