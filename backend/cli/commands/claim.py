@@ -90,15 +90,16 @@ def _claim_task(
             typer.echo("Aborting. Use --force to overwrite.")
             raise typer.Exit(1)
         # Resume - just switch to the branch
+        task_branch = f"{task_id}/main"
         try:
             subprocess.run(
-                ["git", "checkout", task_id],
+                ["git", "checkout", task_branch],
                 check=True,
                 capture_output=True,
                 text=True,
             )
             typer.echo(f"Resumed task {task_id}")
-            return {"task_id": task_id, "action": "resumed", "branch": task_id}
+            return {"task_id": task_id, "action": "resumed", "branch": task_branch}
         except subprocess.CalledProcessError as e:
             output_error(f"Failed to checkout branch: {e.stderr}")
             raise typer.Exit(1) from None
@@ -128,7 +129,7 @@ def _claim_task(
     return {
         "task_id": task_id,
         "action": "claimed",
-        "branch": task_id,
+        "branch": f"{task_id}/main",
         "snapshot": meta.snapshot_path,
         "base_branch": meta.base_branch,
     }

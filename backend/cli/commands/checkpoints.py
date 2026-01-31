@@ -22,7 +22,7 @@ def _get_task_branches(task_id: str) -> list[dict[str, str]]:
     branches = []
     try:
         result = subprocess.run(
-            ["git", "branch", "--list", f"{task_id}*"],
+            ["git", "branch", "--list", f"{task_id}/*"],
             capture_output=True,
             text=True,
             check=True,
@@ -30,13 +30,13 @@ def _get_task_branches(task_id: str) -> list[dict[str, str]]:
         for line in result.stdout.splitlines():
             branch = line.strip().lstrip("* ")
             if branch:
-                # Determine if it's a subtask branch
-                if "/" in branch:
-                    parts = branch.split("/")
-                    subtask_id = parts[-1] if len(parts) > 1 else ""
-                    branches.append({"branch": branch, "subtask_id": subtask_id, "type": "subtask"})
-                else:
+                # Determine if it's a subtask or task branch
+                # Task branch ends with /main, subtask branches end with /X.Y
+                suffix = branch.split("/")[-1] if "/" in branch else ""
+                if suffix == "main":
                     branches.append({"branch": branch, "subtask_id": "", "type": "task"})
+                else:
+                    branches.append({"branch": branch, "subtask_id": suffix, "type": "subtask"})
     except subprocess.CalledProcessError:
         pass
     return branches

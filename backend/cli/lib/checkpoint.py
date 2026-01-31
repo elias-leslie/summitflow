@@ -180,10 +180,11 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
     )
     meta_path.write_text(json.dumps(meta.to_dict(), indent=2))
 
-    # Create git branch for task
+    # Create git branch for task (use task_id/main to allow subtask branches like task_id/1.1)
+    task_branch = f"{task_id}/main"
     try:
         subprocess.run(
-            ["git", "checkout", "-b", task_id],
+            ["git", "checkout", "-b", task_branch],
             check=True,
             capture_output=True,
             text=True,
@@ -378,17 +379,18 @@ def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
         SystemExit: On merge failure
     """
     subtask_branch = f"{task_id}/{subtask_id}"
+    task_branch = f"{task_id}/main"
 
     # Checkout task branch
     try:
         subprocess.run(
-            ["git", "checkout", task_id],
+            ["git", "checkout", task_branch],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to checkout {task_id}: {e.stderr}", file=sys.stderr)
+        print(f"Error: Failed to checkout {task_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
     # Merge subtask branch
@@ -450,28 +452,29 @@ def merge_task_branch(task_id: str) -> bool:
         print(f"Error: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    # Merge task branch
+    # Merge task branch (task_id/main)
+    task_branch = f"{task_id}/main"
     try:
         subprocess.run(
-            ["git", "merge", "--no-ff", task_id, "-m", f"Merge task {task_id}"],
+            ["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to merge {task_id}: {e.stderr}", file=sys.stderr)
+        print(f"Error: Failed to merge {task_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
     # Delete task branch
     try:
         subprocess.run(
-            ["git", "branch", "-d", task_id],
+            ["git", "branch", "-d", task_branch],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to delete branch {task_id}: {e.stderr}", file=sys.stderr)
+        print(f"Warning: Failed to delete branch {task_branch}: {e.stderr}", file=sys.stderr)
 
     return True
 
@@ -489,6 +492,7 @@ def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
         True on success
     """
     branch_name = f"{task_id}/{subtask_id}"
+    task_branch = f"{task_id}/main"
 
     # Make sure we're not on the branch we're deleting
     current = _get_current_branch()
@@ -496,7 +500,7 @@ def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
         # Switch to task branch
         try:
             subprocess.run(
-                ["git", "checkout", task_id],
+                ["git", "checkout", task_branch],
                 check=True,
                 capture_output=True,
                 text=True,
