@@ -12,6 +12,17 @@ import typer
 
 from ..output import is_compact, output_error, output_json
 from .memory_api import agent_hub_request
+from .memory_formatters import (
+    format_batch_get_compact,
+    format_batch_tier_compact,
+    format_get_compact,
+    format_list_compact,
+    format_orphaned_cleanup_compact,
+    format_save_compact,
+    format_search_compact,
+    format_stale_cleanup_compact,
+    format_stats_compact,
+)
 
 # FORMAT_STANDARD validation patterns
 HEADER_PATTERN = re.compile(r"^\*\*[^*]+\*\*:")
@@ -87,19 +98,6 @@ def validate_format_standard(content: str, summary: str) -> list[str]:
         errors.append(f"[8] summary: Too short ({len(summary)} chars, need 10-40)")
 
     return errors
-
-
-from .memory_formatters import (
-    format_batch_get_compact,
-    format_batch_tier_compact,
-    format_get_compact,
-    format_list_compact,
-    format_orphaned_cleanup_compact,
-    format_save_compact,
-    format_search_compact,
-    format_stale_cleanup_compact,
-    format_stats_compact,
-)
 
 
 def stats_impl(scope: str, scope_id: str | None) -> None:

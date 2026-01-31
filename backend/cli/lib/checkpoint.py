@@ -6,6 +6,7 @@ Used by st claim, st done, st abandon, and st checkpoints commands.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -274,7 +275,7 @@ def restore_task_snapshot(task_id: str) -> bool:
             sys.exit(1)
         # Non-critical warnings (ownership, privileges, extensions)
         if e.stderr.strip():
-            print(f"pg_restore completed with warnings (non-critical)", file=sys.stderr)
+            print("pg_restore completed with warnings (non-critical)", file=sys.stderr)
 
     # Restart backend service
     print("Restarting summitflow-backend service...")
@@ -497,16 +498,13 @@ def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
     # Make sure we're not on the branch we're deleting
     current = _get_current_branch()
     if current == branch_name:
-        # Switch to task branch
-        try:
+        with contextlib.suppress(subprocess.CalledProcessError):
             subprocess.run(
                 ["git", "checkout", task_branch],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-        except subprocess.CalledProcessError:
-            pass
 
     # Force delete the branch
     try:
@@ -543,16 +541,13 @@ def delete_task_branches(task_id: str) -> bool:
     else:
         base_branch = "main"
 
-    # Checkout base branch first
-    try:
+    with contextlib.suppress(subprocess.CalledProcessError):
         subprocess.run(
             ["git", "checkout", base_branch],
             check=True,
             capture_output=True,
             text=True,
         )
-    except subprocess.CalledProcessError:
-        pass
 
     # List and delete all task-related branches
     try:

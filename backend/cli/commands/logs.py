@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
@@ -48,11 +47,11 @@ SYSLOG_PRIORITY_TO_LEVEL = {
     0: "CRITICAL",  # emerg
     1: "CRITICAL",  # alert
     2: "CRITICAL",  # crit
-    3: "ERROR",     # err
-    4: "WARN",      # warning
-    5: "INFO",      # notice
-    6: "INFO",      # info
-    7: "DEBUG",     # debug
+    3: "ERROR",  # err
+    4: "WARN",  # warning
+    5: "INFO",  # notice
+    6: "INFO",  # info
+    7: "DEBUG",  # debug
 }
 
 # Valid time range values
@@ -167,8 +166,7 @@ def _determine_level(entry: dict) -> str:
 def _is_control_message(message: str) -> bool:
     """Check if message is a systemd control message."""
     return any(
-        message.startswith(prefix)
-        for prefix in ("Starting ", "Started ", "Stopping ", "Stopped ")
+        message.startswith(prefix) for prefix in ("Starting ", "Started ", "Stopping ", "Stopped ")
     )
 
 
@@ -185,9 +183,12 @@ def _fetch_logs(
     cmd = [
         "journalctl",
         "--no-pager",
-        "-o", "json",
-        "--since", since,
-        "-n", str(lines),
+        "-o",
+        "json",
+        "--since",
+        since,
+        "-n",
+        str(lines),
     ]
 
     if is_user_mode:
@@ -221,12 +222,14 @@ def _fetch_logs(
                 if _is_control_message(message):
                     continue
 
-                logs.append(LogEntry(
-                    timestamp=_extract_timestamp(entry),
-                    service=_map_service(entry),
-                    level=_determine_level(entry),
-                    message=message.strip(),
-                ))
+                logs.append(
+                    LogEntry(
+                        timestamp=_extract_timestamp(entry),
+                        service=_map_service(entry),
+                        level=_determine_level(entry),
+                        message=message.strip(),
+                    )
+                )
             except (json.JSONDecodeError, KeyError, ValueError):
                 continue
 
@@ -287,21 +290,24 @@ def tail(
     service: Annotated[
         str | None,
         typer.Option(
-            "--service", "-s",
+            "--service",
+            "-s",
             help="Filter by service (summitflow,agent-hub,celery,redis,postgres,neo4j,all)",
         ),
     ] = None,
     level: Annotated[
         str | None,
         typer.Option(
-            "--level", "-l",
+            "--level",
+            "-l",
             help="Filter by level (ERROR,WARN,INFO,DEBUG)",
         ),
     ] = None,
     lines: Annotated[
         int,
         typer.Option(
-            "--lines", "-n",
+            "--lines",
+            "-n",
             help="Number of lines to show",
         ),
     ] = 100,
@@ -315,7 +321,8 @@ def tail(
     follow: Annotated[
         bool,
         typer.Option(
-            "--follow", "-f",
+            "--follow",
+            "-f",
             help="Follow log output (like tail -f)",
         ),
     ] = False,
@@ -341,9 +348,13 @@ def tail(
     all_logs: list[LogEntry] = []
 
     if user_svcs:
-        all_logs.extend(_fetch_logs(user_svcs, is_user_mode=True, lines=lines, since=validated_since))
+        all_logs.extend(
+            _fetch_logs(user_svcs, is_user_mode=True, lines=lines, since=validated_since)
+        )
     if system_svcs:
-        all_logs.extend(_fetch_logs(system_svcs, is_user_mode=False, lines=lines, since=validated_since))
+        all_logs.extend(
+            _fetch_logs(system_svcs, is_user_mode=False, lines=lines, since=validated_since)
+        )
 
     # Sort by timestamp
     all_logs.sort(key=lambda x: x.timestamp)
@@ -412,10 +423,12 @@ def services() -> None:
         for name, unit in SYSTEM_SERVICES.items():
             print(f"  {name:15} {unit}")
     else:
-        output_json({
-            "user_services": USER_SERVICES,
-            "system_services": SYSTEM_SERVICES,
-        })
+        output_json(
+            {
+                "user_services": USER_SERVICES,
+                "system_services": SYSTEM_SERVICES,
+            }
+        )
 
 
 @app.command()

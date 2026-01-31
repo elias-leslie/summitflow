@@ -17,7 +17,7 @@ from ..lib.checkpoint import (
     get_snapshot_info,
     has_active_task,
 )
-from ..output import output_error, output_json, output_success
+from ..output import output_error, output_success
 
 app = typer.Typer(help="Claim task or subtask to start work")
 
@@ -71,17 +71,14 @@ def _claim_task(
     # Check for existing checkpoint (resume scenario)
     existing = get_snapshot_info(task_id)
     if existing and not force:
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
 
         created = datetime.fromisoformat(existing["created_at"].replace("Z", "+00:00"))
         age = datetime.now(UTC) - created
         hours = int(age.total_seconds() / 3600)
         mins = int((age.total_seconds() % 3600) / 60)
 
-        if hours > 0:
-            age_str = f"{hours}h {mins}m"
-        else:
-            age_str = f"{mins}m"
+        age_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
 
         typer.echo(f"Existing checkpoint found for {task_id} (created {age_str} ago).")
         typer.echo(f"Size: {existing.get('size', 'unknown')}")
@@ -107,8 +104,7 @@ def _claim_task(
     # Check working tree is clean
     if not _is_working_tree_clean():
         output_error(
-            "Working tree has uncommitted changes.\n"
-            "Commit or stash first: git stash or git commit"
+            "Working tree has uncommitted changes.\nCommit or stash first: git stash or git commit"
         )
         raise typer.Exit(1)
 
@@ -150,16 +146,14 @@ def _claim_subtask(
 
     if status != "running":
         output_error(
-            f"Parent task {task_id} not claimed (status={status}).\n"
-            f"Run: st claim {task_id}"
+            f"Parent task {task_id} not claimed (status={status}).\nRun: st claim {task_id}"
         )
         raise typer.Exit(1)
 
     # Check working tree is clean
     if not _is_working_tree_clean():
         output_error(
-            "Working tree has uncommitted changes.\n"
-            "Commit or stash first: git stash or git commit"
+            "Working tree has uncommitted changes.\nCommit or stash first: git stash or git commit"
         )
         raise typer.Exit(1)
 

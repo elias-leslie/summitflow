@@ -208,9 +208,8 @@ def abandon_command(
     if _is_subtask_id(id):
         # Subtask abandonment - need task_id
         resolved_task_id = require_task_id(task_id)
-        result = _abandon_subtask(client, id, resolved_task_id, reason)
+        _abandon_subtask(client, id, resolved_task_id, reason)
         output_success(f"Subtask {id} abandoned. Branch deleted.")
     else:
-        # Task abandonment
-        result = _abandon_task(client, id, force, reason)
+        _abandon_task(client, id, force, reason)
         output_success(f"Task {id} abandoned. DB restored, branches deleted.")

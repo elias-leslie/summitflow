@@ -20,6 +20,8 @@ from celery import Celery
 from celery.signals import (
     after_setup_logger,
     after_setup_task_logger,
+    worker_ready,
+    worker_shutdown,
 )
 
 from app.config import DATABASE_URL, REDIS_URL
@@ -169,6 +171,47 @@ def setup_celery_task_logger(logger: logging.Logger, *args: Any, **kwargs: Any) 
         handler.setFormatter(
             logging.Formatter("[%(asctime)s: %(levelname)s/%(processName)s] %(message)s")
         )
+
+
+# Redis pub/sub dispatcher for immediate task dispatch
+_dispatcher = None
+
+
+@worker_ready.connect
+def start_dispatch_subscriber(sender: Any, **kwargs: Any) -> None:
+    """Start Redis pub/sub subscriber when Celery worker is ready.
+
+    This enables immediate task dispatch via st autocode without waiting
+    for the Beat polling fallback.
+    """
+    global _dispatcher
+    from app.logging_config import get_logger
+    from app.scheduling import get_dispatcher
+    from app.tasks.autonomous.pickup import handle_dispatch_event
+
+    logger = get_logger(__name__)
+
+    try:
+        _dispatcher = get_dispatcher()
+        _dispatcher.subscribe(handle_dispatch_event)
+        logger.info("Started Redis dispatch subscriber for immediate task pickup")
+    except Exception as e:
+        logger.warning(f"Failed to start dispatch subscriber: {e}")
+
+
+@worker_shutdown.connect
+def stop_dispatch_subscriber(sender: Any, **kwargs: Any) -> None:
+    """Stop Redis pub/sub subscriber when Celery worker shuts down."""
+    global _dispatcher
+    if _dispatcher is not None:
+        from app.logging_config import get_logger
+
+        logger = get_logger(__name__)
+        try:
+            _dispatcher.unsubscribe()
+            logger.info("Stopped Redis dispatch subscriber")
+        except Exception as e:
+            logger.warning(f"Error stopping dispatch subscriber: {e}")
 
 
 # Import tasks to register them with Celery

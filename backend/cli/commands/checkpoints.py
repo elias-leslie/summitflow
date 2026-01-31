@@ -78,7 +78,7 @@ def _format_compact_checkpoints(checkpoints: list[dict]) -> None:
     total = len(checkpoints)
     print(f"CHECKPOINTS[{total}]")
 
-    for project_id, project_checkpoints in by_project.items():
+    for _project_id, project_checkpoints in by_project.items():
         for cp in project_checkpoints:
             task_id = cp.get("task_id", "?")
             age = _format_age(cp.get("created_at", ""))
@@ -123,11 +123,13 @@ def _format_details(task_id: str) -> None:
                 branch = br["branch"]
                 print(f"  {branch} [{btype}]")
     else:
-        output_json({
-            "task_id": task_id,
-            "checkpoint": info,
-            "branches": branches,
-        })
+        output_json(
+            {
+                "task_id": task_id,
+                "checkpoint": info,
+                "branches": branches,
+            }
+        )
 
 
 @app.command(name="checkpoints")
@@ -169,18 +171,20 @@ def checkpoints_command(
         _format_compact_checkpoints(checkpoint_data)
     else:
         # JSON output
-        output_json({
-            "checkpoints": [
-                {
-                    "task_id": cp.task_id,
-                    "project_id": cp.project_id,
-                    "snapshot_path": cp.snapshot_path,
-                    "base_branch": cp.base_branch,
-                    "created_at": cp.created_at,
-                    "claimed_by": cp.claimed_by,
-                    "branches": _get_task_branches(cp.task_id),
-                }
-                for cp in checkpoints
-            ],
-            "total": len(checkpoints),
-        })
+        output_json(
+            {
+                "checkpoints": [
+                    {
+                        "task_id": cp.task_id,
+                        "project_id": cp.project_id,
+                        "snapshot_path": cp.snapshot_path,
+                        "base_branch": cp.base_branch,
+                        "created_at": cp.created_at,
+                        "claimed_by": cp.claimed_by,
+                        "branches": _get_task_branches(cp.task_id),
+                    }
+                    for cp in checkpoints
+                ],
+                "total": len(checkpoints),
+            }
+        )

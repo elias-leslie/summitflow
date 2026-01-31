@@ -81,10 +81,7 @@ def _complete_subtask(
     """
     # Check working tree is clean
     if not _is_working_tree_clean():
-        output_error(
-            "Working tree has uncommitted changes.\n"
-            "Commit first: git commit -m 'message'"
-        )
+        output_error("Working tree has uncommitted changes.\nCommit first: git commit -m 'message'")
         raise typer.Exit(1)
 
     # Mark subtask as passed via API (DB triggers verify steps)
@@ -92,7 +89,9 @@ def _complete_subtask(
         client.update_subtask(task_id, subtask_id, passes=True)
     except APIError as e:
         # Parse DB trigger errors
-        detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+        detail: dict[str, Any] = (
+            e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+        )
         helpful = _parse_db_error(detail)
         if helpful:
             output_error(helpful)
@@ -127,10 +126,7 @@ def _complete_task(
     """
     # Check working tree is clean
     if not _is_working_tree_clean():
-        output_error(
-            "Working tree has uncommitted changes.\n"
-            "Commit first: git commit -m 'message'"
-        )
+        output_error("Working tree has uncommitted changes.\nCommit first: git commit -m 'message'")
         raise typer.Exit(1)
 
     # Check for existing checkpoint
@@ -144,7 +140,9 @@ def _complete_task(
         client.update_status(task_id, "completed")
     except APIError as e:
         # Parse DB trigger errors
-        detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+        detail: dict[str, Any] = (
+            e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+        )
         helpful = _parse_db_error(detail)
         if helpful:
             output_error(helpful)
@@ -203,10 +201,9 @@ def done_command(
     if _is_subtask_id(id):
         # Subtask completion - need task_id
         resolved_task_id = require_task_id(task_id)
-        result = _complete_subtask(client, id, resolved_task_id, message)
+        _complete_subtask(client, id, resolved_task_id, message)
         output_success(f"Subtask {id} completed. Branch merged.")
     else:
-        # Task completion
-        result = _complete_task(client, id, message)
+        _complete_task(client, id, message)
         output_success(f"Task {id} completed. Checkpoint removed.")
         typer.echo(f"  Merged to: {get_snapshot_info(id) or 'main'}")

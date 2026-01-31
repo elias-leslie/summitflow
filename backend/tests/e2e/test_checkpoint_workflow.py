@@ -25,7 +25,6 @@ from typing import Any
 import pytest
 
 from app.storage import tasks as task_store
-from app.storage.connection import get_connection
 
 TEST_PROJECT_ID = "summitflow"
 SUMMITFLOW_DIR = Path("/home/kasadis/summitflow")
@@ -188,7 +187,14 @@ def create_test_task(project_id: str, title: str) -> dict[str, Any]:
 class TestHappyPath:
     """Test happy path: claim → context → step pass → subtask pass → done."""
 
-    def test_single_agent_workflow(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_single_agent_workflow(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Test complete workflow for a single agent."""
         task = create_test_task(test_project_id, "Happy Path Test")
         cleanup_tasks.append(task["id"])
@@ -223,7 +229,14 @@ class TestHappyPath:
         result = run_cli(["context", task["id"]])
         assert "completed" in result.stdout.lower() or "done" in result.stdout.lower()
 
-    def test_context_with_subtask_flag(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_context_with_subtask_flag(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Test st context --subtask shows step details."""
         task = create_test_task(test_project_id, "Context Subtask Test")
         cleanup_tasks.append(task["id"])
@@ -240,7 +253,14 @@ class TestHappyPath:
 class TestSubtaskAbandon:
     """Test subtask abandonment - git branch only, no DB rollback."""
 
-    def test_abandon_subtask_deletes_branch(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_abandon_subtask_deletes_branch(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Abandoning a subtask should delete its git branch only."""
         task = create_test_task(test_project_id, "Subtask Abandon Test")
         cleanup_tasks.append(task["id"])
@@ -260,7 +280,14 @@ class TestSubtaskAbandon:
 class TestTaskAbandon:
     """Test task abandonment - full DB rollback."""
 
-    def test_abandon_task_restores_db(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_abandon_task_restores_db(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Abandoning a task should restore DB and delete all branches."""
         task = create_test_task(test_project_id, "Task Abandon Test")
         cleanup_tasks.append(task["id"])
@@ -282,7 +309,14 @@ class TestTaskAbandon:
 class TestProjectLock:
     """Test project-level lock - one active task at a time."""
 
-    def test_second_claim_blocked(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_second_claim_blocked(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Second task claim should fail when one is already active."""
         task1 = create_test_task(test_project_id, "Project Lock Test 1")
         task2 = create_test_task(test_project_id, "Project Lock Test 2")
@@ -305,15 +339,20 @@ class TestProjectLock:
 class TestCheckpointsCommand:
     """Test st checkpoints command."""
 
-    def test_checkpoints_lists_active(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_checkpoints_lists_active(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """st checkpoints should list active checkpoints."""
         task = create_test_task(test_project_id, "Checkpoints List Test")
         cleanup_tasks.append(task["id"])
         cleanup_checkpoints.append(task["id"])
 
-        result = run_cli(["checkpoints"])
-        initial_count = result.stdout.count(task["id"])
-
+        run_cli(["checkpoints"])
         run_cli(["claim", task["id"]], check=True)
 
         result = run_cli(["checkpoints"])
@@ -324,7 +363,14 @@ class TestCheckpointsCommand:
 class TestResumeAfterInterruption:
     """Test resuming work after session interruption."""
 
-    def test_detect_existing_checkpoint(self, requires_backend, requires_clean_git, test_project_id, cleanup_tasks, cleanup_checkpoints):
+    def test_detect_existing_checkpoint(
+        self,
+        requires_backend,
+        requires_clean_git,
+        test_project_id,
+        cleanup_tasks,
+        cleanup_checkpoints,
+    ):
         """Claiming existing checkpoint should offer resume."""
         task = create_test_task(test_project_id, "Resume Test")
         cleanup_tasks.append(task["id"])
@@ -339,7 +385,9 @@ class TestResumeAfterInterruption:
         assert result.returncode == 0, f"Resume failed: {result.stderr}"
         # Should show either "existing checkpoint" message or "resumed"
         output = result.stdout.lower()
-        assert "existing" in output or "resumed" in output or "checkpoint" in output, f"Expected resume detection: {result.stdout}"
+        assert "existing" in output or "resumed" in output or "checkpoint" in output, (
+            f"Expected resume detection: {result.stdout}"
+        )
 
 
 class TestRemovedCommands:
