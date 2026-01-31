@@ -53,8 +53,11 @@ class TestCFJWTExtraction:
 class TestIdeaSubmission:
     """Tests for POST /api/projects/{id}/ideas."""
 
+    @patch("asyncio.create_task")
     @patch("app.api.ideas.get_connection")
-    def test_submit_idea_returns_idea_id(self, mock_conn: MagicMock):
+    def test_submit_idea_returns_idea_id(
+        self, mock_conn: MagicMock, mock_create_task: MagicMock
+    ):
         """Test that submitting an idea returns an idea_id."""
         mock_cursor = MagicMock()
         # No JWT header → user_identifier = "anonymous" → skip user hourly check
@@ -78,8 +81,11 @@ class TestIdeaSubmission:
         assert "idea_id" in data
         assert data["status"] == "pending_refinement"
 
+    @patch("asyncio.create_task")
     @patch("app.api.ideas.get_connection")
-    def test_submit_idea_extracts_email(self, mock_conn: MagicMock):
+    def test_submit_idea_extracts_email(
+        self, mock_conn: MagicMock, mock_create_task: MagicMock
+    ):
         """Test that submitting with JWT extracts and stores email."""
         mock_cursor = MagicMock()
         # With JWT header → user_identifier = email → checks user hourly limit
@@ -192,9 +198,12 @@ class TestImmediateExecution:
 class TestRefinementFlow:
     """Tests for idea refinement and status transitions."""
 
+    @patch("app.services.idea_refiner.update_idea_with_refinement")
     @patch("app.services.idea_refiner.refine_idea")
     @patch("app.api.ideas.get_connection")
-    def test_refine_idea_success(self, mock_conn: MagicMock, mock_refine: MagicMock):
+    def test_refine_idea_success(
+        self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
+    ):
         """Test successful refinement endpoint."""
         from app.services.idea_refiner import RefinementResult
 
@@ -219,9 +228,12 @@ class TestRefinementFlow:
         assert "refined_text" in data
         assert data["status"] == "refined"
 
+    @patch("app.services.idea_refiner.update_idea_with_refinement")
     @patch("app.services.idea_refiner.refine_idea")
     @patch("app.api.ideas.get_connection")
-    def test_refine_idea_rejected(self, mock_conn: MagicMock, mock_refine: MagicMock):
+    def test_refine_idea_rejected(
+        self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
+    ):
         """Test refinement that results in rejection."""
         from app.services.idea_refiner import RefinementResult
 
