@@ -27,7 +27,8 @@ import pytest
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
-TEST_PROJECT_ID = "checkpoint-test"
+TEST_PROJECT_ID = "summitflow"
+SUMMITFLOW_DIR = Path("/home/kasadis/summitflow")
 
 
 def _backend_available() -> bool:
@@ -47,7 +48,7 @@ def _git_clean() -> bool:
             capture_output=True,
             text=True,
             timeout=10,
-            cwd="/home/kasadis/summitflow",
+            cwd=SUMMITFLOW_DIR,
         )
         return result.returncode == 0 and not result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -70,15 +71,7 @@ def requires_clean_git():
 
 @pytest.fixture
 def test_project_id():
-    """Ensure test project exists."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO projects (id, name, base_url)
-               VALUES (%s, %s, %s)
-               ON CONFLICT (id) DO NOTHING""",
-            (TEST_PROJECT_ID, "Checkpoint Test", "http://localhost:3001"),
-        )
-        conn.commit()
+    """Return test project ID (summitflow already exists)."""
     return TEST_PROJECT_ID
 
 
@@ -130,7 +123,7 @@ def run_cli(
         capture_output=True,
         text=True,
         timeout=timeout,
-        cwd=Path.home(),
+        cwd=SUMMITFLOW_DIR,
         env=env,
     )
     if check and result.returncode != 0:
