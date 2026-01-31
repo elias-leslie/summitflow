@@ -53,3 +53,6 @@ celerybeat-schedule*
 
 # Reference repos
 references/
+
+# Checkpoint data
+.st/
