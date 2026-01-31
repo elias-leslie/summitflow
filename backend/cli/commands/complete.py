@@ -29,9 +29,9 @@ def _load_credentials() -> tuple[str, str, str]:
             key, val = line.split("=", 1)
             creds[key.strip()] = val.strip()
 
-    client_id = creds.get("CONSULT_CLIENT_ID") or creds.get("SUMMITFLOW_CLIENT_ID")
-    client_secret = creds.get("CONSULT_CLIENT_SECRET") or creds.get("SUMMITFLOW_CLIENT_SECRET")
-    request_source = creds.get("CONSULT_REQUEST_SOURCE", "st-complete")
+    client_id = creds.get("SUMMITFLOW_CLIENT_ID") or creds.get("CONSULT_CLIENT_ID")
+    client_secret = creds.get("SUMMITFLOW_CLIENT_SECRET") or creds.get("CONSULT_CLIENT_SECRET")
+    request_source = creds.get("SUMMITFLOW_REQUEST_SOURCE", "st-complete")
 
     if not client_id or not client_secret:
         output_error(
