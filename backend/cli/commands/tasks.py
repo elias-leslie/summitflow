@@ -933,6 +933,13 @@ def autocode(
         bool,
         typer.Option("--dry-run", help="Validate only, don't execute"),
     ] = False,
+    at: Annotated[
+        str | None,
+        typer.Option(
+            "--at",
+            help="Schedule for later: '22:00', '2025-02-01 22:00', 'in 30m', 'in 2h'",
+        ),
+    ] = None,
 ) -> None:
     """Queue task for autonomous execution via Celery.
 
@@ -947,9 +954,14 @@ def autocode(
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st autocode task-abc123    # Queue for autonomous execution
-        st autocode --dry-run      # Validate without executing
+        st autocode task-abc123              # Queue for immediate execution
+        st autocode --dry-run                # Validate without executing
+        st autocode task-abc --at "22:00"    # Schedule for 10pm today/tomorrow
+        st autocode task-abc --at "in 2h"    # Schedule for 2 hours from now
     """
+    from app.scheduling import OnceSchedule, get_dispatcher
+    from app.scheduling.types import parse_at_time
+
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
@@ -975,18 +987,28 @@ def autocode(
         output_error(f"Task {task_id} is already {current_status}.")
         raise typer.Exit(1)
 
+    schedule = None
+    if at:
+        try:
+            scheduled_time = parse_at_time(at)
+            schedule = OnceSchedule(timestamp=scheduled_time)
+        except ValueError as e:
+            output_error(f"Invalid --at value: {e}")
+            raise typer.Exit(1) from None
+
     if dry_run:
         incomplete = [s for s in subtasks if not s.get("passes")]
-        output_json(
-            {
-                "task_id": task_id,
-                "status": "dry_run",
-                "subtasks_total": len(subtasks),
-                "subtasks_incomplete": len(incomplete),
-                "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
-                "message": f"Would queue {task_id} for autonomous execution",
-            }
-        )
+        result = {
+            "task_id": task_id,
+            "status": "dry_run",
+            "subtasks_total": len(subtasks),
+            "subtasks_incomplete": len(incomplete),
+            "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
+            "message": f"Would queue {task_id} for autonomous execution",
+        }
+        if schedule:
+            result["scheduled_for"] = schedule.timestamp.isoformat()
+        output_json(result)
         return
 
     try:
@@ -995,13 +1017,37 @@ def autocode(
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    output_json(
-        {
-            "task_id": task_id,
-            "status": "queued",
-            "message": f"Task queued for autonomous execution. Monitor via: st context {task_id}",
-        }
-    )
+    project_id = task.get("project_id", "summitflow")
+    dispatcher = get_dispatcher()
+    published = dispatcher.publish_task_ready(task_id, project_id, schedule)
+
+    if schedule:
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "scheduled",
+                "scheduled_for": schedule.timestamp.isoformat(),
+                "message": f"Task scheduled for {schedule.timestamp.strftime('%Y-%m-%d %H:%M UTC')}",
+            }
+        )
+    elif published:
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "queued",
+                "dispatch": "immediate",
+                "message": f"Task queued for immediate execution. Monitor via: st context {task_id}",
+            }
+        )
+    else:
+        output_json(
+            {
+                "task_id": task_id,
+                "status": "queued",
+                "dispatch": "fallback",
+                "message": f"Task queued (Redis unavailable, will be picked up by Beat). Monitor via: st context {task_id}",
+            }
+        )
 
 
 @app.command("import")

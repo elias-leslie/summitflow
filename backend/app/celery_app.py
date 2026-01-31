@@ -69,10 +69,10 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.reset_expired_task_claims",
         "schedule": 60 * 60,  # Hourly
     },
-    # Autonomous work pickup - pick up and execute eligible tasks
+    # Autonomous work pickup - FALLBACK for missed events (primary is Redis pub/sub)
     "autonomous-work-pickup-summitflow": {
         "task": "summitflow.autonomous_work_pickup",
-        "schedule": 60 * 30,  # Every 30 minutes
+        "schedule": 60 * 60 * 2,  # Every 2 hours (fallback only)
         "kwargs": {"project_id": "summitflow"},
     },
     # Autonomous review - Opus review gate for ai_reviewing tasks
@@ -80,6 +80,11 @@ celery_app.conf.beat_schedule = {
         "task": "summitflow.review_pending_tasks",
         "schedule": 60 * 30,  # Every 30 minutes
         "kwargs": {"project_id": "summitflow"},
+    },
+    # Scheduled task processor - check for due scheduled tasks
+    "process-scheduled-tasks": {
+        "task": "summitflow.process_scheduled_tasks",
+        "schedule": 60,  # Every 1 minute
     },
     # Code health - daily scan at 2am UTC
     "daily-code-health-scan": {

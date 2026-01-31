@@ -12,7 +12,7 @@ import {
   fetchQualityGateHealth,
   type ProjectWithStats,
 } from '@/lib/api'
-import { getActiveCheckpoint, type Checkpoint } from '@/lib/api/checkpoints'
+import { getActiveCheckpoint } from '@/lib/api/checkpoints'
 
 interface ProjectCardProps {
   project: ProjectWithStats

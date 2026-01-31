@@ -50,9 +50,10 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         SUMMITFLOW (dev.summitflow.dev)                 │
 │  EXECUTION PATHWAYS:                                                    │
-│  ├─ st autocode (CLI) → AgentHubService → Single subtask dispatch       │
+│  ├─ st autocode (CLI) → Redis pub/sub → Immediate dispatch              │
+│  ├─ st autocode --at (CLI) → Redis sorted set → Scheduled dispatch      │
 │  ├─ POST /execute (API) → Celery → OrchestratorService → Multi-subtask  │
-│  └─ Celery Beat (30 min) → autonomous_work_pickup() → Orchestrator      │
+│  └─ Celery Beat (2h fallback) → autonomous_work_pickup() → Orchestrator │
 │                                                                         │
 │  ORCHESTRATOR FLOW:                                                     │
 │  ├─ Claim task (PostgreSQL lock, 30 min TTL)                            │
@@ -84,10 +85,10 @@
 
 | Use Case | Pathway | Implementation |
 |----------|---------|----------------|
-| Async execution (CLI) | `st autocode` | Sets status=queue → Celery → OrchestratorService |
-| Sync execution (CLI) | `st autocode --sync` | AgentHubService → Agent Hub LLM (single subtask) |
+| Immediate execution | `st autocode` | Redis pub/sub → dispatch_task_immediate → OrchestratorService |
+| Scheduled execution | `st autocode --at` | Redis sorted set → process_scheduled_tasks (1 min) → dispatch |
 | Multi-subtask (API) | POST `/execute` | Celery → OrchestratorService |
-| Scheduled pickup | Celery Beat | autonomous_work_pickup() |
+| Fallback pickup | Celery Beat (2h) | autonomous_work_pickup() (backup if Redis unavailable) |
 
 ---
 
@@ -290,7 +291,7 @@ st close                     # Uses active task (no ID needed)
 | `st work` | Set/show/clear active task context | N/A |
 | `st verify` | Validate plan.json against schema | No |
 | `st import` | Import plan.json as task with subtasks | No |
-| `st autocode [id]` | Queue for async execution (default) or sync with --sync | Yes |
+| `st autocode [id]` | Immediate dispatch via Redis, or `--at` for scheduled | Yes |
 
 #### Subcommands
 
@@ -303,6 +304,7 @@ st close                     # Uses active task (no ID needed)
 | `st backup` | list, create, restore, status, schedule | Backup management |
 | `st autonomous` | enable, disable, status | Autonomous settings |
 | `st health` | (no subcommands) | Quality gate status |
+| `st logs` | tail, services, levels | Unified service logs via journalctl |
 | `st exec-monitor` | (task-id) -f -n | Execution monitoring (see 5.7) |
 
 **Output modes**: `--compact` (TOON), `--human` (pretty JSON), `--no-compact` (raw JSON)
@@ -334,7 +336,8 @@ Ideas → Planning → In Progress → AI Review → Human Review → Done
 
 | Task | Schedule | Purpose |
 |------|----------|---------|
-| `autonomous-work-pickup-summitflow` | 30 min | Pick eligible tasks for execution |
+| `autonomous-work-pickup-summitflow` | 2 hours | FALLBACK pickup (primary is Redis pub/sub) |
+| `process-scheduled-tasks` | 1 min | Process delayed tasks from Redis sorted set |
 | `review-pending-tasks-summitflow` | 30 min | Opus review gate |
 | `cleanup-orphaned-worktrees` | 6 hours | Clean stale worktrees (30-day TTL) |
 | `scan-all-projects` | 6 hours | Explorer scan |
@@ -1024,8 +1027,8 @@ Compared to Auto-Claude and Automaker reference implementations:
 
 | Database | Size | Tables | Recent Activity |
 |----------|------|--------|-----------------|
-| `summitflow` | ~112 MB | 28 | 3 commits in 8h |
-| `agent_hub` | ~2 MB | 12 | 9 agents seeded |
+| `summitflow` | ~112 MB | 37 | Active development |
+| `agent_hub` | ~2 MB | 20 | 9 agents seeded |
 | Neo4j | - | Graphiti | 126 episodes |
 
 ### Registered Projects
@@ -1083,6 +1086,10 @@ Scope: Global (126) + Project (35)
 | `/home/kasadis/summitflow/backend/app/services/agent_hub_client.py` | Agent Hub integration |
 | `/home/kasadis/summitflow/backend/app/services/evidence_manager.py` | Evidence capture |
 | `/home/kasadis/summitflow/backend/app/tasks/autonomous/execution.py` | Autonomous execution |
+| `/home/kasadis/summitflow/backend/app/tasks/autonomous/pickup.py` | Work pickup + event-driven dispatch |
+| `/home/kasadis/summitflow/backend/app/scheduling/` | Schedule types + Redis pub/sub dispatcher |
+| `/home/kasadis/summitflow/backend/app/services/health_cache.py` | Health check caching with async refresh |
+| `/home/kasadis/summitflow/backend/cli/commands/logs.py` | Unified log tailing via journalctl |
 | `/home/kasadis/summitflow/backend/app/logging_config.py` | Python logging config |
 | `/home/kasadis/summitflow/backend/app/services/pubsub.py` | Event pub/sub (Redis + PostgreSQL) |
 | `/home/kasadis/summitflow/backend/app/storage/events.py` | Event persistence |
@@ -1195,8 +1202,9 @@ st subtask pass 1.1              # Mark subtask complete (all steps must pass)
 st close                         # Close task (all subtasks must pass)
 
 # Execution
-st autocode                      # Execute via Agent Hub (PRIMARY)
-st autocode --status exec-123    # Check execution status
+st autocode                      # Immediate dispatch via Redis pub/sub
+st autocode --at "22:00"         # Schedule for 10pm today/tomorrow
+st autocode --at "in 2h"         # Schedule for 2 hours from now
 
 # Task management
 st list --status pending         # Filter by status
@@ -1217,6 +1225,12 @@ st health                        # Quality gate status
 st exec-monitor <task-id>        # Show last 50 events
 st exec-monitor <task-id> -f     # Follow mode (poll every 2s)
 st exec-monitor <task-id> -n 100 # Show last 100 events
+
+# Logs (unified service logs)
+st logs                          # Show recent logs
+st logs tail -s summitflow       # Filter by service
+st logs tail -f                  # Follow mode (like tail -f)
+st logs services                 # List available services
 ```
 
 ### Memory API Quick Reference
@@ -1232,4 +1246,4 @@ curl -X POST "http://localhost:8003/api/memory/save-learning" \
 
 ---
 
-*Generated: 2026-01-27 | Companion: QUICK_REFERENCE.md*
+*Updated: 2026-01-31 | Companion: QUICK_REFERENCE.md | See [docs/REVIEW.md](./docs/REVIEW.md) for comprehensive technical review*

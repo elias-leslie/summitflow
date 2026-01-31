@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from .escalation import check_worker_stuck, supervisor_guidance
 from .execution import start_execution
-from .pickup import autonomous_work_pickup, review_pending_tasks
+from .pickup import (
+    autonomous_work_pickup,
+    dispatch_task_immediate,
+    process_scheduled_tasks,
+    review_pending_tasks,
+)
 from .planning import create_plan
 from .review import ai_review
 from .task_generation import generate_tasks_from_scan, regenerate_refactor_tasks
@@ -24,7 +29,9 @@ __all__ = [
     "autonomous_work_pickup",
     "check_worker_stuck",
     "create_plan",
+    "dispatch_task_immediate",
     "generate_tasks_from_scan",
+    "process_scheduled_tasks",
     "regenerate_refactor_tasks",
     "review_pending_tasks",
     "start_execution",

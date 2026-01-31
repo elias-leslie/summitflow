@@ -3,9 +3,10 @@
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import cast
 
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
@@ -112,14 +113,19 @@ async def health_check() -> dict[str, str]:
     return {"status": "healthy", "service": "summitflow"}
 
 
-@app.get("/api/health/detailed")
-async def detailed_health_check() -> DetailedHealthResponse:
-    """Detailed health check endpoint with database, cache, and uptime information."""
-    # Check database health
-    db_health = _check_database_health()
+async def _fetch_detailed_health() -> DetailedHealthResponse:
+    """
+    Internal function to fetch fresh detailed health data.
 
-    # Check Redis cache health
-    cache_health = _check_cache_health()
+    Separated from endpoint to enable caching. Runs sync checks in thread pool.
+    """
+    import asyncio
+
+    # Run sync health checks in thread pool
+    db_health, cache_health = await asyncio.gather(
+        asyncio.to_thread(_check_database_health),
+        asyncio.to_thread(_check_cache_health),
+    )
 
     # Determine overall status
     overall_status = "healthy"
@@ -140,6 +146,38 @@ async def detailed_health_check() -> DetailedHealthResponse:
         cache=cache_health,
         version="0.1.0",
     )
+
+
+@app.get("/api/health/detailed")
+async def detailed_health_check() -> DetailedHealthResponse:
+    """
+    Detailed health check with database, cache, and uptime information.
+
+    Uses caching with background refresh:
+    - Returns cached response if < 60s old (fast path)
+    - Triggers background refresh on every request
+    - Concurrent requests share the same refresh
+    """
+    from .services.health_cache import get_detailed_health_cache
+
+    cache = get_detailed_health_cache()
+    result = await cache.get_or_refresh(_fetch_detailed_health)
+    if result is None:
+        raise HTTPException(status_code=503, detail="Health check unavailable")
+    return cast(DetailedHealthResponse, result)
+
+
+@app.get("/api/health/cache")
+async def health_cache_info() -> dict[str, str | int | bool | None]:
+    """
+    Get health cache statistics.
+
+    Returns cache state, age, and refresh status for debugging.
+    """
+    from .services.health_cache import get_detailed_health_cache
+
+    cache = get_detailed_health_cache()
+    return cache.stats
 
 
 def _check_database_health() -> ComponentHealth:

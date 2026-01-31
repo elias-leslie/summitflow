@@ -12,7 +12,7 @@ import {
   User,
 } from 'lucide-react'
 import { useState } from 'react'
-import { getCheckpoint, type Checkpoint } from '@/lib/api/checkpoints'
+import { getCheckpoint } from '@/lib/api/checkpoints'
 
 interface CheckpointStatusProps {
   taskId: string

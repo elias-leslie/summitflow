@@ -1,7 +1,10 @@
 """Autonomous work pickup and review tasks.
 
-Scheduled Celery tasks that poll for eligible tasks and dispatch them
-through the autonomous execution pipeline.
+Supports two dispatch modes:
+1. Event-driven: Immediate pickup via Redis pub/sub (from st autocode)
+2. Polling: Fallback Beat task that checks every 2 hours for missed tasks
+
+The event-driven path is preferred for low-latency dispatch.
 """
 
 from __future__ import annotations
@@ -11,6 +14,8 @@ from typing import Any
 
 from app.celery_app import celery_app
 from app.logging_config import get_logger
+from app.scheduling import get_dispatcher
+from app.scheduling.dispatch import DispatchEvent
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
@@ -242,3 +247,127 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
     logger.info("Review pickup complete", project_id=project_id, dispatched=dispatched)
 
     return {"project_id": project_id, "dispatched": dispatched}
+
+
+@celery_app.task(name="summitflow.dispatch_task_immediate")
+def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
+    """Dispatch a single task immediately (event-driven path).
+
+    Called when st autocode publishes to Redis pub/sub.
+    Bypasses polling delay for instant task pickup.
+
+    Args:
+        task_id: Task to dispatch
+        project_id: Project ID
+
+    Returns:
+        Dict with dispatch result
+    """
+    logger.info("Immediate dispatch requested", task_id=task_id, project_id=project_id)
+
+    if not agent_configs.is_autonomous_enabled(project_id):
+        return {
+            "status": "disabled",
+            "task_id": task_id,
+            "reason": "autonomous_enabled=false",
+        }
+
+    current_hour = datetime.now().hour
+    if not agent_configs.is_within_autonomous_hours(project_id, current_hour):
+        schedule = agent_configs.get_autonomous_schedule(project_id)
+        return {
+            "status": "outside_hours",
+            "task_id": task_id,
+            "current_hour": current_hour,
+            "start_hour": schedule.get("start_hour", 0),
+            "end_hour": schedule.get("end_hour", 24),
+        }
+
+    schedule = agent_configs.get_autonomous_schedule(project_id)
+    max_concurrent = schedule.get("max_concurrent", 1)
+    running_count = task_store.count_running_tasks(project_id)
+    if running_count >= max_concurrent:
+        return {
+            "status": "concurrency_limit",
+            "task_id": task_id,
+            "running_count": running_count,
+            "max_concurrent": max_concurrent,
+        }
+
+    stage = _determine_next_stage(task_id)
+
+    try:
+        if stage == "triage":
+            triage_idea.delay(task_id, project_id)
+            logger.info("Dispatched to triage (immediate)", task_id=task_id)
+            return {"status": "dispatched", "task_id": task_id, "stage": "triage"}
+
+        elif stage == "planning":
+            create_plan.delay(task_id, project_id)
+            logger.info("Dispatched to planning (immediate)", task_id=task_id)
+            return {"status": "dispatched", "task_id": task_id, "stage": "planning"}
+
+        elif stage == "execution":
+            task_store.update_task_status(task_id, "running")
+            start_execution.delay(task_id, project_id)
+            logger.info("Dispatched to execution (immediate)", task_id=task_id)
+            return {"status": "dispatched", "task_id": task_id, "stage": "execution"}
+
+        else:
+            logger.warning("Unknown stage for immediate dispatch", task_id=task_id, stage=stage)
+            return {"status": "skipped", "task_id": task_id, "reason": f"unknown stage: {stage}"}
+
+    except Exception as e:
+        logger.error("Failed to dispatch task", task_id=task_id, error=str(e))
+        return {"status": "error", "task_id": task_id, "error": str(e)}
+
+
+@celery_app.task(name="summitflow.process_scheduled_tasks")
+def process_scheduled_tasks() -> dict[str, Any]:
+    """Process scheduled tasks that are due for execution.
+
+    Checks Redis sorted set for tasks with schedule <= now.
+    Called periodically by Celery Beat (every 1 minute).
+
+    Returns:
+        Dict with processing results
+    """
+    dispatcher = get_dispatcher()
+    due_events = dispatcher.get_due_scheduled_tasks()
+
+    if not due_events:
+        return {"processed": 0}
+
+    processed = 0
+    for event in due_events:
+        try:
+            dispatch_task_immediate.delay(event.task_id, event.project_id)
+            processed += 1
+            logger.info(
+                "Dispatched scheduled task",
+                task_id=event.task_id,
+                queued_at=event.queued_at.isoformat(),
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to dispatch scheduled task",
+                task_id=event.task_id,
+                error=str(e),
+            )
+
+    return {"processed": processed}
+
+
+def handle_dispatch_event(event: DispatchEvent) -> None:
+    """Handle a dispatch event from Redis pub/sub.
+
+    Called by the subscriber when a task is queued via st autocode.
+    """
+    if event.schedule is None:
+        dispatch_task_immediate.delay(event.task_id, event.project_id)
+    else:
+        logger.debug(
+            "Scheduled task stored, will be processed by Beat",
+            task_id=event.task_id,
+            schedule=event.schedule.to_dict(),
+        )

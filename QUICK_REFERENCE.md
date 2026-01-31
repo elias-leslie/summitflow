@@ -28,11 +28,11 @@ Once set, these commands use active task automatically:
 | Pathway | Command | Use When |
 |---------|---------|----------|
 | **Claude Code** | `/do_it` | Interactive session (you ARE the agent) |
-| **Autonomous** | `st autocode` | Queue for Celery (async, full pipeline) |
-| **Autonomous (sync)** | `st autocode --sync` | Direct dispatch (blocks, single subtask) |
-| **Scheduled** | Celery Beat | autonomous_work_pickup() |
+| **Autonomous** | `st autocode` | Queue for immediate dispatch via Redis pub/sub |
+| **Scheduled** | `st autocode --at` | Delayed execution: `--at "22:00"`, `--at "in 2h"` |
+| **Fallback** | Celery Beat | autonomous_work_pickup() every 2 hours (backup only) |
 
-**Note**: When using Claude Code with `/do_it`, you execute steps directly and use `st step pass`/`st subtask pass`. The `st autocode` command queues work for the full autonomous pipeline (worktrees, review gates). Use `--sync` for debugging.
+**Note**: When using Claude Code with `/do_it`, you execute steps directly and use `st step pass`/`st subtask pass`. The `st autocode` command triggers immediate dispatch via Redis pub/sub (no 30-min polling delay). Use `--at` for scheduled execution.
 
 ## Verification Model
 
@@ -105,6 +105,18 @@ AGENT_BROWSER_SESSION=verify_$$ agent-browser open http://localhost:PORT/page &&
 SummitFlow: 8001 (API), 3001 (UI)
 Agent Hub:  8003 (API), 3003 (UI)
 ```
+
+## Logs (Unified Service Logs)
+
+```bash
+st logs                              # Show recent logs (tail)
+st logs tail -s summitflow -l ERROR  # Filter by service/level
+st logs tail -f                      # Follow mode (like tail -f)
+st logs services                     # List available services
+st logs levels                       # Show log level counts
+```
+
+**Services**: summitflow, sf-frontend, sf-celery, sf-beat, agent-hub, ah-frontend, ah-celery, ah-beat, terminal, redis, postgres, neo4j
 
 ## Memory System (ACE-aligned)
 
@@ -217,4 +229,4 @@ st exec-monitor <task-id> -n 100 # Show last 100 events
 
 ---
 
-*Updated: 2026-01-27 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details*
+*Updated: 2026-01-31 | See [SYSTEM_REFERENCE.md](./SYSTEM_REFERENCE.md) for full details | See [docs/REVIEW.md](./docs/REVIEW.md) for comprehensive technical review*

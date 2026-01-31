@@ -19,6 +19,7 @@ from .commands import (
     exec_monitor,
     git,
     health,
+    logs,
     memory,
     projects,
     sessions,
@@ -51,7 +52,7 @@ TASKS:
   context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   log <id> <message>
-  autocode <id> [--dry-run]                # queue for autonomous execution
+  autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   verify <plan.json>                       # validate plan file against schema
   exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
 
@@ -106,6 +107,12 @@ MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id>
 
 TOOLS: tools status [--hours N]
 
+LOGS (unified service logs):
+  logs                                   # show recent logs (default: tail)
+  logs tail [-s service] [-l level] [-n lines] [--since time] [-f]
+  logs services                          # list available services
+  logs levels                            # show log level counts
+
 HEALTH (quality gate):
   health                                   # show quality gate summary (default)
   health status                            # same as above
@@ -149,6 +156,7 @@ app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
 app.add_typer(health.app, name="health")
+app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
 app.add_typer(tools.app, name="tools")
