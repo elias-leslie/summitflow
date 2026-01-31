@@ -274,6 +274,52 @@ def _compute_issue_id(error: str) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()[:8]
 
 
+def _has_uncommitted_changes(project_path: str) -> bool:
+    """Check if the working tree has uncommitted changes."""
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def _auto_commit(project_path: str, message: str) -> bool:
+    """Auto-commit all changes with the given message.
+
+    Returns True if commit was made, False if nothing to commit or error.
+    """
+    try:
+        add_result = subprocess.run(
+            ["git", "add", "-A"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if add_result.returncode != 0:
+            logger.warning("git_add_failed", error=add_result.stderr)
+            return False
+
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if commit_result.returncode != 0:
+            if "nothing to commit" in commit_result.stdout.lower():
+                return False
+            logger.warning("git_commit_failed", error=commit_result.stderr)
+            return False
+
+        logger.info("auto_commit_success", message=message[:80])
+        return True
+    except Exception as e:
+        logger.warning("auto_commit_exception", error=str(e))
+        return False
+
+
 @shared_task(bind=True, name="autonomous.start_execution")
 def start_execution(
     self: Task[..., dict[str, Any]], task_id: str, project_id: str
@@ -317,6 +363,18 @@ def start_execution(
             "reason": "pristine_check_failed",
         }
 
+    # Auto-commit any orphaned changes from previous session
+    project_path = _get_project_path(project_id)
+    if _has_uncommitted_changes(project_path):
+        _emit_log(
+            task_id,
+            "warn",
+            "Found uncommitted changes from previous session, auto-committing",
+            project_id=project_id,
+        )
+        if _auto_commit(project_path, "WIP: uncommitted changes from previous session"):
+            _emit_log(task_id, "info", "Orphaned changes committed", project_id=project_id)
+
     task_store.update_task_status(task_id, "running")
 
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
@@ -358,6 +416,21 @@ def start_execution(
             completed_subtasks=completed,
             project_id=project_id,
         )
+
+        # Auto-commit after each subtask (supervisor ensures commits happen)
+        subtask_short_id = subtask.get("subtask_id", "")
+        subtask_desc = subtask.get("description", "")[:50]
+        if _has_uncommitted_changes(project_path):
+            commit_msg = f"Subtask {subtask_short_id}: {subtask_desc}"
+            if status == "failed":
+                commit_msg = f"[FAILED] {commit_msg}"
+            if _auto_commit(project_path, commit_msg):
+                _emit_log(
+                    task_id,
+                    "info",
+                    f"Committed changes for subtask {subtask_short_id}",
+                    project_id=project_id,
+                )
 
         if result.get("status") == "failed":
             issue_id = result.get("issue_id")
