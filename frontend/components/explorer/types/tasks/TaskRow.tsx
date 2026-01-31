@@ -8,6 +8,7 @@ import { Clock, Zap } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
+import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface TaskRowProps {
   entry: ExplorerEntry
@@ -31,6 +32,7 @@ export function TaskRow({ entry }: TaskRowProps) {
   const successRate = entry.metadata.success_rate_pct
   const avgDuration = entry.metadata.avg_duration_ms
   const isScheduled = !!entry.metadata.schedule_type
+  const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   return (
     <>
@@ -38,6 +40,9 @@ export function TaskRow({ entry }: TaskRowProps) {
       <span className="flex-shrink-0 text-slate-500">
         <Zap className="w-4 h-4 text-yellow-500/70" />
       </span>
+
+      {/* Health indicator */}
+      <HealthBadge status={healthStatus} type="task" size="sm" />
 
       {/* Name with schedule indicator */}
       <div className="flex-1 flex items-center gap-2 min-w-0">

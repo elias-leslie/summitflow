@@ -13,9 +13,18 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { Database, FileText, Folder, Globe, Package, Zap } from 'lucide-react'
+import {
+  Database,
+  FileText,
+  Folder,
+  Globe,
+  Layers,
+  Package,
+  Zap,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  type ExplorerEntryType,
   fetchExplorerEntries,
   fetchScanStatus,
   type ScanStatusResponse,
@@ -49,13 +58,14 @@ export interface ExplorerChildProps {
 }
 
 // Map UI type to API entry type
-const uiTypeToApiType: Record<ExplorerType, string> = {
+const uiTypeToApiType: Record<ExplorerType, ExplorerEntryType> = {
   files: 'file',
   database: 'table',
   celery: 'task',
   api: 'endpoint',
   pages: 'page',
   dependencies: 'dependency',
+  architecture: 'architecture',
 }
 
 const typeIcons: Record<ExplorerType, React.ReactNode> = {
@@ -65,6 +75,7 @@ const typeIcons: Record<ExplorerType, React.ReactNode> = {
   api: <Globe className="w-5 h-5" />,
   pages: <FileText className="w-5 h-5" />,
   dependencies: <Package className="w-5 h-5" />,
+  architecture: <Layers className="w-5 h-5" />,
 }
 
 const typeTitles: Record<ExplorerType, string> = {
@@ -74,6 +85,7 @@ const typeTitles: Record<ExplorerType, string> = {
   api: 'API Endpoints',
   pages: 'Frontend Pages',
   dependencies: 'Dependencies',
+  architecture: 'Architecture',
 }
 
 export function ExplorerShell({
@@ -106,6 +118,7 @@ export function ExplorerShell({
     api: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     pages: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
     dependencies: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
+    architecture: { total: 0, fresh: 0, stale: 0, orphan: 0, lastScan: null },
   })
 
   // Fetch stats for all types on mount and when scanning completes
@@ -118,6 +131,7 @@ export function ExplorerShell({
         'api',
         'pages',
         'dependencies',
+        'architecture',
       ]
       // Start with empty stats object to avoid dependency on statsData
       const newStats: Record<ExplorerType, ExplorerStats> = {
@@ -133,13 +147,20 @@ export function ExplorerShell({
           orphan: 0,
           lastScan: null,
         },
+        architecture: {
+          total: 0,
+          fresh: 0,
+          stale: 0,
+          orphan: 0,
+          lastScan: null,
+        },
       }
 
       for (const type of types) {
         try {
           const apiType = uiTypeToApiType[type]
           const response = await fetchExplorerEntries(projectId, {
-            type: apiType as 'file' | 'table' | 'task' | 'endpoint' | 'page',
+            type: apiType,
             limit: 1, // Just need stats, not entries
           })
 
@@ -278,6 +299,7 @@ export function ExplorerShell({
       api: statsData.api.total,
       pages: statsData.pages.total,
       dependencies: statsData.dependencies.total,
+      architecture: statsData.architecture.total,
     }),
     [statsData],
   )

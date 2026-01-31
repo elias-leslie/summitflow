@@ -8,6 +8,7 @@ import { FileText } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
+import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface PageRowProps {
   entry: ExplorerEntry
@@ -25,6 +26,7 @@ export function PageRow({ entry }: PageRowProps) {
   const responseTime = entry.metadata.response_time_ms
   const routeParams = entry.metadata.route_params ?? []
   const consoleErrors = entry.metadata.console_errors ?? 0
+  const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   const isHealthy =
     httpStatus !== undefined && httpStatus >= 200 && httpStatus < 400
@@ -36,6 +38,9 @@ export function PageRow({ entry }: PageRowProps) {
       <span className="flex-shrink-0 text-slate-500">
         <FileText className="w-4 h-4 text-purple-500/70" />
       </span>
+
+      {/* Health indicator */}
+      <HealthBadge status={healthStatus} type="page" size="sm" />
 
       {/* Path with error indicator */}
       <div className="flex-1 flex items-center gap-2 min-w-0">

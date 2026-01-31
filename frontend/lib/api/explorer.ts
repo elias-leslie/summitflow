@@ -16,6 +16,7 @@ export type ExplorerEntryType =
   | 'endpoint'
   | 'page'
   | 'dependency'
+  | 'architecture'
 export type ExplorerHealthStatus = 'healthy' | 'warning' | 'error' | 'unknown'
 
 export interface ExplorerEntryMetadata {

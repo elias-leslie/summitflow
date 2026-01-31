@@ -48,6 +48,13 @@ HEALTH_CONFIG: dict[str, dict[str, Any]] = {
         "vuln_medium": "warning",
         "is_outdated": "warning",
     },
+    "architecture": {
+        "parallel_implementation_threshold": 1,
+        "missing_infrastructure_threshold": 3,
+        "duplicate_utility_threshold": 5,
+        "error_count_threshold": 1,
+        "warning_count_threshold": 3,
+    },
 }
 
 
@@ -133,6 +140,8 @@ def calculate_health_for_entry(entry_type: str, metadata: dict[str, Any]) -> str
         return _calculate_page_health(metadata, config)
     elif entry_type == "dependency":
         return _calculate_dependency_health(metadata, config)
+    elif entry_type == "architecture":
+        return _calculate_architecture_health(metadata, config)
     else:
         return "unknown"
 
@@ -266,6 +275,54 @@ def _calculate_dependency_health(metadata: dict[str, Any], config: dict[str, Any
         return str(config.get("vuln_medium", "warning"))
     if metadata.get("is_outdated", False):
         return str(config.get("is_outdated", "warning"))
+
+    return "healthy"
+
+
+def _calculate_architecture_health(metadata: dict[str, Any], config: dict[str, Any]) -> str:
+    """Calculate health for architecture entries.
+
+    Based on violation counts by type:
+    - parallel_implementation: Multiple implementations of same functionality (error)
+    - missing_infrastructure: Missing caching, error handling, observability (warning)
+    - duplicate_utility: Literal code duplication (warning)
+    """
+    violations = metadata.get("violations", [])
+
+    parallel_count = 0
+    missing_count = 0
+    duplicate_count = 0
+
+    for v in violations:
+        vtype = v.get("violation_type", "")
+        if vtype == "parallel_implementation":
+            parallel_count += 1
+        elif vtype == "missing_infrastructure":
+            missing_count += 1
+        elif vtype == "duplicate_utility":
+            duplicate_count += 1
+
+    parallel_threshold = int(config.get("parallel_implementation_threshold", 1))
+    if parallel_count >= parallel_threshold:
+        return "error"
+
+    error_threshold = int(config.get("error_count_threshold", 1))
+    total_errors = sum(1 for v in violations if v.get("severity") == "error")
+    if total_errors >= error_threshold:
+        return "error"
+
+    missing_threshold = int(config.get("missing_infrastructure_threshold", 3))
+    duplicate_threshold = int(config.get("duplicate_utility_threshold", 5))
+    warning_threshold = int(config.get("warning_count_threshold", 3))
+
+    if missing_count >= missing_threshold:
+        return "warning"
+    if duplicate_count >= duplicate_threshold:
+        return "warning"
+
+    total_warnings = sum(1 for v in violations if v.get("severity") == "warning")
+    if total_warnings >= warning_threshold:
+        return "warning"
 
     return "healthy"
 

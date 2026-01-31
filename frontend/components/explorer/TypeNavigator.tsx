@@ -13,6 +13,7 @@ import {
   Filter,
   Folder,
   Globe,
+  Layers,
   Package,
   Search,
   Zap,
@@ -81,6 +82,13 @@ const typeConfig: Record<
     activeClass: 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300',
     glowClass: 'shadow-[0_0_12px_rgba(99,102,241,0.4)]',
   },
+  architecture: {
+    icon: Layers,
+    label: 'Architecture',
+    color: 'text-rose-400',
+    activeClass: 'bg-rose-500/20 border-rose-500/50 text-rose-300',
+    glowClass: 'shadow-[0_0_12px_rgba(244,63,94,0.4)]',
+  },
 }
 
 const filterConfig: Record<
@@ -110,6 +118,7 @@ export function TypeNavigator({
     'api',
     'pages',
     'dependencies',
+    'architecture',
   ]
   const filters: (HealthStatus | 'all')[] = ['all', 'fresh', 'stale', 'orphan']
 

@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-01-30 14:51 UTC
+generated_at: 2026-01-31 06:15 UTC
 environment:
   python_version: '>=3.12'
   venv_path: backend/.venv
@@ -116,7 +116,6 @@ tables:
 tasks:
 - autonomous_work_pickup (every 30 minutes)
 - cleanup_debug_captures (every 1 day)
-- cleanup_orphaned_worktrees (every 6 hours)
 - cleanup_stale_tasks (every 1 day)
 - daily_code_health_scan (every 1 day)
 - generate_tasks_from_scan (every 7 days)
@@ -132,11 +131,11 @@ tasks:
 folders:
   (root): 26 files - services, tests
   .claude: 3 files
-  .dev-tools: 24 files - tests
+  .dev-tools: 5 files - tests
   .qna-session: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 521 files - api, services, tests
+  backend: 486 files - api, services, tests
   docs: 64 files - tests
   frontend: 274 files - api, components, tests
   mockups: 7 files

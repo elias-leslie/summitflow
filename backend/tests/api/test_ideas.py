@@ -55,9 +55,7 @@ class TestIdeaSubmission:
 
     @patch("asyncio.create_task")
     @patch("app.api.ideas.get_connection")
-    def test_submit_idea_returns_idea_id(
-        self, mock_conn: MagicMock, mock_create_task: MagicMock
-    ):
+    def test_submit_idea_returns_idea_id(self, mock_conn: MagicMock, mock_create_task: MagicMock):
         """Test that submitting an idea returns an idea_id."""
         mock_cursor = MagicMock()
         # No JWT header → user_identifier = "anonymous" → skip user hourly check
@@ -83,9 +81,7 @@ class TestIdeaSubmission:
 
     @patch("asyncio.create_task")
     @patch("app.api.ideas.get_connection")
-    def test_submit_idea_extracts_email(
-        self, mock_conn: MagicMock, mock_create_task: MagicMock
-    ):
+    def test_submit_idea_extracts_email(self, mock_conn: MagicMock, mock_create_task: MagicMock):
         """Test that submitting with JWT extracts and stores email."""
         mock_cursor = MagicMock()
         # With JWT header → user_identifier = email → checks user hourly limit

@@ -18,6 +18,7 @@ export type EntryType =
   | 'endpoint'
   | 'page'
   | 'dependency'
+  | 'architecture'
 
 interface HealthBadgeProps {
   status: HealthStatus
@@ -101,6 +102,7 @@ const typeThresholds: Record<EntryType, string> = {
   endpoint: 'HTTP status, orphaned status',
   page: 'HTTP status, console errors',
   dependency: 'Vulnerabilities, outdated status',
+  architecture: 'Parallel implementations, missing infrastructure, duplicates',
 }
 
 export function HealthBadge({

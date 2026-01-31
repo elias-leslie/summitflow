@@ -30,6 +30,7 @@ const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
   api: { singular: 'endpoint', plural: 'endpoints' },
   pages: { singular: 'page', plural: 'pages' },
   dependencies: { singular: 'dependency', plural: 'dependencies' },
+  architecture: { singular: 'module', plural: 'modules' },
 }
 
 function formatTimeAgo(dateStr: string | null): string {

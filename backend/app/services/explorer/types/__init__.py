@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ..base import BaseScanner
 
 # Import scanners
+from .architecture import CodeArchitectureScanner
 from .database import DatabaseScanner
 from .dependencies import DependencyScanner
 from .endpoints import EndpointScanner
@@ -37,6 +38,7 @@ SCANNERS: dict[str, type[BaseScanner]] = {
     "endpoint": EndpointScanner,
     "page": PageScanner,
     "dependency": DependencyScanner,
+    "architecture": CodeArchitectureScanner,
 }
 
 

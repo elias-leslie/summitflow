@@ -424,7 +424,7 @@ def show(
 
 @app.command()
 def context(
-    task_id: Annotated[str | None, typer.Argument()] = None,
+    task_id: Annotated[str, typer.Argument(help="Task ID (required)")],
 ) -> None:
     """Get full task context in a single call.
 
@@ -433,16 +433,10 @@ def context(
 
     This is optimized for /do_it workflow - one command instead of multiple calls.
 
-    If no task_id is provided, uses the active context from 'st work'.
-
     Examples:
         st --compact context task-abc123
         st context task-abc123
-        st context                        # Uses active context
     """
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
     client = STClient(require_project=False)
 
     try:
@@ -504,7 +498,7 @@ def context(
 
 @app.command()
 def export(
-    task_id: Annotated[str | None, typer.Argument()] = None,
+    task_id: Annotated[str, typer.Argument(help="Task ID (required)")],
     output: Annotated[
         str | None,
         typer.Option("-o", "--output", help="Output file path (default: stdout)"),
@@ -518,18 +512,11 @@ def export(
 
     This is the single-command full export for task archival or comparison.
 
-    If no task_id is provided, uses the active context from 'st work'.
-
     Examples:
         st export task-abc123                      # Output to stdout
         st export task-abc123 -o task.json        # Write to file
-        st export -o /tmp/task.json               # Uses active context
     """
     from datetime import datetime
-
-    from ..context import require_task_id
-
-    task_id = require_task_id(task_id)
     client = STClient(require_project=False)
 
     try:
@@ -1647,123 +1634,3 @@ def import_plan(
     typer.echo(f"IMPORT:{task_id}|{complexity}|{len(subtasks)} subtasks")
 
 
-def _display_triggered_references(task_type: str) -> None:
-    """Fetch and display references triggered by the task's type.
-
-    Calls Agent Hub to get reference episodes where task_type matches
-    their trigger_task_types. Outputs to console so the agent sees them.
-    """
-    from ..config import get_config_optional
-
-    config = get_config_optional()
-    if not config.agent_hub_base:
-        return
-
-    import httpx
-
-    try:
-        response = httpx.get(
-            f"{config.agent_hub_base}/api/memory/triggered-references",
-            params={"task_type": task_type},
-            timeout=10.0,
-        )
-        if response.status_code != 200:
-            return
-
-        data = response.json()
-        refs = data.get("references", [])
-        if not refs:
-            return
-
-        typer.echo(f"\nREFERENCES[{len(refs)}] for task_type={task_type}:")
-        for ref in refs:
-            content = ref.get("content", "")
-            # Truncate long content but preserve structure
-            if len(content) > 500:
-                content = content[:500] + "..."
-            typer.echo(f"---\n{content}\n---")
-
-    except Exception:
-        # Silently fail - references are optional enhancement
-        pass
-
-
-@app.command()
-def work(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    done: Annotated[
-        bool,
-        typer.Option("--done", help="Clear active context"),
-    ] = False,
-    show: Annotated[
-        bool,
-        typer.Option("--show", help="Show current context"),
-    ] = False,
-) -> None:
-    """Set or show the active task context.
-
-    Once set, subsequent commands (close, subtask, step) will
-    use this task automatically when no explicit ID is provided.
-
-    Examples:
-        st work task-abc123          # Set active task
-        st work --show               # Show current context
-        st work --done               # Clear active context
-        st close                     # Uses active task (no ID needed)
-        st subtask pass 1.1          # Uses active task
-    """
-    from ..context import (
-        clear_active_task_id,
-        get_active_context,
-        set_active_task_id,
-    )
-
-    # --show: display current context
-    if show:
-        ctx = get_active_context()
-        if ctx:
-            typer.echo(f"ACTIVE:{ctx.task_id}|{ctx.project_id or ''}")
-        else:
-            typer.echo("ACTIVE:(none)")
-        return
-
-    # --done: clear context
-    if done:
-        if clear_active_task_id():
-            typer.echo("CLEARED")
-        else:
-            typer.echo("ACTIVE:(none)")
-        return
-
-    # Set context: requires task_id
-    if not task_id:
-        # No argument and no flag - show current context
-        ctx = get_active_context()
-        if ctx:
-            typer.echo(f"ACTIVE:{ctx.task_id}")
-        else:
-            output_error("Usage: st work <task-id> or st work --show")
-            raise typer.Exit(1)
-        return
-
-    # Validate task exists
-    client = STClient(require_project=False)
-    try:
-        task = client.get_task(task_id)
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
-
-    # Set active context
-    project_id = task.get("project_id")
-    set_active_task_id(task_id, project_id)
-
-    # Output confirmation
-    status = task.get("status", "unknown")
-    title = task.get("title", "")[:50]
-    typer.echo(f"ACTIVE:{task_id}|{status}|{title}")
-
-    # Fetch and display triggered references for this task's type
-    task_type = task.get("task_type")
-    if task_type:
-        _display_triggered_references(task_type)

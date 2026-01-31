@@ -5,10 +5,19 @@
  * Each type provides columns, row renderer, and detail renderer.
  */
 
-import { Database, FileText, Folder, Globe, Package, Zap } from 'lucide-react'
+import {
+  Database,
+  FileText,
+  Folder,
+  Globe,
+  Layers,
+  Package,
+  Zap,
+} from 'lucide-react'
 import type { ExplorerEntry, ExplorerEntryType } from '@/lib/api/explorer'
 import type { ExplorerColumn, ExplorerType as UIExplorerType } from '../types'
 
+export * from './architecture'
 export * from './database'
 export * from './dependencies'
 export * from './endpoints'
@@ -17,6 +26,11 @@ export * from './files'
 export * from './pages'
 export * from './tasks'
 
+import {
+  ArchitectureDetail,
+  ArchitectureRow,
+  architectureColumns,
+} from './architecture'
 import { TableDetail, TableRow, tableColumns } from './database'
 import {
   DependencyDetail,
@@ -116,6 +130,16 @@ export const typeConfigs: Record<ExplorerEntryType, ExplorerTypeConfig> = {
     RowComponent: DependencyRow,
     DetailComponent: DependencyDetail,
   },
+  architecture: {
+    entryType: 'architecture',
+    uiType: 'architecture',
+    label: 'Architecture',
+    icon: Layers,
+    colorClass: 'text-rose-500',
+    columns: architectureColumns,
+    RowComponent: ArchitectureRow,
+    DetailComponent: ArchitectureDetail,
+  },
 }
 
 /**
@@ -128,6 +152,7 @@ export const uiTypeToEntryType: Record<UIExplorerType, ExplorerEntryType> = {
   api: 'endpoint',
   pages: 'page',
   dependencies: 'dependency',
+  architecture: 'architecture',
 }
 
 /**
@@ -140,6 +165,7 @@ export const entryTypeToUiType: Record<ExplorerEntryType, UIExplorerType> = {
   endpoint: 'api',
   page: 'pages',
   dependency: 'dependencies',
+  architecture: 'architecture',
 }
 
 /**

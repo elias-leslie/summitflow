@@ -17,6 +17,7 @@ import {
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
+import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface DependencyRowProps {
   entry: ExplorerEntry
@@ -83,11 +84,11 @@ export function DependencyRow({ entry }: DependencyRowProps) {
   const vulns = meta.vulnerabilities as
     | { critical?: number; high?: number; medium?: number; low?: number }
     | undefined
-  // Support both deduplicated (source_files) and raw (source_file) entries
   const sourceFiles =
     (meta.source_files as string[] | undefined) ||
     (meta.source_file ? [meta.source_file as string] : [])
   const versionConflict = meta.version_conflict as boolean | undefined
+  const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   const vulnBadge = getVulnBadge(vulns)
   const VulnIcon = vulnBadge.icon
@@ -98,6 +99,9 @@ export function DependencyRow({ entry }: DependencyRowProps) {
       <span className="flex-shrink-0 text-slate-500">
         <Package className="w-4 h-4 text-indigo-400/70" />
       </span>
+
+      {/* Health indicator */}
+      <HealthBadge status={healthStatus} type="dependency" size="sm" />
 
       {/* Package name with optional badges */}
       <div className="flex-1 flex items-center gap-2 min-w-0">

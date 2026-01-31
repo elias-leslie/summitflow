@@ -12,6 +12,7 @@ export type ExplorerType =
   | 'api'
   | 'pages'
   | 'dependencies'
+  | 'architecture'
 
 export type HealthStatus = 'fresh' | 'active' | 'stale' | 'orphan' | 'unknown'
 

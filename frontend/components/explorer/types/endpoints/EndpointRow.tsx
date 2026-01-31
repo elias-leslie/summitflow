@@ -8,6 +8,7 @@ import { FileText, Globe } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
+import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface EndpointRowProps {
   entry: ExplorerEntry
@@ -35,6 +36,7 @@ export function EndpointRow({ entry }: EndpointRowProps) {
   const responseTime = entry.metadata.response_time_ms
   const endpointType = entry.metadata.endpoint_type
   const consoleErrors = entry.metadata.console_errors ?? 0
+  const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   const isPage = endpointType === 'page'
   const isHealthy =
@@ -51,6 +53,9 @@ export function EndpointRow({ entry }: EndpointRowProps) {
           <Globe className="w-4 h-4 text-cyan-500/70" />
         )}
       </span>
+
+      {/* Health indicator */}
+      <HealthBadge status={healthStatus} type="endpoint" size="sm" />
 
       {/* Path with error indicator */}
       <div className="flex-1 flex items-center gap-2 min-w-0">

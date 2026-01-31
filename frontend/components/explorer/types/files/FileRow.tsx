@@ -8,12 +8,12 @@ import { File, Folder } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
+import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface FileRowProps {
   entry: ExplorerEntry
 }
 
-// Helpers
 const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
 
 const formatBytes = (bytes: number | undefined | null) => {
@@ -34,28 +34,6 @@ const formatTimeAgo = (dateStr: string | null) => {
   if (diffDays < 7) return `${diffDays}d ago`
   if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
   return `${Math.floor(diffDays / 30)}mo ago`
-}
-
-// Health badge component - triage dot indicator for refactor priority
-function HealthBadge({ priority }: { priority: string | undefined }) {
-  // Only show badge for high or medium priority
-  if (!priority || priority === 'low' || priority === 'none') return null
-
-  const isHigh = priority === 'high'
-
-  return (
-    <span
-      className={cn(
-        'w-2 h-2 rounded-full shrink-0',
-        isHigh ? 'bg-red-500' : 'bg-amber-500',
-      )}
-      title={
-        isHigh
-          ? 'Critical - needs refactoring'
-          : 'Warning - consider refactoring'
-      }
-    />
-  )
 }
 
 // Comment density indicator - shows when >15% (excessive commenting)
@@ -83,10 +61,8 @@ export function FileRow({ entry }: FileRowProps) {
     : (entry.metadata.lines_of_code ?? 0)
   const size = entry.metadata.size_bytes ?? 0
   const bloatLevel = entry.metadata.bloat_level
-  const refactorPriority = entry.metadata.refactor_priority as
-    | string
-    | undefined
   const commentDensity = entry.metadata.comment_density as number | undefined
+  const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   return (
     <>
@@ -99,6 +75,9 @@ export function FileRow({ entry }: FileRowProps) {
         )}
       </span>
 
+      {/* Health indicator */}
+      <HealthBadge status={healthStatus} type="file" size="sm" />
+
       {/* Name with complexity badge */}
       <ColumnValue
         className={cn(
@@ -109,7 +88,6 @@ export function FileRow({ entry }: FileRowProps) {
         )}
       >
         <span className="truncate">{entry.name}</span>
-        <HealthBadge priority={refactorPriority} />
         <CommentDensityBadge density={commentDensity} />
       </ColumnValue>
 

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 
 type TabId = 'kanban' | 'tasks' | 'explorer' | 'health'
-type ExplorerType =
+export type ExplorerType =
   | 'files'
   | 'database'
   | 'celery'
   | 'api'
   | 'pages'
   | 'dependencies'
+  | 'architecture'
 
 const VALID_TABS: TabId[] = ['kanban', 'tasks', 'explorer', 'health']
 const VALID_EXPLORER_TYPES: ExplorerType[] = [
@@ -17,6 +18,7 @@ const VALID_EXPLORER_TYPES: ExplorerType[] = [
   'api',
   'pages',
   'dependencies',
+  'architecture',
 ]
 
 const getLastTabKey = (projectId: string) => `summitflow_last_tab_${projectId}`
@@ -115,5 +117,5 @@ export function useTabPersistence({
 }
 
 // Re-export types for convenience
-export type { TabId, ExplorerType }
+export type { TabId }
 export { VALID_TABS, VALID_EXPLORER_TYPES }

@@ -17,7 +17,9 @@ from ..storage.connection import get_connection
 
 def validate_entry_type(entry_type: str) -> None:
     """Validate entry type parameter."""
-    valid_types = {"file", "table", "task", "endpoint", "page", "dependency"}
+    from ..services.explorer.types import list_registered_types
+
+    valid_types = set(list_registered_types())
     if entry_type not in valid_types:
         raise HTTPException(
             status_code=400,

@@ -21,7 +21,9 @@ class ExplorerEntry(BaseModel):
 
     id: int | None = None
     project_id: str
-    entry_type: str = Field(..., pattern="^(file|table|task|endpoint|page|dependency)$")
+    entry_type: str = Field(
+        ..., pattern="^(file|table|task|endpoint|page|dependency|architecture)$"
+    )
     path: str
     name: str
     health_status: str = Field(default="unknown", pattern="^(healthy|warning|error|unknown)$")

@@ -73,7 +73,7 @@ def validate_format_standard(content: str, summary: str) -> list[str]:
         if "|" in line:
             continue
         if "::" in line or re.search(r"(?<!\|)\s*->\s*(?!\|)", line):
-            errors.append(f"[5] delimiters: Line {i+1} has :: or -> (use tables or rewrite)")
+            errors.append(f"[5] delimiters: Line {i + 1} has :: or -> (use tables or rewrite)")
             break
 
     # Rule 6: No conversational patterns
@@ -87,6 +87,8 @@ def validate_format_standard(content: str, summary: str) -> list[str]:
         errors.append(f"[8] summary: Too short ({len(summary)} chars, need 10-40)")
 
     return errors
+
+
 from .memory_formatters import (
     format_batch_get_compact,
     format_batch_tier_compact,

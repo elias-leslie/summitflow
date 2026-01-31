@@ -116,6 +116,8 @@ def scan_all_projects(
                     project_id=proj_id,
                 )
                 current_app.send_task("summitflow.generate_tasks_from_scan", args=[proj_id])
+                current_app.send_task("summitflow.generate_schema_tasks", args=[proj_id])
+                current_app.send_task("summitflow.generate_architecture_tasks", args=[proj_id])
                 # NOTE: generate_bug_tasks disabled - auto-generating tasks from error
                 # observations was too noisy (environmental/transient issues, not real bugs)
                 # Check for resolved issues and auto-close linked tasks
