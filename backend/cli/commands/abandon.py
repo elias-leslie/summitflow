@@ -156,7 +156,7 @@ def _abandon_task(
 
     # Reset task status via API
     try:
-        client.update_status(task_id, "todo")
+        client.update_status(task_id, "pending")
     except APIError as e:
         # Non-fatal - DB/branches already restored
         typer.echo(f"Warning: Could not reset task status: {e.detail}", err=True)
