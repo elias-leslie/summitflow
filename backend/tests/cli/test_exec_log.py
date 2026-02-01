@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.commands.exec_monitor import _subtask_summary, exec_log_command
+from cli.commands.exec_monitor import _subtask_summary
 from cli.main import app
 
 runner = CliRunner()

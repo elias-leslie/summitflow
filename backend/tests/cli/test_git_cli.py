@@ -22,8 +22,14 @@ class TestGitStatus:
         assert "Show git status for managed repositories" in result.stdout
 
     @patch("cli.commands.git._get_repo_status")
-    def test_status_json_output(self, mock_status: MagicMock):
+    @patch("cli.commands.git._get_managed_repos")
+    @patch("cli.commands.git.is_compact")
+    def test_status_json_output(
+        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
+    ):
         """Test JSON output format for status."""
+        mock_compact.return_value = False
+        mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
             "name": "repo",
@@ -40,10 +46,14 @@ class TestGitStatus:
         assert "total" in result.stdout
 
     @patch("cli.commands.git._get_repo_status")
+    @patch("cli.commands.git._get_managed_repos")
     @patch("cli.commands.git.is_compact")
-    def test_status_toon_output(self, mock_compact: MagicMock, mock_status: MagicMock):
+    def test_status_toon_output(
+        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
+    ):
         """Test TOON format output for status."""
         mock_compact.return_value = True
+        mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
             "name": "repo",
@@ -69,8 +79,14 @@ class TestGitSync:
         assert "Sync all managed repositories" in result.stdout
 
     @patch("cli.commands.git._get_repo_status")
-    def test_sync_skips_dirty_repos(self, mock_status: MagicMock):
+    @patch("cli.commands.git._get_managed_repos")
+    @patch("cli.commands.git.is_compact")
+    def test_sync_skips_dirty_repos(
+        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
+    ):
         """Test that sync skips repos with uncommitted changes."""
+        mock_compact.return_value = False
+        mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
             "name": "repo",

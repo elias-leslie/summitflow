@@ -10,6 +10,25 @@ from app.main import app
 from app.storage.connection import get_connection
 
 
+@pytest.fixture(autouse=True)
+def reset_cli_output_state():
+    """Reset CLI output globals before each test to prevent state pollution.
+
+    The CLI uses module-level globals (_compact_output, _human_output, etc.)
+    that persist across tests. Tests invoking the main app set compact=True
+    which then affects later tests expecting JSON output.
+    """
+    from cli.output import set_compact_output, set_human_output, set_progress_only
+
+    set_compact_output(False)
+    set_human_output(False)
+    set_progress_only(False)
+    yield
+    set_compact_output(False)
+    set_human_output(False)
+    set_progress_only(False)
+
+
 def pytest_addoption(parser):
     """Add custom pytest command-line options."""
     parser.addoption(
