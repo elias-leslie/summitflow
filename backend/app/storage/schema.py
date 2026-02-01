@@ -367,6 +367,61 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
         """
     )
 
+    # ============================================================
+    # Agent Performance Tracking
+    # ============================================================
+
+    # Individual records of model execution outcomes for performance analysis
+    cur.execute(
+        """
+            CREATE TABLE IF NOT EXISTS model_performance_logs (
+                id SERIAL PRIMARY KEY,
+                task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+                model_name TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                complexity TEXT NOT NULL,
+                outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure', 'error')),
+                quality_score DOUBLE PRECISION,
+                tokens_used INTEGER,
+                latency_ms INTEGER,
+                error_category TEXT,
+                metadata JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_perf_logs_lookup ON model_performance_logs(model_name, task_type, complexity)"
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_model_perf_logs_task_id ON model_performance_logs(task_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_model_perf_logs_created_at ON model_performance_logs(created_at DESC)")
+
+    # Aggregated performance metrics for models, used for intelligent task routing
+    cur.execute(
+        """
+            CREATE TABLE IF NOT EXISTS model_performance_metrics (
+                model_name TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                complexity TEXT NOT NULL,
+                success_count INTEGER DEFAULT 0,
+                failure_count INTEGER DEFAULT 0,
+                total_executions INTEGER DEFAULT 0,
+                avg_quality_score DOUBLE PRECISION DEFAULT 0.0,
+                avg_latency_ms DOUBLE PRECISION DEFAULT 0.0,
+                avg_tokens_used DOUBLE PRECISION DEFAULT 0.0,
+                last_executed_at TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (model_name, task_type, complexity)
+            )
+        """
+    )
+    cur.execute(
+        """
+            CREATE INDEX IF NOT EXISTS idx_model_perf_metrics_ranking
+            ON model_performance_metrics(task_type, complexity, success_count DESC, avg_quality_score DESC)
+        """
+    )
+
     # Add new columns to existing tables if they don't exist
     # This allows running init_schema() on existing databases
     for column, table in [
