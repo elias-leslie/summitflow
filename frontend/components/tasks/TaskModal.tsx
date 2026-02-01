@@ -157,9 +157,12 @@ export function TaskModal({
   const isPaused = task?.status === 'paused'
   const isAiReviewing = task?.status === 'ai_reviewing'
   const isCompleted = task?.status === 'completed'
+  const isPending = task?.status === 'pending'
+  const isBlocked = task?.status === 'blocked'
 
-  // Show timeline for active tasks AND completed tasks (to view execution history)
-  const showTimeline = isRunning || isPaused || isAiReviewing || isCompleted
+  // Show timeline for all task states to view execution history
+  // (including pending - pristine self-heal runs before task starts)
+  const showTimeline = isRunning || isPaused || isAiReviewing || isCompleted || isPending || isBlocked
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

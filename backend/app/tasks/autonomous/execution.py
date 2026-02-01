@@ -211,6 +211,13 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
     root_path = get_project_root_path(project_id)
     if not root_path:
         logger.error("pristine_self_heal_no_path", project_id=project_id)
+        _emit_log(
+            task_id,
+            "error",
+            "Pristine self-heal failed: no project path",
+            source="pristine",
+            project_id=project_id,
+        )
         return False
 
     repo_path = Path(root_path)
@@ -221,6 +228,14 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
 
     cmd = [dt_cmd, "--check"]
     previous_error_count: int | None = None
+
+    _emit_log(
+        task_id,
+        "info",
+        "Starting pristine self-heal: checking quality gates",
+        source="pristine",
+        project_id=project_id,
+    )
 
     for attempt in range(PRISTINE_SELF_HEAL_MAX_ATTEMPTS):
         try:
@@ -244,6 +259,13 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                         project_id=project_id,
                         attempts=attempt + 1,
                     )
+                    _emit_log(
+                        task_id,
+                        "info",
+                        f"Pristine self-heal succeeded after {attempt + 1} attempt(s)",
+                        source="pristine",
+                        project_id=project_id,
+                    )
                 return True
 
             output = result.stdout + result.stderr
@@ -255,6 +277,13 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                     project_id=project_id,
                     previous=previous_error_count,
                     current=error_count,
+                )
+                _emit_log(
+                    task_id,
+                    "warning",
+                    f"Pristine self-heal regression detected ({previous_error_count}→{error_count} errors), reverting",
+                    source="pristine",
+                    project_id=project_id,
                 )
                 subprocess.run(
                     ["git", "checkout", "."],
@@ -273,6 +302,13 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                 project_id=project_id,
                 attempt=attempt + 1,
                 error_count=error_count,
+            )
+            _emit_log(
+                task_id,
+                "info",
+                f"Pristine self-heal attempt {attempt + 1}/{PRISTINE_SELF_HEAL_MAX_ATTEMPTS}: {error_count} errors, invoking coder agent",
+                source="pristine",
+                project_id=project_id,
             )
 
             client = get_sync_client()
@@ -309,18 +345,46 @@ Fix these issues now.
                 attempt=attempt + 1,
                 response_length=len(response.content) if response.content else 0,
             )
+            _emit_log(
+                task_id,
+                "info",
+                f"Pristine self-heal: coder agent completed attempt {attempt + 1}",
+                source="pristine",
+                project_id=project_id,
+            )
 
         except subprocess.TimeoutExpired:
             logger.error("pristine_self_heal_timeout", project_id=project_id)
+            _emit_log(
+                task_id,
+                "error",
+                "Pristine self-heal timed out",
+                source="pristine",
+                project_id=project_id,
+            )
             return False
         except Exception as e:
             logger.error("pristine_self_heal_error", project_id=project_id, error=str(e))
+            _emit_log(
+                task_id,
+                "error",
+                f"Pristine self-heal error: {e}",
+                source="pristine",
+                project_id=project_id,
+            )
             return False
 
     logger.warning(
         "pristine_self_heal_exhausted",
         project_id=project_id,
         max_attempts=PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
+    )
+    _emit_log(
+        task_id,
+        "warning",
+        f"Pristine self-heal exhausted {PRISTINE_SELF_HEAL_MAX_ATTEMPTS} attempts",
+        source="pristine",
+        project_id=project_id,
     )
     return False
 
