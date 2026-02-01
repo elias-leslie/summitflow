@@ -308,9 +308,7 @@ def _handle_exhaustion(
             "reason": "exhausted",
             "execution_time_seconds": round(execution_time, 2),
             "last_error": (
-                iteration_context.get("test_failures", "")[:500]
-                if iteration_context
-                else None
+                iteration_context.get("test_failures", "")[:500] if iteration_context else None
             ),
         },
     )
@@ -322,7 +320,5 @@ def _handle_exhaustion(
         models_tried=models_tried,
         reason="exhausted",
         error=f"Failed after {max_iterations} iterations",
-        test_output=(
-            iteration_context.get("test_failures") if iteration_context else None
-        ),
+        test_output=(iteration_context.get("test_failures") if iteration_context else None),
     )
