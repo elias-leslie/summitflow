@@ -46,15 +46,6 @@ export function ExecutionTimeline({
     setMessages((prev) => [...prev, message])
   }, [])
 
-  // Fetch historical events
-  const { historicalEvents, isLoading: isLoadingHistory } = useTimelineHistory({
-    taskId,
-    projectId,
-    onLastSequence: (seq) => {
-      setLastSequence(seq)
-    },
-  })
-
   // Connect to WebSocket
   const { isConnected, error, connect, sendChatMessage, setLastSequence } =
     useExecutionWebSocket({
@@ -63,6 +54,13 @@ export function ExecutionTimeline({
       onMessage: handleMessage,
       onScrollToBottom: scrollToBottom,
     })
+
+  // Fetch historical events (hook uses ref internally for callback stability)
+  const { historicalEvents, isLoading: isLoadingHistory } = useTimelineHistory({
+    taskId,
+    projectId,
+    onLastSequence: setLastSequence,
+  })
 
   // Voice recording
   const {

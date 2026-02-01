@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { type Event, getEventsByTask } from '@/lib/api/events'
 import type { TimelineMessage } from '../TimelineEvent'
 
@@ -17,6 +17,10 @@ export function useTimelineHistory({
     [],
   )
   const [isLoading, setIsLoading] = useState(false)
+
+  // Use ref to avoid onLastSequence in deps (prevents infinite loops)
+  const onLastSequenceRef = useRef(onLastSequence)
+  onLastSequenceRef.current = onLastSequence
 
   const eventToTimelineMessage = useCallback(
     (event: Event, index: number): TimelineMessage => {
@@ -58,8 +62,8 @@ export function useTimelineHistory({
         })
         const converted = events.map(eventToTimelineMessage)
         setHistoricalEvents(converted)
-        if (converted.length > 0 && onLastSequence) {
-          onLastSequence(converted.length)
+        if (converted.length > 0 && onLastSequenceRef.current) {
+          onLastSequenceRef.current(converted.length)
         }
       } catch (err) {
         console.error('Failed to fetch historical events:', err)
@@ -69,7 +73,7 @@ export function useTimelineHistory({
     }
 
     fetchHistory()
-  }, [projectId, taskId, eventToTimelineMessage, onLastSequence])
+  }, [projectId, taskId, eventToTimelineMessage])
 
   return {
     historicalEvents,
