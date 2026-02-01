@@ -20,5 +20,3 @@ __all__ = [
     "get_events_with_filters",
     "log_task_event",
 ]
-
-# AUTOTEST_autotest-1769904656

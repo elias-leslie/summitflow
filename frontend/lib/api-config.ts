@@ -10,9 +10,7 @@
 
 const PORTS = { frontend: 3001, backend: 8001 }
 const PROD_DOMAIN = 'dev.summitflow.dev'
-// Kept for future cross-origin API routing if CF Access removed
-const _PROD_API_DOMAIN = 'devapi.summitflow.dev'
-void _PROD_API_DOMAIN // suppress unused warning
+const PROD_API_DOMAIN = 'devapi.summitflow.dev'
 
 /**
  * Get the base URL for SummitFlow backend API calls.
@@ -45,11 +43,10 @@ export function getApiBaseUrl(): string {
 /**
  * Get WebSocket URL for a given path.
  *
- * Automatically handles ws/wss based on current protocol.
- *
- * IMPORTANT: In production, WebSocket uses same-origin routing via Cloudflare Tunnel
- * path-based rules. This avoids CF Access cookie issues (cookies are subdomain-specific).
- * The Tunnel config routes /ws/* paths directly to the backend.
+ * IMPORTANT: WebSockets connect directly to the API domain (devapi.summitflow.dev)
+ * not the frontend domain. This is because:
+ * 1. Next.js rewrites don't work for WebSocket connections
+ * 2. CF Tunnel supports WebSocket passthrough to the API backend
  *
  * @param path - WebSocket path (e.g., /ws/execution/task-123)
  * @returns Full WebSocket URL
@@ -59,18 +56,17 @@ export function getWsUrl(path: string): string {
     return `ws://localhost:${PORTS.backend}${path}`
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.hostname
 
-  // Development
+  // Development: use localhost
   if (host === 'localhost' || host === '127.0.0.1') {
     return `ws://localhost:${PORTS.backend}${path}`
   }
 
-  // Production: use same-origin WebSocket via Cloudflare Tunnel path routing
-  // Tunnel config routes /ws/* paths directly to backend, avoiding CF Access cookie issues
+  // Production: connect directly to API domain for WebSocket
+  // CF Tunnel routes devapi.summitflow.dev -> localhost:8001
   if (host === PROD_DOMAIN) {
-    return `${protocol}//${PROD_DOMAIN}${path}`
+    return `wss://${PROD_API_DOMAIN}${path}`
   }
 
   // Fallback
