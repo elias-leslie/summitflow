@@ -199,6 +199,7 @@ class ImplementationExecutor:
             files=files,
             capability_id=capability_id or "general",
             max_iterations=max_iterations,
+            update_phase_callback=self._update_phase,
         )
 
     def resume_execution(self, session_id: str) -> str:
