@@ -22,9 +22,8 @@ from ...storage.projects import get_project_root_path
 logger = get_logger(__name__)
 
 COMMAND_ALIASES: dict[str, str] = {
-    "dt ruff": "cd backend && .venv/bin/ruff check app/",
-    "dt mypy": "cd backend && .venv/bin/mypy app/ --ignore-missing-imports",
-    "dt pytest": "cd backend && .venv/bin/pytest -x -q",
+    # dt commands run as-is - they have proper TOON output format
+    # No expansion needed since dt is in PATH (~/.local/bin/dt)
 }
 
 
