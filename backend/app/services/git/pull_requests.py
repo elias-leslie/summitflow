@@ -101,7 +101,7 @@ def auto_create_pr(
     title: str | None = None,
     body: str | None = None,
 ) -> dict[str, Any]:
-    """Create a pull request from the task's worktree branch.
+    """Create a pull request from the task's branch.
 
     This is called when an agent completes task execution. It:
     1. Pushes the branch to origin

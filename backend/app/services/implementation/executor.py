@@ -290,7 +290,7 @@ class ImplementationExecutor:
                 iteration_context = {"test_failures": f"Agent error: {e}", "static_failures": ""}
                 continue
 
-            if not output or not parse_and_apply_changes(output, self.repo_path, False):
+            if not output or not parse_and_apply_changes(output, self.repo_path):
                 iteration_context = {
                     "test_failures": "No valid code changes in output",
                     "static_failures": "",

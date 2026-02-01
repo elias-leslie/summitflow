@@ -5,7 +5,7 @@ Supports multiple verification patterns:
 - Exit code checks (returncode == 0)
 - Output contains checks (expected string in stdout)
 - Command aliases (dt -> actual commands)
-- Venv path resolution (uses main repo's venv when in worktree)
+- Venv path resolution (resolves relative .venv paths to absolute)
 """
 
 from __future__ import annotations
@@ -29,13 +29,11 @@ COMMAND_ALIASES: dict[str, str] = {
 
 
 def _resolve_venv_paths(cmd: str, project_id: str) -> str:
-    """Resolve .venv paths to use main repo's venv (not worktree's).
-
-    Worktrees don't include virtualenvs, so we need to point to the main repo.
+    """Resolve .venv paths to absolute paths.
 
     Args:
         cmd: Command that may contain .venv references
-        project_id: Project ID to look up main repo path
+        project_id: Project ID to look up repo path
 
     Returns:
         Command with absolute venv paths
@@ -117,7 +115,7 @@ def verify_step(
         step: Step dict with verify_command and expected_output
         working_dir: Directory to run command in
         timeout: Command timeout in seconds
-        project_id: Project ID for resolving venv paths (uses main repo venv in worktrees)
+        project_id: Project ID for resolving venv paths
 
     Returns:
         VerificationResult with pass/fail status

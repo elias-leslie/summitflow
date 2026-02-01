@@ -143,7 +143,7 @@ Keep response concise (under 500 words)."""
         return f"Consultation failed: {e}. Consider reviewing the error manually."
 
 
-def parse_and_apply_changes(output: str, repo_path: Path, use_worktree: bool = False) -> bool:
+def parse_and_apply_changes(output: str, repo_path: Path) -> bool:
     """Parse agent output and apply file changes.
 
     Expected format:
@@ -153,8 +153,7 @@ def parse_and_apply_changes(output: str, repo_path: Path, use_worktree: bool = F
 
     Args:
         output: Agent output text
-        repo_path: Path to repository (main or worktree)
-        use_worktree: Whether we're operating in a worktree
+        repo_path: Path to repository
 
     Returns:
         True if changes were applied, False otherwise
@@ -174,6 +173,6 @@ def parse_and_apply_changes(output: str, repo_path: Path, use_worktree: bool = F
 
         # Write file
         full_path.write_text(content.strip() + "\n")
-        logger.info("file_written", path=file_path, in_worktree=use_worktree)
+        logger.info("file_written", path=file_path)
 
     return True

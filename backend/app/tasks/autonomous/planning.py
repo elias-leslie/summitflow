@@ -1,6 +1,6 @@
 """Autonomous planning task using Agent Hub run_agent().
 
-Creates implementation plans by running the planner agent in the task's worktree.
+Creates implementation plans by running the planner agent in the project directory.
 """
 
 from __future__ import annotations

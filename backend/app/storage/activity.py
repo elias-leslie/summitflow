@@ -4,7 +4,7 @@ This module provides data access for the unified activity feed:
 - Task completions (from tasks table)
 - Agent sessions (from agent_sessions table)
 - Backup events (from backups table)
-- Git commits (from git data/worktrees)
+- Git commits (from git data)
 """
 
 from __future__ import annotations

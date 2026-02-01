@@ -44,9 +44,8 @@ ERROR_BLOCKLIST_PATTERNS = [
     "migration inspection",
     "jq filter",
     "jq syntax",
-    # Capability/worktree verification (test infrastructure)
+    # Test infrastructure patterns
     "capability verification",
-    "worktree.*verification",
 ]
 
 # Security-sensitive directory names that require human review

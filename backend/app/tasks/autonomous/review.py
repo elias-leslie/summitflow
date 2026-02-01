@@ -239,7 +239,7 @@ def _handle_plan_defect(task_id: str, review_result: dict[str, Any]) -> None:
 
 
 def _auto_merge(task_id: str) -> None:
-    """Auto-merge via worktree manager (placeholder)."""
+    """Auto-merge changes to main branch (placeholder)."""
     logger.info("Auto-merge triggered for SIMPLE task", task_id=task_id)
 
 

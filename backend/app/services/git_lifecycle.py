@@ -6,7 +6,7 @@ Defines the states and transitions for agent-driven git workflows:
                             human_review
 
 Supports both human workflows (direct on main) and agent workflows
-(worktree isolation with AI-reviewed auto-merge).
+(branch-based with AI-reviewed merge).
 """
 
 from __future__ import annotations
@@ -177,7 +177,6 @@ class TaskLifecycle:
     lock_expires_at: str | None = None
     pr_url: str | None = None
     branch_name: str | None = None
-    worktree_path: str | None = None
     review_result: dict[str, Any] | None = None
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -323,7 +322,6 @@ class TaskLifecycle:
             "lock_expires_at": self.lock_expires_at,
             "pr_url": self.pr_url,
             "branch_name": self.branch_name,
-            "worktree_path": self.worktree_path,
             "review_result": self.review_result,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -340,7 +338,6 @@ class TaskLifecycle:
             lock_expires_at=data.get("lock_expires_at"),
             pr_url=data.get("pr_url"),
             branch_name=data.get("branch_name"),
-            worktree_path=data.get("worktree_path"),
             review_result=data.get("review_result"),
             created_at=data.get("created_at", datetime.now(UTC).isoformat()),
             updated_at=data.get("updated_at", datetime.now(UTC).isoformat()),

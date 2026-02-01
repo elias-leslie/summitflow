@@ -6,7 +6,6 @@ Runs external verification tools (pytest, pyright, ruff) and checks step complet
 from __future__ import annotations
 
 import hashlib
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -20,13 +19,11 @@ logger = get_logger(__name__)
 
 
 def _resolve_venv_path(cmd_path: str, repo_path: Path) -> str:
-    """Resolve .venv paths to use main repo's venv for worktrees.
-
-    Worktrees don't include virtualenvs, so we need to point to the main repo.
+    """Resolve .venv paths to absolute paths.
 
     Args:
         cmd_path: Command path like ".venv/bin/pytest"
-        repo_path: Repository path (may be worktree or main repo)
+        repo_path: Repository path
 
     Returns:
         Resolved path string
@@ -34,23 +31,10 @@ def _resolve_venv_path(cmd_path: str, repo_path: Path) -> str:
     if not cmd_path.startswith(".venv/"):
         return cmd_path
 
-    # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
-    repo_str = str(repo_path)
-    worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", repo_str)
-    if worktree_match:
-        project_id = worktree_match.group(1)
-        from ...storage.projects import get_project_root_path
-
-        main_repo = get_project_root_path(project_id)
-        if main_repo:
-            main_venv = Path(main_repo) / "backend" / ".venv"
-            if main_venv.exists():
-                return str(main_venv / cmd_path[6:])  # Skip ".venv/"
-
-    # Not a worktree - try parent repo's venv
+    # Try backend/.venv (when running from project root)
     backend_venv = repo_path / "backend" / ".venv"
     if backend_venv.exists():
-        return str(backend_venv / cmd_path[6:])
+        return str(backend_venv / cmd_path[6:])  # Skip ".venv/"
 
     # Fallback to relative path
     return cmd_path
@@ -64,7 +48,7 @@ def run_verification(
     """Run external verification (pytest, pyright, ruff).
 
     Args:
-        repo_path: Path to repository (main or worktree)
+        repo_path: Path to repository
         files: List of affected files
         capability_id: Capability ID or "general" for standalone tasks
 
@@ -80,7 +64,7 @@ def run_verification(
 
     backend_path = repo_path / "backend"
 
-    # Resolve venv paths for worktrees
+    # Resolve venv paths
     pytest_path = _resolve_venv_path(".venv/bin/pytest", repo_path)
     pyright_path = _resolve_venv_path(".venv/bin/pyright", repo_path)
     ruff_path = _resolve_venv_path(".venv/bin/ruff", repo_path)

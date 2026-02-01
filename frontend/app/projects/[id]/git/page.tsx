@@ -8,17 +8,14 @@ import {
   CheckCircle2,
   FileEdit,
   GitBranch,
-  HardDrive,
   Loader2,
   RefreshCw,
   Zap,
 } from 'lucide-react'
-import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import {
   fetchProjectGitStatus,
-  fetchWorktrees,
   type RepoStatus,
   type SyncResult,
   syncRepositories,
@@ -39,11 +36,6 @@ export default function GitDashboardPage() {
     queryKey: ['git-status', projectId],
     queryFn: () => fetchProjectGitStatus(projectId),
     refetchInterval: 30000,
-  })
-
-  const { data: worktreesData } = useQuery({
-    queryKey: ['worktrees', projectId],
-    queryFn: () => fetchWorktrees(projectId),
   })
 
   const syncMutation = useMutation({
@@ -133,7 +125,6 @@ export default function GitDashboardPage() {
   }
 
   const repos = gitStatus?.repositories ?? []
-  const worktrees = worktreesData?.worktrees ?? []
   const cleanCount = repos.filter((r) => r.state === 'clean').length
   const dirtyCount = repos.filter((r) => r.state === 'dirty').length
 
@@ -190,12 +181,6 @@ export default function GitDashboardPage() {
             <div className="w-3 h-3 rounded-full bg-outrun-500 shadow-[0_0_8px_rgba(255,0,102,0.6)]" />
             <span className="text-sm text-slate-300">
               {dirtyCount} Modified
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-slate-500" />
-            <span className="text-sm text-slate-400">
-              {worktrees.length} Active Worktrees
             </span>
           </div>
         </div>
@@ -355,73 +340,6 @@ export default function GitDashboardPage() {
           })}
         </div>
       </section>
-
-      {/* Worktrees Section */}
-      {worktrees.length > 0 && (
-        <section>
-          <div className="flex items-center gap-3 mb-4">
-            <span className="mono text-xs text-outrun-500 uppercase tracking-widest">
-              Active Worktrees
-            </span>
-            <div className="h-px flex-1 bg-gradient-to-r from-outrun-500/30 to-transparent" />
-            <Link
-              href={`/projects/${projectId}/git/worktrees`}
-              className="text-sm text-outrun-400 hover:text-outrun-300 transition-colors"
-            >
-              Manage →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {worktrees.slice(0, 4).map((wt) => (
-              <div
-                key={wt.task_id}
-                className="card p-4 flex items-center justify-between"
-              >
-                <div>
-                  <div className="mono text-sm text-white">{wt.task_id}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <GitBranch className="w-3 h-3 text-slate-500" />
-                    <span className="mono text-xs text-slate-400">
-                      {wt.branch}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-slate-300">
-                    {wt.commit_count} commits
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    <span className="text-emerald-400">+{wt.additions}</span>
-                    {' / '}
-                    <span className="text-rose-400">-{wt.deletions}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {worktrees.length > 4 && (
-            <Link
-              href={`/projects/${projectId}/git/worktrees`}
-              className="block mt-3 text-center text-sm text-slate-400 hover:text-outrun-400 transition-colors"
-            >
-              View all {worktrees.length} worktrees
-            </Link>
-          )}
-        </section>
-      )}
-
-      {/* Empty State for Worktrees */}
-      {worktrees.length === 0 && (
-        <section className="card p-8 text-center border border-dashed border-slate-700">
-          <HardDrive className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No active worktrees</p>
-          <p className="text-sm text-slate-500 mt-1">
-            Worktrees are created when agents claim tasks
-          </p>
-        </section>
-      )}
     </div>
   )
 }

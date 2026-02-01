@@ -217,16 +217,14 @@ Do NOT modify the verify_command - verification gates are immutable."""
 
 
 def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
-    """Resolve .venv paths to use main repo's venv (not worktree's).
-
-    Worktrees don't include virtualenvs, so we need to point to the main repo.
+    """Resolve .venv paths to absolute paths.
 
     For multi-project tasks, if the command explicitly `cd`s to a different
     project's directory, we use that project's venv instead.
 
     Args:
         cmd: Command that may contain .venv references
-        cwd: Working directory (may be worktree or main repo)
+        cwd: Working directory
 
     Returns:
         Command with absolute venv paths
@@ -254,22 +252,7 @@ def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
                     return cmd.replace("backend/.venv/bin/", abs_venv)
                 return cmd.replace(".venv/bin/", abs_venv)
 
-    # Check if running in a worktree: /tmp/summitflow-worktrees/<project>/task-xxx
-    worktree_match = re.match(r"/tmp/summitflow-worktrees/([^/]+)/", cwd)
-    if worktree_match:
-        project_id = worktree_match.group(1)
-        # Look up main repo path
-        main_repo = get_project_root_path(project_id)
-        if main_repo:
-            main_backend_venv = Path(main_repo) / "backend" / ".venv"
-            if main_backend_venv.exists():
-                abs_venv = f"{main_backend_venv}/bin/"
-                # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
-                if "backend/.venv/bin/" in cmd:
-                    return cmd.replace("backend/.venv/bin/", abs_venv)
-                return cmd.replace(".venv/bin/", abs_venv)
-
-    # Not a worktree - check if cwd has backend/.venv
+    # Check if cwd has backend/.venv
     cwd_path = Path(cwd)
     if (cwd_path / "backend" / ".venv").exists():
         abs_venv = f"{cwd_path}/backend/.venv/bin/"
@@ -355,7 +338,7 @@ def run_verify_command(
     # Default to summitflow for backwards compatibility
     working_dir = cwd or "/home/kasadis/summitflow"
 
-    # Resolve .venv paths for worktrees (which don't have their own venv)
+    # Resolve .venv paths to absolute paths
     resolved_command = _resolve_venv_paths(verify_command, working_dir)
 
     try:

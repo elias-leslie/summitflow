@@ -59,21 +59,15 @@ def get_escalation_level(attempts: int) -> str:
 def escalate_to_human(
     conn: psycopg.Connection[Any],
     result_id: int,
-    worktree_path: str | None = None,
 ) -> str | None:
     """Create a blocking bug task for manual review of an unfixable error.
 
     Called when fix attempts exceed MAX_FIX_ATTEMPTS (3 worker + 2 supervisor).
     Creates a P1 bug task linked to the check result.
 
-    Per d5 decision: Worktree is preserved for human inspection. Do NOT delete
-    the worktree on HUMAN escalation - include the path in the task description
-    so the human can inspect git log, git diff, and attempt_history.json.
-
     Args:
         conn: Database connection
         result_id: ID of the quality_check_result to escalate
-        worktree_path: Optional path to preserved worktree for inspection
 
     Returns:
         Created task ID, or None if escalation failed
@@ -134,27 +128,6 @@ def escalate_to_human(
             "Manual investigation required.",
         ]
     )
-
-    # Add worktree inspection info if available
-    if worktree_path:
-        description_parts.extend(
-            [
-                "",
-                "## Worktree Preserved for Inspection",
-                "",
-                f"**Worktree path:** `{worktree_path}`",
-                "",
-                "The worktree has been preserved with all fix attempts. You can inspect:",
-                "- `git log` - see all attempted commits",
-                "- `git diff main...HEAD` - see current changes vs main",
-                "- `.summitflow/attempt_history.json` - detailed history of all fix attempts",
-                "",
-                "**After inspection:** Delete the worktree with:",
-                "```bash",
-                f"rm -rf {worktree_path}",
-                "```",
-            ]
-        )
     description = "\n".join(description_parts)
 
     try:
