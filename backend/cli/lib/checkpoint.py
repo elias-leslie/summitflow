@@ -302,11 +302,17 @@ def restore_task_snapshot(task_id: str) -> bool:
     else:
         print("Warning: Backend may not be fully ready yet", file=sys.stderr)
 
-    # Checkout base branch and delete task branches
+    # Checkout base branch and discard uncommitted changes
     print(f"Switching to {base_branch} branch...")
     try:
         subprocess.run(
             ["git", "checkout", base_branch],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "."],
             check=True,
             capture_output=True,
             text=True,
@@ -544,6 +550,12 @@ def delete_task_branches(task_id: str) -> bool:
     with contextlib.suppress(subprocess.CalledProcessError):
         subprocess.run(
             ["git", "checkout", base_branch],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "."],
             check=True,
             capture_output=True,
             text=True,
