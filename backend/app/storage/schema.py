@@ -108,12 +108,8 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     # Indexes for sitemap_entries
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_project ON sitemap_entries(project_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_port ON sitemap_entries(port)")
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sitemap_health ON sitemap_entries(health_status)"
-    )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sitemap_entry_type ON sitemap_entries(entry_type)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_health ON sitemap_entries(health_status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_entry_type ON sitemap_entries(entry_type)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_sitemap_last_checked ON sitemap_entries(last_checked_at)"
     )
@@ -175,9 +171,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(task_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)")
     # Composite indexes for common query patterns (PERF-002, PERF-004)
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON tasks(project_id, created_at DESC)"
     )
@@ -233,9 +227,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project ON agent_sessions(project_id)"
     )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)"
     )
@@ -280,9 +272,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
             )
             """
     )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_notification_project ON notifications(project_id)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_project ON notifications(project_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notification_status ON notifications(status)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_notification_created ON notifications(created_at DESC)"
@@ -334,12 +324,8 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
             )
         """
     )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_design_rules_standard ON design_rules(standard_id)"
-    )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_design_rules_category ON design_rules(category)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_design_rules_standard ON design_rules(standard_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_design_rules_category ON design_rules(category)")
 
     # ============================================================
     # Code Health Tables
@@ -368,9 +354,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_code_health_project ON code_health_lists(project_id)"
     )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_code_health_type ON code_health_lists(list_type)"
-    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_code_health_type ON code_health_lists(list_type)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_code_health_category ON code_health_lists(category)"
     )
