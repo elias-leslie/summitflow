@@ -642,6 +642,8 @@ def _execute_subtask(
             project_id=project_id,
             use_memory=True,
         )
+        # Store session ID for continuation in retry attempts
+        agent_session_id = response.session_id
         logger.info(
             "Agent completed",
             subtask_id=subtask_short_id,
@@ -855,7 +857,10 @@ def _execute_subtask(
                     max_turns=15,  # Shorter for fix attempts
                     project_id=project_id,
                     use_memory=True,
+                    resume_session_id=agent_session_id,  # Continue from previous session
                 )
+                # Update session ID for next iteration
+                agent_session_id = response.session_id or agent_session_id
 
                 _emit_log(
                     task_id,
