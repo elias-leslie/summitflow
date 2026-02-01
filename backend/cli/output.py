@@ -112,7 +112,7 @@ def output_blocked_tasks(tasks: list[dict[str, Any]], blockers_map: dict[str, li
             for b in blockers:
                 blocker_id = b.get("depends_on_task_id", "?")
                 blocker_status = b.get("depends_on_status", "?")
-                blocker_title = fmt._truncate(b.get("depends_on_title", ""), 40)
+                blocker_title = fmt.truncate(b.get("depends_on_title", ""), 40)
                 print(f"  ↳ blocked by: {blocker_id}|{blocker_status}|{blocker_title}")
     else:
         output_json({"tasks": tasks, "blockers_impact": blockers_map})
