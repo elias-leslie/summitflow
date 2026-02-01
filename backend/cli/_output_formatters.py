@@ -1,5 +1,4 @@
-"""Internal formatting logic for CLI output.
-"""
+"""Internal formatting logic for CLI output."""
 
 from __future__ import annotations
 
