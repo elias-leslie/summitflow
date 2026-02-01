@@ -273,6 +273,76 @@ def _emit_error(
     )
 
 
+def _emit_progress_log(
+    task_id: str,
+    subtask_id: str,
+    progress_log: list[Any],
+    *,
+    project_id: str | None = None,
+) -> None:
+    """Emit progress_log entries from Agent Hub response as timeline events.
+
+    Args:
+        task_id: Task ID for event correlation
+        subtask_id: Subtask being executed
+        progress_log: List of AgentProgress entries from run_agent response
+        project_id: Project ID for event scoping
+    """
+    if not progress_log:
+        return
+
+    for entry in progress_log:
+        turn = getattr(entry, "turn", 0)
+        status = getattr(entry, "status", "unknown")
+        message = getattr(entry, "message", "")
+        tool_calls = getattr(entry, "tool_calls", [])
+        tool_results = getattr(entry, "tool_results", [])
+        thinking = getattr(entry, "thinking", None)
+
+        # Map status to log level
+        level = "info"
+        if status == "error":
+            level = "error"
+        elif status in ("thinking", "tool_use"):
+            level = "debug"
+
+        # Determine visibility based on content
+        visibility: EventVisibility = "user"
+        if thinking or status == "thinking":
+            visibility = "internal"
+
+        # Build event message
+        if tool_calls:
+            tool_names = [tc.get("name", "?") for tc in tool_calls]
+            event_message = f"Turn {turn}: {status} - tools: {', '.join(tool_names)}"
+        else:
+            event_message = f"Turn {turn}: {status}"
+            if message and message != f"Turn {turn}: sending to Gemini":
+                event_message = f"Turn {turn}: {message}"
+
+        _emit_log(
+            task_id,
+            level,
+            event_message,
+            source="agent",
+            project_id=project_id,
+            visibility=visibility,
+        )
+
+        # Emit tool results as separate events for detail
+        for result in tool_results:
+            tool_id = result.get("id", "?")
+            content_preview = str(result.get("content", ""))[:200]
+            _emit_log(
+                task_id,
+                "debug",
+                f"  Tool result [{tool_id}]: {content_preview}",
+                source="agent",
+                project_id=project_id,
+                visibility="internal",
+            )
+
+
 def _reset_steps_for_rerun(subtasks: list[dict[str, Any]]) -> None:
     """Reset step passes values to allow re-running failed tasks.
 
@@ -644,12 +714,20 @@ def _execute_subtask(
         )
         # Store session ID for continuation in retry attempts
         agent_session_id = response.session_id
+
+        # Surface progress_log to execution timeline
+        if response.progress_log:
+            _emit_progress_log(
+                task_id, subtask_short_id, response.progress_log, project_id=project_id
+            )
+
         logger.info(
             "Agent completed",
             subtask_id=subtask_short_id,
             response_length=len(response.content) if response.content else 0,
             session_id=response.session_id,
             cited_uuids=len(response.cited_uuids) if response.cited_uuids else 0,
+            progress_entries=len(response.progress_log) if response.progress_log else 0,
         )
         debug_detailed(
             "Agent output received",
@@ -861,6 +939,12 @@ def _execute_subtask(
                 )
                 # Update session ID for next iteration
                 agent_session_id = response.session_id or agent_session_id
+
+                # Surface progress_log to execution timeline
+                if response.progress_log:
+                    _emit_progress_log(
+                        task_id, subtask_short_id, response.progress_log, project_id=project_id
+                    )
 
                 _emit_log(
                     task_id,
