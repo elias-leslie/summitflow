@@ -60,7 +60,6 @@ def close_pool() -> None:
     global _pool
     if _pool is not None and not _pool.closed:
         _pool.close()
-        logger.info("Connection pool closed")
         _pool = None
 
 
