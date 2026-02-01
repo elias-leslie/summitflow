@@ -45,6 +45,29 @@ logger = get_logger(__name__)
 
 MAX_ITERATIONS = 50
 
+# Map task_type to agent_slug for specialized execution
+TASK_TYPE_AGENT_MAP: dict[str, str] = {
+    "refactor": "refactor",
+    # Add more mappings as specialized agents are created:
+    # "bug": "debugger",
+    # "feature": "coder",
+}
+DEFAULT_AGENT = "coder"
+
+
+def _get_agent_for_task(task_type: str | None) -> str:
+    """Get the appropriate agent slug for a task type.
+
+    Args:
+        task_type: The task type (refactor, bug, feature, etc.)
+
+    Returns:
+        Agent slug to use for execution
+    """
+    if not task_type:
+        return DEFAULT_AGENT
+    return TASK_TYPE_AGENT_MAP.get(task_type, DEFAULT_AGENT)
+
 
 class PristineCheckError(Exception):
     """Raised when codebase is not in pristine state."""
@@ -345,6 +368,10 @@ def start_execution(
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
+    # Extract agent routing info
+    task_type = task.get("task_type")
+    agent_override = task.get("agent_override")
+
     # Verify codebase is pristine before automated execution
     try:
         _emit_log(task_id, "info", "Running pristine check (dt --check)...", project_id=project_id)
@@ -404,7 +431,9 @@ def start_execution(
             _wind_down(task_id, results, incomplete, "max_iterations")
             break
 
-        result = _execute_subtask(task_id, subtask, project_id, issue_counts)
+        result = _execute_subtask(
+            task_id, subtask, project_id, issue_counts, task_type, agent_override
+        )
         results.append(result)
         completed += 1
         status = "passed" if result.get("status") == "passed" else "failed"
@@ -485,6 +514,8 @@ def _execute_subtask(
     subtask: dict[str, Any],
     project_id: str,
     issue_counts: dict[str, int],
+    task_type: str | None = None,
+    agent_override: str | None = None,
 ) -> dict[str, Any]:
     """Execute a single subtask with fresh context."""
     import time
@@ -516,17 +547,22 @@ def _execute_subtask(
     try:
         project_path = _get_project_path(project_id)
         prompt = _build_subtask_prompt(task_id, subtask, project_id, project_path)
+
+        # Resolve which agent to use: override > task_type mapping > default
+        agent_slug = agent_override or _get_agent_for_task(task_type)
+
         logger.info(
             "Executing in project",
             subtask_id=subtask_short_id,
             project_path=project_path,
             prompt_length=len(prompt),
+            agent_slug=agent_slug,
         )
         client = get_sync_client()
         _emit_log(
             task_id,
             "info",
-            f"Calling agent (coder) for subtask {subtask_short_id}...",
+            f"Calling agent ({agent_slug}) for subtask {subtask_short_id}...",
             source="orchestrator",
             project_id=project_id,
         )
@@ -537,10 +573,10 @@ def _execute_subtask(
             prompt_length=len(prompt),
             prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
         )
-        logger.info("Calling Agent Hub run_agent", agent_slug="coder", max_turns=30)
+        logger.info("Calling Agent Hub run_agent", agent_slug=agent_slug, max_turns=30)
         response = client.run_agent(
             task=prompt,
-            agent_slug="coder",
+            agent_slug=agent_slug,
             working_dir=project_path,
             max_turns=30,
             project_id=project_id,

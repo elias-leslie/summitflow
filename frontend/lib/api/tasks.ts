@@ -99,6 +99,8 @@ export interface Task {
   enriched_at?: string | null
   // Autonomous execution flag
   autonomous?: boolean
+  // Agent override for autonomous execution
+  agent_override?: string | null
 }
 
 export interface TaskListResponse {
@@ -199,6 +201,7 @@ export async function updateTask(
     task_type?: TaskType
     parent_task_id?: string
     autonomous?: boolean
+    agent_override?: string | null
   },
 ): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
@@ -669,4 +672,33 @@ export async function deleteTasks(
   taskIds: string[],
 ): Promise<DeleteTaskResponse[]> {
   return Promise.all(taskIds.map((taskId) => deleteTask(projectId, taskId)))
+}
+
+// ============================================================================
+// Agent Hub Types (for coding agent selection)
+// ============================================================================
+
+export interface CodingAgent {
+  slug: string
+  name: string
+  description: string | null
+  is_coding_agent: boolean
+}
+
+export interface CodingAgentsResponse {
+  agents: CodingAgent[]
+  total: number
+}
+
+/**
+ * Fetch coding agents from Agent Hub (via SummitFlow proxy).
+ * These are agents that can execute autonomous tasks.
+ */
+export async function fetchCodingAgents(): Promise<CodingAgentsResponse> {
+  const apiBase = getApiBase()
+  const response = await fetch(`${apiBase}/api/agent-hub/agents`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch coding agents')
+  }
+  return response.json()
 }

@@ -160,6 +160,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
                 enriched_at TIMESTAMPTZ,
                 -- Autonomous execution mode
                 autonomous BOOLEAN DEFAULT FALSE,
+                agent_override VARCHAR(50),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
             """

@@ -3,11 +3,7 @@
 import { ExecutionBadges } from '@/components/tasks/ExecutionBadges'
 import { Input } from '@/components/ui/input'
 import type { Task } from '@/lib/api/tasks'
-import {
-  getPriorityColors,
-  getStatusConfig,
-  getTaskTypeConfig,
-} from '@/lib/task-config'
+import { getPriorityColors, getTaskTypeConfig } from '@/lib/task-config'
 
 interface TaskModalHeaderProps {
   task: Task
@@ -23,7 +19,6 @@ export function TaskModalHeader({
   onEditTitleChange,
 }: TaskModalHeaderProps) {
   const colors = getPriorityColors(task.priority)
-  const status = getStatusConfig(task.status)
   const typeConfig = getTaskTypeConfig(task.task_type)
 
   return (
@@ -40,12 +35,6 @@ export function TaskModalHeader({
         >
           {typeConfig.icon}
           {typeConfig.label}
-        </span>
-        <span
-          className={`text-xs px-1.5 py-0.5 rounded border flex items-center gap-1 ${status.className}`}
-        >
-          {status.icon}
-          {status.label}
         </span>
         <ExecutionBadges task={task} />
       </div>

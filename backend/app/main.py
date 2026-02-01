@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     activity,
+    agent_hub,
     agent_sessions,
     autonomous,
     backups,
@@ -99,6 +100,7 @@ app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
+app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 
 from .api import events, ideas, ws_execution  # noqa: E402
 

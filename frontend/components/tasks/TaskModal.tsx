@@ -113,6 +113,7 @@ export function TaskModal({
     handleStopExecution,
     handleObjectiveEdit,
     handleToggleAutonomous,
+    handleAgentOverrideChange,
     setEditTitle,
   } = useTaskModal({
     taskId,
@@ -216,6 +217,7 @@ export function TaskModal({
                 onStopExecution={handleStopExecution}
                 onStatusChange={handleStatusChange}
                 onToggleAutonomous={handleToggleAutonomous}
+                onAgentOverrideChange={handleAgentOverrideChange}
                 onEditStart={handleEditStart}
                 onEditCancel={handleEditCancel}
                 onEditSave={handleEditSave}

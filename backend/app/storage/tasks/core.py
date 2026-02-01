@@ -13,11 +13,12 @@ from psycopg.rows import TupleRow
 
 from ..connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (37 columns)
+# Column list for all task SELECT/RETURNING queries (38 columns)
 # Order must match _row_to_dict index mapping
 # Note: Migration 072 dropped: plan_content, labels, objective, spirit_anti,
 #       decisions, constraints, done_when (moved to task_spirit/task_labels)
 # Note: Migration 099 dropped: progress_log (moved to events table)
+# Note: Migration 101 added: agent_override
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -26,7 +27,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
     complexity, autonomous,
-    qa_status, qa_signoff_at, qa_signoff_by, qa_issues"""
+    qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -37,11 +38,11 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues"""
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override"""
 
-EXPECTED_TASK_COLUMNS = 37
+EXPECTED_TASK_COLUMNS = 38
 
-# Columns for queries that JOIN with task_spirit (43 columns total)
+# Columns for queries that JOIN with task_spirit (44 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
     t.error_message, t.branch_name, t.commits, t.pull_request_url,
@@ -51,10 +52,10 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues,
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 43
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44
 
 
 def _generate_task_id() -> str:
@@ -65,27 +66,27 @@ def _generate_task_id() -> str:
 def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (43 columns):
-        First 37 columns are standard task columns (see _row_to_dict).
+    Column order (44 columns):
+        First 38 columns are standard task columns (see _row_to_dict).
         Then 6 spirit columns:
-        37: objective, 38: spirit_anti, 39: decisions, 40: constraints,
-        41: done_when, 42: plan_status
+        38: objective, 39: spirit_anti, 40: decisions, 41: constraints,
+        42: done_when, 43: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
     if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
-    # Build base task dict from first 37 columns
+    # Build base task dict from first 38 columns
     task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
 
-    # Add spirit fields (columns 37-42)
-    task["objective"] = row[37]
-    task["spirit_anti"] = row[38]
-    task["decisions"] = row[39] if row[39] else []
-    task["constraints"] = row[40] if row[40] else []
-    task["done_when"] = row[41] if row[41] else []
-    task["plan_status"] = row[42]
+    # Add spirit fields (columns 38-43)
+    task["objective"] = row[38]
+    task["spirit_anti"] = row[39]
+    task["decisions"] = row[40] if row[40] else []
+    task["constraints"] = row[41] if row[41] else []
+    task["done_when"] = row[42] if row[42] else []
+    task["plan_status"] = row[43]
 
     return task
 
@@ -93,7 +94,7 @@ def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (37 columns):
+    Column order (38 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -102,11 +103,12 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, autonomous,
-        qa_status, qa_signoff_at, qa_signoff_by, qa_issues
+        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override
 
     Note: Migration 072 dropped plan_content, labels, objective, spirit_anti,
           decisions, constraints, done_when (now in task_spirit/task_labels)
     Note: Migration 099 dropped progress_log (now in events table)
+    Note: Migration 101 added agent_override
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -150,6 +152,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "qa_signoff_at": row[34],
         "qa_signoff_by": row[35],
         "qa_issues": row[36] or [],
+        "agent_override": row[37],
     }
 
 
@@ -278,6 +281,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     # Note: objective, spirit_anti, decisions, constraints, done_when, labels
     # are now in task_spirit/task_labels tables (migration 072)
     # Note: progress_log moved to events table (migration 099)
+    # Note: agent_override added in migration 101
     allowed_fields = {
         "project_id",  # Allow moving task between projects
         "title",
@@ -314,6 +318,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "qa_signoff_at",
         "qa_signoff_by",
         "qa_issues",
+        "agent_override",
     }
 
     invalid = set(fields.keys()) - allowed_fields

@@ -60,6 +60,7 @@ interface UseTaskModalReturn {
   handleStopExecution: () => Promise<void>
   handleObjectiveEdit: (objective: string) => Promise<void>
   handleToggleAutonomous: () => Promise<void>
+  handleAgentOverrideChange: (agentSlug: string | null) => Promise<void>
 }
 
 export function useTaskModal({
@@ -267,6 +268,23 @@ export function useTaskModal({
     }
   }, [task, projectId, onTaskUpdate])
 
+  // Change agent override
+  const handleAgentOverrideChange = useCallback(
+    async (agentSlug: string | null) => {
+      if (!task) return
+      try {
+        const updated = await updateTask(projectId, task.id, {
+          agent_override: agentSlug,
+        })
+        setTask(updated)
+        onTaskUpdate?.(updated)
+      } catch (err) {
+        console.error('Failed to update agent override:', err)
+      }
+    },
+    [task, projectId, onTaskUpdate],
+  )
+
   return {
     task,
     subtasks,
@@ -297,5 +315,6 @@ export function useTaskModal({
     handleStopExecution,
     handleObjectiveEdit,
     handleToggleAutonomous,
+    handleAgentOverrideChange,
   }
 }

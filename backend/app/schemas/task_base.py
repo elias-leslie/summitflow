@@ -80,6 +80,10 @@ class TaskUpdate(BaseModel):
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     autonomous: bool | None = None
+    # Agent override for autonomous execution
+    agent_override: str | None = Field(
+        default=None, description="Override which agent executes this task (slug from Agent Hub)"
+    )
     # QA workflow fields (migration 068)
     qa_status: Literal["pending", "passed", "failed", "skipped"] | None = None
     qa_issues: list[dict[str, Any]] | None = None
@@ -176,6 +180,10 @@ class TaskResponse(BaseModel):
     subtask_summary: SubtaskSummary | None = None
     # Autonomous execution flag
     autonomous: bool = False
+    # Agent override for autonomous execution
+    agent_override: str | None = Field(
+        default=None, description="Override which agent executes this task (slug from Agent Hub)"
+    )
     # QA workflow fields (migration 068)
     qa_status: Literal["pending", "passed", "failed", "skipped"] | None = None
     qa_signoff_at: str | None = None

@@ -1019,3 +1019,34 @@ async def update_task_status(
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     return _task_to_response(updated)
+
+
+@router.post("/projects/{project_id}/tasks/{task_id}/execute", response_model=TaskResponse)
+async def execute_task(project_id: str, task_id: str) -> TaskResponse:
+    """Start autonomous execution for a task.
+
+    This endpoint changes the task status to "queue" which triggers
+    autonomous execution via Celery. The task will be picked up by
+    an agent and executed.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID to execute
+
+    Returns:
+        Updated task with status "queue"
+    """
+    _verify_task_project(task_id, project_id)
+
+    try:
+        updated = task_store.update_task_status(task_id, "queue")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to start execution")
+
+    # Dispatch autonomous execution
+    _dispatch_autonomous_task(task_id, "queue", project_id)
+
+    return _task_to_response(updated)
