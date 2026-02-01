@@ -84,6 +84,9 @@ QA_SUPERVISOR_STUCK_THRESHOLD = 2
 # =============================================================================
 # When step verification fails, agent gets a chance to self-correct before escalating
 
+# Number of pristine self-heal attempts before blocking task execution
+PRISTINE_SELF_HEAL_MAX_ATTEMPTS = 3
+
 # Number of self-fix attempts before requesting supervisor guidance
 SELF_HEAL_MAX_ATTEMPTS = 2
 

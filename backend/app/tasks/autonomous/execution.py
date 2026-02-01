@@ -15,7 +15,11 @@ from typing import Any
 
 from celery import Task, shared_task
 
-from ...constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
+from ...constants import (
+    PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
+    SELF_HEAL_MAX_ATTEMPTS,
+    SUPERVISOR_GUIDED_MAX_ATTEMPTS,
+)
 from ...core.debug import (
     debug,
     debug_detailed,
@@ -157,6 +161,168 @@ def check_pristine_codebase(project_id: str) -> None:
             reason=f"Command not found: {e}",
         )
         return
+
+
+def _parse_error_count(output: str) -> int:
+    """Parse error count from dt --check output.
+
+    Looks for patterns like:
+    - "Found N errors" / "N errors"
+    - "N failed" / "N failures"
+    - Fall back to counting "error:" lines
+    """
+    import re
+
+    output_lower = output.lower()
+
+    patterns = [
+        r"found\s+(\d+)\s+error",
+        r"(\d+)\s+error",
+        r"(\d+)\s+fail",
+        r"(\d+)\s+problem",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, output_lower)
+        if match:
+            return int(match.group(1))
+
+    error_lines = sum(1 for line in output.split("\n") if "error" in line.lower())
+    return max(error_lines, 1 if "error" in output_lower else 0)
+
+
+def pristine_self_heal(task_id: str, project_id: str) -> bool:
+    """Auto-fix quality gate failures before task execution.
+
+    Simple loop that:
+    1. Runs dt --check
+    2. If fails, passes error output to agent
+    3. Reverts with git checkout . if error count increases
+    4. Auto-commits successful fixes with [pristine] prefix
+
+    Args:
+        task_id: Task ID for logging
+        project_id: Project to fix
+
+    Returns:
+        True if codebase is pristine (passed or fixed)
+        False if exhausted attempts (escalate/block)
+    """
+    root_path = get_project_root_path(project_id)
+    if not root_path:
+        logger.error("pristine_self_heal_no_path", project_id=project_id)
+        return False
+
+    repo_path = Path(root_path)
+    dt_cmd = _find_dev_tools()
+    if not dt_cmd:
+        logger.warning("pristine_self_heal_skipped", reason="dt not found")
+        return True
+
+    cmd = [dt_cmd, "--check"]
+    previous_error_count: int | None = None
+
+    for attempt in range(PRISTINE_SELF_HEAL_MAX_ATTEMPTS):
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            if result.returncode == 0:
+                if attempt > 0:
+                    if _has_uncommitted_changes(str(repo_path)):
+                        _auto_commit(
+                            str(repo_path),
+                            f"[pristine] Auto-fix quality issues before {task_id}",
+                        )
+                    logger.info(
+                        "pristine_self_heal_success",
+                        project_id=project_id,
+                        attempts=attempt + 1,
+                    )
+                return True
+
+            output = result.stdout + result.stderr
+            error_count = _parse_error_count(output)
+
+            if previous_error_count is not None and error_count > previous_error_count:
+                logger.warning(
+                    "pristine_self_heal_regression",
+                    project_id=project_id,
+                    previous=previous_error_count,
+                    current=error_count,
+                )
+                subprocess.run(
+                    ["git", "checkout", "."],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                )
+                return False
+
+            previous_error_count = error_count
+
+            if attempt >= PRISTINE_SELF_HEAL_MAX_ATTEMPTS - 1:
+                break
+
+            logger.info(
+                "pristine_self_heal_attempt",
+                project_id=project_id,
+                attempt=attempt + 1,
+                error_count=error_count,
+            )
+
+            client = get_sync_client()
+            fix_prompt = f"""# Pristine Self-Heal: Fix Quality Gate Errors
+
+The codebase has quality gate failures that must be fixed before task execution.
+
+## Errors from `dt --check`:
+```
+{output[:8000]}
+```
+
+## Instructions
+1. Fix all lint, type, and test errors shown above
+2. Do NOT add new features or change behavior
+3. Make minimal changes to pass quality gates
+4. Focus on the specific errors listed
+
+Fix these issues now.
+"""
+
+            response = client.run_agent(
+                task=fix_prompt,
+                agent_slug="coder",
+                working_dir=str(repo_path),
+                max_turns=20,
+                project_id=project_id,
+                use_memory=True,
+            )
+
+            logger.info(
+                "pristine_self_heal_agent_completed",
+                project_id=project_id,
+                attempt=attempt + 1,
+                response_length=len(response.content) if response.content else 0,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error("pristine_self_heal_timeout", project_id=project_id)
+            return False
+        except Exception as e:
+            logger.error("pristine_self_heal_error", project_id=project_id, error=str(e))
+            return False
+
+    logger.warning(
+        "pristine_self_heal_exhausted",
+        project_id=project_id,
+        max_attempts=PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
+    )
+    return False
 
 
 WORKER_STUCK_THRESHOLD = 3
@@ -444,22 +610,36 @@ def start_execution(
     agent_override = task.get("agent_override")
 
     # Verify codebase is pristine before automated execution
+    # First try self-healing, then fall back to blocking
     try:
         _emit_log(task_id, "info", "Running pristine check (dt --check)...", project_id=project_id)
         check_pristine_codebase(project_id)
         _emit_log(task_id, "info", "Pristine check passed", project_id=project_id)
     except PristineCheckError as e:
-        logger.error("pristine_check_failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "blocked", error_message=str(e))
-        _emit_error(
-            task_id, f"Pristine check failed: {e}", recoverable=False, project_id=project_id
+        _emit_log(
+            task_id,
+            "warn",
+            f"Pristine check failed, attempting self-heal: {str(e)[:100]}",
+            project_id=project_id,
         )
-        return {
-            "task_id": task_id,
-            "status": "blocked",
-            "error": str(e),
-            "reason": "pristine_check_failed",
-        }
+
+        if pristine_self_heal(task_id, project_id):
+            _emit_log(task_id, "info", "Pristine self-heal succeeded", project_id=project_id)
+        else:
+            logger.error("pristine_self_heal_failed", task_id=task_id, error=str(e))
+            task_store.update_task_status(task_id, "blocked", error_message=str(e))
+            _emit_error(
+                task_id,
+                f"Pristine self-heal failed after {PRISTINE_SELF_HEAL_MAX_ATTEMPTS} attempts: {e}",
+                recoverable=False,
+                project_id=project_id,
+            )
+            return {
+                "task_id": task_id,
+                "status": "blocked",
+                "error": str(e),
+                "reason": "pristine_self_heal_failed",
+            }
 
     # Auto-commit any orphaned changes from previous session
     project_path = _get_project_path(project_id)

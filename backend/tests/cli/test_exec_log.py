@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.commands.exec_monitor import exec_log_command, _subtask_summary
+from cli.commands.exec_monitor import _subtask_summary, exec_log_command
 from cli.main import app
 
 runner = CliRunner()
@@ -218,7 +218,9 @@ class TestExecMonitorAlias:
         assert result.exit_code == 0
         assert "View execution progress" in result.output
 
-    def test_exec_monitor_same_as_exec_log(self, ):
+    def test_exec_monitor_same_as_exec_log(
+        self,
+    ):
         """Test exec-monitor produces same output as exec-log."""
         mock = MagicMock()
         mock.get_task.return_value = {
