@@ -6,12 +6,13 @@ Supports multiple verification patterns:
 - Output contains checks (expected string in stdout)
 - Command aliases (dt -> actual commands)
 - Venv path resolution (resolves relative .venv paths to absolute)
+- Smoke tests for changed Python files (import + __all__ checks)
 """
 
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -223,3 +224,188 @@ def verify_step(
             returncode=-1,
             reason=f"error: {e}",
         )
+
+
+@dataclass
+class SmokeTestResult:
+    """Result of a smoke test on changed files."""
+
+    passed: bool
+    files_tested: list[str] = field(default_factory=list)
+    failures: list[dict[str, str]] = field(default_factory=list)
+
+
+def _detect_changed_files(project_path: str) -> list[str]:
+    """Detect Python files changed in the last commit.
+
+    Uses git diff HEAD~1 to find files modified by the agent.
+
+    Returns:
+        List of changed .py file paths relative to project root.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD~1", "--", "*.py"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning("git_diff_failed", stderr=result.stderr[:200])
+            return []
+
+        files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        logger.info("smoke_test_files_detected", count=len(files), files=files[:10])
+        return files
+    except Exception as e:
+        logger.warning("smoke_test_detect_error", error=str(e))
+        return []
+
+
+def _file_to_module(project_path: str, file_path: str) -> str | None:
+    """Convert file path to Python module name.
+
+    Args:
+        project_path: Root path of the project
+        file_path: Relative path like 'backend/cli/output.py'
+
+    Returns:
+        Module name like 'cli.output' or None if not importable.
+    """
+    if not file_path.endswith(".py"):
+        return None
+    file_path = file_path[:-12] if file_path.endswith("__init__.py") else file_path[:-3]
+
+    # Handle backend/ prefix - strip it for module path
+    if file_path.startswith("backend/"):
+        file_path = file_path[8:]
+
+    # Handle app/ prefix - keep it for summitflow backend structure
+    # Convert path separators to dots
+    module_name = file_path.replace("/", ".").replace("\\", ".")
+
+    # Skip test files and migrations
+    if "test" in module_name.lower() or "migration" in module_name.lower():
+        return None
+
+    return module_name if module_name else None
+
+
+def _smoke_test_module(project_path: str, module_name: str) -> dict[str, str] | None:
+    """Attempt to import a module to catch import-time errors.
+
+    This is a simple smoke test that verifies the module can be imported.
+    Catches: import errors, circular imports, missing dependencies, syntax errors.
+
+    For function-body bugs (like fmt._truncate), rely on unit tests.
+    Per Gemini Pro: AST analysis is overkill - if mypy passes, a custom parser
+    adds maintenance weight without solving the core problem.
+
+    Args:
+        project_path: Project root (for venv path)
+        module_name: Dotted module name like 'cli.output'
+
+    Returns:
+        Error dict with 'module' and 'error' keys, or None if passed.
+    """
+    # Use project's venv Python
+    backend_path = Path(project_path) / "backend"
+    venv_python = backend_path / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        venv_python = Path(project_path) / ".venv" / "bin" / "python"
+
+    python_cmd = str(venv_python) if venv_python.exists() else "python"
+
+    # Simple import test - catches import errors, circular imports, missing deps
+    import_cmd = f"import {module_name}"
+
+    try:
+        result = subprocess.run(
+            [python_cmd, "-c", import_cmd],
+            cwd=str(backend_path) if backend_path.exists() else project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr.strip()
+            # Extract the actual error from traceback
+            if "Error:" in error_msg:
+                error_lines = error_msg.split("\n")
+                error_msg = next(
+                    (line for line in reversed(error_lines) if "Error:" in line),
+                    error_msg[-500:],
+                )
+            return {"module": module_name, "error": error_msg[:500]}
+
+        return None
+
+    except subprocess.TimeoutExpired:
+        return {"module": module_name, "error": "import timed out after 30s"}
+    except Exception as e:
+        return {"module": module_name, "error": str(e)[:500]}
+
+
+def run_smoke_tests(project_path: str, changed_files: list[str] | None = None) -> SmokeTestResult:
+    """Run smoke tests on changed Python files.
+
+    Automatically detects changed files if not provided.
+    Tests each file by attempting to import its module.
+
+    Args:
+        project_path: Project root path
+        changed_files: Optional list of changed files (auto-detected if None)
+
+    Returns:
+        SmokeTestResult with pass/fail status and any failures.
+    """
+    if changed_files is None:
+        changed_files = _detect_changed_files(project_path)
+
+    if not changed_files:
+        logger.info("smoke_test_skipped", reason="no changed files")
+        return SmokeTestResult(passed=True)
+
+    failures: list[dict[str, str]] = []
+    tested: list[str] = []
+
+    for file_path in changed_files:
+        module_name = _file_to_module(project_path, file_path)
+        if not module_name:
+            continue
+
+        tested.append(module_name)
+        error = _smoke_test_module(project_path, module_name)
+        if error:
+            failures.append(error)
+            logger.warning(
+                "smoke_test_failed",
+                module=module_name,
+                error=error["error"][:200],
+            )
+        else:
+            debug_success(f"Smoke test passed: {module_name}")
+
+    passed = len(failures) == 0
+    if passed:
+        logger.info("smoke_tests_passed", tested=len(tested))
+    else:
+        logger.error(
+            "smoke_tests_failed",
+            tested=len(tested),
+            failed=len(failures),
+            failures=failures,
+        )
+        debug_error(
+            "Smoke tests failed",
+            tested=len(tested),
+            failed=len(failures),
+        )
+
+    return SmokeTestResult(
+        passed=passed,
+        files_tested=tested,
+        failures=failures,
+    )

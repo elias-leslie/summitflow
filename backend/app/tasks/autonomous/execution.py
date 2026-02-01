@@ -39,7 +39,7 @@ from ...storage.subtasks import (
 from ...storage.task_spirit import get_task_spirit
 from .escalation import check_escalation_needed, supervisor_guidance
 from .review import ai_review
-from .verification import verify_step
+from .verification import run_smoke_tests, verify_step
 
 logger = get_logger(__name__)
 
@@ -609,6 +609,48 @@ def _execute_subtask(
         step_results = _verify_steps(task_id, subtask_id, steps, project_path, project_id)
 
         all_passed = all(r["passed"] for r in step_results)
+
+        # Run smoke tests on changed files after explicit verification passes
+        if all_passed:
+            _emit_log(
+                task_id,
+                "info",
+                "Running smoke tests on changed files...",
+                source="verify",
+                project_id=project_id,
+            )
+            smoke_result = run_smoke_tests(project_path)
+            if not smoke_result.passed:
+                all_passed = False
+                # Add smoke failures to step results for visibility
+                for failure in smoke_result.failures:
+                    step_results.append(
+                        {
+                            "step_number": 999,
+                            "passed": False,
+                            "output": f"Import failed: {failure['error']}",
+                            "reason": f"smoke_test_failed:{failure['module']}",
+                            "returncode": 1,
+                        }
+                    )
+                    _emit_log(
+                        task_id,
+                        "error",
+                        f"Smoke test failed: {failure['module']} - {failure['error'][:100]}",
+                        source="verify",
+                        project_id=project_id,
+                    )
+            else:
+                tested_count = len(smoke_result.files_tested)
+                if tested_count > 0:
+                    _emit_log(
+                        task_id,
+                        "info",
+                        f"Smoke tests passed ({tested_count} modules)",
+                        source="verify",
+                        project_id=project_id,
+                    )
+
         duration = time.time() - start_time
         duration_str = f"{duration:.1f}s"
 
