@@ -1,6 +1,7 @@
-"""Execution monitor command for the CLI.
+"""Execution log command for the CLI.
 
 Provides live monitoring of task execution via the events API.
+Shows task ID, subtask status, tool calls with timestamps, and agent responses.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from ..context import require_task_id
 from ..output import handle_api_error, is_compact
 
 
-def exec_monitor_command(
+def exec_log_command(
     task_id: Annotated[
         str | None,
         typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
@@ -36,17 +37,18 @@ def exec_monitor_command(
         typer.Option("--json", help="Output as JSON (one event per line, for agent parsing)"),
     ] = False,
 ) -> None:
-    """Monitor execution progress for a task.
+    """View execution progress for a task.
 
-    Shows recent events and optionally follows in real-time.
+    Shows task ID, subtask status, tool calls with timestamps, and agent responses.
+    Supports follow mode for real-time monitoring.
 
     Examples:
-        st exec-monitor task-abc123
-        st exec-monitor task-abc123 -f      # Follow mode
-        st exec-monitor -n 100 task-abc123  # Show more events
-        st exec-monitor -f                  # Uses active context, follow mode
-        st exec-monitor --debug             # Include debug events with timing
-        st exec-monitor --json              # JSON output for agent parsing
+        st exec-log task-abc123
+        st exec-log task-abc123 -f      # Follow mode
+        st exec-log -n 100 task-abc123  # Show more events
+        st exec-log -f                  # Uses active context, follow mode
+        st exec-log --debug             # Include debug events with timing
+        st exec-log --json              # JSON output for agent parsing
     """
     task_id = require_task_id(task_id)
     client = STClient()
@@ -56,17 +58,44 @@ def exec_monitor_command(
         task = client.get_task(task_id)
         project_id = task.get("project_id", "unknown")
 
+        # Get subtask status
+        subtasks_data = client.get_subtasks(task_id)
+        subtasks = subtasks_data.get("subtasks", [])
+
         # Get events from API
         events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
     except APIError as e:
         handle_api_error(e)
         return
 
-    _display_events(task, events, follow, client, limit, debug, json_output)
+    _display_events(task, subtasks, events, follow, client, limit, debug, json_output)
+
+
+# Alias for backward compatibility
+exec_monitor_command = exec_log_command
+
+
+def _subtask_summary(subtasks: list[dict[str, Any]]) -> str:
+    """Generate a compact summary of subtask statuses."""
+    if not subtasks:
+        return "0/0"
+
+    total = len(subtasks)
+    passed = sum(1 for s in subtasks if s.get("status") == "passed")
+    failed = sum(1 for s in subtasks if s.get("status") == "failed")
+    in_progress = sum(1 for s in subtasks if s.get("status") == "in_progress")
+
+    if failed > 0:
+        return f"{passed}/{total}({failed}F)"
+    elif in_progress > 0:
+        return f"{passed}/{total}({in_progress}W)"
+    else:
+        return f"{passed}/{total}"
 
 
 def _display_events(
     task: dict[str, Any],
+    subtasks: list[dict[str, Any]],
     events: dict[str, Any],
     follow: bool,
     client: STClient,
@@ -83,14 +112,24 @@ def _display_events(
     title = task.get("title", "Unknown")[:50]
     status = task.get("status", "unknown")
 
+    # Summarize subtask status
+    subtask_summary = _subtask_summary(subtasks)
+
     # Header (skip for JSON output)
     if not json_output:
         if is_compact():
-            print(f"EXEC:{task_id}|{status}|{title}")
+            print(f"EXEC:{task_id}|{status}|{subtask_summary}|{title}")
         else:
             print(f"Task: {task_id}")
             print(f"Title: {title}")
             print(f"Status: {status}")
+            if subtasks:
+                print(f"Subtasks: {subtask_summary}")
+                for s in subtasks:
+                    s_id = s.get("subtask_id", "?")
+                    s_status = s.get("status", "?")
+                    s_desc = s.get("description", "")[:40]
+                    print(f"  {s_id}: {s_status} - {s_desc}")
             if debug:
                 print("Mode: debug (showing all visibility levels)")
             print("-" * 60)

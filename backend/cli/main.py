@@ -55,7 +55,7 @@ TASKS:
   cancel <id> [-r reason]                  # cancel a task (from any state)
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   verify <plan.json>                       # validate plan file against schema
-  exec-monitor <id> [-f] [-n N] [--debug]  # monitor execution events
+  exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
 CHECKPOINT (claim → done | abandon):
   claim <id> [--force]                     # claim task, create checkpoint (DB+git)
@@ -161,7 +161,8 @@ app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
 app.add_typer(tools.app, name="tools")
-app.command("exec-monitor")(exec_monitor.exec_monitor_command)
+app.command("exec-log")(exec_monitor.exec_log_command)
+app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app
