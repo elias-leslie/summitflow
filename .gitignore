@@ -12,6 +12,7 @@ build/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # IDE
 .idea/
