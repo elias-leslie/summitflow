@@ -101,6 +101,34 @@ Frontend:
   verify_command: "./scripts/rebuild.sh --frontend 2>&1 | rg -q 'Rebuild complete' && echo 'Rebuild complete'"
   expected_output: "Rebuild complete"
 
+## Runtime verification (REQUIRED - actually run the code):
+
+IMPORTANT: Static checks (rg patterns) verify code EXISTS but not that it WORKS.
+Each subtask MUST include at least one step that RUNS the changed code.
+
+CLI changes (cli/*.py):
+  verify_command: "cd backend && .venv/bin/python -c 'from cli.module import function; function(test_arg)'"
+  expected_output: exit code 0
+
+Or run the actual CLI:
+  verify_command: "st <command> --compact 2>&1 | head -1"
+  expected_output: (expected output prefix)
+
+API endpoint changes:
+  verify_command: "curl -s http://localhost:8001/api/endpoint | jq -r '.status // .error'"
+  expected_output: "ok"
+
+Library/module changes:
+  verify_command: "cd backend && .venv/bin/python -c 'from app.module import MyClass; print(MyClass().method())'"
+  expected_output: (expected output)
+
+Formatter/output functions:
+  verify_command: "cd backend && .venv/bin/python -c 'from cli.output import output_func; output_func({{}})'"
+  expected_output: exit code 0
+
+The runtime verification step catches bugs that pass static analysis but fail at runtime
+(like calling fmt._truncate instead of fmt.truncate).
+
 Output as JSON with this structure:
 {{
     "objective": "...",
