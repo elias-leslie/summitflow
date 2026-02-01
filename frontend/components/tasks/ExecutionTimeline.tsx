@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertCircle, Loader2 } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useExecutionWebSocket } from './hooks/useExecutionWebSocket'
 import { useTimelineHistory } from './hooks/useTimelineHistory'
 import { useVoiceRecording } from './hooks/useVoiceRecording'
@@ -21,6 +21,8 @@ interface ExecutionTimelineProps {
   chatEnabled?: boolean
   /** Optional class name */
   className?: string
+  /** Max height for timeline (default: 500px, use 'none' for no limit) */
+  maxHeight?: string
 }
 
 export function ExecutionTimeline({
@@ -30,19 +32,31 @@ export function ExecutionTimeline({
   showChatInput = false,
   chatEnabled = false,
   className = '',
+  maxHeight = '500px',
 }: ExecutionTimelineProps) {
   const [messages, setMessages] = useState<TimelineMessage[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
+  const seenSequences = useRef<Set<number>>(new Set())
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }
+      })
     }
   }, [])
 
-  // Handle new WebSocket message
+  // Handle new WebSocket message with deduplication
   const handleMessage = useCallback((message: TimelineMessage) => {
+    // Deduplicate by sequence number
+    if (seenSequences.current.has(message.sequence)) {
+      return
+    }
+    seenSequences.current.add(message.sequence)
     setMessages((prev) => [...prev, message])
   }, [])
 
@@ -71,8 +85,33 @@ export function ExecutionTimeline({
     onTranscription: sendChatMessage,
   })
 
-  // Combine historical and live events
-  const allEvents = [...historicalEvents, ...messages]
+  // Combine historical and live events, sorted by timestamp and deduplicated
+  const allEvents = useMemo(() => {
+    const combined = [...historicalEvents, ...messages]
+
+    // Sort by timestamp (ascending - oldest first)
+    combined.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime()
+      const timeB = new Date(b.timestamp).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      // Fall back to sequence if timestamps match
+      return a.sequence - b.sequence
+    })
+
+    // Deduplicate by sequence + timestamp (composite key)
+    const seen = new Set<string>()
+    return combined.filter((event) => {
+      const key = `${event.timestamp}-${event.sequence}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [historicalEvents, messages])
+
+  // Track height style
+  const heightStyle = maxHeight === 'none'
+    ? { minHeight: '200px' }
+    : { minHeight: '200px', maxHeight }
 
   return (
     <div className={`flex flex-col ${className}`}>
@@ -85,7 +124,8 @@ export function ExecutionTimeline({
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto min-h-[200px] max-h-[400px] bg-slate-950/30"
+        className="flex-1 overflow-y-auto bg-slate-950/40 rounded-b-lg border border-slate-800/50 border-t-0"
+        style={heightStyle}
       >
         {isLoadingHistory ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600 py-8">
