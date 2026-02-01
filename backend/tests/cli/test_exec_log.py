@@ -141,7 +141,6 @@ class TestExecLogCommand:
         with (
             patch("cli.commands.exec_monitor.STClient", return_value=mock_client),
             patch("cli.commands.exec_monitor.require_task_id", return_value="task-test123"),
-            patch("cli.commands.exec_monitor.is_compact", return_value=False),
         ):
             result = runner.invoke(app, ["--no-compact", "exec-log", "task-test123"])
 

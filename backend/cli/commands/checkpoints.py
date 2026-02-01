@@ -12,9 +12,17 @@ from typing import Annotated
 import typer
 
 from ..lib.checkpoint import get_active_checkpoints, get_snapshot_info
-from ..output import is_compact, output_json
+from ..output import output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="Show active checkpoints")
+
+
+@app.callback()
+def checkpoints_callback(ctx: typer.Context) -> None:
+    """Initialize context if not set by parent app."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
 
 
 def _get_task_branches(task_id: str) -> list[dict[str, str]]:
@@ -98,7 +106,7 @@ def _format_compact_checkpoints(checkpoints: list[dict]) -> None:
                     print(f"  └─ {subtask_id} {branch_name}")
 
 
-def _format_details(task_id: str) -> None:
+def _format_details(out: OutputContext, task_id: str) -> None:
     """Show detailed checkpoint info for a specific task."""
     info = get_snapshot_info(task_id)
     if not info:
@@ -108,7 +116,7 @@ def _format_details(task_id: str) -> None:
     age = _format_age(info.get("created_at", ""))
     branches = _get_task_branches(task_id)
 
-    if is_compact():
+    if out.is_compact:
         print(f"CHECKPOINT:{task_id}")
         print(f"  Project: {info.get('project_id', '?')}")
         print(f"  Snapshot: {info.get('snapshot_path', '?')} ({info.get('size', '?')})")
@@ -134,6 +142,7 @@ def _format_details(task_id: str) -> None:
 
 @app.command(name="checkpoints")
 def checkpoints_command(
+    ctx: typer.Context,
     project: Annotated[
         str | None,
         typer.Option("--project", "-p", help="Filter by project ID"),
@@ -154,13 +163,13 @@ def checkpoints_command(
         st checkpoints --details task-abc   # Show full details
     """
     if details:
-        _format_details(details)
+        _format_details(ctx.obj, details)
         return
 
     # Get all checkpoints
     checkpoints = get_active_checkpoints(project)
 
-    if is_compact():
+    if ctx.obj.is_compact:
         # Build checkpoint data with extra info
         checkpoint_data = []
         for cp in checkpoints:

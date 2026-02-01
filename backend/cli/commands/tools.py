@@ -8,7 +8,8 @@ import httpx
 import typer
 
 from ..config import get_agent_hub_url
-from ..output import is_compact, output_error, output_json
+from ..output import output_error, output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
 
@@ -70,6 +71,7 @@ def _format_status_compact(data: dict[str, Any]) -> None:
 
 @app.command()
 def status(
+    ctx: typer.Context,
     hours: Annotated[int, typer.Option("--hours", "-h", help="Hours to look back")] = 24,
     limit: Annotated[int, typer.Option("--limit", "-l", help="Max endpoints to show")] = 10,
 ) -> None:
@@ -90,7 +92,7 @@ def status(
         params={"hours": hours, "limit": limit},
     )
 
-    if is_compact():
+    if ctx.obj.is_compact:
         _format_status_compact(result)
     else:
         output_json(result)
@@ -99,5 +101,7 @@ def status(
 @app.callback(invoke_without_command=True)
 def tools_default(ctx: typer.Context) -> None:
     """Show tool status (default command)."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
     if ctx.invoked_subcommand is None:
-        status()
+        status(ctx)

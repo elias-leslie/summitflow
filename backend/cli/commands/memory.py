@@ -28,11 +28,12 @@ app = typer.Typer(help="Memory system commands (Agent Hub)")
 def memory_default(ctx: typer.Context) -> None:
     """Show memory stats (default command)."""
     if ctx.invoked_subcommand is None:
-        stats()
+        stats(ctx)
 
 
 @app.command()
 def stats(
+    ctx: typer.Context,
     scope: Annotated[
         str,
         typer.Option("--scope", "-s", help="Memory scope (global or project)"),
@@ -43,11 +44,12 @@ def stats(
     ] = None,
 ) -> None:
     """Get memory statistics."""
-    stats_impl(scope, scope_id)
+    stats_impl(ctx.obj, scope, scope_id)
 
 
 @app.command()
 def save(
+    ctx: typer.Context,
     content: Annotated[str, typer.Argument(help="Learning content to save")],
     summary: Annotated[
         str,
@@ -87,11 +89,14 @@ def save(
     ] = None,
 ) -> None:
     """Save a learning to the memory system."""
-    save_impl(content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id)
+    save_impl(
+        ctx.obj, content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id
+    )
 
 
 @app.command("list")
 def list_cmd(
+    ctx: typer.Context,
     limit: Annotated[
         int,
         typer.Option("--limit", "-l", help="Max episodes to return (1-300)"),
@@ -114,11 +119,12 @@ def list_cmd(
     ] = None,
 ) -> None:
     """List memory episodes with pagination."""
-    list_impl(limit, cursor, tier, scope, scope_id)
+    list_impl(ctx.obj, limit, cursor, tier, scope, scope_id)
 
 
 @app.command()
 def search(
+    ctx: typer.Context,
     query: Annotated[str, typer.Argument(help="Search query")],
     limit: Annotated[
         int,
@@ -138,15 +144,16 @@ def search(
     ] = None,
 ) -> None:
     """Search memory for relevant episodes."""
-    search_impl(query, limit, min_score, scope, scope_id)
+    search_impl(ctx.obj, query, limit, min_score, scope, scope_id)
 
 
 @app.command()
 def get(
+    ctx: typer.Context,
     uuids: Annotated[list[str], typer.Argument(help="Episode UUID(s) to retrieve")],
 ) -> None:
     """Get details for one or more episodes by UUID."""
-    get_impl(uuids)
+    get_impl(ctx.obj, uuids)
 
 
 @app.command()
@@ -199,6 +206,7 @@ def update(
 
 @app.command("batch-tier")
 def batch_tier(
+    ctx: typer.Context,
     input_file: Annotated[
         Path | None,
         typer.Option("--file", "-f", help="JSON file with updates [{uuid, tier}]"),
@@ -217,7 +225,7 @@ def batch_tier(
     ] = None,
 ) -> None:
     """Batch update tier for multiple episodes."""
-    batch_tier_impl(input_file, json_input, tier, uuids)
+    batch_tier_impl(ctx.obj, input_file, json_input, tier, uuids)
 
 
 @app.command("export")
@@ -259,6 +267,7 @@ def export_cmd(
 
 @app.command("import")
 def import_cmd(
+    ctx: typer.Context,
     input_path: Annotated[
         Path,
         typer.Argument(help="JSON file or directory to import (from st memory export)"),
@@ -269,11 +278,12 @@ def import_cmd(
     ] = False,
 ) -> None:
     """Import episodes from JSON file or directory. Directories process all .json files."""
-    import_impl(input_path, dry_run)
+    import_impl(ctx.obj, input_path, dry_run)
 
 
 @app.command("cleanup")
 def cleanup(
+    ctx: typer.Context,
     orphaned: Annotated[
         bool,
         typer.Option("--orphaned", help="Clean up orphaned edges (stale episode refs)"),
@@ -296,4 +306,4 @@ def cleanup(
     ] = None,
 ) -> None:
     """Clean up memory system."""
-    cleanup_impl(orphaned, stale, ttl_days, scope, scope_id)
+    cleanup_impl(ctx.obj, orphaned, stale, ttl_days, scope, scope_id)

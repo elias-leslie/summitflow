@@ -31,6 +31,7 @@ from .commands import (
 )
 from .config import set_project_override
 from .output import set_compact_output, set_human_output, set_progress_only
+from .output_context import OutputContext
 
 # Ensure connection pool is closed on exit to avoid thread cleanup warnings
 atexit.register(close_pool)
@@ -182,6 +183,7 @@ for cmd in abandon.app.registered_commands:
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     project: Annotated[
         str | None,
         typer.Option(
@@ -211,9 +213,16 @@ def main(
     """SummitFlow Tasks CLI."""
     if project:
         set_project_override(project)
-    set_human_output(human and not compact and not progress_only)
-    set_compact_output(compact or progress_only)
-    set_progress_only(progress_only)
+
+    ctx.obj = OutputContext(
+        human=human and not compact and not progress_only,
+        compact=compact or progress_only,
+        progress_only=progress_only,
+    )
+
+    set_human_output(ctx.obj.human)
+    set_compact_output(ctx.obj.compact)
+    set_progress_only(ctx.obj.progress_only)
 
 
 if __name__ == "__main__":

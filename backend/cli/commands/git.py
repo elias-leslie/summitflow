@@ -10,9 +10,17 @@ from typing import Annotated, Any
 import httpx
 import typer
 
-from ..output import is_compact, output_json
+from ..output import output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="Git repository management")
+
+
+@app.callback()
+def git_callback(ctx: typer.Context) -> None:
+    """Initialize context if not set by parent app."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
 
 
 def _get_summitflow_api_url() -> str:
@@ -157,6 +165,7 @@ def _format_compact_repo(repo: dict[str, Any]) -> str:
 
 @app.command()
 def status(
+    ctx: typer.Context,
     _all_repos: Annotated[
         bool,
         typer.Option("--all", "-a", help="Show all known managed repos"),
@@ -179,7 +188,7 @@ def status(
         if repo_status:
             repos.append(repo_status)
 
-    if is_compact():
+    if ctx.obj.is_compact:
         print(f"GIT[{len(repos)}]")
         for repo in repos:
             print(_format_compact_repo(repo))
@@ -189,6 +198,7 @@ def status(
 
 @app.command()
 def sync(
+    ctx: typer.Context,
     _pull_only: Annotated[
         bool,
         typer.Option("--pull-only", help="Only pull, don't push (default)"),
@@ -238,7 +248,7 @@ def sync(
 
         results.append(result)
 
-    if is_compact():
+    if ctx.obj.is_compact:
         success = sum(1 for r in results if r["status"] in ("up_to_date", "updated"))
         failed = sum(1 for r in results if r["status"] == "failed")
         skipped = sum(1 for r in results if r["status"] == "skipped")

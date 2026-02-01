@@ -7,9 +7,17 @@ from typing import Annotated, Any
 import typer
 
 from ..client import APIError, STClient
-from ..output import is_compact, output_error, output_json
+from ..output import output_error, output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="Quality gate health and status")
+
+
+@app.callback()
+def health_callback(ctx: typer.Context) -> None:
+    """Initialize context if not set by parent app."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
 
 
 def _format_health_compact(health: dict[str, Any]) -> None:
@@ -76,11 +84,11 @@ def health_default(ctx: typer.Context) -> None:
         st health --human
     """
     if ctx.invoked_subcommand is None:
-        status()
+        status(ctx)
 
 
 @app.command()
-def status() -> None:
+def status(ctx: typer.Context) -> None:
     """Show quality gate health summary for current project.
 
     Displays the latest status for each check type (pytest, ruff, mypy, biome, tsc)
@@ -100,7 +108,7 @@ def status() -> None:
         output_error(f"Failed to get health: {e}")
         raise typer.Exit(1) from None
 
-    if is_compact():
+    if ctx.obj.is_compact:
         _format_health_compact(result)
     else:
         output_json(result)
@@ -108,6 +116,7 @@ def status() -> None:
 
 @app.command()
 def results(
+    ctx: typer.Context,
     check_type: Annotated[
         str | None,
         typer.Option("--type", "-t", help="Filter by check type (pytest, ruff, mypy, biome, tsc)"),
@@ -157,7 +166,7 @@ def results(
         output_error(f"Failed to get results: {e}")
         raise typer.Exit(1) from None
 
-    if is_compact():
+    if ctx.obj.is_compact:
         _format_results_compact(result)
     else:
         output_json(result)
@@ -165,6 +174,7 @@ def results(
 
 @app.command()
 def sync(
+    ctx: typer.Context,
     check_type: Annotated[
         str,
         typer.Argument(help="Check type (pytest, ruff, mypy, biome, tsc)"),
@@ -229,7 +239,7 @@ def sync(
         output_error(f"Failed to sync: {e}")
         raise typer.Exit(1) from None
 
-    if is_compact():
+    if ctx.obj.is_compact:
         synced = data.get("synced", False)
         created = data.get("created_count", 0)
         ct = data.get("check_type", check_type)

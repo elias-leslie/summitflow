@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from cli.commands.git import _format_compact_repo, _get_repo_status, app
+from cli.output_context import OutputContext
 
 runner = CliRunner()
 
@@ -23,12 +24,8 @@ class TestGitStatus:
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    @patch("cli.commands.git.is_compact")
-    def test_status_json_output(
-        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
-    ):
+    def test_status_json_output(self, mock_managed: MagicMock, mock_status: MagicMock):
         """Test JSON output format for status."""
-        mock_compact.return_value = False
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
@@ -40,19 +37,15 @@ class TestGitStatus:
             "state": "dirty",
         }
 
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["status"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert "repositories" in result.stdout
         assert "total" in result.stdout
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    @patch("cli.commands.git.is_compact")
-    def test_status_toon_output(
-        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
-    ):
+    def test_status_toon_output(self, mock_managed: MagicMock, mock_status: MagicMock):
         """Test TOON format output for status."""
-        mock_compact.return_value = True
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
@@ -64,7 +57,7 @@ class TestGitStatus:
             "state": "dirty",
         }
 
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["status"], obj=OutputContext(compact=True))
         assert result.exit_code == 0
         assert "GIT[" in result.stdout
 
@@ -80,12 +73,8 @@ class TestGitSync:
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    @patch("cli.commands.git.is_compact")
-    def test_sync_skips_dirty_repos(
-        self, mock_compact: MagicMock, mock_managed: MagicMock, mock_status: MagicMock
-    ):
+    def test_sync_skips_dirty_repos(self, mock_managed: MagicMock, mock_status: MagicMock):
         """Test that sync skips repos with uncommitted changes."""
-        mock_compact.return_value = False
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
             "path": "/test/repo",
@@ -97,7 +86,7 @@ class TestGitSync:
             "state": "dirty",
         }
 
-        result = runner.invoke(app, ["sync"])
+        result = runner.invoke(app, ["sync"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
 

@@ -12,10 +12,12 @@ import typer
 
 from ..client import APIError, STClient
 from ..context import require_task_id
-from ..output import handle_api_error, is_compact
+from ..output import handle_api_error
+from ..output_context import OutputContext
 
 
 def exec_log_command(
+    ctx: typer.Context,
     task_id: Annotated[
         str | None,
         typer.Argument(help="Task ID to monitor (uses active context if not provided)"),
@@ -68,7 +70,7 @@ def exec_log_command(
         handle_api_error(e)
         return
 
-    _display_events(task, subtasks, events, follow, client, limit, debug, json_output)
+    _display_events(ctx.obj, task, subtasks, events, follow, client, limit, debug, json_output)
 
 
 # Alias for backward compatibility
@@ -94,6 +96,7 @@ def _subtask_summary(subtasks: list[dict[str, Any]]) -> str:
 
 
 def _display_events(
+    out: OutputContext,
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
     events: dict[str, Any],
@@ -117,7 +120,7 @@ def _display_events(
 
     # Header (skip for JSON output)
     if not json_output:
-        if is_compact():
+        if out.is_compact:
             print(f"EXEC:{task_id}|{status}|{subtask_summary}|{title}")
         else:
             print(f"Task: {task_id}")
@@ -136,7 +139,7 @@ def _display_events(
 
     # Initial events
     events_list = events.get("events", []) if isinstance(events, dict) else events
-    _print_events(events_list, debug, json_output)
+    _print_events(out, events_list, debug, json_output)
 
     if not follow:
         return
@@ -181,7 +184,7 @@ def _display_events(
                         new_only = [e for e in events_list if e.get("id") != last_event_id]
                         # Check if we have events newer than last
                         if new_only and events_list[0].get("id") != last_event_id:
-                            _print_events(new_only, debug, json_output)
+                            _print_events(out, new_only, debug, json_output)
                             last_event_id = events_list[0].get("id")
                     else:
                         last_event_id = events_list[0].get("id")
@@ -194,7 +197,9 @@ def _display_events(
             print("\n[Stopped]")
 
 
-def _print_events(events: list[Any], debug: bool = False, json_output: bool = False) -> None:
+def _print_events(
+    out: OutputContext, events: list[Any], debug: bool = False, json_output: bool = False
+) -> None:
     """Print a list of events."""
     import json
 
@@ -226,7 +231,7 @@ def _print_events(events: list[Any], debug: bool = False, json_output: bool = Fa
         elif debug and visibility == "internal":
             vis_indicator = "[I] "
 
-        if is_compact():
+        if out.is_compact:
             # TOON format: timestamp|level|message
             print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
         else:

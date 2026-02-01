@@ -8,9 +8,17 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
-from ..output import handle_api_error, is_compact, output_error, output_json
+from ..output import handle_api_error, output_error, output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="Backup management commands")
+
+
+@app.callback()
+def backup_callback(ctx: typer.Context) -> None:
+    """Initialize context if not set by parent app."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
 
 
 def _format_size(size_bytes: int | None) -> str:
@@ -38,9 +46,9 @@ def _format_compact_backup(backup: dict[str, Any]) -> str:
     return f"{backup_id} {status} {size} {created} {note}"
 
 
-def _output_backups(backups: list[dict[str, Any]], total: int) -> None:
+def _output_backups(out: OutputContext, backups: list[dict[str, Any]], total: int) -> None:
     """Output backup list."""
-    if is_compact():
+    if out.is_compact:
         print(f"BACKUPS[{total}]")
         for b in backups:
             print(_format_compact_backup(b))
@@ -50,6 +58,7 @@ def _output_backups(backups: list[dict[str, Any]], total: int) -> None:
 
 @app.command("list")
 def list_backups(
+    ctx: typer.Context,
     limit: Annotated[int, typer.Option("--limit", "-l", help="Max results")] = 20,
     status: Annotated[str | None, typer.Option("--status", "-s", help="Filter by status")] = None,
 ) -> None:
@@ -73,13 +82,14 @@ def list_backups(
         )
         backups = result.get("backups", [])
         total = result.get("total", len(backups))
-        _output_backups(backups, total)
+        _output_backups(ctx.obj, backups, total)
     except APIError as e:
         handle_api_error(e)
 
 
 @app.command("create")
 def create_backup(
+    ctx: typer.Context,
     note: Annotated[str | None, typer.Option("--note", "-n", help="Backup note")] = None,
     keep_local: Annotated[bool, typer.Option("--keep-local", help="Keep local copy")] = False,
 ) -> None:
@@ -109,7 +119,7 @@ def create_backup(
                 detail = response.text
             raise APIError(response.status_code, detail)
         result = response.json()
-        if is_compact():
+        if ctx.obj.is_compact:
             print(f"QUEUED {result.get('task_id', '?')}")
         else:
             output_json(result)
@@ -119,6 +129,7 @@ def create_backup(
 
 @app.command("restore")
 def restore_backup(
+    ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to restore")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without restoring")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
@@ -179,7 +190,7 @@ def restore_backup(
             raise APIError(response.status_code, detail)
         result = response.json()
 
-        if is_compact():
+        if ctx.obj.is_compact:
             if dry_run:
                 print(f"DRY_RUN {result.get('task_id', 'OK')}")
             else:
@@ -192,6 +203,7 @@ def restore_backup(
 
 @app.command("status")
 def backup_status(
+    ctx: typer.Context,
     task_id: Annotated[str | None, typer.Argument(help="Celery task ID")] = None,
 ) -> None:
     """Show backup/restore job status.
@@ -215,13 +227,13 @@ def backup_status(
             result = client.get(f"{client.base_url}/projects/{config.project_id}/backups?limit=1")
             backups = result.get("backups", [])
             if not backups:
-                if is_compact():
+                if ctx.obj.is_compact:
                     print("NO_BACKUPS")
                 else:
                     output_json({"status": "no_backups"})
             else:
                 latest = backups[0]
-                if is_compact():
+                if ctx.obj.is_compact:
                     print(
                         f"LATEST {latest.get('id')}|{latest.get('status')}|{_format_size(latest.get('size_bytes'))}"
                     )
@@ -233,6 +245,7 @@ def backup_status(
 
 @app.command("schedule")
 def backup_schedule(
+    ctx: typer.Context,
     enable: Annotated[
         bool | None, typer.Option("--enable/--disable", help="Enable or disable")
     ] = None,
@@ -267,7 +280,7 @@ def backup_schedule(
                 timeout=30.0,
             )
             if response.status_code == 404 or response.text == "null":
-                if is_compact():
+                if ctx.obj.is_compact:
                     print("SCHEDULE disabled")
                 else:
                     output_json({"enabled": False, "message": "No schedule configured"})
@@ -279,7 +292,7 @@ def backup_schedule(
                 raise APIError(response.status_code, detail)
             else:
                 schedule = response.json()
-                if is_compact():
+                if ctx.obj.is_compact:
                     enabled = "enabled" if schedule.get("enabled") else "disabled"
                     freq = schedule.get("frequency", "?")
                     ret = schedule.get("retention_count", "?")
@@ -319,7 +332,7 @@ def backup_schedule(
                 raise APIError(response.status_code, detail)
             result = response.json()
 
-            if is_compact():
+            if ctx.obj.is_compact:
                 enabled = "enabled" if result.get("enabled") else "disabled"
                 print(
                     f"SCHEDULE_UPDATED {enabled}|{result.get('frequency')}|retention:{result.get('retention_count')}"
@@ -332,6 +345,7 @@ def backup_schedule(
 
 @app.command("show")
 def show_backup(
+    ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID")],
 ) -> None:
     """Show details of a specific backup.
@@ -357,7 +371,7 @@ def show_backup(
             raise APIError(response.status_code, detail)
         backup = response.json()
 
-        if is_compact():
+        if ctx.obj.is_compact:
             print(_format_compact_backup(backup))
         else:
             output_json(backup)
@@ -367,6 +381,7 @@ def show_backup(
 
 @app.command("delete")
 def delete_backup(
+    ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to delete")],
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
 ) -> None:
@@ -402,7 +417,7 @@ def delete_backup(
             raise APIError(response.status_code, detail)
         result = response.json()
 
-        if is_compact():
+        if ctx.obj.is_compact:
             print(f"DELETED {backup_id}")
         else:
             output_json(result)

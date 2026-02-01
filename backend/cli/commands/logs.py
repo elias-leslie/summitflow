@@ -14,7 +14,8 @@ from typing import Annotated
 
 import typer
 
-from ..output import is_compact, output_error, output_json
+from ..output import output_error, output_json
+from ..output_context import OutputContext
 
 app = typer.Typer(help="View and tail service logs")
 
@@ -281,12 +282,15 @@ def logs_default(ctx: typer.Context) -> None:
 
     Without a subcommand, shows the tail of recent logs.
     """
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
     if ctx.invoked_subcommand is None:
-        tail()
+        tail(ctx)
 
 
 @app.command()
 def tail(
+    ctx: typer.Context,
     service: Annotated[
         str | None,
         typer.Option(
@@ -371,7 +375,7 @@ def tail(
         output_error("No logs found")
         return
 
-    if is_compact():
+    if ctx.obj.is_compact:
         _format_logs_compact(all_logs)
     else:
         output_json([log.to_dict() for log in all_logs])
@@ -409,13 +413,13 @@ def _follow_logs(
 
 
 @app.command()
-def services() -> None:
+def services(ctx: typer.Context) -> None:
     """List available service names for filtering.
 
     Examples:
         st logs services
     """
-    if is_compact():
+    if ctx.obj.is_compact:
         print("SERVICES:user")
         for name, unit in USER_SERVICES.items():
             print(f"  {name:15} {unit}")
@@ -432,7 +436,7 @@ def services() -> None:
 
 
 @app.command()
-def levels() -> None:
+def levels(ctx: typer.Context) -> None:
     """Show log level counts from recent logs.
 
     Examples:
@@ -453,7 +457,7 @@ def levels() -> None:
     for log in all_logs:
         counts[log.level] = counts.get(log.level, 0) + 1
 
-    if is_compact():
+    if ctx.obj.is_compact:
         total = sum(counts.values())
         print(f"LEVELS:total={total}:since=30m")
         for lvl in ["CRITICAL", "ERROR", "WARN", "INFO", "DEBUG"]:

@@ -10,7 +10,8 @@ from typing import Any
 
 import typer
 
-from ..output import is_compact, output_error, output_json
+from ..output import output_error, output_json
+from ..output_context import OutputContext
 from .memory_api import agent_hub_request
 from .memory_formatters import (
     format_batch_get_compact,
@@ -100,7 +101,7 @@ def validate_format_standard(content: str, summary: str) -> list[str]:
     return errors
 
 
-def stats_impl(scope: str, scope_id: str | None) -> None:
+def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
     result = agent_hub_request(
         "GET",
         "/api/memory/stats",
@@ -109,13 +110,14 @@ def stats_impl(scope: str, scope_id: str | None) -> None:
         tool_name="st memory stats",
     )
 
-    if is_compact():
+    if out.is_compact:
         format_stats_compact(result)
     else:
         output_json(result)
 
 
 def save_impl(
+    out: OutputContext,
     content: str,
     summary: str,
     tier: str,
@@ -178,13 +180,14 @@ def save_impl(
         tool_name="st memory save",
     )
 
-    if is_compact():
+    if out.is_compact:
         format_save_compact(result)
     else:
         output_json(result)
 
 
 def list_impl(
+    out: OutputContext,
     limit: int,
     cursor: str | None,
     tier: str | None,
@@ -206,13 +209,14 @@ def list_impl(
         tool_name="st memory list",
     )
 
-    if is_compact():
+    if out.is_compact:
         format_list_compact(result)
     else:
         output_json(result)
 
 
 def search_impl(
+    out: OutputContext,
     query: str,
     limit: int,
     min_score: float,
@@ -234,13 +238,13 @@ def search_impl(
         tool_name="st memory search",
     )
 
-    if is_compact():
+    if out.is_compact:
         format_search_compact(result)
     else:
         output_json(result)
 
 
-def get_impl(uuids: list[str]) -> None:
+def get_impl(out: OutputContext, uuids: list[str]) -> None:
     if not uuids:
         output_error("At least one UUID required")
         raise typer.Exit(1)
@@ -256,7 +260,7 @@ def get_impl(uuids: list[str]) -> None:
             output_error(result["detail"])
             raise typer.Exit(1)
 
-        if is_compact():
+        if out.is_compact:
             format_get_compact(result)
         else:
             output_json(result)
@@ -268,7 +272,7 @@ def get_impl(uuids: list[str]) -> None:
             tool_name="st memory get",
         )
 
-        if is_compact():
+        if out.is_compact:
             format_batch_get_compact(result)
         else:
             output_json(result)
@@ -448,6 +452,7 @@ def update_impl(
 
 
 def batch_tier_impl(
+    out: OutputContext,
     input_file: Path | None,
     json_input: str | None,
     tier: str | None,
@@ -487,7 +492,7 @@ def batch_tier_impl(
         tool_name="st memory batch-tier",
     )
 
-    if is_compact():
+    if out.is_compact:
         format_batch_tier_compact(result)
     else:
         typer.echo(f"Updated: {result['updated']}/{result['total']}")
@@ -625,7 +630,7 @@ def export_impl(
             typer.echo(json_output)
 
 
-def import_impl(input_path: Path, dry_run: bool) -> None:
+def import_impl(out: OutputContext, input_path: Path, dry_run: bool) -> None:
     if not input_path.exists():
         output_error(f"Path not found: {input_path}")
         raise typer.Exit(1)
@@ -774,7 +779,7 @@ def import_impl(input_path: Path, dry_run: bool) -> None:
         prop_updated = result.get("updated", 0)
         prop_failed = result.get("failed", 0)
 
-    if is_compact():
+    if out.is_compact:
         typer.echo(
             f"IMPORT:content={content_success}/{len(content_changes)}|props={prop_updated}/{len(property_updates)}"
         )
@@ -786,6 +791,7 @@ def import_impl(input_path: Path, dry_run: bool) -> None:
 
 
 def cleanup_impl(
+    out: OutputContext,
     orphaned: bool,
     stale: bool,
     ttl_days: int,
@@ -804,7 +810,7 @@ def cleanup_impl(
             scope_id=scope_id,
             tool_name="st memory cleanup --orphaned",
         )
-        if is_compact():
+        if out.is_compact:
             format_orphaned_cleanup_compact(result)
         else:
             output_json(result)
@@ -817,7 +823,7 @@ def cleanup_impl(
             scope_id=scope_id,
             tool_name="st memory cleanup --stale",
         )
-        if is_compact():
+        if out.is_compact:
             format_stale_cleanup_compact(result)
         else:
             output_json(result)
