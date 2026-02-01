@@ -22,6 +22,7 @@ import {
   type TaskStatus,
   updateTaskStatus,
 } from '@/lib/api'
+import { executeTask } from '@/lib/api/tasks'
 import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
 
 export default function ProjectDetailPage() {
@@ -131,7 +132,7 @@ export default function ProjectDetailPage() {
 
   const handleApproveAndResume = async (_message?: string) => {
     if (!escalationTask) return
-    await updateTaskStatus(projectId, escalationTask.id, 'running')
+    await executeTask(projectId, escalationTask.id)
     refetchKanbanTasks()
   }
 

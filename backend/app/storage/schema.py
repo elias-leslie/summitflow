@@ -393,8 +393,12 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_model_perf_logs_lookup ON model_performance_logs(model_name, task_type, complexity)"
     )
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_model_perf_logs_task_id ON model_performance_logs(task_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_model_perf_logs_created_at ON model_performance_logs(created_at DESC)")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_perf_logs_task_id ON model_performance_logs(task_id)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_perf_logs_created_at ON model_performance_logs(created_at DESC)"
+    )
 
     # Aggregated performance metrics for models, used for intelligent task routing
     cur.execute(
