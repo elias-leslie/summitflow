@@ -79,6 +79,17 @@ QA_WORKER_STUCK_THRESHOLD = 3
 # Number of supervisor attempts before escalating to human
 QA_SUPERVISOR_STUCK_THRESHOLD = 2
 
+# =============================================================================
+# Self-Healing Retry Constants
+# =============================================================================
+# When step verification fails, agent gets a chance to self-correct before escalating
+
+# Number of self-fix attempts before requesting supervisor guidance
+SELF_HEAL_MAX_ATTEMPTS = 2
+
+# Number of supervisor-guided fix attempts before escalating to human
+SUPERVISOR_GUIDED_MAX_ATTEMPTS = 2
+
 # Total number of QA review attempts before escalation to human
 QA_ESCALATION_THRESHOLD = 5
 

@@ -15,6 +15,7 @@ from typing import Any
 
 from celery import Task, shared_task
 
+from ...constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ...core.debug import (
     debug,
     debug_detailed,
@@ -37,7 +38,7 @@ from ...storage.subtasks import (
     update_subtask_passes,
 )
 from ...storage.task_spirit import get_task_spirit
-from .escalation import check_escalation_needed, supervisor_guidance
+from .escalation import get_supervisor_guidance_sync
 from .review import ai_review
 from .verification import run_smoke_tests, verify_step
 
@@ -421,7 +422,6 @@ def start_execution(
 
     results: list[dict[str, Any]] = []
     issue_counts: dict[str, int] = {}
-    supervisor_attempts: dict[str, int] = {}
 
     for iteration, subtask in enumerate(incomplete, 1):
         if iteration > MAX_ITERATIONS:
@@ -446,7 +446,7 @@ def start_execution(
             project_id=project_id,
         )
 
-        # Auto-commit after each subtask (supervisor ensures commits happen)
+        # Auto-commit after each subtask
         subtask_short_id = subtask.get("subtask_id", "")
         subtask_desc = subtask.get("description", "")[:50]
         if _has_uncommitted_changes(project_path):
@@ -462,36 +462,34 @@ def start_execution(
                 )
 
         if result.get("status") == "failed":
-            issue_id = result.get("issue_id")
-            issue_count = result.get("issue_count", 1)
+            # Self-healing loop was already exhausted within _execute_subtask
+            # Check if we should escalate to human review
+            self_fix_attempts = result.get("self_fix_attempts", 0)
+            supervisor_guided_attempts = result.get("supervisor_guided_attempts", 0)
+            total_attempts = 1 + self_fix_attempts + supervisor_guided_attempts
 
-            if issue_id and issue_count >= WORKER_STUCK_THRESHOLD:
-                sup_count = supervisor_attempts.get(issue_id, 0)
-                escalation = check_escalation_needed(issue_count, sup_count)
+            if supervisor_guided_attempts > 0:
+                # Supervisor guidance was already tried - escalate to human
+                _emit_log(
+                    task_id,
+                    "error",
+                    f"Escalating to human review after {total_attempts} attempts "
+                    f"(including {supervisor_guided_attempts} supervisor-guided)",
+                    project_id=project_id,
+                )
+                task_store.update_task_status(task_id, "human_review")
+                log_task_event(
+                    task_id,
+                    f"ESCALATION_REQUIRED\nTask: {task_id}\nSubtask: {result.get('subtask_id')}\n"
+                    f"Issue: verification failed after self-healing\n"
+                    f"Total Attempts: {total_attempts}\n"
+                    f"Self-fix: {self_fix_attempts}, Supervisor-guided: {supervisor_guided_attempts}\n"
+                    f"Reason: All retry attempts exhausted",
+                )
+                return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
-                if escalation.get("escalate_to_human"):
-                    _emit_log(task_id, "error", "Escalating to human review", project_id=project_id)
-                    task_store.update_task_status(task_id, "human_review")
-                    log_task_event(
-                        task_id,
-                        f"ESCALATION_REQUIRED\nTask: {task_id}\nSubtask: {result.get('subtask_id')}\n"
-                        f"Issue: {result.get('error', 'verification failed')}\n"
-                        f"Attempts: {iteration}/{MAX_ITERATIONS}\nReason: Supervisor guidance exhausted",
-                    )
-                    return {"task_id": task_id, "status": "escalated", "subtask_results": results}
-
-                if escalation.get("escalate_to_supervisor"):
-                    _emit_log(
-                        task_id, "warn", "Requesting supervisor guidance", project_id=project_id
-                    )
-                    supervisor_guidance.delay(
-                        task_id,
-                        result.get("subtask_id", ""),
-                        result.get("error", "verification failed"),
-                        sup_count,
-                    )
-                    supervisor_attempts[issue_id] = sup_count + 1
-
+            # Self-healing wasn't fully attempted (edge case: exception before loop)
+            # Mark as blocked for retry
             break
 
     all_passed = all(r.get("status") == "passed" for r in results)
@@ -509,6 +507,68 @@ def start_execution(
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
 
+def _build_fix_prompt(
+    subtask: dict[str, Any],
+    failed_steps: list[dict[str, Any]],
+    previous_response: str,
+    supervisor_guidance: str | None = None,
+) -> str:
+    """Build a fix prompt with error context for self-healing.
+
+    Args:
+        subtask: The subtask being executed
+        failed_steps: List of failed step verification results
+        previous_response: Agent's previous response (for context)
+        supervisor_guidance: Optional supervisor guidance text
+
+    Returns:
+        Fix prompt to send to agent
+    """
+    subtask_short_id = subtask.get("subtask_id", "")
+    subtask_desc = subtask.get("description", "")
+
+    prompt_parts = [
+        f"# Fix Required for Subtask {subtask_short_id}",
+        f"\nDescription: {subtask_desc}",
+        "\n## Verification Failures",
+        "The following verification steps failed:",
+    ]
+
+    for fail in failed_steps:
+        step_num = fail.get("step_number", "?")
+        reason = fail.get("reason", "unknown")
+        output = fail.get("output", "")[:500]
+        prompt_parts.append(f"\n### Step {step_num}: FAILED")
+        prompt_parts.append(f"Reason: {reason}")
+        if output:
+            prompt_parts.append(f"Output:\n```\n{output}\n```")
+
+    if supervisor_guidance:
+        prompt_parts.append("\n## Supervisor Guidance")
+        prompt_parts.append(supervisor_guidance)
+
+    prompt_parts.append("\n## Your Task")
+    prompt_parts.append("Fix the issues identified above. Focus on making the verification pass.")
+    prompt_parts.append("After making changes, the same verification commands will run again.")
+
+    # Include steps from subtask for reference
+    steps = subtask.get("steps_from_table", [])
+    if steps:
+        prompt_parts.append("\n## Steps (for reference)")
+        for step in steps:
+            step_num = step.get("step_number", 0)
+            desc = step.get("description", "")
+            verify = step.get("verify_command", "")
+            expect = step.get("expected_output", "")
+            prompt_parts.append(f"{step_num}. {desc}")
+            if verify:
+                prompt_parts.append(f"   Verify: {verify}")
+            if expect:
+                prompt_parts.append(f"   Expected: {expect}")
+
+    return "\n".join(prompt_parts)
+
+
 def _execute_subtask(
     task_id: str,
     subtask: dict[str, Any],
@@ -517,7 +577,7 @@ def _execute_subtask(
     task_type: str | None = None,
     agent_override: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a single subtask with fresh context."""
+    """Execute a single subtask with fresh context and self-healing retry loop."""
     import time
 
     start_time = time.time()
@@ -641,62 +701,211 @@ def _execute_subtask(
 
             acknowledge_no_citations(task_id, subtask_short_id)
 
+        # ================================================================
+        # Self-Healing Retry Loop
+        # ================================================================
+        # After initial execution, if verification fails:
+        # 1. Self-fix attempts (SELF_HEAL_MAX_ATTEMPTS)
+        # 2. Supervisor-guided attempts (SUPERVISOR_GUIDED_MAX_ATTEMPTS)
+        # 3. Escalate to outer loop for human review
+
         steps = subtask.get("steps_from_table", [])
-        step_results = _verify_steps(task_id, subtask_id, steps, project_path, project_id)
+        supervisor_guidance_text: str | None = None
+        self_fix_attempts = 0
+        supervisor_guided_attempts = 0
+        total_max_attempts = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
 
-        all_passed = all(r["passed"] for r in step_results)
+        for heal_attempt in range(total_max_attempts + 1):
+            step_results = _verify_steps(task_id, subtask_id, steps, project_path, project_id)
+            all_passed = all(r["passed"] for r in step_results)
 
-        # Run smoke tests on changed files after explicit verification passes
-        if all_passed:
+            # Run smoke tests on changed files after explicit verification passes
+            if all_passed:
+                _emit_log(
+                    task_id,
+                    "info",
+                    "Running smoke tests on changed files...",
+                    source="verify",
+                    project_id=project_id,
+                )
+                smoke_result = run_smoke_tests(project_path)
+                if not smoke_result.passed:
+                    all_passed = False
+                    for failure in smoke_result.failures:
+                        step_results.append(
+                            {
+                                "step_number": 999,
+                                "passed": False,
+                                "output": f"Import failed: {failure['error']}",
+                                "reason": f"smoke_test_failed:{failure['module']}",
+                                "returncode": 1,
+                            }
+                        )
+                        _emit_log(
+                            task_id,
+                            "error",
+                            f"Smoke test failed: {failure['module']} - {failure['error'][:100]}",
+                            source="verify",
+                            project_id=project_id,
+                        )
+                else:
+                    tested_count = len(smoke_result.files_tested)
+                    if tested_count > 0:
+                        _emit_log(
+                            task_id,
+                            "info",
+                            f"Smoke tests passed ({tested_count} modules)",
+                            source="verify",
+                            project_id=project_id,
+                        )
+
+            # Success - break out of retry loop
+            if all_passed:
+                break
+
+            # Exhausted all retry attempts
+            if heal_attempt >= total_max_attempts:
+                break
+
+            failed_steps = [r for r in step_results if not r["passed"]]
+            failed_count = len(failed_steps)
+
+            # Determine which phase we're in
+            if self_fix_attempts < SELF_HEAL_MAX_ATTEMPTS:
+                # Phase 1: Self-fix attempts
+                self_fix_attempts += 1
+                _emit_log(
+                    task_id,
+                    "warn",
+                    f"Verification failed ({failed_count} steps). "
+                    f"Self-heal attempt {self_fix_attempts}/{SELF_HEAL_MAX_ATTEMPTS}",
+                    source="orchestrator",
+                    project_id=project_id,
+                )
+
+                fix_prompt = _build_fix_prompt(
+                    subtask, failed_steps, response.content, supervisor_guidance=None
+                )
+            else:
+                # Phase 2: Supervisor-guided attempts
+                if supervisor_guided_attempts == 0:
+                    # First supervisor attempt - get guidance
+                    _emit_log(
+                        task_id,
+                        "warn",
+                        "Self-fix exhausted. Requesting supervisor guidance...",
+                        source="orchestrator",
+                        project_id=project_id,
+                    )
+
+                    # Get supervisor guidance synchronously
+                    error_desc = "; ".join(
+                        f"Step {f.get('step_number')}: {f.get('reason', 'failed')}"
+                        for f in failed_steps
+                    )
+                    supervisor_guidance_text = get_supervisor_guidance_sync(
+                        task_id, subtask_short_id, error_desc, failed_steps
+                    )
+
+                    if supervisor_guidance_text:
+                        _emit_log(
+                            task_id,
+                            "info",
+                            f"Supervisor guidance received ({len(supervisor_guidance_text)} chars)",
+                            source="supervisor",
+                            project_id=project_id,
+                        )
+                    else:
+                        _emit_log(
+                            task_id,
+                            "warn",
+                            "Supervisor guidance unavailable, continuing without",
+                            source="orchestrator",
+                            project_id=project_id,
+                        )
+
+                supervisor_guided_attempts += 1
+                _emit_log(
+                    task_id,
+                    "warn",
+                    f"Verification failed ({failed_count} steps). "
+                    f"Supervisor-guided attempt {supervisor_guided_attempts}/{SUPERVISOR_GUIDED_MAX_ATTEMPTS}",
+                    source="orchestrator",
+                    project_id=project_id,
+                )
+
+                fix_prompt = _build_fix_prompt(
+                    subtask, failed_steps, response.content, supervisor_guidance_text
+                )
+
+            # Call agent with fix prompt
             _emit_log(
                 task_id,
                 "info",
-                "Running smoke tests on changed files...",
-                source="verify",
+                "Calling agent for fix attempt...",
+                source="orchestrator",
                 project_id=project_id,
             )
-            smoke_result = run_smoke_tests(project_path)
-            if not smoke_result.passed:
-                all_passed = False
-                # Add smoke failures to step results for visibility
-                for failure in smoke_result.failures:
-                    step_results.append(
-                        {
-                            "step_number": 999,
-                            "passed": False,
-                            "output": f"Import failed: {failure['error']}",
-                            "reason": f"smoke_test_failed:{failure['module']}",
-                            "returncode": 1,
-                        }
+
+            try:
+                response = client.run_agent(
+                    task=fix_prompt,
+                    agent_slug=agent_slug,
+                    working_dir=project_path,
+                    max_turns=15,  # Shorter for fix attempts
+                    project_id=project_id,
+                    use_memory=True,
+                )
+
+                _emit_log(
+                    task_id,
+                    "info",
+                    "Agent fix attempt completed",
+                    source="agent",
+                    project_id=project_id,
+                )
+
+                # Auto-commit fix attempt
+                if _has_uncommitted_changes(project_path):
+                    phase = "self-fix" if self_fix_attempts <= SELF_HEAL_MAX_ATTEMPTS else "guided"
+                    attempt_num = (
+                        self_fix_attempts if phase == "self-fix" else supervisor_guided_attempts
                     )
-                    _emit_log(
-                        task_id,
-                        "error",
-                        f"Smoke test failed: {failure['module']} - {failure['error'][:100]}",
-                        source="verify",
-                        project_id=project_id,
-                    )
-            else:
-                tested_count = len(smoke_result.files_tested)
-                if tested_count > 0:
-                    _emit_log(
-                        task_id,
-                        "info",
-                        f"Smoke tests passed ({tested_count} modules)",
-                        source="verify",
-                        project_id=project_id,
-                    )
+                    commit_msg = f"[{phase}] {subtask_short_id} attempt {attempt_num}"
+                    _auto_commit(project_path, commit_msg)
+
+            except Exception as fix_error:
+                logger.warning(
+                    "Fix attempt failed",
+                    subtask_id=subtask_short_id,
+                    attempt=heal_attempt + 1,
+                    error=str(fix_error),
+                )
+                _emit_log(
+                    task_id,
+                    "error",
+                    f"Fix attempt error: {str(fix_error)[:100]}",
+                    source="orchestrator",
+                    project_id=project_id,
+                )
+                # Continue to next attempt or exit loop
+
+        # ================================================================
+        # End of Self-Healing Loop - Process Final Result
+        # ================================================================
 
         duration = time.time() - start_time
         duration_str = f"{duration:.1f}s"
+        total_attempts = 1 + self_fix_attempts + supervisor_guided_attempts
 
         if all_passed:
             update_subtask_passes(task_id, subtask_short_id, passes=True)
             _extract_handoff_summary(subtask_id, response.content)
+            attempt_info = f" (after {total_attempts} attempts)" if total_attempts > 1 else ""
             _emit_log(
                 task_id,
                 "info",
-                f"Subtask {subtask_short_id} PASSED ({duration_str})",
+                f"Subtask {subtask_short_id} PASSED{attempt_info} ({duration_str})",
                 project_id=project_id,
             )
             debug_success(
@@ -704,6 +913,8 @@ def _execute_subtask(
                 task_id=task_id,
                 project_id=project_id,
                 duration_ms=duration * 1000,
+                self_fix_attempts=self_fix_attempts,
+                supervisor_guided_attempts=supervisor_guided_attempts,
             )
         else:
             failed_steps = [r for r in step_results if not r["passed"]]
@@ -714,15 +925,18 @@ def _execute_subtask(
             _emit_log(
                 task_id,
                 "warn",
-                f"Subtask {subtask_short_id} FAILED: {len(failed_steps)} step(s) ({duration_str})",
+                f"Subtask {subtask_short_id} FAILED after {total_attempts} attempts: "
+                f"{len(failed_steps)} step(s) ({duration_str})",
                 project_id=project_id,
             )
             debug_error(
-                f"Subtask {subtask_short_id} verification failed",
+                f"Subtask {subtask_short_id} verification failed after self-healing",
                 task_id=task_id,
                 project_id=project_id,
                 failed_steps=len(failed_steps),
                 duration_ms=duration * 1000,
+                self_fix_attempts=self_fix_attempts,
+                supervisor_guided_attempts=supervisor_guided_attempts,
             )
 
         return {
@@ -730,6 +944,8 @@ def _execute_subtask(
             "status": "passed" if all_passed else "failed",
             "step_results": step_results,
             "issue_counts": {k: v for k, v in issue_counts.items() if v >= 2},
+            "self_fix_attempts": self_fix_attempts,
+            "supervisor_guided_attempts": supervisor_guided_attempts,
         }
 
     except Exception as e:

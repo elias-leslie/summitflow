@@ -47,6 +47,78 @@ def check_escalation_needed(
     }
 
 
+def get_supervisor_guidance_sync(
+    task_id: str,
+    subtask_id: str,
+    issue_description: str,
+    step_outputs: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Get supervisor guidance synchronously for self-healing loop.
+
+    Called when worker exhausts self-fix attempts. Returns guidance text
+    to feed into next agent iteration.
+
+    Args:
+        task_id: The task ID
+        subtask_id: The subtask that's stuck
+        issue_description: Description of the failure
+        step_outputs: Optional list of failed step verification outputs
+
+    Returns:
+        Guidance text or None if supervisor call fails
+    """
+    logger.info(
+        "Requesting supervisor guidance (sync)",
+        task_id=task_id,
+        subtask_id=subtask_id,
+    )
+
+    step_context = ""
+    if step_outputs:
+        step_details = []
+        for step in step_outputs:
+            if not step.get("passed"):
+                step_details.append(
+                    f"- Step {step.get('step_number')}: {step.get('reason', 'failed')}\n"
+                    f"  Output: {step.get('output', '')[:300]}"
+                )
+        if step_details:
+            step_context = "\n\nFailed step details:\n" + "\n".join(step_details)
+
+    prompt = f"""A worker agent has failed to fix this issue after multiple attempts.
+Analyze the error and provide specific guidance on how to fix it.
+
+Task ID: {task_id}
+Subtask: {subtask_id}
+Issue: {issue_description}{step_context}
+
+Provide SPECIFIC guidance:
+1. What is the root cause of this failure?
+2. What exact change should the worker make?
+3. What should the worker verify after the fix?
+
+Be specific and actionable. The worker will use this guidance to attempt another fix."""
+
+    try:
+        client = get_sync_client()
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            agent_slug="supervisor",
+        )
+
+        guidance: str = response.content
+        log_task_event(
+            task_id,
+            f"Supervisor guidance for {subtask_id}:\n{guidance[:500]}",
+        )
+
+        return guidance
+
+    except Exception as e:
+        logger.warning("Supervisor guidance failed", error=str(e))
+        return None
+
+
 @shared_task(bind=True, name="autonomous.supervisor_guidance")
 def supervisor_guidance(
     self: Task[..., dict[str, Any]],
@@ -55,7 +127,10 @@ def supervisor_guidance(
     issue_description: str,
     failure_count: int,
 ) -> dict[str, Any]:
-    """Get supervisor guidance for a stuck worker.
+    """Get supervisor guidance for a stuck worker (async Celery task).
+
+    NOTE: This async version is kept for backward compatibility.
+    Prefer get_supervisor_guidance_sync() for self-healing loop.
 
     Supervisor provides guidance, NOT implementation.
     After 2 attempts, escalates to human review.
