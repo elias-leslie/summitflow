@@ -455,10 +455,11 @@ def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
     task_branch = f"{task_id}/main"
 
     # Remove worktree if it exists (so we can checkout the branch)
+    # Keep the branch - we need it for the merge
     worktree_info = get_worktree_info(task_id)
     if worktree_info:
         print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id)
+        remove_worktree(task_id, delete_branch=False)
 
     # Checkout task branch
     try:
@@ -522,10 +523,11 @@ def merge_task_branch(task_id: str) -> bool:
         base_branch = "main"
 
     # Remove worktree if it exists (clean up before merge)
+    # Keep the branch - we need it for the merge
     worktree_info = get_worktree_info(task_id)
     if worktree_info:
         print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id)
+        remove_worktree(task_id, delete_branch=False)
 
     # Checkout base branch
     try:
