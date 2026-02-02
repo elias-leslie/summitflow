@@ -287,16 +287,24 @@ phase_19_done_workflow() {
     st subtask create 1.1 -t "$task_id" -d "Make a change" --phase backend \
         --steps-json '[{"description": "Add marker", "verify_command": "echo PASS", "expected_output": "PASS"}]' 2>&1 || true
 
-    # Claim task
+    # Claim task (creates worktree with task/main branch)
     st claim "$task_id" 2>&1 || {
         log_fail "st claim failed"
         return 1
     }
 
     local worktree_path="${WORKTREES_BASE}/${task_id}"
+
+    # Claim subtask (creates subtask branch task/1.1 from task/main)
+    st claim 1.1 -t "$task_id" 2>&1 || {
+        log_fail "st claim subtask failed"
+        st abandon "$task_id" --force 2>/dev/null || true
+        return 1
+    }
+
     local marker="# DONE_WORKFLOW_TEST_$(date +%s)"
 
-    # Make a change in the worktree
+    # Make a change in the worktree (on subtask branch)
     echo "$marker" >> "$worktree_path/backend/app/storage/__init__.py"
 
     # Commit in worktree
