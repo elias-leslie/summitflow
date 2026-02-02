@@ -30,17 +30,24 @@ class SnapshotMeta:
     created_at: str  # ISO format
     claimed_by: str
     worktree_path: str | None = None  # Path to isolated worktree
+    backend_port: int | None = None  # Allocated backend port for worktree
+    frontend_port: int | None = None  # Allocated frontend port for worktree
 
-    def to_dict(self) -> dict[str, str | None]:
+    def to_dict(self) -> dict[str, str | int | None]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | None]) -> SnapshotMeta:
+    def from_dict(cls, data: dict[str, str | int | None]) -> SnapshotMeta:
         """Create from dictionary."""
         # Handle older snapshots without worktree_path
         if "worktree_path" not in data:
             data["worktree_path"] = None
+        # Handle older snapshots without port info
+        if "backend_port" not in data:
+            data["backend_port"] = None
+        if "frontend_port" not in data:
+            data["frontend_port"] = None
         return cls(**data)
 
 
@@ -134,6 +141,7 @@ def create_task_snapshot(
 
     Creates pg_dump snapshot, metadata file, and isolated git worktree.
     The worktree provides code isolation at ~/.summitflow/worktrees/<task-id>/.
+    Also allocates isolated ports for worktree services (backend/frontend).
 
     Args:
         task_id: Task identifier
@@ -141,11 +149,12 @@ def create_task_snapshot(
         use_worktree: Whether to create isolated worktree (default True)
 
     Returns:
-        SnapshotMeta with checkpoint details including worktree path
+        SnapshotMeta with checkpoint details including worktree path and ports
 
     Raises:
         SystemExit: On pg_dump failure or git errors
     """
+    from .port_manager import allocate_ports
     from .worktree import WorktreeError, create_worktree, get_worktree_info
 
     snapshot_path = _get_snapshot_path(task_id)
@@ -180,6 +189,8 @@ def create_task_snapshot(
         sys.exit(1)
 
     worktree_path: str | None = None
+    backend_port: int | None = None
+    frontend_port: int | None = None
 
     if use_worktree:
         # Create isolated worktree for task
@@ -187,6 +198,12 @@ def create_task_snapshot(
             worktree_info = create_worktree(task_id, base_branch)
             worktree_path = str(worktree_info.path)
             print(f"Created worktree: {worktree_path}")
+
+            # Allocate isolated ports for worktree services
+            ports = allocate_ports(task_id)
+            backend_port = ports.backend_port
+            frontend_port = ports.frontend_port
+            print(f"Allocated ports: backend={backend_port}, frontend={frontend_port}")
         except WorktreeError as e:
             # Clean up snapshot on worktree failure
             snapshot_path.unlink(missing_ok=True)
@@ -217,6 +234,8 @@ def create_task_snapshot(
         created_at=datetime.now(UTC).isoformat(),
         claimed_by=_get_claimed_by(),
         worktree_path=worktree_path,
+        backend_port=backend_port,
+        frontend_port=frontend_port,
     )
     meta_path.write_text(json.dumps(meta.to_dict(), indent=2))
 
@@ -670,12 +689,14 @@ def has_active_task(project_id: str) -> str | None:
     return checkpoints[0].task_id if checkpoints else None
 
 
-def get_snapshot_info(task_id: str) -> dict[str, str | None] | None:
+def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
     """Get snapshot info for a task.
 
     Returns dict with snapshot details or None if not found.
-    Includes worktree_path and worktree_exists for isolation status.
+    Includes worktree_path, worktree_exists for isolation status,
+    and allocated ports for worktree services.
     """
+    from .port_manager import get_worktree_ports
     from .worktree import get_worktree_info
 
     meta_path = _get_meta_path(task_id)
@@ -704,5 +725,13 @@ def get_snapshot_info(task_id: str) -> dict[str, str | None] | None:
     info["worktree_exists"] = str(worktree_info is not None).lower()
     if worktree_info:
         info["worktree_branch"] = worktree_info.branch
+
+    # Add port info (from ports.json or meta)
+    ports = get_worktree_ports(task_id)
+    if ports:
+        info["backend_port"] = ports.backend_port
+        info["frontend_port"] = ports.frontend_port
+        info["api_url"] = ports.api_url
+        info["frontend_url"] = ports.frontend_url
 
     return info

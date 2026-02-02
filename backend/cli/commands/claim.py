@@ -98,6 +98,8 @@ def _claim_task(
                 "action": "resumed",
                 "branch": task_branch,
                 "worktree_path": worktree_path,
+                "backend_port": existing.get("backend_port"),
+                "frontend_port": existing.get("frontend_port"),
             }
         # Fall back to branch checkout (legacy mode or missing worktree)
         try:
@@ -146,6 +148,8 @@ def _claim_task(
         "snapshot": meta.snapshot_path,
         "base_branch": meta.base_branch,
         "worktree_path": meta.worktree_path,
+        "backend_port": meta.backend_port,
+        "frontend_port": meta.frontend_port,
     }
 
 
@@ -228,6 +232,11 @@ def claim_command(
             if result.get("worktree_path"):
                 typer.echo(f"\nTo work in isolation:")
                 typer.echo(f"  cd {result['worktree_path']}")
+                if result.get("backend_port") and result.get("frontend_port"):
+                    typer.echo(f"\nTo start isolated services:")
+                    typer.echo(f"  worktree-services.sh start {id}")
+                    typer.echo(f"  Backend:  http://localhost:{result['backend_port']}")
+                    typer.echo(f"  Frontend: http://localhost:{result['frontend_port']}")
         else:
             output_success(f"Task {id} claimed. Checkpoint created.")
             typer.echo(f"  Branch: {result['branch']}")
@@ -236,3 +245,8 @@ def claim_command(
                 typer.echo(f"  Worktree: {result['worktree_path']}")
                 typer.echo(f"\nTo work in isolation:")
                 typer.echo(f"  cd {result['worktree_path']}")
+                if result.get("backend_port") and result.get("frontend_port"):
+                    typer.echo(f"\nTo start isolated services:")
+                    typer.echo(f"  worktree-services.sh start {id}")
+                    typer.echo(f"  Backend:  http://localhost:{result['backend_port']}")
+                    typer.echo(f"  Frontend: http://localhost:{result['frontend_port']}")
