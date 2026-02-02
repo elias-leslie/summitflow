@@ -124,6 +124,13 @@ HEALTH (quality gate):
   health results [--type T] [--status S] [--unfixed] [--limit N]
   health sync <type> <status> [--errors N] [--warnings N] [--triggered-by commit|manual|ci|agent]
 
+CLEANUP (worktree maintenance):
+  cleanup worktrees                        # list orphaned/stale worktrees with recommendations
+  cleanup worktrees --auto                 # auto-cleanup safe cases (merged, no commits ahead)
+  cleanup worktrees --force                # cleanup all worktrees (with confirmation)
+  cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
+  cleanup status                           # quick worktree status overview
+
 EXAMPLES:
   st ready                                 # find work (compact by default)
   st claim task-abc                        # claim task, create checkpoint
@@ -165,6 +172,7 @@ app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
 app.add_typer(tools.app, name="tools")
+app.add_typer(cleanup.app, name="cleanup")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 
