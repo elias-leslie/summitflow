@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 def get_agent_hub_url() -> str:
@@ -40,7 +44,7 @@ def set_project_override(project_id: str | None) -> None:
     get_config.cache_clear()
 
 
-def _detect_project_from_cwd(api_base: str) -> tuple[str | None, str | None]:
+def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str | None, str | None]:
     """Detect project_id from current working directory.
 
     Queries the projects API and finds a project whose root_path
@@ -48,41 +52,76 @@ def _detect_project_from_cwd(api_base: str) -> tuple[str | None, str | None]:
 
     Args:
         api_base: API base URL to query projects from
+        max_retries: Maximum number of retry attempts on transient failures
 
     Returns:
         Tuple of (project_id, root_path) or (None, None) if not found.
     """
     cwd = Path.cwd().resolve()
 
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"{api_base}/projects")
-            if response.status_code != 200:
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(f"{api_base}/projects")
+                if response.status_code != 200:
+                    logger.warning(
+                        "Project detection: API returned %d (attempt %d/%d)",
+                        response.status_code,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(0.5 * (attempt + 1))
+                        continue
+                    return None, None
+
+                projects = response.json()
+                if not isinstance(projects, list):
+                    logger.warning("Project detection: API returned non-list response")
+                    return None, None
+
+                # Find project whose root_path contains or matches cwd
+                for project in projects:
+                    root_path = project.get("root_path")
+                    if not root_path:
+                        continue
+
+                    root = Path(root_path).resolve()
+
+                    # Check if cwd is within this project's root
+                    try:
+                        cwd.relative_to(root)
+                        return project.get("id"), str(root)
+                    except ValueError:
+                        # cwd is not relative to this root
+                        continue
+
+                # No matching project found (not a transient error, don't retry)
                 return None, None
 
-            projects = response.json()
-            if not isinstance(projects, list):
-                return None, None
-
-            # Find project whose root_path contains or matches cwd
-            for project in projects:
-                root_path = project.get("root_path")
-                if not root_path:
-                    continue
-
-                root = Path(root_path).resolve()
-
-                # Check if cwd is within this project's root
-                try:
-                    cwd.relative_to(root)
-                    return project.get("id"), str(root)
-                except ValueError:
-                    # cwd is not relative to this root
-                    continue
-
-    except Exception:
-        # Network error, timeout, etc. - fall back to default
-        pass
+        except httpx.TimeoutException as e:
+            logger.warning(
+                "Project detection timeout (attempt %d/%d): %s",
+                attempt + 1,
+                max_retries,
+                e,
+            )
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+        except httpx.RequestError as e:
+            logger.warning(
+                "Project detection network error (attempt %d/%d): %s",
+                attempt + 1,
+                max_retries,
+                e,
+            )
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+        except Exception as e:
+            logger.error("Project detection unexpected error: %s", e)
+            break
 
     return None, None
 

@@ -1,7 +1,16 @@
 #!/bin/bash
 export GREEN='\033[0;32m' YELLOW='\033[1;33m' RED='\033[0;31m' BLUE='\033[0;34m' NC='\033[0m'
-[ -z "$PROJECT_DIR" ] && PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-export PROJECT_DIR PROJECT_NAME=$(basename "$PROJECT_DIR")
+if [ -z "$PROJECT_DIR" ]; then
+    PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    # Detect if we're in a worktree (path pattern: ~/.local/share/st/worktrees/<project-id>/<task-id>/)
+    if [[ "$PROJECT_DIR" == *"/worktrees/"* ]]; then
+        # Extract actual project name from worktree path
+        PROJECT_NAME=$(echo "$PROJECT_DIR" | sed -E 's|.*/worktrees/([^/]+)/.*|\1|')
+    else
+        PROJECT_NAME=$(basename "$PROJECT_DIR")
+    fi
+fi
+export PROJECT_DIR PROJECT_NAME
 case "$PROJECT_NAME" in
     summitflow) export SERVICE_PREFIX="summitflow" FRONTEND_PORT=3001 BACKEND_PORT=8001 HAS_CELERY=true HAS_REDIS=false ;;
     terminal) export SERVICE_PREFIX="summitflow-terminal" FRONTEND_PORT=3002 BACKEND_PORT=8002 HAS_CELERY=false HAS_REDIS=false ;;

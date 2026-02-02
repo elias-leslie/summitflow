@@ -109,6 +109,8 @@ def handle_update_step_passes(
                 "step_number": e.step_number,
                 "output": e.output,
                 "exit_code": e.exit_code,
+                "verify_command": e.verify_command,
+                "cwd": e.cwd,
                 "verification_failed": True,
             },
         ) from e

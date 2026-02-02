@@ -41,13 +41,20 @@ def pass_step(
         # Check if this is a verification failure
         detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {}
         if detail.get("verification_failed"):
-            # TOON-efficient verification failure output
+            # TOON-efficient verification failure output with debug context
             exit_code = detail.get("exit_code", 1)
             output = detail.get("output", "").strip() or "(empty)"
+            cwd = detail.get("cwd") or "(unknown)"
+            cmd = detail.get("verify_command") or "(unknown)"
             # Truncate output to first 100 chars
             if len(output) > 100:
                 output = output[:100] + "..."
+            # Truncate command to 80 chars for display
+            if len(cmd) > 80:
+                cmd = cmd[:80] + "..."
             typer.echo(f"STEP_FAIL:{subtask_id}.{step_number}|exit={exit_code}", err=True)
+            typer.echo(f"  cwd: {cwd}", err=True)
+            typer.echo(f"  cmd: {cmd}", err=True)
             typer.echo(f"  got: {output}", err=True)
             typer.echo(
                 f"FIX: 1) impl 2) st step new {subtask_id} 'Fix:...' -v 'cmd' -e 'expect' "

@@ -188,6 +188,8 @@ class StepVerificationError(Exception):
         step_number: The step that failed verification
         output: The verification command output
         exit_code: The exit code from the verify_command
+        verify_command: The command that was executed
+        cwd: The working directory used for execution
         next_steps: Guidance for what to do next
     """
 
@@ -206,6 +208,8 @@ Do NOT modify the verify_command - verification gates are immutable."""
         step_number: int,
         output: str,
         exit_code: int = 1,
+        verify_command: str | None = None,
+        cwd: str | None = None,
     ):
         # Append guidance to message
         full_message = f"{message}\n{self.NEXT_STEPS_GUIDANCE}"
@@ -213,6 +217,8 @@ Do NOT modify the verify_command - verification gates are immutable."""
         self.step_number = step_number
         self.output = output
         self.exit_code = exit_code
+        self.verify_command = verify_command
+        self.cwd = cwd
         self.next_steps = self.NEXT_STEPS_GUIDANCE
 
 
@@ -447,6 +453,8 @@ def update_step_passes(
             step_number=step_number,
             output="",
             exit_code=-1,
+            verify_command=None,
+            cwd=project_root,
         )
 
     # expected_output is required - fail if missing
@@ -456,6 +464,8 @@ def update_step_passes(
             step_number=step_number,
             output="",
             exit_code=-1,
+            verify_command=verify_command,
+            cwd=project_root,
         )
 
     # Parse expected output to determine check type
@@ -477,6 +487,8 @@ def update_step_passes(
             step_number=step_number,
             output=output,
             exit_code=exit_code,
+            verify_command=verify_command,
+            cwd=project_root,
         )
 
     # For "exit_code" check type, exit code 0 is sufficient (already passed above)
@@ -494,6 +506,8 @@ def update_step_passes(
             step_number=step_number,
             output=output,
             exit_code=0,
+            verify_command=verify_command,
+            cwd=project_root,
         )
 
     logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
