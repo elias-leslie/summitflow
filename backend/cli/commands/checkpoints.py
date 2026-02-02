@@ -22,47 +22,56 @@ app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup
 
 
 def _auto_cleanup_safe_items() -> tuple[int, int, int]:
-    """Auto-cleanup clearly stale items. Returns (stale_meta, legacy_sql, orphan_branches)."""
+    """Auto-cleanup stale items. Returns (stale_meta, legacy_sql, orphan_branches)."""
     snapshots_dir = Path.cwd() / ".st" / "snapshots"
     cleaned_meta = 0
     cleaned_sql = 0
-    orphan_branches = 0
-
-    if not snapshots_dir.exists():
-        return (0, 0, len(_get_orphaned_branches()))
+    cleaned_branches = 0
 
     # Find and clean stale metadata (no worktree AND no branch)
-    for meta_file in snapshots_dir.glob("*.meta.json"):
+    if snapshots_dir.exists():
+        for meta_file in snapshots_dir.glob("*.meta.json"):
+            try:
+                import json
+
+                meta = json.loads(meta_file.read_text())
+                task_id = meta.get("task_id", "")
+                project_id = meta.get("project_id")
+
+                # Check if worktree or branch exists
+                worktree = get_worktree_info(task_id, project_id)
+                branches = _get_task_branches(task_id)
+
+                if not worktree and not branches:
+                    # Safe to delete - no worktree, no branch
+                    meta_file.unlink()
+                    cleaned_meta += 1
+            except Exception:
+                pass
+
+        # Clean legacy SQL files
+        for sql_file in snapshots_dir.glob("*.sql"):
+            try:
+                sql_file.unlink()
+                cleaned_sql += 1
+            except Exception:
+                pass
+
+    # Auto-delete orphaned branches (task-*/main without metadata)
+    # No metadata = task was abandoned/completed = safe to delete
+    for branch in _get_orphaned_branches():
         try:
-            import json
-
-            meta = json.loads(meta_file.read_text())
-            task_id = meta.get("task_id", "")
-            project_id = meta.get("project_id")
-
-            # Check if worktree or branch exists
-            worktree = get_worktree_info(task_id, project_id)
-            branches = _get_task_branches(task_id)
-
-            if not worktree and not branches:
-                # Safe to delete - no worktree, no branch
-                meta_file.unlink()
-                cleaned_meta += 1
-        except Exception:
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            cleaned_branches += 1
+        except subprocess.CalledProcessError:
             pass
 
-    # Clean legacy SQL files
-    for sql_file in snapshots_dir.glob("*.sql"):
-        try:
-            sql_file.unlink()
-            cleaned_sql += 1
-        except Exception:
-            pass
-
-    # Count orphaned branches (don't auto-delete, just count for warning)
-    orphan_branches = len(_get_orphaned_branches())
-
-    return (cleaned_meta, cleaned_sql, orphan_branches)
+    return (cleaned_meta, cleaned_sql, cleaned_branches)
 
 
 @app.callback(invoke_without_command=True)
@@ -90,8 +99,8 @@ def checkpoints_callback(
         _format_details(ctx.obj, details)
         return
 
-    # Auto-cleanup safe items BEFORE listing (so stale items don't appear)
-    cleaned_meta, cleaned_sql, orphan_branches = _auto_cleanup_safe_items()
+    # Auto-cleanup stale items BEFORE listing (so stale items don't appear)
+    cleaned_meta, cleaned_sql, cleaned_branches = _auto_cleanup_safe_items()
 
     # Now get active checkpoints (after cleanup)
     checkpoints = get_active_checkpoints(project)
@@ -105,10 +114,15 @@ def checkpoints_callback(
         _format_compact_checkpoints(checkpoint_data)
 
         # Report what was cleaned
-        if cleaned_meta or cleaned_sql:
-            print(f"  (auto-cleaned: {cleaned_meta} stale metadata, {cleaned_sql} legacy SQL)")
-        if orphan_branches:
-            print(f"  Orphaned branches: {orphan_branches} (use 'cleanup --branches' to remove)")
+        if cleaned_meta or cleaned_sql or cleaned_branches:
+            parts = []
+            if cleaned_meta:
+                parts.append(f"{cleaned_meta} stale metadata")
+            if cleaned_sql:
+                parts.append(f"{cleaned_sql} legacy SQL")
+            if cleaned_branches:
+                parts.append(f"{cleaned_branches} orphaned branches")
+            print(f"  (auto-cleaned: {', '.join(parts)})")
     else:
         output_json(
             {
@@ -269,142 +283,3 @@ def _get_orphaned_branches() -> list[str]:
     return orphaned
 
 
-def _get_legacy_sql_files() -> list[Path]:
-    """Find legacy .sql snapshot files."""
-    snapshots_dir = Path.cwd() / ".st" / "snapshots"
-    if not snapshots_dir.exists():
-        return []
-    return list(snapshots_dir.glob("*.sql"))
-
-
-def _analyze_checkpoint_status(checkpoints: list) -> dict:
-    """Analyze checkpoint status: active, stale, or orphaned.
-
-    Returns dict with:
-        - active: checkpoints with valid worktrees
-        - stale: metadata without worktree or branch
-        - orphaned_branches: branches without metadata
-        - legacy_files: old .sql files
-    """
-    active = []
-    stale = []
-
-    for cp in checkpoints:
-        task_id = cp.task_id
-        project_id = cp.project_id
-
-        # Check if worktree exists
-        worktree = get_worktree_info(task_id, project_id)
-        branches = _get_task_branches(task_id)
-
-        if worktree or branches:
-            active.append({"checkpoint": cp, "has_worktree": bool(worktree), "branches": branches})
-        else:
-            stale.append(cp)
-
-    return {
-        "active": active,
-        "stale": stale,
-        "orphaned_branches": _get_orphaned_branches(),
-        "legacy_files": _get_legacy_sql_files(),
-    }
-
-
-@app.command(name="cleanup")
-def cleanup_command(
-    ctx: typer.Context,
-    force: Annotated[
-        bool,
-        typer.Option("--force", "-f", help="Actually delete (default is dry-run)"),
-    ] = False,
-    branches: Annotated[
-        bool,
-        typer.Option("--branches", "-b", help="Also clean orphaned branches"),
-    ] = False,
-) -> None:
-    """Clean up stale checkpoints and orphaned artifacts.
-
-    By default runs in dry-run mode showing what would be removed.
-    Use --force to actually delete.
-
-    Cleans:
-    - Stale metadata: .meta.json without worktree or branch
-    - Legacy SQL files: old .sql snapshots from pre-worktree era
-    - Orphaned branches: task-*/main branches without metadata (with --branches)
-
-    Examples:
-        st checkpoints cleanup              # Dry-run, show what would be removed
-        st checkpoints cleanup --force      # Actually remove stale items
-        st checkpoints cleanup --branches   # Include orphaned branches in cleanup
-    """
-    checkpoints = get_active_checkpoints()
-    analysis = _analyze_checkpoint_status(checkpoints)
-
-    stale = analysis["stale"]
-    legacy = analysis["legacy_files"]
-    orphaned = analysis["orphaned_branches"] if branches else []
-
-    total_issues = len(stale) + len(legacy) + len(orphaned)
-
-    if total_issues == 0:
-        print("CLEANUP: No issues found")
-        print(f"  Active checkpoints: {len(analysis['active'])}")
-        if not branches:
-            orphan_count = len(analysis["orphaned_branches"])
-            if orphan_count > 0:
-                print(f"  Orphaned branches: {orphan_count} (use --branches to clean)")
-        return
-
-    mode = "REMOVING" if force else "DRY-RUN (use --force to delete)"
-    print(f"CLEANUP: {mode}")
-    print()
-
-    removed_meta = 0
-    removed_sql = 0
-    removed_branches = 0
-
-    # Stale metadata
-    if stale:
-        print(f"Stale metadata [{len(stale)}]:")
-        for cp in stale:
-            meta_path = Path.cwd() / ".st" / "snapshots" / f"{cp.task_id}.meta.json"
-            age = _format_age(cp.created_at)
-            print(f"  {cp.task_id} ({age}) - no worktree/branch")
-            if force and meta_path.exists():
-                meta_path.unlink()
-                removed_meta += 1
-        print()
-
-    # Legacy SQL files
-    if legacy:
-        print(f"Legacy SQL files [{len(legacy)}]:")
-        for sql_file in legacy:
-            size_kb = sql_file.stat().st_size // 1024
-            print(f"  {sql_file.name} ({size_kb}KB)")
-            if force:
-                sql_file.unlink()
-                removed_sql += 1
-        print()
-
-    # Orphaned branches
-    if orphaned:
-        print(f"Orphaned branches [{len(orphaned)}]:")
-        for branch in orphaned:
-            print(f"  {branch}")
-            if force:
-                try:
-                    subprocess.run(
-                        ["git", "branch", "-D", branch],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    removed_branches += 1
-                except subprocess.CalledProcessError as e:
-                    print(f"    Failed to delete: {e.stderr.strip()}")
-        print()
-
-    if force:
-        print(f"Removed: {removed_meta} metadata, {removed_sql} SQL files, {removed_branches} branches")
-    else:
-        print(f"Would remove: {len(stale)} metadata, {len(legacy)} SQL files, {len(orphaned)} branches")
