@@ -449,8 +449,16 @@ def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
     Raises:
         SystemExit: On merge failure
     """
+    from .worktree import get_worktree_info, remove_worktree
+
     subtask_branch = f"{task_id}/{subtask_id}"
     task_branch = f"{task_id}/main"
+
+    # Remove worktree if it exists (so we can checkout the branch)
+    worktree_info = get_worktree_info(task_id)
+    if worktree_info:
+        print(f"Removing worktree before merge: {worktree_info.path}")
+        remove_worktree(task_id)
 
     # Checkout task branch
     try:
@@ -502,6 +510,8 @@ def merge_task_branch(task_id: str) -> bool:
     Raises:
         SystemExit: On merge failure
     """
+    from .worktree import get_worktree_info, remove_worktree
+
     meta_path = _get_meta_path(task_id)
 
     # Get base branch from metadata
@@ -510,6 +520,12 @@ def merge_task_branch(task_id: str) -> bool:
         base_branch = meta.base_branch
     else:
         base_branch = "main"
+
+    # Remove worktree if it exists (clean up before merge)
+    worktree_info = get_worktree_info(task_id)
+    if worktree_info:
+        print(f"Removing worktree before merge: {worktree_info.path}")
+        remove_worktree(task_id)
 
     # Checkout base branch
     try:
