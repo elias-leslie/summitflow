@@ -15,7 +15,6 @@ from ..lib.checkpoint import (
     create_subtask_branch,
     create_task_snapshot,
     get_snapshot_info,
-    has_active_task,
 )
 from ..output import output_error, output_success
 
@@ -58,15 +57,6 @@ def _claim_task(
     # Get project_id from task
     task = client.get_task(task_id)
     project_id = task.get("project_id", "")
-
-    # Check for existing active task in project
-    active_task = has_active_task(project_id)
-    if active_task and active_task != task_id:
-        output_error(
-            f"Project has active task {active_task}.\n"
-            f"Complete or abandon it first: st done {active_task} or st abandon {active_task}"
-        )
-        raise typer.Exit(1)
 
     # Check for existing checkpoint (resume scenario)
     existing = get_snapshot_info(task_id)
