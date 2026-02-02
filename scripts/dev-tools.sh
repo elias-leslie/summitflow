@@ -79,10 +79,12 @@ case "${1:-}" in
 esac
 
 # Parse remaining flags
+CHANGED_ONLY=0
 for arg in "$@"; do
     case $arg in
         --check|-c) ACTION="check"; TARGET="current" ;;
         --quick|-q) ACTION="quick_check"; TARGET="current" ;;
+        --changed-only|-d) CHANGED_ONLY=1 ;;
         --frontend-only|--fe) ACTION="frontend_only_check"; TARGET="current" ;;
         --fix|-f) ACTION="fix"; TARGET="current" ;;
         --fix-all) ACTION="fix"; TARGET="all" ;;
@@ -100,6 +102,35 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
+
+# Get changed files (staged + unstaged) for a given extension pattern
+# Usage: get_changed_files "py" or get_changed_files "ts|tsx"
+get_changed_files() {
+    local ext_pattern="$1"
+    local base_dir="${2:-$PROJECT_DIR}"
+
+    # Get both staged and unstaged changes
+    (
+        git -C "$base_dir" diff --name-only HEAD 2>/dev/null
+        git -C "$base_dir" diff --name-only --cached 2>/dev/null
+    ) | grep -E "\.($ext_pattern)$" | sort -u | while read -r file; do
+        # Return full path if file exists
+        local full_path="$base_dir/$file"
+        [[ -f "$full_path" ]] && echo "$full_path"
+    done
+}
+
+# Get changed Python files in backend
+get_changed_python_files() {
+    get_changed_files "py" "$PROJECT_DIR" | grep -E "^$BACKEND_PATH" || true
+}
+
+# Get changed TypeScript files in frontend
+get_changed_ts_files() {
+    local frontend_dir="$PROJECT_DIR/frontend"
+    [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
+    get_changed_files "ts|tsx|js|jsx" "$PROJECT_DIR" | grep -E "^$frontend_dir" || true
+}
 
 # Max detail files to keep for rotation (last N runs)
 MAX_DETAIL_FILES=5
@@ -254,7 +285,9 @@ run_lint() {
     local backend=$(get_backend_path "$project_name" "$project_dir")
     local fix_mode="$2"
 
-    echo "LINT:$project_name"
+    local mode_suffix=""
+    [[ "$CHANGED_ONLY" == "1" ]] && mode_suffix=":changed"
+    echo "LINT:$project_name$mode_suffix"
 
     local ruff_bin="${venv}/bin/ruff"
     local ruff_src="venv"
@@ -267,13 +300,22 @@ run_lint() {
         fi
     fi
 
-    # Lint all of backend/ (app + tests)
-    local lint_dir="$backend"
+    # Determine what to lint
+    local lint_targets="$backend"
+    if [[ "$CHANGED_ONLY" == "1" ]]; then
+        local changed_files
+        changed_files=$(get_changed_python_files)
+        if [[ -z "$changed_files" ]]; then
+            echo "OK:no_py_changes"
+            return 0
+        fi
+        lint_targets="$changed_files"
+    fi
 
     # ALWAYS auto-fix safe issues first (import sorting, formatting)
     # This eliminates the fix vs check distinction for safe fixes
-    "$ruff_bin" check "$lint_dir" --fix --quiet 2>/dev/null || true
-    "$ruff_bin" format "$lint_dir" --quiet 2>/dev/null || true
+    echo "$lint_targets" | xargs "$ruff_bin" check --fix --quiet 2>/dev/null || true
+    echo "$lint_targets" | xargs "$ruff_bin" format --quiet 2>/dev/null || true
 
     ensure_output_dir
     local details_file="$OUTPUT_DIR/ruff-details.1.txt"
@@ -284,7 +326,7 @@ run_lint() {
     else
         # Check for remaining unfixable violations
         local output retval=0
-        output=$("$ruff_bin" check "$lint_dir" --output-format=concise 2>&1) || retval=$?
+        output=$(echo "$lint_targets" | xargs "$ruff_bin" check --output-format=concise 2>&1) || retval=$?
         if [[ $retval -eq 0 ]]; then
             rm -f "$details_file"
             echo "OK:violations=0"
@@ -304,7 +346,9 @@ run_types() {
     local venv=$(get_venv_path "$project_name" "$project_dir")
     local backend=$(get_backend_path "$project_name" "$project_dir")
 
-    echo "TYPES:$project_name"
+    local mode_suffix=""
+    [[ "$CHANGED_ONLY" == "1" ]] && mode_suffix=":changed"
+    echo "TYPES:$project_name$mode_suffix"
 
     local mypy_bin="${venv}/bin/mypy"
     if [[ ! -x "$mypy_bin" ]]; then
@@ -315,13 +359,26 @@ run_types() {
     ensure_output_dir
     local details_file="$OUTPUT_DIR/mypy-details.1.txt"
 
-    local app_dir="$backend/app"
-    [[ ! -d "$app_dir" ]] && app_dir="$backend"
+    # Determine what to check
+    local type_targets
+    if [[ "$CHANGED_ONLY" == "1" ]]; then
+        local changed_files
+        changed_files=$(get_changed_python_files)
+        if [[ -z "$changed_files" ]]; then
+            echo "OK:no_py_changes"
+            return 0
+        fi
+        type_targets="$changed_files"
+    else
+        local app_dir="$backend/app"
+        [[ ! -d "$app_dir" ]] && app_dir="$backend"
+        type_targets="$app_dir"
+    fi
 
     cd "$backend"
     # Capture output first, then count errors to avoid pipefail issues
     local output errors
-    output=$("$mypy_bin" "$app_dir" --ignore-missing-imports 2>&1) || true
+    output=$(echo "$type_targets" | xargs "$mypy_bin" --ignore-missing-imports 2>&1) || true
     errors=$(echo "$output" | grep -c "error:") || errors=0
     if [[ "$errors" -eq 0 ]]; then
         rm -f "$details_file"
@@ -371,9 +428,18 @@ quick_check() {
     local project_name=$(basename "$project_dir")
     local errors=0
 
-    echo "QUICK_CHECK:$project_name"
-    run_tool_toon ruff || ((errors++))
-    run_tool_toon mypy || ((errors++))
+    local mode_suffix=""
+    [[ "$CHANGED_ONLY" == "1" ]] && mode_suffix=":changed"
+    echo "QUICK_CHECK:$project_name$mode_suffix"
+
+    # Use run_lint/run_types when in changed-only mode for proper file filtering
+    if [[ "$CHANGED_ONLY" == "1" ]]; then
+        run_lint "$project_dir" || ((errors++))
+        run_types "$project_dir" || ((errors++))
+    else
+        run_tool_toon ruff || ((errors++))
+        run_tool_toon mypy || ((errors++))
+    fi
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
@@ -790,11 +856,17 @@ show_help() {
     echo "  (no args)        Dashboard of all projects (default)"
     echo "  --check, -c      Quality gate: lint, types, tests + frontend (current project)"
     echo "  --quick, -q      Fast check: lint, types + frontend (for commits)"
+    echo "  --changed-only, -d  Only check changed files (combine with -c or -q)"
     echo "  --frontend-only  Frontend only: biome + tsc (skip Python tools)"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
     echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"
     echo "  --help, -h       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  dt --check                 # Full check on all files"
+    echo "  dt --quick --changed-only  # Fast check on changed files only (for commits)"
+    echo "  dt -q -d                   # Same as above, short form"
     echo ""
     echo "Managed: ${MANAGED_PROJECTS[*]}"
 }

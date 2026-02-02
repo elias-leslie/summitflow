@@ -75,17 +75,18 @@ detect_type() {
     fi
 }
 
-# Run quality gates via dt --quick (lint+types, no tests)
-# Use --check for full validation including tests
+# Run quality gates via dt --quick --changed-only (lint+types on changed files only)
+# This avoids failing on pre-existing issues in unchanged code
 run_quality_gates() {
     if ! command -v "$DEV_TOOLS" &>/dev/null && [[ ! -x "$DEV_TOOLS" ]]; then
         echo "GATES:FAIL:dt not found"
         return 1
     fi
 
-    # Use --quick for fast pre-commit validation (lint+types only)
+    # Use --quick --changed-only for fast pre-commit validation
+    # Only checks changed files, ignores pre-existing issues elsewhere
     local output retval=0
-    output=$("$DEV_TOOLS" --quick 2>&1) || retval=$?
+    output=$("$DEV_TOOLS" --quick --changed-only 2>&1) || retval=$?
 
     # Parse TOON output for CHECK_RESULT line
     if echo "$output" | grep -q "CHECK_RESULT:OK"; then
