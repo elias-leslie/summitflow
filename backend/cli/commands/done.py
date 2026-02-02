@@ -84,6 +84,10 @@ def _complete_subtask(
         output_error("Working tree has uncommitted changes.\nCommit first: git commit -m 'message'")
         raise typer.Exit(1)
 
+    # Get project_id from snapshot for per-project worktree paths
+    snapshot_info = get_snapshot_info(task_id)
+    project_id = snapshot_info.get("project_id") if snapshot_info else None
+
     # Mark subtask as passed via API (DB triggers verify steps)
     try:
         client.update_subtask(task_id, subtask_id, passes=True)
@@ -101,7 +105,7 @@ def _complete_subtask(
 
     # Merge subtask branch to task branch
     try:
-        merge_subtask_branch(task_id, subtask_id)
+        merge_subtask_branch(task_id, subtask_id, project_id=project_id)
     except SystemExit:
         # merge_subtask_branch already prints error
         output_error("Merge failed. Resolve conflicts manually, then retry.")
@@ -150,16 +154,19 @@ def _complete_task(
             output_error(f"Failed to complete task: {e.detail}")
         raise typer.Exit(1) from None
 
+    # Get project_id from snapshot for per-project worktree paths
+    project_id = snapshot_info.get("project_id") if snapshot_info else None
+
     # Merge task branch to base branch
     try:
-        merge_task_branch(task_id)
+        merge_task_branch(task_id, project_id=project_id)
     except SystemExit:
         # merge_task_branch already prints error
         output_error("Merge failed. Resolve conflicts manually, then retry.")
         raise typer.Exit(1) from None
 
     # Remove snapshot after successful merge
-    remove_snapshot(task_id)
+    remove_snapshot(task_id, project_id=project_id)
 
     return {
         "task_id": task_id,
