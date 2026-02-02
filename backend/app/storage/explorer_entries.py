@@ -18,90 +18,44 @@ from typing import Any
 from psycopg import sql
 
 from .connection import get_connection
-
-# Standard column list for explorer_entries queries
-_ENTRY_COLUMNS = (
-    "id, project_id, entry_type, path, name, health_status, "
-    "metadata, last_scanned_at, created_at, updated_at"
+from .explorer_helpers import (
+    ALLOWED_SORT_FIELDS,
+    ENTRY_COLUMNS,
+    build_where_clause,
+    row_to_entry,
+    to_iso_string,
 )
 
-# Allowed sort fields for get_entries queries
-_ALLOWED_SORT_FIELDS = {"path", "name", "health_status", "last_scanned_at", "created_at"}
-
-
-def _to_iso_string(value: datetime | None) -> str | None:
-    """Convert datetime to ISO string, returning None if value is None."""
-    return value.isoformat() if value else None
-
-
-def _build_where_clause(
-    conditions: list[str],
-) -> sql.Composable:
-    """Build a WHERE clause from a list of condition strings.
-
-    Joins conditions with AND. If conditions is empty, returns TRUE.
-
-    Args:
-        conditions: List of condition strings like ["project_id = %s", "type = %s"]
-
-    Returns:
-        sql.Composable ready to format into a query
-    """
-    if conditions:
-        return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
-    return sql.SQL("TRUE")
-
-
-def _row_to_entry(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert a database row to an entry dict."""
-    return {
-        "id": row[0],
-        "project_id": row[1],
-        "entry_type": row[2],
-        "path": row[3],
-        "name": row[4],
-        "health_status": row[5],
-        "metadata": row[6] if row[6] else {},
-        "last_scanned_at": _to_iso_string(row[7]),
-        "created_at": _to_iso_string(row[8]),
-        "updated_at": _to_iso_string(row[9]),
-    }
+# Re-export constants for backwards compatibility
+_ALLOWED_SORT_FIELDS = ALLOWED_SORT_FIELDS
+_ENTRY_COLUMNS = ENTRY_COLUMNS
 
 
 def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any]]) -> int:
-    """Upsert explorer entries (insert or update on conflict).
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Entry type ('file', 'table', 'task', 'endpoint')
-        entries: List of entry dicts with keys: path, name, health_status, metadata
-
-    Returns:
-        Number of entries upserted
-    """
+    """Upsert explorer entries (insert or update on conflict)."""
     if not entries:
         return 0
 
     now = datetime.now(UTC)
+    query = """
+        INSERT INTO explorer_entries (
+            project_id, entry_type, path, name, health_status,
+            metadata, last_scanned_at, created_at, updated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (project_id, entry_type, path)
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            health_status = EXCLUDED.health_status,
+            metadata = explorer_entries.metadata || EXCLUDED.metadata,
+            last_scanned_at = EXCLUDED.last_scanned_at,
+            updated_at = EXCLUDED.updated_at
+    """
 
     with get_connection() as conn, conn.cursor() as cur:
-        count = 0
         for entry in entries:
             cur.execute(
-                """
-                INSERT INTO explorer_entries (
-                    project_id, entry_type, path, name, health_status,
-                    metadata, last_scanned_at, created_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (project_id, entry_type, path)
-                DO UPDATE SET
-                    name = EXCLUDED.name,
-                    health_status = EXCLUDED.health_status,
-                    metadata = explorer_entries.metadata || EXCLUDED.metadata,
-                    last_scanned_at = EXCLUDED.last_scanned_at,
-                    updated_at = EXCLUDED.updated_at
-                """,
+                query,
                 (
                     project_id,
                     entry_type,
@@ -114,29 +68,12 @@ def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any
                     now,
                 ),
             )
-            count += 1
-
         conn.commit()
-        return count
+        return len(entries)
 
 
 def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Get explorer entries with optional filters.
-
-    Args:
-        project_id: Project ID for scoping
-        filters: Optional dict with keys:
-            - type: Filter by entry_type
-            - health: Filter by health_status
-            - path: Filter by path prefix (LIKE 'path%')
-            - sort: Sort field (default: 'path')
-            - dir: Sort direction ('asc' or 'desc', default: 'asc')
-            - limit: Max results (default: 1000)
-            - offset: Skip results (default: 0)
-
-    Returns:
-        List of entry dicts
-    """
+    """Get explorer entries with optional filters (type, health, path, sort, dir, limit, offset)."""
     filters = filters or {}
 
     # Build WHERE clause
@@ -155,11 +92,11 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
         conditions.append("ee.path LIKE %s")
         params.append(f"{filters['path']}%")
 
-    where_clause = _build_where_clause(conditions)
+    where_clause = build_where_clause(conditions)
 
     # Sort and pagination
     sort_field = filters.get("sort", "path")
-    if sort_field not in _ALLOWED_SORT_FIELDS:
+    if sort_field not in ALLOWED_SORT_FIELDS:
         sort_field = "path"
 
     sort_dir = "DESC" if filters.get("dir", "asc").lower() == "desc" else "ASC"
@@ -184,61 +121,30 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
         )
         rows = cur.fetchall()
 
-        return [_row_to_entry(row) for row in rows]
+        return [row_to_entry(row) for row in rows]
 
 
 def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | None:
-    """Get a single explorer entry by type and path.
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Entry type
-        path: Entry path
-
-    Returns:
-        Entry dict or None if not found
-    """
+    """Get a single explorer entry by type and path."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            SELECT {_ENTRY_COLUMNS}
-            FROM explorer_entries
-            WHERE project_id = %s AND entry_type = %s AND path = %s
-            """,
+            f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
+            "WHERE project_id = %s AND entry_type = %s AND path = %s",
             (project_id, entry_type, path),
         )
         row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return _row_to_entry(row)
+        return row_to_entry(row) if row else None
 
 
 def get_entry_by_id(entry_id: int) -> dict[str, Any] | None:
-    """Get a single explorer entry by ID.
-
-    Args:
-        entry_id: Entry database ID
-
-    Returns:
-        Entry dict or None if not found
-    """
+    """Get a single explorer entry by ID."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            SELECT {_ENTRY_COLUMNS}
-            FROM explorer_entries
-            WHERE id = %s
-            """,
+            f"SELECT {ENTRY_COLUMNS} FROM explorer_entries WHERE id = %s",
             (entry_id,),
         )
         row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return _row_to_entry(row)
+        return row_to_entry(row) if row else None
 
 
 def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict[str, Any]]:
