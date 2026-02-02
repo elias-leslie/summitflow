@@ -177,9 +177,7 @@ def get_worktree_ports(task_id: str) -> WorktreePorts | None:
         return None
 
 
-def calculate_ports(
-    task_id: str, project_root: str | Path | None = None
-) -> tuple[int, int]:
+def calculate_ports(task_id: str, project_root: str | Path | None = None) -> tuple[int, int]:
     """Calculate deterministic ports for a task without persisting.
 
     Uses hash-based allocation from project service config:
