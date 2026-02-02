@@ -67,8 +67,6 @@ def create_task_worktree(
     try:
         # Import the CLI worktree module
         from cli.lib.worktree import (
-            WorktreeError as CLIWorktreeError,
-            WorktreeInfo,
             create_worktree,
             get_worktree_info,
         )

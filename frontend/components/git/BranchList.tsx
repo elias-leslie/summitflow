@@ -166,9 +166,6 @@ export function BranchList() {
 
   const [isExpanded, setIsExpanded] = useState(true)
 
-  // Auto-collapse if many branches
-  const shouldDefaultCollapse = data && data.count > 10
-
   // Don't render section if no branches
   if (!isLoading && !isError && (!data || data.count === 0)) {
     return null
