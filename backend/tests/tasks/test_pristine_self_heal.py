@@ -84,7 +84,7 @@ class TestPristineSelfHeal:
             response = MagicMock()
             response.content = "Fixed the issues"
             response.session_id = "session-123"
-            client.run_agent.return_value = response
+            client.complete.return_value = response
             mock.return_value = client
             yield client
 
@@ -118,7 +118,7 @@ class TestPristineSelfHeal:
                 result = pristine_self_heal("task-123", "test-project")
 
         assert result is True
-        mock_agent_client.run_agent.assert_called_once()
+        mock_agent_client.complete.assert_called_once()
         mock_commit.assert_called()
 
     def test_pristine_error_count_regression_reverts(
@@ -150,7 +150,7 @@ class TestPristineSelfHeal:
         result = pristine_self_heal("task-123", "test-project")
 
         assert result is False
-        assert mock_agent_client.run_agent.call_count == 2
+        assert mock_agent_client.complete.call_count == 2
 
     def test_pristine_no_project_path(self):
         """If project has no root_path, return False."""

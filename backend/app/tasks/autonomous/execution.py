@@ -1,6 +1,7 @@
-"""Subtask execution task using Agent Hub run_agent().
+"""Subtask execution task using Agent Hub complete() with agentic mode.
 
 Executes subtasks with fresh context per subtask to prevent context rot.
+Uses complete() with execute_tools=True for agentic execution.
 """
 
 from __future__ import annotations
@@ -330,11 +331,12 @@ The codebase has quality gate failures that must be fixed before task execution.
 Fix these issues now.
 """
 
-            response = client.run_agent(
-                task=fix_prompt,
+            response = client.complete(
+                messages=[{"role": "user", "content": fix_prompt}],
                 agent_slug="coder",
                 working_dir=str(repo_path),
                 max_turns=20,
+                execute_tools=True,
                 project_id=project_id,
                 use_memory=True,
             )
@@ -515,7 +517,7 @@ def _emit_progress_log(
     Args:
         task_id: Task ID for event correlation
         subtask_id: Subtask being executed
-        progress_log: List of AgentProgress entries from run_agent response
+        progress_log: List of AgentProgress entries from agentic completion response
         project_id: Project ID for event scoping
     """
     if not progress_log:
@@ -651,7 +653,7 @@ def start_execution(
     """Start autonomous execution of a task.
 
     Executes subtasks in order with fresh context per subtask.
-    Uses run_agent() with the worker agent for implementation.
+    Uses complete() with execute_tools=True for agentic execution.
 
     Args:
         task_id: The task ID to execute
@@ -947,14 +949,18 @@ def _execute_subtask(
             prompt_length=len(prompt),
             prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
         )
-        logger.info("Calling Agent Hub run_agent", agent_slug=agent_slug, max_turns=30)
-        response = client.run_agent(
-            task=prompt,
+        logger.info(
+            "Calling Agent Hub complete (agentic mode)", agent_slug=agent_slug, max_turns=30
+        )
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
             agent_slug=agent_slug,
             working_dir=project_path,
             max_turns=30,
+            execute_tools=True,
             project_id=project_id,
             use_memory=True,
+            trace_id=task_id,
         )
         # Store session ID for continuation in retry attempts
         agent_session_id = response.session_id
@@ -1172,14 +1178,16 @@ def _execute_subtask(
             )
 
             try:
-                response = client.run_agent(
-                    task=fix_prompt,
+                response = client.complete(
+                    messages=[{"role": "user", "content": fix_prompt}],
                     agent_slug=agent_slug,
                     working_dir=project_path,
                     max_turns=15,  # Shorter for fix attempts
+                    execute_tools=True,
                     project_id=project_id,
                     use_memory=True,
                     resume_session_id=agent_session_id,  # Continue from previous session
+                    trace_id=task_id,
                 )
                 # Update session ID for next iteration
                 agent_session_id = response.session_id or agent_session_id
