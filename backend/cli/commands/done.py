@@ -33,11 +33,18 @@ def _is_subtask_id(id_str: str) -> bool:
     return parts[0].isdigit() and parts[1].isdigit()
 
 
-def _is_working_tree_clean() -> bool:
-    """Check if git working tree is clean."""
+def _is_working_tree_clean(path: str | None = None) -> bool:
+    """Check if git working tree is clean.
+
+    Args:
+        path: Directory to check. If None, checks current directory.
+    """
+    cmd = ["git", "status", "--porcelain"]
+    if path:
+        cmd = ["git", "-C", path, "status", "--porcelain"]
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
+            cmd,
             capture_output=True,
             text=True,
             check=True,
@@ -128,15 +135,28 @@ def _complete_task(
 
     DB triggers verify all subtasks passed and QA signoff.
     """
-    # Check working tree is clean
-    if not _is_working_tree_clean():
-        output_error("Working tree has uncommitted changes.\nCommit first: git commit -m 'message'")
-        raise typer.Exit(1)
-
-    # Check for existing checkpoint
+    # Check for existing checkpoint FIRST (need worktree path for clean check)
     snapshot_info = get_snapshot_info(task_id)
     if not snapshot_info:
         output_error(f"No checkpoint found for {task_id}. Was it claimed?")
+        raise typer.Exit(1)
+
+    # Check working tree is clean - check WORKTREE, not main repo
+    worktree_path = snapshot_info.get("worktree_path")
+    if worktree_path and not _is_working_tree_clean(worktree_path):
+        output_error(
+            f"Worktree has uncommitted changes.\n"
+            f"  Path: {worktree_path}\n"
+            f"Commit first: cd {worktree_path} && git commit -m 'message'"
+        )
+        raise typer.Exit(1)
+
+    # Also check main repo - st done runs from main and needs it clean for merge
+    if not _is_working_tree_clean():
+        output_error(
+            "Main repo has uncommitted changes.\n"
+            "Commit or stash first before completing task."
+        )
         raise typer.Exit(1)
 
     # Mark task as completed via API (DB triggers verify all subtasks)

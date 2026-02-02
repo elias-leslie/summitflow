@@ -35,10 +35,34 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Project detection
+# Project detection - handles both main repos and worktrees
 PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 PROJECT_NAME=$(basename "$PROJECT_DIR")
-VENV_PATH=$(get_venv_path "$PROJECT_NAME" "$PROJECT_DIR")
+MAIN_REPO_DIR="$PROJECT_DIR"
+
+# Detect SummitFlow worktree pattern: ~/.local/share/st/worktrees/<project>/<task>/
+# If in a worktree, use the MAIN repo for venv (worktrees don't have their own venv)
+WORKTREE_PATTERN="$HOME/.local/share/st/worktrees"
+if [[ "$PROJECT_DIR" == "$WORKTREE_PATTERN"/* ]]; then
+    # Extract project name from worktree path (the directory after worktrees/)
+    WORKTREE_REL="${PROJECT_DIR#$WORKTREE_PATTERN/}"
+    PROJECT_NAME="${WORKTREE_REL%%/*}"
+    # Get main repo path from SummitFlow project registry
+    MAIN_REPO_DIR="$HOME/$PROJECT_NAME"
+    if [[ ! -d "$MAIN_REPO_DIR" ]]; then
+        # Fallback: check common locations
+        for candidate in "/home/kasadis/$PROJECT_NAME" "/home/kasadis/projects/$PROJECT_NAME"; do
+            if [[ -d "$candidate" ]]; then
+                MAIN_REPO_DIR="$candidate"
+                break
+            fi
+        done
+    fi
+fi
+
+# Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)
+VENV_PATH=$(get_venv_path "$PROJECT_NAME" "$MAIN_REPO_DIR")
+# Backend path should be in the WORKTREE (or current dir) for linting
 BACKEND_PATH=$(get_backend_path "$PROJECT_NAME" "$PROJECT_DIR")
 
 # Output directory for TOON details
