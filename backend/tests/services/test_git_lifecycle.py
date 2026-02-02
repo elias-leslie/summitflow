@@ -35,9 +35,13 @@ class TestTaskLifecycleState:
         assert actual == expected
 
     def test_terminal_states(self):
-        """Verify terminal states are completed and cancelled."""
+        """Verify terminal states are completed, cancelled, and abandoned."""
         terminal = TaskLifecycleState.terminal_states()
-        assert terminal == {TaskLifecycleState.completed, TaskLifecycleState.cancelled}
+        assert terminal == {
+            TaskLifecycleState.completed,
+            TaskLifecycleState.cancelled,
+            TaskLifecycleState.abandoned,
+        }
 
     def test_active_states(self):
         """Verify active states are running and ai_reviewing."""
@@ -72,29 +76,32 @@ class TestValidTransitions:
         }
 
     def test_running_transitions(self):
-        """Running can go to pr_created, failed, blocked, or cancelled."""
+        """Running can go to pr_created, failed, blocked, cancelled, or abandoned."""
         valid = VALID_TRANSITIONS[TaskLifecycleState.running]
         assert valid == {
             TaskLifecycleState.pr_created,
             TaskLifecycleState.failed,
             TaskLifecycleState.blocked,
             TaskLifecycleState.cancelled,
+            TaskLifecycleState.abandoned,
         }
 
     def test_ai_reviewing_transitions(self):
-        """AI reviewing can go to completed, human_review, running, or failed."""
+        """AI reviewing can go to completed, human_review, running, failed, or abandoned."""
         valid = VALID_TRANSITIONS[TaskLifecycleState.ai_reviewing]
         assert valid == {
             TaskLifecycleState.completed,
             TaskLifecycleState.human_review,
             TaskLifecycleState.running,
             TaskLifecycleState.failed,
+            TaskLifecycleState.abandoned,
         }
 
     def test_terminal_states_no_transitions(self):
         """Terminal states have no valid transitions."""
         assert VALID_TRANSITIONS[TaskLifecycleState.completed] == set()
         assert VALID_TRANSITIONS[TaskLifecycleState.cancelled] == set()
+        assert VALID_TRANSITIONS[TaskLifecycleState.abandoned] == set()
 
     def test_all_states_have_transitions_defined(self):
         """Every state should have an entry in VALID_TRANSITIONS."""
