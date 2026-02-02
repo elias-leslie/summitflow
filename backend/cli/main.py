@@ -13,6 +13,7 @@ from .commands import (
     backup,
     checkpoints,
     claim,
+    cleanup,
     close,
     complete,
     deps,

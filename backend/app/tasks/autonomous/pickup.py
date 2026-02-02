@@ -5,6 +5,11 @@ Supports two dispatch modes:
 2. Polling: Fallback Beat task that checks every 2 hours for missed tasks
 
 The event-driven path is preferred for low-latency dispatch.
+
+Worktree Isolation:
+When dispatching tasks to execution, a worktree is created at
+~/.summitflow/worktrees/<task-id>/ with branch <task-id>/main.
+This ensures each task runs in isolation without affecting the main branch.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from app.celery_app import celery_app
 from app.logging_config import get_logger
 from app.scheduling import get_dispatcher
 from app.scheduling.dispatch import DispatchEvent
+from app.services.worktree import create_task_worktree
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
@@ -195,6 +201,21 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 logger.info("Dispatched to planning", task_id=task_id)
 
             elif stage == "execution":
+                # Create worktree for task isolation before execution
+                worktree = create_task_worktree(task_id, project_id)
+                if worktree:
+                    logger.info(
+                        "Created worktree for execution",
+                        task_id=task_id,
+                        worktree_path=str(worktree.path),
+                        branch=worktree.branch,
+                    )
+                else:
+                    logger.warning(
+                        "Worktree creation failed, using project root",
+                        task_id=task_id,
+                    )
+
                 task_store.update_task_status(task_id, "running")
                 start_execution.delay(task_id, project_id)
                 dispatched["execution"] += 1
