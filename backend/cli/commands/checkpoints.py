@@ -21,12 +21,42 @@ from ..output_context import OutputContext
 app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup stale artifacts")
 
 
-def _auto_cleanup_safe_items() -> tuple[int, int, int]:
-    """Auto-cleanup stale items. Returns (stale_meta, legacy_sql, orphan_branches)."""
+def _get_branch_unmerged_commits(branch: str) -> list[dict]:
+    """Get unmerged commits for a branch (commits not in main)."""
+    commits = []
+    try:
+        result = subprocess.run(
+            ["git", "log", f"main..{branch}", "--oneline", "--format=%H|%s|%ar"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in result.stdout.strip().splitlines():
+            if "|" in line:
+                parts = line.split("|", 2)
+                if len(parts) == 3:
+                    commits.append({
+                        "hash": parts[0][:8],
+                        "message": parts[1],
+                        "age": parts[2],
+                    })
+    except subprocess.CalledProcessError:
+        pass
+    return commits
+
+
+def _auto_cleanup_safe_items() -> tuple[int, int, int, list[dict]]:
+    """Auto-cleanup clearly safe items.
+
+    Returns (stale_meta, legacy_sql, cleaned_branches, branches_needing_review).
+
+    Branches needing review have unmerged commits and require judgment.
+    """
     snapshots_dir = Path.cwd() / ".st" / "snapshots"
     cleaned_meta = 0
     cleaned_sql = 0
     cleaned_branches = 0
+    branches_needing_review: list[dict] = []
 
     # Find and clean stale metadata (no worktree AND no branch)
     if snapshots_dir.exists():
@@ -57,21 +87,30 @@ def _auto_cleanup_safe_items() -> tuple[int, int, int]:
             except Exception:
                 pass
 
-    # Auto-delete orphaned branches (task-*/main without metadata)
-    # No metadata = task was abandoned/completed = safe to delete
+    # Process orphaned branches - auto-delete only if 0 unmerged commits
     for branch in _get_orphaned_branches():
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", branch],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            cleaned_branches += 1
-        except subprocess.CalledProcessError:
-            pass
+        commits = _get_branch_unmerged_commits(branch)
 
-    return (cleaned_meta, cleaned_sql, cleaned_branches)
+        if not commits:
+            # 0 unmerged commits = safe to delete (already merged or identical to main)
+            try:
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                cleaned_branches += 1
+            except subprocess.CalledProcessError:
+                pass
+        else:
+            # Has unmerged commits - needs review
+            branches_needing_review.append({
+                "branch": branch,
+                "commits": commits,
+            })
+
+    return (cleaned_meta, cleaned_sql, cleaned_branches, branches_needing_review)
 
 
 @app.callback(invoke_without_command=True)
@@ -100,7 +139,7 @@ def checkpoints_callback(
         return
 
     # Auto-cleanup stale items BEFORE listing (so stale items don't appear)
-    cleaned_meta, cleaned_sql, cleaned_branches = _auto_cleanup_safe_items()
+    cleaned_meta, cleaned_sql, cleaned_branches, needs_review = _auto_cleanup_safe_items()
 
     # Now get active checkpoints (after cleanup)
     checkpoints = get_active_checkpoints(project)
@@ -123,6 +162,24 @@ def checkpoints_callback(
             if cleaned_branches:
                 parts.append(f"{cleaned_branches} orphaned branches")
             print(f"  (auto-cleaned: {', '.join(parts)})")
+
+        # Report branches needing review with instructions
+        if needs_review:
+            print()
+            print(f"ACTION REQUIRED - Branches with unmerged commits [{len(needs_review)}]:")
+            for item in needs_review:
+                branch = item["branch"]
+                commits = item["commits"]
+                print(f"  {branch} ({len(commits)} commit{'s' if len(commits) != 1 else ''}):")
+                for commit in commits[:5]:  # Show max 5 commits
+                    print(f"    - {commit['message']} ({commit['age']})")
+                if len(commits) > 5:
+                    print(f"    - ... and {len(commits) - 5} more")
+            print()
+            print("INSTRUCTIONS: Review each branch above:")
+            print("  1. If commits are test artifacts or abandoned work → delete: git branch -D <branch>")
+            print("  2. If commits appear to be valuable work → ask user before deleting")
+            print("  3. If uncertain → ask user for guidance")
     else:
         output_json(
             {
