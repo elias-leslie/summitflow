@@ -154,8 +154,7 @@ def _complete_task(
     # Also check main repo - st done runs from main and needs it clean for merge
     if not _is_working_tree_clean():
         output_error(
-            "Main repo has uncommitted changes.\n"
-            "Commit or stash first before completing task."
+            "Main repo has uncommitted changes.\nCommit or stash first before completing task."
         )
         raise typer.Exit(1)
 

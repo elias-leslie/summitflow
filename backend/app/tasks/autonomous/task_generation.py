@@ -157,13 +157,6 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_bug_tasks")
-def generate_bug_tasks(project_id: str) -> dict[str, Any]:
-    """Generate bug tasks from runtime errors (DEPRECATED)."""
-    logger.info(f"generate_bug_tasks disabled for {project_id}")
-    return {"status": "disabled", "reason": "Use self-healing system instead"}
-
-
 @celery_app.task(name="summitflow.generate_schema_tasks")
 def generate_schema_tasks(project_id: str) -> dict[str, Any]:
     """Generate schema tasks from database table violations."""

@@ -72,7 +72,9 @@ def count_python_metrics(filepath: Path) -> FileMetrics:
         lines = content.splitlines()
 
         # Count functions (def)
-        functions = len(re.findall(r"^\s*(?:async\s+)?def\s+\w+", content, re.MULTILINE))
+        functions = len(
+            re.findall(r"^\s*(?:async\s+)?def\s+\w+", content, re.MULTILINE)
+        )
 
         # Count classes
         classes = len(re.findall(r"^\s*class\s+\w+", content, re.MULTILINE))
@@ -111,7 +113,9 @@ def count_typescript_metrics(filepath: Path) -> FileMetrics:
         )
 
         # Count classes/components
-        classes = len(re.findall(r"^\s*(?:export\s+)?class\s+\w+", content, re.MULTILINE))
+        classes = len(
+            re.findall(r"^\s*(?:export\s+)?class\s+\w+", content, re.MULTILINE)
+        )
         classes += len(
             re.findall(
                 r"^\s*(?:export\s+)?(?:const|function)\s+[A-Z]\w*",
@@ -136,9 +140,7 @@ def count_typescript_metrics(filepath: Path) -> FileMetrics:
         return FileMetrics()
 
 
-def calculate_complexity(
-    lines: int, functions: int, classes: int, imports: int
-) -> int:
+def calculate_complexity(lines: int, functions: int, classes: int, imports: int) -> int:
     """Calculate heuristic complexity score."""
     score = 0
 
@@ -232,24 +234,32 @@ def get_refactor_targets(files: dict[str, FileEntry]) -> list[dict[str, Any]]:
 
         if reasons:
             priority = (
-                "high" if metrics.complexity_score > 15 or metrics.lines > 500 else "medium"
+                "high"
+                if metrics.complexity_score > 15 or metrics.lines > 500
+                else "medium"
             )
             # Calculate priority score for sorting (higher = more urgent)
-            priority_score = metrics.complexity_score + (metrics.lines // 50) + metrics.functions
-            targets.append({
-                "file": path,
-                "reason": ", ".join(reasons),
-                "priority": priority,
-                "priority_score": priority_score,
-                "metrics": {
-                    "lines": metrics.lines,
-                    "functions": metrics.functions,
-                    "classes": metrics.classes,
-                    "complexity": metrics.complexity_score,
-                },
-            })
+            priority_score = (
+                metrics.complexity_score + (metrics.lines // 50) + metrics.functions
+            )
+            targets.append(
+                {
+                    "file": path,
+                    "reason": ", ".join(reasons),
+                    "priority": priority,
+                    "priority_score": priority_score,
+                    "metrics": {
+                        "lines": metrics.lines,
+                        "functions": metrics.functions,
+                        "classes": metrics.classes,
+                        "complexity": metrics.complexity_score,
+                    },
+                }
+            )
 
-    return sorted(targets, key=lambda x: (-x["priority_score"], x["priority"] != "high"))
+    return sorted(
+        targets, key=lambda x: (-x["priority_score"], x["priority"] != "high")
+    )
 
 
 def init_project_index(output_path: Path, project_root: Path) -> None:
@@ -356,10 +366,14 @@ def generate_report(index_path: Path) -> None:
     )
 
     baseline_complexity = sum(
-        f["baseline"]["complexity_score"] for f in index["files"].values() if f["baseline"]
+        f["baseline"]["complexity_score"]
+        for f in index["files"].values()
+        if f["baseline"]
     )
     current_complexity = sum(
-        f["current"]["complexity_score"] for f in index["files"].values() if f["current"]
+        f["current"]["complexity_score"]
+        for f in index["files"].values()
+        if f["current"]
     )
 
     # Find top improvements
@@ -407,11 +421,17 @@ def generate_report(index_path: Path) -> None:
 
     line_change = baseline_lines - current_lines
     line_pct = (line_change / baseline_lines * 100) if baseline_lines else 0
-    print(f"Lines of code:     {baseline_lines:,} -> {current_lines:,} ({line_change:+,}, {line_pct:+.1f}%)")
+    print(
+        f"Lines of code:     {baseline_lines:,} -> {current_lines:,} ({line_change:+,}, {line_pct:+.1f}%)"
+    )
 
     complexity_change = baseline_complexity - current_complexity
-    complexity_pct = (complexity_change / baseline_complexity * 100) if baseline_complexity else 0
-    print(f"Total complexity:  {baseline_complexity} -> {current_complexity} ({complexity_change:+}, {complexity_pct:+.1f}%)")
+    complexity_pct = (
+        (complexity_change / baseline_complexity * 100) if baseline_complexity else 0
+    )
+    print(
+        f"Total complexity:  {baseline_complexity} -> {current_complexity} ({complexity_change:+}, {complexity_pct:+.1f}%)"
+    )
 
     summary = index.get("summary", {})
     if summary.get("type_errors_fixed"):
@@ -429,8 +449,12 @@ def generate_report(index_path: Path) -> None:
         print("-" * 40)
         for i, imp in enumerate(improvements[:10], 1):
             print(f"{i}. {imp['file']}")
-            print(f"   Lines: {imp['lines_before']} -> {imp['lines_after']} ({imp['lines_before'] - imp['lines_after']:+})")
-            print(f"   Complexity: {imp['complexity_before']} -> {imp['complexity_after']}")
+            print(
+                f"   Lines: {imp['lines_before']} -> {imp['lines_after']} ({imp['lines_before'] - imp['lines_after']:+})"
+            )
+            print(
+                f"   Complexity: {imp['complexity_before']} -> {imp['complexity_after']}"
+            )
             print()
 
     # Show remaining refactor targets

@@ -21,8 +21,9 @@ from pathlib import Path
 # Add backend to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.storage.connection import get_connection
 from app.storage.criteria import get_next_criterion_id
+
+from app.storage.connection import get_connection
 
 logging.basicConfig(
     level=logging.INFO,

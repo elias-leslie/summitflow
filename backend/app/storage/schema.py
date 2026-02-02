@@ -398,9 +398,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
             "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
             "tasks",
         ),
-        # DEPRECATED: Subtask details column - superseded by step-level specs (migration 062)
-        # Kept for backward compatibility but no longer populated by st import
-        ("details JSONB", "task_subtasks"),
+        # Note: Subtask details column dropped in migration 800fff09a547 (was deprecated, never used)
         # Step-level specs - implementation details per step, populated from plan.json (migration 062)
         ("spec JSONB", "task_subtask_steps"),
         # updated_at columns for tracking modifications (migration 077)

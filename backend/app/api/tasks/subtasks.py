@@ -199,7 +199,6 @@ async def create_subtask_endpoint(
         display_order=request.display_order,
         phase=request.phase,
         steps=steps,
-        details=request.details,
     )
 
     # Convert steps (list of dicts) to steps (list of strings) for response

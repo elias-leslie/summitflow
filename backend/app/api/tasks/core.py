@@ -782,7 +782,6 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                                 "description": s.description,
                                 "steps": steps_as_dicts,
                                 "display_order": s.display_order,
-                                "details": s.details,
                             }
                         )
                     created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)

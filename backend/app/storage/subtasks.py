@@ -17,15 +17,15 @@ from .steps import bulk_create_steps
 
 logger = logging.getLogger(__name__)
 
-# Column list for all subtask SELECT/RETURNING queries (11 columns)
+# Column list for all subtask SELECT/RETURNING queries (10 columns)
 # Note: steps column was dropped in migration 045 - steps are in task_subtask_steps table
-# Note: details column added in migration 061 - stores rich implementation specs
+# Note: details column was dropped in migration 800fff09a547 - was deprecated, never used
 # Note: citations_acknowledged_at added in migration 100 - tracks memory reflection
 SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description,
-    details, passes, passed_at, display_order, created_at, citations_acknowledged_at"""
+    passes, passed_at, display_order, created_at, citations_acknowledged_at"""
 
 # Expected column count for row validation
-EXPECTED_SUBTASK_COLUMNS = 11
+EXPECTED_SUBTASK_COLUMNS = 10
 
 
 def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
@@ -39,9 +39,9 @@ def _generate_subtask_id(task_id: str, subtask_id: str) -> str:
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a subtask dict.
 
-    Column order (11 columns):
+    Column order (10 columns):
         id, task_id, subtask_id, phase, description,
-        details, passes, passed_at, display_order, created_at, citations_acknowledged_at
+        passes, passed_at, display_order, created_at, citations_acknowledged_at
 
     Note: steps field is always [] - steps are in task_subtask_steps table
     """
@@ -55,13 +55,12 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "subtask_id": row[2],
         "phase": row[3],
         "description": row[4],
-        "details": row[5],  # Rich implementation spec from plan.json
         # Note: "steps" field is populated separately when include_steps=True
-        "passes": row[6],
-        "passed_at": row[7].isoformat() if row[7] else None,
-        "display_order": row[8],
-        "created_at": row[9].isoformat() if row[9] else None,
-        "citations_acknowledged_at": row[10].isoformat() if row[10] else None,
+        "passes": row[5],
+        "passed_at": row[6].isoformat() if row[6] else None,
+        "display_order": row[7],
+        "created_at": row[8].isoformat() if row[8] else None,
+        "citations_acknowledged_at": row[9].isoformat() if row[9] else None,
     }
 
 
@@ -72,7 +71,6 @@ def create_subtask(
     display_order: int,
     phase: str | None = None,
     steps: list[str | dict[str, Any]] | None = None,
-    details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask.
 
@@ -86,7 +84,6 @@ def create_subtask(
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
         steps: Optional list of steps - strings or {description, spec} dicts
-        details: Optional rich implementation spec from plan.json (deprecated)
 
     Returns:
         The created subtask dict.
@@ -94,24 +91,20 @@ def create_subtask(
     Raises:
         Exception: If task_id doesn't exist (FK constraint violation)
     """
-    import json
-
     if steps is None:
         steps = []
 
     table_id = _generate_subtask_id(task_id, subtask_id)
-    details_json = json.dumps(details) if details else None
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                       details, display_order)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                       display_order)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (task_id, subtask_id) DO UPDATE SET
                 phase = EXCLUDED.phase,
                 description = EXCLUDED.description,
-                details = EXCLUDED.details,
                 display_order = EXCLUDED.display_order
             RETURNING {SUBTASK_COLUMNS}
             """,
@@ -121,7 +114,6 @@ def create_subtask(
                 subtask_id,
                 phase,
                 description,
-                details_json,
                 display_order,
             ),
         )
@@ -470,7 +462,6 @@ def bulk_create_subtasks(
             - phase: str (optional)
             - steps: list[str | dict] (optional) - strings or {description, spec} objects
             - display_order: int (optional, auto-assigned if missing)
-            - details: dict (optional) - deprecated, use step-level specs
 
     Returns:
         List of created subtask dicts.
@@ -478,8 +469,6 @@ def bulk_create_subtasks(
     Raises:
         Exception: If task_id doesn't exist or on DB error.
     """
-    import json
-
     if not subtasks:
         return []
 
@@ -492,18 +481,15 @@ def bulk_create_subtasks(
             table_id = _generate_subtask_id(task_id, subtask_id)
             display_order = subtask.get("display_order", idx)
             steps = subtask.get("steps", [])
-            details = subtask.get("details")
-            details_json = json.dumps(details) if details else None
 
             cur.execute(
                 f"""
                 INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                           details, display_order)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                           display_order)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (task_id, subtask_id) DO UPDATE SET
                     phase = EXCLUDED.phase,
                     description = EXCLUDED.description,
-                    details = EXCLUDED.details,
                     display_order = EXCLUDED.display_order
                 RETURNING {SUBTASK_COLUMNS}
                 """,
@@ -513,7 +499,6 @@ def bulk_create_subtasks(
                     subtask_id,
                     subtask.get("phase"),
                     subtask["description"],
-                    details_json,
                     display_order,
                 ),
             )

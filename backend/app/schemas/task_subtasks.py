@@ -30,9 +30,6 @@ class SubtaskCreate(BaseModel):
         default_factory=list, description="Steps as strings or {description, spec} objects"
     )
     display_order: int = Field(default=0, ge=0, description="Order for display")
-    details: dict[str, Any] | None = Field(
-        default=None, description="Rich implementation spec from plan.json (deprecated)"
-    )
     depends_on: list[str] | None = Field(
         default=None,
         description="List of subtask IDs this subtask depends on (e.g., ['1.1', '1.2'])",
@@ -47,7 +44,6 @@ class SubtaskResponse(BaseModel):
     subtask_id: str
     phase: str | None
     description: str
-    details: dict[str, Any] | None = None
     steps: list[str]
     passes: bool
     passed_at: str | None
