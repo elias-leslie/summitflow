@@ -10,6 +10,7 @@ import {
   GitBranch,
   RefreshCw,
 } from 'lucide-react'
+import { BranchList } from '@/components/git/BranchList'
 import { WorktreeList } from '@/components/git/WorktreeList'
 import { fetchGitStatus, type RepoStatus } from '@/lib/api'
 
@@ -184,6 +185,9 @@ export default function GitPage() {
 
       {/* Active Worktrees Section */}
       <WorktreeList />
+
+      {/* Branch List Section */}
+      <BranchList />
 
       {/* Summary */}
       {gitStatus && (
