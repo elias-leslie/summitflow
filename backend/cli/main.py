@@ -69,6 +69,7 @@ CHECKPOINT (claim -> done | close | abandon):
   abandon <subtask> -t <task>              # abandon subtask, delete branch
   abandon <task> [--force]                 # abandon task, restore DB, delete branches
   checkpoints [-p project] [-d task]       # show active checkpoints
+  checkpoints cleanup [--force] [--branches]  # cleanup stale artifacts
 
 SUBTASK:
   subtask list <task-id>
