@@ -145,7 +145,6 @@ def _claim_task(
         "task_id": task_id,
         "action": "claimed",
         "branch": f"{task_id}/main",
-        "snapshot": meta.snapshot_path,
         "base_branch": meta.base_branch,
         "worktree_path": meta.worktree_path,
         "backend_port": meta.backend_port,
@@ -240,7 +239,6 @@ def claim_command(
         else:
             output_success(f"Task {id} claimed. Checkpoint created.")
             typer.echo(f"  Branch: {result['branch']}")
-            typer.echo(f"  Snapshot: {result['snapshot']}")
             if result.get("worktree_path"):
                 typer.echo(f"  Worktree: {result['worktree_path']}")
                 typer.echo("\nTo work in isolation:")

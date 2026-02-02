@@ -35,11 +35,13 @@ def _get_branch_unmerged_commits(branch: str) -> list[dict]:
             if "|" in line:
                 parts = line.split("|", 2)
                 if len(parts) == 3:
-                    commits.append({
-                        "hash": parts[0][:8],
-                        "message": parts[1],
-                        "age": parts[2],
-                    })
+                    commits.append(
+                        {
+                            "hash": parts[0][:8],
+                            "message": parts[1],
+                            "age": parts[2],
+                        }
+                    )
     except subprocess.CalledProcessError:
         pass
     return commits
@@ -105,10 +107,12 @@ def _auto_cleanup_safe_items() -> tuple[int, int, int, list[dict]]:
                 pass
         else:
             # Has unmerged commits - needs review
-            branches_needing_review.append({
-                "branch": branch,
-                "commits": commits,
-            })
+            branches_needing_review.append(
+                {
+                    "branch": branch,
+                    "commits": commits,
+                }
+            )
 
     return (cleaned_meta, cleaned_sql, cleaned_branches, branches_needing_review)
 
@@ -177,7 +181,9 @@ def checkpoints_callback(
                     print(f"    - ... and {len(commits) - 5} more")
             print()
             print("INSTRUCTIONS: Review each branch above:")
-            print("  1. If commits are test artifacts or abandoned work → delete: git branch -D <branch>")
+            print(
+                "  1. If commits are test artifacts or abandoned work → delete: git branch -D <branch>"
+            )
             print("  2. If commits appear to be valuable work → ask user before deleting")
             print("  3. If uncertain → ask user for guidance")
     else:
@@ -187,7 +193,7 @@ def checkpoints_callback(
                     {
                         "task_id": cp.task_id,
                         "project_id": cp.project_id,
-                        "snapshot_path": cp.snapshot_path,
+                        "worktree_path": cp.worktree_path,
                         "base_branch": cp.base_branch,
                         "created_at": cp.created_at,
                         "claimed_by": cp.claimed_by,
@@ -294,7 +300,7 @@ def _format_details(out: OutputContext, task_id: str) -> None:
     if out.is_compact:
         print(f"CHECKPOINT:{task_id}")
         print(f"  Project: {info.get('project_id', '?')}")
-        print(f"  Snapshot: {info.get('snapshot_path', '?')} ({info.get('size', '?')})")
+        print(f"  Worktree: {info.get('worktree_path', '?')}")
         print(f"  Base branch: {info.get('base_branch', '?')}")
         print(f"  Created: {info.get('created_at', '?')} ({age})")
         print(f"  Claimed by: {info.get('claimed_by', '?')}")
@@ -338,5 +344,3 @@ def _get_orphaned_branches() -> list[str]:
     except subprocess.CalledProcessError:
         pass
     return orphaned
-
-
