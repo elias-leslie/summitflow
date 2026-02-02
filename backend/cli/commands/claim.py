@@ -230,10 +230,10 @@ def claim_command(
         if result.get("action") == "resumed":
             output_success(f"Task {id} resumed. Branch: {result['branch']}")
             if result.get("worktree_path"):
-                typer.echo(f"\nTo work in isolation:")
+                typer.echo("\nTo work in isolation:")
                 typer.echo(f"  cd {result['worktree_path']}")
                 if result.get("backend_port") and result.get("frontend_port"):
-                    typer.echo(f"\nTo start isolated services:")
+                    typer.echo("\nTo start isolated services:")
                     typer.echo(f"  worktree-services.sh start {id}")
                     typer.echo(f"  Backend:  http://localhost:{result['backend_port']}")
                     typer.echo(f"  Frontend: http://localhost:{result['frontend_port']}")
@@ -243,10 +243,10 @@ def claim_command(
             typer.echo(f"  Snapshot: {result['snapshot']}")
             if result.get("worktree_path"):
                 typer.echo(f"  Worktree: {result['worktree_path']}")
-                typer.echo(f"\nTo work in isolation:")
+                typer.echo("\nTo work in isolation:")
                 typer.echo(f"  cd {result['worktree_path']}")
                 if result.get("backend_port") and result.get("frontend_port"):
-                    typer.echo(f"\nTo start isolated services:")
+                    typer.echo("\nTo start isolated services:")
                     typer.echo(f"  worktree-services.sh start {id}")
                     typer.echo(f"  Backend:  http://localhost:{result['backend_port']}")
                     typer.echo(f"  Frontend: http://localhost:{result['frontend_port']}")

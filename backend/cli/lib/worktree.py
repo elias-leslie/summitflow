@@ -2,7 +2,7 @@
 
 Provides git worktree operations for st claim workflow.
 Each claimed task gets an isolated worktree at:
-    ~/.summitflow/worktrees/<task-id>/
+    ~/.local/share/st/worktrees/<project-id>/<task-id>/
 
 With the existing branch naming:
     <task-id>/main
@@ -10,13 +10,12 @@ With the existing branch naming:
 
 from __future__ import annotations
 
-import os
+import contextlib
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 class WorktreeError(Exception):
@@ -34,29 +33,42 @@ class WorktreeInfo:
     task_id: str
     base_branch: str
     is_active: bool = True
+    project_id: str | None = None
 
 
-def get_worktrees_base_dir() -> Path:
-    """Returns ~/.summitflow/worktrees directory.
+def get_worktrees_base_dir(project_id: str | None = None) -> Path:
+    """Returns worktrees directory for a project.
+
+    Path format: ~/.local/share/st/worktrees/<project-id>/
+    If project_id is None, returns the base worktrees directory.
 
     Creates the directory if it doesn't exist.
+
+    Args:
+        project_id: Project identifier. If None, returns base worktrees dir.
+
+    Returns:
+        Path to the worktrees directory (project-specific if project_id given).
     """
-    base_dir = Path.home() / ".summitflow" / "worktrees"
+    base_dir = Path.home() / ".local" / "share" / "st" / "worktrees"
+    if project_id:
+        base_dir = base_dir / project_id
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir
 
 
-def get_worktree_path(task_id: str) -> Path:
+def get_worktree_path(task_id: str, project_id: str | None = None) -> Path:
     """Returns the path for a specific task's worktree.
 
     Args:
         task_id: The task identifier.
+        project_id: Project identifier for per-project paths.
 
     Returns:
         Path to the worktree directory.
     """
     sanitized = _sanitize_task_id(task_id)
-    return get_worktrees_base_dir() / sanitized
+    return get_worktrees_base_dir(project_id) / sanitized
 
 
 def _sanitize_task_id(task_id: str) -> str:
@@ -137,12 +149,15 @@ def _get_branch_name(task_id: str) -> str:
     return f"{task_id}/main"
 
 
-def create_worktree(task_id: str, base_branch: str = "main") -> WorktreeInfo:
+def create_worktree(
+    task_id: str, base_branch: str = "main", project_id: str | None = None
+) -> WorktreeInfo:
     """Create a worktree for a task.
 
     Args:
         task_id: The task identifier.
         base_branch: The branch to base the worktree on.
+        project_id: Project identifier for per-project paths.
 
     Returns:
         WorktreeInfo with details about the created worktree.
@@ -150,12 +165,12 @@ def create_worktree(task_id: str, base_branch: str = "main") -> WorktreeInfo:
     Raises:
         WorktreeError: If worktree creation fails.
     """
-    worktree_path = get_worktree_path(task_id)
+    worktree_path = get_worktree_path(task_id, project_id)
     branch_name = _get_branch_name(task_id)
 
     # Check if worktree already exists
     if worktree_path.exists():
-        existing_info = get_worktree_info(task_id)
+        existing_info = get_worktree_info(task_id, project_id)
         if existing_info:
             return existing_info
         # Directory exists but not a valid worktree, clean it up
@@ -185,9 +200,7 @@ def create_worktree(task_id: str, base_branch: str = "main") -> WorktreeInfo:
                     cwd=repo_root,
                 )
             except WorktreeError:
-                raise WorktreeError(
-                    f"Failed to create worktree for task '{task_id}': {e}"
-                )
+                raise WorktreeError(f"Failed to create worktree for task '{task_id}': {e}")
         else:
             raise
 
@@ -197,19 +210,21 @@ def create_worktree(task_id: str, base_branch: str = "main") -> WorktreeInfo:
         task_id=task_id,
         base_branch=base_branch,
         is_active=True,
+        project_id=project_id,
     )
 
 
-def get_worktree_info(task_id: str) -> WorktreeInfo | None:
+def get_worktree_info(task_id: str, project_id: str | None = None) -> WorktreeInfo | None:
     """Get information about an existing worktree.
 
     Args:
         task_id: The task identifier.
+        project_id: Project identifier for per-project paths.
 
     Returns:
         WorktreeInfo if worktree exists, None otherwise.
     """
-    worktree_path = get_worktree_path(task_id)
+    worktree_path = get_worktree_path(task_id, project_id)
 
     if not worktree_path.exists():
         return None
@@ -221,9 +236,7 @@ def get_worktree_info(task_id: str) -> WorktreeInfo | None:
 
     # Get current branch
     try:
-        result = _run_git(
-            ["rev-parse", "--abbrev-ref", "HEAD"], cwd=worktree_path, check=False
-        )
+        result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=worktree_path, check=False)
         if result.returncode != 0:
             return None
         branch = result.stdout.strip()
@@ -252,15 +265,19 @@ def get_worktree_info(task_id: str) -> WorktreeInfo | None:
         task_id=task_id,
         base_branch=base_branch,
         is_active=True,
+        project_id=project_id,
     )
 
 
-def remove_worktree(task_id: str, delete_branch: bool = True) -> bool:
+def remove_worktree(
+    task_id: str, delete_branch: bool = True, project_id: str | None = None
+) -> bool:
     """Remove a task's worktree and optionally its branch.
 
     Args:
         task_id: The task identifier.
         delete_branch: Whether to also delete the associated branch.
+        project_id: Project identifier for per-project paths.
 
     Returns:
         True if worktree was removed, False if it didn't exist.
@@ -268,7 +285,7 @@ def remove_worktree(task_id: str, delete_branch: bool = True) -> bool:
     Raises:
         WorktreeError: If removal fails.
     """
-    worktree_path = get_worktree_path(task_id)
+    worktree_path = get_worktree_path(task_id, project_id)
     branch_name = _get_branch_name(task_id)
 
     if not worktree_path.exists():
@@ -296,38 +313,57 @@ def remove_worktree(task_id: str, delete_branch: bool = True) -> bool:
             # Prune stale worktree entries
             _run_git(["worktree", "prune"], cwd=repo_root, check=False)
         except OSError as e:
-            raise WorktreeError(f"Failed to remove worktree directory: {e}")
+            raise WorktreeError(f"Failed to remove worktree directory: {e}") from e
 
-    # Delete the branch if requested
+    # Delete the branch if requested (best-effort)
     if delete_branch:
-        try:
+        with contextlib.suppress(WorktreeError):
             _run_git(["branch", "-D", branch_name], cwd=repo_root, check=False)
-        except WorktreeError:
-            # Branch deletion is best-effort
-            pass
 
     return True
 
 
-def get_active_worktrees() -> list[WorktreeInfo]:
-    """List all active worktrees in the summitflow directory.
+def get_active_worktrees(project_id: str | None = None) -> list[WorktreeInfo]:
+    """List all active worktrees.
+
+    If project_id is provided, lists worktrees for that project.
+    If project_id is None, lists worktrees across all projects.
+
+    Args:
+        project_id: Project identifier. If None, lists all worktrees.
 
     Returns:
         List of WorktreeInfo for each active worktree.
     """
-    base_dir = get_worktrees_base_dir()
     worktrees: list[WorktreeInfo] = []
 
-    if not base_dir.exists():
-        return worktrees
+    if project_id:
+        # List worktrees for specific project
+        base_dir = get_worktrees_base_dir(project_id)
+        if not base_dir.exists():
+            return worktrees
 
-    for entry in base_dir.iterdir():
-        if entry.is_dir():
-            # Extract task_id from directory name
-            task_id = entry.name
-            info = get_worktree_info(task_id)
-            if info:
-                worktrees.append(info)
+        for entry in base_dir.iterdir():
+            if entry.is_dir():
+                task_id = entry.name
+                info = get_worktree_info(task_id, project_id)
+                if info:
+                    worktrees.append(info)
+    else:
+        # List worktrees across all projects
+        base_dir = get_worktrees_base_dir()
+        if not base_dir.exists():
+            return worktrees
+
+        for project_entry in base_dir.iterdir():
+            if project_entry.is_dir():
+                proj_id = project_entry.name
+                for task_entry in project_entry.iterdir():
+                    if task_entry.is_dir():
+                        task_id = task_entry.name
+                        info = get_worktree_info(task_id, proj_id)
+                        if info:
+                            worktrees.append(info)
 
     return worktrees
 
@@ -342,9 +378,7 @@ def get_current_branch(cwd: Path | None = None) -> str | None:
         Current branch name, or None if not in a git repo or detached HEAD.
     """
     try:
-        result = _run_git(
-            ["symbolic-ref", "--short", "HEAD"], cwd=cwd, check=False
-        )
+        result = _run_git(["symbolic-ref", "--short", "HEAD"], cwd=cwd, check=False)
         if result.returncode == 0:
             return result.stdout.strip()
         return None
@@ -352,7 +386,9 @@ def get_current_branch(cwd: Path | None = None) -> str | None:
         return None
 
 
-def check_worktree_safety(cwd: Path | None = None) -> tuple[bool, str | None]:
+def check_worktree_safety(
+    cwd: Path | None = None, project_id: str | None = None
+) -> tuple[bool, str | None]:
     """Check if it's safe to commit on main.
 
     Detects when someone is about to commit on main/master while having
@@ -361,6 +397,7 @@ def check_worktree_safety(cwd: Path | None = None) -> tuple[bool, str | None]:
 
     Args:
         cwd: Working directory to check. If None, uses current directory.
+        project_id: Project identifier for per-project worktree checks.
 
     Returns:
         Tuple of (is_safe, warning_message).
@@ -378,7 +415,7 @@ def check_worktree_safety(cwd: Path | None = None) -> tuple[bool, str | None]:
         return (True, None)
 
     # Check for active worktrees
-    active_worktrees = get_active_worktrees()
+    active_worktrees = get_active_worktrees(project_id)
     if not active_worktrees:
         # No active worktrees - still on main, but no task isolation in use
         return (True, None)
@@ -395,15 +432,17 @@ def check_worktree_safety(cwd: Path | None = None) -> tuple[bool, str | None]:
         lines.append(f"    Branch: {wt.branch}")
         lines.append(f"    Path: {wt.path}")
 
-    lines.extend([
-        "",
-        "This usually means you should be working in one of these worktrees",
-        "instead of committing directly to the main branch.",
-        "",
-        "Options:",
-        "  1. Switch to a worktree: cd <worktree-path>",
-        "  2. Create a new task: sf task create <task-name>",
-        "  3. Bypass this check: git commit --no-verify",
-    ])
+    lines.extend(
+        [
+            "",
+            "This usually means you should be working in one of these worktrees",
+            "instead of committing directly to the main branch.",
+            "",
+            "Options:",
+            "  1. Switch to a worktree: cd <worktree-path>",
+            "  2. Create a new task: sf task create <task-name>",
+            "  3. Bypass this check: git commit --no-verify",
+        ]
+    )
 
     return (False, "\n".join(lines))

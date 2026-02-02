@@ -2,6 +2,9 @@
 
 Provides git+database checkpoint operations for safe task rollback.
 Used by st claim, st done, st abandon, and st checkpoints commands.
+
+Worktree paths are per-project at:
+    ~/.local/share/st/worktrees/<project-id>/<task-id>/
 """
 
 from __future__ import annotations
@@ -134,9 +137,7 @@ def _get_meta_path(task_id: str) -> Path:
     return _get_snapshots_dir() / f"{task_id}.meta.json"
 
 
-def create_task_snapshot(
-    task_id: str, project_id: str, use_worktree: bool = True
-) -> SnapshotMeta:
+def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = True) -> SnapshotMeta:
     """Create DB snapshot and worktree for task.
 
     Creates pg_dump snapshot, metadata file, and isolated git worktree.
@@ -155,7 +156,7 @@ def create_task_snapshot(
         SystemExit: On pg_dump failure or git errors
     """
     from .port_manager import allocate_ports
-    from .worktree import WorktreeError, create_worktree, get_worktree_info
+    from .worktree import WorktreeError, create_worktree
 
     snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
@@ -195,7 +196,7 @@ def create_task_snapshot(
     if use_worktree:
         # Create isolated worktree for task
         try:
-            worktree_info = create_worktree(task_id, base_branch)
+            worktree_info = create_worktree(task_id, base_branch, project_id)
             worktree_path = str(worktree_info.path)
             print(f"Created worktree: {worktree_path}")
 
@@ -377,12 +378,15 @@ def restore_task_snapshot(task_id: str) -> bool:
     return True
 
 
-def remove_snapshot(task_id: str, remove_worktree: bool = True) -> bool:
+def remove_snapshot(
+    task_id: str, remove_worktree: bool = True, project_id: str | None = None
+) -> bool:
     """Delete snapshot files and optionally worktree after completion.
 
     Args:
         task_id: Task identifier
         remove_worktree: Whether to also remove the worktree (default True)
+        project_id: Project identifier for per-project worktree paths
 
     Returns:
         True on success
@@ -392,12 +396,18 @@ def remove_snapshot(task_id: str, remove_worktree: bool = True) -> bool:
     snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
 
-    # Remove worktree if it exists
-    if remove_worktree:
+    # Load project_id from meta if not provided
+    if project_id is None and meta_path.exists():
         try:
-            rm_worktree(task_id, delete_branch=False)  # Branch handled separately
-        except Exception:
-            pass  # Best effort cleanup
+            meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
+            project_id = meta.project_id
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Remove worktree if it exists (best-effort cleanup)
+    if remove_worktree:
+        with contextlib.suppress(Exception):
+            rm_worktree(task_id, delete_branch=False, project_id=project_id)
 
     snapshot_path.unlink(missing_ok=True)
     meta_path.unlink(missing_ok=True)
@@ -436,12 +446,13 @@ def create_subtask_branch(task_id: str, subtask_id: str) -> str:
     return branch_name
 
 
-def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
+def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
     """Merge subtask branch to task branch.
 
     Args:
         task_id: Parent task identifier
         subtask_id: Subtask identifier
+        project_id: Project identifier for per-project worktree paths
 
     Returns:
         True on success
@@ -456,10 +467,10 @@ def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
 
     # Remove worktree if it exists (so we can checkout the branch)
     # Keep the branch - we need it for the merge
-    worktree_info = get_worktree_info(task_id)
+    worktree_info = get_worktree_info(task_id, project_id)
     if worktree_info:
         print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False)
+        remove_worktree(task_id, delete_branch=False, project_id=project_id)
 
     # Checkout task branch
     try:
@@ -499,11 +510,12 @@ def merge_subtask_branch(task_id: str, subtask_id: str) -> bool:
     return True
 
 
-def merge_task_branch(task_id: str) -> bool:
+def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     """Merge task branch to main and clean up.
 
     Args:
         task_id: Task identifier
+        project_id: Project identifier for per-project worktree paths
 
     Returns:
         True on success
@@ -515,6 +527,14 @@ def merge_task_branch(task_id: str) -> bool:
 
     meta_path = _get_meta_path(task_id)
 
+    # Load project_id from meta if not provided
+    if project_id is None and meta_path.exists():
+        try:
+            meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
+            project_id = meta.project_id
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     # Get base branch from metadata
     if meta_path.exists():
         meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
@@ -524,10 +544,10 @@ def merge_task_branch(task_id: str) -> bool:
 
     # Remove worktree if it exists (clean up before merge)
     # Keep the branch - we need it for the merge
-    worktree_info = get_worktree_info(task_id)
+    worktree_info = get_worktree_info(task_id, project_id)
     if worktree_info:
         print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False)
+        remove_worktree(task_id, delete_branch=False, project_id=project_id)
 
     # Checkout base branch
     try:
@@ -738,8 +758,8 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
     else:
         info["size"] = "0"
 
-    # Check worktree status
-    worktree_info = get_worktree_info(task_id)
+    # Check worktree status (use project_id from meta)
+    worktree_info = get_worktree_info(task_id, meta.project_id)
     info["worktree_exists"] = str(worktree_info is not None).lower()
     if worktree_info:
         info["worktree_branch"] = worktree_info.branch

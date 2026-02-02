@@ -2,7 +2,7 @@
 
 Provides worktree operations for Agent Hub task dispatch workflow.
 Each dispatched task gets an isolated worktree at:
-    ~/.summitflow/worktrees/<task-id>/
+    ~/.local/share/st/worktrees/<project-id>/<task-id>/
 
 With branch naming:
     <task-id>/main
@@ -49,8 +49,8 @@ def create_task_worktree(
 ) -> TaskWorktreeInfo | None:
     """Create an isolated worktree for a task.
 
-    Creates a worktree at ~/.summitflow/worktrees/<task-id>/ with a new branch
-    <task-id>/main based on the specified base branch.
+    Creates a worktree at ~/.local/share/st/worktrees/<project-id>/<task-id>/
+    with a new branch <task-id>/main based on the specified base branch.
 
     Args:
         task_id: Task identifier for the worktree
@@ -72,7 +72,7 @@ def create_task_worktree(
         )
 
         # Check if worktree already exists
-        existing = get_worktree_info(task_id)
+        existing = get_worktree_info(task_id, project_id)
         if existing:
             logger.info(
                 "worktree_exists",
@@ -89,7 +89,7 @@ def create_task_worktree(
             )
 
         # Create new worktree
-        worktree_info = create_worktree(task_id, base_branch)
+        worktree_info = create_worktree(task_id, base_branch, project_id)
         logger.info(
             "worktree_created",
             task_id=task_id,
@@ -124,11 +124,12 @@ def create_task_worktree(
         return None
 
 
-def get_task_worktree(task_id: str) -> TaskWorktreeInfo | None:
+def get_task_worktree(task_id: str, project_id: str | None = None) -> TaskWorktreeInfo | None:
     """Get worktree info for a task if it exists.
 
     Args:
         task_id: Task identifier
+        project_id: Project identifier for per-project worktree paths
 
     Returns:
         TaskWorktreeInfo if worktree exists, None otherwise
@@ -136,7 +137,7 @@ def get_task_worktree(task_id: str) -> TaskWorktreeInfo | None:
     try:
         from cli.lib.worktree import get_worktree_info
 
-        info = get_worktree_info(task_id)
+        info = get_worktree_info(task_id, project_id)
         if info:
             return TaskWorktreeInfo(
                 path=info.path,
@@ -153,12 +154,15 @@ def get_task_worktree(task_id: str) -> TaskWorktreeInfo | None:
         return None
 
 
-def remove_task_worktree(task_id: str, delete_branch: bool = False) -> bool:
+def remove_task_worktree(
+    task_id: str, delete_branch: bool = False, project_id: str | None = None
+) -> bool:
     """Remove a task's worktree.
 
     Args:
         task_id: Task identifier
         delete_branch: Whether to also delete the associated branch
+        project_id: Project identifier for per-project worktree paths
 
     Returns:
         True if worktree was removed, False otherwise
@@ -166,7 +170,7 @@ def remove_task_worktree(task_id: str, delete_branch: bool = False) -> bool:
     try:
         from cli.lib.worktree import remove_worktree
 
-        result = remove_worktree(task_id, delete_branch=delete_branch)
+        result = remove_worktree(task_id, delete_branch=delete_branch, project_id=project_id)
         if result:
             logger.info(
                 "worktree_removed",
@@ -198,7 +202,7 @@ def get_execution_path(task_id: str, project_id: str) -> str:
         ValueError: If project has no root path configured
     """
     # First, check if a worktree exists for this task
-    worktree = get_task_worktree(task_id)
+    worktree = get_task_worktree(task_id, project_id)
     if worktree and worktree.is_active:
         logger.debug(
             "using_worktree_path",
@@ -240,7 +244,7 @@ def ensure_task_worktree(
         Path to use for task execution
     """
     # Try to get existing worktree
-    worktree = get_task_worktree(task_id)
+    worktree = get_task_worktree(task_id, project_id)
     if worktree and worktree.is_active:
         return str(worktree.path)
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 
@@ -18,10 +18,9 @@ from ..client import APIError, STClient
 from ..lib.worktree import (
     WorktreeInfo,
     get_active_worktrees,
-    get_worktree_path,
     remove_worktree,
 )
-from ..output import output_error, output_json, output_success, output_warning
+from ..output import output_json, output_success, output_warning
 
 app = typer.Typer(help="Cleanup commands for stale resources")
 
@@ -53,7 +52,9 @@ class WorktreeAnalysis:
     reason: str
 
 
-def _run_git(args: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
+def _run_git(
+    args: list[str], cwd: Path | None = None, check: bool = True
+) -> subprocess.CompletedProcess:
     """Run a git command."""
     cmd = ["git"] + args
     return subprocess.run(
@@ -74,9 +75,7 @@ def _get_repo_root() -> Path | None:
         return None
 
 
-def _get_commits_ahead_behind(
-    worktree_path: Path, base_branch: str = "main"
-) -> tuple[int, int]:
+def _get_commits_ahead_behind(worktree_path: Path, base_branch: str = "main") -> tuple[int, int]:
     """Get number of commits ahead and behind base branch."""
     try:
         # Fetch to ensure we have latest refs
@@ -216,9 +215,7 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
     task_status, task_title = _get_task_info(client, worktree.task_id)
 
     # Get git state
-    commits_ahead, commits_behind = _get_commits_ahead_behind(
-        worktree.path, worktree.base_branch
-    )
+    commits_ahead, commits_behind = _get_commits_ahead_behind(worktree.path, worktree.base_branch)
     has_uncommitted = _has_uncommitted_changes(worktree.path)
     has_conflicts = _has_merge_conflicts(worktree.path, worktree.base_branch)
     last_commit_age = _get_last_commit_age_days(worktree.path)
@@ -272,7 +269,9 @@ def format_analysis(analysis: WorktreeAnalysis) -> str:
     task_info = f"task:{analysis.task_status or 'NOT_FOUND'}"
     title = analysis.task_title[:40] if analysis.task_title else "?"
 
-    age_str = f"{analysis.last_commit_age_days}d" if analysis.last_commit_age_days is not None else "?"
+    age_str = (
+        f"{analysis.last_commit_age_days}d" if analysis.last_commit_age_days is not None else "?"
+    )
     commits_str = f"+{analysis.commits_ahead}/-{analysis.commits_behind}"
 
     flags = []
@@ -308,7 +307,8 @@ def cleanup_worktree(analysis: WorktreeAnalysis, force: bool = False) -> tuple[b
 
     # Remove the worktree
     try:
-        success = remove_worktree(task_id, delete_branch=True)
+        project_id = analysis.worktree.project_id
+        success = remove_worktree(task_id, delete_branch=True, project_id=project_id)
         if success:
             return True, "Removed"
         else:
@@ -338,7 +338,7 @@ def cleanup_worktrees(
 ) -> None:
     """List orphaned/stale worktrees with cleanup recommendations.
 
-    Analyzes worktrees at ~/.summitflow/worktrees/ and recommends actions:
+    Analyzes worktrees at ~/.local/share/st/worktrees/ and recommends actions:
     - SAFE: No commits ahead, can be safely deleted
     - MERGED: Already merged into main
     - NEEDS_MERGE: Has commits not in main
@@ -371,9 +371,9 @@ def cleanup_worktrees(
         analyses.append(analysis)
 
     # Categorize
-    safe_to_delete = [a for a in analyses if a.action in (
-        CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED
-    )]
+    safe_to_delete = [
+        a for a in analyses if a.action in (CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED)
+    ]
     needs_merge = [a for a in analyses if a.action == CleanupAction.NEEDS_MERGE]
     has_conflicts = [a for a in analyses if a.action == CleanupAction.HAS_CONFLICTS]
     needs_review = [a for a in analyses if a.action == CleanupAction.MANUAL_REVIEW]
@@ -381,7 +381,8 @@ def cleanup_worktrees(
 
     # Mark stale based on age
     stale = [
-        a for a in analyses
+        a
+        for a in analyses
         if a.last_commit_age_days is not None and a.last_commit_age_days >= stale_days
     ]
 

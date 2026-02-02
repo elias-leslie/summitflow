@@ -443,9 +443,7 @@ def _extract_task_id_from_branch(branch_name: str) -> str | None:
     return None
 
 
-def _get_branch_commit_info(
-    branch_name: str, repo_path: Path
-) -> tuple[str | None, str | None]:
+def _get_branch_commit_info(branch_name: str, repo_path: Path) -> tuple[str | None, str | None]:
     """Get the last commit short hash and date for a branch."""
     result = _run_git(
         ["log", "-1", "--format=%h|%cI", branch_name],

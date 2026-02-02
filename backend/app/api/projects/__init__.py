@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
+from ...schemas.project import ProjectServicesResponse
 from ...services import explorer
 from ...storage.connection import get_connection
+from ..projects_services import get_project_services
 from . import agents, automation
 
 # Re-export get_connection for backwards compatibility with tests
@@ -168,6 +170,16 @@ async def check_project_health(project_id: str) -> ProjectHealthResponse:
             error=str(e),
             checked_at=datetime.now(UTC),
         )
+
+
+@router.get("/{project_id}/services", response_model=ProjectServicesResponse)
+async def get_services(project_id: str) -> ProjectServicesResponse:
+    """Get service configuration for a project.
+
+    Returns the service commands, ports, and settings from .st/services.yaml
+    if available, otherwise returns default configuration.
+    """
+    return get_project_services(project_id)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

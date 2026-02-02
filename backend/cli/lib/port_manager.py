@@ -47,7 +47,7 @@ class WorktreePorts:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int]) -> "WorktreePorts":
+    def from_dict(cls, data: dict[str, str | int]) -> WorktreePorts:
         """Create from dictionary."""
         return cls(**data)
 
@@ -289,13 +289,15 @@ def get_port_status() -> dict[str, list[dict]]:
     }
 
     for ports in list_allocated_ports():
-        status["worktrees"].append({
-            "task_id": ports.task_id,
-            "backend_port": ports.backend_port,
-            "backend_available": check_port_available(ports.backend_port),
-            "frontend_port": ports.frontend_port,
-            "frontend_available": check_port_available(ports.frontend_port),
-        })
+        status["worktrees"].append(
+            {
+                "task_id": ports.task_id,
+                "backend_port": ports.backend_port,
+                "backend_available": check_port_available(ports.backend_port),
+                "frontend_port": ports.frontend_port,
+                "frontend_available": check_port_available(ports.frontend_port),
+            }
+        )
 
     return status
 
