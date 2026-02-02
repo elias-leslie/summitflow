@@ -31,6 +31,7 @@ from ...core.debug import (
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.pubsub import publish_ws_event
+from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.events import EventVisibility
@@ -394,8 +395,24 @@ Fix these issues now.
 WORKER_STUCK_THRESHOLD = 3
 
 
-def _get_project_path(project_id: str) -> str:
-    """Get project root path for task execution."""
+def _get_project_path(project_id: str, task_id: str | None = None) -> str:
+    """Get execution path for task, using worktree if available.
+
+    Args:
+        project_id: Project ID for fallback to root path
+        task_id: Task ID to check for worktree (optional)
+
+    Returns:
+        Worktree path if task has one, otherwise project root path
+
+    Raises:
+        ValueError: If project has no root_path configured
+    """
+    if task_id:
+        # Use worktree-aware function that checks for task worktree first
+        return get_execution_path(task_id, project_id)
+
+    # Fallback for cases without task_id (e.g., pristine checks)
     project_root = get_project_root_path(project_id)
     if not project_root:
         raise ValueError(f"Project {project_id} has no root_path configured")
@@ -708,7 +725,8 @@ def start_execution(
             }
 
     # Auto-commit any orphaned changes from previous session
-    project_path = _get_project_path(project_id)
+    # Use task worktree if available, otherwise project root
+    project_path = _get_project_path(project_id, task_id)
     if _has_uncommitted_changes(project_path):
         _emit_log(
             task_id,
@@ -921,7 +939,8 @@ def _execute_subtask(
     )
 
     try:
-        project_path = _get_project_path(project_id)
+        # Use task worktree if available for isolated execution
+        project_path = _get_project_path(project_id, task_id)
         prompt = _build_subtask_prompt(task_id, subtask, project_id, project_path)
 
         # Resolve which agent to use: override > task_type mapping > default

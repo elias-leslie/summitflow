@@ -15,6 +15,7 @@ from celery import Task, shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 
