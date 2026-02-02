@@ -15,8 +15,6 @@ Constraint: Output should be scannable by AI agents.
 
 from __future__ import annotations
 
-import json
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,16 +24,10 @@ import yaml
 from ...logging_config import get_logger
 from ...storage import explorer as storage
 from .base import get_project_root
+from .environment import get_cli_info, get_environment
+from .port_detection import get_services
 
 logger = get_logger(__name__)
-
-
-# Shared infrastructure ports (standard, rarely change)
-INFRASTRUCTURE_PORTS = {
-    "neo4j": 7687,
-    "postgres": 5432,
-    "redis": 6379,
-}
 
 
 def _extract_port_from_service_content(content: str) -> int | None:

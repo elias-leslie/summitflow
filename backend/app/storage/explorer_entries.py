@@ -247,52 +247,27 @@ def delete_entries(project_id: str, entry_type: str | None = None) -> int:
 def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[str]) -> int:
     """Delete explorer entries that no longer exist in the codebase.
 
-    ARCHITECTURAL DECISION: The Explorer represents a current-state snapshot of the
-    codebase, NOT a historical accumulation. When files, pages, endpoints, or tables
-    are removed from the codebase, their corresponding explorer entries must be deleted.
-
-    This function is called after each scan to remove entries for paths that were
-    not found in the current scan. This ensures the Explorer always reflects the
-    actual state of the codebase.
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Entry type ('file', 'page', 'endpoint', 'table', 'task')
-        current_paths: Set of paths found in the current scan
-
-    Returns:
-        Number of stale entries deleted
+    The Explorer represents a current-state snapshot, NOT historical accumulation.
+    This function removes entries for paths not found in the current scan.
     """
     if not current_paths:
         # Safety: if scan returned nothing, don't delete everything
-        # This prevents accidental data loss from failed scans
         return 0
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Get all existing paths for this project/type
         cur.execute(
-            """
-            SELECT path FROM explorer_entries
-            WHERE project_id = %s AND entry_type = %s
-            """,
+            "SELECT path FROM explorer_entries WHERE project_id = %s AND entry_type = %s",
             (project_id, entry_type),
         )
         existing_paths = {row[0] for row in cur.fetchall()}
 
-        # Find stale paths (in DB but not in current scan)
         stale_paths = existing_paths - current_paths
-
         if not stale_paths:
             return 0
 
-        # Delete stale entries
         cur.execute(
-            """
-            DELETE FROM explorer_entries
-            WHERE project_id = %s
-              AND entry_type = %s
-              AND path = ANY(%s)
-            """,
+            "DELETE FROM explorer_entries WHERE project_id = %s AND entry_type = %s "
+            "AND path = ANY(%s)",
             (project_id, entry_type, list(stale_paths)),
         )
         deleted: int = cur.rowcount or 0
@@ -300,33 +275,14 @@ def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[s
         return deleted
 
 
-def update_health_check(
-    entry_id: int,
-    health_status: str,
-    health_data: dict[str, Any],
-) -> bool:
-    """Update health check data for an explorer entry.
-
-    Args:
-        entry_id: Explorer entry ID
-        health_status: New health status ('healthy', 'warning', 'error', 'unknown')
-        health_data: Health check results to merge into metadata
-
-    Returns:
-        True if updated, False if entry not found
-    """
+def update_health_check(entry_id: int, health_status: str, health_data: dict[str, Any]) -> bool:
+    """Update health check data for an explorer entry."""
     from psycopg.types.json import Jsonb
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            UPDATE explorer_entries
-            SET health_status = %s,
-                metadata = metadata || %s,
-                updated_at = NOW()
-            WHERE id = %s
-            RETURNING id
-            """,
+            "UPDATE explorer_entries SET health_status = %s, metadata = metadata || %s, "
+            "updated_at = NOW() WHERE id = %s RETURNING id",
             (health_status, Jsonb(health_data), entry_id),
         )
         row = cur.fetchone()
@@ -335,24 +291,12 @@ def update_health_check(
 
 
 def get_pages_for_health_check(project_id: str) -> list[dict[str, Any]]:
-    """Get page entries that need health checks.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        List of page entry dicts with id, path, metadata
-    """
+    """Get page entries that need health checks."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            SELECT {_ENTRY_COLUMNS}
-            FROM explorer_entries
-            WHERE project_id = %s
-              AND entry_type = 'page'
-            ORDER BY path
-            """,
+            f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
+            "WHERE project_id = %s AND entry_type = 'page' ORDER BY path",
             (project_id,),
         )
         rows = cur.fetchall()
-        return [_row_to_entry(row) for row in rows]
+        return [row_to_entry(row) for row in rows]
