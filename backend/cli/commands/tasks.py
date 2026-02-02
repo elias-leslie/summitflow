@@ -482,6 +482,18 @@ def context(
 
             output_context(task, subtasks, blockers, task_refs)
 
+        # Show worktree info if available
+        worktree_info = get_worktree_info(task_id)
+        if worktree_info:
+            worktree_path = str(worktree_info.path)
+            # Use ~ shorthand for home directory
+            home = str(Path.home())
+            display_path = worktree_path.replace(home, "~")
+            typer.echo("")
+            typer.echo(f"WORKTREE: {display_path}")
+            typer.echo(f"  branch: {worktree_info.branch}")
+            typer.echo(f"  cd {display_path}  # to work in isolation")
+
     except APIError as e:
         handle_api_error(e)
         return

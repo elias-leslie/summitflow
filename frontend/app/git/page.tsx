@@ -10,6 +10,7 @@ import {
   GitBranch,
   RefreshCw,
 } from 'lucide-react'
+import { WorktreeList } from '@/components/git/WorktreeList'
 import { fetchGitStatus, type RepoStatus } from '@/lib/api'
 
 function getStateInfo(state: RepoStatus['state']) {
@@ -180,6 +181,9 @@ export default function GitPage() {
           View and manage git status across all managed repositories.
         </p>
       </section>
+
+      {/* Active Worktrees Section */}
+      <WorktreeList />
 
       {/* Summary */}
       {gitStatus && (

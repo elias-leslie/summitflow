@@ -26,16 +26,25 @@ def get_subtask_table_id(task_id: str, subtask_id: str) -> str:
 def get_verification_cwd(project_id: str, task_id: str) -> str | None:
     """Get the working directory for step verification.
 
-    Returns the project root path for verification commands.
+    If a worktree exists for the task, returns the worktree path.
+    Otherwise returns the project root path.
 
     Args:
         project_id: Project ID
-        task_id: Task ID (unused, kept for API compatibility)
+        task_id: Task ID (used to check for worktree isolation)
 
     Returns:
         Path to use as cwd for verification commands
     """
+    from cli.lib.worktree import get_worktree_info
+
     from ...storage.projects import get_project_root_path
+
+    # Check if worktree exists for this task
+    if task_id:
+        worktree_info = get_worktree_info(task_id)
+        if worktree_info and worktree_info.path.exists():
+            return str(worktree_info.path)
 
     return get_project_root_path(project_id)
 
