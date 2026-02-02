@@ -4,7 +4,7 @@ Tests the full checkpoint lifecycle:
 1. Happy path - single agent: claim → context → step pass → subtask pass → done
 2. Parallel agents - multiple subtasks executing concurrently
 3. Subtask failure - git rollback only (abandon subtask)
-4. Task failure - full DB rollback (abandon task)
+4. Task failure - git rollback only (abandon task, no DB restore)
 5. Project lock - one active task per project
 6. Resume after interruption - detect existing checkpoint
 7. Agent Hub integration - CLI calls work from agents
@@ -77,13 +77,9 @@ def test_project_id():
 @pytest.fixture
 def cleanup_checkpoints():
     """Clean up checkpoint data after tests."""
-    checkpoint_dir = Path.home() / ".st" / "snapshots"
     task_ids: list[str] = []
     yield task_ids
     for task_id in task_ids:
-        snapshot_path = checkpoint_dir / f"{task_id}.sql"
-        if snapshot_path.exists():
-            snapshot_path.unlink()
         run_cli(["abandon", task_id, "--force"], check=False)
 
 
@@ -278,9 +274,9 @@ class TestSubtaskAbandon:
 
 
 class TestTaskAbandon:
-    """Test task abandonment - full DB rollback."""
+    """Test task abandonment - code rollback only (no DB restore)."""
 
-    def test_abandon_task_restores_db(
+    def test_abandon_task_deletes_branches(
         self,
         requires_backend,
         requires_clean_git,
@@ -288,7 +284,7 @@ class TestTaskAbandon:
         cleanup_tasks,
         cleanup_checkpoints,
     ):
-        """Abandoning a task should restore DB and delete all branches."""
+        """Abandoning a task should delete all branches and mark as abandoned."""
         task = create_test_task(test_project_id, "Task Abandon Test")
         cleanup_tasks.append(task["id"])
         cleanup_checkpoints.append(task["id"])

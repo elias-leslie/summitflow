@@ -12,7 +12,7 @@ Default values (for SummitFlow-style projects):
         - Backend: 8100 + (task_id_hash % range)
         - Frontend: 3100 + (task_id_hash % range)
 
-Port assignments are persisted in ~/.summitflow/worktrees/<task-id>/ports.json
+Port assignments are persisted in ~/.local/share/st/worktrees/<project-id>/<task-id>/ports.json
 """
 
 from __future__ import annotations

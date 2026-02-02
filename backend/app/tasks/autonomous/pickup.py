@@ -8,7 +8,7 @@ The event-driven path is preferred for low-latency dispatch.
 
 Worktree Isolation:
 When dispatching tasks to execution, a worktree is created at
-~/.summitflow/worktrees/<task-id>/ with branch <task-id>/main.
+~/.local/share/st/worktrees/<project-id>/<task-id>/ with branch <task-id>/main.
 This ensures each task runs in isolation without affecting the main branch.
 """
 

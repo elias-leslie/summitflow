@@ -1,6 +1,6 @@
 """Checkpoint library for st CLI.
 
-Provides git+database checkpoint operations for safe task rollback.
+Provides worktree isolation for safe task execution.
 Used by st claim, st done, st abandon, and st checkpoints commands.
 
 Worktree paths are per-project at:
@@ -14,9 +14,6 @@ import json
 import os
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,11 +21,10 @@ from pathlib import Path
 
 @dataclass
 class SnapshotMeta:
-    """Metadata for a task checkpoint snapshot."""
+    """Metadata for a task checkpoint (worktree isolation)."""
 
     task_id: str
     project_id: str
-    snapshot_path: str
     base_branch: str
     created_at: str  # ISO format
     claimed_by: str
@@ -51,6 +47,8 @@ class SnapshotMeta:
             data["backend_port"] = None
         if "frontend_port" not in data:
             data["frontend_port"] = None
+        # Handle older snapshots with snapshot_path (no longer used)
+        data.pop("snapshot_path", None)
         return cls(**data)
 
 
@@ -68,15 +66,6 @@ def _get_snapshots_dir() -> Path:
             f.write("snapshots/\n")
 
     return snapshots_dir
-
-
-def _get_database_url() -> str:
-    """Get PostgreSQL connection string from environment."""
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
-    if not url:
-        print("Error: DATABASE_URL or POSTGRES_URL not set", file=sys.stderr)
-        sys.exit(1)
-    return url
 
 
 def _get_claimed_by() -> str:
@@ -127,21 +116,16 @@ def _is_working_tree_clean() -> bool:
         return False
 
 
-def _get_snapshot_path(task_id: str) -> Path:
-    """Get path for task snapshot SQL file."""
-    return _get_snapshots_dir() / f"{task_id}.sql"
-
-
 def _get_meta_path(task_id: str) -> Path:
     """Get path for task snapshot metadata file."""
     return _get_snapshots_dir() / f"{task_id}.meta.json"
 
 
 def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = True) -> SnapshotMeta:
-    """Create DB snapshot and worktree for task.
+    """Create worktree checkpoint for task.
 
-    Creates pg_dump snapshot, metadata file, and isolated git worktree.
-    The worktree provides code isolation at ~/.summitflow/worktrees/<task-id>/.
+    Creates metadata file and isolated git worktree.
+    The worktree provides code isolation at ~/.local/share/st/worktrees/<project-id>/<task-id>/.
     Also allocates isolated ports for worktree services (backend/frontend).
 
     Args:
@@ -153,40 +137,18 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
         SnapshotMeta with checkpoint details including worktree path and ports
 
     Raises:
-        SystemExit: On pg_dump failure or git errors
+        SystemExit: On git errors
     """
     from .port_manager import allocate_ports
     from .worktree import WorktreeError, create_worktree
 
-    snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
-    db_url = _get_database_url()
     base_branch = _get_current_branch()
 
-    # Check for existing snapshot
-    if snapshot_path.exists():
-        print(f"Error: Snapshot already exists for {task_id}", file=sys.stderr)
+    # Check for existing checkpoint
+    if meta_path.exists():
+        print(f"Error: Checkpoint already exists for {task_id}", file=sys.stderr)
         print("Use 'st abandon' to remove existing checkpoint first.", file=sys.stderr)
-        sys.exit(1)
-
-    # Run pg_dump
-    try:
-        subprocess.run(
-            [
-                "pg_dump",
-                "--format=custom",
-                f"--file={snapshot_path}",
-                db_url,
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: pg_dump failed: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-    except FileNotFoundError:
-        print("Error: pg_dump not found. Install PostgreSQL client tools.", file=sys.stderr)
         sys.exit(1)
 
     worktree_path: str | None = None
@@ -206,8 +168,6 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
             frontend_port = ports.frontend_port
             print(f"Allocated ports: backend={backend_port}, frontend={frontend_port}")
         except WorktreeError as e:
-            # Clean up snapshot on worktree failure
-            snapshot_path.unlink(missing_ok=True)
             print(f"Error: Failed to create worktree: {e}", file=sys.stderr)
             sys.exit(1)
     else:
@@ -221,8 +181,6 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
                 text=True,
             )
         except subprocess.CalledProcessError as e:
-            # Clean up snapshot on git failure
-            snapshot_path.unlink(missing_ok=True)
             print(f"Error: Failed to create git branch: {e.stderr}", file=sys.stderr)
             sys.exit(1)
 
@@ -230,7 +188,6 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
     meta = SnapshotMeta(
         task_id=task_id,
         project_id=project_id,
-        snapshot_path=str(snapshot_path),
         base_branch=base_branch,
         created_at=datetime.now(UTC).isoformat(),
         claimed_by=_get_claimed_by(),
@@ -243,145 +200,10 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
     return meta
 
 
-def restore_task_snapshot(task_id: str) -> bool:
-    """DANGEROUS: Restore DB from snapshot - DESTROYS ALL DATA created after snapshot.
-
-    WARNING: This function runs pg_restore --clean which DELETES all records
-    created after the snapshot was taken. This includes:
-    - Tasks created by other processes
-    - User data entered during the task
-    - Any database changes made after checkpoint
-
-    DO NOT USE for normal task abandonment. Use the safe `st abandon` command
-    which marks tasks as 'abandoned' without restoring the database.
-
-    Only use this for disaster recovery when you intentionally want to
-    restore the entire database to a previous state.
-
-    Stops backend service, restores from pg_dump, restarts backend.
-
-    Args:
-        task_id: Task identifier
-
-    Returns:
-        True on success
-
-    Raises:
-        SystemExit: On restore failure
-    """
-    snapshot_path = _get_snapshot_path(task_id)
-    meta_path = _get_meta_path(task_id)
-
-    if not snapshot_path.exists():
-        print(f"Error: No snapshot found for {task_id}", file=sys.stderr)
-        sys.exit(1)
-
-    # Load metadata for base branch info
-    if meta_path.exists():
-        meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
-        base_branch = meta.base_branch
-    else:
-        base_branch = "main"
-
-    db_url = _get_database_url()
-
-    # Stop backend service
-    print("Stopping summitflow-backend service...")
-    try:
-        subprocess.run(
-            ["systemctl", "--user", "stop", "summitflow-backend"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to stop service: {e.stderr}", file=sys.stderr)
-
-    # Restore from snapshot
-    print(f"Restoring database from {snapshot_path}...")
-    try:
-        subprocess.run(
-            [
-                "pg_restore",
-                "--clean",
-                "--if-exists",
-                "--no-owner",  # Skip ownership issues
-                "--no-privileges",  # Skip privilege issues
-                f"--dbname={db_url}",
-                str(snapshot_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        # pg_restore returns non-zero for warnings too
-        # Only fail on critical errors, not ownership/privilege warnings
-        stderr_lower = e.stderr.lower()
-        # Critical errors that indicate data loss
-        critical_errors = ["fatal:", "could not connect", "database does not exist"]
-        if any(err in stderr_lower for err in critical_errors):
-            print(f"Error: pg_restore failed: {e.stderr}", file=sys.stderr)
-            # Try to restart backend even on failure
-            subprocess.run(
-                ["systemctl", "--user", "start", "summitflow-backend"],
-                capture_output=True,
-            )
-            sys.exit(1)
-        # Non-critical warnings (ownership, privileges, extensions)
-        if e.stderr.strip():
-            print("pg_restore completed with warnings (non-critical)", file=sys.stderr)
-
-    # Restart backend service
-    print("Restarting summitflow-backend service...")
-    try:
-        subprocess.run(
-            ["systemctl", "--user", "start", "summitflow-backend"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to start service: {e.stderr}", file=sys.stderr)
-
-    # Wait for backend to be ready (up to 30 seconds)
-    print("Waiting for backend to be ready...")
-    for _ in range(30):
-        try:
-            req = urllib.request.Request("http://localhost:8001/health", method="GET")
-            with urllib.request.urlopen(req, timeout=1):
-                print("Backend ready.")
-                break
-        except (urllib.error.URLError, TimeoutError):
-            time.sleep(1)
-    else:
-        print("Warning: Backend may not be fully ready yet", file=sys.stderr)
-
-    # Checkout base branch and discard uncommitted changes
-    print(f"Switching to {base_branch} branch...")
-    try:
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "."],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
-
-    return True
-
-
 def remove_snapshot(
     task_id: str, remove_worktree: bool = True, project_id: str | None = None
 ) -> bool:
-    """Delete snapshot files and optionally worktree after completion.
+    """Delete checkpoint metadata and optionally worktree after completion.
 
     Args:
         task_id: Task identifier
@@ -393,7 +215,6 @@ def remove_snapshot(
     """
     from .worktree import remove_worktree as rm_worktree
 
-    snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
 
     # Load project_id from meta if not provided
@@ -409,7 +230,6 @@ def remove_snapshot(
         with contextlib.suppress(Exception):
             rm_worktree(task_id, delete_branch=False, project_id=project_id)
 
-    snapshot_path.unlink(missing_ok=True)
     meta_path.unlink(missing_ok=True)
 
     return True
@@ -729,9 +549,9 @@ def has_active_task(project_id: str) -> str | None:
 
 
 def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
-    """Get snapshot info for a task.
+    """Get checkpoint info for a task.
 
-    Returns dict with snapshot details or None if not found.
+    Returns dict with checkpoint details or None if not found.
     Includes worktree_path, worktree_exists for isolation status,
     and allocated ports for worktree services.
     """
@@ -739,25 +559,12 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
     from .worktree import get_worktree_info
 
     meta_path = _get_meta_path(task_id)
-    snapshot_path = _get_snapshot_path(task_id)
 
     if not meta_path.exists():
         return None
 
     meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
     info = meta.to_dict()
-
-    # Add size info
-    if snapshot_path.exists():
-        size_bytes = snapshot_path.stat().st_size
-        if size_bytes < 1024:
-            info["size"] = f"{size_bytes}B"
-        elif size_bytes < 1024 * 1024:
-            info["size"] = f"{size_bytes // 1024}KB"
-        else:
-            info["size"] = f"{size_bytes // (1024 * 1024)}MB"
-    else:
-        info["size"] = "0"
 
     # Check worktree status (use project_id from meta)
     worktree_info = get_worktree_info(task_id, meta.project_id)
