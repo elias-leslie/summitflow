@@ -30,7 +30,7 @@ class TestCFJWTExtraction:
 
     def test_cf_jwt_extraction(self):
         """Test email is correctly extracted from CF-Access-JWT-Assertion header."""
-        from app.api.ideas import extract_email_from_cf_jwt
+        from app.services.ideas_helpers import extract_email_from_cf_jwt
 
         jwt = make_jwt("test@example.com")
         email = extract_email_from_cf_jwt(jwt)
@@ -38,13 +38,13 @@ class TestCFJWTExtraction:
 
     def test_cf_jwt_extraction_none(self):
         """Test None returned when no JWT provided."""
-        from app.api.ideas import extract_email_from_cf_jwt
+        from app.services.ideas_helpers import extract_email_from_cf_jwt
 
         assert extract_email_from_cf_jwt(None) is None
 
     def test_cf_jwt_extraction_invalid(self):
         """Test None returned for invalid JWT."""
-        from app.api.ideas import extract_email_from_cf_jwt
+        from app.services.ideas_helpers import extract_email_from_cf_jwt
 
         assert extract_email_from_cf_jwt("invalid.jwt") is None
         assert extract_email_from_cf_jwt("not-a-jwt") is None
@@ -54,7 +54,7 @@ class TestIdeaSubmission:
     """Tests for POST /api/projects/{id}/ideas."""
 
     @patch("asyncio.create_task")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_submit_idea_returns_idea_id(self, mock_conn: MagicMock, mock_create_task: MagicMock):
         """Test that submitting an idea returns an idea_id."""
         mock_cursor = MagicMock()
@@ -80,7 +80,7 @@ class TestIdeaSubmission:
         assert data["status"] == "pending_refinement"
 
     @patch("asyncio.create_task")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_submit_idea_extracts_email(self, mock_conn: MagicMock, mock_create_task: MagicMock):
         """Test that submitting with JWT extracts and stores email."""
         mock_cursor = MagicMock()
@@ -113,7 +113,7 @@ class TestIdeaSubmission:
 class TestRetryLimit:
     """Tests for retry limit enforcement (ac-003)."""
 
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_retry_limit(self, mock_conn: MagicMock):
         """Test retry is blocked after 3 attempts."""
         mock_cursor = MagicMock()
@@ -137,8 +137,8 @@ class TestRetryLimit:
 class TestIdeaApproval:
     """Tests for POST /api/projects/{id}/ideas/{id}/approve."""
 
-    @patch("app.storage.tasks.core.create_task")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.api.ideas.create_task")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_approve_creates_task(self, mock_conn: MagicMock, mock_create_task: MagicMock):
         """Test approving an idea creates a task."""
         mock_cursor = MagicMock()
@@ -168,7 +168,7 @@ class TestImmediateExecution:
     """Tests for POST /api/projects/{id}/ideas/execute-now (ac-011)."""
 
     @patch("app.tasks.autonomous.ideas.process_crowdsourced_ideas")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     @patch("app.api.ideas._last_execution", {})  # Clear throttle
     def test_immediate_execution(self, mock_conn: MagicMock, mock_process: MagicMock):
         """Test immediate execution triggers the processing task."""
@@ -196,7 +196,7 @@ class TestRefinementFlow:
 
     @patch("app.services.idea_refiner.update_idea_with_refinement")
     @patch("app.services.idea_refiner.refine_idea")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_refine_idea_success(
         self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
     ):
@@ -226,7 +226,7 @@ class TestRefinementFlow:
 
     @patch("app.services.idea_refiner.update_idea_with_refinement")
     @patch("app.services.idea_refiner.refine_idea")
-    @patch("app.api.ideas.get_connection")
+    @patch("app.storage.ideas_repository.get_connection")
     def test_refine_idea_rejected(
         self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
     ):
