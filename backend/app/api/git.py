@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -330,3 +332,223 @@ async def get_pr_status(task_id: str) -> dict[str, Any]:
         "branch_name": task.get("branch_name"),
         "status": task.get("status"),
     }
+
+
+# ==============================================================================
+# Worktree endpoints
+# ==============================================================================
+
+WORKTREES_BASE_DIR = Path.home() / ".summitflow" / "worktrees"
+
+
+class WorktreeInfo(BaseModel):
+    """Information about a worktree."""
+
+    task_id: str
+    path: str
+    branch: str
+    base_branch: str
+    is_active: bool
+
+
+class WorktreesResponse(BaseModel):
+    """Response for worktrees list."""
+
+    worktrees: list[WorktreeInfo]
+    count: int
+
+
+def _get_worktree_info(task_id: str) -> WorktreeInfo | None:
+    """Get information about an existing worktree."""
+    worktree_path = WORKTREES_BASE_DIR / task_id
+
+    if not worktree_path.exists():
+        return None
+
+    # Verify it's a valid git worktree
+    git_dir = worktree_path / ".git"
+    if not git_dir.exists():
+        return None
+
+    # Get current branch
+    result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], worktree_path)
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+
+    # Determine base branch
+    base_branch = "main"
+    for candidate in ["main", "master", "develop"]:
+        result = _run_git(
+            ["rev-parse", "--verify", f"origin/{candidate}"],
+            worktree_path,
+        )
+        if result.returncode == 0:
+            base_branch = candidate
+            break
+
+    return WorktreeInfo(
+        task_id=task_id,
+        path=str(worktree_path),
+        branch=branch,
+        base_branch=base_branch,
+        is_active=True,
+    )
+
+
+@router.get("/git/worktrees", response_model=WorktreesResponse, tags=["git"])
+async def get_worktrees() -> WorktreesResponse:
+    """Get list of active worktrees."""
+    worktrees: list[WorktreeInfo] = []
+
+    if WORKTREES_BASE_DIR.exists():
+        for entry in WORKTREES_BASE_DIR.iterdir():
+            if entry.is_dir():
+                info = _get_worktree_info(entry.name)
+                if info:
+                    worktrees.append(info)
+
+    return WorktreesResponse(worktrees=worktrees, count=len(worktrees))
+
+
+# ==============================================================================
+# Branch endpoints
+# ==============================================================================
+
+
+class BranchInfo(BaseModel):
+    """Information about a git branch."""
+
+    name: str
+    is_current: bool
+    has_worktree: bool
+    worktree_path: str | None = None
+    task_id: str | None = None
+    last_commit_short: str | None = None
+    last_commit_date: str | None = None
+
+
+class BranchesResponse(BaseModel):
+    """Response for branches list."""
+
+    branches: list[BranchInfo]
+    count: int
+
+
+def _extract_task_id_from_branch(branch_name: str) -> str | None:
+    """Extract task ID from branch name if it follows task-xxx/main pattern."""
+    # Match patterns like task-abc123/main or task-abc123
+    match = re.match(r"^(task-[a-zA-Z0-9_-]+)(?:/.*)?$", branch_name)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _get_branch_commit_info(
+    branch_name: str, repo_path: Path
+) -> tuple[str | None, str | None]:
+    """Get the last commit short hash and date for a branch."""
+    result = _run_git(
+        ["log", "-1", "--format=%h|%cI", branch_name],
+        repo_path,
+    )
+    if result.returncode != 0:
+        return (None, None)
+
+    parts = result.stdout.strip().split("|")
+    if len(parts) == 2:
+        return (parts[0], parts[1])
+    return (None, None)
+
+
+def _get_worktree_branches() -> dict[str, str]:
+    """Get a mapping of branch names to worktree paths."""
+    worktree_branches: dict[str, str] = {}
+
+    if not WORKTREES_BASE_DIR.exists():
+        return worktree_branches
+
+    for entry in WORKTREES_BASE_DIR.iterdir():
+        if entry.is_dir():
+            git_dir = entry / ".git"
+            if git_dir.exists():
+                result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], entry)
+                if result.returncode == 0:
+                    branch = result.stdout.strip()
+                    worktree_branches[branch] = str(entry)
+
+    return worktree_branches
+
+
+@router.get("/git/branches", response_model=BranchesResponse, tags=["git"])
+async def get_branches() -> BranchesResponse:
+    """Get list of all branches with worktree indicators.
+
+    Returns local and remote branches with information about:
+    - Whether it's the current branch
+    - Whether it has an associated worktree
+    - Last commit info
+    """
+    branches: list[BranchInfo] = []
+
+    # Get all managed repos and aggregate branches
+    managed_repos = _get_managed_repos()
+    if not managed_repos:
+        return BranchesResponse(branches=[], count=0)
+
+    # Use the first managed repo for now (typically the main project)
+    repo_path = managed_repos[0]
+
+    # Get worktree branches mapping
+    worktree_branches = _get_worktree_branches()
+
+    # Get current branch
+    result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+    current_branch = result.stdout.strip() if result.returncode == 0 else ""
+
+    # Get local branches
+    result = _run_git(["branch", "--format=%(refname:short)"], repo_path)
+    if result.returncode != 0:
+        return BranchesResponse(branches=[], count=0)
+
+    seen_branches: set[str] = set()
+
+    for line in result.stdout.strip().split("\n"):
+        branch_name = line.strip()
+        if not branch_name or branch_name in seen_branches:
+            continue
+
+        seen_branches.add(branch_name)
+
+        # Get commit info
+        commit_short, commit_date = _get_branch_commit_info(branch_name, repo_path)
+
+        # Check for worktree
+        has_worktree = branch_name in worktree_branches
+        worktree_path = worktree_branches.get(branch_name)
+
+        # Extract task ID if applicable
+        task_id = _extract_task_id_from_branch(branch_name)
+
+        branches.append(
+            BranchInfo(
+                name=branch_name,
+                is_current=branch_name == current_branch,
+                has_worktree=has_worktree,
+                worktree_path=worktree_path,
+                task_id=task_id,
+                last_commit_short=commit_short,
+                last_commit_date=commit_date,
+            )
+        )
+
+    # Sort: current branch first, then worktree branches, then alphabetically
+    branches.sort(
+        key=lambda b: (
+            not b.is_current,
+            not b.has_worktree,
+            b.name.lower(),
+        )
+    )
+
+    return BranchesResponse(branches=branches, count=len(branches))

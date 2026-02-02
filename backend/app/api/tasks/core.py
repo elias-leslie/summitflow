@@ -30,6 +30,7 @@ from ...schemas.tasks import (
     TaskResponse,
     TaskStatusUpdate,
     TaskUpdate,
+    WorktreeResponse,
 )
 from ...storage import log_task_event
 from ...storage import task_dependencies as dep_store
@@ -40,6 +41,33 @@ from ...storage.subtasks import get_subtasks_for_task
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _get_worktree_response(task_id: str) -> WorktreeResponse | None:
+    """Get worktree info for a task if it exists.
+
+    Args:
+        task_id: Task ID to check for worktree
+
+    Returns:
+        WorktreeResponse if worktree exists, None otherwise
+    """
+    try:
+        from ...cli.lib.worktree import get_worktree_info
+
+        worktree_info = get_worktree_info(task_id)
+        if worktree_info:
+            return WorktreeResponse(
+                path=str(worktree_info.path),
+                branch=worktree_info.branch,
+                is_active=worktree_info.is_active,
+            )
+    except ImportError:
+        # Worktree module not available
+        pass
+    except Exception as e:
+        logger.debug("Failed to get worktree info", task_id=task_id, error=str(e))
+    return None
 
 
 def _get_step_count_for_task(task_id: str) -> int:
@@ -475,6 +503,8 @@ def _task_to_response(task: dict[str, Any], criteria_count: int | None = None) -
         plan_approved_by=task.get("plan_approved_by"),
         # Context for plan.json round-trip (from task_spirit if joined)
         context=task.get("context"),
+        # Worktree info (when task has an active worktree)
+        worktree=task.get("worktree"),
     )
 
 
@@ -823,6 +853,11 @@ async def get_task_global(
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    # Add worktree info if exists
+    worktree_response = _get_worktree_response(task_id)
+    if worktree_response:
+        task["worktree"] = worktree_response
+
     task_response = _task_to_response(task)
 
     # Return TOON format if requested
@@ -847,6 +882,12 @@ async def get_task(
         task_id: Task ID
     """
     task = _verify_task_project(task_id, project_id)
+
+    # Add worktree info if exists
+    worktree_response = _get_worktree_response(task_id)
+    if worktree_response:
+        task["worktree"] = worktree_response
+
     task_response = _task_to_response(task)
 
     # Return TOON format if requested

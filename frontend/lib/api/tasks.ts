@@ -62,6 +62,12 @@ export interface BlockerInfo {
   priority: number
 }
 
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  is_active: boolean
+}
+
 export interface Task {
   id: string
   project_id: string
@@ -101,6 +107,8 @@ export interface Task {
   autonomous?: boolean
   // Agent override for autonomous execution
   agent_override?: string | null
+  // Worktree info (when task has an active worktree)
+  worktree?: WorktreeInfo | null
 }
 
 export interface TaskListResponse {
