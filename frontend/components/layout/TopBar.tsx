@@ -21,8 +21,62 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { fetchTasks, type Task, type TaskType } from '@/lib/api'
+import { fetchGitStatus, type RepoStatus } from '@/lib/api/git'
 import { GlobalAutoExecDropdown } from './GlobalAutoExecDropdown'
 import { useSelectedProject } from './ProjectSelector'
+
+type GitHealthState = 'clean' | 'dirty' | 'behind' | 'loading' | 'error'
+
+function useGitHealth(): GitHealthState {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['git-status-topbar'],
+    queryFn: fetchGitStatus,
+    staleTime: 30000,
+    refetchInterval: 60000,
+  })
+
+  if (isLoading) return 'loading'
+  if (isError || !data) return 'error'
+
+  const repos = data.repositories
+  if (repos.some((r: RepoStatus) => r.state === 'behind')) return 'behind'
+  if (repos.some((r: RepoStatus) => r.state === 'dirty' || r.state === 'ahead'))
+    return 'dirty'
+  return 'clean'
+}
+
+function GitStatusIndicator({ state }: { state: GitHealthState }) {
+  if (state === 'loading' || state === 'error') return null
+
+  const colorClasses = {
+    clean: 'bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.7)]',
+    dirty: 'bg-sunset-orange shadow-[0_0_8px_rgba(255,102,0,0.7)]',
+    behind: 'bg-outrun-500 shadow-[0_0_8px_rgba(255,0,102,0.7)]',
+  }
+
+  const pulseClasses = {
+    clean: '',
+    dirty: 'animate-pulse',
+    behind: 'animate-pulse',
+  }
+
+  return (
+    <span
+      className={clsx(
+        'w-2 h-2 rounded-full flex-shrink-0',
+        colorClasses[state],
+        pulseClasses[state],
+      )}
+      title={
+        state === 'clean'
+          ? 'All repos clean'
+          : state === 'dirty'
+            ? 'Uncommitted changes or ahead of remote'
+            : 'Behind remote - pull needed'
+      }
+    />
+  )
+}
 
 const SUMMITFLOW_PROJECT_ID = 'summitflow'
 
@@ -75,6 +129,7 @@ export function TopBar() {
   const selectedProjectId = useSelectedProject()
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const gitHealth = useGitHealth()
 
   const [isExpanded, setIsExpanded] = useState(false)
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -287,6 +342,7 @@ export function TopBar() {
                   )}
                 />
                 <span>{item.label}</span>
+                {item.id === 'git' && <GitStatusIndicator state={gitHealth} />}
               </Link>
             )
           })}

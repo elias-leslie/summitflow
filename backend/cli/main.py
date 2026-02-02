@@ -13,6 +13,7 @@ from .commands import (
     backup,
     checkpoints,
     claim,
+    close,
     complete,
     deps,
     done,
@@ -58,11 +59,12 @@ TASKS:
   verify <plan.json>                       # validate plan file against schema
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
-CHECKPOINT (claim → done | abandon):
+CHECKPOINT (claim -> done | close | abandon):
   claim <id> [--force]                     # claim task, create checkpoint (DB+git)
   claim <subtask> -t <task>                # claim subtask, create branch
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
+  close <task> [--force]                   # complete task (code-only), delete branches, no merge
   abandon <subtask> -t <task>              # abandon subtask, delete branch
   abandon <task> [--force]                 # abandon task, restore DB, delete branches
   checkpoints [-p project] [-d task]       # show active checkpoints
@@ -179,6 +181,9 @@ for cmd in done.app.registered_commands:
 for cmd in abandon.app.registered_commands:
     if cmd.callback is not None and cmd.name == "abandon":
         app.command(name="abandon")(cmd.callback)
+for cmd in close.app.registered_commands:
+    if cmd.callback is not None and cmd.name == "close":
+        app.command(name="close")(cmd.callback)
 
 
 @app.callback()

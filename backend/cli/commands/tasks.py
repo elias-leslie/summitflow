@@ -11,6 +11,7 @@ from typing import Annotated, Any
 import typer
 
 from ..client import APIError, STClient
+from ..lib.worktree import get_worktree_info
 from ..output import (
     handle_api_error,
     output_blocked_tasks,

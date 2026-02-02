@@ -82,12 +82,24 @@ def _claim_task(
 
         typer.echo(f"Existing checkpoint found for {task_id} (created {age_str} ago).")
         typer.echo(f"Size: {existing.get('size', 'unknown')}")
+        if existing.get("worktree_path"):
+            typer.echo(f"Worktree: {existing['worktree_path']}")
         resume = typer.confirm("Resume existing work?", default=True)
         if not resume:
             typer.echo("Aborting. Use --force to overwrite.")
             raise typer.Exit(1)
-        # Resume - just switch to the branch
+        # Resume - check for worktree or use branch
+        worktree_path = existing.get("worktree_path")
         task_branch = f"{task_id}/main"
+        if worktree_path and existing.get("worktree_exists") == "true":
+            typer.echo(f"Resumed task {task_id}")
+            return {
+                "task_id": task_id,
+                "action": "resumed",
+                "branch": task_branch,
+                "worktree_path": worktree_path,
+            }
+        # Fall back to branch checkout (legacy mode or missing worktree)
         try:
             subprocess.run(
                 ["git", "checkout", task_branch],
@@ -96,7 +108,12 @@ def _claim_task(
                 text=True,
             )
             typer.echo(f"Resumed task {task_id}")
-            return {"task_id": task_id, "action": "resumed", "branch": task_branch}
+            return {
+                "task_id": task_id,
+                "action": "resumed",
+                "branch": task_branch,
+                "worktree_path": worktree_path,
+            }
         except subprocess.CalledProcessError as e:
             output_error(f"Failed to checkout branch: {e.stderr}")
             raise typer.Exit(1) from None
@@ -128,6 +145,7 @@ def _claim_task(
         "branch": f"{task_id}/main",
         "snapshot": meta.snapshot_path,
         "base_branch": meta.base_branch,
+        "worktree_path": meta.worktree_path,
     }
 
 
@@ -207,7 +225,14 @@ def claim_command(
         result = _claim_task(client, id, force)
         if result.get("action") == "resumed":
             output_success(f"Task {id} resumed. Branch: {result['branch']}")
+            if result.get("worktree_path"):
+                typer.echo(f"\nTo work in isolation:")
+                typer.echo(f"  cd {result['worktree_path']}")
         else:
             output_success(f"Task {id} claimed. Checkpoint created.")
             typer.echo(f"  Branch: {result['branch']}")
             typer.echo(f"  Snapshot: {result['snapshot']}")
+            if result.get("worktree_path"):
+                typer.echo(f"  Worktree: {result['worktree_path']}")
+                typer.echo(f"\nTo work in isolation:")
+                typer.echo(f"  cd {result['worktree_path']}")

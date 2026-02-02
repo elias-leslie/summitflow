@@ -29,14 +29,18 @@ class SnapshotMeta:
     base_branch: str
     created_at: str  # ISO format
     claimed_by: str
+    worktree_path: str | None = None  # Path to isolated worktree
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | None]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, str]) -> SnapshotMeta:
+    def from_dict(cls, data: dict[str, str | None]) -> SnapshotMeta:
         """Create from dictionary."""
+        # Handle older snapshots without worktree_path
+        if "worktree_path" not in data:
+            data["worktree_path"] = None
         return cls(**data)
 
 
@@ -123,22 +127,27 @@ def _get_meta_path(task_id: str) -> Path:
     return _get_snapshots_dir() / f"{task_id}.meta.json"
 
 
-def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
-    """Create DB snapshot for task.
+def create_task_snapshot(
+    task_id: str, project_id: str, use_worktree: bool = True
+) -> SnapshotMeta:
+    """Create DB snapshot and worktree for task.
 
-    Creates pg_dump snapshot and metadata file.
-    Also creates git branch for the task.
+    Creates pg_dump snapshot, metadata file, and isolated git worktree.
+    The worktree provides code isolation at ~/.summitflow/worktrees/<task-id>/.
 
     Args:
         task_id: Task identifier
         project_id: Project identifier
+        use_worktree: Whether to create isolated worktree (default True)
 
     Returns:
-        SnapshotMeta with checkpoint details
+        SnapshotMeta with checkpoint details including worktree path
 
     Raises:
         SystemExit: On pg_dump failure or git errors
     """
+    from .worktree import WorktreeError, create_worktree, get_worktree_info
+
     snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
     db_url = _get_database_url()
@@ -170,6 +179,35 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
         print("Error: pg_dump not found. Install PostgreSQL client tools.", file=sys.stderr)
         sys.exit(1)
 
+    worktree_path: str | None = None
+
+    if use_worktree:
+        # Create isolated worktree for task
+        try:
+            worktree_info = create_worktree(task_id, base_branch)
+            worktree_path = str(worktree_info.path)
+            print(f"Created worktree: {worktree_path}")
+        except WorktreeError as e:
+            # Clean up snapshot on worktree failure
+            snapshot_path.unlink(missing_ok=True)
+            print(f"Error: Failed to create worktree: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Legacy mode: create branch in main repo
+        task_branch = f"{task_id}/main"
+        try:
+            subprocess.run(
+                ["git", "checkout", "-b", task_branch],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # Clean up snapshot on git failure
+            snapshot_path.unlink(missing_ok=True)
+            print(f"Error: Failed to create git branch: {e.stderr}", file=sys.stderr)
+            sys.exit(1)
+
     # Create metadata
     meta = SnapshotMeta(
         task_id=task_id,
@@ -178,24 +216,9 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
         base_branch=base_branch,
         created_at=datetime.now(UTC).isoformat(),
         claimed_by=_get_claimed_by(),
+        worktree_path=worktree_path,
     )
     meta_path.write_text(json.dumps(meta.to_dict(), indent=2))
-
-    # Create git branch for task (use task_id/main to allow subtask branches like task_id/1.1)
-    task_branch = f"{task_id}/main"
-    try:
-        subprocess.run(
-            ["git", "checkout", "-b", task_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        # Clean up snapshot on git failure
-        snapshot_path.unlink(missing_ok=True)
-        meta_path.unlink(missing_ok=True)
-        print(f"Error: Failed to create git branch: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
 
     return meta
 
@@ -335,17 +358,27 @@ def restore_task_snapshot(task_id: str) -> bool:
     return True
 
 
-def remove_snapshot(task_id: str) -> bool:
-    """Delete snapshot files after successful completion.
+def remove_snapshot(task_id: str, remove_worktree: bool = True) -> bool:
+    """Delete snapshot files and optionally worktree after completion.
 
     Args:
         task_id: Task identifier
+        remove_worktree: Whether to also remove the worktree (default True)
 
     Returns:
         True on success
     """
+    from .worktree import remove_worktree as rm_worktree
+
     snapshot_path = _get_snapshot_path(task_id)
     meta_path = _get_meta_path(task_id)
+
+    # Remove worktree if it exists
+    if remove_worktree:
+        try:
+            rm_worktree(task_id, delete_branch=False)  # Branch handled separately
+        except Exception:
+            pass  # Best effort cleanup
 
     snapshot_path.unlink(missing_ok=True)
     meta_path.unlink(missing_ok=True)
@@ -637,11 +670,14 @@ def has_active_task(project_id: str) -> str | None:
     return checkpoints[0].task_id if checkpoints else None
 
 
-def get_snapshot_info(task_id: str) -> dict[str, str] | None:
+def get_snapshot_info(task_id: str) -> dict[str, str | None] | None:
     """Get snapshot info for a task.
 
     Returns dict with snapshot details or None if not found.
+    Includes worktree_path and worktree_exists for isolation status.
     """
+    from .worktree import get_worktree_info
+
     meta_path = _get_meta_path(task_id)
     snapshot_path = _get_snapshot_path(task_id)
 
@@ -662,5 +698,11 @@ def get_snapshot_info(task_id: str) -> dict[str, str] | None:
             info["size"] = f"{size_bytes // (1024 * 1024)}MB"
     else:
         info["size"] = "0"
+
+    # Check worktree status
+    worktree_info = get_worktree_info(task_id)
+    info["worktree_exists"] = str(worktree_info is not None).lower()
+    if worktree_info:
+        info["worktree_branch"] = worktree_info.branch
 
     return info
