@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .connection import get_connection
-from .explorer_entries import _to_iso_string
+from .explorer_helpers import to_iso_string as _to_iso_string
 
 
 def get_scan_state(project_id: str) -> dict[str, Any] | None:
