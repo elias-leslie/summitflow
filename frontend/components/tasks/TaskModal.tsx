@@ -352,6 +352,9 @@ export function TaskModal({
                 onEdit={handleObjectiveEdit}
               />
 
+              {/* Worktree Section - Shows when task has an active worktree */}
+              {task.worktree && <WorktreeSection worktree={task.worktree} />}
+
               {/* Description - Collapsible, collapsed by default */}
               <CollapsibleSection
                 title="Description"
