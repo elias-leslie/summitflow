@@ -19,23 +19,6 @@ router = APIRouter()
 # ============================================================================
 
 
-class ActivityEventMetadata(BaseModel):
-    """Metadata for an activity event, varies by type."""
-
-    task_id: str | None = None
-    session_id: str | None = None
-    backup_id: str | None = None
-    commit_sha: str | None = None
-    status: str | None = None
-    title: str | None = None
-    agent_type: str | None = None
-    backup_type: str | None = None
-    size_bytes: int | None = None
-    tests_passed: int | None = None
-    tests_failed: int | None = None
-    notes: str | None = None
-
-
 class ActivityEvent(BaseModel):
     """A single activity event."""
 
