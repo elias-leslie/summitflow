@@ -27,8 +27,8 @@ NC='\033[0m'
 # Default API base URL
 API_BASE_URL="${ST_API_URL:-http://localhost:8001}"
 
-# Worktrees base directory
-WORKTREES_BASE="${ST_WORKTREES_BASE:-${HOME}/.summitflow/worktrees}"
+# Worktrees base directory (per-project paths)
+WORKTREES_BASE="${ST_WORKTREES_BASE:-${HOME}/.local/share/st/worktrees}"
 
 usage() {
     echo "Worktree Service Manager (Config-Driven)"
@@ -47,7 +47,7 @@ usage() {
     echo ""
     echo "Environment Variables:"
     echo "  ST_API_URL           SummitFlow API URL (default: http://localhost:8001)"
-    echo "  ST_WORKTREES_BASE    Worktrees directory (default: ~/.summitflow/worktrees)"
+    echo "  ST_WORKTREES_BASE    Worktrees base dir (default: ~/.local/share/st/worktrees)"
     echo ""
     echo "Examples:"
     echo "  $0 start task-abc123 --project proj-xyz"
@@ -162,13 +162,13 @@ check_port() {
     fi
 }
 
-# Get worktree path
+# Get worktree path (per-project: ~/.local/share/st/worktrees/<project-id>/<task-id>/)
 get_worktree_path() {
     local task_id="$1"
     # Sanitize task ID (replace non-alphanumeric chars with underscore)
     local sanitized
     sanitized=$(echo "$task_id" | tr -c 'a-zA-Z0-9_-' '_' | tr -s '_' | sed 's/^_//;s/_$//')
-    echo "${WORKTREES_BASE}/${sanitized}"
+    echo "${WORKTREES_BASE}/${PROJECT_ID}/${sanitized}"
 }
 
 # Get PID file directory
