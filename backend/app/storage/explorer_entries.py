@@ -26,7 +26,10 @@ from .explorer_helpers import (
     to_iso_string,
 )
 
-# Re-export constants for backwards compatibility
+# Re-export functions and constants for backwards compatibility
+_row_to_entry = row_to_entry
+_build_where_clause = build_where_clause
+_to_iso_string = to_iso_string
 _ALLOWED_SORT_FIELDS = ALLOWED_SORT_FIELDS
 _ENTRY_COLUMNS = ENTRY_COLUMNS
 
@@ -148,121 +151,74 @@ def get_entry_by_id(entry_id: int) -> dict[str, Any] | None:
 
 
 def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict[str, Any]]:
-    """Get direct children of a path (for tree navigation).
-
-    For files: returns entries where path starts with parent_path/ and has no
-    additional slashes (immediate children only).
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Entry type
-        parent_path: Parent path to find children of
-
-    Returns:
-        List of child entry dicts
-    """
+    """Get direct children of a path (for tree navigation, immediate children only)."""
     # Normalize parent path
     if parent_path and not parent_path.endswith("/"):
         parent_path = parent_path + "/"
 
     with get_connection() as conn, conn.cursor() as cur:
         if not parent_path:
-            # Root level - find top-level entries
-            cur.execute(
-                f"""
-                SELECT {_ENTRY_COLUMNS}
-                FROM explorer_entries
-                WHERE project_id = %s
-                  AND entry_type = %s
-                  AND path NOT LIKE '%%/%%'
-                ORDER BY path
-                """,
-                (project_id, entry_type),
+            query = (
+                f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
+                "WHERE project_id = %s AND entry_type = %s AND path NOT LIKE '%%/%%' "
+                "ORDER BY path"
             )
+            params: tuple[Any, ...] = (project_id, entry_type)
         else:
-            # Find immediate children of parent_path
-            cur.execute(
-                f"""
-                SELECT {_ENTRY_COLUMNS}
-                FROM explorer_entries
-                WHERE project_id = %s
-                  AND entry_type = %s
-                  AND path LIKE %s
-                  AND path NOT LIKE %s
-                ORDER BY path
-                """,
-                (
-                    project_id,
-                    entry_type,
-                    f"{parent_path}%",
-                    f"{parent_path}%/%",
-                ),
+            query = (
+                f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
+                "WHERE project_id = %s AND entry_type = %s AND path LIKE %s "
+                "AND path NOT LIKE %s ORDER BY path"
             )
+            params = (project_id, entry_type, f"{parent_path}%", f"{parent_path}%/%")
 
+        cur.execute(query, params)
         rows = cur.fetchall()
-        return [_row_to_entry(row) for row in rows]
+        return [row_to_entry(row) for row in rows]
 
 
 def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
-    """Get aggregated statistics for explorer entries.
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Optional entry type to filter stats by
-
-    Returns:
-        Dict with:
-            - by_type: {type: count}
-            - by_health: {health: count}
-            - total: total count
-            - last_scanned: most recent scan timestamp
-    """
-    # Build WHERE clause using parameterized conditions
+    """Get aggregated statistics for explorer entries (by_type, by_health, total, last_scanned)."""
     conditions = ["project_id = %s"]
     params: list[Any] = [project_id]
     if entry_type:
         conditions.append("entry_type = %s")
         params.append(entry_type)
 
-    where_clause = _build_where_clause(conditions)
+    where_clause = build_where_clause(conditions)
 
     with get_connection() as conn, conn.cursor() as cur:
         # Count by type
         cur.execute(
-            sql.SQL("""
-            SELECT entry_type, COUNT(*) as count
-            FROM explorer_entries
-            WHERE {where_clause}
-            GROUP BY entry_type
-            """).format(where_clause=where_clause),
+            sql.SQL(
+                "SELECT entry_type, COUNT(*) as count FROM explorer_entries "
+                "WHERE {where_clause} GROUP BY entry_type"
+            ).format(where_clause=where_clause),
             params,
         )
         by_type = {row[0]: row[1] for row in cur.fetchall()}
 
         # Count by health
         cur.execute(
-            sql.SQL("""
-            SELECT health_status, COUNT(*) as count
-            FROM explorer_entries
-            WHERE {where_clause}
-            GROUP BY health_status
-            """).format(where_clause=where_clause),
+            sql.SQL(
+                "SELECT health_status, COUNT(*) as count FROM explorer_entries "
+                "WHERE {where_clause} GROUP BY health_status"
+            ).format(where_clause=where_clause),
             params,
         )
         by_health = {row[0]: row[1] for row in cur.fetchall()}
 
         # Total and last scanned
         cur.execute(
-            sql.SQL("""
-            SELECT COUNT(*), MAX(last_scanned_at)
-            FROM explorer_entries
-            WHERE {where_clause}
-            """).format(where_clause=where_clause),
+            sql.SQL(
+                "SELECT COUNT(*), MAX(last_scanned_at) FROM explorer_entries "
+                "WHERE {where_clause}"
+            ).format(where_clause=where_clause),
             params,
         )
         row = cur.fetchone()
         total = row[0] if row else 0
-        last_scanned = _to_iso_string(row[1]) if row else None
+        last_scanned = to_iso_string(row[1]) if row else None
 
         return {
             "by_type": by_type,
@@ -273,33 +229,16 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
 
 
 def delete_entries(project_id: str, entry_type: str | None = None) -> int:
-    """Delete explorer entries.
-
-    Args:
-        project_id: Project ID for scoping
-        entry_type: Optional entry type to filter (deletes all types if None)
-
-    Returns:
-        Number of entries deleted
-    """
+    """Delete explorer entries (optionally filtered by entry_type)."""
     with get_connection() as conn, conn.cursor() as cur:
         if entry_type:
-            cur.execute(
-                """
-                DELETE FROM explorer_entries
-                WHERE project_id = %s AND entry_type = %s
-                """,
-                (project_id, entry_type),
-            )
+            query = "DELETE FROM explorer_entries WHERE project_id = %s AND entry_type = %s"
+            params: tuple[Any, ...] = (project_id, entry_type)
         else:
-            cur.execute(
-                """
-                DELETE FROM explorer_entries
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
+            query = "DELETE FROM explorer_entries WHERE project_id = %s"
+            params = (project_id,)
 
+        cur.execute(query, params)
         deleted: int = cur.rowcount or 0
         conn.commit()
         return deleted

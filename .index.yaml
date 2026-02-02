@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-01 06:18 UTC
+generated_at: 2026-02-02 13:30 UTC
 environment:
   python_version: '>=3.12'
   venv_path: backend/.venv
@@ -30,7 +30,6 @@ pages:
 - /projects/:id/backups/:backupId/restore (restore)
 - /projects/:id/design (design)
 - /projects/:id/git (git)
-- /projects/:id/git/worktrees (worktrees)
 - /projects/:id/settings (settings)
 - /projects/new (new)
 endpoints:
@@ -91,6 +90,8 @@ tables:
 - ideas
 - migration_backup
 - mockups
+- model_performance_logs
+- model_performance_metrics
 - notifications
 - project_agent_config
 - projects
@@ -114,7 +115,7 @@ tables:
 - terminal_sessions
 - user_prompts
 tasks:
-- autonomous_work_pickup (every 30 minutes)
+- autonomous_work_pickup (every 2 hours)
 - cleanup_debug_captures (every 1 day)
 - cleanup_stale_tasks (every 1 day)
 - daily_code_health_scan (every 1 day)
@@ -123,6 +124,7 @@ tasks:
 - monitor_systemd_errors (every 5 minutes)
 - orchestrate_self_healing (every 15 minutes)
 - process_crowdsourced_ideas (every 1 day)
+- process_scheduled_tasks (every 1 minute)
 - reset_expired_task_claims (every 1 hour)
 - review_pending_tasks (every 30 minutes)
 - run_scheduled_backups (every 1 hour)
@@ -131,17 +133,17 @@ tasks:
 folders:
   (root): 30 files - services, tests
   .claude: 3 files
-  .dev-tools: 9 files - tests
+  .dev-tools: 14 files - tests
   .qna-session: 1 files
-  .st: 4 files
+  .st: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 501 files - api, services, tests
+  backend: 513 files - api, services, tests
   docs: 64 files - tests
-  frontend: 281 files - api, components, tests
+  frontend: 264 files - api, components, tests
   mockups: 7 files
   project_review: 11 files
-  scripts: 33 files - services, tests
+  scripts: 34 files - services, tests
   services: 4 files - services
   spec: 2 files - tests
   tasks: 496 files - api, components, services, tests
