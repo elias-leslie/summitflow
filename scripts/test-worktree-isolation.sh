@@ -468,18 +468,18 @@ phase_21_service_port_isolation() {
     result=$(python3 -c "
 import sys
 sys.path.insert(0, 'backend')
-from cli.lib.port_manager import get_port_offset, allocate_ports
+from cli.lib.port_manager import calculate_ports, allocate_ports
 
 # Test deterministic calculation
 task1 = 'task-abc123'
 task2 = 'task-def456'
 
-offset1 = get_port_offset(task1)
-offset2 = get_port_offset(task2)
+backend1, frontend1 = calculate_ports(task1)
+backend2, frontend2 = calculate_ports(task2)
 
-# Offsets should be in range 0-99
-print(f'offset1_valid:{0 <= offset1 < 100}')
-print(f'offset2_valid:{0 <= offset2 < 100}')
+# Ports should be in valid range
+print(f'offset1_valid:{8100 <= backend1 < 8200}')
+print(f'offset2_valid:{8100 <= backend2 < 8200}')
 
 # Test port allocation
 ports = allocate_ports('task-test')
@@ -566,22 +566,19 @@ phase_22_step_verification_context() {
     result=$(python3 -c "
 import sys
 sys.path.insert(0, 'backend')
-from app.services.worktree import get_execution_path, get_task_worktree
+# Use CLI module which doesn't have db deps
+from cli.lib.worktree import get_worktree_info
 
 task_id = '$task_id'
-project_id = 'summitflow'
 
-worktree = get_task_worktree(task_id)
+worktree = get_worktree_info(task_id)
 if worktree:
     print(f'worktree_found:true')
     print(f'worktree_path:{worktree.path}')
+    if '.summitflow/worktrees' in str(worktree.path):
+        print('uses_worktree:true')
 else:
     print('worktree_found:false')
-
-exec_path = get_execution_path(task_id, project_id)
-print(f'exec_path:{exec_path}')
-if '.summitflow/worktrees' in exec_path:
-    print('uses_worktree:true')
 " 2>/dev/null)
 
     if echo "$result" | grep -q "worktree_found:true"; then
