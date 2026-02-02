@@ -21,6 +21,50 @@ from ..output_context import OutputContext
 app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup stale artifacts")
 
 
+def _auto_cleanup_safe_items() -> tuple[int, int, int]:
+    """Auto-cleanup clearly stale items. Returns (stale_meta, legacy_sql, orphan_branches)."""
+    snapshots_dir = Path.cwd() / ".st" / "snapshots"
+    cleaned_meta = 0
+    cleaned_sql = 0
+    orphan_branches = 0
+
+    if not snapshots_dir.exists():
+        return (0, 0, len(_get_orphaned_branches()))
+
+    # Find and clean stale metadata (no worktree AND no branch)
+    for meta_file in snapshots_dir.glob("*.meta.json"):
+        try:
+            import json
+
+            meta = json.loads(meta_file.read_text())
+            task_id = meta.get("task_id", "")
+            project_id = meta.get("project_id")
+
+            # Check if worktree or branch exists
+            worktree = get_worktree_info(task_id, project_id)
+            branches = _get_task_branches(task_id)
+
+            if not worktree and not branches:
+                # Safe to delete - no worktree, no branch
+                meta_file.unlink()
+                cleaned_meta += 1
+        except Exception:
+            pass
+
+    # Clean legacy SQL files
+    for sql_file in snapshots_dir.glob("*.sql"):
+        try:
+            sql_file.unlink()
+            cleaned_sql += 1
+        except Exception:
+            pass
+
+    # Count orphaned branches (don't auto-delete, just count for warning)
+    orphan_branches = len(_get_orphaned_branches())
+
+    return (cleaned_meta, cleaned_sql, orphan_branches)
+
+
 @app.callback(invoke_without_command=True)
 def checkpoints_callback(
     ctx: typer.Context,
@@ -46,6 +90,10 @@ def checkpoints_callback(
         _format_details(ctx.obj, details)
         return
 
+    # Auto-cleanup safe items BEFORE listing (so stale items don't appear)
+    cleaned_meta, cleaned_sql, orphan_branches = _auto_cleanup_safe_items()
+
+    # Now get active checkpoints (after cleanup)
     checkpoints = get_active_checkpoints(project)
 
     if ctx.obj.is_compact:
@@ -55,6 +103,12 @@ def checkpoints_callback(
             if info:
                 checkpoint_data.append(info)
         _format_compact_checkpoints(checkpoint_data)
+
+        # Report what was cleaned
+        if cleaned_meta or cleaned_sql:
+            print(f"  (auto-cleaned: {cleaned_meta} stale metadata, {cleaned_sql} legacy SQL)")
+        if orphan_branches:
+            print(f"  Orphaned branches: {orphan_branches} (use 'cleanup --branches' to remove)")
     else:
         output_json(
             {
