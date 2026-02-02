@@ -188,44 +188,27 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
     where_clause = build_where_clause(conditions)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Count by type
         cur.execute(
-            sql.SQL(
-                "SELECT entry_type, COUNT(*) as count FROM explorer_entries "
-                "WHERE {where_clause} GROUP BY entry_type"
-            ).format(where_clause=where_clause),
+            sql.SQL("SELECT entry_type, COUNT(*) FROM explorer_entries WHERE {where_clause} GROUP BY entry_type").format(where_clause=where_clause),
             params,
         )
         by_type = {row[0]: row[1] for row in cur.fetchall()}
 
-        # Count by health
         cur.execute(
-            sql.SQL(
-                "SELECT health_status, COUNT(*) as count FROM explorer_entries "
-                "WHERE {where_clause} GROUP BY health_status"
-            ).format(where_clause=where_clause),
+            sql.SQL("SELECT health_status, COUNT(*) FROM explorer_entries WHERE {where_clause} GROUP BY health_status").format(where_clause=where_clause),
             params,
         )
         by_health = {row[0]: row[1] for row in cur.fetchall()}
 
-        # Total and last scanned
         cur.execute(
-            sql.SQL(
-                "SELECT COUNT(*), MAX(last_scanned_at) FROM explorer_entries "
-                "WHERE {where_clause}"
-            ).format(where_clause=where_clause),
+            sql.SQL("SELECT COUNT(*), MAX(last_scanned_at) FROM explorer_entries WHERE {where_clause}").format(where_clause=where_clause),
             params,
         )
         row = cur.fetchone()
         total = row[0] if row else 0
         last_scanned = to_iso_string(row[1]) if row else None
 
-        return {
-            "by_type": by_type,
-            "by_health": by_health,
-            "total": total,
-            "last_scanned": last_scanned,
-        }
+        return {"by_type": by_type, "by_health": by_health, "total": total, "last_scanned": last_scanned}
 
 
 def delete_entries(project_id: str, entry_type: str | None = None) -> int:
