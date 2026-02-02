@@ -43,7 +43,8 @@ def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) ->
 
     task_store.update_task_status(task_id, "ai_reviewing")
 
-    git_diff = _get_git_diff(project_id)
+    # Get diff from worktree if task has one, otherwise project root
+    git_diff = _get_git_diff(task_id, project_id)
     complexity = task.get("complexity", "STANDARD")
 
     prompt = f"""Review this code change for quality, correctness, and security.
