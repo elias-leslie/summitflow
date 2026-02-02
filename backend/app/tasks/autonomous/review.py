@@ -95,15 +95,25 @@ Output format:
         return {"task_id": task_id, "status": "error", "message": str(e)}
 
 
-def _get_git_diff(project_id: str) -> str:
-    """Get git diff for the project."""
+def _get_git_diff(task_id: str, project_id: str) -> str:
+    """Get git diff for the task, using worktree if available.
+
+    Args:
+        task_id: Task ID to check for worktree
+        project_id: Project ID for fallback path
+
+    Returns:
+        Git diff output or error message
+    """
     try:
+        # Use worktree path if task has one, otherwise project root
+        cwd = get_execution_path(task_id, project_id)
         result = subprocess.run(
             ["git", "diff", "HEAD~1"],
             capture_output=True,
             text=True,
             timeout=30,
-            cwd=f"/home/kasadis/{project_id}",
+            cwd=cwd,
         )
         return result.stdout or "(no changes)"
     except Exception as e:
