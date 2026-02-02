@@ -14,7 +14,7 @@ class TestCreateListEntry:
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (
             1,  # id
-            "summitflow",  # project_id
+            "test-project",  # project_id
             "allow",  # list_type
             "compat_comments",  # category
             "backward compatibility",  # pattern
@@ -32,7 +32,7 @@ class TestCreateListEntry:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=None)
 
         result = code_health_lists.create_list_entry(
-            project_id="summitflow",
+            project_id="test-project",
             list_type="allow",
             category="compat_comments",
             pattern="backward compatibility",
@@ -71,7 +71,7 @@ class TestCreateListEntry:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=None)
 
         result = code_health_lists.create_list_entry(
-            project_id="summitflow",
+            project_id="test-project",
             list_type="block",
             category="legacy_vars",
             pattern="old_config",

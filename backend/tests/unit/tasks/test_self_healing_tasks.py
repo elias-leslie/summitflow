@@ -63,7 +63,7 @@ class TestMonitorSystemdErrors:
         mock_monitor_cls.return_value = mock_monitor
         mock_create.return_value = {"id": "task-123"}
 
-        result = monitor_systemd_errors(project_id="summitflow")
+        result = monitor_systemd_errors(project_id="test-project")
 
         assert result["created"] == 2
         assert result["skipped"] == 0

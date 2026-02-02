@@ -180,7 +180,7 @@ def create_mock_session_response(
     response.id = session_id
     response.status = status
     response.messages = []
-    response.project_id = "summitflow"
+    response.project_id = "test-project"
     return response
 
 

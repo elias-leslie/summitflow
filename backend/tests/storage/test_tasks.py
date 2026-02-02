@@ -7,20 +7,13 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def project_id():
-    """Ensure test project exists."""
-    project_id = "summitflow"
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (project_id, "SummitFlow", "http://localhost:3001"),
-        )
-        conn.commit()
-    return project_id
+def project_id(ensure_test_project):
+    """Use test project from conftest."""
+    return ensure_test_project
 
 
 @pytest.fixture
-def test_task(project_id):
+def test_task(project_id, cleanup_task):
     """Create and cleanup a test task with approved spirit record.
 
     Note: G4 enforcement (migration 074) requires spirit record with approved plan
@@ -28,9 +21,10 @@ def test_task(project_id):
     """
     task = task_store.create_task(
         project_id=project_id,
-        title="Test Task for Unit Tests",
+        title="Test Task for Storage Tests",
         description="Created by test fixture",
     )
+    cleanup_task(task["id"])
 
     # Create spirit record with approved plan (required by G4 enforcement)
     with get_connection() as conn, conn.cursor() as cur:
@@ -44,32 +38,27 @@ def test_task(project_id):
         )
         conn.commit()
 
-    yield task
-
-    # Cleanup
-    task_store.delete_task(task["id"])
+    return task
 
 
 class TestCreateTask:
     """Tests for create_task function."""
 
-    def test_create_task_generates_valid_id(self, project_id):
+    def test_create_task_generates_valid_id(self, project_id, cleanup_task):
         """Test that create_task generates a valid task_id."""
         task = task_store.create_task(
             project_id=project_id,
             title="Test Create",
         )
+        cleanup_task(task["id"])
 
-        try:
-            assert task is not None
-            assert task["id"].startswith("task-")
-            assert len(task["id"]) == 13  # "task-" + 8 hex chars
-            assert task["status"] == "pending"
-            assert task["project_id"] == project_id
-        finally:
-            task_store.delete_task(task["id"])
+        assert task is not None
+        assert task["id"].startswith("task-")
+        assert len(task["id"]) == 13  # "task-" + 8 hex chars
+        assert task["status"] == "pending"
+        assert task["project_id"] == project_id
 
-    def test_create_task_with_custom_id(self, project_id):
+    def test_create_task_with_custom_id(self, project_id, cleanup_task):
         """Test creating task with custom ID."""
         custom_id = "task-custom-123"
         task = task_store.create_task(
@@ -77,13 +66,11 @@ class TestCreateTask:
             title="Custom ID Task",
             task_id=custom_id,
         )
+        cleanup_task(task["id"])
 
-        try:
-            assert task["id"] == custom_id
-        finally:
-            task_store.delete_task(task["id"])
+        assert task["id"] == custom_id
 
-    def test_create_task_with_all_fields(self, project_id):
+    def test_create_task_with_all_fields(self, project_id, cleanup_task):
         """Test creating task with all optional fields."""
         task = task_store.create_task(
             project_id=project_id,
@@ -91,13 +78,11 @@ class TestCreateTask:
             description="Full description",
             capability_id=None,  # Optional capability link
         )
+        cleanup_task(task["id"])
 
-        try:
-            assert task["title"] == "Full Task"
-            assert task["description"] == "Full description"
-            assert task["capability_id"] is None
-        finally:
-            task_store.delete_task(task["id"])
+        assert task["title"] == "Full Task"
+        assert task["description"] == "Full description"
+        assert task["capability_id"] is None
 
 
 class TestUpdateTaskStatus:
@@ -148,26 +133,25 @@ class TestUpdateTaskStatus:
 class TestListTasks:
     """Tests for list_tasks function."""
 
-    def test_list_tasks_returns_all(self, project_id):
+    def test_list_tasks_returns_all(self, project_id, cleanup_task):
         """Test listing all tasks for a project."""
-        # Create multiple tasks
         task1 = task_store.create_task(project_id, "Task 1")
         task2 = task_store.create_task(project_id, "Task 2")
+        cleanup_task(task1["id"])
+        cleanup_task(task2["id"])
 
-        try:
-            tasks = task_store.list_tasks(project_id)
-            task_ids = [t["id"] for t in tasks]
+        tasks = task_store.list_tasks(project_id)
+        task_ids = [t["id"] for t in tasks]
 
-            assert task1["id"] in task_ids
-            assert task2["id"] in task_ids
-        finally:
-            task_store.delete_task(task1["id"])
-            task_store.delete_task(task2["id"])
+        assert task1["id"] in task_ids
+        assert task2["id"] in task_ids
 
-    def test_list_tasks_filters_by_status(self, project_id):
+    def test_list_tasks_filters_by_status(self, project_id, cleanup_task):
         """Test filtering tasks by status."""
         task1 = task_store.create_task(project_id, "Pending Task")
         task2 = task_store.create_task(project_id, "Running Task")
+        cleanup_task(task1["id"])
+        cleanup_task(task2["id"])
 
         # Create spirit record with approved plan (required by G4 enforcement)
         with get_connection() as conn, conn.cursor() as cur:
@@ -182,44 +166,37 @@ class TestListTasks:
 
         task_store.update_task_status(task2["id"], "running")
 
-        try:
-            pending = task_store.list_tasks(project_id, status_filter="pending")
-            running = task_store.list_tasks(project_id, status_filter="running")
+        pending = task_store.list_tasks(project_id, status_filter="pending")
+        running = task_store.list_tasks(project_id, status_filter="running")
 
-            pending_ids = [t["id"] for t in pending]
-            running_ids = [t["id"] for t in running]
+        pending_ids = [t["id"] for t in pending]
+        running_ids = [t["id"] for t in running]
 
-            assert task1["id"] in pending_ids
-            assert task2["id"] in running_ids
-            assert task1["id"] not in running_ids
-            assert task2["id"] not in pending_ids
-        finally:
-            task_store.delete_task(task1["id"])
-            task_store.delete_task(task2["id"])
+        assert task1["id"] in pending_ids
+        assert task2["id"] in running_ids
+        assert task1["id"] not in running_ids
+        assert task2["id"] not in pending_ids
 
-    def test_list_tasks_respects_limit_offset(self, project_id):
+    def test_list_tasks_respects_limit_offset(self, project_id, cleanup_task):
         """Test pagination with limit and offset."""
         tasks = []
         for i in range(5):
             t = task_store.create_task(project_id, f"Task {i}")
+            cleanup_task(t["id"])
             tasks.append(t)
 
-        try:
-            # List with limit
-            limited = task_store.list_tasks(project_id, limit=2)
-            assert len(limited) == 2
+        # List with limit
+        limited = task_store.list_tasks(project_id, limit=2)
+        assert len(limited) == 2
 
-            # List with offset
-            offset = task_store.list_tasks(project_id, limit=2, offset=2)
-            assert len(offset) == 2
+        # List with offset
+        offset = task_store.list_tasks(project_id, limit=2, offset=2)
+        assert len(offset) == 2
 
-            # Verify no overlap
-            limited_ids = {t["id"] for t in limited}
-            offset_ids = {t["id"] for t in offset}
-            assert len(limited_ids & offset_ids) == 0
-        finally:
-            for t in tasks:
-                task_store.delete_task(t["id"])
+        # Verify no overlap
+        limited_ids = {t["id"] for t in limited}
+        offset_ids = {t["id"] for t in offset}
+        assert len(limited_ids & offset_ids) == 0
 
 
 class TestDeleteTask:

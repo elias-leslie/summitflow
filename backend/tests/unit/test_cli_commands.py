@@ -128,7 +128,7 @@ def mock_st_client():
     mock_client.create_task = mock_create_task
     mock_client.batch_create_tasks = mock_batch_create_tasks
     mock_client.get_task = mock_get_task
-    mock_client.project_id = "summitflow"
+    mock_client.project_id = "test-project"
 
     # Mock the STClient class to return our mock instance
     with patch("cli.commands.tasks.STClient", return_value=mock_client):

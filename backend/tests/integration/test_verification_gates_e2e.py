@@ -50,7 +50,7 @@ def requires_backend():
 @pytest.fixture
 def project_id():
     """Ensure test project exists."""
-    project_id = "summitflow"
+    project_id = "test-project"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
@@ -74,7 +74,7 @@ def cleanup_tasks():
 
 
 def run_cli(
-    args: list[str], check: bool = False, project_id: str = "summitflow"
+    args: list[str], check: bool = False, project_id: str = "test-project"
 ) -> subprocess.CompletedProcess:
     """Run st CLI command and return result."""
     import os

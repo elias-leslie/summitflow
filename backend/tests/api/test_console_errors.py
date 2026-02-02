@@ -91,7 +91,7 @@ class TestCaptureConsoleErrorEndpoint:
         # Verify create_task was called correctly
         mock_create.assert_called_once()
         call_kwargs = mock_create.call_args[1]
-        assert call_kwargs["project_id"] == "summitflow"
+        assert call_kwargs["project_id"] == "test-project"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
         assert call_kwargs["autonomous"] is True

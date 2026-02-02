@@ -26,7 +26,7 @@ import pytest
 
 from app.storage import tasks as task_store
 
-TEST_PROJECT_ID = "summitflow"
+TEST_PROJECT_ID = "test-project"
 SUMMITFLOW_DIR = Path("/home/kasadis/summitflow")
 
 
@@ -70,7 +70,7 @@ def requires_clean_git():
 
 @pytest.fixture
 def test_project_id():
-    """Return test project ID (summitflow already exists)."""
+    """Return test project ID (test-project for E2E tests)."""
     return TEST_PROJECT_ID
 
 

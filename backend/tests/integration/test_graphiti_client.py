@@ -69,7 +69,7 @@ async def test_store_pattern(client: GraphitiClient, cleanup_episodes: list[str]
         error_signature="ruff:F401:unused import",
         fix_diff="- import unused\n+ # removed unused import",
         root_cause_summary="Removed unused import to fix F401",
-        project_id="summitflow",
+        project_id="test-project",
         check_type="ruff",
     )
 

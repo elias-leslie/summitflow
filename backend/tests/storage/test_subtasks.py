@@ -14,7 +14,7 @@ from app.storage.subtasks import SubtaskGateError
 @pytest.fixture
 def project_id():
     """Ensure test project exists."""
-    project_id = "summitflow"
+    project_id = "test-project"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
