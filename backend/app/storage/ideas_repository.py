@@ -50,7 +50,9 @@ def create_idea_in_db(project_id: str, raw_text: str, user_email: str | None) ->
         return str(row[0])
 
 
-def get_idea_list(project_id: str, status: str | None, limit: int, offset: int) -> list[dict[str, Any]]:
+def get_idea_list(
+    project_id: str, status: str | None, limit: int, offset: int
+) -> list[dict[str, Any]]:
     """Get list of ideas for a project.
 
     Args:

@@ -156,7 +156,11 @@ async def approve_idea(project_id: str, idea_id: str) -> dict[str, Any]:
 
     # Map idea complexity to task complexity
     complexity_map = {"simple": "SIMPLE", "medium": "STANDARD", "complex": "COMPLEX"}
-    task_complexity = complexity_map.get(idea_data["complexity"], "STANDARD") if idea_data["complexity"] else "STANDARD"
+    task_complexity = (
+        complexity_map.get(idea_data["complexity"], "STANDARD")
+        if idea_data["complexity"]
+        else "STANDARD"
+    )
 
     task = create_task(
         project_id=project_id,

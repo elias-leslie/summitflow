@@ -30,7 +30,6 @@ from .port_detection import get_services
 logger = get_logger(__name__)
 
 
-
 def get_pages(project_id: str) -> list[str]:
     """Get all frontend pages."""
     entries = storage.get_entries(project_id, {"type": "page", "limit": 100})

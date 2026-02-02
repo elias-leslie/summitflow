@@ -86,7 +86,9 @@ def _process_refactor_target(
     )
 
     if task_id:
-        logger.info(f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}: {reason}")
+        logger.info(
+            f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}: {reason}"
+        )
         return True
     return False
 
@@ -140,7 +142,9 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
 
         for target in targets:
             scanned += 1
-            if _process_refactor_target(project_id, target, project_root=project_root, skip_existing=False):
+            if _process_refactor_target(
+                project_id, target, project_root=project_root, skip_existing=False
+            ):
                 created += 1
 
         logger.info(
@@ -247,7 +251,11 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
                 skipped += 1
 
         logger.info(f"Stale task cleanup complete: cancelled={cancelled}, skipped={skipped}")
-        return {"cancelled_count": cancelled, "skipped_count": skipped, "max_age_days": max_age_days}
+        return {
+            "cancelled_count": cancelled,
+            "skipped_count": skipped,
+            "max_age_days": max_age_days,
+        }
     except Exception as e:
         logger.error(f"Error in stale task cleanup: {e}")
         return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}
@@ -285,7 +293,9 @@ def generate_architecture_tasks(project_id: str) -> dict[str, Any]:
                 logger.info(f"Skipping {violation_type}: task already exists")
                 continue
 
-            affected_files = list({v.get("file_path", "") for v in violations if v.get("file_path")})
+            affected_files = list(
+                {v.get("file_path", "") for v in violations if v.get("file_path")}
+            )
             severity = "error" if violation_type == "parallel_implementation" else "warning"
             tier = 2 if violation_type == "parallel_implementation" else 1
             complexity = "STANDARD" if len(affected_files) > 5 else "SIMPLE"

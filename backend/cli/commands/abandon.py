@@ -1,8 +1,12 @@
 """Abandon command for st CLI.
 
-Checkpoint-aware rollback for tasks and subtasks.
-For tasks, restores DB snapshot and deletes all branches.
-For subtasks, deletes git branch only.
+Safe rollback for tasks and subtasks.
+For tasks: Marks as abandoned, deletes git branches (NO DB restore).
+For subtasks: Deletes git branch only.
+
+IMPORTANT: This uses append-only task metadata. Tasks are NEVER deleted,
+only marked as 'abandoned'. This prevents data loss when other tasks were
+created after this task's checkpoint.
 """
 
 from __future__ import annotations
@@ -18,7 +22,6 @@ from ..lib.checkpoint import (
     delete_task_branches,
     get_snapshot_info,
     remove_snapshot,
-    restore_task_snapshot,
 )
 from ..output import output_error, output_success
 
@@ -106,15 +109,14 @@ def _abandon_task(
     force: bool = False,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """Abandon a task - restore DB snapshot and delete all branches.
+    """Abandon a task - mark as abandoned and delete git branches.
 
-    This is destructive: restores database to pre-task state.
+    SAFE: Does NOT restore database. Uses append-only task metadata.
+    Tasks created after this task's checkpoint will NOT be destroyed.
     """
     # Check for existing checkpoint
     snapshot_info = get_snapshot_info(task_id)
-    if not snapshot_info:
-        output_error(f"No checkpoint found for {task_id}. Nothing to restore.")
-        raise typer.Exit(1)
+    has_snapshot = snapshot_info is not None
 
     # Check for active subtask branches
     subtask_branches = _get_subtask_branches(task_id)
@@ -128,45 +130,39 @@ def _abandon_task(
     # Confirmation for task-level abandon
     if not force:
         typer.echo("\nThis will:")
-        typer.echo(f"  - Restore DB to pre-task state (snapshot: {snapshot_info.get('size', '?')})")
-        typer.echo(f"  - Delete task branch: {task_id}")
+        typer.echo(f"  - Mark task {task_id} as 'abandoned'")
+        typer.echo(f"  - Delete task branch: {task_id}/main")
         if subtask_branches:
             typer.echo(f"  - Delete {len(subtask_branches)} subtask branches")
+        if has_snapshot:
+            typer.echo(f"  - Remove snapshot file ({snapshot_info.get('size', '?')})")
+        typer.echo("")
+        typer.echo("NOTE: Database will NOT be restored (append-only task metadata).")
         typer.echo("")
         confirm = typer.confirm("Proceed with abandon?", default=False)
         if not confirm:
             typer.echo("Aborted.")
             raise typer.Exit(0)
 
-    # Restore DB from snapshot (stops/starts backend)
+    # Mark task as abandoned (NOT pending - this is a terminal state)
     try:
-        restore_task_snapshot(task_id)
-    except SystemExit:
-        output_error(
-            f"DB restore failed. Snapshot preserved at .st/snapshots/{task_id}.sql\n"
-            "You can manually restore with: pg_restore --clean --dbname=<url> <snapshot>"
-        )
-        raise typer.Exit(1) from None
+        client.update_status(task_id, "abandoned")
+    except APIError as e:
+        typer.echo(f"Warning: Could not update task status: {e.detail}", err=True)
 
-    # Delete all task branches
+    # Delete all task branches (code rollback only)
     delete_task_branches(task_id)
 
-    # Remove snapshot files
-    remove_snapshot(task_id)
-
-    # Reset task status via API
-    try:
-        client.update_status(task_id, "pending")
-    except APIError as e:
-        # Non-fatal - DB/branches already restored
-        typer.echo(f"Warning: Could not reset task status: {e.detail}", err=True)
+    # Remove snapshot files (cleanup - no longer needed)
+    if has_snapshot:
+        remove_snapshot(task_id)
 
     return {
         "task_id": task_id,
         "action": "abandoned",
-        "db_restored": True,
+        "db_restored": False,  # NEVER restore DB
         "branches_deleted": len(subtask_branches) + 1,
-        "snapshot_removed": True,
+        "snapshot_removed": has_snapshot,
     }
 
 
@@ -186,18 +182,19 @@ def abandon_command(
         typer.Option("--reason", "-r", help="Reason for abandonment"),
     ] = None,
 ) -> None:
-    """Abandon a task or subtask and rollback changes.
+    """Abandon a task or subtask and rollback code changes.
 
-    For subtasks: Deletes git branch only (DB unchanged).
-    For tasks: Restores DB snapshot, deletes all branches.
+    For subtasks: Deletes git branch only.
+    For tasks: Marks as 'abandoned', deletes all branches.
 
-    DESTRUCTIVE: Task-level abandon restores the database to its state
-    before the task was claimed. All changes made during the task are lost.
+    SAFE: Database is NOT restored. This uses append-only task metadata,
+    preventing data loss when other tasks were created after this task's
+    checkpoint was taken.
 
     Examples:
         st abandon 1.1 -t task-abc123    # Abandon subtask (delete branch)
         st abandon 1.1                    # Uses active context
-        st abandon task-abc123            # Abandon task (restore DB, interactive)
+        st abandon task-abc123            # Abandon task (interactive)
         st abandon task-abc123 --force    # Abandon task (skip confirmation)
     """
     from ..context import require_task_id
@@ -212,4 +209,4 @@ def abandon_command(
         output_success(f"Subtask {id} abandoned. Branch deleted.")
     else:
         _abandon_task(client, id, force, reason)
-        output_success(f"Task {id} abandoned. DB restored, branches deleted.")
+        output_success(f"Task {id} abandoned. Branches deleted, status set to 'abandoned'.")

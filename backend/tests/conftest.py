@@ -13,7 +13,6 @@ from __future__ import annotations
 # =============================================================================
 # This runs at module load time, BEFORE pytest_configure, to ensure
 # DATABASE_URL is overridden before any app modules read it.
-
 import os
 import sys
 from pathlib import Path
@@ -29,11 +28,7 @@ _db_url = os.environ.get("DATABASE_URL", "")
 _test_db_url = os.environ.get("TEST_DATABASE_URL", "")
 
 # Check if pointing at production database
-_is_production = (
-    "/summitflow" in _db_url
-    and "/summitflow_test" not in _db_url
-    and not _test_db_url
-)
+_is_production = "/summitflow" in _db_url and "/summitflow_test" not in _db_url and not _test_db_url
 
 if _is_production:
     print("\n" + "=" * 70, file=sys.stderr)
@@ -44,17 +39,25 @@ if _is_production:
     print("  1. TEST_DATABASE_URL env var pointing to summitflow_test", file=sys.stderr)
     print("  2. DATABASE_URL pointing to summitflow_test (not summitflow)", file=sys.stderr)
     print("\nTo fix, add to ~/.env.local:", file=sys.stderr)
-    print("  TEST_DATABASE_URL=postgresql://summitflow_app:PASSWORD@localhost:5432/summitflow_test", file=sys.stderr)
+    print(
+        "  TEST_DATABASE_URL=postgresql://summitflow_app:PASSWORD@localhost:5432/summitflow_test",
+        file=sys.stderr,
+    )
     print("\nOr create the test database:", file=sys.stderr)
     print("  sudo -u postgres createdb summitflow_test", file=sys.stderr)
-    print("  sudo -u postgres psql -c \"GRANT ALL ON DATABASE summitflow_test TO summitflow_app;\"", file=sys.stderr)
+    print(
+        '  sudo -u postgres psql -c "GRANT ALL ON DATABASE summitflow_test TO summitflow_app;"',
+        file=sys.stderr,
+    )
     print("=" * 70 + "\n", file=sys.stderr)
     sys.exit(1)
 
 # If TEST_DATABASE_URL is set, override DATABASE_URL BEFORE any app imports
 if _test_db_url:
     os.environ["DATABASE_URL"] = _test_db_url
-    print(f"\n[TEST] Using TEST_DATABASE_URL: {_test_db_url.split('@')[1] if '@' in _test_db_url else _test_db_url}")
+    print(
+        f"\n[TEST] Using TEST_DATABASE_URL: {_test_db_url.split('@')[1] if '@' in _test_db_url else _test_db_url}"
+    )
 
 # =============================================================================
 # NOW safe to import from app modules
@@ -91,7 +94,9 @@ def pytest_collection_modifyitems(config, items):
     from pathlib import Path
 
     run_e2e = config.getoption("--run-e2e")
-    skip_e2e = pytest.mark.skip(reason="E2E tests skipped. Use --run-e2e to run (DANGEROUS: hits production DB!)")
+    skip_e2e = pytest.mark.skip(
+        reason="E2E tests skipped. Use --run-e2e to run (DANGEROUS: hits production DB!)"
+    )
 
     tests_dir = Path(__file__).parent
 
@@ -115,6 +120,7 @@ def pytest_collection_modifyitems(config, items):
 # DATABASE FIXTURES
 # =============================================================================
 
+
 @pytest.fixture(scope="session")
 def test_db_url():
     """Get the test database URL."""
@@ -137,6 +143,7 @@ def db_schema_initialized(test_db_url):
 # =============================================================================
 # TEST CLIENT FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def client(db_schema_initialized):
@@ -174,6 +181,7 @@ def ensure_test_project(db_schema_initialized):
 # =============================================================================
 # TASK CLEANUP FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def cleanup_task(db_schema_initialized):

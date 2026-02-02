@@ -201,7 +201,19 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
 
 
 def restore_task_snapshot(task_id: str) -> bool:
-    """Restore DB from snapshot.
+    """DANGEROUS: Restore DB from snapshot - DESTROYS ALL DATA created after snapshot.
+
+    WARNING: This function runs pg_restore --clean which DELETES all records
+    created after the snapshot was taken. This includes:
+    - Tasks created by other processes
+    - User data entered during the task
+    - Any database changes made after checkpoint
+
+    DO NOT USE for normal task abandonment. Use the safe `st abandon` command
+    which marks tasks as 'abandoned' without restoring the database.
+
+    Only use this for disaster recovery when you intentionally want to
+    restore the entire database to a previous state.
 
     Stops backend service, restores from pg_dump, restarts backend.
 

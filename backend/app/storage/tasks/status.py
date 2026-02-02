@@ -12,14 +12,15 @@ Status values (extended for git management workflow):
 - ai_reviewing: AI review in progress
 - human_review: Needs human review (escalated from AI)
 - completed: Successfully completed
-- cancelled: Task cancelled
+- cancelled: Task cancelled (auto-cancelled or never started)
+- abandoned: Task was claimed but rolled back (append-only, never deleted)
 
 Kanban column mapping (5 columns per decision d2):
 - Planning: pending
 - In Progress: running, paused, blocked
 - AI Review: pr_created, ai_reviewing
 - Human Review: human_review
-- Done: completed, failed, cancelled
+- Done: completed, failed, cancelled, abandoned
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"queue", "running", "paused", "blocked", "cancelled"},
     # Queue state (autonomous execution pipeline)
     "queue": {"running", "pending", "blocked", "cancelled", "human_review"},
-    # Work states
+    # Work states - can transition to abandoned (rollback without DB restore)
     "running": {
         "queue",
         "paused",
@@ -47,20 +48,22 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "human_reviewing",
         "needs_review",
         "cancelled",
+        "abandoned",
     },
-    "paused": {"queue", "running", "pending", "failed", "cancelled"},
-    "blocked": {"queue", "running", "pending", "failed", "cancelled"},
+    "paused": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
+    "blocked": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     "failed": {"queue", "pending", "running", "cancelled"},
     # PR/Review states (agent workflow)
-    "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled"},
-    "ai_reviewing": {"completed", "human_review", "running", "failed"},
-    "human_review": {"completed", "running", "cancelled"},
+    "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled", "abandoned"},
+    "ai_reviewing": {"completed", "human_review", "running", "failed", "abandoned"},
+    "human_review": {"completed", "running", "cancelled", "abandoned"},
     # Verification workflow states (migration 073)
-    "needs_review": {"completed", "running", "failed", "cancelled"},  # QA passed → can complete
-    "human_reviewing": {"completed", "running", "failed", "cancelled"},  # Human reviewing criteria
+    "needs_review": {"completed", "running", "failed", "cancelled", "abandoned"},
+    "human_reviewing": {"completed", "running", "failed", "cancelled", "abandoned"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
     "cancelled": set(),
+    "abandoned": set(),  # Terminal - claimed but rolled back
 }
 
 # Status to kanban column mapping (6 columns with Queue)
@@ -78,6 +81,7 @@ STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
     "completed": "Done",
     "failed": "Done",
     "cancelled": "Done",
+    "abandoned": "Done",  # Claimed but rolled back
 }
 
 
@@ -138,6 +142,7 @@ def update_task_status(
         "human_review",
         "completed",
         "cancelled",
+        "abandoned",
     }
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {valid_statuses}")
@@ -160,16 +165,16 @@ def update_task_status(
             UPDATE tasks
             SET status = %s,
                 started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
-                completed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NOW() ELSE completed_at END,
+                completed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NOW() ELSE completed_at END,
                 error_message = CASE
                     WHEN %s = 'running' THEN NULL
                     WHEN %s IN ('completed', 'failed') THEN %s
                     ELSE error_message
                 END,
                 current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
-                claimed_by = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE claimed_by END,
-                claimed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE claimed_at END,
-                lock_expires_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled') THEN NULL ELSE lock_expires_at END
+                claimed_by = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE claimed_by END,
+                claimed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE claimed_at END,
+                lock_expires_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE lock_expires_at END
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,

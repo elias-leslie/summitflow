@@ -36,11 +36,12 @@ class TaskLifecycleState(str, Enum):
     # Terminal states
     completed = "completed"
     cancelled = "cancelled"
+    abandoned = "abandoned"  # Claimed but rolled back (append-only)
 
     @classmethod
     def terminal_states(cls) -> set[TaskLifecycleState]:
         """States that represent end of lifecycle."""
-        return {cls.completed, cls.cancelled}
+        return {cls.completed, cls.cancelled, cls.abandoned}
 
     @classmethod
     def active_states(cls) -> set[TaskLifecycleState]:
@@ -69,6 +70,7 @@ VALID_TRANSITIONS: dict[TaskLifecycleState, set[TaskLifecycleState]] = {
         TaskLifecycleState.failed,
         TaskLifecycleState.blocked,
         TaskLifecycleState.cancelled,
+        TaskLifecycleState.abandoned,  # Rollback without completing
     },
     TaskLifecycleState.failed: {
         TaskLifecycleState.pending,  # Retry
@@ -79,27 +81,32 @@ VALID_TRANSITIONS: dict[TaskLifecycleState, set[TaskLifecycleState]] = {
         TaskLifecycleState.pending,  # Unblock
         TaskLifecycleState.running,  # Direct resume
         TaskLifecycleState.cancelled,
+        TaskLifecycleState.abandoned,  # Give up on blocked task
     },
     TaskLifecycleState.pr_created: {
         TaskLifecycleState.ai_reviewing,
         TaskLifecycleState.human_review,  # Skip AI review
         TaskLifecycleState.failed,
         TaskLifecycleState.cancelled,
+        TaskLifecycleState.abandoned,
     },
     TaskLifecycleState.ai_reviewing: {
         TaskLifecycleState.completed,  # Auto-merge on pass
         TaskLifecycleState.human_review,  # Escalate
         TaskLifecycleState.running,  # Retry with fixes
         TaskLifecycleState.failed,
+        TaskLifecycleState.abandoned,
     },
     TaskLifecycleState.human_review: {
         TaskLifecycleState.completed,  # Approved
         TaskLifecycleState.running,  # Changes requested
         TaskLifecycleState.cancelled,
+        TaskLifecycleState.abandoned,
     },
     # Terminal states - no transitions out
     TaskLifecycleState.completed: set(),
     TaskLifecycleState.cancelled: set(),
+    TaskLifecycleState.abandoned: set(),
 }
 
 

@@ -15,10 +15,10 @@ from app.services.git_lifecycle import (
 class TestTaskLifecycleState:
     """Tests for TaskLifecycleState enum."""
 
-    def test_has_9_states(self):
-        """Verify exactly 9 states exist."""
+    def test_has_10_states(self):
+        """Verify exactly 10 states exist (including abandoned)."""
         states = list(TaskLifecycleState)
-        assert len(states) == 9
+        assert len(states) == 10
         expected = {
             "pending",
             "running",
@@ -29,6 +29,7 @@ class TestTaskLifecycleState:
             "human_review",
             "completed",
             "cancelled",
+            "abandoned",
         }
         actual = {s.value for s in states}
         assert actual == expected
