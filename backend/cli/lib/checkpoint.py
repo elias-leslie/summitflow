@@ -671,7 +671,8 @@ def delete_task_branches(task_id: str) -> bool:
             text=True,
             check=True,
         )
-        branches = [b.strip().lstrip("* ") for b in result.stdout.splitlines() if b.strip()]
+        # Strip branch prefixes: * (current), + (worktree), space
+        branches = [b.strip().lstrip("*+ ") for b in result.stdout.splitlines() if b.strip()]
 
         for branch in branches:
             try:

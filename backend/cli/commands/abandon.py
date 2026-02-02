@@ -150,12 +150,15 @@ def _abandon_task(
     except APIError as e:
         typer.echo(f"Warning: Could not update task status: {e.detail}", err=True)
 
+    # Get project_id from snapshot for per-project worktree paths
+    project_id = snapshot_info.get("project_id") if snapshot_info else None
+
+    # Remove worktree FIRST (so branches aren't "in use" by worktree)
+    if has_snapshot:
+        remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+
     # Delete all task branches (code rollback only)
     delete_task_branches(task_id)
-
-    # Remove snapshot files (cleanup - no longer needed)
-    if has_snapshot:
-        remove_snapshot(task_id)
 
     return {
         "task_id": task_id,
