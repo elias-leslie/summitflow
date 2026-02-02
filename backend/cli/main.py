@@ -181,9 +181,7 @@ app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # a
 for cmd in claim.app.registered_commands:
     if cmd.callback is not None and cmd.name == "claim":
         app.command(name="claim")(cmd.callback)
-for cmd in checkpoints.app.registered_commands:
-    if cmd.callback is not None and cmd.name == "checkpoints":
-        app.command(name="checkpoints")(cmd.callback)
+app.add_typer(checkpoints.app, name="checkpoints")
 for cmd in done.app.registered_commands:
     if cmd.callback is not None and cmd.name == "done":
         app.command(name="done")(cmd.callback)

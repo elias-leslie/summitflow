@@ -18,14 +18,61 @@ from ..lib.worktree import get_worktree_info
 from ..output import output_json
 from ..output_context import OutputContext
 
-app = typer.Typer(help="Show active checkpoints")
+app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup stale artifacts")
 
 
-@app.callback()
-def checkpoints_callback(ctx: typer.Context) -> None:
-    """Initialize context if not set by parent app."""
+@app.callback(invoke_without_command=True)
+def checkpoints_callback(
+    ctx: typer.Context,
+    project: Annotated[
+        str | None,
+        typer.Option("--project", "-p", help="Filter by project ID"),
+    ] = None,
+    details: Annotated[
+        str | None,
+        typer.Option("--details", "-d", help="Show details for specific task"),
+    ] = None,
+) -> None:
+    """Show active checkpoints (default when no subcommand given)."""
     if ctx.obj is None:
         ctx.obj = OutputContext()
+
+    # If a subcommand is invoked, don't run the default list behavior
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Default behavior: list checkpoints (same as old checkpoints_command)
+    if details:
+        _format_details(ctx.obj, details)
+        return
+
+    checkpoints = get_active_checkpoints(project)
+
+    if ctx.obj.is_compact:
+        checkpoint_data = []
+        for cp in checkpoints:
+            info = get_snapshot_info(cp.task_id)
+            if info:
+                checkpoint_data.append(info)
+        _format_compact_checkpoints(checkpoint_data)
+    else:
+        output_json(
+            {
+                "checkpoints": [
+                    {
+                        "task_id": cp.task_id,
+                        "project_id": cp.project_id,
+                        "snapshot_path": cp.snapshot_path,
+                        "base_branch": cp.base_branch,
+                        "created_at": cp.created_at,
+                        "claimed_by": cp.claimed_by,
+                        "branches": _get_task_branches(cp.task_id),
+                    }
+                    for cp in checkpoints
+                ],
+                "total": len(checkpoints),
+            }
+        )
 
 
 def _get_task_branches(task_id: str) -> list[dict[str, str]]:
@@ -139,65 +186,6 @@ def _format_details(out: OutputContext, task_id: str) -> None:
                 "task_id": task_id,
                 "checkpoint": info,
                 "branches": branches,
-            }
-        )
-
-
-@app.command(name="checkpoints")
-def checkpoints_command(
-    ctx: typer.Context,
-    project: Annotated[
-        str | None,
-        typer.Option("--project", "-p", help="Filter by project ID"),
-    ] = None,
-    details: Annotated[
-        str | None,
-        typer.Option("--details", "-d", help="Show details for specific task"),
-    ] = None,
-) -> None:
-    """Show active checkpoints.
-
-    Lists all active task checkpoints with their subtask branches.
-    Use --details to see full metadata for a specific task.
-
-    Examples:
-        st checkpoints                      # List all active checkpoints
-        st checkpoints --project summitflow # Filter by project
-        st checkpoints --details task-abc   # Show full details
-    """
-    if details:
-        _format_details(ctx.obj, details)
-        return
-
-    # Get all checkpoints
-    checkpoints = get_active_checkpoints(project)
-
-    if ctx.obj.is_compact:
-        # Build checkpoint data with extra info
-        checkpoint_data = []
-        for cp in checkpoints:
-            info = get_snapshot_info(cp.task_id)
-            if info:
-                checkpoint_data.append(info)
-
-        _format_compact_checkpoints(checkpoint_data)
-    else:
-        # JSON output
-        output_json(
-            {
-                "checkpoints": [
-                    {
-                        "task_id": cp.task_id,
-                        "project_id": cp.project_id,
-                        "snapshot_path": cp.snapshot_path,
-                        "base_branch": cp.base_branch,
-                        "created_at": cp.created_at,
-                        "claimed_by": cp.claimed_by,
-                        "branches": _get_task_branches(cp.task_id),
-                    }
-                    for cp in checkpoints
-                ],
-                "total": len(checkpoints),
             }
         )
 
