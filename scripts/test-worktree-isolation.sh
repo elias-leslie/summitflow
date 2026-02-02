@@ -25,8 +25,9 @@ NC='\033[0m'
 
 # Configuration
 SUMMITFLOW_DIR="${HOME}/summitflow"
-WORKTREES_BASE="${HOME}/.summitflow/worktrees"
 TEST_PROJECT="summitflow"
+# Per-project worktree paths: ~/.local/share/st/worktrees/<project-id>/<task-id>/
+WORKTREES_BASE="${HOME}/.local/share/st/worktrees/${TEST_PROJECT}"
 
 # State tracking
 PASSED=0
@@ -244,8 +245,8 @@ import sys
 sys.path.insert(0, 'backend')
 from cli.lib.worktree import check_worktree_safety, get_active_worktrees
 
-is_safe, warning = check_worktree_safety()
-worktrees = get_active_worktrees()
+is_safe, warning = check_worktree_safety(project_id='summitflow')
+worktrees = get_active_worktrees(project_id='summitflow')
 print(f'safe:{is_safe}')
 print(f'worktrees:{len(worktrees)}')
 if warning:
@@ -470,19 +471,20 @@ import sys
 sys.path.insert(0, 'backend')
 from cli.lib.port_manager import calculate_ports, allocate_ports
 
-# Test deterministic calculation
+# Test deterministic calculation (uses project root for config)
 task1 = 'task-abc123'
 task2 = 'task-def456'
+project_root = '${SUMMITFLOW_DIR}'
 
-backend1, frontend1 = calculate_ports(task1)
-backend2, frontend2 = calculate_ports(task2)
+backend1, frontend1 = calculate_ports(task1, project_root=project_root)
+backend2, frontend2 = calculate_ports(task2, project_root=project_root)
 
-# Ports should be in valid range
+# Ports should be in valid range (8100-8199 for summitflow default)
 print(f'offset1_valid:{8100 <= backend1 < 8200}')
 print(f'offset2_valid:{8100 <= backend2 < 8200}')
 
 # Test port allocation
-ports = allocate_ports('task-test')
+ports = allocate_ports('task-test', project_root=project_root)
 print(f'backend_valid:{8100 <= ports.backend_port < 8200}')
 print(f'frontend_valid:{3100 <= ports.frontend_port < 3200}')
 " 2>/dev/null)
@@ -571,11 +573,11 @@ from cli.lib.worktree import get_worktree_info
 
 task_id = '$task_id'
 
-worktree = get_worktree_info(task_id)
+worktree = get_worktree_info(task_id, project_id='summitflow')
 if worktree:
     print(f'worktree_found:true')
     print(f'worktree_path:{worktree.path}')
-    if '.summitflow/worktrees' in str(worktree.path):
+    if '.local/share/st/worktrees' in str(worktree.path):
         print('uses_worktree:true')
 else:
     print('worktree_found:false')
@@ -659,7 +661,7 @@ import sys
 sys.path.insert(0, 'backend')
 from cli.lib.worktree import get_active_worktrees
 
-worktrees = get_active_worktrees()
+worktrees = get_active_worktrees(project_id='summitflow')
 print(f'count:{len(worktrees)}')
 for wt in worktrees:
     print(f'task:{wt.task_id}')
@@ -677,11 +679,12 @@ for wt in worktrees:
     result=$(python3 -c "
 import sys
 sys.path.insert(0, 'backend')
-from cli.lib.port_manager import get_port_offset
+from cli.lib.port_manager import calculate_ports
 
 tasks = ['task-aaa', 'task-bbb', 'task-ccc', 'task-ddd', 'task-eee']
-offsets = [get_port_offset(t) for t in tasks]
-unique = len(set(offsets))
+project_root = '${SUMMITFLOW_DIR}'
+ports = [calculate_ports(t, project_root=project_root)[0] for t in tasks]
+unique = len(set(ports))
 print(f'unique_offsets:{unique}')
 print(f'total_tasks:{len(tasks)}')
 " 2>/dev/null)
