@@ -8,11 +8,15 @@ With branch naming:
     <task-id>/main
 
 This module wraps the CLI worktree library for use in Celery tasks.
+Creates checkpoint metadata for unified tracking via `st checkpoints`.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +27,11 @@ if TYPE_CHECKING:
     pass
 
 logger = get_logger(__name__)
+
+
+def _get_claimed_by() -> str:
+    """Get the claimer identity from env or default."""
+    return os.getenv("AGENT_ID", "autonomous")
 
 
 @dataclass
@@ -40,6 +49,107 @@ class WorktreeError(Exception):
     """Error during worktree operations."""
 
     pass
+
+
+def _get_snapshots_dir(project_root: str) -> Path:
+    """Get the .st/snapshots directory for a project, creating if needed."""
+    snapshots_dir = Path(project_root) / ".st" / "snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    return snapshots_dir
+
+
+def _create_checkpoint_metadata(
+    task_id: str,
+    project_id: str,
+    base_branch: str,
+    worktree_path: str,
+) -> bool:
+    """Create checkpoint metadata file for unified tracking.
+
+    Creates .st/snapshots/<task_id>.meta.json in the project root.
+    This enables `st checkpoints` to show autonomous task worktrees.
+
+    Args:
+        task_id: Task identifier
+        project_id: Project identifier
+        base_branch: Branch the worktree is based on
+        worktree_path: Path to the worktree
+
+    Returns:
+        True if metadata was created, False on error
+    """
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        logger.warning(
+            "checkpoint_metadata_skipped",
+            task_id=task_id,
+            reason="no project root path",
+        )
+        return False
+
+    try:
+        snapshots_dir = _get_snapshots_dir(project_root)
+        meta_path = snapshots_dir / f"{task_id}.meta.json"
+
+        if meta_path.exists():
+            logger.debug("checkpoint_metadata_exists", task_id=task_id)
+            return True
+
+        metadata = {
+            "task_id": task_id,
+            "project_id": project_id,
+            "base_branch": base_branch,
+            "created_at": datetime.now(UTC).isoformat(),
+            "claimed_by": _get_claimed_by(),
+            "worktree_path": worktree_path,
+            "backend_port": None,
+            "frontend_port": None,
+        }
+
+        meta_path.write_text(json.dumps(metadata, indent=2))
+        logger.info(
+            "checkpoint_metadata_created",
+            task_id=task_id,
+            path=str(meta_path),
+        )
+        return True
+
+    except Exception as e:
+        logger.warning(
+            "checkpoint_metadata_failed",
+            task_id=task_id,
+            error=str(e),
+        )
+        return False
+
+
+def _remove_checkpoint_metadata(task_id: str, project_id: str) -> bool:
+    """Remove checkpoint metadata file.
+
+    Args:
+        task_id: Task identifier
+        project_id: Project identifier
+
+    Returns:
+        True if metadata was removed or didn't exist, False on error
+    """
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        return True
+
+    try:
+        meta_path = Path(project_root) / ".st" / "snapshots" / f"{task_id}.meta.json"
+        if meta_path.exists():
+            meta_path.unlink()
+            logger.info("checkpoint_metadata_removed", task_id=task_id)
+        return True
+    except Exception as e:
+        logger.warning(
+            "checkpoint_metadata_removal_failed",
+            task_id=task_id,
+            error=str(e),
+        )
+        return False
 
 
 def create_task_worktree(
@@ -96,6 +206,14 @@ def create_task_worktree(
             path=str(worktree_info.path),
             branch=worktree_info.branch,
             base_branch=base_branch,
+        )
+
+        # Create checkpoint metadata for unified tracking via `st checkpoints`
+        _create_checkpoint_metadata(
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=base_branch,
+            worktree_path=str(worktree_info.path),
         )
 
         return TaskWorktreeInfo(
@@ -157,7 +275,7 @@ def get_task_worktree(task_id: str, project_id: str | None = None) -> TaskWorktr
 def remove_task_worktree(
     task_id: str, delete_branch: bool = False, project_id: str | None = None
 ) -> bool:
-    """Remove a task's worktree.
+    """Remove a task's worktree and checkpoint metadata.
 
     Args:
         task_id: Task identifier
@@ -177,6 +295,9 @@ def remove_task_worktree(
                 task_id=task_id,
                 branch_deleted=delete_branch,
             )
+            # Also remove checkpoint metadata
+            if project_id:
+                _remove_checkpoint_metadata(task_id, project_id)
         return result
     except ImportError:
         return False
