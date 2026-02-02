@@ -43,17 +43,17 @@ log_info() {
 
 log_pass() {
     echo -e "${GREEN}[PASS]${NC} $1"
-    ((PASSED++))
+    ((PASSED++)) || true  # Prevent exit on PASSED=0 with set -e
 }
 
 log_fail() {
     echo -e "${RED}[FAIL]${NC} $1"
-    ((FAILED++))
+    ((FAILED++)) || true
 }
 
 log_skip() {
     echo -e "${YELLOW}[SKIP]${NC} $1"
-    ((SKIPPED++))
+    ((SKIPPED++)) || true
 }
 
 log_section() {
