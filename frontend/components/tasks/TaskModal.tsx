@@ -12,6 +12,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useState } from 'react'
+import { AgentObservabilityTimeline } from '@/components/tasks/AgentObservabilityTimeline'
 import { CheckpointStatus } from '@/components/tasks/CheckpointStatus'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
@@ -213,9 +214,11 @@ export function TaskModal({
     descriptionOpen,
     subtasksOpen,
     timelineOpen,
+    agentTimelineOpen,
     setDescriptionOpen,
     setSubtasksOpen,
     setTimelineOpen,
+    setAgentTimelineOpen,
     handleEditStart,
     handleEditCancel,
     handleEditSave,
@@ -455,6 +458,25 @@ export function TaskModal({
                     autoConnect={isRunning || isAiReviewing}
                     showChatInput={true}
                     chatEnabled={isRunning}
+                    className="border border-slate-700 rounded-lg overflow-hidden"
+                  />
+                </CollapsibleSection>
+              )}
+
+              {/* Agent Observability Timeline - Full Claude Code-like execution visibility */}
+              {showTimeline && (
+                <CollapsibleSection
+                  title="Agent Observability"
+                  isOpen={agentTimelineOpen}
+                  onToggle={() => setAgentTimelineOpen(!agentTimelineOpen)}
+                  testId="agent-timeline-toggle"
+                >
+                  <AgentObservabilityTimeline
+                    taskId={task.id}
+                    projectId={projectId}
+                    isLive={isRunning || isAiReviewing}
+                    pollInterval={3000}
+                    maxHeight="600px"
                     className="border border-slate-700 rounded-lg overflow-hidden"
                   />
                 </CollapsibleSection>

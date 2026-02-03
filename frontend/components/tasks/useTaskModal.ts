@@ -46,9 +46,11 @@ interface UseTaskModalReturn {
   descriptionOpen: boolean
   subtasksOpen: boolean
   timelineOpen: boolean
+  agentTimelineOpen: boolean
   setDescriptionOpen: (open: boolean) => void
   setSubtasksOpen: (open: boolean) => void
   setTimelineOpen: (open: boolean) => void
+  setAgentTimelineOpen: (open: boolean) => void
 
   // Handlers
   handleEditStart: () => void
@@ -92,6 +94,7 @@ export function useTaskModal({
   const [descriptionOpen, setDescriptionOpen] = useState(false)
   const [subtasksOpen, setSubtasksOpen] = useState(false)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const [agentTimelineOpen, setAgentTimelineOpen] = useState(false)
 
   // Fetch task when modal opens
   useEffect(() => {
@@ -137,6 +140,7 @@ export function useTaskModal({
       setDescriptionOpen(false)
       setSubtasksOpen(false)
       setTimelineOpen(false)
+      setAgentTimelineOpen(false)
     }
   }, [open])
 
@@ -303,9 +307,11 @@ export function useTaskModal({
     descriptionOpen,
     subtasksOpen,
     timelineOpen,
+    agentTimelineOpen,
     setDescriptionOpen,
     setSubtasksOpen,
     setTimelineOpen,
+    setAgentTimelineOpen,
     handleEditStart,
     handleEditCancel,
     handleEditSave,
