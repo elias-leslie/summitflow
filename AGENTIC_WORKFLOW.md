@@ -393,9 +393,9 @@ curl localhost:8003/api/sessions/{session-id}/events
 
 When Agent Hub is called with `trace_id=<task-id>`, the session is linked to the SummitFlow task. The Task Modal's Timeline tab shows events from linked Agent Hub sessions.
 
-**Provider Differences:**
-- **Gemini**: Full observability (all 5 event types)
-- **Claude**: 4 event types (tool_result via SDK hooks may not fire)
+**Provider Support:**
+Both Gemini and Claude support full observability with all 5 event types:
+- memory_inject, user_message, tool_use, tool_result, assistant_message
 
 ---
 
@@ -409,7 +409,7 @@ When Agent Hub is called with `trace_id=<task-id>`, the session is linked to the
 | Worktree missing | `st checkpoints` | `st claim <task-id>` |
 | WebSocket not connecting | Browser console | Check CORS, service running |
 | Auto-exec not picking up | Check settings | Enable via Global dropdown |
-| No tool events (Claude) | `st session-events <id>` | SDK limitation, tool_use visible but not tool_result |
+| No tool events | `st session-events <id>` | Ensure execute_tools=true (-x flag in CLI) |
 | Session not linked to task | Check trace_id param | Ensure Agent Hub called with trace_id=task_id |
 
 ---
