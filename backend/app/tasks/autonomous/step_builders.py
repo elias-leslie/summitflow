@@ -93,14 +93,9 @@ def build_refactor_steps(
             "expected_output": "exit code 0",
         },
         {
-            "description": "Verify ruff linting passes",
-            "verify_command": "dt ruff",
-            "expected_output": "LINT:OK",
-        },
-        {
-            "description": "Verify mypy type checking passes",
-            "verify_command": "dt mypy",
-            "expected_output": "TYPES:OK",
+            "description": "Verify lint and type checking passes",
+            "verify_command": "dt --quick",
+            "expected_output": "CHECK_RESULT:OK",
         },
         {
             "description": f"Verify tests for {relative_path}",
