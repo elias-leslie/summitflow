@@ -24,6 +24,7 @@ from .commands import (
     logs,
     memory,
     projects,
+    session_events,
     sessions,
     step,
     subtask,
@@ -171,6 +172,7 @@ app.add_typer(health.app, name="health")
 app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
+app.add_typer(session_events.app, name="session-events")
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
 app.command("exec-log")(exec_monitor.exec_log_command)
