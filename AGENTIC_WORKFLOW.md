@@ -344,6 +344,61 @@ dt --quick                               # Fast check (lint + types)
 
 ---
 
+## Observability (Session Events)
+
+Agent Hub tracks all events during agentic execution in the `session_events` table. This provides full visibility into what happens during task execution.
+
+### Event Types
+
+| Event Type | Description |
+|------------|-------------|
+| `memory_inject` | Memory facts injected into context |
+| `user_message` | User/system prompt |
+| `assistant_message` | Model response |
+| `tool_use` | Tool invocation (bash, read_file, etc) |
+| `tool_result` | Result from tool execution |
+| `thinking` | Extended thinking content (Claude) |
+| `memory_cite` | Memory items cited in response |
+| `error` | Error during execution |
+
+### CLI Commands
+
+```bash
+# View session events
+st session-events <session-id>
+
+# Example output:
+# [1.1] memory_inject
+#   Injected 75 memory facts
+# [1.2] user_message
+#   Implement the feature...
+# [1.3] tool_use (bash)
+#   {"command": "ls -la"}
+# [1.4] tool_result (bash_abc123)
+#   {"content": "file1 file2...", "is_error": false}
+# [1.5] assistant_message [150 tokens]
+#   Here's the implementation...
+```
+
+### API Access
+
+```bash
+# Get session events
+curl localhost:8003/api/sessions/{session-id}/events
+
+# Response includes event_type, content, turn, sequence, tokens
+```
+
+### Linking SummitFlow Tasks to Sessions
+
+When Agent Hub is called with `trace_id=<task-id>`, the session is linked to the SummitFlow task. The Task Modal's Timeline tab shows events from linked Agent Hub sessions.
+
+**Provider Differences:**
+- **Gemini**: Full observability (all 5 event types)
+- **Claude**: 4 event types (tool_result via SDK hooks may not fire)
+
+---
+
 ## Troubleshooting
 
 | Issue | Check | Fix |
@@ -354,6 +409,8 @@ dt --quick                               # Fast check (lint + types)
 | Worktree missing | `st checkpoints` | `st claim <task-id>` |
 | WebSocket not connecting | Browser console | Check CORS, service running |
 | Auto-exec not picking up | Check settings | Enable via Global dropdown |
+| No tool events (Claude) | `st session-events <id>` | SDK limitation, tool_use visible but not tool_result |
+| Session not linked to task | Check trace_id param | Ensure Agent Hub called with trace_id=task_id |
 
 ---
 
@@ -378,4 +435,4 @@ curl -X PATCH localhost:8001/api/projects/summitflow/autonomous/settings \
 
 ---
 
-*Last updated: 2026-02-02*
+*Last updated: 2026-02-03*
