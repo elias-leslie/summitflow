@@ -756,10 +756,30 @@ def start_execution(
     )
 
     if not incomplete:
-        task_store.update_task_status(task_id, "completed")
-        _emit_log(task_id, "info", "All subtasks already complete", project_id=project_id)
-        return {"task_id": task_id, "status": "completed", "message": "All subtasks complete"}
+        try:
+            task_store.update_task_status(task_id, "ai_reviewing")
+            _emit_log(
+                task_id,
+                "info",
+                "All subtasks already complete, starting QA review",
+                project_id=project_id,
+            )
+            ai_review.delay(task_id, project_id)
+        except Exception as e:
+            _emit_log(
+                task_id,
+                "error",
+                f"Failed to transition to ai_reviewing: {e}",
+                project_id=project_id,
+            )
+            task_store.update_task_status(task_id, "blocked")
+        return {
+            "task_id": task_id,
+            "status": "ai_reviewing",
+            "message": "Triggered QA review for complete subtasks",
+        }
 
+    # Track results across loop
     results: list[dict[str, Any]] = []
     issue_counts: dict[str, int] = {}
 
@@ -976,6 +996,9 @@ def _execute_subtask(
     _emit_progress(
         task_id, subtask_id=subtask_short_id, status="in_progress", project_id=project_id
     )
+
+    all_passed = False
+    step_results: list[dict[str, Any]] = []
 
     try:
         # Use task worktree if available for isolated execution
