@@ -145,7 +145,9 @@ def _fetch_session_events(
         return {"events": [], "total": 0, "max_turn": 0}
 
 
-@router.get("/{task_id}/agent-events", response_model=AgentHubEventsResponse)
+@router.get(
+    "/projects/{project_id}/tasks/{task_id}/agent-events", response_model=AgentHubEventsResponse
+)
 async def get_task_agent_events(
     project_id: str,
     task_id: str,
@@ -231,7 +233,7 @@ async def get_task_agent_events(
     )
 
 
-@router.get("/{task_id}/agent-sessions")
+@router.get("/projects/{project_id}/tasks/{task_id}/agent-sessions")
 async def get_task_agent_sessions(
     project_id: str,
     task_id: str,
