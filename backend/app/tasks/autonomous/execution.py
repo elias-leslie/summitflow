@@ -990,6 +990,12 @@ def _execute_subtask(
         # Store session ID for continuation in retry attempts
         agent_session_id = response.session_id
 
+        # Store Agent Hub session ID for observability
+        if agent_session_id:
+            from ...storage.tasks.core import add_agent_hub_session
+
+            add_agent_hub_session(task_id, agent_session_id)
+
         # Surface progress_log to execution timeline
         if response.progress_log:
             _emit_progress_log(
@@ -1215,7 +1221,13 @@ def _execute_subtask(
                     trace_id=task_id,
                 )
                 # Update session ID for next iteration
-                agent_session_id = response.session_id or agent_session_id
+                new_session_id = response.session_id
+                if new_session_id and new_session_id != agent_session_id:
+                    # New session created during retry - store it for observability
+                    from ...storage.tasks.core import add_agent_hub_session
+
+                    add_agent_hub_session(task_id, new_session_id)
+                agent_session_id = new_session_id or agent_session_id
 
                 # Surface progress_log to execution timeline
                 if response.progress_log:

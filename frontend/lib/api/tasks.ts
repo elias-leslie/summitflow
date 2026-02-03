@@ -109,6 +109,8 @@ export interface Task {
   agent_override?: string | null
   // Worktree info (when task has an active worktree)
   worktree?: WorktreeInfo | null
+  // Agent Hub session IDs for full observability
+  agent_hub_session_ids?: string[]
 }
 
 export interface TaskListResponse {
@@ -709,4 +711,75 @@ export async function fetchCodingAgents(): Promise<CodingAgentsResponse> {
     throw new Error('Failed to fetch coding agents')
   }
   return response.json()
+}
+
+// ============================================================================
+// Agent Hub Observability Types
+// ============================================================================
+
+export type AgentEventType =
+  | 'user_message'
+  | 'assistant_message'
+  | 'system_message'
+  | 'thinking'
+  | 'tool_use'
+  | 'tool_result'
+  | 'memory_inject'
+  | 'memory_cite'
+  | 'error'
+
+export interface AgentHubEvent {
+  id: string
+  turn: number
+  sequence: number
+  event_type: AgentEventType
+  role: string | null
+  content: string | null
+  tool_name: string | null
+  tool_input: Record<string, unknown> | null
+  tool_output: Record<string, unknown> | null
+  tokens: number | null
+  duration_ms: number | null
+  model_used: string | null
+  agent_id: string | null
+  agent_name: string | null
+  created_at: string
+}
+
+export interface AgentHubEventsResponse {
+  task_id: string
+  session_ids: string[]
+  events: AgentHubEvent[]
+  total: number
+  max_turn: number
+}
+
+/**
+ * Fetch Agent Hub session events for a task.
+ * Returns full observability data including thinking, tool calls, memory events.
+ */
+export async function fetchTaskAgentEvents(
+  projectId: string,
+  taskId: string,
+  options?: {
+    event_type?: AgentEventType
+    turn?: number
+    page?: number
+    page_size?: number
+  },
+): Promise<AgentHubEventsResponse> {
+  const params = new URLSearchParams()
+  if (options?.event_type) params.set('event_type', options.event_type)
+  if (options?.turn !== undefined) params.set('turn', options.turn.toString())
+  if (options?.page) params.set('page', options.page.toString())
+  if (options?.page_size) params.set('page_size', options.page_size.toString())
+
+  const query = params.toString() ? `?${params.toString()}` : ''
+
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/tasks/${taskId}/agent-events${query}`,
+    {
+      errorMessage: 'Failed to fetch agent events',
+    },
+  )
 }

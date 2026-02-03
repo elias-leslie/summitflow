@@ -13,12 +13,13 @@ from psycopg.rows import TupleRow
 
 from ..connection import generate_prefixed_id, get_connection
 
-# Column list for all task SELECT/RETURNING queries (38 columns)
+# Column list for all task SELECT/RETURNING queries (39 columns)
 # Order must match _row_to_dict index mapping
 # Note: Migration 072 dropped: plan_content, labels, objective, spirit_anti,
 #       decisions, constraints, done_when (moved to task_spirit/task_labels)
 # Note: Migration 099 dropped: progress_log (moved to events table)
 # Note: Migration 101 added: agent_override
+# Note: Migration 028147425749 added: agent_hub_session_ids
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -27,7 +28,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
     complexity, autonomous,
-    qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override"""
+    qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override, agent_hub_session_ids"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -38,11 +39,11 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override"""
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids"""
 
-EXPECTED_TASK_COLUMNS = 38
+EXPECTED_TASK_COLUMNS = 39
 
-# Columns for queries that JOIN with task_spirit (44 columns total)
+# Columns for queries that JOIN with task_spirit (45 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
     t.error_message, t.branch_name, t.commits, t.pull_request_url,
@@ -52,10 +53,10 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override,
+    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 45
 
 
 def _generate_task_id() -> str:
@@ -66,27 +67,27 @@ def _generate_task_id() -> str:
 def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (44 columns):
-        First 38 columns are standard task columns (see _row_to_dict).
+    Column order (45 columns):
+        First 39 columns are standard task columns (see _row_to_dict).
         Then 6 spirit columns:
-        38: objective, 39: spirit_anti, 40: decisions, 41: constraints,
-        42: done_when, 43: plan_status
+        39: objective, 40: spirit_anti, 41: decisions, 42: constraints,
+        43: done_when, 44: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
     if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
-    # Build base task dict from first 38 columns
+    # Build base task dict from first 39 columns
     task = _row_to_dict(row[:EXPECTED_TASK_COLUMNS])
 
-    # Add spirit fields (columns 38-43)
-    task["objective"] = row[38]
-    task["spirit_anti"] = row[39]
-    task["decisions"] = row[40] if row[40] else []
-    task["constraints"] = row[41] if row[41] else []
-    task["done_when"] = row[42] if row[42] else []
-    task["plan_status"] = row[43]
+    # Add spirit fields (columns 39-44)
+    task["objective"] = row[39]
+    task["spirit_anti"] = row[40]
+    task["decisions"] = row[41] if row[41] else []
+    task["constraints"] = row[42] if row[42] else []
+    task["done_when"] = row[43] if row[43] else []
+    task["plan_status"] = row[44]
 
     return task
 
@@ -94,7 +95,7 @@ def _row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (38 columns):
+    Column order (39 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -103,12 +104,13 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, autonomous,
-        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override
+        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override, agent_hub_session_ids
 
     Note: Migration 072 dropped plan_content, labels, objective, spirit_anti,
           decisions, constraints, done_when (now in task_spirit/task_labels)
     Note: Migration 099 dropped progress_log (now in events table)
     Note: Migration 101 added agent_override
+    Note: Migration 028147425749 added agent_hub_session_ids
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -153,6 +155,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "qa_signoff_by": row[35],
         "qa_issues": row[36] or [],
         "agent_override": row[37],
+        "agent_hub_session_ids": row[38] or [],
     }
 
 
@@ -319,6 +322,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         "qa_signoff_by",
         "qa_issues",
         "agent_override",
+        "agent_hub_session_ids",
     }
 
     invalid = set(fields.keys()) - allowed_fields
@@ -332,7 +336,7 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     # JSONB list fields
     jsonb_list_fields = {"qa_issues"}
     for field, value in fields.items():
-        if field in ("commits", "labels") and isinstance(value, list):
+        if field in ("commits", "labels", "agent_hub_session_ids") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
         elif (field in jsonb_dict_fields and isinstance(value, dict)) or (
@@ -379,3 +383,69 @@ def delete_task(task_id: str) -> bool:
         conn.commit()
 
     return result is not None
+
+
+def add_agent_hub_session(task_id: str, session_id: str) -> dict[str, Any] | None:
+    """Add an Agent Hub session ID to a task.
+
+    Appends the session_id to the agent_hub_session_ids array if not already present.
+    This links the task to Agent Hub sessions for full observability.
+
+    Args:
+        task_id: Task ID
+        session_id: Agent Hub session ID to add
+
+    Returns:
+        Updated task dict or None if task not found.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE tasks
+            SET agent_hub_session_ids = array_append(
+                COALESCE(agent_hub_session_ids, ARRAY[]::TEXT[]),
+                %s
+            )
+            WHERE id = %s
+            AND NOT (%s = ANY(COALESCE(agent_hub_session_ids, ARRAY[]::TEXT[])))
+            RETURNING {TASK_COLUMNS}
+            """,
+            (session_id, task_id, session_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    # If no row returned, either task not found or session_id already exists
+    # Try to fetch the task to distinguish
+    if not row:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {TASK_COLUMNS} FROM tasks WHERE id = %s",
+                (task_id,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return None
+    return _row_to_dict(row)
+
+
+def get_agent_hub_sessions(task_id: str) -> list[str]:
+    """Get Agent Hub session IDs for a task.
+
+    Args:
+        task_id: Task ID
+
+    Returns:
+        List of Agent Hub session IDs (empty if task not found or no sessions).
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT agent_hub_session_ids FROM tasks WHERE id = %s",
+            (task_id,),
+        )
+        row = cur.fetchone()
+
+    if not row or not row[0]:
+        return []
+    return list(row[0])
