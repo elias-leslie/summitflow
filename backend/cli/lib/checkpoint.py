@@ -11,114 +11,43 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .checkpoint_branches import (
+    create_subtask_branch,
+    delete_subtask_branch,
+    delete_task_branches,
+    merge_subtask_branch,
+    merge_task_branch,
+)
+from .checkpoint_metadata import (
+    SnapshotMeta,
+    get_claimed_by,
+    get_current_branch,
+    get_meta_path,
+    get_snapshots_dir,
+    is_working_tree_clean,
+    load_snapshot_meta,
+    save_snapshot_meta,
+)
 
-@dataclass
-class SnapshotMeta:
-    """Metadata for a task checkpoint (worktree isolation)."""
-
-    task_id: str
-    project_id: str
-    base_branch: str
-    created_at: str  # ISO format
-    claimed_by: str
-    worktree_path: str | None = None  # Path to isolated worktree
-    backend_port: int | None = None  # Allocated backend port for worktree
-    frontend_port: int | None = None  # Allocated frontend port for worktree
-
-    def to_dict(self) -> dict[str, str | int | None]:
-        """Convert to dictionary for JSON serialization."""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, str | int | None]) -> SnapshotMeta:
-        """Create from dictionary."""
-        # Handle older snapshots without worktree_path
-        if "worktree_path" not in data:
-            data["worktree_path"] = None
-        # Handle older snapshots without port info
-        if "backend_port" not in data:
-            data["backend_port"] = None
-        if "frontend_port" not in data:
-            data["frontend_port"] = None
-        # Handle older snapshots with snapshot_path (no longer used)
-        data.pop("snapshot_path", None)
-        return cls(**data)
-
-
-def _get_snapshots_dir() -> Path:
-    """Get the .st/snapshots directory, creating if needed."""
-    snapshots_dir = Path.cwd() / ".st" / "snapshots"
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
-
-    # Ensure .st/.gitignore ignores snapshots
-    gitignore = Path.cwd() / ".st" / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text("snapshots/\n")
-    elif "snapshots/" not in gitignore.read_text():
-        with gitignore.open("a") as f:
-            f.write("snapshots/\n")
-
-    return snapshots_dir
-
-
-def _get_claimed_by() -> str:
-    """Get the claimer identity from env or git config."""
-    # Try AGENT_ID first (for agent workflows)
-    agent_id = os.getenv("AGENT_ID")
-    if agent_id:
-        return agent_id
-
-    # Fall back to git user
-    try:
-        result = subprocess.run(
-            ["git", "config", "user.name"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip() or "unknown"
-    except subprocess.CalledProcessError:
-        return "unknown"
-
-
-def _get_current_branch() -> str:
-    """Get current git branch name."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        return "main"
-
-
-def _is_working_tree_clean() -> bool:
-    """Check if git working tree is clean."""
-    try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return len(result.stdout.strip()) == 0
-    except subprocess.CalledProcessError:
-        return False
-
-
-def _get_meta_path(task_id: str) -> Path:
-    """Get path for task snapshot metadata file."""
-    return _get_snapshots_dir() / f"{task_id}.meta.json"
+# Re-export for backwards compatibility
+__all__ = [
+    "SnapshotMeta",
+    "create_task_snapshot",
+    "remove_snapshot",
+    "create_subtask_branch",
+    "merge_subtask_branch",
+    "merge_task_branch",
+    "delete_subtask_branch",
+    "delete_task_branches",
+    "get_active_checkpoints",
+    "has_active_task",
+    "get_snapshot_info",
+]
 
 
 def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = True) -> SnapshotMeta:
@@ -142,8 +71,8 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
     from .port_manager import allocate_ports
     from .worktree import WorktreeError, create_worktree
 
-    meta_path = _get_meta_path(task_id)
-    base_branch = _get_current_branch()
+    meta_path = get_meta_path(task_id)
+    base_branch = get_current_branch()
 
     # Check for existing checkpoint
     if meta_path.exists():
@@ -190,12 +119,12 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
         project_id=project_id,
         base_branch=base_branch,
         created_at=datetime.now(UTC).isoformat(),
-        claimed_by=_get_claimed_by(),
+        claimed_by=get_claimed_by(),
         worktree_path=worktree_path,
         backend_port=backend_port,
         frontend_port=frontend_port,
     )
-    meta_path.write_text(json.dumps(meta.to_dict(), indent=2))
+    save_snapshot_meta(meta)
 
     return meta
 
@@ -215,15 +144,13 @@ def remove_snapshot(
     """
     from .worktree import remove_worktree as rm_worktree
 
-    meta_path = _get_meta_path(task_id)
+    meta_path = get_meta_path(task_id)
 
     # Load project_id from meta if not provided
-    if project_id is None and meta_path.exists():
-        try:
-            meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
+    if project_id is None:
+        meta = load_snapshot_meta(task_id)
+        if meta:
             project_id = meta.project_id
-        except (json.JSONDecodeError, KeyError):
-            pass
 
     # Remove worktree if it exists (best-effort cleanup)
     if remove_worktree:
@@ -231,321 +158,6 @@ def remove_snapshot(
             rm_worktree(task_id, delete_branch=False, project_id=project_id)
 
     meta_path.unlink(missing_ok=True)
-
-    return True
-
-
-def create_subtask_branch(task_id: str, subtask_id: str) -> str:
-    """Create git branch for subtask.
-
-    Branch name format: {task_id}/{subtask_id}
-
-    Args:
-        task_id: Parent task identifier
-        subtask_id: Subtask identifier (e.g., "1.1")
-
-    Returns:
-        Branch name created
-
-    Raises:
-        SystemExit: On git failure
-    """
-    branch_name = f"{task_id}/{subtask_id}"
-
-    try:
-        subprocess.run(
-            ["git", "checkout", "-b", branch_name],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to create branch {branch_name}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    return branch_name
-
-
-def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
-    """Merge subtask branch to task branch (if subtask branch exists).
-
-    This merges WITHIN the worktree context - does NOT remove the worktree.
-    The worktree stays alive until the entire task is completed.
-
-    Args:
-        task_id: Parent task identifier
-        subtask_id: Subtask identifier
-        project_id: Project identifier for per-project worktree paths
-
-    Returns:
-        True on success, False if no subtask branch exists
-    """
-    from .worktree import get_worktree_info
-
-    subtask_branch = f"{task_id}/{subtask_id}"
-    task_branch = f"{task_id}/main"
-
-    # Get worktree info - we'll run git commands from there if it exists
-    worktree_info = get_worktree_info(task_id, project_id)
-    cwd = str(worktree_info.path) if worktree_info else None
-
-    # Check if subtask branch exists
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", subtask_branch],
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-    )
-    if result.returncode != 0:
-        # No subtask branch - this is fine, work was done directly on task branch
-        print(f"No subtask branch {subtask_branch} found - work done on task branch")
-        return False
-
-    # Subtask branch exists - merge it into task branch
-    # We need to be on the task branch to merge
-    current_branch = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-    )
-    if current_branch.stdout.strip() != task_branch:
-        try:
-            subprocess.run(
-                ["git", "checkout", task_branch],
-                check=True,
-                capture_output=True,
-                text=True,
-                cwd=cwd,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"Error: Failed to checkout {task_branch}: {e.stderr}", file=sys.stderr)
-            sys.exit(1)
-
-    # Merge subtask branch
-    try:
-        subprocess.run(
-            ["git", "merge", "--no-ff", subtask_branch, "-m", f"Merge subtask {subtask_id}"],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to merge {subtask_branch}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    # Delete subtask branch
-    try:
-        subprocess.run(
-            ["git", "branch", "-d", subtask_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to delete {subtask_branch}: {e.stderr}", file=sys.stderr)
-
-    print(f"Merged subtask branch {subtask_branch} into {task_branch}")
-    return True
-
-
-def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """Merge task branch to base branch and clean up.
-
-    Correct order of operations (verified with git documentation):
-    1. Ensure we're on base branch (main/master) in main repo
-    2. Merge task branch (works even while worktree exists!)
-    3. Remove worktree AFTER merge succeeds
-    4. Delete task branch AFTER worktree is removed
-
-    Args:
-        task_id: Task identifier
-        project_id: Project identifier for per-project worktree paths
-
-    Returns:
-        True on success
-
-    Raises:
-        SystemExit: On merge failure
-    """
-    from .worktree import get_worktree_info, remove_worktree
-
-    meta_path = _get_meta_path(task_id)
-
-    # Load project_id from meta if not provided
-    if project_id is None and meta_path.exists():
-        try:
-            meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
-            project_id = meta.project_id
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    # Get base branch from metadata
-    if meta_path.exists():
-        meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
-        base_branch = meta.base_branch
-    else:
-        base_branch = "main"
-
-    task_branch = f"{task_id}/main"
-
-    # Step 1: Ensure we're on base branch
-    # Check current branch first
-    current = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    current_branch = current.stdout.strip() if current.returncode == 0 else ""
-
-    if current_branch != base_branch:
-        try:
-            subprocess.run(
-                ["git", "checkout", base_branch],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"Error: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
-            sys.exit(1)
-
-    # Step 2: Merge task branch (worktree can still exist - this is allowed!)
-    try:
-        subprocess.run(
-            ["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        print(f"Merged {task_branch} into {base_branch}")
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to merge {task_branch}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    # Step 3: Remove worktree AFTER merge succeeds
-    worktree_info = get_worktree_info(task_id, project_id)
-    if worktree_info:
-        print(f"Removing worktree: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False, project_id=project_id)
-
-    # Step 4: Delete task branch AFTER worktree is removed
-    try:
-        subprocess.run(
-            ["git", "branch", "-d", task_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        print(f"Deleted branch {task_branch}")
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to delete branch {task_branch}: {e.stderr}", file=sys.stderr)
-
-    return True
-
-
-def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
-    """Delete subtask branch without merging.
-
-    Used when abandoning a subtask.
-
-    Args:
-        task_id: Parent task identifier
-        subtask_id: Subtask identifier
-
-    Returns:
-        True on success
-    """
-    branch_name = f"{task_id}/{subtask_id}"
-    task_branch = f"{task_id}/main"
-
-    # Make sure we're not on the branch we're deleting
-    current = _get_current_branch()
-    if current == branch_name:
-        with contextlib.suppress(subprocess.CalledProcessError):
-            subprocess.run(
-                ["git", "checkout", task_branch],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-
-    # Force delete the branch
-    try:
-        subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to delete {branch_name}: {e.stderr}", file=sys.stderr)
-        return False
-
-    return True
-
-
-def delete_task_branches(task_id: str) -> bool:
-    """Delete task branch and all subtask branches.
-
-    Used when abandoning a task completely.
-
-    Args:
-        task_id: Task identifier
-
-    Returns:
-        True on success
-    """
-    meta_path = _get_meta_path(task_id)
-
-    # Get base branch from metadata
-    if meta_path.exists():
-        meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
-        base_branch = meta.base_branch
-    else:
-        base_branch = "main"
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "."],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-    # List and delete all task-related branches
-    try:
-        result = subprocess.run(
-            ["git", "branch", "--list", f"{task_id}*"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        # Strip branch prefixes: * (current), + (worktree), space
-        branches = [b.strip().lstrip("*+ ") for b in result.stdout.splitlines() if b.strip()]
-
-        for branch in branches:
-            try:
-                subprocess.run(
-                    ["git", "branch", "-D", branch],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                print(f"Deleted branch: {branch}")
-            except subprocess.CalledProcessError as e:
-                print(f"Warning: Failed to delete {branch}: {e.stderr}", file=sys.stderr)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to list branches: {e.stderr}", file=sys.stderr)
 
     return True
 
@@ -596,12 +208,10 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
     from .port_manager import get_worktree_ports
     from .worktree import get_worktree_info
 
-    meta_path = _get_meta_path(task_id)
-
-    if not meta_path.exists():
+    meta = load_snapshot_meta(task_id)
+    if not meta:
         return None
 
-    meta = SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
     info = meta.to_dict()
 
     # Check worktree status (use project_id from meta)
