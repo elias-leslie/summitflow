@@ -63,8 +63,8 @@ if _test_db_url:
 # NOW safe to import from app modules
 # =============================================================================
 
-import pytest
-from fastapi.testclient import TestClient
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 def pytest_addoption(parser):

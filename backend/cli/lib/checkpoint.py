@@ -28,8 +28,6 @@ from .checkpoint_metadata import (
     get_claimed_by,
     get_current_branch,
     get_meta_path,
-    get_snapshots_dir,
-    is_working_tree_clean,
     load_snapshot_meta,
     save_snapshot_meta,
 )

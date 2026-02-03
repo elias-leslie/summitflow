@@ -56,7 +56,7 @@ def _run_git(
     args: list[str], cwd: Path | None = None, check: bool = True
 ) -> subprocess.CompletedProcess:
     """Run a git command."""
-    cmd = ["git"] + args
+    cmd = ["git", *args]
     return subprocess.run(
         cmd,
         cwd=cwd,

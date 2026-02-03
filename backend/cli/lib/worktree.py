@@ -106,7 +106,7 @@ def _run_git(
     Raises:
         WorktreeError: If command fails and check is True.
     """
-    cmd = ["git"] + args
+    cmd = ["git", *args]
     try:
         result = subprocess.run(
             cmd,
@@ -182,8 +182,8 @@ def create_worktree(
     # Ensure base branch exists and is up to date
     try:
         _run_git(["rev-parse", "--verify", base_branch], cwd=repo_root)
-    except WorktreeError:
-        raise WorktreeError(f"Base branch '{base_branch}' does not exist")
+    except WorktreeError as e:
+        raise WorktreeError(f"Base branch '{base_branch}' does not exist") from e
 
     # Create the worktree with a new branch
     try:
@@ -199,8 +199,8 @@ def create_worktree(
                     ["worktree", "add", str(worktree_path), branch_name],
                     cwd=repo_root,
                 )
-            except WorktreeError:
-                raise WorktreeError(f"Failed to create worktree for task '{task_id}': {e}")
+            except WorktreeError as err:
+                raise WorktreeError(f"Failed to create worktree for task '{task_id}': {e}") from err
         else:
             raise
 

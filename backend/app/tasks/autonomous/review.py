@@ -181,14 +181,27 @@ def _route_based_on_verdict(
             )
 
     elif verdict in ("NEEDS_FIX", "REJECT", "REJECTED"):
-        _create_fix_subtask(task_id, review_result)
-        # Transition to running (ai_reviewing → running is valid)
-        task_store.update_task_status(task_id, "running")
-        log_task_event(
-            task_id,
-            f"AI Review: {verdict} - Created fix subtask. Issues: {review_result.get('concerns', [])}",
-        )
-        logger.info("QA needs fix, returning to execution", task_id=task_id)
+        concerns = review_result.get("concerns", [])
+        if not concerns:
+            # False positive - no actual issues to fix, treat as APPROVED
+            log_task_event(
+                task_id,
+                f"AI Review: {verdict} returned with no concerns - treating as APPROVED",
+            )
+            if complexity == "SIMPLE":
+                _auto_merge(task_id)
+                task_store.update_task_status(task_id, "completed")
+            else:
+                task_store.update_task_status(task_id, "human_review")
+        else:
+            _create_fix_subtask(task_id, review_result)
+            # Transition to running (ai_reviewing → running is valid)
+            task_store.update_task_status(task_id, "running")
+            log_task_event(
+                task_id,
+                f"AI Review: {verdict} - Created fix subtask. Issues: {concerns}",
+            )
+            logger.info("QA needs fix, returning to execution", task_id=task_id)
 
     elif verdict == "PLAN_DEFECT":
         _handle_plan_defect(task_id, review_result)
