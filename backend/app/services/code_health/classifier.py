@@ -1,4 +1,4 @@
-"""Code health finding classifier using Gemini Flash.
+"""Code health finding classifier using Agent Hub.
 
 Classifies code health findings into verdicts:
 - FALSE_POSITIVE: Should be added to allow list (not a real issue)
@@ -14,12 +14,10 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
-from ...constants import GEMINI_FLASH
+from ..agent_hub_client import AgentHubLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +120,7 @@ Respond with ONLY the JSON object, no additional text.
 
 
 class CodeHealthClassifier:
-    """Classifier for code health findings using Gemini Flash.
+    """Classifier for code health findings using Agent Hub.
 
     Integrates with memory for learning:
     - Stores classification decisions as observations
@@ -131,29 +129,30 @@ class CodeHealthClassifier:
 
     def __init__(
         self,
-        model: str = GEMINI_FLASH,
+        agent_slug: str = "analyst",
         project_id: str | None = None,
         enable_memory: bool = True,
     ) -> None:
         """Initialize the classifier.
 
         Args:
-            model: Gemini model to use for classification
+            agent_slug: Agent slug for classification routing (default: analyst)
             project_id: Project ID for memory storage (required if enable_memory=True)
             enable_memory: Whether to use memory for learning/reuse
         """
-        self.model = model
-        self.project_id = project_id
-        self.enable_memory = enable_memory and project_id is not None
-        self._client: Any = None
-        self._session_id = str(uuid.uuid4())[:8]
+        self.agent_slug = agent_slug
+        self.project_id = project_id or "summitflow"
+        self.enable_memory = enable_memory
+        self._client: AgentHubLLMClient | None = None
 
-    def _get_client(self) -> Any:
-        """Get or create the Gemini client."""
+    def _get_client(self) -> AgentHubLLMClient:
+        """Get or create the Agent Hub client."""
         if self._client is None:
-            from google import genai
-
-            self._client = genai.Client()
+            self._client = AgentHubLLMClient(
+                agent_slug=self.agent_slug,
+                project_id=self.project_id,
+                use_memory=self.enable_memory,
+            )
         return self._client
 
     def _store_classification_observation(
@@ -207,17 +206,14 @@ class CodeHealthClassifier:
         try:
             client = self._get_client()
 
-            response = client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.1,  # Low temp for consistent classification
-                },
+            response = client.generate(
+                prompt=prompt,
+                temperature=0.1,  # Low temp for consistent classification
+                purpose="code_health_classification",
             )
 
             # Parse the JSON response
-            result_json = json.loads(response.text)
+            result_json = json.loads(response.content)
 
             verdict = ClassificationVerdict(result_json.get("verdict", "needs_refactor"))
             confidence = float(result_json.get("confidence", 0.5))

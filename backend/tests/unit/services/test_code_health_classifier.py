@@ -127,7 +127,7 @@ class TestCodeHealthClassifier:
     def test_classify_returns_false_positive(self, mock_get_client: MagicMock) -> None:
         """Test classifying a finding as false positive."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
+        mock_response.content = json.dumps(
             {
                 "verdict": "false_positive",
                 "confidence": 0.95,
@@ -136,7 +136,7 @@ class TestCodeHealthClassifier:
             }
         )
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.generate.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
@@ -156,7 +156,7 @@ class TestCodeHealthClassifier:
     def test_classify_returns_true_positive(self, mock_get_client: MagicMock) -> None:
         """Test classifying a finding as true positive."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
+        mock_response.content = json.dumps(
             {
                 "verdict": "true_positive",
                 "confidence": 0.88,
@@ -165,7 +165,7 @@ class TestCodeHealthClassifier:
             }
         )
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.generate.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
@@ -186,7 +186,7 @@ class TestCodeHealthClassifier:
     def test_classify_returns_needs_refactor(self, mock_get_client: MagicMock) -> None:
         """Test classifying a finding as needs refactor."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
+        mock_response.content = json.dumps(
             {
                 "verdict": "needs_refactor",
                 "confidence": 0.75,
@@ -195,7 +195,7 @@ class TestCodeHealthClassifier:
             }
         )
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.generate.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
@@ -214,9 +214,9 @@ class TestCodeHealthClassifier:
     def test_handles_json_parse_error(self, mock_get_client: MagicMock) -> None:
         """Test handling of JSON parse errors."""
         mock_response = MagicMock()
-        mock_response.text = "Not valid JSON"
+        mock_response.content = "Not valid JSON"
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.generate.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
@@ -236,7 +236,7 @@ class TestCodeHealthClassifier:
     def test_handles_api_error(self, mock_get_client: MagicMock) -> None:
         """Test handling of API errors."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("API Error")
+        mock_client.generate.side_effect = Exception("API Error")
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
@@ -256,7 +256,7 @@ class TestCodeHealthClassifier:
     def test_classify_batch(self, mock_get_client: MagicMock) -> None:
         """Test batch classification of findings."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
+        mock_response.content = json.dumps(
             {
                 "verdict": "true_positive",
                 "confidence": 0.8,
@@ -264,7 +264,7 @@ class TestCodeHealthClassifier:
             }
         )
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.generate.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         classifier = CodeHealthClassifier()
