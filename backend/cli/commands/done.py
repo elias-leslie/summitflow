@@ -38,7 +38,17 @@ def _is_working_tree_clean(path: str | None = None) -> bool:
 
     Args:
         path: Directory to check. If None, checks current directory.
+
+    Returns:
+        True if clean (no uncommitted changes), or if path doesn't exist.
+        False if there are uncommitted changes.
     """
+    from pathlib import Path
+
+    # If path specified but doesn't exist, consider it "clean" (nothing to commit)
+    if path and not Path(path).exists():
+        return True
+
     cmd = ["git", "status", "--porcelain"]
     if path:
         cmd = ["git", "-C", path, "status", "--porcelain"]

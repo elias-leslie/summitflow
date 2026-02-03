@@ -267,7 +267,10 @@ def create_subtask_branch(task_id: str, subtask_id: str) -> str:
 
 
 def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
-    """Merge subtask branch to task branch.
+    """Merge subtask branch to task branch (if subtask branch exists).
+
+    This merges WITHIN the worktree context - does NOT remove the worktree.
+    The worktree stays alive until the entire task is completed.
 
     Args:
         task_id: Parent task identifier
@@ -275,34 +278,49 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
         project_id: Project identifier for per-project worktree paths
 
     Returns:
-        True on success
-
-    Raises:
-        SystemExit: On merge failure
+        True on success, False if no subtask branch exists
     """
-    from .worktree import get_worktree_info, remove_worktree
+    from .worktree import get_worktree_info
 
     subtask_branch = f"{task_id}/{subtask_id}"
     task_branch = f"{task_id}/main"
 
-    # Remove worktree if it exists (so we can checkout the branch)
-    # Keep the branch - we need it for the merge
+    # Get worktree info - we'll run git commands from there if it exists
     worktree_info = get_worktree_info(task_id, project_id)
-    if worktree_info:
-        print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False, project_id=project_id)
+    cwd = str(worktree_info.path) if worktree_info else None
 
-    # Checkout task branch
-    try:
-        subprocess.run(
-            ["git", "checkout", task_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to checkout {task_branch}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
+    # Check if subtask branch exists
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", subtask_branch],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        # No subtask branch - this is fine, work was done directly on task branch
+        print(f"No subtask branch {subtask_branch} found - work done on task branch")
+        return False
+
+    # Subtask branch exists - merge it into task branch
+    # We need to be on the task branch to merge
+    current_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if current_branch.stdout.strip() != task_branch:
+        try:
+            subprocess.run(
+                ["git", "checkout", task_branch],
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Error: Failed to checkout {task_branch}: {e.stderr}", file=sys.stderr)
+            sys.exit(1)
 
     # Merge subtask branch
     try:
@@ -311,6 +329,7 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
             check=True,
             capture_output=True,
             text=True,
+            cwd=cwd,
         )
     except subprocess.CalledProcessError as e:
         print(f"Error: Failed to merge {subtask_branch}: {e.stderr}", file=sys.stderr)
@@ -323,15 +342,23 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
             check=True,
             capture_output=True,
             text=True,
+            cwd=cwd,
         )
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to delete {subtask_branch}: {e.stderr}", file=sys.stderr)
 
+    print(f"Merged subtask branch {subtask_branch} into {task_branch}")
     return True
 
 
 def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """Merge task branch to main and clean up.
+    """Merge task branch to base branch and clean up.
+
+    Correct order of operations (verified with git documentation):
+    1. Ensure we're on base branch (main/master) in main repo
+    2. Merge task branch (works even while worktree exists!)
+    3. Remove worktree AFTER merge succeeds
+    4. Delete task branch AFTER worktree is removed
 
     Args:
         task_id: Task identifier
@@ -362,27 +389,30 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     else:
         base_branch = "main"
 
-    # Remove worktree if it exists (clean up before merge)
-    # Keep the branch - we need it for the merge
-    worktree_info = get_worktree_info(task_id, project_id)
-    if worktree_info:
-        print(f"Removing worktree before merge: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False, project_id=project_id)
-
-    # Checkout base branch
-    try:
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    # Merge task branch (task_id/main)
     task_branch = f"{task_id}/main"
+
+    # Step 1: Ensure we're on base branch
+    # Check current branch first
+    current = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    current_branch = current.stdout.strip() if current.returncode == 0 else ""
+
+    if current_branch != base_branch:
+        try:
+            subprocess.run(
+                ["git", "checkout", base_branch],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Error: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
+            sys.exit(1)
+
+    # Step 2: Merge task branch (worktree can still exist - this is allowed!)
     try:
         subprocess.run(
             ["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"],
@@ -390,11 +420,18 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
             capture_output=True,
             text=True,
         )
+        print(f"Merged {task_branch} into {base_branch}")
     except subprocess.CalledProcessError as e:
         print(f"Error: Failed to merge {task_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    # Delete task branch
+    # Step 3: Remove worktree AFTER merge succeeds
+    worktree_info = get_worktree_info(task_id, project_id)
+    if worktree_info:
+        print(f"Removing worktree: {worktree_info.path}")
+        remove_worktree(task_id, delete_branch=False, project_id=project_id)
+
+    # Step 4: Delete task branch AFTER worktree is removed
     try:
         subprocess.run(
             ["git", "branch", "-d", task_branch],
@@ -402,6 +439,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
             capture_output=True,
             text=True,
         )
+        print(f"Deleted branch {task_branch}")
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to delete branch {task_branch}: {e.stderr}", file=sys.stderr)
 
