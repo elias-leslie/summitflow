@@ -35,8 +35,9 @@
    - [3.4 Memory System](#34-memory-system)
    - [3.5 Agents](#35-agents)
    - [3.6 UI Pages](#36-ui-pages)
-   - [3.7 Error Handling](#37-error-handling)
-   - [3.8 Deployment](#38-deployment)
+   - [3.7 Celery Tasks](#37-celery-tasks)
+   - [3.8 Error Handling](#38-error-handling)
+   - [3.9 Deployment](#39-deployment)
 4. [Integration](#4-integration)
 5. [Logging & Monitoring](#5-logging--monitoring)
 6. [Live System State](#6-live-system-state)
@@ -99,17 +100,19 @@
 | Component | Technology | Version |
 |-----------|------------|---------|
 | Backend | FastAPI + Uvicorn | 0.115+ |
-| Frontend | Next.js + React | 16.1.2 / 19 |
+| Frontend | Next.js + React | 16.1+ / 19.2+ |
 | Database | PostgreSQL + psycopg3 | 15+ |
 | Queue | Celery + Redis | 5.4+ |
 | Language | Python | 3.12+ |
 | Styling | Tailwind CSS | 4.1 |
 | Type Check | MyPy (strict) | 1.13+ |
 | Linting | Ruff | 0.8+ |
+| Testing | Vitest (frontend) | 3.0+ |
+| Migrations | Alembic | 1.14+ |
 
 ### 2.2 Database Schema
 
-**85 migrations** in `/home/kasadis/summitflow/backend/migrations/`
+**103 migrations** in `/home/kasadis/summitflow/backend/migrations/`
 
 #### Core Tables
 
@@ -117,18 +120,64 @@
 |-------|---------|-------------|
 | `projects` | Project registry | id, name, base_url, root_path, agent_configs (JSONB), automation_settings (JSONB) |
 | `tasks` | Task records | id, project_id, title, status, priority, task_type, autonomous, complexity, claimed_by, lock_expires_at |
-| `subtasks` | Task breakdown | id, task_id, title, status, order_index |
-| `steps` | Subtask steps | id, subtask_id, title, status, order_index |
-| `acceptance_criteria` | Reusable criteria | id, criterion_id, project_id, criterion, category, measurement, threshold |
-| `task_criteria` | Task-criteria link | task_id, criterion_db_id |
-| `evidence` | Captured artifacts | id, evidence_id, project_id, task_id, explorer_entry_id, evidence_type, file_path, quality_status, version |
+| `task_dependencies` | Task dependency graph | task_id, depends_on_task_id |
+| `task_spirit` | Task objectives, constraints, decisions | task_id, objectives, constraints, key_decisions |
+| `task_labels` | Task categorization | task_id, label |
+
+#### Task Hierarchy Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `task_subtasks` | Subtask definitions | id, task_id, title, status, order_index, verification_command, verification_expected_output |
+| `task_subtask_steps` | Step-level specifications | id, subtask_id, title, status, order_index |
+| `subtask_dependencies` | Subtask dependency graph | subtask_id, depends_on_subtask_id |
+| `subtask_summaries` | Subtask completion summaries | subtask_id, summary, completion_notes |
+| `subtask_citations` | Subtask evidence citations | subtask_id, citation_type, content, rating |
+
+#### Explorer & Analysis Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
 | `explorer_entries` | Codebase entities | id, project_id, entry_type, path, name, health_status, metadata (JSONB) |
+| `explorer_sub_elements` | Sub-elements within entries | id, entry_id, element_type, name, metadata |
+| `explorer_relationships` | Entry relationships | source_entry_id, target_entry_id, relationship_type |
+| `scan_history` | Explorer scan logs | id, project_id, scan_type, triggered_by, metrics (JSONB) |
+| `scan_states` | Scan state tracking | id, project_id, scan_type, status, current_entry, total_entries |
+| `qa_issues` | Quality assurance issues | id, project_id, entry_id, issue_type, severity, description |
+| `code_health_lists` | Code health classifications | id, project_id, list_type, entry_ids |
+
+#### Execution & Events Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `events` | Unified execution events (OTel-inspired) | id, project_id, trace_id, span_id, event_type, source, level, message, attributes |
+| `agent_sessions` | Agent build sessions | id, project_id, task_id, session_type, status, provider, model |
+| `refactor_sessions` | Refactoring session tracking | id, project_id, task_id, status, changes_summary |
+
+#### Design & Ideas Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
 | `mockups` | Design mockups | id, mockup_id, project_id, name, status, file_path, generator, task_id |
 | `design_standards` | Design rules | id, project_id, name, base_standard_id, is_base |
 | `design_rules` | Individual rules | id, standard_id, category, rule_id, name, requirements (JSONB) |
+| `ideas` | Feature ideas | id, project_id, title, description, status, source, votes |
+
+#### Backup & Quality Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
 | `backups` | Backup records | id, project_id, name, status, size_bytes, location |
 | `backup_schedules` | Backup scheduling | id, project_id, enabled, frequency, retention_count |
-| `scan_history` | Explorer scan logs | id, project_id, scan_type, triggered_by, metrics (JSONB) |
+| `quality_check_results` | Quality gate results | id, project_id, check_type, status, details, created_at |
+
+#### Other Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `notifications` | User notifications | id, user_id, type, message, read_status, created_at |
+| `sitemap_entries` | Application sitemap | id, path, title, parent_path, order_index |
+| `user_prompts` | Stored user prompts | id, project_id, prompt_text, usage_count |
 
 #### Task Status Values
 ```
@@ -154,6 +203,8 @@ file, table, endpoint, page, celery_task, dependency
 | GET | `/api/projects` | List projects |
 | GET | `/api/projects/with-stats` | List with task counts |
 | GET | `/api/projects/{id}/health` | Health check |
+| GET | `/activity` | Activity feed |
+| GET | `/notifications` | User notifications |
 
 #### Tasks
 | Method | Endpoint | Purpose |
@@ -165,6 +216,7 @@ file, table, endpoint, page, celery_task, dependency
 | PATCH | `/api/tasks/{id}/status` | Update status |
 | POST | `/api/tasks/{id}/claim` | Claim task |
 | DELETE | `/api/tasks/{id}` | Delete task |
+| GET | `/api/tasks/{id}/export` | Export task to JSON |
 
 #### Subtasks & Steps
 | Method | Endpoint | Purpose |
@@ -174,30 +226,46 @@ file, table, endpoint, page, celery_task, dependency
 | POST | `/api/subtasks/{id}/steps` | Create step |
 | PATCH | `/api/subtasks/{id}/status` | Update subtask status |
 | PATCH | `/api/steps/{id}/status` | Update step status |
+| POST | `/api/subtasks/{id}/citations` | Log citation |
 
-#### Criteria
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/tasks/{id}/criteria` | Add criterion |
-| GET | `/api/tasks/{id}/criteria` | List criteria |
-| POST | `/api/projects/{id}/acceptance-criteria` | Create reusable criterion |
-
-#### Evidence
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/projects/{id}/evidence/capture` | Trigger capture |
-| GET | `/api/projects/{id}/evidence` | List evidence |
-| GET | `/api/projects/{id}/evidence/{eid}` | Get evidence |
-| GET | `/api/projects/{id}/evidence/{eid}/screenshot` | Get image |
-| POST | `/api/projects/{id}/evidence/{eid}/review` | User review |
-
-#### Explorer
+#### Explorer & Code Health
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/api/projects/{id}/explorer/scan` | Trigger scan |
 | GET | `/api/projects/{id}/explorer` | List entries |
 | GET | `/api/projects/{id}/explorer/stats` | Get stats |
 | GET | `/api/projects/{id}/explorer/refactor-targets` | Get refactor candidates |
+| GET | `/api/projects/{id}/explorer/scan-history` | Scan history |
+| GET | `/api/projects/{id}/explorer/scan/status` | Current scan status |
+| GET | `/api/projects/{id}/explorer/entry/{entry_id}` | Get entry by ID |
+| POST | `/api/projects/{id}/explorer/regenerate-index` | Regenerate entry index |
+| POST | `/api/explorer/regenerate-all-indexes` | Regenerate all indexes |
+
+#### TDD & Suggestions
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/tdd/suggestions` | Get TDD suggestions |
+| GET | `/api/projects/{id}/tdd/component-suggestions` | Get component suggestions |
+
+#### Ideas
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/ideas` | List ideas |
+| GET | `/api/projects/{id}/ideas/{idea_id}` | Get idea |
+| POST | `/api/projects/{id}/ideas/{idea_id}/approve` | Approve idea |
+| POST | `/api/projects/{id}/ideas/{idea_id}/refine` | Refine idea |
+| POST | `/api/projects/{id}/ideas/{idea_id}/retry` | Retry refinement |
+| POST | `/api/projects/{id}/ideas/execute-now` | Execute approved ideas |
+
+#### Quality Gate
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/quality/results` | List check results |
+| POST | `/api/projects/{id}/quality/results` | Create check result |
+| POST | `/api/projects/{id}/quality/sync` | Sync results |
+| POST | `/api/projects/{id}/quality/auto-fix` | Trigger auto-fix |
+| POST | `/api/projects/{id}/quality/results/{rid}/fix-attempt` | Record fix attempt |
+| POST | `/api/projects/{id}/quality/results/{rid}/mark-fixed` | Mark as fixed |
 
 #### Mockups
 | Method | Endpoint | Purpose |
@@ -229,8 +297,32 @@ file, table, endpoint, page, celery_task, dependency
 | POST | `/api/projects/{id}/backups` | Create backup |
 | GET | `/api/projects/{id}/backups` | List backups |
 | POST | `/api/projects/{id}/backups/{bid}/restore` | Restore backup |
+| GET | `/api/projects/{id}/backups/{bid}/restore/preview` | Preview restore |
+| DELETE | `/api/projects/{id}/backups/{bid}` | Delete backup |
 | GET | `/api/projects/{id}/backups/schedule` | Get schedule |
 | PUT | `/api/projects/{id}/backups/schedule` | Update schedule |
+
+#### Events & Observability
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/events` | List events |
+| GET | `/api/projects/{id}/events/by-trace/{trace_id}` | Events by trace |
+| POST | `/api/projects/{id}/errors/console` | Capture console error |
+
+#### Refactor Sessions
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/projects/{id}/refactor-sessions/active` | Get active session |
+| GET | `/api/projects/{id}/refactor-sessions/{task_id}` | Get session |
+| POST | `/api/projects/{id}/refactor-sessions` | Create session |
+| PATCH | `/api/projects/{id}/refactor-sessions/{task_id}` | Update session |
+| POST | `/api/projects/{id}/refactor-sessions/{task_id}/complete` | Complete session |
+
+#### Schemas
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/schemas` | List schemas |
+| GET | `/api/schemas/{schema_name}` | Get schema |
 
 #### Autonomous
 | Method | Endpoint | Purpose |
@@ -250,12 +342,21 @@ file, table, endpoint, page, celery_task, dependency
 |---------|------|---------|
 | OrchestratorService | `services/orchestrator.py` | Task execution coordination |
 | WorktreeManager | `services/worktree_manager.py` | Git worktree isolation |
+| CheckpointManager | `services/checkpoint_manager.py` | Worktree checkpoint management |
 | EvidenceManager | `services/evidence_manager.py` | Evidence capture/storage |
 | MockupGenerator | `services/mockup_generator.py` | AI mockup generation |
 | AgentHubClient | `services/agent_hub_client.py` | Agent Hub integration |
 | SelfHealingOrchestrator | `services/self_healing/orchestrator.py` | Auto-fix orchestration |
 | RecoveryManager | `services/recovery/manager.py` | Build state recovery |
 | GitLifecycle | `services/git_lifecycle.py` | Git state machine |
+| CodeHealthClassifier | `services/code_health/classifier.py` | Code analysis via Agent Hub |
+| ExplorerService | `services/explorer/` | Codebase exploration & indexing |
+| ImplementationService | `services/implementation/` | Task execution loop |
+| QualityGate | `services/quality_gate/` | Automated quality checks |
+| EnrichmentService | `services/enrichment_service.py` | Task enrichment via AI |
+| BuildQAService | `services/build/qa_loop.py` | Build QA loop |
+| PubSubService | `services/pubsub.py` | Event pub/sub (Redis + PostgreSQL) |
+| HealthCache | `services/health_cache.py` | Health check caching |
 
 ### 2.5 CLI Commands
 
@@ -285,27 +386,52 @@ st close                     # Uses active task (no ID needed)
 | `st close [id]` | Close task (all subtasks must be complete) | Yes |
 | `st cancel [id]` | Cancel task from any non-terminal state | Yes |
 | `st claim [id]` | Claim/release task, optionally with worktree | Yes |
+| `st abandon [id]` | Abandon task, rollback changes | Yes |
 | `st delete [id]` | Delete task | Yes |
 | `st bug` | Create bug task (shorthand for create -t bug) | No |
+| `st done [target]` | Mark subtask or task complete | Yes |
 | `st log <msg>` | Append to task progress log with timestamp | Yes |
 | `st work` | Set/show/clear active task context | N/A |
 | `st verify` | Validate plan.json against schema | No |
 | `st import` | Import plan.json as task with subtasks | No |
 | `st autocode [id]` | Immediate dispatch via Redis, or `--at` for scheduled | Yes |
 
-#### Subcommands
+#### Subtask & Step Commands
 
 | Command | Subcommands | Purpose |
 |---------|-------------|---------|
 | `st subtask` | list, show, create, pass, block, delete | Subtask management |
 | `st step` | list, pass, new, insert, defect, delete | Step management |
+| `st dep` | list, add, rm | Dependency management |
+
+#### Infrastructure Commands
+
+| Command | Subcommands | Purpose |
+|---------|-------------|---------|
 | `st worktree` | list, prune | Worktree management |
+| `st checkpoints` | (no subcommands) | List active checkpoints |
 | `st git` | status, sync, cleanup | Git operations |
 | `st backup` | list, create, restore, status, schedule | Backup management |
 | `st autonomous` | enable, disable, status | Autonomous settings |
 | `st health` | (no subcommands) | Quality gate status |
 | `st logs` | tail, services, levels | Unified service logs via journalctl |
+| `st cleanup` | worktrees | Cleanup operations |
+
+#### Memory & Agent Commands
+
+| Command | Subcommands | Purpose |
+|---------|-------------|---------|
+| `st memory` | stats, save, list, search, get, delete | Memory operations |
+| `st sessions` | list, show | Session management |
+| `st citations` | log | Log citations with ratings (+/-) |
+
+#### Development Commands
+
+| Command | Subcommands | Purpose |
+|---------|-------------|---------|
 | `st exec-monitor` | (task-id) -f -n | Execution monitoring (see 5.7) |
+| `st tools` | status | Tool status |
+| `st test` | list, import | Test management |
 
 **Output modes**: `--compact` (TOON), `--human` (pretty JSON), `--no-compact` (raw JSON)
 
@@ -314,12 +440,19 @@ st close                     # Uses active task (no ID needed)
 | URL | Component | Features |
 |-----|-----------|----------|
 | `/` | Dashboard | Project grid, activity feed, quick access |
+| `/about` | About | Overview, features, how it works, getting started |
+| `/projects/{id}` | Project Dashboard | Overview, stats, recent activity |
 | `/projects/{id}?tab=kanban` | Kanban | 6 columns, drag-drop, WebSocket streaming |
 | `/projects/{id}?tab=explorer` | Explorer | 6 entry types, health status, refactor targets |
 | `/projects/{id}?tab=evidence` | Evidence | Screenshots, AI review, mockup comparison |
 | `/projects/{id}/design` | Design | Mockup management, Outrun Design System |
-| `/git` | Git | Repository status, worktree management |
-| `/backups` | Backups | Backup list, scheduling, restore |
+| `/projects/{id}/git` | Project Git | Repository status, worktree management |
+| `/projects/{id}/backups` | Project Backups | Backup list, restore |
+| `/projects/{id}/backups/{id}/restore` | Restore | Backup restore preview |
+| `/projects/{id}/settings` | Project Settings | Configuration, agents, automation |
+| `/projects/new` | New Project | Project creation wizard |
+| `/git` | Global Git | All repositories status |
+| `/backups` | Global Backups | All backups management |
 
 #### Kanban Columns
 ```
@@ -336,17 +469,21 @@ Ideas → Planning → In Progress → AI Review → Human Review → Done
 
 | Task | Schedule | Purpose |
 |------|----------|---------|
-| `autonomous-work-pickup-summitflow` | 2 hours | FALLBACK pickup (primary is Redis pub/sub) |
-| `process-scheduled-tasks` | 1 min | Process delayed tasks from Redis sorted set |
-| `review-pending-tasks-summitflow` | 30 min | Opus review gate |
-| `cleanup-orphaned-worktrees` | 6 hours | Clean stale worktrees (30-day TTL) |
-| `scan-all-projects` | 6 hours | Explorer scan |
-| `daily-code-health-scan` | Daily | Code health metrics |
-| `daily-evidence-capture` | Daily 2am | Automated evidence capture |
-| `run-scheduled-backups` | Hourly | Scheduled backups |
-| `process-crowdsourced-ideas-monkey-fight` | Daily 3am | Process approved ideas |
-| `monitor-systemd-errors` | 5 min | Monitor service errors |
-| `orchestrate-self-healing` | 15 min | Auto-fix orchestration |
+| `autonomous_work_pickup` | 2 hours | FALLBACK pickup (primary is Redis pub/sub) |
+| `process_scheduled_tasks` | 1 min | Process delayed tasks from Redis sorted set |
+| `review_pending_tasks` | 30 min | Opus review gate |
+| `reset_expired_task_claims` | 1 hour | Reset stale task claims |
+| `cleanup_stale_tasks` | 1 day | Clean up stale tasks |
+| `cleanup_debug_captures` | 1 day | Clean debug artifacts |
+| `scan_all_projects` | 6 hours | Explorer scan |
+| `weekly_deep_scan` | 7 days | Deep codebase scan |
+| `daily_code_health_scan` | 1 day | Code health metrics |
+| `generate_tasks_from_scan` | 7 days | Auto-generate tasks from scan |
+| `monitor_browser_errors` | 6 hours | Browser error monitoring |
+| `monitor_systemd_errors` | 5 min | Monitor service errors |
+| `orchestrate_self_healing` | 15 min | Auto-fix orchestration |
+| `run_scheduled_backups` | 1 hour | Scheduled backups |
+| `process_crowdsourced_ideas` | 1 day | Process approved ideas |
 
 ### 2.8 Error Handling
 
@@ -406,33 +543,39 @@ AGENT_HUB_URL=http://localhost:8003
 | Component | Technology | Version |
 |-----------|------------|---------|
 | Backend | FastAPI + Uvicorn | 0.115+ |
-| Frontend | Next.js + React | 16.1.2 / 19 |
-| Primary DB | PostgreSQL | 15+ |
+| Frontend | Next.js + React | 16.1+ / 19.2+ |
+| Primary DB | PostgreSQL + asyncpg | 15+ |
 | Graph DB | Neo4j (Graphiti) | 2025.12.1 |
 | Queue | Celery + Redis | 5.4+ |
 | Language | Python | 3.13+ |
-| LLM | Anthropic SDK, Google AI SDK | 0.40+, 1.21+ |
+| LLM | Anthropic SDK, Google AI SDK, OpenAI | 0.40+, 1.21+, 1.60+ |
+| Testing | Vitest, Playwright | 3.0+, 1.50+ |
 
 ### 3.2 Database Schema
 
-**14 migrations** in `/home/kasadis/agent-hub/backend/migrations/versions/`
+**34 migrations** in `/home/kasadis/agent-hub/backend/alembic/versions/`
 
 #### PostgreSQL Tables
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
 | `sessions` | AI conversation sessions | id, project_id, external_id, provider, model, status, purpose, session_type |
-| `messages` | Individual messages | id, session_id, role, content, tokens, agent_id, agent_name |
+| `messages` | Individual messages | id, session_id, role, content, tokens, agent_id, agent_name, tool_calls |
 | `credentials` | Encrypted API keys | id, provider, credential_type, value_encrypted |
 | `cost_logs` | Token/cost tracking | id, session_id, model, input_tokens, output_tokens, cost_usd |
-| `agents` | Agent configurations | id, slug, name, system_prompt, primary_model_id, fallback_models, mandate_tags |
+| `agents` | Agent configurations | id, slug, name, system_prompt, primary_model_id, fallback_models, mandate_tags, temperature |
 | `agent_versions` | Agent change history | id, agent_id, version, config_snapshot |
 | `api_keys` | Virtual API keys | id, key_hash, project_id, rate_limit_rpm |
-| `client_control` | Kill switch - clients | client_name, enabled, disabled_by, reason |
-| `purpose_control` | Kill switch - purposes | purpose, enabled, disabled_by, reason |
-| `client_purpose_control` | Kill switch - combos | client_name, purpose, enabled |
+| `clients` | Registered clients | id, name, description, enabled |
+| `client_controls` | Kill switch - clients | client_name, enabled, disabled_by, reason |
+| `purpose_controls` | Kill switch - purposes | purpose, enabled, disabled_by, reason |
+| `client_purpose_controls` | Kill switch - combos | client_name, purpose, enabled |
 | `truncation_events` | Context overflow logs | id, model, output_tokens, max_tokens_requested |
-| `message_feedback` | User ratings | id, message_id, feedback_type, category |
+| `request_logs` | API request logging | id, client_name, endpoint, status_code, duration_ms |
+| `usage_stats` | Usage statistics | id, client_name, date, requests_count, tokens_count |
+| `memory_settings` | Memory configuration | id, key, value |
+| `memory_injection_metrics` | Memory performance | id, session_id, episodes_injected, tokens_injected |
+| `webhook_subscriptions` | Webhook configs | id, url, event_types, secret |
 
 #### Neo4j Schema (Graphiti)
 
@@ -526,6 +669,19 @@ AGENT_HUB_URL=http://localhost:8003
 
 **SummitFlow uses `run_agent`** for autonomous execution (`st autocode`, Celery tasks).
 
+#### Access Control
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/access-control/clients` | List clients |
+| POST | `/api/access-control/clients` | Create client |
+| GET | `/api/access-control/clients/{id}` | Get client |
+| PUT | `/api/access-control/clients/{id}` | Update client |
+| DELETE | `/api/access-control/clients/{id}` | Delete client |
+| POST | `/api/access-control/clients/{id}/disable` | Disable client |
+| POST | `/api/access-control/clients/{id}/enable` | Enable client |
+| GET | `/api/access-control/purposes` | List purposes |
+| POST | `/api/access-control/check` | Check access |
+
 #### Admin
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
@@ -533,13 +689,26 @@ AGENT_HUB_URL=http://localhost:8003
 | POST | `/api/admin/clients/{name}/disable` | Disable client |
 | DELETE | `/api/admin/clients/{name}/disable` | Enable client |
 | GET | `/api/admin/blocked-requests` | Get blocked log |
+| DELETE | `/api/admin/request-audit` | Clear audit log |
+| DELETE | `/api/admin/unknown-callers` | Clear unknown callers |
+| GET | `/api/admin/db/tables/{table_name}/count` | Table row count |
+| GET | `/api/admin/db/tables/{table_name}/sample` | Table sample |
 
-#### Analytics
+#### Analytics & Monitoring
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/analytics/costs` | Cost aggregation |
 | GET | `/api/analytics/truncations` | Truncation metrics |
 | GET | `/api/feedback/stats` | Feedback statistics |
+| GET | `/api/metrics` | Prometheus metrics |
+| GET | `/api/status/cache` | Cache status |
+
+#### Webhooks
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/webhooks` | List subscriptions |
+| POST | `/api/webhooks` | Create subscription |
+| DELETE | `/api/webhooks/{id}` | Delete subscription |
 
 ### 3.4 Memory System
 
@@ -665,9 +834,18 @@ If vote > 5: promote the episode
 | `/dashboard` | Dashboard | KPI cards, cost charts, provider health, feedback stats |
 | `/chat` | Chat | Single/Roundtable mode, memory toggle, coding agent mode |
 | `/agents` | Agents | Agent list, metrics, CRUD, version history |
+| `/agents/{slug}` | Agent Detail | Agent configuration, playground, analytics |
+| `/agents/{slug}/playground` | Agent Playground | Test agent with live execution |
+| `/agents/{slug}/analytics` | Agent Analytics | Usage metrics, performance charts |
 | `/memory` | Memory | Episode browser, 6 categories, golden standards, bulk delete |
 | `/sessions` | Sessions | Session list, message history, token breakdown, cost |
+| `/sessions/{id}` | Session Detail | Full session transcript, metrics, timeline |
 | `/admin` | Admin | Kill switch controls, blocked requests log |
+| `/access-control` | Access Control | Client and purpose management |
+| `/access-control/clients` | Clients List | All registered clients |
+| `/access-control/clients/{id}` | Client Detail | Client configuration, audit log |
+| `/access-control/clients/new` | New Client | Client registration wizard |
+| `/monitoring/requests` | Request Monitoring | Real-time request tracking |
 
 #### Chat Modes
 - **Single**: 1-on-1 with model selection (5 models)
@@ -681,7 +859,14 @@ If vote > 5: promote the episode
 3. PurposeControl (least specific)
 ```
 
-### 3.7 Error Handling
+### 3.7 Celery Tasks
+
+| Task | Schedule | Purpose |
+|------|----------|---------|
+| `cleanup_stale_sessions_task` | 5 minutes | Clean up stale sessions |
+| `run_tier_optimizer` | Daily 2:00 AM | Memory tier optimization |
+
+### 3.8 Error Handling
 
 #### Provider Errors
 - Fallback chain: Primary → Fallback models in order
@@ -712,7 +897,7 @@ If vote > 5: promote the episode
 | Image Generation | 2 hours |
 | Agent | 24 hours |
 
-### 3.8 Deployment
+### 3.9 Deployment
 
 #### Systemd Services
 | Service | Port | Command |

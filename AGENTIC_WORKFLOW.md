@@ -1,6 +1,6 @@
 # SummitFlow Autonomous Development Workflow
 
-> Operating entirely within SummitFlow UI + Agent Hub. Agents use CLI tools (st, dt).
+> **Executive Summary:** SummitFlow is an autonomous software development platform that operates entirely within a self-hosted environment. It leverages a multi-agent system (Agent Hub) to plan, execute, review, and fix code tasks. The core workflow revolves around "Tasks" which are executed by agents in isolated "Worktrees" with full state checkpoints (Database + Git). This allows for safe experimentation, automated recovery (rollbacks), and continuous learning via the ACE (Agentic Context Engineering) memory system. Developers interact via the `st` CLI or the Web UI, while agents handle the heavy lifting of coding, testing, and verifying.
 
 ---
 
@@ -18,6 +18,7 @@
 │                                │                                             │
 │                    WebSocket: /ws/execution/{taskId}                         │
 │                    REST: /api/projects/{id}/tasks/{id}/execute               │
+│                    REST: /api/ideas/... (Ideas Workflow)                     │
 └────────────────────────────────┼─────────────────────────────────────────────┘
                                  │
 ┌────────────────────────────────┼─────────────────────────────────────────────┐
@@ -40,12 +41,14 @@
 │  │  - dispatch_task_immediate (event-driven, <1s latency)                │  │
 │  │  - autonomous_work_pickup (polling fallback, every 2h)                │  │
 │  │  - process_scheduled_tasks (every 1m)                                 │  │
+│  │  - daily_code_health_scan (daily)                                     │  │
+│  │  - process_crowdsourced_ideas (daily)                                 │  │
 │  └─────────────────────────────┬─────────────────────────────────────────┘  │
 │                                │                                             │
 │  ┌─────────────────────────────▼─────────────────────────────────────────┐  │
 │  │                     Execution Pipeline                                │  │
 │  │  1. check_pristine_codebase() - dt --check                            │  │
-│  │  2. Create worktree: ~/.local/share/st/worktrees/<project>/<task>/    │  │
+│  │  2. Create worktree: ~/.local/share/st/worktrees/<project>/<task>/   │  │
 │  │  3. For each subtask: _execute_subtask() via Agent Hub                │  │
 │  │  4. Verify steps: run verify_command, check expected_output           │  │
 │  │  5. Auto-commit after each subtask                                    │  │
@@ -64,12 +67,29 @@
 │  └─────────────────────────────┬─────────────────────────────────────────┘  │
 │                                │                                             │
 │  ┌─────────────────────────────▼─────────────────────────────────────────┐  │
-│  │                     Agent Roster                                      │  │
-│  │  - planner: Generate implementation plans (subtasks + steps)          │  │
-│  │  - coder: Execute code changes (Flash/Sonnet)                         │  │
-│  │  - reviewer: Code review gate (Opus)                                  │  │
-│  │  - supervisor: Coordination when stuck (Sonnet)                       │  │
-│  │  - fixer: Error fixing (Sonnet)                                       │  │
+│  │                     Agent Roster (14 Agents)                          │  │
+│  │                                                                         │  │
+│  │  TIER 1 - Complex Analysis & Planning:                                  │  │
+│  │  - planner (Opus→Gemini-3-pro): Creates implementation plans            │  │
+│  │  - supervisor (Opus→Gemini-3-pro): Complex error analysis             │  │
+│  │  - reviewer (Sonnet→Opus): Code review gate                             │  │
+│  │  - qa (Opus→Sonnet): Execution quality review                           │  │
+│  │                                                                         │  │
+│  │  TIER 2 - Standard Implementation:                                      │  │
+│  │  - coder (Gemini-3-flash→Sonnet): Code generation w/ tool permissions  │  │
+│  │  - refactor (Flash→Sonnet→Opus): Code refactoring w/ behavior preservation│  │
+│  │  - analyst (Sonnet→Gemini-3-pro): Codebase analysis                    │  │
+│  │  - explorer (Flash→Sonnet): Fast codebase exploration                   │  │
+│  │                                                                         │  │
+│  │  TIER 3 - Quick Operations:                                             │  │
+│  │  - worker (Flash→Sonnet): Fast error fixing                             │  │
+│  │  - validator (Flash→Haiku): Quick validation & syntax checks            │  │
+│  │  - auditor (Gemini-3-pro→Sonnet): Cross-checks fixes                    │  │
+│  │                                                                         │  │
+│  │  SPECIALIZED:                                                           │  │
+│  │  - designer (Gemini-3-pro→Sonnet): UI/UX design analysis               │  │
+│  │  - idea-intake (Flash→Haiku): Idea triage & clarification               │  │
+│  │  - reasoner (Gemini-3-pro→Opus): Complex reasoning & trade-offs         │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -167,7 +187,7 @@
 
 - **All Off** (red) / **Partial** (yellow) / **All Active** (green)
 - **Per-project toggles** with time window awareness
-- Toggles `enabled` flag in project autonomous settings
+- **Toggles `enabled`** flag in project autonomous settings
 
 ### Bottom Execution Dock (floating panel)
 
@@ -201,51 +221,70 @@ st autocode task-abc123 --at "22:00" # Scheduled
 ### 3. Execution Pipeline
 
 ```python
-# /backend/app/tasks/autonomous/execution.py:667
+# /backend/app/tasks/autonomous/execution.py
 def start_execution(task_id, project_id):
     # 1. Pristine check
-    check_pristine_codebase()  # dt --check
+    check_pristine_codebase()  # Uses st health or health cache
     if fails:
         pristine_self_heal()   # Up to 3 attempts via coder agent
 
-    # 2. Create worktree
+    # 2. Create worktree with checkpoint
     worktree_path = create_worktree(task_id)
     # ~/.local/share/st/worktrees/<project>/<task>/
 
     # 3. Execute subtasks
     for subtask in get_incomplete_subtasks(task_id):
-        _execute_subtask(subtask)  # Agent Hub complete()
+        _execute_subtask(subtask)  # Agent Hub run_agent()
         auto_commit(subtask_id)
+        # Checkpoint updated after each subtask
 
     # 4. AI Review
-    ai_review(task_id)  # Opus reviewer agent
+    ai_review(task_id)  # Opus reviewer agent via Agent Hub
 ```
+
+**Checkpoint System:**
+- Checkpoints are created when claiming a task (`st claim`)
+- Each checkpoint captures git state + database state
+- If execution fails, can rollback to last checkpoint via `st abandon`
+- Checkpoints enable safe experimentation - always have a known-good state to return to
 
 ### 4. Subtask Execution
 
 ```python
-# /backend/app/tasks/autonomous/execution.py:906
+# /backend/app/tasks/autonomous/execution.py
 def _execute_subtask(subtask):
-    # Call Agent Hub with execute_tools=True
-    result = agent_hub.complete(
-        agent="coder",
+    # Call Agent Hub with run_agent (agentic mode with tool loop)
+    result = agent_hub.run_agent(
+        agent_slug="coder",           # Or agent:supervisor for complex tasks
         messages=[subtask_prompt],
-        execute_tools=True,  # Agentic mode
-        memory=True          # Inject mandates/guardrails
+        project_id="summitflow",      # Memory scope
+        external_id=subtask.task_id,  # Cost tracking
+        purpose="code_generation",    # Kill switch categorization
     )
+    # Returns: session_id, memory_uuids, cited_uuids
+
+    # Log citations with ratings for ACE-aligned feedback loop
+    log_citations(result.cited_uuids, rating="+")  # or "-" for harmful
 
     # Verify each step
     for step in subtask.steps:
         output = run_command(step.verify_command)
         if not matches(output, step.expected_output):
-            # Self-heal loop (3 attempts)
-            # Then escalate: worker → supervisor → human
+            # Self-heal loop (max 3 attempts via fixer agent)
+            # Then escalate: worker → supervisor → human_review
 ```
+
+**Agent Routing:**
+- **coder** (claude-sonnet-4-5): Standard implementation tasks
+- **supervisor** (claude-sonnet-4-5): Complex analysis, coordination
+- **reviewer** (claude-opus-4-5): Code review gate
+- **fixer** (claude-sonnet-4-5): Error fixing and debugging
+- **worker** (gemini-3-flash): Quick fixes, simple tasks
 
 ### 5. Review Gate
 
 ```python
-# /backend/app/tasks/autonomous/review.py:25
+# /backend/app/tasks/autonomous/review.py
 def ai_review(task_id):
     diff = get_git_diff()
     verdict = agent_hub.complete(
@@ -267,66 +306,183 @@ def ai_review(task_id):
 
 ---
 
-## Quick Reference
+## Ideas & Crowdsourced Workflow
 
-### Task Management
-```bash
-st create <title> -t <type> -d <desc>   # Create task
-st list --status pending                 # List by status
-st context <task-id>                     # Full context (subtasks, steps)
+The ideas system allows capturing feature requests from any source and converting them into refined tasks.
+
+### Workflow Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. IDEA CAPTURE                                             │
+│    - Ideas stored in `ideas` table                          │
+│    - Source tracking: manual, auto-detected, crowdsourced   │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. IDEA INTAKE (idea-intake agent)                          │
+│    - Triages ideas for clarity                              │
+│    - Status: needs_clarification → clarification_requested    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. AUTO-CONVERSION TO TASK                                      │
+│    - Approved ideas auto-convert to tasks                       │
+│    - Task type='idea', source='crowdsourced'                    │
+│    - Enters normal task lifecycle (pending → queue → running)   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Execution
+### CLI Commands (Planned/API)
+
+*Note: Some commands are currently available via API only.*
+
 ```bash
-st autocode <task-id>                    # Queue for immediate execution
-st autocode <task-id> --at "22:00"       # Schedule for 10pm
-st exec-monitor <task-id> -f             # Follow execution events
+# Ideas management is currently handled via API endpoints
+# /api/ideas/...
 ```
 
-### Checkpoint/Worktree
+### Automated Processing
+
+The `process_crowdsourced_ideas` Celery task (`backend/app/tasks/autonomous/ideas.py`):
+1. Finds `approved` ideas without tasks
+2. Auto-converts to tasks
+3. Dispatches for execution if budget allows
+
+---
+
+## Code Health Workflow
+
+Automated scanning identifies issues and generates fix tasks.
+
+### Workflow Overview
+
+1. **Scan Trigger:** Celery `daily_code_health_scan`
+2. **Analysis:** AST analysis via `backend/app/tasks/code_health.py`
+3. **Classification:** Gemini Flash classifies issues (True/False Positive)
+4. **Task Generation:** True positives create `fix` tasks
+
+### Health Metrics
+
+| Metric | Target |
+|--------|--------|
+| Overall Health Score | >80% |
+| Critical Issues | 0 |
+| High Issues | <5 |
+
+### CLI Commands
+
 ```bash
-st claim <task-id>                       # Create worktree + git branch
-st done <task-id>                        # Merge worktree to main
-st abandon <task-id> --force             # Delete worktree without merge
-st checkpoints                           # View active checkpoints
+st health                              # Show quality gate summary
+st health results                      # Show detailed findings
 ```
 
-### Quality Gates
+---
+
+## Test-Driven Development (TDD) Workflow
+
+TDD mode enforces writing tests before implementation.
+
+### Workflow
+1. **RED:** Write Failing Test
+2. **GREEN:** Minimal Implementation
+3. **REFACTOR:** Clean Up
+
+### API Integration
+- `GET /api/projects/{id}/tdd/suggestions`
+- Logic in `backend/app/api/tdd.py`
+
+---
+
+## Memory & Citation Feedback Loop
+
+The ACE system improves memory quality over time.
+
+1. **Injection:** `agent-hub` injects Mandates/Guardrails/References.
+2. **Citation:** Agent cites used memories `[M:abc]`.
+3. **Rating:** System tracks helpfulness.
+4. **Optimization:** Daily job promotes/demotes memories based on utility.
+
+### CLI Commands
+
 ```bash
-dt --check                               # Full quality gate
-dt --quick                               # Fast check (lint + types)
-./scripts/rebuild.sh                     # Rebuild after code changes
+st memory stats                        # Overall statistics
+st memory save "content"               # Save new learning
+st memory list                         # List episodes
+```
+
+---
+
+## Checkpoint & Rollback System
+
+Checkpoints provide safe experimentation.
+
+### Checkpoint Lifecycle
+
+1. **Create:** `st claim` (Snapshot DB + Git Worktree)
+2. **Execute:** Work happens in isolated worktree
+3. **Complete:** `st done` (Merge & Cleanup)
+4. **Rollback:** `st abandon` (Restore DB & Delete Worktree)
+
+### Commands
+
+```bash
+st claim <task-id>                     # Create checkpoint + worktree
+st done <task-id>                      # Complete & Merge
+st abandon <task-id> --force           # Full Rollback
+st checkpoints                         # List active
 ```
 
 ---
 
 ## Key Files
 
-### Backend
-
+### Backend - Core Execution
 | File | Purpose |
 |------|---------|
-| `backend/app/storage/tasks/status.py:113` | `update_task_status()` - status transitions |
-| `backend/app/scheduling/dispatch.py:93` | `publish_task_ready()` - Redis dispatch |
-| `backend/app/tasks/autonomous/pickup.py:382` | `handle_dispatch_event()` - event handler |
-| `backend/app/tasks/autonomous/execution.py:667` | `start_execution()` - main orchestrator |
-| `backend/app/tasks/autonomous/execution.py:906` | `_execute_subtask()` - per-subtask logic |
-| `backend/app/tasks/autonomous/planning.py:25` | `create_plan()` - generate subtasks |
-| `backend/app/tasks/autonomous/review.py:25` | `ai_review()` - Opus review gate |
-| `backend/app/services/agent_hub_client.py:115` | Agent Hub client factory |
+| `backend/app/tasks/autonomous/execution.py` | Main execution orchestrator |
+| `backend/app/tasks/autonomous/pickup.py` | Event-driven task dispatch |
+| `backend/app/services/agent_hub_client.py` | Agent Hub API client with run_agent integration |
+| `backend/app/storage/tasks/core.py` | Task CRUD operations and context retrieval |
+| `backend/app/storage/tasks/status.py` | Status state machine and transitions |
+| `backend/app/storage/task_spirit.py` | Task objectives, constraints, and approval state |
+| `backend/app/api/tasks/core.py` | REST API endpoints for task management |
+| `backend/app/api/events.py` | Event streaming API (REST + WebSocket) |
+
+### Backend - Checkpoint & Worktree
+| File | Purpose |
+|------|---------|
+| `backend/cli/lib/checkpoint.py` | Checkpoint logic |
+| `backend/cli/lib/worktree.py` | Worktree management |
+| `backend/cli/commands/claim.py` | `st claim` command |
+
+### Backend - Explorer & Code Health
+| File | Purpose |
+|------|---------|
+| `backend/app/services/explorer/` | Explorer service |
+| `backend/app/tasks/code_health.py` | Code health scan task |
+| `backend/app/services/code_health/classifier.py` | Finding classifier |
+
+### Backend - Ideas & Task Generation
+| File | Purpose |
+|------|---------|
+| `backend/app/api/ideas.py` | Ideas API endpoints |
+| `backend/app/tasks/autonomous/ideas.py` | Crowdsourced idea processing |
+| `backend/app/storage/ideas_repository.py` | Ideas DB storage |
+
+### Backend - Memory
+| File | Purpose |
+|------|---------|
+| `backend/cli/commands/memory.py` | `st memory` CLI commands |
 
 ### Frontend
-
 | File | Purpose |
 |------|---------|
-| `frontend/components/kanban/TaskKanbanBoard.tsx` | Kanban with drag-drop |
-| `frontend/components/kanban/TaskCard.tsx` | Task card with execution panel |
-| `frontend/components/tasks/TaskModal.tsx` | Full task details + controls |
-| `frontend/components/tasks/TaskModalActions.tsx` | Start/Stop/Agent buttons |
-| `frontend/components/tasks/ExecutionTimeline.tsx` | Live event timeline |
-| `frontend/hooks/useExecutionWebSocket.ts` | WebSocket connection |
-| `frontend/components/layout/GlobalAutoExecDropdown.tsx` | Auto-exec toggle |
-| `frontend/lib/api/tasks.ts:287` | `executeTask()` - API call |
+| `frontend/components/kanban/TaskKanbanBoard.tsx` | Kanban UI |
+| `frontend/components/tasks/TaskModal.tsx` | Task Details & Execution |
+| `frontend/hooks/useExecutionWebSocket.ts` | Real-time events |
 
 ---
 
@@ -334,105 +490,8 @@ dt --quick                               # Fast check (lint + types)
 
 | Service | Port | Health Check |
 |---------|------|--------------|
-| SummitFlow Backend | 8001 | `curl localhost:8001/health` |
+| SummitFlow Backend | 8001 | `/health` |
 | SummitFlow Frontend | 3001 | `http://localhost:3001` |
-| Agent Hub Backend | 8003 | `curl localhost:8003/api/health` |
-| Agent Hub Frontend | 3003 | `http://localhost:3003` |
-| Neo4j | 7687 | bolt protocol |
-| Redis | 6379 | `redis-cli PING` |
-| PostgreSQL | 5432 | `pg_isready` |
+| Agent Hub Backend | 8003 | `/api/health` |
 
----
-
-## Observability (Session Events)
-
-Agent Hub tracks all events during agentic execution in the `session_events` table. This provides full visibility into what happens during task execution.
-
-### Event Types
-
-| Event Type | Description |
-|------------|-------------|
-| `memory_inject` | Memory facts injected into context |
-| `user_message` | User/system prompt |
-| `assistant_message` | Model response |
-| `tool_use` | Tool invocation (bash, read_file, etc) |
-| `tool_result` | Result from tool execution |
-| `thinking` | Extended thinking content (Claude) |
-| `memory_cite` | Memory items cited in response |
-| `error` | Error during execution |
-
-### CLI Commands
-
-```bash
-# View session events
-st session-events <session-id>
-
-# Example output:
-# [1.1] memory_inject
-#   Injected 75 memory facts
-# [1.2] user_message
-#   Implement the feature...
-# [1.3] tool_use (bash)
-#   {"command": "ls -la"}
-# [1.4] tool_result (bash_abc123)
-#   {"content": "file1 file2...", "is_error": false}
-# [1.5] assistant_message [150 tokens]
-#   Here's the implementation...
-```
-
-### API Access
-
-```bash
-# Get session events
-curl localhost:8003/api/sessions/{session-id}/events
-
-# Response includes event_type, content, turn, sequence, tokens
-```
-
-### Linking SummitFlow Tasks to Sessions
-
-When Agent Hub is called with `trace_id=<task-id>`, the session is linked to the SummitFlow task. The Task Modal's Timeline tab shows events from linked Agent Hub sessions.
-
-**Provider Support:**
-Both Gemini and Claude support full observability with all 5 event types:
-- memory_inject, user_message, tool_use, tool_result, assistant_message
-
----
-
-## Troubleshooting
-
-| Issue | Check | Fix |
-|-------|-------|-----|
-| Task not executing | `st context <id>` - has subtasks? | Add subtasks with steps |
-| Step failing | `st exec-monitor <id>` | Check verify_command output |
-| Agent Hub down | `journalctl --user -u agent-hub-backend` | `~/agent-hub/scripts/restart.sh` |
-| Worktree missing | `st checkpoints` | `st claim <task-id>` |
-| WebSocket not connecting | Browser console | Check CORS, service running |
-| Auto-exec not picking up | Check settings | Enable via Global dropdown |
-| No tool events | `st session-events <id>` | Ensure execute_tools=true (-x flag in CLI) |
-| Session not linked to task | Check trace_id param | Ensure Agent Hub called with trace_id=task_id |
-
----
-
-## Autonomous Settings
-
-```bash
-# View settings
-curl localhost:8001/api/projects/summitflow/autonomous/settings
-
-# Enable/disable
-curl -X PATCH localhost:8001/api/projects/summitflow/autonomous/settings \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true}'
-```
-
-| Setting | Description |
-|---------|-------------|
-| `enabled` | Whether autonomous pickup runs |
-| `frequency_minutes` | How often to check for work |
-| `max_concurrent` | Max parallel executions |
-| `start_hour`/`end_hour` | Active hours (24h format) |
-
----
-
-*Last updated: 2026-02-03*
+*Last updated: 2026-02-03 (v2.1 - Corrected file paths and CLI availability)*
