@@ -423,6 +423,25 @@ run_tests() {
     fi
 }
 
+
+# Check if project has python backend
+has_python_backend() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    local backend_dir=$(get_backend_path "$(basename "$project_dir")" "$project_dir")
+    
+    # Check for pyproject.toml or requirements.txt
+    if [[ -f "$backend_dir/pyproject.toml" ]] || [[ -f "$backend_dir/requirements.txt" ]]; then
+        return 0
+    fi
+    # Fallback: check if backend dir exists and has python files
+    if [[ -d "$backend_dir" ]]; then
+        if find "$backend_dir" -maxdepth 2 -name "*.py" -print -quit | grep -q .; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 quick_check() {
     local project_dir="$1"
     local project_name=$(basename "$project_dir")
@@ -432,19 +451,28 @@ quick_check() {
     [[ "$CHANGED_ONLY" == "1" ]] && mode_suffix=":changed"
     echo "QUICK_CHECK:$project_name$mode_suffix"
 
-    # Use run_lint/run_types when in changed-only mode for proper file filtering
-    if [[ "$CHANGED_ONLY" == "1" ]]; then
-        run_lint "$project_dir" || ((errors++))
-        run_types "$project_dir" || ((errors++))
+    # Python tools only if backend exists
+    if has_python_backend "$project_dir"; then
+        # Use run_lint/run_types when in changed-only mode for proper file filtering
+        if [[ "$CHANGED_ONLY" == "1" ]]; then
+            run_lint "$project_dir" || ((errors++))
+            run_types "$project_dir" || ((errors++))
+        else
+            run_tool_toon ruff || ((errors++))
+            run_tool_toon mypy || ((errors++))
+        fi
     else
-        run_tool_toon ruff || ((errors++))
-        run_tool_toon mypy || ((errors++))
+        echo "LINT:OK:skipped_no_python"
+        echo "TYPES:OK:skipped_no_python"
     fi
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
         run_tool_toon biome || ((errors++))
         run_tool_toon tsc || ((errors++))
+    else
+        echo "BIOME:OK:skipped_no_frontend"
+        echo "TSC:OK:skipped_no_frontend"
     fi
 
     if [[ $errors -eq 0 ]]; then
@@ -489,14 +517,24 @@ full_check() {
     local errors=0
 
     echo "CHECK:$project_name"
-    run_lint "$project_dir" || ((errors++))
-    run_types "$project_dir" || ((errors++))
-    run_tests "$project_dir" || ((errors++))
+    
+    if has_python_backend "$project_dir"; then
+        run_lint "$project_dir" || ((errors++))
+        run_types "$project_dir" || ((errors++))
+        run_tests "$project_dir" || ((errors++))
+    else
+        echo "LINT:OK:skipped_no_python"
+        echo "TYPES:OK:skipped_no_python"
+        echo "TEST:OK:skipped_no_python"
+    fi
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
         run_tool_toon biome || ((errors++))
         run_tool_toon tsc || ((errors++))
+    else
+        echo "BIOME:OK:skipped_no_frontend"
+        echo "TSC:OK:skipped_no_frontend"
     fi
 
     if [[ $errors -eq 0 ]]; then
@@ -763,6 +801,14 @@ run_tool_toon() {
     fi
 
     IFS='|' read -r label binary args count_method dir_type fallback_global pass_path <<< "$def"
+
+    # Smart Check: Skip Python tools if no Python backend (when running explicit command like 'dt mypy')
+    if [[ "$dir_type" == "backend" ]]; then
+        if ! has_python_backend "$PROJECT_DIR"; then
+            echo "$label:OK:skipped_no_python"
+            return 0
+        fi
+    fi
 
     ensure_output_dir
     local details_file="$OUTPUT_DIR/${tool_name}-details.txt"
