@@ -49,6 +49,8 @@ def _complete(
     source_client: str = "st-cli",
     use_memory: bool = True,
     memory_group_id: str | None = None,
+    execute_tools: bool = False,
+    working_dir: str | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, client_secret, request_source = _load_credentials()
@@ -73,6 +75,10 @@ def _complete(
         payload["use_memory"] = True
     if memory_group_id:
         payload["memory_group_id"] = memory_group_id
+    if execute_tools:
+        payload["execute_tools"] = True
+    if working_dir:
+        payload["working_dir"] = working_dir
 
     agent_hub_url = get_agent_hub_url()
 
@@ -130,6 +136,12 @@ def complete_default(
     memory_group: Annotated[
         str | None, typer.Option("--memory-group", "-g", help="Memory group ID")
     ] = None,
+    execute_tools: Annotated[
+        bool, typer.Option("--execute-tools", "-x", help="Execute tools (full observability)")
+    ] = False,
+    working_dir: Annotated[
+        str | None, typer.Option("--working-dir", "-w", help="Working directory for tool execution")
+    ] = None,
     raw: Annotated[bool, typer.Option("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.
@@ -145,7 +157,9 @@ def complete_default(
             typer.echo(ctx.get_help())
             return
 
-        result = _complete(agent, message, project, source, memory, memory_group)
+        result = _complete(
+            agent, message, project, source, memory, memory_group, execute_tools, working_dir
+        )
 
         if raw:
             output_json(result)
