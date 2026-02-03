@@ -62,7 +62,9 @@ def save(
     scope_id: str | None,
 ) -> None:
     """Save a new memory episode."""
-    save_impl(out, content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id)
+    save_impl(
+        out, content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id
+    )
 
 
 def list_episodes(

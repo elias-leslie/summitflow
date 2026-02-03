@@ -37,16 +37,16 @@ from .checkpoint_metadata import (
 # Re-export for backwards compatibility
 __all__ = [
     "SnapshotMeta",
-    "create_task_snapshot",
-    "remove_snapshot",
     "create_subtask_branch",
-    "merge_subtask_branch",
-    "merge_task_branch",
+    "create_task_snapshot",
     "delete_subtask_branch",
     "delete_task_branches",
     "get_active_checkpoints",
-    "has_active_task",
     "get_snapshot_info",
+    "has_active_task",
+    "merge_subtask_branch",
+    "merge_task_branch",
+    "remove_snapshot",
 ]
 
 
