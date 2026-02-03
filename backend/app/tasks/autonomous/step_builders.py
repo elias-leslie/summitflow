@@ -72,8 +72,9 @@ def build_refactor_steps(
     """Build verification steps for a refactor task.
 
     Args:
-        relative_path: Relative file path for display
-        file_path: Absolute file path for verification commands
+        relative_path: Relative file path for display and verification commands
+            (commands run from worktree root, so relative paths work correctly)
+        file_path: Absolute file path (unused, kept for API compatibility)
         lines: Current line count
         target_lines: Target line count
         is_frontend: Whether this is a frontend file
@@ -81,15 +82,16 @@ def build_refactor_steps(
     Returns:
         List of step dictionaries with description, verify_command, expected_output
     """
+    # Use relative_path for verify commands since they run from worktree root
     steps = [
         {
             "description": f"Analyze {relative_path} for refactoring opportunities",
-            "verify_command": f"test -f {file_path}",
+            "verify_command": f"test -f {relative_path}",
             "expected_output": "exit code 0",
         },
         {
             "description": f"Split/refactor to reduce line count from {lines} to <{target_lines}",
-            "verify_command": f"test $(wc -l < {file_path}) -lt {target_lines}",
+            "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
             "expected_output": "exit code 0",
         },
         {
