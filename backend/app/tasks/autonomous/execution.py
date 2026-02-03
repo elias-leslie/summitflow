@@ -356,6 +356,12 @@ Fix these issues now.
                 project_id=project_id,
             )
 
+            # Surface agent tool calls to execution timeline for observability
+            if response.progress_log:
+                _emit_progress_log(
+                    task_id, f"pristine-{attempt + 1}", response.progress_log, project_id=project_id
+                )
+
         except subprocess.TimeoutExpired:
             logger.error("pristine_self_heal_timeout", project_id=project_id)
             _emit_log(
