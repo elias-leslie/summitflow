@@ -162,6 +162,7 @@ def _route_based_on_verdict(
     if verdict == "APPROVED":
         if complexity == "SIMPLE":
             # SIMPLE tasks auto-merge after AI approval
+            _auto_merge(task_id)
             task_store.update_task_status(task_id, "completed")
             log_task_event(
                 task_id,
@@ -251,8 +252,27 @@ def _handle_plan_defect(task_id: str, review_result: dict[str, Any]) -> None:
 
 
 def _auto_merge(task_id: str) -> None:
-    """Auto-merge changes to main branch (placeholder)."""
-    logger.info("Auto-merge triggered for SIMPLE task", task_id=task_id)
+    """Auto-merge changes to main branch.
+
+    Triggers the merge_and_cleanup_task_worktree Celery task to:
+    1. Merge task branch to main
+    2. Remove the worktree
+    3. Delete the task branch
+    """
+    from .cleanup import merge_and_cleanup_task_worktree
+
+    task = task_store.get_task(task_id)
+    if not task:
+        logger.warning("Cannot auto-merge: task not found", task_id=task_id)
+        return
+
+    project_id = task.get("project_id")
+    if not project_id:
+        logger.warning("Cannot auto-merge: no project_id", task_id=task_id)
+        return
+
+    logger.info("Triggering auto-merge for SIMPLE task", task_id=task_id, project_id=project_id)
+    merge_and_cleanup_task_worktree.delay(task_id, project_id)
 
 
 def _create_fix_subtask(task_id: str, review_result: dict[str, Any]) -> None:
