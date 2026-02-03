@@ -834,15 +834,48 @@ def start_execution(
 
     all_passed = all(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        task_store.update_task_status(task_id, "ai_reviewing")
-        _emit_log(task_id, "info", "All subtasks passed, starting QA review", project_id=project_id)
-        ai_review.delay(task_id, project_id)
+        try:
+            task_store.update_task_status(task_id, "ai_reviewing")
+            _emit_log(
+                task_id, "info", "All subtasks passed, starting QA review", project_id=project_id
+            )
+            ai_review.delay(task_id, project_id)
+        except Exception as e:
+            # Log full context and set task to blocked instead of leaving in limbo
+            _emit_log(
+                task_id,
+                "error",
+                f"Failed to transition to ai_reviewing: {type(e).__name__}: {e!s}\n"
+                f"Task ID: {task_id}\n"
+                f"Project ID: {project_id}\n"
+                f"Results: {results}",
+                project_id=project_id,
+            )
+            task_store.update_task_status(task_id, "blocked")
+            _emit_log(
+                task_id,
+                "error",
+                "Task set to blocked due to status transition failure",
+                project_id=project_id,
+            )
     else:
         # Some subtasks failed - mark as blocked (not stuck in "running")
-        task_store.update_task_status(task_id, "blocked")
-        _emit_log(
-            task_id, "info", "Execution paused - subtask verification failed", project_id=project_id
-        )
+        try:
+            task_store.update_task_status(task_id, "blocked")
+            _emit_log(
+                task_id,
+                "info",
+                "Execution paused - subtask verification failed",
+                project_id=project_id,
+            )
+        except Exception as e:
+            # Log the failure but task is likely already in a bad state
+            _emit_log(
+                task_id,
+                "error",
+                f"Failed to set blocked status: {type(e).__name__}: {e!s}",
+                project_id=project_id,
+            )
 
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
