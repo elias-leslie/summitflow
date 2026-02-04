@@ -57,3 +57,5 @@ references/
 
 # Checkpoint data
 .st/
+
+backup-index.json
