@@ -10,6 +10,7 @@ import os
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -30,28 +31,49 @@ class SnapshotMeta:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int | None]) -> SnapshotMeta:
+    def from_dict(cls, data: dict[str, Any]) -> SnapshotMeta:
         """Create from dictionary."""
+        # Ensure correct types for conversion
+        d = data.copy()
         # Handle older snapshots without worktree_path
-        if "worktree_path" not in data:
-            data["worktree_path"] = None
+        if "worktree_path" not in d:
+            d["worktree_path"] = None
         # Handle older snapshots without port info
-        if "backend_port" not in data:
-            data["backend_port"] = None
-        if "frontend_port" not in data:
-            data["frontend_port"] = None
+        if "backend_port" not in d:
+            d["backend_port"] = None
+        if "frontend_port" not in d:
+            d["frontend_port"] = None
         # Handle older snapshots with snapshot_path (no longer used)
-        data.pop("snapshot_path", None)
-        return cls(**data)
+        d.pop("snapshot_path", None)
+
+        bp = d.get("backend_port")
+        fp = d.get("frontend_port")
+
+        # Cast to required types to satisfy LSP
+        return cls(
+            task_id=str(d["task_id"]),
+            project_id=str(d["project_id"]),
+            base_branch=str(d["base_branch"]),
+            created_at=str(d["created_at"]),
+            claimed_by=str(d["claimed_by"]),
+            worktree_path=str(d["worktree_path"]) if d.get("worktree_path") else None,
+            backend_port=int(bp) if bp is not None else None,
+            frontend_port=int(fp) if fp is not None else None,
+        )
 
 
-def get_snapshots_dir() -> Path:
+def get_snapshots_dir(project_root: str | Path | None = None) -> Path:
     """Get the .st/snapshots directory, creating if needed."""
-    snapshots_dir = Path.cwd() / ".st" / "snapshots"
+    if project_root:
+        base = Path(project_root)
+    else:
+        base = Path.cwd()
+
+    snapshots_dir = base / ".st" / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     # Ensure .st/.gitignore ignores snapshots
-    gitignore = Path.cwd() / ".st" / ".gitignore"
+    gitignore = base / ".st" / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text("snapshots/\n")
     elif "snapshots/" not in gitignore.read_text():
@@ -61,23 +83,32 @@ def get_snapshots_dir() -> Path:
     return snapshots_dir
 
 
-def get_meta_path(task_id: str) -> Path:
+def get_meta_path(task_id: str, project_root: str | Path | None = None) -> Path:
     """Get path for task snapshot metadata file."""
-    return get_snapshots_dir() / f"{task_id}.meta.json"
+    return get_snapshots_dir(project_root) / f"{task_id}.meta.json"
 
 
-def load_snapshot_meta(task_id: str) -> SnapshotMeta | None:
+def load_snapshot_meta(task_id: str, project_root: str | Path | None = None) -> SnapshotMeta | None:
     """Load snapshot metadata for a task.
 
     Args:
         task_id: Task identifier
+        project_root: Optional project root path
 
     Returns:
         SnapshotMeta if found, None otherwise
     """
-    meta_path = get_meta_path(task_id)
+    meta_path = get_meta_path(task_id, project_root)
     if not meta_path.exists():
-        return None
+        # Fallback to CWD-based lookup for backwards compatibility
+        if project_root is not None:
+            fallback_path = get_meta_path(task_id, None)
+            if fallback_path.exists():
+                meta_path = fallback_path
+            else:
+                return None
+        else:
+            return None
 
     try:
         return SnapshotMeta.from_dict(json.loads(meta_path.read_text()))

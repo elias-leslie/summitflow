@@ -1057,41 +1057,24 @@ def _execute_subtask(
             _emit_progress_log(
                 task_id, subtask_short_id, response.progress_log, project_id=project_id
             )
-
-        logger.info(
-            "Agent completed",
-            subtask_id=subtask_short_id,
-            response_length=len(response.content) if response.content else 0,
-            session_id=response.session_id,
-            cited_uuids=len(response.cited_uuids) if response.cited_uuids else 0,
-            progress_entries=len(response.progress_log) if response.progress_log else 0,
-        )
-        debug_detailed(
-            "Agent output received",
-            task_id=task_id,
-            project_id=project_id,
-            response_length=len(response.content) if response.content else 0,
-            session_id=response.session_id,
-            citations=len(response.cited_uuids) if response.cited_uuids else 0,
-        )
-
-        # Emit agent completion with summary
-        response_preview = response.content[:300] if response.content else "(no response)"
-        _emit_log(
-            task_id,
-            "info",
-            f"Agent completed subtask {subtask_short_id}",
-            source="agent",
-            project_id=project_id,
-        )
-        _emit_log(
-            task_id,
-            "debug",
-            f"Agent response: {response_preview}",
-            source="agent",
-            project_id=project_id,
-            visibility="internal",
-        )
+        else:
+            # Fallback for agents that don't support incremental progress
+            response_preview = response.content[:300] if response.content else "(no response)"
+            _emit_log(
+                task_id,
+                "info",
+                f"Agent completed subtask {subtask_short_id}",
+                source="agent",
+                project_id=project_id,
+            )
+            _emit_log(
+                task_id,
+                "debug",
+                f"Agent response: {response_preview}",
+                source="agent",
+                project_id=project_id,
+                visibility="internal",
+            )
 
         # Log memory citations used
         if response.cited_uuids:

@@ -45,7 +45,7 @@ def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) ->
 
     # Get diff from worktree if task has one, otherwise project root
     git_diff = _get_git_diff(task_id, project_id)
-    complexity = task.get("complexity", "STANDARD")
+    complexity = task.get("complexity") or "STANDARD"
 
     prompt = f"""Review this code change for quality, correctness, and security.
 

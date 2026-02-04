@@ -138,7 +138,9 @@ def _remove_checkpoint_metadata(task_id: str, project_id: str) -> bool:
         return True
 
     try:
-        meta_path = Path(project_root) / ".st" / "snapshots" / f"{task_id}.meta.json"
+        from cli.lib.checkpoint_metadata import get_meta_path
+
+        meta_path = get_meta_path(task_id, project_root)
         if meta_path.exists():
             meta_path.unlink()
             logger.info("checkpoint_metadata_removed", task_id=task_id)
@@ -157,23 +159,7 @@ def create_task_worktree(
     project_id: str,
     base_branch: str = "main",
 ) -> TaskWorktreeInfo | None:
-    """Create an isolated worktree for a task.
-
-    Creates a worktree at ~/.local/share/st/worktrees/<project-id>/<task-id>/
-    with a new branch <task-id>/main based on the specified base branch.
-
-    Args:
-        task_id: Task identifier for the worktree
-        project_id: Project ID to get the repository root
-        base_branch: Branch to base the worktree on (default: main)
-
-    Returns:
-        TaskWorktreeInfo with worktree details, or None if creation failed
-
-    Note:
-        This function does not raise exceptions - it logs errors and returns None
-        to allow execution to fall back to using the project root path.
-    """
+    """Create an isolated worktree for a task."""
     try:
         # Import the CLI worktree module
         from cli.lib.worktree import (
