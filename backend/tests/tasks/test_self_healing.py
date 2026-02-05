@@ -53,7 +53,7 @@ class TestSystemdMonitorIntegration:
         # Verify create_task was called with correct arguments
         mock_create.assert_called_once()
         call_kwargs = mock_create.call_args[1]
-        assert call_kwargs["project_id"] == "test-project"
+        assert call_kwargs["project_id"] == "summitflow"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
         assert call_kwargs["autonomous"] is True

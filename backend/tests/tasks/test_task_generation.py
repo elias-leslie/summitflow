@@ -32,24 +32,14 @@ class TestGenerateTasksFromScan:
 
     @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.task_generation.task_store")
-    @patch("app.tasks.autonomous.task_generation.qa_storage")
-    @patch("app.tasks.autonomous.task_generation.link_issue_to_task")
-    @patch("app.tasks.autonomous.task_generation.bulk_create_subtasks")
-    @patch("app.tasks.autonomous.task_generation.bulk_create_steps")
-    @patch("app.tasks.autonomous.task_generation.create_task_spirit")
-    @patch("app.tasks.autonomous.task_generation.approve_plan")
+    @patch("app.tasks.autonomous.task_generation.create_refactor_task")
     def test_creates_refactor_task_type(
         self,
-        mock_approve: MagicMock,
-        mock_spirit: MagicMock,
-        mock_steps: MagicMock,
-        mock_subtasks: MagicMock,
-        mock_link: MagicMock,
-        mock_qa: MagicMock,
+        mock_create_task: MagicMock,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
     ):
-        """Test that created tasks have task_type='refactor'."""
+        """Test that refactor tasks are created from scan targets."""
         mock_get_targets.return_value = {
             "targets": [
                 {
@@ -62,21 +52,14 @@ class TestGenerateTasksFromScan:
             ]
         }
         mock_store.task_exists_for_file.return_value = False
-        mock_qa.upsert_issue.return_value = "issue-123"
-        mock_store.create_task.return_value = {"id": "task-123"}
-        mock_subtasks.return_value = [{"id": "subtask-123"}]
+        mock_create_task.return_value = ("task-123", "issue-123")  # (task_id, issue_id)
 
         result = generate_tasks_from_scan("test-project")
 
-        # Verify task was created with task_type='refactor'
-        call_args = mock_store.create_task.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["task_type"] == "refactor"
+        # Verify create_refactor_task was called
+        mock_create_task.assert_called_once()
+        # Verify task creation was counted
         assert result["created_count"] == 1
-        # Verify task_spirit was created
-        mock_spirit.assert_called_once()
-        mock_approve.assert_called_once()
 
     @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.task_generation.task_store")

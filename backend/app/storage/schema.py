@@ -161,6 +161,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
                 -- Autonomous execution mode
                 autonomous BOOLEAN DEFAULT FALSE,
                 agent_override VARCHAR(50),
+                agent_hub_session_ids TEXT[] DEFAULT '{}',
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
             """
@@ -409,6 +410,8 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
             "escalation_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
             "quality_check_results",
         ),
+        # Agent Hub session tracking (migration 083)
+        ("agent_hub_session_ids TEXT[] DEFAULT '{}'::text[]", "tasks"),
     ]:
         try:
             # Note: table and column names come from controlled internal list, not user input

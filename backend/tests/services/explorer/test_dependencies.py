@@ -11,24 +11,28 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.explorer.types.dependencies import DependencyScanner
+from app.services.explorer.types.dependencies_nodejs import scan_nodejs_dependencies
 
 
 class TestStandaloneProjectDetection:
     """Test multi-context discovery for standalone vs workspace projects."""
 
     @pytest.fixture
-    def scanner(self):
-        """Create a scanner with mocked project root."""
-        scanner = DependencyScanner("test-project")
-        scanner.root_path = Path("/fake/project")
-        return scanner
+    def root_path(self):
+        """Create a mock project root."""
+        return Path("/fake/project")
 
-    def test_standalone_project_no_workspace(self, scanner):
+    def test_standalone_project_no_workspace(self, root_path):
         """Standalone project without workspace should be detected correctly."""
+        # Patch the functions in dependencies_nodejs module
         with (
-            patch.object(scanner, "_find_pnpm_workspace_root", return_value=None),
-            patch.object(scanner, "_scan_standalone_node_project") as mock_scan,
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._find_pnpm_workspace_root",
+                return_value=None,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._scan_standalone_node_project"
+            ) as mock_scan,
             patch("pathlib.Path.exists", return_value=True),
         ):
             mock_scan.return_value = [
@@ -40,12 +44,12 @@ class TestStandaloneProjectDetection:
             ]
 
             # Should call standalone scanner when no workspace found
-            result = scanner._scan_nodejs_dependencies()
+            result = scan_nodejs_dependencies("test-project", root_path)
 
             mock_scan.assert_called_once()
             assert len(result) == 1
 
-    def test_workspace_member_not_standalone(self, scanner):
+    def test_workspace_member_not_standalone(self, root_path):
         """Workspace member should NOT be treated as standalone."""
         workspace_root = Path("/fake/workspace")
         workspace_packages = [
@@ -54,21 +58,42 @@ class TestStandaloneProjectDetection:
         ]
 
         with (
-            patch.object(scanner, "_find_pnpm_workspace_root", return_value=workspace_root),
-            patch.object(scanner, "_parse_pnpm_workspace", return_value=workspace_packages),
-            patch.object(scanner, "_has_own_lockfile", return_value=False),
-            patch.object(scanner, "_is_project_in_workspace", return_value=True),
-            patch.object(scanner, "_parse_pnpm_lock", return_value={}),
-            patch.object(scanner, "_run_pnpm_audit", return_value={}),
-            patch.object(scanner, "_run_pnpm_outdated", return_value={}),
-            patch.object(scanner, "_scan_standalone_node_project") as mock_standalone,
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._find_pnpm_workspace_root",
+                return_value=workspace_root,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._parse_pnpm_workspace",
+                return_value=workspace_packages,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._has_own_lockfile",
+                return_value=False,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._is_project_in_workspace",
+                return_value=True,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._parse_pnpm_lock", return_value={}
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._run_pnpm_audit", return_value={}
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._run_pnpm_outdated",
+                return_value={},
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._scan_standalone_node_project"
+            ) as mock_standalone,
         ):
             # Should NOT call standalone scanner
-            scanner._scan_nodejs_dependencies()
+            scan_nodejs_dependencies("test-project", root_path)
 
             mock_standalone.assert_not_called()
 
-    def test_project_with_own_lockfile_treated_as_standalone(self, scanner):
+    def test_project_with_own_lockfile_treated_as_standalone(self, root_path):
         """Project with own lockfile should be standalone even if workspace exists."""
         workspace_root = Path("/fake/workspace")
         workspace_packages = [
@@ -76,21 +101,35 @@ class TestStandaloneProjectDetection:
         ]
 
         with (
-            patch.object(scanner, "_find_pnpm_workspace_root", return_value=workspace_root),
-            patch.object(scanner, "_parse_pnpm_workspace", return_value=workspace_packages),
-            patch.object(scanner, "_has_own_lockfile", return_value=True),
-            patch.object(scanner, "_is_project_in_workspace", return_value=False),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._find_pnpm_workspace_root",
+                return_value=workspace_root,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._parse_pnpm_workspace",
+                return_value=workspace_packages,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._has_own_lockfile",
+                return_value=True,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._is_project_in_workspace",
+                return_value=False,
+            ),
             patch("pathlib.Path.exists", return_value=True),
-            patch.object(scanner, "_scan_standalone_node_project") as mock_standalone,
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._scan_standalone_node_project"
+            ) as mock_standalone,
         ):
             mock_standalone.return_value = []
 
             # Should call standalone scanner when has own lockfile
-            scanner._scan_nodejs_dependencies()
+            scan_nodejs_dependencies("test-project", root_path)
 
             mock_standalone.assert_called_once()
 
-    def test_mixed_parent_directory_scenario(self, scanner):
+    def test_mixed_parent_directory_scenario(self, root_path):
         """Project should correctly identify when it has own resolution context.
 
         Scenario: Workspace at parent level but project has own lockfile.
@@ -100,18 +139,30 @@ class TestStandaloneProjectDetection:
             Path("/fake/frontend/package.json"),
             Path("/fake/backend/package.json"),
         ]
-        # Scanner root is /fake/project which is NOT in the packages list
-        scanner.root_path = Path("/fake/project")
 
         # _is_project_in_workspace checks if root_path matches any workspace package
         # /fake/project is NOT in [/fake/frontend, /fake/backend]
         with (
-            patch.object(scanner, "_find_pnpm_workspace_root", return_value=workspace_root),
-            patch.object(scanner, "_parse_pnpm_workspace", return_value=workspace_packages),
-            patch.object(scanner, "_has_own_lockfile", return_value=True),
-            patch.object(scanner, "_is_project_in_workspace", return_value=False),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._find_pnpm_workspace_root",
+                return_value=workspace_root,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._parse_pnpm_workspace",
+                return_value=workspace_packages,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._has_own_lockfile",
+                return_value=True,
+            ),
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._is_project_in_workspace",
+                return_value=False,
+            ),
             patch("pathlib.Path.exists", return_value=True),
-            patch.object(scanner, "_scan_standalone_node_project") as mock_standalone,
+            patch(
+                "app.services.explorer.types.dependencies_nodejs._scan_standalone_node_project"
+            ) as mock_standalone,
         ):
             mock_standalone.return_value = [
                 MagicMock(
@@ -121,7 +172,7 @@ class TestStandaloneProjectDetection:
                 )
             ]
 
-            result = scanner._scan_nodejs_dependencies()
+            result = scan_nodejs_dependencies("test-project", root_path)
 
             # Should be treated as standalone
             mock_standalone.assert_called_once()

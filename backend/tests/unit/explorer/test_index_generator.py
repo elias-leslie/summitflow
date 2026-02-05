@@ -14,9 +14,9 @@ class TestGenerateIndex:
         """Test with no entries returns minimal YAML."""
         with (
             patch("app.services.explorer.index_generator.storage") as mock_storage,
-            patch("app.services.explorer.index_generator._get_environment") as mock_env,
-            patch("app.services.explorer.index_generator._get_services") as mock_services,
-            patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
         ):
             mock_storage.get_entries.return_value = []
             mock_env.return_value = {}
@@ -41,9 +41,9 @@ class TestGenerateIndex:
 
         with (
             patch("app.services.explorer.index_generator.storage") as mock_storage,
-            patch("app.services.explorer.index_generator._get_environment") as mock_env,
-            patch("app.services.explorer.index_generator._get_services") as mock_services,
-            patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
         ):
             # Return file entries for type=file, empty for others
             def get_entries_side_effect(project_id, filters):
@@ -76,9 +76,9 @@ class TestGenerateIndex:
 
         with (
             patch("app.services.explorer.index_generator.storage") as mock_storage,
-            patch("app.services.explorer.index_generator._get_environment") as mock_env,
-            patch("app.services.explorer.index_generator._get_services") as mock_services,
-            patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
         ):
 
             def get_entries_side_effect(project_id, filters):
@@ -110,9 +110,9 @@ class TestGenerateIndex:
 
         with (
             patch("app.services.explorer.index_generator.storage") as mock_storage,
-            patch("app.services.explorer.index_generator._get_environment") as mock_env,
-            patch("app.services.explorer.index_generator._get_services") as mock_services,
-            patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
         ):
 
             def get_entries_side_effect(project_id, filters):
@@ -152,9 +152,9 @@ class TestWriteIndexFile:
         with (
             patch("app.services.explorer.index_generator.get_project_root") as mock_root,
             patch("app.services.explorer.index_generator.storage") as mock_storage,
-            patch("app.services.explorer.index_generator._get_environment") as mock_env,
-            patch("app.services.explorer.index_generator._get_services") as mock_services,
-            patch("app.services.explorer.index_generator._get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
         ):
             mock_root.return_value = str(tmp_path)
 

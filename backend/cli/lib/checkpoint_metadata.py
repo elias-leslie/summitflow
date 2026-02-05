@@ -64,10 +64,7 @@ class SnapshotMeta:
 
 def get_snapshots_dir(project_root: str | Path | None = None) -> Path:
     """Get the .st/snapshots directory, creating if needed."""
-    if project_root:
-        base = Path(project_root)
-    else:
-        base = Path.cwd()
+    base = Path(project_root) if project_root else Path.cwd()
 
     snapshots_dir = base / ".st" / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)

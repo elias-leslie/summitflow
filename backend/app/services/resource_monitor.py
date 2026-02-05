@@ -149,5 +149,3 @@ def get_cpu_usage() -> CPUUsageDict:
         "cores": cores,
         "status": status,
     }
-
-

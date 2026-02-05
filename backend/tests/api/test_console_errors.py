@@ -82,7 +82,7 @@ class TestCaptureConsoleErrorEndpoint:
         mock_create.return_value = {"id": "task-console123"}
 
         request = ConsoleErrorRequest(**error_request_data)
-        result = await capture_console_error("summitflow", request)
+        result = await capture_console_error("test-project", request)
 
         assert result.success is True
         assert result.task_id == "task-console123"

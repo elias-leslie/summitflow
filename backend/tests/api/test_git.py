@@ -14,7 +14,7 @@ client = TestClient(app)
 class TestGitStatus:
     """Tests for GET /api/git/status."""
 
-    @patch("app.api.git._get_repo_status")
+    @patch("app.api.git.get_repo_status")
     def test_git_status_returns_repos(self, mock_status: MagicMock):
         """Test that git status returns repository information."""
         from app.api.git import RepoStatus
@@ -40,24 +40,29 @@ class TestGitStatus:
 class TestGitSync:
     """Tests for POST /api/git/sync."""
 
-    @patch("app.api.git._get_repo_status")
-    @patch("app.api.git._run_git")
-    def test_git_sync_skips_dirty_repos(self, mock_run_git: MagicMock, mock_status: MagicMock):
+    @patch("app.api.git.get_managed_repos")
+    @patch("app.api.git.sync_repository")
+    def test_git_sync_skips_dirty_repos(self, mock_sync: MagicMock, mock_get_repos: MagicMock):
         """Test that sync skips repos with uncommitted changes."""
-        mock_status.return_value = MagicMock(
+        mock_get_repos.return_value = ["/test/repo"]
+
+        # Setup sync result
+        from app.api.models.git_models import SyncResult
+
+        mock_sync.return_value = SyncResult(
             path="/test/repo",
             name="repo",
             branch="main",
-            uncommitted=5,  # Has uncommitted changes
-            ahead=0,
-            behind=0,
-            state="dirty",
+            status="skipped",
+            reason="Skipped due to uncommitted changes",
         )
 
         response = client.post("/api/git/sync")
         assert response.status_code == 200
         data = response.json()
-        assert data["skipped"] > 0 or data["success"] >= 0
+        assert data["skipped"] > 0
+        assert data["failed"] == 0
+        assert data["success"] == 0
 
 
 class TestPREndpoints:

@@ -142,6 +142,11 @@ EXAMPLES:
   st done task-abc                         # complete task, remove checkpoint
   st abandon task-abc --force              # rollback everything
   st checkpoints                           # show active checkpoints
+  st checkpoints                           # show active checkpoints
+
+SESSION EVENTS:
+  session-events list                      # list session events
+  session-events create                    # create session event
 """
 
 app = typer.Typer(

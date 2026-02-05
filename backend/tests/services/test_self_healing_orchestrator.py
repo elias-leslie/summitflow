@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import app.services.quality_gate.fix_agent  # noqa: F401
 from app.services.self_healing.orchestrator import (
     BUDGET_CAP_USD,
     CHECK_TYPE_PRIORITY,

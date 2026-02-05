@@ -153,7 +153,7 @@ class TestCreateBrowserErrorTask:
             error_hash="abc123def456",
         )
 
-        result = create_browser_error_task("summitflow", error)
+        result = create_browser_error_task("test-project", error)
 
         assert result == {"id": "task-browser123"}
         mock_create.assert_called_once()
