@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import base64
 import json
-from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from app.main import app
 
@@ -53,11 +54,11 @@ class TestCFJWTExtraction:
 class TestIdeaSubmission:
     """Tests for POST /api/projects/{id}/ideas."""
 
-    @patch("asyncio.create_task")
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_submit_idea_returns_idea_id(self, mock_conn: MagicMock, mock_create_task: MagicMock):
+    def test_submit_idea_returns_idea_id(self, mocker: MockerFixture):
         """Test that submitting an idea returns an idea_id."""
-        mock_cursor = MagicMock()
+        mocker.patch("asyncio.create_task")
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_cursor = mocker.MagicMock()
         # No JWT header → user_identifier = "anonymous" → skip user hourly check
         mock_cursor.fetchone.side_effect = [
             [0],  # Rate limit: daily refinements count
@@ -79,11 +80,11 @@ class TestIdeaSubmission:
         assert "idea_id" in data
         assert data["status"] == "pending_refinement"
 
-    @patch("asyncio.create_task")
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_submit_idea_extracts_email(self, mock_conn: MagicMock, mock_create_task: MagicMock):
+    def test_submit_idea_extracts_email(self, mocker: MockerFixture):
         """Test that submitting with JWT extracts and stores email."""
-        mock_cursor = MagicMock()
+        mocker.patch("asyncio.create_task")
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_cursor = mocker.MagicMock()
         # With JWT header → user_identifier = email → checks user hourly limit
         mock_cursor.fetchone.side_effect = [
             [0],  # Rate limit: user hourly count

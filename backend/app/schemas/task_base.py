@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Import AcceptanceCriterion at runtime for Pydantic validation
 from .task_criteria import AcceptanceCriterion
@@ -140,6 +141,8 @@ class WorktreeResponse(BaseModel):
 class TaskResponse(BaseModel):
     """Response model for a task."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     capability_id: int | None
@@ -152,9 +155,9 @@ class TaskResponse(BaseModel):
     pull_request_url: str | None
     total_sessions: int
     total_tokens_used: int
-    created_at: str | None
-    started_at: str | None
-    completed_at: str | None
+    created_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
     # Issue tracking fields
     priority: int
     labels: list[str]
@@ -176,7 +179,7 @@ class TaskResponse(BaseModel):
     raw_request: str | None = None
     enrichment_status: str | None = None
     enriched_by: str | None = None
-    enriched_at: str | None = None
+    enriched_at: datetime | None = None
     # Optional subtasks (when include=subtasks)
     subtasks: list[SubtaskResponse] | None = None
     # Optional capability context (when include=capability)
@@ -194,12 +197,12 @@ class TaskResponse(BaseModel):
     )
     # QA workflow fields (migration 068)
     qa_status: Literal["pending", "passed", "failed", "skipped"] | None = None
-    qa_signoff_at: str | None = None
+    qa_signoff_at: datetime | None = None
     qa_signoff_by: str | None = None
     qa_issues: list[dict[str, Any]] | None = None
     # Plan workflow fields (from task_spirit)
     plan_status: Literal["draft", "pending_review", "approved", "rejected"] | None = None
-    plan_approved_at: str | None = None
+    plan_approved_at: datetime | None = None
     plan_approved_by: str | None = None
     # Context for plan.json round-trip (from task_spirit)
     context: dict[str, Any] | None = None

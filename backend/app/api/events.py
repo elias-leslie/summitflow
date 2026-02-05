@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -17,7 +18,7 @@ router = APIRouter()
 
 
 @router.get("/projects/{project_id}/events")
-def get_events(
+async def get_events(
     project_id: str,
     trace_id: Annotated[str | None, Query(description="Filter by trace ID (task_id)")] = None,
     level: Annotated[EventLevel | None, Query(description="Filter by level")] = None,
@@ -31,7 +32,8 @@ def get_events(
 
     Returns events with summary statistics (total count, by_level breakdown).
     """
-    result = get_events_with_filters(
+    result = await asyncio.to_thread(
+        get_events_with_filters,
         project_id=project_id,
         trace_id=trace_id,
         source=source,
@@ -68,7 +70,7 @@ def get_events(
 
 
 @router.get("/projects/{project_id}/events/by-trace/{trace_id}")
-def get_events_for_trace(
+async def get_events_for_trace(
     project_id: str,
     trace_id: str,
     visibility: Annotated[EventVisibility | None, Query(description="Filter by visibility")] = None,
@@ -80,7 +82,8 @@ def get_events_for_trace(
     Optimized for fetching a complete execution timeline.
     Returns events ordered by timestamp ascending.
     """
-    events = get_events_by_trace(
+    events = await asyncio.to_thread(
+        get_events_by_trace,
         trace_id=trace_id,
         visibility=visibility,
         level=level,

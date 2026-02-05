@@ -35,6 +35,26 @@ logger = get_logger(__name__)
 
 WS_CHANNEL_PREFIX = "ws:execution:"
 
+# Module-level connection pools for reuse
+_sync_pool: redis.ConnectionPool | None = None
+_async_pool: aioredis.ConnectionPool | None = None
+
+
+def _get_sync_pool() -> redis.ConnectionPool:
+    """Get or create the synchronous Redis connection pool."""
+    global _sync_pool
+    if _sync_pool is None:
+        _sync_pool = redis.ConnectionPool.from_url(REDIS_URL, max_connections=10)
+    return _sync_pool
+
+
+def _get_async_pool() -> aioredis.ConnectionPool:
+    """Get or create the asynchronous Redis connection pool."""
+    global _async_pool
+    if _async_pool is None:
+        _async_pool = aioredis.ConnectionPool.from_url(REDIS_URL, max_connections=10)
+    return _async_pool
+
 
 def get_channel_name(task_id: str) -> str:
     """Get Redis channel name for a task's WebSocket events."""
@@ -99,11 +119,10 @@ def publish_ws_event(
             logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
 
     try:
-        r = redis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
+        r = redis.Redis(connection_pool=_get_sync_pool())
         channel = get_channel_name(task_id)
         message = json.dumps(event)
         r.publish(channel, message)
-        r.close()
         return True
     except redis.RedisError as e:
         logger.warning("Failed to publish WebSocket event", task_id=task_id, error=str(e))
@@ -126,7 +145,7 @@ async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, Any]]:
     pubsub: aioredis.client.PubSub | None = None
 
     try:
-        r = await aioredis.from_url(REDIS_URL)  # type: ignore[no-untyped-call]
+        r = aioredis.Redis(connection_pool=_get_async_pool())
         pubsub = r.pubsub()
         channel = get_channel_name(task_id)
 
@@ -155,5 +174,3 @@ async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, Any]]:
         if pubsub:
             await pubsub.unsubscribe(get_channel_name(task_id))
             await pubsub.close()
-        if r:
-            await r.close()

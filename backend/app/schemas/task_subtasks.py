@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StepInput(BaseModel):
@@ -38,6 +38,8 @@ class SubtaskCreate(BaseModel):
 
 class SubtaskResponse(BaseModel):
     """Response model for a subtask."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: str
     task_id: str

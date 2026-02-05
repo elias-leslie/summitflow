@@ -10,6 +10,7 @@ Handles:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -546,7 +547,8 @@ async def list_tasks(
     includes = include.split(",") if include else []
     include_blockers = "blockers" in includes
 
-    tasks = task_store.list_tasks(
+    tasks = await asyncio.to_thread(
+        task_store.list_tasks,
         project_id,
         status_filter=status,
         task_type_filter=task_type,
@@ -560,12 +562,12 @@ async def list_tasks(
     # Add blockers info if requested
     if include_blockers:
         for task in tasks:
-            blockers = dep_store.get_blocking_tasks(task["id"])
+            blockers = await asyncio.to_thread(dep_store.get_blocking_tasks, task["id"])
             task["blockers"] = blockers
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = _get_step_counts_batch(task_ids)
+    criteria_counts = await asyncio.to_thread(_get_step_counts_batch, task_ids)
 
     task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
 
@@ -595,11 +597,11 @@ async def list_ready_tasks(
     Returns pending tasks with no incomplete blocking dependencies,
     ordered by priority then creation date.
     """
-    tasks = task_store.list_ready_tasks(project_id, limit=limit)
+    tasks = await asyncio.to_thread(task_store.list_ready_tasks, project_id, limit=limit)
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = _get_step_counts_batch(task_ids)
+    criteria_counts = await asyncio.to_thread(_get_step_counts_batch, task_ids)
 
     task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
 
@@ -628,11 +630,11 @@ async def list_blocked_tasks(
 
     Returns pending tasks that have unresolved blocking dependencies.
     """
-    tasks = task_store.list_blocked_tasks(project_id, limit=limit)
+    tasks = await asyncio.to_thread(task_store.list_blocked_tasks, project_id, limit=limit)
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [t["id"] for t in tasks]
-    criteria_counts = _get_step_counts_batch(task_ids)
+    criteria_counts = await asyncio.to_thread(_get_step_counts_batch, task_ids)
 
     task_responses = [_task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
 
@@ -663,7 +665,8 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
     """
     from ...storage.task_spirit import upsert_task_spirit
 
-    created = task_store.create_task(
+    created = await asyncio.to_thread(
+        task_store.create_task,
         project_id=project_id,
         title=task.title,
         description=task.description,
@@ -677,7 +680,8 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
 
     # Save spirit fields to task_spirit table
     if task.objective or task.spirit_anti or task.decisions or task.constraints or task.done_when:
-        upsert_task_spirit(
+        await asyncio.to_thread(
+            upsert_task_spirit,
             task_id=created["id"],
             objective=task.objective or "",
             spirit_anti=task.spirit_anti,
@@ -720,7 +724,8 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     for item in body.items:
         try:
             # Create task (basic fields only)
-            task = task_store.create_task(
+            task = await asyncio.to_thread(
+                task_store.create_task,
                 project_id=project_id,
                 title=item.title,
                 description=item.description,
@@ -741,7 +746,8 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                 or item.done_when
             ):
                 try:
-                    upsert_task_spirit(
+                    await asyncio.to_thread(
+                        upsert_task_spirit,
                         task_id=task["id"],
                         objective=item.objective or "",
                         spirit_anti=item.spirit_anti,
@@ -784,7 +790,9 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                                 "display_order": s.display_order,
                             }
                         )
-                    created_subtasks = bulk_create_subtasks(task["id"], subtask_dicts)
+                    created_subtasks = await asyncio.to_thread(
+                        bulk_create_subtasks, task["id"], subtask_dicts
+                    )
 
                     # Handle subtask dependencies
                     from ...storage.subtasks import bulk_add_subtask_dependencies
@@ -796,7 +804,9 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
                                 dependencies.append((s.subtask_id, dep))
                     if dependencies:
                         try:
-                            bulk_add_subtask_dependencies(task["id"], dependencies)
+                            await asyncio.to_thread(
+                                bulk_add_subtask_dependencies, task["id"], dependencies
+                            )
                         except Exception as dep_err:
                             logger.warning(  # type: ignore[call-arg]
                                 "Failed to create dependencies for task %s: %s",
@@ -848,7 +858,7 @@ async def get_task_global(
     Args:
         task_id: Task ID (e.g., "task-abc12345")
     """
-    task = task_store.get_task(task_id)
+    task = await asyncio.to_thread(task_store.get_task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -880,7 +890,7 @@ async def get_task(
         project_id: Project ID
         task_id: Task ID
     """
-    task = _verify_task_project(task_id, project_id)
+    task = await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
     # Add worktree info if exists
     worktree_response = _get_worktree_response(task_id)
@@ -907,7 +917,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
     """
     from ...storage.task_spirit import update_task_spirit
 
-    existing = _verify_task_project(task_id, project_id)
+    existing = await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
     update_fields = update.model_dump(exclude_unset=True)
     if not update_fields:
@@ -922,7 +932,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
 
     # Update task table
     if task_updates:
-        updated = task_store.update_task(task_id, **task_updates)
+        updated = await asyncio.to_thread(task_store.update_task, task_id, **task_updates)
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update task")
     else:
@@ -930,7 +940,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
 
     # Update task_spirit table
     if spirit_updates:
-        update_task_spirit(task_id, **spirit_updates)
+        await asyncio.to_thread(update_task_spirit, task_id, **spirit_updates)
 
     return _task_to_response(updated)
 
@@ -943,9 +953,9 @@ async def delete_task(project_id: str, task_id: str) -> dict[str, Any]:
         project_id: Project ID
         task_id: Task ID
     """
-    _verify_task_project(task_id, project_id)
+    await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
-    deleted = task_store.delete_task(task_id)
+    deleted = await asyncio.to_thread(task_store.delete_task, task_id)
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete task")
 
@@ -971,7 +981,7 @@ async def update_task_status(
         When completing a task, all subtasks must be complete and all
         acceptance criteria must be verified. There is no bypass.
     """
-    _verify_task_project(task_id, project_id)
+    await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
     # Gate checks when completing - NO BYPASS ALLOWED
     # These gates ensure work is actually done before marking complete
@@ -979,7 +989,7 @@ async def update_task_status(
         # Gate 1: All subtasks must be complete
         from ...storage.subtasks import get_subtasks_for_task
 
-        subtasks = get_subtasks_for_task(task_id)
+        subtasks = await asyncio.to_thread(get_subtasks_for_task, task_id)
         incomplete_subtasks = [s["subtask_id"] for s in subtasks if not s.get("passes")]
         if incomplete_subtasks:
             raise HTTPException(
@@ -997,7 +1007,7 @@ async def update_task_status(
 
         # Gate 2: Task must have at least one verified step
         # Note: Step verify_commands are run when marking steps as passed, not here
-        step_status = _get_step_verification_status(task_id)
+        step_status = await asyncio.to_thread(_get_step_verification_status, task_id)
 
         # Gate 2a: Cannot complete task with zero steps (verification is mandatory)
         if step_status["total"] == 0:
@@ -1029,8 +1039,11 @@ async def update_task_status(
             )
 
     try:
-        updated = task_store.update_task_status(
-            task_id, update.status, error_message=update.error_message
+        updated = await asyncio.to_thread(
+            task_store.update_task_status,
+            task_id,
+            update.status,
+            error_message=update.error_message,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -1040,21 +1053,23 @@ async def update_task_status(
 
     # Log completion reason to events if provided
     if update.reason and update.status in ("completed", "cancelled"):
-        log_task_event(task_id, f"Closed: {update.reason}")
+        await asyncio.to_thread(log_task_event, task_id, f"Closed: {update.reason}")
 
     # Dispatch autonomous execution tasks on status transitions
     _dispatch_autonomous_task(task_id, update.status, project_id)
 
     # Populate verification_result on completion (step-level verification)
     if update.status == "completed" and updated:
-        step_status = _get_step_verification_status(task_id)
+        step_status = await asyncio.to_thread(_get_step_verification_status, task_id)
         verification_result = {
             "total": step_status["total"],
             "verified": step_status["verified"],
             "unverified": step_status["unverified"],
             "all_verified": step_status["all_verified"],
         }
-        updated = task_store.update_task(task_id, verification_result=verification_result)
+        updated = await asyncio.to_thread(
+            task_store.update_task, task_id, verification_result=verification_result
+        )
 
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -1076,10 +1091,10 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
     Returns:
         Updated task with status "queue"
     """
-    _verify_task_project(task_id, project_id)
+    await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
     try:
-        updated = task_store.update_task_status(task_id, "queue")
+        updated = await asyncio.to_thread(task_store.update_task_status, task_id, "queue")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 

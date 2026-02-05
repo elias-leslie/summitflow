@@ -3,9 +3,10 @@
 Defines schemas for the task_subtask_steps table operations.
 """
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StepCreate(BaseModel):
@@ -25,6 +26,8 @@ class StepUpdate(BaseModel):
 class StepResponse(BaseModel):
     """Response model for a step."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     subtask_id: str
     step_number: int
@@ -33,8 +36,8 @@ class StepResponse(BaseModel):
     verify_command: str | None
     expected_output: str | None
     passes: bool
-    passed_at: str | None
-    created_at: str | None
+    passed_at: datetime | None
+    created_at: datetime | None
     status: str | None = Field(
         default="pending", description="Step status: pending, passed, failed, plan_defect"
     )

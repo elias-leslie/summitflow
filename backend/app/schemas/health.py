@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ComponentHealth(BaseModel):
@@ -17,6 +17,8 @@ class ComponentHealth(BaseModel):
 
 class DetailedHealthResponse(BaseModel):
     """Detailed health check response including all system components."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(
         ..., description="Overall system status: 'healthy', 'degraded', or 'unhealthy'"

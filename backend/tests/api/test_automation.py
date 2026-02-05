@@ -5,35 +5,44 @@ Covers automation settings CRUD, budget limits, and scheduling.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
+import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from app.main import app
 
 client = TestClient(app)
 
 
+def _setup_mock_connection(mocker: MockerFixture, fetchone_return):
+    """Helper to set up mock database connection."""
+    mock_cursor = mocker.MagicMock()
+    mock_cursor.fetchone.return_value = fetchone_return
+    mock_conn = mocker.patch("app.api.projects.automation.get_connection")
+    mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
+        mock_cursor
+    )
+    return mock_cursor
+
+
 class TestAutomationSettings:
     """Tests for GET/PUT /api/projects/{id}/settings/automation."""
 
-    @patch("app.api.projects.automation.get_connection")
-    def test_get_automation_settings(self, mock_conn: MagicMock):
+    def test_get_automation_settings(self, mocker: MockerFixture):
         """Test fetching automation settings."""
-        mock_cursor = MagicMock()
         # Return dict, not JSON string (psycopg parses JSONB)
-        mock_cursor.fetchone.return_value = [
-            {
-                "schedule_preset": "nightly",
-                "cron_expression": "0 3 * * *",
-                "daily_budget_usd": 5.0,
-                "primary_agent": "gemini",
-                "secondary_agent": "claude",
-                "enabled": False,
-            }
-        ]
-        mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
-            mock_cursor
+        _setup_mock_connection(
+            mocker,
+            [
+                {
+                    "schedule_preset": "nightly",
+                    "cron_expression": "0 3 * * *",
+                    "daily_budget_usd": 5.0,
+                    "primary_agent": "gemini",
+                    "secondary_agent": "claude",
+                    "enabled": False,
+                }
+            ],
         )
 
         response = client.get("/api/projects/test-project/settings/automation")
@@ -44,14 +53,9 @@ class TestAutomationSettings:
         assert data["daily_budget_usd"] == 5.0
         assert data["enabled"] is False
 
-    @patch("app.api.projects.automation.get_connection")
-    def test_update_automation_settings(self, mock_conn: MagicMock):
+    def test_update_automation_settings(self, mocker: MockerFixture):
         """Test updating automation settings."""
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ["test-project"]  # Project exists
-        mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
-            mock_cursor
-        )
+        _setup_mock_connection(mocker, ["test-project"])  # Project exists
 
         response = client.put(
             "/api/projects/test-project/settings/automation",
@@ -71,28 +75,32 @@ class TestAutomationSettings:
         assert data["daily_budget_usd"] == 10.0
         assert data["enabled"] is True
 
-    @patch("app.api.projects.automation.get_connection")
-    def test_budget_validation(self, mock_conn: MagicMock):
+    @pytest.mark.parametrize(
+        "invalid_budget,expected_status",
+        [
+            (-5.0, 400),  # Negative budget
+            (-0.01, 400),  # Small negative
+        ],
+    )
+    def test_budget_validation(
+        self, mocker: MockerFixture, invalid_budget: float, expected_status: int
+    ):
         """Test that negative budget is rejected."""
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ["test-project"]
-        mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
-            mock_cursor
-        )
+        _setup_mock_connection(mocker, ["test-project"])
 
         response = client.put(
             "/api/projects/test-project/settings/automation",
             json={
                 "schedule_preset": "nightly",
                 "cron_expression": "0 3 * * *",
-                "daily_budget_usd": -5.0,  # Negative - should fail
+                "daily_budget_usd": invalid_budget,
                 "primary_agent": "gemini",
                 "secondary_agent": "claude",
                 "enabled": True,
             },
         )
 
-        assert response.status_code == 400
+        assert response.status_code == expected_status
 
 
 class TestCelerySchedule:

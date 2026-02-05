@@ -9,9 +9,10 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
+from pytest_mock import MockerFixture
 
 from app.api.ws_execution import (
     ConnectionManager,
@@ -161,59 +162,59 @@ class TestHelperFunctions:
     """Tests for helper functions that send messages."""
 
     @pytest.mark.asyncio
-    async def test_send_log(self):
+    async def test_send_log(self, mocker: MockerFixture):
         """Test send_log broadcasts correct message."""
-        with patch.object(manager, "broadcast", new_callable=AsyncMock) as mock_broadcast:
-            await send_log("task-1", "info", "Test message", source="test")
-            mock_broadcast.assert_called_once()
-            call_args = mock_broadcast.call_args[0]
-            assert call_args[0] == "task-1"
-            msg = call_args[1]
-            assert msg.type == MessageType.LOG
-            assert msg.data["level"] == "info"
-            assert msg.data["message"] == "Test message"
-            assert msg.data["source"] == "test"
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+        await send_log("task-1", "info", "Test message", source="test")
+        mock_broadcast.assert_called_once()
+        call_args = mock_broadcast.call_args[0]
+        assert call_args[0] == "task-1"
+        msg = call_args[1]
+        assert msg.type == MessageType.LOG
+        assert msg.data["level"] == "info"
+        assert msg.data["message"] == "Test message"
+        assert msg.data["source"] == "test"
 
     @pytest.mark.asyncio
-    async def test_send_progress(self):
+    async def test_send_progress(self, mocker: MockerFixture):
         """Test send_progress broadcasts correct message."""
-        with patch.object(manager, "broadcast", new_callable=AsyncMock) as mock_broadcast:
-            await send_progress(
-                "task-1",
-                subtask_id="1.1",
-                step=2,
-                status="completed",
-                total_subtasks=5,
-                completed_subtasks=2,
-            )
-            mock_broadcast.assert_called_once()
-            msg = mock_broadcast.call_args[0][1]
-            assert msg.type == MessageType.PROGRESS
-            assert msg.data["subtask_id"] == "1.1"
-            assert msg.data["step"] == 2
-            assert msg.data["status"] == "completed"
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+        await send_progress(
+            "task-1",
+            subtask_id="1.1",
+            step=2,
+            status="completed",
+            total_subtasks=5,
+            completed_subtasks=2,
+        )
+        mock_broadcast.assert_called_once()
+        msg = mock_broadcast.call_args[0][1]
+        assert msg.type == MessageType.PROGRESS
+        assert msg.data["subtask_id"] == "1.1"
+        assert msg.data["step"] == 2
+        assert msg.data["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_send_model_change(self):
+    async def test_send_model_change(self, mocker: MockerFixture):
         """Test send_model_change broadcasts correct message."""
-        with patch.object(manager, "broadcast", new_callable=AsyncMock) as mock_broadcast:
-            await send_model_change("task-1", "claude-sonnet-4-5", reason="Stuck pattern")
-            mock_broadcast.assert_called_once()
-            msg = mock_broadcast.call_args[0][1]
-            assert msg.type == MessageType.MODEL_CHANGE
-            assert msg.data["model"] == "claude-sonnet-4-5"
-            assert msg.data["reason"] == "Stuck pattern"
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+        await send_model_change("task-1", "claude-sonnet-4-5", reason="Stuck pattern")
+        mock_broadcast.assert_called_once()
+        msg = mock_broadcast.call_args[0][1]
+        assert msg.type == MessageType.MODEL_CHANGE
+        assert msg.data["model"] == "claude-sonnet-4-5"
+        assert msg.data["reason"] == "Stuck pattern"
 
     @pytest.mark.asyncio
-    async def test_send_error(self):
+    async def test_send_error(self, mocker: MockerFixture):
         """Test send_error broadcasts correct message."""
-        with patch.object(manager, "broadcast", new_callable=AsyncMock) as mock_broadcast:
-            await send_error("task-1", "Something failed", recoverable=False)
-            mock_broadcast.assert_called_once()
-            msg = mock_broadcast.call_args[0][1]
-            assert msg.type == MessageType.ERROR
-            assert msg.data["error"] == "Something failed"
-            assert msg.data["recoverable"] is False
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+        await send_error("task-1", "Something failed", recoverable=False)
+        mock_broadcast.assert_called_once()
+        msg = mock_broadcast.call_args[0][1]
+        assert msg.type == MessageType.ERROR
+        assert msg.data["error"] == "Something failed"
+        assert msg.data["recoverable"] is False
 
 
 class TestWebSocketEndpoint:
@@ -226,34 +227,34 @@ class TestWebSocketEndpoint:
         assert "/ws/execution/{task_id}" in routes
 
     @pytest.mark.asyncio
-    async def test_websocket_validates_task_id(self):
+    async def test_websocket_validates_task_id(self, mocker: MockerFixture):
         """Test that WebSocket sends error and closes for non-existent task."""
         from starlette.testclient import TestClient
 
-        with patch("app.storage.tasks.get_task") as mock_get_task:
-            mock_get_task.return_value = None  # Task not found
+        mock_get_task = mocker.patch("app.storage.tasks.get_task")
+        mock_get_task.return_value = None  # Task not found
 
-            client = TestClient(app)
-            with client.websocket_connect("/ws/execution/nonexistent-task") as websocket:
-                # Should receive error message before close
-                data = websocket.receive_json()
-                assert data["type"] == "error"
-                assert "not found" in data["data"]["error"].lower()
-                assert data["data"]["recoverable"] is False
+        client = TestClient(app)
+        with client.websocket_connect("/ws/execution/nonexistent-task") as websocket:
+            # Should receive error message before close
+            data = websocket.receive_json()
+            assert data["type"] == "error"
+            assert "not found" in data["data"]["error"].lower()
+            assert data["data"]["recoverable"] is False
 
-            mock_get_task.assert_called_once_with("nonexistent-task")
+        mock_get_task.assert_called_once_with("nonexistent-task")
 
     @pytest.mark.asyncio
-    async def test_websocket_accepts_valid_task(self):
+    async def test_websocket_accepts_valid_task(self, mocker: MockerFixture):
         """Test that WebSocket accepts connection for valid task."""
         from starlette.testclient import TestClient
 
-        with patch("app.storage.tasks.get_task") as mock_get_task:
-            mock_get_task.return_value = {"id": "task-123", "title": "Test"}
+        mock_get_task = mocker.patch("app.storage.tasks.get_task")
+        mock_get_task.return_value = {"id": "task-123", "title": "Test"}
 
-            client = TestClient(app)
-            with client.websocket_connect("/ws/execution/task-123") as websocket:
-                # Should receive connected message
-                data = websocket.receive_json()
-                assert data["type"] == "connected"
-                assert data["task_id"] == "task-123"
+        client = TestClient(app)
+        with client.websocket_connect("/ws/execution/task-123") as websocket:
+            # Should receive connected message
+            data = websocket.receive_json()
+            assert data["type"] == "connected"
+            assert data["task_id"] == "task-123"
