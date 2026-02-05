@@ -27,7 +27,16 @@ logger = get_logger(__name__)
 INTER_PROJECT_DELAY = 5
 
 
-@shared_task(name="summitflow.scan_all_projects")
+@shared_task(
+    name="summitflow.scan_all_projects",
+    acks_late=True,
+    time_limit=1800,  # 30 minutes hard limit
+    soft_time_limit=1680,  # 28 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,  # Max 5 minutes between retries
+    max_retries=3,
+)
 def scan_all_projects(
     project_id: str | None = None,
     entry_type: str | None = None,
@@ -347,7 +356,16 @@ def _error_issue_still_exists(
     return True
 
 
-@shared_task(name="summitflow.check_resolved_issues")
+@shared_task(
+    name="summitflow.check_resolved_issues",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[str, Any]:
     """Celery task to check for resolved issues after a scan.
 
@@ -382,7 +400,16 @@ def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[s
 HEALTH_CHECK_DELAY = 1
 
 
-@shared_task(name="summitflow.run_page_health_checks")
+@shared_task(
+    name="summitflow.run_page_health_checks",
+    acks_late=True,
+    time_limit=1200,  # 20 minutes hard limit
+    soft_time_limit=1080,  # 18 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=180,  # Max 3 minutes between retries
+    max_retries=3,
+)
 def run_page_health_checks(project_id: str) -> dict[str, Any]:
     """Run health checks on all page entries for a project.
 
