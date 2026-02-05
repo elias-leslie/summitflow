@@ -370,7 +370,16 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
         return {"status": "error", "task_id": task_id, "error": str(e)}
 
 
-@celery_app.task(name="summitflow.process_scheduled_tasks")
+@celery_app.task(
+    name="summitflow.process_scheduled_tasks",
+    acks_late=True,
+    time_limit=120,  # 2 minutes hard limit
+    soft_time_limit=90,  # 1.5 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=30,  # Max 30 seconds between retries
+    max_retries=3,
+)
 def process_scheduled_tasks() -> dict[str, Any]:
     """Process scheduled tasks that are due for execution.
 
