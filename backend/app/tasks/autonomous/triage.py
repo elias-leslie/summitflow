@@ -20,7 +20,17 @@ from ...storage.task_spirit import create_task_spirit
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.triage_idea")
+@shared_task(
+    bind=True,
+    name="autonomous.triage_idea",
+    acks_late=True,
+    time_limit=300,  # 5 minutes hard limit
+    soft_time_limit=240,  # 4 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,  # Max 1 minute between retries
+    max_retries=3,
+)
 def triage_idea(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Triage an idea task using the idea-intake agent.
 
