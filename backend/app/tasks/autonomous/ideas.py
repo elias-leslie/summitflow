@@ -112,7 +112,16 @@ def update_idea_status(idea_id: str, status: str) -> None:
         conn.commit()
 
 
-@celery_app.task(name="summitflow.process_crowdsourced_ideas")
+@celery_app.task(
+    name="summitflow.process_crowdsourced_ideas",
+    acks_late=True,
+    time_limit=1800,  # 30 minutes hard limit
+    soft_time_limit=1680,  # 28 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,  # Max 5 minutes between retries
+    max_retries=3,
+)
 def process_crowdsourced_ideas(project_id: str) -> dict[str, Any]:
     """Process approved crowdsourced ideas for a project.
 
