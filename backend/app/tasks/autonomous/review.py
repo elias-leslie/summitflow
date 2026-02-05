@@ -22,7 +22,17 @@ from ...storage import tasks as task_store
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.ai_review")
+@shared_task(
+    bind=True,
+    name="autonomous.ai_review",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Run AI review on completed task using reviewer agent (Opus).
 
