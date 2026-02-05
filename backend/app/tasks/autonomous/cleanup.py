@@ -20,7 +20,16 @@ from app.storage.projects import get_project_root_path
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="summitflow.reset_expired_task_claims")
+@celery_app.task(
+    name="summitflow.reset_expired_task_claims",
+    acks_late=True,
+    time_limit=120,  # 2 minutes hard limit
+    soft_time_limit=90,  # 1.5 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=30,  # Max 30 seconds between retries
+    max_retries=3,
+)
 def reset_expired_task_claims() -> dict[str, int | str]:
     """Reset tasks with expired claim locks.
 
