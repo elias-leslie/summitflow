@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from app.main import app
 
@@ -14,11 +16,11 @@ client = TestClient(app)
 class TestGitStatus:
     """Tests for GET /api/git/status."""
 
-    @patch("app.api.git.get_repo_status")
-    def test_git_status_returns_repos(self, mock_status: MagicMock):
+    def test_git_status_returns_repos(self, mocker: MockerFixture) -> None:
         """Test that git status returns repository information."""
-        from app.api.git import RepoStatus
+        from app.api.models.git_models import RepoStatus
 
+        mock_status = mocker.patch("app.api.git.get_repo_status")
         mock_status.return_value = RepoStatus(
             path="/test/repo",
             name="repo",
@@ -40,14 +42,13 @@ class TestGitStatus:
 class TestGitSync:
     """Tests for POST /api/git/sync."""
 
-    @patch("app.api.git.get_managed_repos")
-    @patch("app.api.git.sync_repository")
-    def test_git_sync_skips_dirty_repos(self, mock_sync: MagicMock, mock_get_repos: MagicMock):
+    def test_git_sync_skips_dirty_repos(self, mocker: MockerFixture) -> None:
         """Test that sync skips repos with uncommitted changes."""
-        mock_get_repos.return_value = ["/test/repo"]
-
-        # Setup sync result
         from app.api.models.git_models import SyncResult
+
+        mock_get_repos = mocker.patch("app.api.git.get_managed_repos")
+        mock_sync = mocker.patch("app.api.git.sync_repository")
+        mock_get_repos.return_value = ["/test/repo"]
 
         mock_sync.return_value = SyncResult(
             path="/test/repo",
@@ -68,16 +69,22 @@ class TestGitSync:
 class TestPREndpoints:
     """Tests for /api/tasks/{task_id}/pr endpoints."""
 
-    def test_get_pr_status_invalid_task(self):
-        """Test 404 for invalid task."""
-        response = client.get("/api/tasks/nonexistent/pr")
+    @pytest.mark.parametrize(
+        "method,endpoint,json_data",
+        [
+            ("get", "/api/tasks/nonexistent/pr", None),
+            ("post", "/api/tasks/nonexistent/pr", {"title": "Test PR", "body": "Test body"}),
+        ],
+        ids=["get_pr_status", "create_pr"],
+    )
+    def test_pr_invalid_task_returns_404(
+        self, method: str, endpoint: str, json_data: dict[str, Any] | None
+    ) -> None:
+        """Test 404 for invalid task on PR endpoints."""
+        if method == "get":
+            response = client.get(endpoint)
+        else:
+            response = client.post(endpoint, json=json_data)
+
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
-
-    def test_create_pr_invalid_task(self):
-        """Test 404 for invalid task."""
-        response = client.post(
-            "/api/tasks/nonexistent/pr",
-            json={"title": "Test PR", "body": "Test body"},
-        )
-        assert response.status_code == 404

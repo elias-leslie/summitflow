@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
@@ -14,7 +13,7 @@ client = TestClient(app)
 class TestActivityFeed:
     """Tests for GET /api/activity."""
 
-    def test_activity_feed_returns_events(self, mocker: MockerFixture):
+    def test_activity_feed_returns_events(self, mocker: MockerFixture) -> None:
         """Test that activity feed returns aggregated events."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (
@@ -67,7 +66,7 @@ class TestActivityFeed:
         assert first["message"] == "Task completed: Fix bug"
         assert first["project_id"] == "proj-123"
 
-    def test_activity_feed_pagination(self, mocker: MockerFixture):
+    def test_activity_feed_pagination(self, mocker: MockerFixture) -> None:
         """Test pagination parameters are passed correctly."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
@@ -82,7 +81,7 @@ class TestActivityFeed:
             event_types=None,
         )
 
-    def test_activity_feed_project_filter(self, mocker: MockerFixture):
+    def test_activity_feed_project_filter(self, mocker: MockerFixture) -> None:
         """Test project_id filter is passed correctly."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
@@ -97,7 +96,7 @@ class TestActivityFeed:
             event_types=None,
         )
 
-    def test_activity_feed_type_filter(self, mocker: MockerFixture):
+    def test_activity_feed_type_filter(self, mocker: MockerFixture) -> None:
         """Test event type filter is parsed correctly."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
@@ -112,7 +111,7 @@ class TestActivityFeed:
             event_types=["task", "session"],
         )
 
-    def test_activity_feed_invalid_types_ignored(self, mocker: MockerFixture):
+    def test_activity_feed_invalid_types_ignored(self, mocker: MockerFixture) -> None:
         """Test that invalid event types are filtered out."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
@@ -127,7 +126,7 @@ class TestActivityFeed:
             event_types=["task", "backup"],
         )
 
-    def test_activity_feed_has_more_flag(self, mocker: MockerFixture):
+    def test_activity_feed_has_more_flag(self, mocker: MockerFixture) -> None:
         """Test has_more is True when more events exist."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (
@@ -153,7 +152,7 @@ class TestActivityFeed:
 class TestActivityEventTypes:
     """Tests for different event type responses."""
 
-    def test_task_event_format(self, mocker: MockerFixture):
+    def test_task_event_format(self, mocker: MockerFixture) -> None:
         """Test task event has correct format."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (
@@ -181,7 +180,7 @@ class TestActivityEventTypes:
         assert event["metadata"]["task_id"] == "task-abc"
         assert event["metadata"]["status"] == "blocked"
 
-    def test_session_event_format(self, mocker: MockerFixture):
+    def test_session_event_format(self, mocker: MockerFixture) -> None:
         """Test session event has correct format."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (
@@ -212,7 +211,7 @@ class TestActivityEventTypes:
         assert event["metadata"]["tests_passed"] == 3
         assert event["metadata"]["tests_failed"] == 2
 
-    def test_backup_event_format(self, mocker: MockerFixture):
+    def test_backup_event_format(self, mocker: MockerFixture) -> None:
         """Test backup event has correct format."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (
@@ -241,7 +240,7 @@ class TestActivityEventTypes:
         assert event["metadata"]["backup_type"] == "scheduled"
         assert event["metadata"]["size_bytes"] == 15937024
 
-    def test_git_event_format(self, mocker: MockerFixture):
+    def test_git_event_format(self, mocker: MockerFixture) -> None:
         """Test git event has correct format."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = (

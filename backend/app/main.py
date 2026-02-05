@@ -32,7 +32,7 @@ from .api import (
     tasks,
     tdd,
 )
-from .config import REDIS_URL
+from .config import REDIS_URL, settings
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
 
@@ -65,19 +65,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - origins loaded from settings for cross-project communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",
-        "http://192.168.8.233:3001",
-        "https://dev.summitflow.dev",
-        "http://localhost:4001",
-        "https://test1.summitflow.dev",
-        # Agent Hub cross-origin requests
-        "http://localhost:3003",
-        "https://agent.summitflow.dev",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

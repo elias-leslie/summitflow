@@ -15,6 +15,7 @@ from __future__ import annotations
 # DATABASE_URL is overridden before any app modules read it.
 import os
 import sys
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -67,7 +68,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     """Add custom pytest command-line options."""
     parser.addoption(
         "--run-live-agent-hub",
@@ -83,13 +84,13 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     """Register custom markers."""
     config.addinivalue_line("markers", "e2e: mark test as E2E (requires --run-e2e)")
     config.addinivalue_line("markers", "integration: mark test as integration test")
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Skip E2E and integration tests unless explicitly enabled."""
     from pathlib import Path
 
@@ -122,7 +123,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(scope="session")
-def test_db_url():
+def test_db_url() -> str:
     """Get the test database URL."""
     url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not url:
@@ -131,7 +132,7 @@ def test_db_url():
 
 
 @pytest.fixture(scope="session")
-def db_schema_initialized(test_db_url):
+def db_schema_initialized(test_db_url: str) -> Generator[None, None, None]:
     """Initialize test database schema once per session."""
     from app.storage.connection import close_pool, init_schema
 
@@ -141,12 +142,39 @@ def db_schema_initialized(test_db_url):
 
 
 # =============================================================================
+# CLI OUTPUT STATE FIXTURES
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def reset_cli_output_state() -> Generator[None, None, None]:
+    """Reset CLI output module state before each test.
+
+    The CLI output module uses global state for output formatting.
+    Tests that set compact/human/progress_only modes can leak state
+    to other tests if not properly reset. This fixture ensures
+    clean state for every test.
+    """
+    from cli.output import set_compact_output, set_human_output, set_progress_only
+
+    # Reset to defaults before test
+    set_compact_output(False)
+    set_human_output(False)
+    set_progress_only(False)
+    yield
+    # Reset again after test (in case test forgot to cleanup)
+    set_compact_output(False)
+    set_human_output(False)
+    set_progress_only(False)
+
+
+# =============================================================================
 # TEST CLIENT FIXTURES
 # =============================================================================
 
 
 @pytest.fixture
-def client(db_schema_initialized):
+def client(db_schema_initialized: None) -> TestClient:
     """FastAPI test client with database initialized."""
     from app.main import app
 
@@ -154,13 +182,13 @@ def client(db_schema_initialized):
 
 
 @pytest.fixture
-def test_project_id():
+def test_project_id() -> str:
     """Return a test project ID."""
     return "test-project"
 
 
 @pytest.fixture
-def ensure_test_project(db_schema_initialized):
+def ensure_test_project(db_schema_initialized: None) -> str:
     """Ensure test project exists in database."""
     from app.storage.connection import get_connection
 
@@ -184,13 +212,13 @@ def ensure_test_project(db_schema_initialized):
 
 
 @pytest.fixture
-def cleanup_task(db_schema_initialized):
+def cleanup_task(db_schema_initialized: None) -> Generator[Callable[[str], None], None, None]:
     """Fixture that returns a cleanup function for tasks."""
     from app.storage.connection import get_connection
 
     created_tasks = []
 
-    def _cleanup_task(task_id: str):
+    def _cleanup_task(task_id: str) -> None:
         created_tasks.append(task_id)
 
     yield _cleanup_task

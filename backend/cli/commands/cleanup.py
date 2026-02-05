@@ -8,7 +8,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -25,7 +25,7 @@ from ..output import output_json, output_success, output_warning
 app = typer.Typer(help="Cleanup commands for stale resources")
 
 
-class CleanupAction(str, Enum):
+class CleanupAction(StrEnum):
     """Recommended action for a stale worktree."""
 
     SAFE_DELETE = "safe_delete"  # No commits ahead, safe to remove
@@ -54,7 +54,7 @@ class WorktreeAnalysis:
 
 def _run_git(
     args: list[str], cwd: Path | None = None, check: bool = True
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Run a git command."""
     cmd = ["git", *args]
     return subprocess.run(

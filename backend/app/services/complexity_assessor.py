@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from ..logging_config import get_logger
@@ -19,7 +19,7 @@ from ..logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class ComplexityTier(str, Enum):
+class ComplexityTier(StrEnum):
     SIMPLE = "SIMPLE"
     STANDARD = "STANDARD"
     COMPLEX = "COMPLEX"

@@ -29,7 +29,7 @@ def make_jwt(email: str) -> str:
 class TestCFJWTExtraction:
     """Tests for Cloudflare JWT email extraction (ac-009)."""
 
-    def test_cf_jwt_extraction(self):
+    def test_cf_jwt_extraction(self) -> None:
         """Test email is correctly extracted from CF-Access-JWT-Assertion header."""
         from app.services.ideas_helpers import extract_email_from_cf_jwt
 
@@ -37,29 +37,36 @@ class TestCFJWTExtraction:
         email = extract_email_from_cf_jwt(jwt)
         assert email == "test@example.com"
 
-    def test_cf_jwt_extraction_none(self):
+    def test_cf_jwt_extraction_none(self) -> None:
         """Test None returned when no JWT provided."""
         from app.services.ideas_helpers import extract_email_from_cf_jwt
 
         assert extract_email_from_cf_jwt(None) is None
 
-    def test_cf_jwt_extraction_invalid(self):
+    @pytest.mark.parametrize(
+        "invalid_jwt",
+        [
+            "invalid.jwt",
+            "not-a-jwt",
+        ],
+        ids=["invalid_format", "no_dots"],
+    )
+    def test_cf_jwt_extraction_invalid(self, invalid_jwt: str) -> None:
         """Test None returned for invalid JWT."""
         from app.services.ideas_helpers import extract_email_from_cf_jwt
 
-        assert extract_email_from_cf_jwt("invalid.jwt") is None
-        assert extract_email_from_cf_jwt("not-a-jwt") is None
+        assert extract_email_from_cf_jwt(invalid_jwt) is None
 
 
 class TestIdeaSubmission:
     """Tests for POST /api/projects/{id}/ideas."""
 
-    def test_submit_idea_returns_idea_id(self, mocker: MockerFixture):
+    def test_submit_idea_returns_idea_id(self, mocker: MockerFixture) -> None:
         """Test that submitting an idea returns an idea_id."""
         mocker.patch("asyncio.create_task")
         mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
         mock_cursor = mocker.MagicMock()
-        # No JWT header → user_identifier = "anonymous" → skip user hourly check
+        # No JWT header -> user_identifier = "anonymous" -> skip user hourly check
         mock_cursor.fetchone.side_effect = [
             [0],  # Rate limit: daily refinements count
             [{"daily_budget_usd": 5.0}],  # Rate limit: project automation_settings
@@ -80,12 +87,12 @@ class TestIdeaSubmission:
         assert "idea_id" in data
         assert data["status"] == "pending_refinement"
 
-    def test_submit_idea_extracts_email(self, mocker: MockerFixture):
+    def test_submit_idea_extracts_email(self, mocker: MockerFixture) -> None:
         """Test that submitting with JWT extracts and stores email."""
         mocker.patch("asyncio.create_task")
         mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
         mock_cursor = mocker.MagicMock()
-        # With JWT header → user_identifier = email → checks user hourly limit
+        # With JWT header -> user_identifier = email -> checks user hourly limit
         mock_cursor.fetchone.side_effect = [
             [0],  # Rate limit: user hourly count
             [0],  # Rate limit: daily refinements count
@@ -114,10 +121,10 @@ class TestIdeaSubmission:
 class TestRetryLimit:
     """Tests for retry limit enforcement (ac-003)."""
 
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_retry_limit(self, mock_conn: MagicMock):
+    def test_retry_limit(self, mocker: MockerFixture) -> None:
         """Test retry is blocked after 3 attempts."""
-        mock_cursor = MagicMock()
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_cursor = mocker.MagicMock()
         # Return idea with retry_count=3
         mock_cursor.fetchone.return_value = [
             "Make game better",  # raw_text
@@ -138,11 +145,11 @@ class TestRetryLimit:
 class TestIdeaApproval:
     """Tests for POST /api/projects/{id}/ideas/{id}/approve."""
 
-    @patch("app.api.ideas.create_task")
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_approve_creates_task(self, mock_conn: MagicMock, mock_create_task: MagicMock):
+    def test_approve_creates_task(self, mocker: MockerFixture) -> None:
         """Test approving an idea creates a task."""
-        mock_cursor = MagicMock()
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_create_task = mocker.patch("app.api.ideas.create_task")
+        mock_cursor = mocker.MagicMock()
         mock_cursor.fetchone.return_value = [
             "Add jump animation",  # refined_text
             "feature",  # category
@@ -168,18 +175,18 @@ class TestIdeaApproval:
 class TestImmediateExecution:
     """Tests for POST /api/projects/{id}/ideas/execute-now (ac-011)."""
 
-    @patch("app.tasks.autonomous.ideas.process_crowdsourced_ideas")
-    @patch("app.storage.ideas_repository.get_connection")
-    @patch("app.api.ideas._last_execution", {})  # Clear throttle
-    def test_immediate_execution(self, mock_conn: MagicMock, mock_process: MagicMock):
+    def test_immediate_execution(self, mocker: MockerFixture) -> None:
         """Test immediate execution triggers the processing task."""
-        mock_cursor = MagicMock()
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_process = mocker.patch("app.tasks.autonomous.ideas.process_crowdsourced_ideas")
+        mocker.patch("app.api.ideas._last_execution", {})  # Clear throttle
+        mock_cursor = mocker.MagicMock()
         mock_cursor.fetchone.return_value = ["test-project"]  # Project exists
         mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
             mock_cursor
         )
 
-        mock_task = MagicMock()
+        mock_task = mocker.MagicMock()
         mock_task.id = "celery-task-123"
         mock_process.delay.return_value = mock_task
 
@@ -195,62 +202,67 @@ class TestImmediateExecution:
 class TestRefinementFlow:
     """Tests for idea refinement and status transitions."""
 
-    @patch("app.services.idea_refiner.update_idea_with_refinement")
-    @patch("app.services.idea_refiner.refine_idea")
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_refine_idea_success(
-        self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
-    ):
-        """Test successful refinement endpoint."""
+    @pytest.mark.parametrize(
+        "raw_text,refined_text,category,complexity,feasibility,rejection_reason,expected_status",
+        [
+            (
+                "Make game faster",
+                "Optimize rendering pipeline for smoother gameplay",
+                "enhancement",
+                "medium",
+                0.7,
+                None,
+                "refined",
+            ),
+            (
+                "Delete everything",
+                "",  # Empty string instead of None for rejected case
+                "",
+                "",
+                0.0,
+                "Idea is not actionable or potentially harmful",
+                "rejected",
+            ),
+        ],
+        ids=["success", "rejected"],
+    )
+    def test_refine_idea(
+        self,
+        mocker: MockerFixture,
+        raw_text: str,
+        refined_text: str,
+        category: str,
+        complexity: str,
+        feasibility: float,
+        rejection_reason: str | None,
+        expected_status: str,
+    ) -> None:
+        """Test idea refinement with success and rejection cases."""
         from app.services.idea_refiner import RefinementResult
 
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ["Make game faster", "pending_refinement"]
+        mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
+        mock_refine = mocker.patch("app.services.idea_refiner.refine_idea")
+        mocker.patch("app.services.idea_refiner.update_idea_with_refinement")
+        mock_cursor = mocker.MagicMock()
+        mock_cursor.fetchone.return_value = [raw_text, "pending_refinement"]
         mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
             mock_cursor
         )
 
         mock_refine.return_value = RefinementResult(
-            refined_text="Optimize rendering pipeline for smoother gameplay",
-            category="enhancement",
-            complexity="medium",
-            feasibility_score=0.7,
-            rejection_reason=None,
+            refined_text=refined_text,
+            category=category,
+            complexity=complexity,
+            feasibility_score=feasibility,
+            rejection_reason=rejection_reason,
         )
 
         response = client.post("/api/projects/test-project/ideas/idea-abc123/refine")
 
         assert response.status_code == 200
         data = response.json()
-        assert "refined_text" in data
-        assert data["status"] == "refined"
-
-    @patch("app.services.idea_refiner.update_idea_with_refinement")
-    @patch("app.services.idea_refiner.refine_idea")
-    @patch("app.storage.ideas_repository.get_connection")
-    def test_refine_idea_rejected(
-        self, mock_conn: MagicMock, mock_refine: MagicMock, mock_update: MagicMock
-    ):
-        """Test refinement that results in rejection."""
-        from app.services.idea_refiner import RefinementResult
-
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ["Delete everything", "pending_refinement"]
-        mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = (
-            mock_cursor
-        )
-
-        mock_refine.return_value = RefinementResult(
-            refined_text=None,
-            category=None,
-            complexity=None,
-            feasibility_score=0.0,
-            rejection_reason="Idea is not actionable or potentially harmful",
-        )
-
-        response = client.post("/api/projects/test-project/ideas/idea-abc123/refine")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "rejected"
-        assert data["rejection_reason"] is not None
+        assert data["status"] == expected_status
+        if expected_status == "refined":
+            assert "refined_text" in data
+        else:
+            assert data["rejection_reason"] is not None

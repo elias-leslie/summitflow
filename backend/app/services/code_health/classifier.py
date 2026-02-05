@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from ..agent_hub_client import AgentHubLLMClient
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 MEMORY_REUSE_CONFIDENCE_THRESHOLD = 0.8
 
 
-class ClassificationVerdict(str, Enum):
+class ClassificationVerdict(StrEnum):
     """Classification verdict for code health findings."""
 
     FALSE_POSITIVE = "false_positive"

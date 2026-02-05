@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class ReviewVerdict(str, Enum):
+class ReviewVerdict(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
     NEEDS_FIX = "NEEDS_FIX"
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """Risk classification for changes."""
 
     LOW = "low"

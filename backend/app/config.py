@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,10 +25,19 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(
-        ...,
+        default="",  # Validated to be non-empty; loaded from DATABASE_URL env var
         description="PostgreSQL connection URL",
         json_schema_extra={"env": "DATABASE_URL"},
     )
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        """Ensure database_url is provided."""
+        if not v:
+            raise ValueError("DATABASE_URL environment variable is required")
+        return v
+
     redis_url: str = Field(
         default="redis://localhost:6379",
         description="Redis connection URL",
