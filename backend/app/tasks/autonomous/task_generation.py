@@ -129,7 +129,16 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(name="summitflow.regenerate_refactor_tasks")
+@celery_app.task(
+    name="summitflow.regenerate_refactor_tasks",
+    acks_late=True,
+    time_limit=900,  # 15 minutes hard limit
+    soft_time_limit=840,  # 14 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=180,  # Max 3 minutes between retries
+    max_retries=3,
+)
 def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
     """Delete all existing refactor tasks and regenerate from current scan."""
     try:
