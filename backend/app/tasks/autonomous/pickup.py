@@ -132,7 +132,16 @@ def _determine_next_stage(task_id: str) -> str:
     return "unknown"
 
 
-@celery_app.task(name="summitflow.autonomous_work_pickup")
+@celery_app.task(
+    name="summitflow.autonomous_work_pickup",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     """Pick up queued autonomous tasks and dispatch to appropriate pipeline stage.
 
