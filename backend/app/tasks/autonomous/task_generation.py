@@ -290,7 +290,16 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
         return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_architecture_tasks")
+@celery_app.task(
+    name="summitflow.generate_architecture_tasks",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def generate_architecture_tasks(project_id: str) -> dict[str, Any]:
     """Generate tasks from architecture violations detected by Explorer."""
     from app.storage import explorer_entries
