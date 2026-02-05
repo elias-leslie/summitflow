@@ -93,7 +93,16 @@ def _process_refactor_target(
     return False
 
 
-@celery_app.task(name="summitflow.generate_tasks_from_scan")
+@celery_app.task(
+    name="summitflow.generate_tasks_from_scan",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results (skips existing)."""
     try:
