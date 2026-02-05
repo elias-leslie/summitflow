@@ -175,7 +175,16 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
 
 
-@celery_app.task(name="summitflow.generate_schema_tasks")
+@celery_app.task(
+    name="summitflow.generate_schema_tasks",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def generate_schema_tasks(project_id: str) -> dict[str, Any]:
     """Generate schema tasks from database table violations."""
     from app.storage import explorer_entries
