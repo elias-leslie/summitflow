@@ -265,6 +265,8 @@ install_deps() {
 
     for pkg_spec in "ruff==$CANONICAL_RUFF" "mypy==$CANONICAL_MYPY" "pytest==$CANONICAL_PYTEST" \
                     "pytest-asyncio==$CANONICAL_PYTEST_ASYNCIO" "pytest-cov==$CANONICAL_PYTEST_COV" \
+                    "pytest-xdist==$CANONICAL_PYTEST_XDIST" "pytest-mock==$CANONICAL_PYTEST_MOCK" \
+                    "pytest-timeout==$CANONICAL_PYTEST_TIMEOUT" "pytest-randomly==$CANONICAL_PYTEST_RANDOMLY" \
                     "pre-commit==$CANONICAL_PRECOMMIT"; do
         local pkg="${pkg_spec%%==*}"
         if "${venv}/bin/pip" install -q "$pkg_spec" 2>/dev/null; then

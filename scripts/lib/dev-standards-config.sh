@@ -7,15 +7,26 @@
 
 # =============================================================================
 # CANONICAL VERSIONS - Update here, all projects follow
+# Last verified: 2026-02-05
 # =============================================================================
 
-export CANONICAL_RUFF="0.14.13"
+# Linting & Formatting
+export CANONICAL_RUFF="0.15.0"
 export CANONICAL_MYPY="1.19.1"
-export CANONICAL_PYTEST="9.0.2"
 export CANONICAL_PRECOMMIT="4.5.1"
+
+# Testing - Core
+export CANONICAL_PYTEST="9.0.2"
 export CANONICAL_PYTEST_ASYNCIO="1.3.0"
 export CANONICAL_PYTEST_COV="7.0.0"
-export CANONICAL_PYTEST_XDIST="3.6.1"
+export CANONICAL_PYTEST_XDIST="3.8.0"
+
+# Testing - Essential Plugins
+export CANONICAL_PYTEST_MOCK="3.15.1"
+export CANONICAL_PYTEST_TIMEOUT="2.4.0"
+export CANONICAL_PYTEST_RANDOMLY="3.16.0"
+
+# SQL Quality
 export CANONICAL_SQLFLUFF="3.3.1"
 export CANONICAL_SQUAWK="1.5.2"
 

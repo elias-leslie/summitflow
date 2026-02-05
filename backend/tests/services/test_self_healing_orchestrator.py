@@ -347,8 +347,8 @@ class TestBudgetCapEnforcement:
     ) -> None:
         """Test that cumulative cost is tracked and returned."""
         mock_list_projects.return_value = [{"id": "proj-1"}]
-        mock_qcr.get_unfixed_count.side_effect = (
-            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        mock_qcr.get_unfixed_count.side_effect = lambda conn, project_id, check_type: (
+            2 if check_type == "ruff" else 0
         )
 
         # Mock fix to return cost info
@@ -407,8 +407,8 @@ class TestBudgetCapEnforcement:
     ) -> None:
         """Test that budget cap is passed to fix_unfixed_errors."""
         mock_list_projects.return_value = [{"id": "proj-1"}]
-        mock_qcr.get_unfixed_count.side_effect = (
-            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        mock_qcr.get_unfixed_count.side_effect = lambda conn, project_id, check_type: (
+            2 if check_type == "ruff" else 0
         )
         mock_fix.return_value = {
             "fixed": 2,
@@ -441,8 +441,8 @@ class TestBudgetCapEnforcement:
             {"id": "proj-1"},
             {"id": "proj-2"},
         ]
-        mock_qcr.get_unfixed_count.side_effect = (
-            lambda conn, project_id, check_type: 2 if check_type == "ruff" else 0
+        mock_qcr.get_unfixed_count.side_effect = lambda conn, project_id, check_type: (
+            2 if check_type == "ruff" else 0
         )
 
         # Each project costs $0.5
