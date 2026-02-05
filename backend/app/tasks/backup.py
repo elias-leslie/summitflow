@@ -27,7 +27,17 @@ BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
 RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
 
 
-@shared_task(name="summitflow.create_backup", bind=True)
+@shared_task(
+    name="summitflow.create_backup",
+    bind=True,
+    acks_late=True,
+    time_limit=900,  # 15 minutes hard limit
+    soft_time_limit=840,  # 14 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,  # Max 5 minutes between retries
+    max_retries=3,
+)
 def create_backup(
     self: Any,
     project_id: str,
@@ -157,7 +167,14 @@ def create_backup(
         return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
 
-@shared_task(name="summitflow.restore_backup", bind=True)
+@shared_task(
+    name="summitflow.restore_backup",
+    bind=True,
+    acks_late=True,
+    time_limit=2100,  # 35 minutes hard limit (restore can take longer)
+    soft_time_limit=1980,  # 33 minutes soft limit
+    max_retries=2,  # Fewer retries for restore - manual intervention preferred
+)
 def restore_backup(
     self: Any,
     project_id: str,
