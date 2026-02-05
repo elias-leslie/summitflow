@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
-import { ActivityFeed, ProjectCard } from '@/components/dashboard'
+import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
 const PROJECTS_PER_PAGE = 9
@@ -57,6 +57,7 @@ export default function DashboardPage() {
               <div className="text-xs text-slate-500">DB snapshots</div>
             </div>
           </Link>
+          <SystemHealthWidget />
         </div>
       </section>
 

@@ -102,10 +102,11 @@ app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 
-from .api import events, ideas, ws_execution  # noqa: E402
+from .api import events, ideas, system, ws_execution  # noqa: E402
 
 app.include_router(ideas.router, prefix="/api", tags=["ideas"])
 app.include_router(events.router, prefix="/api", tags=["events"])
+app.include_router(system.router, tags=["system"])
 app.include_router(ws_execution.router, tags=["execution"])
 
 

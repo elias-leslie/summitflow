@@ -2,7 +2,7 @@
 name = "summitflow"
 version = "0.1.0"
 description = "AI-assisted software development platform"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -22,6 +22,7 @@ dependencies = [
     "agent-hub-client @ file:///home/kasadis/agent-hub/packages/agent-hub-client",
     "croniter>=3.0.0",
     "pytz>=2024.1",
+    "psutil>=6.0.0",
 ]
 
 [project.scripts]
