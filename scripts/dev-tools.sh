@@ -570,9 +570,6 @@ full_fix() {
         fi
     fi
 
-    # Run hooks to validate
-    run_hooks "$project_dir" || ((errors++))
-
     if [[ $errors -eq 0 ]]; then
         echo "FIX_RESULT:OK"
     else

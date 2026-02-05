@@ -458,8 +458,9 @@ class TestSubtaskCreate:
             )
 
             assert result.exit_code == 0
-            # Default output is TOON format
-            assert "PASS 1.1" in result.output
+            # Default output is JSON
+            assert '"success": true' in result.output
+            assert '"message": "1.1"' in result.output
 
     def test_subtask_create_legacy_steps_warning(self, mock_st_client):
         """Test that using --step shows warning about missing verify_command."""
