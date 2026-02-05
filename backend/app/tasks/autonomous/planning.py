@@ -21,7 +21,17 @@ from ...storage.task_spirit import create_task_spirit, get_task_spirit
 logger = get_logger(__name__)
 
 
-@shared_task(bind=True, name="autonomous.create_plan")
+@shared_task(
+    bind=True,
+    name="autonomous.create_plan",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def create_plan(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
     """Create an implementation plan using the planner agent.
 
