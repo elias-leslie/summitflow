@@ -53,7 +53,16 @@ def reset_expired_task_claims() -> dict[str, int | str]:
         return {"error": str(e), "reset_count": 0}
 
 
-@celery_app.task(name="summitflow.cleanup_task_worktree")
+@celery_app.task(
+    name="summitflow.cleanup_task_worktree",
+    acks_late=True,
+    time_limit=180,  # 3 minutes hard limit
+    soft_time_limit=150,  # 2.5 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,  # Max 1 minute between retries
+    max_retries=3,
+)
 def cleanup_task_worktree(
     task_id: str,
     delete_branch: bool = False,
