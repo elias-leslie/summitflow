@@ -288,7 +288,16 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
     return {"project_id": project_id, "dispatched": dispatched}
 
 
-@celery_app.task(name="summitflow.dispatch_task_immediate")
+@celery_app.task(
+    name="summitflow.dispatch_task_immediate",
+    acks_late=True,
+    time_limit=300,  # 5 minutes hard limit
+    soft_time_limit=240,  # 4 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,  # Max 1 minute between retries
+    max_retries=3,
+)
 def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
     """Dispatch a single task immediately (event-driven path).
 
