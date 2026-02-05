@@ -669,7 +669,14 @@ def _auto_commit(project_path: str, message: str) -> bool:
         return False
 
 
-@shared_task(bind=True, name="autonomous.start_execution")
+@shared_task(
+    bind=True,
+    name="autonomous.start_execution",
+    acks_late=True,
+    time_limit=3600,  # 60 minutes hard limit (execution can be long)
+    soft_time_limit=3300,  # 55 minutes soft limit
+    max_retries=2,  # Fewer retries - execution has internal retry logic
+)
 def start_execution(
     self: Task[..., dict[str, Any]], task_id: str, project_id: str
 ) -> dict[str, Any]:
