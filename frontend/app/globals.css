@@ -1,5 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Fira+Code:wght@400;500&family=Source+Code+Pro:wght@400;500&family=Roboto+Mono:wght@400;500&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap");
-
+/* Fonts are loaded via next/font in layout.tsx for optimized loading */
 @import "tailwindcss";
 
 @theme {
@@ -57,10 +56,11 @@
   --color-status-error: #f43f5e;
   --color-status-info: #3b82f6;
 
-  /* Fonts */
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  /* Fonts - CSS variables are set by next/font in layout.tsx */
+  /* Using var() references to the font variables injected by next/font */
+  --font-mono: var(--font-mono), "Fira Code", monospace;
+  --font-display: var(--font-display), system-ui, sans-serif;
+  --font-body: var(--font-body), system-ui, sans-serif;
 
   /* Font sizes */
   --text-2xs: 0.625rem;
@@ -191,7 +191,7 @@ html {
 }
 
 body {
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   background: var(--slate-deep);
   color: #e4e7eb;
   min-height: 100vh;
@@ -339,12 +339,12 @@ body::before {
 
 /* Monospace text */
 .mono {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--font-mono), monospace;
 }
 
 /* Display font for headings */
 .display {
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: var(--font-display), system-ui, sans-serif;
 }
 
 /* Badge styles */

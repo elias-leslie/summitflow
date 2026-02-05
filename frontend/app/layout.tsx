@@ -1,10 +1,56 @@
 import type { Metadata, Viewport } from 'next'
+import {
+  IBM_Plex_Sans,
+  IBM_Plex_Mono,
+  JetBrains_Mono,
+  Space_Grotesk,
+  Fira_Code,
+} from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 import { AppShell } from '@/components/layout/AppShell'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
 import { Providers } from './providers'
+
+// Primary body font
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-body',
+  display: 'swap',
+})
+
+// Display font for headings
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-display',
+  display: 'swap',
+})
+
+// Primary mono font
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-mono',
+  display: 'swap',
+})
+
+// Alternative mono fonts
+const firaCode = Fira_Code({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-fira-code',
+  display: 'swap',
+})
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-ibm-plex-mono',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'SummitFlow',
@@ -26,7 +72,10 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
+    <html
+      lang="en"
+      className={`dark ${ibmPlexSans.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${firaCode.variable} ${ibmPlexMono.variable}`}
+    >
       <head>
         <link
           rel="icon"
