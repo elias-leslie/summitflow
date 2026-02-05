@@ -83,8 +83,8 @@ show_status() {
         curl -s "http://localhost:$BACKEND_PORT/health" &>/dev/null && echo "✓ healthy" || echo "✗ unhealthy"
     fi
     printf "  Frontend: "
-    local http_status=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
-    [ "$http_status" = "200" ] && echo "✓ serving (HTTP $http_status)" || echo "✗ not serving (HTTP $http_status)"
+    local http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
+    [[ "$http_status" =~ ^(2|3)[0-9][0-9]$ ]] && echo "✓ serving (HTTP $http_status)" || echo "✗ not serving (HTTP $http_status)"
 
     echo ""
 }
