@@ -244,7 +244,16 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     return {"project_id": project_id, "dispatched": total, "breakdown": dispatched}
 
 
-@celery_app.task(name="summitflow.review_pending_tasks")
+@celery_app.task(
+    name="summitflow.review_pending_tasks",
+    acks_late=True,
+    time_limit=900,  # 15 minutes hard limit
+    soft_time_limit=840,  # 14 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=180,  # Max 3 minutes between retries
+    max_retries=3,
+)
 def review_pending_tasks(project_id: str) -> dict[str, Any]:
     """Pick up tasks awaiting AI review and dispatch to reviewer.
 
