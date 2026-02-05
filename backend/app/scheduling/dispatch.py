@@ -2,6 +2,7 @@
 
 Replaces 30-minute polling with immediate task pickup.
 Uses Redis pub/sub for low-latency event delivery.
+Uses Redis-based distributed locking to prevent race conditions.
 """
 
 from __future__ import annotations
@@ -20,6 +21,10 @@ from app.logging_config import get_logger
 from .types import OnceSchedule, TaskSchedule, parse_schedule
 
 logger = get_logger(__name__)
+
+# Lock settings for distributed locking
+DISPATCH_LOCK_PREFIX = "summitflow:dispatch_lock:"
+DISPATCH_LOCK_TTL = 60  # Lock TTL in seconds (auto-expires if process crashes)
 
 CHANNEL_TASK_DISPATCH = "summitflow:task_dispatch"
 CHANNEL_SCHEDULED = "summitflow:scheduled_tasks"
@@ -98,6 +103,9 @@ class EventDispatcher:
     ) -> bool:
         """Publish a task dispatch event.
 
+        Uses distributed locking to prevent race conditions when multiple
+        processes try to dispatch the same task simultaneously.
+
         Args:
             task_id: Task to dispatch
             project_id: Project ID
@@ -106,6 +114,15 @@ class EventDispatcher:
         Returns:
             True if published successfully
         """
+        # Acquire lock to prevent duplicate dispatch
+        if not self.acquire_dispatch_lock(task_id):
+            logger.info(
+                "Task already being dispatched, skipping",
+                task_id=task_id,
+                project_id=project_id,
+            )
+            return False
+
         event = DispatchEvent(
             task_id=task_id,
             project_id=project_id,
@@ -139,6 +156,8 @@ class EventDispatcher:
 
         except redis.RedisError as e:
             logger.warning("Failed to publish dispatch event", error=str(e))
+            # Release lock on failure so task can be retried
+            self.release_dispatch_lock(task_id)
             return False
 
     def _store_scheduled_task(self, event: DispatchEvent) -> None:
@@ -161,10 +180,55 @@ class EventDispatcher:
             next_run=next_run.isoformat(),
         )
 
+    def acquire_dispatch_lock(self, task_id: str) -> bool:
+        """Acquire a distributed lock for task dispatch.
+
+        Uses Redis SET NX (set if not exists) with TTL for atomic locking.
+        Prevents race conditions when multiple workers try to dispatch the same task.
+
+        Args:
+            task_id: Task ID to lock
+
+        Returns:
+            True if lock acquired, False if already locked by another worker
+        """
+        lock_key = f"{DISPATCH_LOCK_PREFIX}{task_id}"
+        try:
+            # SET NX with TTL - atomic operation
+            result = self.redis.set(lock_key, "1", nx=True, ex=DISPATCH_LOCK_TTL)
+            if result:
+                logger.debug("Acquired dispatch lock", task_id=task_id)
+                return True
+            else:
+                logger.debug("Dispatch lock already held", task_id=task_id)
+                return False
+        except redis.RedisError as e:
+            logger.warning("Failed to acquire dispatch lock", task_id=task_id, error=str(e))
+            return False
+
+    def release_dispatch_lock(self, task_id: str) -> bool:
+        """Release a distributed lock for task dispatch.
+
+        Args:
+            task_id: Task ID to unlock
+
+        Returns:
+            True if lock released, False on error
+        """
+        lock_key = f"{DISPATCH_LOCK_PREFIX}{task_id}"
+        try:
+            self.redis.delete(lock_key)
+            logger.debug("Released dispatch lock", task_id=task_id)
+            return True
+        except redis.RedisError as e:
+            logger.warning("Failed to release dispatch lock", task_id=task_id, error=str(e))
+            return False
+
     def get_due_scheduled_tasks(self) -> list[DispatchEvent]:
         """Get scheduled tasks that are due for execution.
 
         Returns tasks with next_run <= now, removes them from the set.
+        Uses distributed locking to prevent race conditions.
         """
         key = "summitflow:scheduled_tasks"
         now = datetime.now(UTC).timestamp()
@@ -179,7 +243,17 @@ class EventDispatcher:
             for item in items:
                 try:
                     data: dict[str, Any] = json.loads(item)
-                    events.append(DispatchEvent.from_dict(data))
+                    event = DispatchEvent.from_dict(data)
+
+                    # Acquire lock before processing to prevent race conditions
+                    if not self.acquire_dispatch_lock(event.task_id):
+                        logger.debug(
+                            "Skipping task - already being processed",
+                            task_id=event.task_id,
+                        )
+                        continue
+
+                    events.append(event)
                     self.redis.zrem(key, item)
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.warning("Failed to parse scheduled task", error=str(e))
