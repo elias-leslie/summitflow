@@ -276,7 +276,16 @@ def restore_backup(
         return {"status": "failed", "error": str(e)}
 
 
-@shared_task(name="summitflow.run_scheduled_backups")
+@shared_task(
+    name="summitflow.run_scheduled_backups",
+    acks_late=True,
+    time_limit=300,  # 5 minutes hard limit
+    soft_time_limit=240,  # 4 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def run_scheduled_backups() -> dict[str, Any]:
     """Check and run due scheduled backups.
 
