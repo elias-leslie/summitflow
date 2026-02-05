@@ -28,7 +28,16 @@ logger = get_logger(__name__)
 MAX_TASKS_PER_RUN = 10
 
 
-@shared_task(name="summitflow.monitor_browser_errors")
+@shared_task(
+    name="summitflow.monitor_browser_errors",
+    acks_late=True,
+    time_limit=600,  # 10 minutes hard limit
+    soft_time_limit=540,  # 9 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,  # Max 2 minutes between retries
+    max_retries=3,
+)
 def monitor_browser_errors(
     project_id: str = "summitflow",
     max_tasks: int = MAX_TASKS_PER_RUN,
@@ -105,7 +114,16 @@ def monitor_browser_errors(
     return results
 
 
-@shared_task(name="summitflow.monitor_systemd_errors")
+@shared_task(
+    name="summitflow.monitor_systemd_errors",
+    acks_late=True,
+    time_limit=300,  # 5 minutes hard limit
+    soft_time_limit=240,  # 4 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,  # Max 1 minute between retries
+    max_retries=3,
+)
 def monitor_systemd_errors(
     project_id: str = "summitflow",
     since: str = "5 minutes ago",
@@ -190,7 +208,16 @@ DEFAULT_MAX_ERRORS = 20
 DEFAULT_ENABLED = True
 
 
-@shared_task(name="summitflow.orchestrate_self_healing")
+@shared_task(
+    name="summitflow.orchestrate_self_healing",
+    acks_late=True,
+    time_limit=900,  # 15 minutes hard limit
+    soft_time_limit=840,  # 14 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=180,  # Max 3 minutes between retries
+    max_retries=3,
+)
 def orchestrate_self_healing(
     max_errors: int = DEFAULT_MAX_ERRORS,
     enabled: bool = DEFAULT_ENABLED,
