@@ -127,7 +127,16 @@ def cleanup_task_worktree(
         }
 
 
-@celery_app.task(name="summitflow.merge_and_cleanup_task_worktree")
+@celery_app.task(
+    name="summitflow.merge_and_cleanup_task_worktree",
+    acks_late=True,
+    time_limit=300,  # 5 minutes hard limit
+    soft_time_limit=240,  # 4 minutes soft limit
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,  # Max 1 minute between retries
+    max_retries=3,
+)
 def merge_and_cleanup_task_worktree(
     task_id: str,
     project_id: str,
