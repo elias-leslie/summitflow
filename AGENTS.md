@@ -122,4 +122,4 @@ The `dt` command wraps standard tools (ruff, mypy, pytest, biome) with optimized
 - **Secrets:** Do not commit `.env` files or secrets.
 - **Paths:** Always use absolute paths when using tool definitions, but relative paths are fine for git/shell commands if you are in the correct working directory.
 - **Verification:** Always run `dt --quick --changed-only` (or `dt -q -d`) after modifying code to ensure quality standards.
-- **Commits:** Use `scripts/sf-commit.sh` for streamlined commits with automated quality gates and TOON output.
+- **Commits:** Use `scripts/commit.sh` for streamlined commits with automated quality gates and TOON output.

@@ -83,6 +83,7 @@ def update_status(
     status: str,
     error_message: str | None = None,
     reason: str | None = None,
+    skip_gates: bool = False,
 ) -> dict[str, Any]:
     """Update task status."""
     data: dict[str, Any] = {"status": status}
@@ -90,6 +91,8 @@ def update_status(
         data["error_message"] = error_message
     if reason:
         data["reason"] = reason
+    if skip_gates:
+        data["skip_gates"] = True
 
     response = client.patch(url_fn(f"/tasks/{task_id}/status"), json=data)
     return cast(dict[str, Any], handle_response(response))

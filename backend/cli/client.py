@@ -111,14 +111,26 @@ class STClient:
         )
 
     def update_status(
-        self, task_id: str, status: str, error_message: str | None = None, reason: str | None = None
+        self,
+        task_id: str,
+        status: str,
+        error_message: str | None = None,
+        reason: str | None = None,
+        skip_gates: bool = False,
     ) -> dict[str, Any]:
         return tasks_ops.update_status(
-            self._client, self._url, self._handle_response, task_id, status, error_message, reason
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            status,
+            error_message,
+            reason,
+            skip_gates,
         )
 
     def close_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
-        return self.update_status(task_id, "completed", reason=reason)
+        return self.update_status(task_id, "completed", reason=reason, skip_gates=True)
 
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         return self.update_status(task_id, "cancelled")

@@ -57,8 +57,8 @@ def pass_step(
             typer.echo(f"  cmd: {cmd}", err=True)
             typer.echo(f"  got: {output}", err=True)
             typer.echo(
-                f"FIX: 1) impl 2) st step new {subtask_id} 'Fix:...' -v 'cmd' -e 'expect' "
-                f"3) st step defect {subtask_id} {step_number} --fix N",
+                f"FIX: 1) impl 2) st step defect {subtask_id} {step_number} "
+                f"-v 'correct_cmd' -e 'correct_expect'",
                 err=True,
             )
             raise typer.Exit(1) from None
@@ -175,54 +175,118 @@ def update_step(
 @app.command("add")
 def add_steps(
     subtask_id: str,
-    descriptions: Annotated[list[str], typer.Argument()],
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-    at_position: Annotated[
-        int | None,
-        typer.Option("--at", help="Insert at specific position (shifts existing steps)"),
+    descriptions: list[str] | None = None,
+    verify_command: Annotated[
+        str | None,
+        typer.Option("--verify", "-v", help="Verify command (applied to all steps)"),
     ] = None,
+    expected_output: Annotated[
+        str | None,
+        typer.Option("--expected", "-e", help="Expected output (applied to all steps)"),
+    ] = None,
+    json_input: Annotated[
+        str | None,
+        typer.Option(
+            "--json",
+            help='JSON array: [{"description":"...","verify_command":"...","expected_output":"..."}]',
+        ),
+    ] = None,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Add steps to a subtask.
+    """Add steps to a subtask (verification required).
 
-    By default, appends steps after the last existing step.
-    Use --at N to insert at a specific position (shifts existing steps).
+    Each step must have a verify_command and expected_output.
 
-    If no steps exist, starts at step 1.
+    Two modes:
+    1. Positional descriptions with shared -v/-e (all steps get same verification):
+       st step add 1.1 "Step 1" "Step 2" -v "dt pytest" -e "All pass"
+
+    2. JSON for per-step verification:
+       st step add 1.1 --json '[{"description":"...","verify_command":"...","expected_output":"..."}]'
+
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step add 1.1 "Step 1" "Step 2" --task task-abc123  # Creates/appends
-        st step add 1.1 "New step" --at 3                     # Insert at position 3
-        st step add 1.1 "Step A" "Step B"                     # Uses active context
+        st step add 1.1 "Add endpoint" -v "rg 'def foo' api.py" -e "Found" -t task-abc123
+        st step add 1.1 --json '[{"description":"Run tests","verify_command":"dt pytest","expected_output":"passed"}]'
     """
+    import json
+
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
     client = STClient()
 
-    try:
-        if at_position is not None:
-            # Insert at position - one step at a time with shift
-            created = []
-            for i, desc in enumerate(descriptions):
-                result = client.insert_step(task_id, subtask_id, at_position + i, desc)
-                created.append(result)
-            if created:
-                output_success(f"{subtask_id}|+{len(created)} at {at_position}")
-            else:
-                output_success(f"{subtask_id}|+0")
-        else:
-            # Append after existing steps
-            result = client.append_steps(task_id, subtask_id, descriptions)
-            created = result.get("created", [])
-            if created:
-                start_num = created[0].get("step_number", "?")
-                output_success(f"{subtask_id}|+{len(created)} from {start_num}")
-            else:
-                output_success(f"{subtask_id}|+0")
-    except APIError as e:
-        handle_api_error(e)
-        return
+    steps_to_create: list[dict[str, str]] = []
+
+    if json_input is not None:
+        if descriptions:
+            typer.echo("Error: provide positional descriptions OR --json, not both.", err=True)
+            raise typer.Exit(1)
+        try:
+            parsed = json.loads(json_input)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error: invalid JSON: {e}", err=True)
+            raise typer.Exit(1) from None
+        if not isinstance(parsed, list):
+            typer.echo("Error: --json must be a JSON array.", err=True)
+            raise typer.Exit(1)
+        for item in parsed:
+            if not isinstance(item, dict):
+                typer.echo("Error: each --json element must be an object.", err=True)
+                raise typer.Exit(1)
+            missing = [
+                k for k in ("description", "verify_command", "expected_output") if k not in item
+            ]
+            if missing:
+                typer.echo(f"Error: JSON element missing keys: {', '.join(missing)}", err=True)
+                raise typer.Exit(1)
+            steps_to_create.append(
+                {
+                    "description": item["description"],
+                    "verify_command": item["verify_command"],
+                    "expected_output": item["expected_output"],
+                }
+            )
+    elif descriptions:
+        if verify_command is None or expected_output is None:
+            typer.echo(
+                "Error: -v (verify) and -e (expected) are required.\n"
+                "  Every step needs verification. Use --json for per-step verify commands.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        for desc in descriptions:
+            steps_to_create.append(
+                {
+                    "description": desc,
+                    "verify_command": verify_command,
+                    "expected_output": expected_output,
+                }
+            )
+    else:
+        typer.echo("Error: provide step descriptions or --json input.", err=True)
+        raise typer.Exit(1)
+
+    created_count = 0
+    first_step_num = None
+    for step in steps_to_create:
+        try:
+            result = client.create_step_with_verification(
+                task_id,
+                subtask_id,
+                step["description"],
+                step["verify_command"],
+                step["expected_output"],
+            )
+            created_count += 1
+            if first_step_num is None:
+                first_step_num = result.get("step_number", "?")
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+    output_success(f"{subtask_id}|+{created_count} from {first_step_num}")
 
 
 @app.command("delete")
@@ -289,9 +353,17 @@ def mark_plan_defect(
     subtask_id: str,
     step_number: int,
     fix_step: Annotated[
-        int,
-        typer.Option("--fix", "-f", help="Step number of the PASSED fix step (e.g., 3)"),
-    ],
+        int | None,
+        typer.Option("--fix", "-f", help="Step number of an already-PASSED fix step"),
+    ] = None,
+    verify_command: Annotated[
+        str | None,
+        typer.Option("--verify", "-v", help="Verify command for inline fix step"),
+    ] = None,
+    expected_output: Annotated[
+        str | None,
+        typer.Option("--expected", "-e", help="Expected output for inline fix step"),
+    ] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Mark a step as a plan defect with a linked fix step.
@@ -300,34 +372,103 @@ def mark_plan_defect(
     wrong API, impossible expected_output). This allows the subtask to be
     passed without fixing the broken verification.
 
-    REQUIRED: You must first create and pass a fix step within the same subtask
-    that has the correct verification. The --fix flag links to that passed step.
+    Two modes:
 
-    Workflow:
-    1. Add fix step:    st step add <subtask> "Fix: correct verification"
-    2. Pass fix step:   st step pass <subtask> <fix_step>
-    3. Mark defect:     st step defect <subtask> <step> --fix <fix_step>
+    1. Inline (recommended): provide -v and -e to create+pass a fix step automatically.
+       st step defect 1.1 4 -v "correct_cmd" -e "correct_expect" -t task-xxx
+
+    2. Reference: provide --fix N pointing to an already-passed fix step.
+       st step defect 1.1 4 --fix 6 -t task-xxx
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step defect 1.1 1 --fix 3 --task task-abc123
-        st step defect 2.3 1 --fix 4              # Uses active context
+        st step defect 1.1 4 -v "rg 'def login' api.py" -e "Found" -t task-abc123
+        st step defect 2.3 1 --fix 4
     """
     from ..context import require_task_id
+
+    has_inline = verify_command is not None or expected_output is not None
+    has_ref = fix_step is not None
+
+    if has_inline and has_ref:
+        typer.echo("Error: provide either --fix OR both -v/-e, not both.", err=True)
+        raise typer.Exit(1)
+
+    if not has_inline and not has_ref:
+        typer.echo("Error: provide --fix N (existing fix step) or -v/-e (inline fix).", err=True)
+        raise typer.Exit(1)
+
+    if has_inline and (verify_command is None or expected_output is None):
+        typer.echo(
+            "Error: both -v (verify) and -e (expected) are required for inline fix.", err=True
+        )
+        raise typer.Exit(1)
 
     task_id = require_task_id(task_id)
     client = STClient()
 
-    try:
-        client.update_step_status(
-            task_id, subtask_id, step_number, status="plan_defect", fix_step_number=fix_step
-        )
-    except APIError as e:
-        handle_api_error(e)
-        return
+    if has_inline:
+        assert verify_command is not None
+        assert expected_output is not None
 
-    output_success(f"{subtask_id}.{step_number}|defect→{fix_step}")
+        # 1. Create fix step
+        try:
+            result = client.create_step_with_verification(
+                task_id,
+                subtask_id,
+                f"Fix: corrected verification for step {step_number}",
+                verify_command,
+                expected_output,
+            )
+        except APIError as e:
+            handle_api_error(e)
+            return
+        fix_step_num = result.get("step_number")
+        if fix_step_num is None:
+            typer.echo("Error: failed to get fix step number from API response.", err=True)
+            raise typer.Exit(1)
+
+        # 2. Pass fix step (runs verify_command — quality gate preserved)
+        try:
+            client.update_step(task_id, subtask_id, fix_step_num, passes=True)
+        except APIError as e:
+            detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {}
+            if detail.get("verification_failed"):
+                output = detail.get("output", "").strip() or "(empty)"
+                if len(output) > 100:
+                    output = output[:100] + "..."
+                typer.echo(
+                    f"Fix step {subtask_id}.{fix_step_num} verification FAILED. "
+                    f"Fix your -v/-e and retry.",
+                    err=True,
+                )
+                typer.echo(f"  got: {output}", err=True)
+                raise typer.Exit(1) from None
+            handle_api_error(e)
+            return
+
+        # 3. Mark original as plan_defect
+        try:
+            client.update_step_status(
+                task_id, subtask_id, step_number, status="plan_defect", fix_step_number=fix_step_num
+            )
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+        output_success(f"{subtask_id}.{step_number}|defect→{fix_step_num}")
+    else:
+        assert fix_step is not None
+        try:
+            client.update_step_status(
+                task_id, subtask_id, step_number, status="plan_defect", fix_step_number=fix_step
+            )
+        except APIError as e:
+            handle_api_error(e)
+            return
+
+        output_success(f"{subtask_id}.{step_number}|defect→{fix_step}")
 
 
 # Error stubs for removed commands - provide helpful redirects

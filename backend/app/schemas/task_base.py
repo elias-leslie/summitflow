@@ -96,7 +96,10 @@ class TaskStatusUpdate(BaseModel):
     status: str  # pending, running, paused, blocked, pr_created, ai_reviewing, human_review, completed, failed, cancelled
     error_message: str | None = None
     reason: str | None = None  # Completion reason (logged to events table)
-    # NOTE: force flag removed - gates cannot be bypassed, complete the work instead
+    skip_gates: bool = Field(
+        default=False,
+        description="Skip completion gates (for st close cleanup path only)",
+    )
 
 
 class TaskLogEntry(BaseModel):

@@ -983,9 +983,10 @@ async def update_task_status(
     """
     await asyncio.to_thread(_verify_task_project, task_id, project_id)
 
-    # Gate checks when completing - NO BYPASS ALLOWED
+    # Gate checks when completing
     # These gates ensure work is actually done before marking complete
-    if update.status == "completed":
+    # skip_gates is only for `st close` cleanup path (already merged manually)
+    if update.status == "completed" and not update.skip_gates:
         # Gate 1: All subtasks must be complete
         from ...storage.subtasks import get_subtasks_for_task
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -342,54 +343,46 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
 
     repo_path = Path(project_root)
 
-    # 1. Run sf-commit.sh (Handles Gates + AI Commit)
-    # We use subprocess to run the script and capture output
-    script_path = Path.home() / "summitflow" / "scripts" / "sf-commit.sh"
+    script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
 
     try:
-        # Run sf-commit with push flag
         proc = await asyncio.create_subprocess_exec(
             str(script_path),
+            "--json",
             "--push",
             "--task",
-            "smart-sync",  # Tag it
+            "smart-sync",
             cwd=repo_path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
 
-        output = stdout.decode() + stderr.decode()
+        output = stdout.decode()
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            return {
+                "success": False,
+                "status": "UNKNOWN",
+                "gates": "",
+                "errors": [stderr.decode()[:200]],
+                "message": "",
+                "reason": "json_parse_failed",
+                "pushed": False,
+                "raw_output": output + stderr.decode(),
+            }
 
-        # Parse XML-like output from sf-commit
-        import re
-
-        status_match = re.search(r"<status>(.*?)</status>", output)
-        status = status_match.group(1) if status_match else "UNKNOWN"
-
-        gates_match = re.search(r"<gates>(.*?)</gates>", output)
-        gates = gates_match.group(1) if gates_match else ""
-
-        errors_match = re.search(r"<errors>(.*?)</errors>", output)
-        errors = errors_match.group(1) if errors_match else ""
-
-        message_match = re.search(r"<message>(.*?)</message>", output, re.DOTALL)
-        message = message_match.group(1).strip() if message_match else ""
-
-        reason_match = re.search(r"<reason>(.*?)</reason>", output)
-        reason = reason_match.group(1) if reason_match else ""
-
-        pushed_match = re.search(r"<pushed>(.*?)</pushed>", output)
-        pushed = pushed_match.group(1) == "true" if pushed_match else False
+        repo = data.get("repos", [{}])[0] if data.get("repos") else {}
 
         return {
             "success": proc.returncode == 0,
-            "status": status,
-            "gates": gates,
-            "errors": errors.split("|") if errors else [],
-            "message": message,
-            "reason": reason,
-            "pushed": pushed,
+            "status": repo.get("status", data.get("status", "UNKNOWN")),
+            "gates": repo.get("gates", ""),
+            "errors": [repo["reason"]] if repo.get("reason") else [],
+            "message": repo.get("message", ""),
+            "reason": repo.get("reason", ""),
+            "pushed": repo.get("pushed", False),
             "raw_output": output,
         }
 

@@ -383,7 +383,7 @@ st close                     # Uses active task (no ID needed)
 | `st context [id]` | Full task context in single call (optimized for /do_it) | Yes |
 | `st export [id]` | Export complete task to JSON | Yes |
 | `st update [id]` | Update task fields, status, dependencies | Yes |
-| `st close [id]` | Close task (all subtasks must be complete) | Yes |
+| `st close [id]` | Close task (bypasses gates, cleanup path) | Yes |
 | `st cancel [id]` | Cancel task from any non-terminal state | Yes |
 | `st claim [id]` | Claim/release task, optionally with worktree | Yes |
 | `st abandon [id]` | Abandon task, rollback changes | Yes |
@@ -401,7 +401,7 @@ st close                     # Uses active task (no ID needed)
 | Command | Subcommands | Purpose |
 |---------|-------------|---------|
 | `st subtask` | list, show, create, pass, block, delete | Subtask management |
-| `st step` | list, pass, new, insert, defect, delete | Step management |
+| `st step` | pass, new, add, update, delete, defect | Step management |
 | `st dep` | list, add, rm | Dependency management |
 
 #### Infrastructure Commands
@@ -1384,7 +1384,8 @@ st context                       # Full task context (uses active task)
 st subtask list                  # List subtasks with steps
 st step pass 1.1 1               # Mark step complete
 st subtask pass 1.1              # Mark subtask complete (all steps must pass)
-st close                         # Close task (all subtasks must pass)
+st done                          # Complete task (all subtasks must pass, merges code)
+st close                         # Close task (bypasses gates, cleanup path)
 
 # Execution
 st autocode                      # Immediate dispatch via Redis pub/sub

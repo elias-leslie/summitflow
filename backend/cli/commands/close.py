@@ -90,19 +90,22 @@ def _close_task(
             typer.echo("Aborted.")
             raise typer.Exit(0)
 
-    # Mark task as completed
+    # Mark task as completed (skip gates — this is the cleanup path)
     try:
-        client.update_status(task_id, "completed")
+        client.update_status(task_id, "completed", skip_gates=True)
     except APIError as e:
         output_error(f"Failed to update task status: {e.detail}")
         raise typer.Exit(1) from None
 
+    # Get project_id from snapshot for per-project worktree paths
+    project_id = snapshot_info.get("project_id") if snapshot_info else None
+
+    # Remove worktree + snapshot BEFORE branch deletion (worktree holds branch ref)
+    if has_snapshot:
+        remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+
     # Delete all task branches (code cleanup, no merge)
     delete_task_branches(task_id)
-
-    # Remove snapshot files (cleanup - no longer needed)
-    if has_snapshot:
-        remove_snapshot(task_id)
 
     return {
         "task_id": task_id,

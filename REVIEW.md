@@ -475,7 +475,8 @@ st checkpoints [-p] [-d]           # Show active checkpoints
 
 ```bash
 st subtask list|show|create|pass|delete <task-id> [subtask-id]
-st step pass|new|update|add|delete|defect <task> <subtask> [step#]
+st step pass|new|add|update|delete|defect <task> <subtask> [step#]
+# step add now requires -v/-e; step defect accepts inline -v/-e
 ```
 
 ##### Additional Commands

@@ -168,11 +168,21 @@ def _complete_task(
         )
         raise typer.Exit(1)
 
-    # Mark task as completed via API (DB triggers verify all subtasks)
+    # Get project_id from snapshot for per-project worktree paths
+    project_id = snapshot_info.get("project_id") if snapshot_info else None
+
+    # Merge task branch FIRST — if merge fails, task stays "running" and agent can retry
+    try:
+        merge_task_branch(task_id, project_id=project_id)
+    except SystemExit:
+        output_error("Merge failed. Resolve conflicts manually, then retry.")
+        raise typer.Exit(1) from None
+
+    # Mark task as completed via API (gates verify all subtasks passed)
+    # Runs AFTER merge so if gates fail, code is merged but task stays "running" (recoverable)
     try:
         client.update_status(task_id, "completed")
     except APIError as e:
-        # Parse DB trigger errors
         detail: dict[str, Any] = (
             e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
         )
@@ -183,18 +193,7 @@ def _complete_task(
             output_error(f"Failed to complete task: {e.detail}")
         raise typer.Exit(1) from None
 
-    # Get project_id from snapshot for per-project worktree paths
-    project_id = snapshot_info.get("project_id") if snapshot_info else None
-
-    # Merge task branch to base branch
-    try:
-        merge_task_branch(task_id, project_id=project_id)
-    except SystemExit:
-        # merge_task_branch already prints error
-        output_error("Merge failed. Resolve conflicts manually, then retry.")
-        raise typer.Exit(1) from None
-
-    # Remove snapshot after successful merge
+    # Remove snapshot after successful merge + status update
     remove_snapshot(task_id, project_id=project_id)
 
     return {
