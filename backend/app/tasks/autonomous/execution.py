@@ -31,7 +31,7 @@ from ...core.debug import (
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.pubsub import publish_ws_event
-from ...services.worktree import create_task_worktree, get_execution_path
+from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.events import EventVisibility
@@ -873,12 +873,8 @@ def start_execution(
                 "reason": "pristine_self_heal_failed",
             }
 
-    # Create worktree for isolated execution
-    worktree = create_task_worktree(task_id, project_id)
-    if worktree:
-        _emit_log(task_id, "info", f"Worktree ready: {worktree.path}", project_id=project_id)
-
-    # Get execution path (worktree if created, otherwise project root)
+    # Auto-commit any orphaned changes from previous session
+    # Use task worktree if available, otherwise project root
     project_path = _get_project_path(project_id, task_id)
     if _has_uncommitted_changes(project_path):
         _emit_log(
