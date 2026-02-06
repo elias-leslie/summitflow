@@ -14,8 +14,7 @@ import { TaskMetadata } from '@/components/tasks/TaskMetadata'
 import { TaskModalActions } from '@/components/tasks/TaskModalActions'
 import { WorktreeSection } from '@/components/tasks/WorktreeSection'
 import { Textarea } from '@/components/ui/textarea'
-import type { Task } from '@/lib/api/tasks'
-import type { Subtask } from '@/lib/api/subtasks'
+import type { Task, Subtask, TaskStatus } from '@/lib/api/tasks'
 
 interface TaskModalContentProps {
   task: Task
@@ -39,7 +38,7 @@ interface TaskModalContentProps {
   onAgentTimelineToggle: () => void
   onStartExecution: () => void
   onStopExecution: () => void
-  onStatusChange: (status: string) => void
+  onStatusChange: (status: TaskStatus) => Promise<void>
   onToggleAutonomous: () => void
   onAgentOverrideChange: (agentId: string | null) => void
   onEditStart: () => void
@@ -47,7 +46,7 @@ interface TaskModalContentProps {
   onEditSave: () => void
   onDelete: () => void
   onObjectiveEdit: (objective: string) => void
-  onSubtaskToggle: (subtaskId: string, passes: boolean) => void
+  onSubtaskToggle: (subtaskId: string, passes: boolean) => Promise<void>
 }
 
 export function TaskModalContent({

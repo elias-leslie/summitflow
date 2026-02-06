@@ -26,7 +26,7 @@ interface TaskModalActionsProps {
   isEditing: boolean
   onStartExecution: () => void
   onStopExecution: () => void
-  onStatusChange: (status: TaskStatus) => void
+  onStatusChange: (status: TaskStatus) => Promise<void>
   onToggleAutonomous: () => void
   onAgentOverrideChange?: (agentSlug: string | null) => void
   onEditStart: () => void
