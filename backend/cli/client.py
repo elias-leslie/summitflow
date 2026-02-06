@@ -373,6 +373,28 @@ class STClient:
     def get_session(self, session_id: str) -> dict[str, Any]:
         return exec_ops.get_session(self._client, self._url, self._handle_response, session_id)
 
+    def get_task_agent_events(
+        self,
+        task_id: str,
+        event_type: str | None = None,
+        turn: int | None = None,
+        page: int = 1,
+        page_size: int = 500,
+    ) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        project_id = task.get("project_id", "")
+        return exec_ops.get_task_agent_events(
+            self._client,
+            self.base_url,
+            self._handle_response,
+            project_id,
+            task_id,
+            event_type,
+            turn,
+            page,
+            page_size,
+        )
+
     # Events
     def get_events(
         self, project_id: str, task_id: str, limit: int = 50, include_debug: bool = False

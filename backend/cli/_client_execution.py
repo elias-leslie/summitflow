@@ -46,6 +46,30 @@ def get_session(
     return cast(dict[str, Any], handle_response(response))
 
 
+def get_task_agent_events(
+    client: httpx.Client,
+    base_url: str,
+    handle_response: Any,
+    project_id: str,
+    task_id: str,
+    event_type: str | None = None,
+    turn: int | None = None,
+    page: int = 1,
+    page_size: int = 500,
+) -> dict[str, Any]:
+    """Get Agent Hub session events linked to a task."""
+    params: dict[str, Any] = {"page": page, "page_size": page_size}
+    if event_type:
+        params["event_type"] = event_type
+    if turn is not None:
+        params["turn"] = turn
+    response = client.get(
+        f"{base_url}/projects/{project_id}/tasks/{task_id}/agent-events",
+        params=params,
+    )
+    return cast(dict[str, Any], handle_response(response))
+
+
 def get_events(
     client: httpx.Client,
     base_url: str,

@@ -147,9 +147,11 @@ EXAMPLES:
   st checkpoints                           # show active checkpoints
   st checkpoints                           # show active checkpoints
 
-SESSION EVENTS:
-  session-events list                      # list session events
-  session-events create                    # create session event
+SESSION EVENTS (Agent Hub observability):
+  session-events <session-id>              # view events by session ID
+  session-events --task <task-id>          # view events by task ID (auto-resolves sessions)
+  session-events --task <task-id> -f       # follow in real-time
+  session-events --task <task-id> -t tool_use  # filter to tool calls only
 """
 
 app = typer.Typer(
