@@ -5,7 +5,8 @@ with the orchestrator for auto-triggering fixes.
 """
 
 from .escalation import MAX_FIX_ATTEMPTS, FixResult, escalate_to_human
-from .fix_agent import fix_lint_type_error, fix_unfixed_errors
+from .fix_agent import fix_lint_type_error
+from .orchestration import fix_unfixed_errors
 from .test_fix_agent import (
     TestFixResult,
     fix_failing_tests,

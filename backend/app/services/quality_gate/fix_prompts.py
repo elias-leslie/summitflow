@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ...services.self_healing import StoredPattern
+from ...services.self_healing.pattern_memory import StoredPattern
 from .pattern_memory_utils import format_patterns_for_prompt
 
 
@@ -17,18 +17,9 @@ def build_fix_prompt(
     file_content: str,
     project_path: Path,
     similar_patterns: list[StoredPattern] | None = None,
+    is_supervisor: bool = False,
 ) -> str:
-    """Build prompt for fix agent.
-
-    Args:
-        check_result: Quality check result from DB
-        file_content: Content of the file with the error
-        project_path: Path to project root
-        similar_patterns: Optional list of similar patterns to include
-
-    Returns:
-        Prompt string for the LLM
-    """
+    """Build prompt for fix agent."""
     check_type = check_result["check_type"]
     error_message = check_result.get("error_message", "")
     file_path = check_result.get("file_path", "")
@@ -44,6 +35,7 @@ def build_fix_prompt(
         lines.append(f"**Line:** {line_number}")
     if check_name:
         lines.append(f"**Rule/Check:** {check_name}")
+
     lines.extend(
         [
             "",
@@ -62,61 +54,20 @@ def build_fix_prompt(
         ]
     )
 
-    if check_type == "ruff":
-        lines.extend(
-            [
-                "Fix the ruff linting error. Common fixes:",
-                "- F401: Remove unused import",
-                "- E501: Break long line (use parentheses or line continuation)",
-                "- W291/W293: Remove trailing whitespace",
-                "- E302/E303: Fix blank lines around functions/classes",
-                "- F841: Remove unused variable or prefix with underscore",
-                "",
-            ]
-        )
-    elif check_type == "mypy":
-        lines.extend(
-            [
-                "Fix the mypy type error. Common fixes:",
-                "- Add type annotations",
-                "- Add proper None checks",
-                "- Use cast() or type guards",
-                "- Fix return type annotations",
-                "- Import types from typing module",
-                "",
-            ]
-        )
-    elif check_type == "biome":
-        lines.extend(
-            [
-                "Fix the Biome lint/format error. Common fixes:",
-                "- Fix import order",
-                "- Add missing semicolons",
-                "- Fix unused variables",
-                "- Apply consistent formatting",
-                "",
-            ]
-        )
-    elif check_type == "tsc":
-        lines.extend(
-            [
-                "Fix the TypeScript type error. Common fixes:",
-                "- Add proper type annotations",
-                "- Fix type mismatches",
-                "- Handle undefined/null properly",
-                "- Import missing types",
-                "",
-            ]
-        )
+    instructions = {
+        "ruff": "Fix the ruff linting error (F401, E501, W291/293, E302/303, F841).",
+        "mypy": "Fix the mypy type error (Add annotations, None checks, cast/guards).",
+        "biome": "Fix the Biome lint/format error (Import order, semicolons, variables).",
+        "tsc": "Fix the TypeScript type error (Add annotations, fix mismatches, handle undefined).",
+    }
+    lines.append(instructions.get(check_type, "Fix the error."))
 
-    # Add similar patterns if available
-    if similar_patterns:
-        pattern_section = format_patterns_for_prompt(similar_patterns)
-        if pattern_section:
-            lines.append(pattern_section)
+    if similar_patterns and (pattern_section := format_patterns_for_prompt(similar_patterns)):
+        lines.append(f"\n{pattern_section}")
 
     lines.extend(
         [
+            "",
             "## Response Format",
             "",
             "Respond with ONLY the fixed file content, no explanation.",
@@ -126,4 +77,16 @@ def build_fix_prompt(
         ]
     )
 
-    return "\n".join(lines)
+    prompt = "\n".join(lines)
+    if is_supervisor:
+        return f"""Previous fix attempts have failed. Try a different approach.
+
+{prompt}
+
+IMPORTANT: Previous attempts failed. Consider:
+- Reading surrounding context more carefully
+- The error might require structural changes, not just line fixes
+- Check if imports or dependencies are missing
+- Verify the fix actually addresses the root cause
+"""
+    return prompt

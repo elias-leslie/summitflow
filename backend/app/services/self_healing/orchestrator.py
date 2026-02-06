@@ -247,7 +247,7 @@ class SelfHealingOrchestrator:
         """
         # Lazy import to avoid circular dependency
         # (fix_agent imports from self_healing for pattern memory)
-        from ..quality_gate.fix_agent import fix_unfixed_errors
+        from ..quality_gate import fix_unfixed_errors
 
         project_results: dict[str, Any] = {
             "fixed": 0,

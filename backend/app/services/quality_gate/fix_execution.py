@@ -9,20 +9,14 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...services.agent_hub_client import get_agent
+from .cost_estimator import estimate_cost_from_response
 
 logger = get_logger(__name__)
 
 
-def read_file_content(file_path: Path, _context_lines: int = 10) -> str | None:
-    """Read file content with surrounding context.
-
-    Args:
-        file_path: Path to file
-        context_lines: Number of lines of context to include around error
-
-    Returns:
-        File content or None if file doesn't exist
-    """
+def read_file_content(file_path: Path) -> str | None:
+    """Read file content."""
     if not file_path.exists():
         return None
     try:
@@ -33,15 +27,7 @@ def read_file_content(file_path: Path, _context_lines: int = 10) -> str | None:
 
 
 def apply_fix(file_path: Path, new_content: str) -> bool:
-    """Apply the fix to the file.
-
-    Args:
-        file_path: Path to file
-        new_content: New file content
-
-    Returns:
-        True if fix was applied successfully
-    """
+    """Apply the fix to the file."""
     try:
         file_path.write_text(new_content)
         return True
@@ -55,44 +41,43 @@ def verify_fix(
     check_type: str,
     file_path: str,
 ) -> bool:
-    """Re-run the check to verify the fix worked.
-
-    Args:
-        project_path: Path to project root
-        check_type: Type of check (ruff, mypy, biome, tsc)
-        file_path: Path to the fixed file
-
-    Returns:
-        True if the check now passes
-    """
-    cmd: list[str] = []
-    cwd = project_path
-
-    if check_type == "ruff":
-        cmd = ["ruff", "check", file_path, "--quiet"]
-    elif check_type == "mypy":
-        cmd = ["mypy", file_path, "--no-error-summary", "--quiet"]
-    elif check_type == "biome":
-        cmd = ["npx", "biome", "check", file_path, "--quiet"]
-    elif check_type == "tsc":
-        # For tsc we check the whole project since it needs tsconfig context
-        cmd = ["npx", "tsc", "--noEmit"]
-    else:
+    """Re-run the check to verify the fix worked."""
+    cmd_map = {
+        "ruff": ["ruff", "check", file_path, "--quiet"],
+        "mypy": ["mypy", file_path, "--no-error-summary", "--quiet"],
+        "biome": ["npx", "biome", "check", file_path, "--quiet"],
+        "tsc": ["npx", "tsc", "--noEmit"],
+    }
+    cmd = cmd_map.get(check_type)
+    if not cmd:
         logger.warning("unknown_check_type", check_type=check_type)
         return False
 
     try:
         result = subprocess.run(
             cmd,
-            cwd=cwd,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
         return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        logger.warning("verify_timeout", check_type=check_type, file=file_path)
-        return False
     except Exception as e:
         logger.error("verify_failed", check_type=check_type, error=str(e))
         return False
+
+
+def execute_agent_fix(
+    agent_slug: str,
+    prompt: str,
+    temperature: float,
+) -> tuple[str, float]:
+    """Execute fix using specified agent and return content + cost."""
+    agent = get_agent(agent_slug)
+    response = agent.generate(
+        prompt=prompt,
+        system="You are a code fix agent. Output only the fixed code, no explanations.",
+        temperature=temperature,
+        purpose="quality_gate_fix",
+    )
+    return response.content.strip(), estimate_cost_from_response(response)
