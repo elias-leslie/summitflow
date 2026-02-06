@@ -27,7 +27,7 @@ from ...schemas.tasks import (
     SubtaskResponse,
     SubtaskUpdate,
 )
-from .core import _get_task_or_404, _verify_task_project
+from .helpers import get_task_or_404, verify_task_project
 
 logger = get_logger(__name__)
 
@@ -53,7 +53,7 @@ async def get_task_subtasks(
     Returns:
         Dict with subtasks list and summary
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
 
@@ -87,7 +87,7 @@ async def update_task_subtask(
     Returns:
         Updated SubtaskResponse
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     from ...storage.subtasks import (
         SubtaskGateError,
@@ -134,7 +134,7 @@ async def delete_task_subtask(
     Returns:
         Deletion confirmation with details.
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     from ...storage.subtasks import delete_subtask
 
@@ -173,7 +173,7 @@ async def create_subtask_endpoint(
     Returns:
         Created SubtaskResponse
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     from ...storage.subtasks import create_subtask
 
@@ -230,7 +230,7 @@ async def create_subtasks_batch(
     Returns:
         {"created": list of created subtasks}
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     from ...storage.subtasks import bulk_create_subtasks
 
@@ -330,7 +330,7 @@ async def get_task_subtasks_global(
     Returns:
         Dict with subtasks list and summary
     """
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
 
     from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
 
@@ -362,7 +362,7 @@ async def update_task_subtask_global(
     Returns:
         Updated SubtaskResponse
     """
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
 
     from ...storage.subtasks import (
         SubtaskGateError,
@@ -416,7 +416,7 @@ async def log_subtask_citations(
     Returns:
         CitationLogResponse with count of logged citations
     """
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
 
     from ...storage.subtasks import log_citations
 
@@ -450,7 +450,7 @@ async def acknowledge_no_citations(
     Returns:
         CitationAcknowledgeResponse with acknowledgment status
     """
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
 
     from ...storage.subtasks import acknowledge_no_citations
 
