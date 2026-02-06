@@ -15,10 +15,12 @@ from .api import (
     activity,
     agent_hub,
     agent_sessions,
+    auto_fix,
     autonomous,
     backups,
     celery_endpoints,
     checkpoints,
+    console_errors,
     context,
     design_standards,
     explorer,
@@ -89,6 +91,8 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
+app.include_router(auto_fix.router, prefix="/api", tags=["quality-gate"])
+app.include_router(console_errors.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])

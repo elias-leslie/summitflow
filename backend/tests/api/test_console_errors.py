@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pytest_mock import MockerFixture
 
-from app.api.quality_gate import _compute_console_error_hash
+from app.api.console_errors import _compute_console_error_hash
 
 
 class TestComputeConsoleErrorHash:
@@ -74,11 +74,12 @@ class TestCaptureConsoleErrorEndpoint:
         error_request_data: dict[str, Any],
     ) -> None:
         """Endpoint creates a bug task from console error."""
-        from app.api.quality_gate import ConsoleErrorRequest, capture_console_error
+        from app.api.console_errors import capture_console_error
+        from app.api.quality_gate_models import ConsoleErrorRequest
 
-        mocker.patch("app.api.quality_gate._validate_project_exists")
-        mock_dedup = mocker.patch("app.api.quality_gate.bug_task_exists_for_error")
-        mock_create = mocker.patch("app.api.quality_gate.create_task")
+        mocker.patch("app.api.console_errors.validate_project_exists")
+        mock_dedup = mocker.patch("app.api.console_errors.bug_task_exists_for_error")
+        mock_create = mocker.patch("app.api.console_errors.create_task")
         mock_dedup.return_value = False
         mock_create.return_value = {"id": "task-console123"}
 
@@ -106,11 +107,12 @@ class TestCaptureConsoleErrorEndpoint:
         error_request_data: dict[str, Any],
     ) -> None:
         """Task description includes full error context."""
-        from app.api.quality_gate import ConsoleErrorRequest, capture_console_error
+        from app.api.console_errors import capture_console_error
+        from app.api.quality_gate_models import ConsoleErrorRequest
 
-        mocker.patch("app.api.quality_gate._validate_project_exists")
-        mock_dedup = mocker.patch("app.api.quality_gate.bug_task_exists_for_error")
-        mock_create = mocker.patch("app.api.quality_gate.create_task")
+        mocker.patch("app.api.console_errors.validate_project_exists")
+        mock_dedup = mocker.patch("app.api.console_errors.bug_task_exists_for_error")
+        mock_create = mocker.patch("app.api.console_errors.create_task")
         mock_dedup.return_value = False
         mock_create.return_value = {"id": "task-123"}
 
@@ -133,11 +135,12 @@ class TestCaptureConsoleErrorEndpoint:
         error_request_data: dict[str, Any],
     ) -> None:
         """Duplicate errors don't create new tasks."""
-        from app.api.quality_gate import ConsoleErrorRequest, capture_console_error
+        from app.api.console_errors import capture_console_error
+        from app.api.quality_gate_models import ConsoleErrorRequest
 
-        mocker.patch("app.api.quality_gate._validate_project_exists")
-        mock_dedup = mocker.patch("app.api.quality_gate.bug_task_exists_for_error")
-        mock_create = mocker.patch("app.api.quality_gate.create_task")
+        mocker.patch("app.api.console_errors.validate_project_exists")
+        mock_dedup = mocker.patch("app.api.console_errors.bug_task_exists_for_error")
+        mock_create = mocker.patch("app.api.console_errors.create_task")
         mock_dedup.return_value = True  # Task already exists
 
         request = ConsoleErrorRequest(**error_request_data)
@@ -154,11 +157,12 @@ class TestCaptureConsoleErrorEndpoint:
         mocker: MockerFixture,
     ) -> None:
         """Works when stack trace is not provided."""
-        from app.api.quality_gate import ConsoleErrorRequest, capture_console_error
+        from app.api.console_errors import capture_console_error
+        from app.api.quality_gate_models import ConsoleErrorRequest
 
-        mocker.patch("app.api.quality_gate._validate_project_exists")
-        mock_dedup = mocker.patch("app.api.quality_gate.bug_task_exists_for_error")
-        mock_create = mocker.patch("app.api.quality_gate.create_task")
+        mocker.patch("app.api.console_errors.validate_project_exists")
+        mock_dedup = mocker.patch("app.api.console_errors.bug_task_exists_for_error")
+        mock_create = mocker.patch("app.api.console_errors.create_task")
         mock_dedup.return_value = False
         mock_create.return_value = {"id": "task-123"}
 
@@ -191,11 +195,12 @@ class TestCaptureConsoleErrorEndpoint:
         expected_check: str,
     ) -> None:
         """Long error messages and stacks are truncated."""
-        from app.api.quality_gate import ConsoleErrorRequest, capture_console_error
+        from app.api.console_errors import capture_console_error
+        from app.api.quality_gate_models import ConsoleErrorRequest
 
-        mocker.patch("app.api.quality_gate._validate_project_exists")
-        mock_dedup = mocker.patch("app.api.quality_gate.bug_task_exists_for_error")
-        mock_create = mocker.patch("app.api.quality_gate.create_task")
+        mocker.patch("app.api.console_errors.validate_project_exists")
+        mock_dedup = mocker.patch("app.api.console_errors.bug_task_exists_for_error")
+        mock_create = mocker.patch("app.api.console_errors.create_task")
         mock_dedup.return_value = False
         mock_create.return_value = {"id": "task-123"}
 
