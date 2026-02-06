@@ -205,8 +205,8 @@ check_venv() {
 # Rebuild venv from scratch
 rebuild_venv() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
 
     echo "REBUILD_VENV:$project_name"
 
@@ -250,8 +250,8 @@ rebuild_venv() {
 
 install_deps() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
 
     echo "INSTALL:$project_name"
 
@@ -282,8 +282,8 @@ install_deps() {
 
 run_lint() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
     local backend=$(get_backend_path "$project_name" "$project_dir")
     local fix_mode="$2"
 
@@ -344,8 +344,8 @@ run_lint() {
 
 run_types() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
     local backend=$(get_backend_path "$project_name" "$project_dir")
 
     local mode_suffix=""
@@ -394,8 +394,8 @@ run_types() {
 
 run_tests() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
     local backend=$(get_backend_path "$project_name" "$project_dir")
 
     echo "TEST:$project_name"
@@ -429,7 +429,7 @@ run_tests() {
 # Check if project has python backend
 has_python_backend() {
     local project_dir="${1:-$PROJECT_DIR}"
-    local backend_dir=$(get_backend_path "$(basename "$project_dir")" "$project_dir")
+    local backend_dir=$(get_backend_path "$PROJECT_NAME" "$project_dir")
     
     # Check for pyproject.toml or requirements.txt
     if [[ -f "$backend_dir/pyproject.toml" ]] || [[ -f "$backend_dir/requirements.txt" ]]; then
@@ -446,7 +446,7 @@ has_python_backend() {
 
 quick_check() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
+    local project_name="$PROJECT_NAME"
     local errors=0
 
     local mode_suffix=""
@@ -490,7 +490,7 @@ quick_check() {
 # Useful for pure frontend projects (e.g., monkey-fight)
 frontend_only_check() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
+    local project_name="$PROJECT_NAME"
     local errors=0
 
     echo "FRONTEND_CHECK:$project_name"
@@ -515,7 +515,7 @@ frontend_only_check() {
 
 full_check() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
+    local project_name="$PROJECT_NAME"
     local errors=0
 
     echo "CHECK:$project_name"
@@ -550,8 +550,8 @@ full_check() {
 
 full_fix() {
     local project_dir="$1"
-    local project_name=$(basename "$project_dir")
-    local venv=$(get_venv_path "$project_name" "$project_dir")
+    local project_name="$PROJECT_NAME"
+    local venv=$(get_venv_path "$project_name" "$MAIN_REPO_DIR")
     local errors=0
 
     echo "FIX:$project_name"

@@ -12,8 +12,11 @@ def calculate_target_lines(current_lines: int) -> int:
         current_lines: Current file line count
 
     Returns:
-        Target line count (always less than current)
+        Target line count. Returns current_lines if file is already
+        at or below the minimum threshold (no refactoring needed).
     """
+    if current_lines <= 150:
+        return current_lines
     if current_lines > 1000:
         return 500  # Large files should get to 500
     elif current_lines > 500:
