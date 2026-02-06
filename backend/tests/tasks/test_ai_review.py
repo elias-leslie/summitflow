@@ -44,11 +44,11 @@ class TestHasFrontendChanges:
     """Tests for _has_frontend_changes helper."""
 
     def test_no_plan_content(self) -> None:
-        task: dict = {}
+        task: dict[str, object] = {}
         assert not _has_frontend_changes(task)
 
     def test_no_affected_files(self) -> None:
-        task = {"plan_content": {"context": {}}}
+        task: dict[str, object] = {"plan_content": {"context": {}}}
         assert not _has_frontend_changes(task)
 
     def test_backend_only_changes(self) -> None:
@@ -120,14 +120,14 @@ class TestRunPytest:
 class TestRunPrecommit:
     """Tests for _run_precommit helper."""
 
-    @patch("app.tasks.ai_review_checks._run_command")
+    @patch("app.tasks.ai_review_tools.run_command")
     def test_precommit_pass(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.return_value = (True, "All passed!")
         result = _run_precommit(tmp_path)
         assert result["status"] == "pass"
         mock_run.assert_called_once()
 
-    @patch("app.tasks.ai_review_checks._run_command")
+    @patch("app.tasks.ai_review_tools.run_command")
     def test_precommit_fail(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.return_value = (False, "Linting failed")
         result = _run_precommit(tmp_path)
@@ -157,14 +157,14 @@ class TestVerifyStepCompletion:
 
     def test_no_subtasks(self) -> None:
         """Task with no subtasks should skip verification."""
-        task: dict = {"id": "task-123"}
+        task: dict[str, object] = {"id": "task-123"}
         result = _verify_step_completion(task)
         assert result["status"] == "skip"
         assert "No subtasks defined" in result["reason"]
 
     def test_no_task_id(self) -> None:
         """Task without ID should error."""
-        task: dict = {"done_when": ["tests pass"]}
+        task: dict[str, object] = {"done_when": ["tests pass"]}
         result = _verify_step_completion(task)
         assert result["status"] == "error"
 
