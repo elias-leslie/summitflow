@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-05 02:33 UTC
+generated_at: 2026-02-06 01:55 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -115,32 +115,32 @@ tables:
 - terminal_sessions
 - user_prompts
 tasks:
-- autonomous_work_pickup (every 2 hours)
-- cleanup_debug_captures (every 1 day)
-- cleanup_stale_tasks (every 1 day)
-- daily_code_health_scan (every 1 day)
-- generate_tasks_from_scan (every 7 days)
-- monitor_browser_errors (every 6 hours)
-- monitor_systemd_errors (every 5 minutes)
-- orchestrate_self_healing (every 15 minutes)
-- process_crowdsourced_ideas (every 1 day)
-- process_scheduled_tasks (every 1 minute)
-- reset_expired_task_claims (every 1 hour)
-- review_pending_tasks (every 30 minutes)
-- run_scheduled_backups (every 1 hour)
-- scan_all_projects (every 6 hours)
-- weekly_deep_scan (every 7 days)
+- autonomous_work_pickup (crontab(minute=15, hour="*/2"))
+- cleanup_debug_captures (crontab(minute=0, hour=3))
+- cleanup_stale_tasks (crontab(minute=0, hour=4))
+- daily_code_health_scan (crontab(minute=0, hour=2))
+- generate_tasks_from_scan (crontab(minute=0, hour=4, day_of_week=1))
+- monitor_browser_errors (crontab(minute=30, hour="*/6"))
+- monitor_systemd_errors (crontab(minute="*/5"))
+- orchestrate_self_healing (crontab(minute="*/15"))
+- process_crowdsourced_ideas (crontab(minute=0, hour=3))
+- process_scheduled_tasks (crontab(minute="*"))
+- reset_expired_task_claims (crontab(minute=0))
+- review_pending_tasks (crontab(minute="*/30"))
+- run_scheduled_backups (crontab(minute=30))
+- scan_all_projects (crontab(minute=0, hour="*/6"))
+- weekly_deep_scan (crontab(minute=0, hour=3, day_of_week=0))
 folders:
   (root): 36 files - services, tests
   .claude: 3 files
-  .dev-tools: 14 files - tests
+  .dev-tools: 16 files - tests
   .qna-session: 1 files
   .st: 1 files
   .summitflow: 35 files - services, tests
   assets: 2 files
-  backend: 532 files - api, services, tests
+  backend: 534 files - api, services, tests
   docs: 64 files - tests
-  frontend: 291 files - api, components, tests
+  frontend: 308 files - api, components, tests
   mockups: 7 files
   project_review: 11 files
   scripts: 35 files - services, tests

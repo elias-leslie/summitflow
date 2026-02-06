@@ -189,7 +189,7 @@ function GitProjectCard({ repo }: { repo: RepoStatus }) {
                   <XCircle className="w-4 h-4 text-pink-500" />
                 )}
                 <span className={clsx("text-sm font-medium", result.success ? "text-emerald-400" : "text-pink-400")}>
-                  {result.status}
+                  {result.reason === 'pushed_existing' ? 'PUSHED' : result.reason === 'no_changes' ? 'SKIP' : result.status}
                 </span>
               </div>
               {result.errors.length > 0 && (

@@ -190,6 +190,30 @@ main() {
 
     # Check for changes
     if [[ -z "$(git status --porcelain)" ]]; then
+        # No local changes — but if --push, check for unpushed commits
+        if $PUSH; then
+            local ahead
+            ahead=$(git rev-list --count @{upstream}..HEAD 2>/dev/null || echo "0")
+            if [[ "$ahead" -gt 0 ]]; then
+                local push_out push_status=0
+                push_out=$(git pull --rebase 2>&1 && git push 2>&1) || push_status=$?
+                if [[ $push_status -eq 0 ]]; then
+                    echo "<sf-commit>"
+                    echo "<status>SUCCESS</status>"
+                    echo "<reason>pushed_existing</reason>"
+                    echo "<pushed>true</pushed>"
+                    echo "</sf-commit>"
+                    exit 0
+                else
+                    echo "<sf-commit>"
+                    echo "<status>PARTIAL</status>"
+                    echo "<reason>push_failed</reason>"
+                    echo "<errors>$(echo "$push_out" | head -2 | tr '\n' ' ')</errors>"
+                    echo "</sf-commit>"
+                    exit 1
+                fi
+            fi
+        fi
         echo "<sf-commit>"
         echo "<status>SKIP</status>"
         echo "<reason>no_changes</reason>"

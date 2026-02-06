@@ -376,12 +376,20 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
         message_match = re.search(r"<message>(.*?)</message>", output, re.DOTALL)
         message = message_match.group(1).strip() if message_match else ""
 
+        reason_match = re.search(r"<reason>(.*?)</reason>", output)
+        reason = reason_match.group(1) if reason_match else ""
+
+        pushed_match = re.search(r"<pushed>(.*?)</pushed>", output)
+        pushed = pushed_match.group(1) == "true" if pushed_match else False
+
         return {
             "success": proc.returncode == 0,
             "status": status,
             "gates": gates,
             "errors": errors.split("|") if errors else [],
             "message": message,
+            "reason": reason,
+            "pushed": pushed,
             "raw_output": output,
         }
 

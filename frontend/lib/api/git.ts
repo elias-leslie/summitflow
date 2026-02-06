@@ -144,6 +144,8 @@ export interface SmartSyncResponse {
   gates: string
   errors: string[]
   message: string
+  reason: string
+  pushed: boolean
   raw_output: string
 }
 
