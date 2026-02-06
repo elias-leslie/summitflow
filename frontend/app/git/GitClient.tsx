@@ -191,13 +191,51 @@ function GitProjectCard({ repo }: { repo: RepoStatus }) {
                 <span className={clsx("text-sm font-medium", result.success ? "text-emerald-400" : "text-pink-400")}>
                   {result.reason === 'pushed_existing' ? 'PUSHED' : result.reason === 'no_changes' ? 'SKIP' : result.status}
                 </span>
+                {result.pushed && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    PUSHED
+                  </span>
+                )}
               </div>
-              {result.errors.length > 0 && (
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-900 text-pink-400 border border-pink-500/30">
-                  {result.errors.length} Issues
-                </span>
-              )}
             </div>
+
+            {/* Quality Gates */}
+            {result.gates && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {result.gates.split('|').filter(Boolean).map((gate) => {
+                  const [name, status] = gate.split(':')
+                  const passed = status === 'PASS' || status === 'SKIP'
+                  const isWarn = status?.startsWith('WARN')
+                  return (
+                    <span
+                      key={gate}
+                      className={clsx(
+                        "text-[10px] font-mono px-1.5 py-0.5 rounded border inline-flex items-center gap-1",
+                        passed
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : isWarn
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            : "bg-pink-500/10 text-pink-400 border-pink-500/20"
+                      )}
+                    >
+                      <span className={clsx("w-1.5 h-1.5 rounded-full", passed ? "bg-emerald-400" : isWarn ? "bg-amber-400" : "bg-pink-400")} />
+                      {name}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Error Messages */}
+            {result.errors.length > 0 && (
+              <div className="mb-2 space-y-1">
+                {result.errors.map((error, i) => (
+                  <div key={i} className="text-xs font-mono text-pink-400 bg-pink-500/5 px-2 py-1 rounded border border-pink-500/10">
+                    {error}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* AI Message Preview */}
             {result.message && (
