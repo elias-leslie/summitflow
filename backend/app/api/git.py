@@ -326,6 +326,7 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
     # Check config repos if not in DB
     if not project_root:
         from ..utils.git_helpers import CONFIG_REPOS
+
         for repo in CONFIG_REPOS:
             if repo.name == project_id:
                 project_root = str(repo)
@@ -333,7 +334,7 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
 
     if not project_root:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        
+
     # project_root is set now
 
     if not project_root:
