@@ -137,14 +137,23 @@ generate_message() {
         local diff
         diff=$(git diff --cached 2>/dev/null)
         if [[ -n "$diff" ]]; then
-            local ai_msg
-            ai_msg=$(st complete --agent git-agent --raw "Generate a conventional commit message for the following diff. Output ONLY the message:\n\n$diff" 2>/dev/null)
+            # Use st complete with --raw (JSON) output
+            local json_out
+            json_out=$(st complete --agent git-agent --raw "Generate a conventional commit message for the following diff. Output ONLY the message:\n\n$diff" 2>/dev/null)
             
-            if [[ -n "$ai_msg" && ! "$ai_msg" =~ "Error" ]]; then
-                # Clean up quotes if agent added them
-                ai_msg=$(echo "$ai_msg" | sed 's/^"//' | sed 's/"$//')
-                echo "$ai_msg"
-                return
+            if [[ -n "$json_out" && ! "$json_out" =~ "Error" ]]; then
+                # Extract content field using jq or python fallback if jq missing
+                if command -v jq &>/dev/null; then
+                    ai_msg=$(echo "$json_out" | jq -r '.content // empty')
+                else
+                    # Fallback python parser if jq missing
+                    ai_msg=$(echo "$json_out" | python3 -c "import sys, json; print(json.load(sys.stdin).get('content', ''))")
+                fi
+
+                if [[ -n "$ai_msg" ]]; then
+                    echo "$ai_msg"
+                    return
+                fi
             fi
         fi
     fi
