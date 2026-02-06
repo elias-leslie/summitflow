@@ -314,10 +314,16 @@ run_lint() {
         lint_targets="$changed_files"
     fi
 
+    # Build --extend-exclude flags from centralized config
+    local exclude_args=()
+    for pattern in "${LINT_EXCLUDE_DIRS[@]}"; do
+        exclude_args+=(--extend-exclude "$pattern")
+    done
+
     # ALWAYS auto-fix safe issues first (import sorting, formatting)
     # This eliminates the fix vs check distinction for safe fixes
-    echo "$lint_targets" | xargs "$ruff_bin" check --fix --quiet 2>/dev/null || true
-    echo "$lint_targets" | xargs "$ruff_bin" format --quiet 2>/dev/null || true
+    echo "$lint_targets" | xargs "$ruff_bin" check --fix --quiet "${exclude_args[@]}" 2>/dev/null || true
+    echo "$lint_targets" | xargs "$ruff_bin" format --quiet "${exclude_args[@]}" 2>/dev/null || true
 
     ensure_output_dir
     local details_file="$OUTPUT_DIR/ruff-details.1.txt"
@@ -328,7 +334,7 @@ run_lint() {
     else
         # Check for remaining unfixable violations
         local output retval=0
-        output=$(echo "$lint_targets" | xargs "$ruff_bin" check --output-format=concise 2>&1) || retval=$?
+        output=$(echo "$lint_targets" | xargs "$ruff_bin" check --output-format=concise "${exclude_args[@]}" 2>&1) || retval=$?
         if [[ $retval -eq 0 ]]; then
             rm -f "$details_file"
             echo "OK:violations=0"
@@ -378,9 +384,15 @@ run_types() {
     fi
 
     cd "$backend"
+    # Build --exclude flags from centralized config (mypy uses regex patterns)
+    local mypy_exclude_args=()
+    for pattern in "${LINT_EXCLUDE_DIRS[@]}"; do
+        mypy_exclude_args+=(--exclude "$pattern")
+    done
+
     # Capture output first, then count errors to avoid pipefail issues
     local output errors
-    output=$(echo "$type_targets" | xargs "$mypy_bin" --ignore-missing-imports 2>&1) || true
+    output=$(echo "$type_targets" | xargs "$mypy_bin" --ignore-missing-imports "${mypy_exclude_args[@]}" 2>&1) || true
     errors=$(echo "$output" | grep -c "error:") || errors=0
     if [[ "$errors" -eq 0 ]]; then
         rm -f "$details_file"

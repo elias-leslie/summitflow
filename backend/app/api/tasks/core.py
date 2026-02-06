@@ -842,6 +842,42 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     return BatchTaskResponse(created=created, errors=errors)
 
 
+@router.get("/tasks/{task_id}/completion-readiness")
+async def check_completion_readiness(task_id: str) -> dict[str, Any]:
+    """Check if a task is ready for completion.
+
+    Pre-validates all completion gates without modifying state.
+    Used by `st done` to fail fast before merging branches.
+
+    Args:
+        task_id: Task ID to check
+
+    Returns:
+        Dict with 'ready' bool and 'gates' list of failing gates.
+    """
+    _get_task_or_404(task_id)
+
+    subtasks = await asyncio.to_thread(get_subtasks_for_task, task_id)
+    incomplete = [s["subtask_id"] for s in subtasks if not s.get("passes")]
+    step_status = await asyncio.to_thread(_get_step_verification_status, task_id)
+
+    gates: list[dict[str, Any]] = []
+    if incomplete:
+        gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
+    if step_status["total"] == 0:
+        gates.append({"gate": "zero_steps", "pass": False})
+    elif not step_status["all_verified"]:
+        gates.append(
+            {
+                "gate": "steps",
+                "pass": False,
+                "detail": step_status["unverified"][:5],
+            }
+        )
+
+    return {"ready": len(gates) == 0, "gates": gates}
+
+
 @router.get("/tasks/{task_id}", response_model=None)
 async def get_task_global(
     task_id: str,

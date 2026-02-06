@@ -71,6 +71,9 @@ def _parse_db_error(detail: Any) -> str | None:
 
     msg = str(detail).lower() if isinstance(detail, str) else str(detail.get("detail", "")).lower()
 
+    if "zero steps" in msg or ("steps" in msg and "zero" in msg):
+        return "Cannot complete: Task has no steps. Create subtasks with steps, or use 'st close' for manual completion."
+
     if "steps" in msg and ("incomplete" in msg or "not verified" in msg):
         return "Cannot complete: Some steps not verified. Run: st step pass <subtask> <step>"
 
@@ -171,7 +174,26 @@ def _complete_task(
     # Get project_id from snapshot for per-project worktree paths
     project_id = snapshot_info.get("project_id") if snapshot_info else None
 
-    # Merge task branch FIRST — if merge fails, task stays "running" and agent can retry
+    # Pre-validate completion gates BEFORE merging (fail fast, avoid half-done state)
+    try:
+        readiness = client.get(client._global_url(f"/tasks/{task_id}/completion-readiness"))
+        if not readiness.get("ready"):
+            for g in readiness.get("gates", []):
+                gate_name = g["gate"]
+                if gate_name == "zero_steps":
+                    output_error(
+                        "Cannot complete: Task has no steps. Create subtasks with steps first."
+                    )
+                elif gate_name == "subtasks":
+                    output_error(f"Cannot complete: Incomplete subtasks: {g['detail']}")
+                elif gate_name == "steps":
+                    output_error(f"Cannot complete: Unverified steps: {g['detail']}")
+            raise typer.Exit(1)
+    except APIError as e:
+        output_error(f"Pre-validation failed: {e.detail}")
+        raise typer.Exit(1) from None
+
+    # Merge task branch — only reached if completion gates will pass
     try:
         merge_task_branch(task_id, project_id=project_id)
     except SystemExit:

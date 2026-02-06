@@ -33,6 +33,13 @@ export CANONICAL_SQUAWK="1.5.2"
 # Python version requirements
 export MIN_PYTHON_VERSION="3.12"
 
+# Directories excluded from linting/type-checking (dead code, archived scripts)
+LINT_EXCLUDE_DIRS=(
+    "scripts/archived"
+    "__pycache__"
+)
+export LINT_EXCLUDE_DIRS
+
 # =============================================================================
 # PROJECT REGISTRY - All managed projects
 # =============================================================================
