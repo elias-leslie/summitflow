@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
 .venv/
 *.egg-info/
 dist/
@@ -19,6 +21,7 @@ out/
 .vscode/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
@@ -27,29 +30,37 @@ Thumbs.db
 # Environment
 .env
 .env.local
-.env.*.local
+.env*.local
 
 # Logs
 *.log
-npm-debug.log*
 
 # Testing
 .coverage
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Temp
 /tmp/
 *.tmp
 
-# Runtime data (evidence, screenshots, project data)
-data/
-backups/
+# Secrets
+*.pem
+*.key
+credentials.json
+secrets.json
 
-# Celery beat schedule files
+# Celery
 celerybeat-schedule*
 
-# Dev tools output (TOON details)
+# Project data
+data/
+backups/
+backup-index.json
+
+# Dev tools
 .dev-tools/
 
 # Reference repos
@@ -57,5 +68,3 @@ references/
 
 # Checkpoint data
 .st/
-
-backup-index.json
