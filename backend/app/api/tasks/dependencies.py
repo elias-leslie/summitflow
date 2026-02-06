@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ...schemas.tasks import DependencyCreate, DependencyResponse
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
-from .core import _get_task_or_404, _verify_task_project
+from .helpers import get_task_or_404, verify_task_project
 
 router = APIRouter()
 
@@ -33,7 +33,7 @@ async def get_task_dependencies(project_id: str, task_id: str) -> list[Dependenc
     Returns:
         List of dependencies with details about the blocking tasks.
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     deps = dep_store.get_dependencies(task_id)
     return [
@@ -66,7 +66,7 @@ async def add_task_dependency(
     Returns:
         The created dependency.
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     # Verify target task exists
     target = task_store.get_task(dep.depends_on_task_id)
@@ -117,7 +117,7 @@ async def remove_task_dependency(
     Returns:
         Status dict.
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     removed = dep_store.remove_dependency(task_id, depends_on_task_id, dependency_type)
 
@@ -144,7 +144,7 @@ async def get_task_dependencies_global(task_id: str) -> list[DependencyResponse]
     Returns:
         List of dependencies with details about the blocking tasks.
     """
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
 
     deps = dep_store.get_dependencies(task_id)
     return [

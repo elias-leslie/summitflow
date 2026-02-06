@@ -25,7 +25,7 @@ from ...schemas.steps import (
     StepSummary,
     StepUpdate,
 )
-from .core import _get_task_or_404, _verify_task_project
+from .helpers import get_task_or_404, verify_task_project
 from .steps_endpoints import (
     append_steps_handler,
     create_batch_handler,
@@ -52,7 +52,7 @@ async def get_subtask_steps(
     subtask_id: str,
 ) -> list[StepResponse]:
     """Get steps for a subtask."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return get_steps_handler(table_id)
 
@@ -69,7 +69,7 @@ async def create_steps_batch(
     request: BatchStepCreate,
 ) -> BatchStepResponse:
     """Create multiple steps for a subtask in batch."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return create_batch_handler(table_id, request, subtask_id, task_id)
 
@@ -86,7 +86,7 @@ async def append_steps_to_subtask(
     request: BatchStepCreate,
 ) -> BatchStepResponse:
     """Append steps to a subtask, continuing from the highest existing step number."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return append_steps_handler(table_id, request, subtask_id, task_id)
 
@@ -104,7 +104,7 @@ async def insert_step_at_position(
     request: StepInsert,
 ) -> StepResponse:
     """Insert a step at a specific position, shifting existing steps down."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return insert_step_handler(table_id, position, request, subtask_id, task_id)
 
@@ -121,7 +121,7 @@ async def create_step_with_verification(
     request: StepCreateWithVerification,
 ) -> StepResponse:
     """Create a single step with required verification."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return create_with_verification_handler(table_id, request, subtask_id, task_id)
 
@@ -138,7 +138,7 @@ async def update_step_fields(
     request: StepFieldsUpdate,
 ) -> StepResponse:
     """Update step description."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return update_fields_handler(table_id, step_number, request, subtask_id)
 
@@ -155,7 +155,7 @@ async def update_step_status(
     request: dict[str, Any],
 ) -> StepResponse:
     """Update step status (pending, passed, failed, plan_defect)."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return handle_update_step_status(table_id, step_number, request)
 
@@ -172,7 +172,7 @@ async def update_step(
     request: StepUpdate,
 ) -> StepResponse:
     """Update a step's passes status."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     verification_cwd = get_verification_cwd(project_id, task_id)
     return handle_update_step_passes(table_id, step_number, request.passes, verification_cwd)
@@ -192,7 +192,7 @@ async def delete_step_endpoint(
     subtask's passes status. This is a safeguard against gaming the verification
     system by deleting steps that have already been verified.
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return delete_step_handler(table_id, step_number, project_id, task_id, subtask_id, force=force)
 
@@ -207,7 +207,7 @@ async def get_step_summary_endpoint(
     subtask_id: str,
 ) -> StepSummary:
     """Get step completion summary for a subtask."""
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return get_summary_handler(table_id)
 
@@ -226,7 +226,7 @@ async def update_step_status_global(
     request: dict[str, Any],
 ) -> StepResponse:
     """Update step status (global, no project context required)."""
-    _get_task_or_404(task_id)
+    get_task_or_404(task_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     return handle_update_step_status(table_id, step_number, request)
 
@@ -242,7 +242,7 @@ async def update_step_global(
     request: StepUpdate,
 ) -> StepResponse:
     """Update a step's passes status (global, no project context required)."""
-    task = _get_task_or_404(task_id)
+    task = get_task_or_404(task_id)
     table_id = get_subtask_table_id(task_id, subtask_id)
     project_id = task.get("project_id")
     verification_cwd = get_verification_cwd(project_id, task_id) if project_id else None

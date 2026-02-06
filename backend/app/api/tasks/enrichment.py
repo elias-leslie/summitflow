@@ -20,7 +20,8 @@ from ...schemas.tasks import (
     TaskResponse,
 )
 from ...storage import tasks as task_store
-from .core import _task_to_response, _verify_task_project
+from .helpers import verify_task_project
+from .response import task_to_response
 
 logger = get_logger(__name__)
 
@@ -114,7 +115,7 @@ async def discuss_task_endpoint(
     Returns:
         DiscussionResponse with AI reply and any updates
     """
-    task = _verify_task_project(task_id, project_id)
+    task = verify_task_project(task_id, project_id)
 
     from ...services.enrichment_service import apply_discussion_changes, discuss_task
 
@@ -152,7 +153,7 @@ async def discuss_task_endpoint(
 
     return DiscussionResponse(
         response=result.response,
-        updated_task=_task_to_response(updated_task) if result.updated_task else None,
+        updated_task=task_to_response(updated_task) if result.updated_task else None,
         history=[
             DiscussionMessage(
                 role=h["role"],  # type: ignore[arg-type]
@@ -181,7 +182,7 @@ async def accept_task_endpoint(
     Returns:
         Updated TaskResponse
     """
-    task = _verify_task_project(task_id, project_id)
+    task = verify_task_project(task_id, project_id)
 
     # Verify task is in acceptable state
     current_status = task.get("enrichment_status")
@@ -201,4 +202,4 @@ async def accept_task_endpoint(
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    return _task_to_response(updated)
+    return task_to_response(updated)

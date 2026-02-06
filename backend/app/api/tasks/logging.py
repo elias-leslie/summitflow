@@ -24,7 +24,8 @@ from ...schemas.tasks import (
 from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from .core import _get_task_or_404, _task_to_response, _verify_task_project
+from .helpers import get_task_or_404, verify_task_project
+from .response import task_to_response
 
 logger = get_logger(__name__)
 
@@ -68,7 +69,7 @@ async def append_task_log(project_id: str, task_id: str, log_entry: TaskLogEntry
         task_id: Task ID
         log_entry: Log entry text
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     updated = log_task_event(task_id, log_entry.entry)
     if not updated:
@@ -101,7 +102,7 @@ async def claim_task(project_id: str, task_id: str, request: ClaimTaskRequest) -
         HTTPException(404): Task not found
         HTTPException(409): Task already claimed or not in claimable status
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     claimed = task_store.claim_task(
         task_id=task_id,
@@ -116,7 +117,7 @@ async def claim_task(project_id: str, task_id: str, request: ClaimTaskRequest) -
             "It may already be claimed or not in a claimable status (pending/paused/failed).",
         )
 
-    return _task_to_response(claimed)
+    return task_to_response(claimed)
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/release", response_model=TaskResponse)
@@ -137,7 +138,7 @@ async def release_task(project_id: str, task_id: str) -> TaskResponse:
         HTTPException(404): Task not found
         HTTPException(400): Task not currently claimed
     """
-    task = _verify_task_project(task_id, project_id)
+    task = verify_task_project(task_id, project_id)
 
     if not task.get("claimed_by"):
         raise HTTPException(
@@ -150,7 +151,7 @@ async def release_task(project_id: str, task_id: str) -> TaskResponse:
     if not released:
         raise HTTPException(status_code=500, detail="Failed to release task")
 
-    return _task_to_response(released)
+    return task_to_response(released)
 
 
 # Global endpoints (no project_id required - task IDs are globally unique)
@@ -164,7 +165,7 @@ async def append_task_log_global(task_id: str, log_entry: TaskLogEntry) -> dict[
         task_id: Task ID
         log_entry: Log entry text
     """
-    task = _get_task_or_404(task_id)
+    task = get_task_or_404(task_id)
 
     updated = log_task_event(task_id, log_entry.entry)
     if not updated:
