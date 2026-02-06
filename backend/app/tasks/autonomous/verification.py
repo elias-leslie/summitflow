@@ -138,6 +138,9 @@ def verify_step(
         expanded_cmd = _resolve_venv_paths(expanded_cmd, project_id)
     check_type, check_value = parse_expected(expected)
 
+    if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):
+        timeout = max(timeout, 300)
+
     logger.info(
         "Verifying step",
         step_num=step_num,

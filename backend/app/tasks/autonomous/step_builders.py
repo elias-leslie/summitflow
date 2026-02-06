@@ -65,6 +65,22 @@ def get_targeted_test_command(relative_path: str) -> str:
     return f"python -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
 
 
+def build_quality_steps() -> list[dict[str, str]]:
+    """Shared quality gate steps reusable across task types."""
+    return [
+        {
+            "description": "Auto-fix lint and format issues",
+            "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
+            "expected_output": "CHECK_RESULT:OK",
+        },
+        {
+            "description": "Full quality gate check",
+            "verify_command": "dt --check",
+            "expected_output": "CHECK_RESULT:OK",
+        },
+    ]
+
+
 def build_refactor_steps(
     relative_path: str,
     file_path: str,
@@ -85,7 +101,6 @@ def build_refactor_steps(
     Returns:
         List of step dictionaries with description, verify_command, expected_output
     """
-    # Use relative_path for verify commands since they run from worktree root
     steps = [
         {
             "description": f"Analyze {relative_path} for refactoring opportunities",
@@ -98,8 +113,8 @@ def build_refactor_steps(
             "expected_output": "exit code 0",
         },
         {
-            "description": "Verify lint and type checking passes",
-            "verify_command": "dt --quick",
+            "description": "Auto-fix lint/format then verify",
+            "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
             "expected_output": "CHECK_RESULT:OK",
         },
         {
@@ -107,9 +122,13 @@ def build_refactor_steps(
             "verify_command": get_targeted_test_command(relative_path),
             "expected_output": "exit code 0",
         },
+        {
+            "description": "Full quality gate check",
+            "verify_command": "dt --check",
+            "expected_output": "CHECK_RESULT:OK",
+        },
     ]
 
-    # Add browser check for frontend files
     if is_frontend:
         steps.append(
             {
@@ -121,9 +140,9 @@ def build_refactor_steps(
 
     steps.append(
         {
-            "description": "Commit changes with descriptive message",
-            "verify_command": "git diff --cached --quiet || git log -1 --oneline",
-            "expected_output": "exit code 0 or commit hash",
+            "description": "Commit changes via commit.sh",
+            "verify_command": 'commit.sh --json | grep -q \'"status":"SUCCESS"\'',
+            "expected_output": "exit code 0",
         }
     )
 

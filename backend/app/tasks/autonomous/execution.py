@@ -669,6 +669,144 @@ def _auto_commit(project_path: str, message: str) -> bool:
         return False
 
 
+def _smart_commit(project_path: str, message: str, task_id: str = "") -> bool:
+    """Commit using commit.sh which runs quality gates.
+
+    Falls back to _auto_commit if commit.sh is not available.
+
+    Args:
+        project_path: Path to the project/worktree
+        message: Commit message
+        task_id: Optional task ID to tag the commit
+
+    Returns:
+        True if commit was made, False otherwise
+    """
+    commit_sh = shutil.which("commit.sh")
+    if not commit_sh:
+        return _auto_commit(project_path, message)
+
+    args = [commit_sh, "--json", "--msg", message]
+    if task_id:
+        args.extend(["--task", task_id])
+
+    try:
+        result = subprocess.run(
+            args, cwd=project_path, capture_output=True, text=True, timeout=300
+        )
+        if result.returncode == 0:
+            logger.info("smart_commit_success", message=message[:80])
+            return True
+
+        logger.warning(
+            "smart_commit_failed",
+            returncode=result.returncode,
+            stderr=result.stderr[:200],
+        )
+        return _auto_commit(project_path, message)
+    except subprocess.TimeoutExpired:
+        logger.warning("smart_commit_timeout")
+        return _auto_commit(project_path, message)
+    except Exception as e:
+        logger.warning("smart_commit_exception", error=str(e))
+        return _auto_commit(project_path, message)
+
+
+def _run_final_quality_gate(
+    task_id: str, project_path: str, project_id: str
+) -> bool:
+    """Run dt --check as final quality gate before AI review.
+
+    Args:
+        task_id: Task ID for logging
+        project_path: Path to the project/worktree
+        project_id: Project ID for logging
+
+    Returns:
+        True if quality gate passes, False otherwise
+    """
+    dt_cmd = _find_dev_tools()
+    if not dt_cmd:
+        return True
+
+    _emit_log(
+        task_id,
+        "info",
+        "Running final quality gate (dt --check)...",
+        source="quality",
+        project_id=project_id,
+    )
+
+    try:
+        result = subprocess.run(
+            [dt_cmd, "--check"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        passed = result.returncode == 0
+        if passed:
+            _emit_log(
+                task_id,
+                "info",
+                "Final quality gate passed",
+                source="quality",
+                project_id=project_id,
+            )
+        else:
+            output = (result.stdout + result.stderr)[:500]
+            _emit_log(
+                task_id,
+                "warn",
+                f"Final quality gate failed: {output}",
+                source="quality",
+                project_id=project_id,
+            )
+        return passed
+    except subprocess.TimeoutExpired:
+        _emit_log(
+            task_id,
+            "warn",
+            "Final quality gate timed out",
+            source="quality",
+            project_id=project_id,
+        )
+        return False
+    except Exception as e:
+        _emit_log(
+            task_id,
+            "warn",
+            f"Final quality gate error: {e}",
+            source="quality",
+            project_id=project_id,
+        )
+        return False
+
+
+def _auto_fix_quality(project_path: str) -> bool:
+    """Run dt --fix to attempt auto-fixing quality issues.
+
+    Returns:
+        True if dt --fix ran successfully
+    """
+    dt_cmd = _find_dev_tools()
+    if not dt_cmd:
+        return False
+
+    try:
+        result = subprocess.run(
+            [dt_cmd, "--fix"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 @shared_task(
     bind=True,
     name="autonomous.start_execution",
@@ -813,14 +951,14 @@ def start_execution(
             project_id=project_id,
         )
 
-        # Auto-commit after each subtask
         subtask_short_id = subtask.get("subtask_id", "")
         subtask_desc = subtask.get("description", "")[:50]
         if _has_uncommitted_changes(project_path):
             commit_msg = f"Subtask {subtask_short_id}: {subtask_desc}"
             if status == "failed":
                 commit_msg = f"[FAILED] {commit_msg}"
-            if _auto_commit(project_path, commit_msg):
+                _auto_commit(project_path, commit_msg)
+            elif _smart_commit(project_path, commit_msg, task_id):
                 _emit_log(
                     task_id,
                     "info",
@@ -861,28 +999,52 @@ def start_execution(
 
     all_passed = all(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        try:
-            task_store.update_task_status(task_id, "ai_reviewing")
-            _emit_log(
-                task_id, "info", "All subtasks passed, starting QA review", project_id=project_id
-            )
-            ai_review.delay(task_id, project_id)
-        except Exception as e:
-            # Log full context and set task to blocked instead of leaving in limbo
+        final_gate_passed = _run_final_quality_gate(task_id, project_path, project_id)
+        if not final_gate_passed:
             _emit_log(
                 task_id,
-                "error",
-                f"Failed to transition to ai_reviewing: {type(e).__name__}: {e!s}\n"
-                f"Task ID: {task_id}\n"
-                f"Project ID: {project_id}\n"
-                f"Results: {results}",
+                "warn",
+                "Final quality gate failed, attempting auto-fix",
+                source="quality",
                 project_id=project_id,
             )
+            _auto_fix_quality(project_path)
+            if _has_uncommitted_changes(project_path):
+                _auto_commit(project_path, f"[auto-fix] Quality gate fixes for {task_id}")
+            final_gate_passed = _run_final_quality_gate(task_id, project_path, project_id)
+
+        if final_gate_passed:
+            try:
+                task_store.update_task_status(task_id, "ai_reviewing")
+                _emit_log(
+                    task_id,
+                    "info",
+                    "All subtasks passed + quality gate passed, starting QA review",
+                    project_id=project_id,
+                )
+                ai_review.delay(task_id, project_id)
+            except Exception as e:
+                _emit_log(
+                    task_id,
+                    "error",
+                    f"Failed to transition to ai_reviewing: {type(e).__name__}: {e!s}\n"
+                    f"Task ID: {task_id}\n"
+                    f"Project ID: {project_id}\n"
+                    f"Results: {results}",
+                    project_id=project_id,
+                )
+                task_store.update_task_status(task_id, "blocked")
+                _emit_log(
+                    task_id,
+                    "error",
+                    "Task set to blocked due to status transition failure",
+                    project_id=project_id,
+                )
+        else:
             task_store.update_task_status(task_id, "blocked")
-            _emit_log(
+            _emit_error(
                 task_id,
-                "error",
-                "Task set to blocked due to status transition failure",
+                "Final quality gate failed after auto-fix attempt",
                 project_id=project_id,
             )
     else:

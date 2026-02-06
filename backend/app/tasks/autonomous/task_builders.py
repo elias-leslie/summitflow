@@ -295,12 +295,25 @@ def create_architecture_task(
     if subtask_data:
         created_subtasks = bulk_create_subtasks(task_id, subtask_data)
 
-        for subtask in created_subtasks:
+        for idx, subtask in enumerate(created_subtasks):
             subtask_full_id = subtask["id"]
+            file = affected_files[idx] if idx < len(affected_files) else ""
             steps = [
-                {"description": f"Identify {violation_type.replace('_', ' ')} issue"},
-                {"description": "Implement fix following project patterns"},
-                {"description": "Verify fix with tests or manual check"},
+                {
+                    "description": f"Identify {violation_type.replace('_', ' ')} issue",
+                    "verify_command": f"test -f {file}" if file else "",
+                    "expected_output": "exit code 0",
+                },
+                {
+                    "description": "Implement fix following project patterns",
+                    "verify_command": "dt --quick --changed-only",
+                    "expected_output": "CHECK_RESULT:OK",
+                },
+                {
+                    "description": "Verify fix with full quality gates",
+                    "verify_command": "dt --check",
+                    "expected_output": "CHECK_RESULT:OK",
+                },
             ]
             bulk_create_steps(subtask_full_id, steps)
 
