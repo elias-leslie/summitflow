@@ -71,6 +71,16 @@ class STClient:
         response = self._client.get(url)
         return self._handle_response(response)
 
+    def post(
+        self,
+        url: str,
+        json: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Generic POST request to any URL."""
+        response = self._client.post(url, json=json, params=params)
+        return self._handle_response(response)
+
     # Task operations
     def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
         return tasks_ops.create_task(self._client, self._url, self._handle_response, data)

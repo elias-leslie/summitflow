@@ -15,6 +15,7 @@ Endpoints:
 - GET /api/projects/{id}/explorer/children - Get children for tree nav
 """
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -23,6 +24,8 @@ from ..services import explorer
 from ..storage import explorer as explorer_storage
 from ..storage import scan_history
 from . import explorer_helpers as helpers
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -268,10 +271,22 @@ async def regenerate_all_indexes() -> dict[str, Any]:
 
 @router.post("/{project_id}/explorer/regenerate-refactor-tasks")
 async def regenerate_refactor_tasks(
-    project_id: str, background_tasks: BackgroundTasks
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    sync: bool = Query(False, description="Run synchronously instead of via Celery"),
 ) -> dict[str, Any]:
     """Delete existing refactor tasks and regenerate from current scan."""
     helpers.validate_project_exists(project_id)
+    if sync:
+        from ..tasks.autonomous.task_generation import regenerate_refactor_tasks_sync
+
+        try:
+            result = regenerate_refactor_tasks_sync(project_id)
+        except Exception as e:
+            logger.exception("Sync regeneration failed for %s", project_id)
+            result = {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
+        status = "completed" if "error" not in result else "error"
+        return {"status": status, "project_id": project_id, **result}
     return helpers.dispatch_celery_task(
         "summitflow.regenerate_refactor_tasks",
         project_id,

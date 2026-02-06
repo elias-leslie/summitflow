@@ -25,6 +25,7 @@ SUMMITFLOW_API="http://localhost:8001/api/projects"
 CONFIG_REPOS=("$HOME/.claude")
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
+QUALITY_GATE_STATE="${QUALITY_GATE_STATE:-$HOME/.claude/hooks/.quality-gate-state.json}"
 
 PUSH=false
 FORCE=false
@@ -408,6 +409,7 @@ commit_project_repo() {
         gates_out=$(run_quality_gates 2>&1) || gates_status=$?
 
         if [[ $gates_status -ne 0 ]]; then
+            echo "{\"timestamp\":$(date +%s),\"repo\":\"$repo_name\"}" > "$QUALITY_GATE_STATE"
             emit_result "BLOCKED" "$repo_name" "" "" "false" "checks:FAIL" ""
             if ! $JSON_OUTPUT; then
                 echo "$gates_out" | head -10 | sed 's/^/  /'
@@ -480,6 +482,7 @@ commit_project_repo() {
         fi
     fi
 
+    rm -f "$QUALITY_GATE_STATE"
     emit_result "SUCCESS" "$repo_name" "$sha" "$message" "$pushed" "$gates" ""
     return 0
 }

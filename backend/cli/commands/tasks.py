@@ -241,6 +241,9 @@ def list_tasks(
     tier: Annotated[int | None, typer.Option("--tier", min=1, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 50,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Output raw JSON for programmatic use")
+    ] = False,
 ) -> None:
     """List tasks with optional filters.
 
@@ -249,6 +252,7 @@ def list_tasks(
         st list -t bug -p 1
         st list --tier 1
         st list --labels "complexity:small"
+        st list --type refactor --json | jq '.tasks[0].id'
     """
     client = STClient()
 
@@ -273,7 +277,10 @@ def list_tasks(
         handle_api_error(e)
         return
 
-    output_task_list(result["tasks"])
+    if json_output:
+        output_json({"tasks": result["tasks"], "total": len(result["tasks"])})
+    else:
+        output_task_list(result["tasks"])
 
 
 @app.command()

@@ -64,9 +64,22 @@ def _process_refactor_target(
     lines = target.get("lines_of_code", 0)
 
     if skip_existing and task_store.task_exists_for_file(project_id, relative_path):
+        logger.info("Skipping %s: task already exists", relative_path)
         return False
 
     target_lines = calculate_target_lines(lines)
+
+    if lines <= target_lines:
+        logger.info(
+            "Skipping %s: %d lines already at/below target %d", relative_path, lines, target_lines
+        )
+        return False
+    if lines > 0 and (lines - target_lines) / lines < 0.20:
+        reduction_pct = (lines - target_lines) / lines * 100
+        logger.info(
+            "Skipping %s: reduction %.0f%% below 20%% threshold", relative_path, reduction_pct
+        )
+        return False
     tier = 3 if (complexity > 15 or lines > 500) else (2 if (complexity > 10 or lines > 300) else 1)
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
     is_frontend = relative_path.startswith("frontend/")
@@ -129,6 +142,46 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
+def regenerate_refactor_tasks_sync(project_id: str) -> dict[str, Any]:
+    """Delete all existing refactor tasks and regenerate from current scan (sync)."""
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        logger.error(f"Project {project_id} not found or has no root_path")
+        return {
+            "error": f"Project {project_id} not found",
+            "deleted_count": 0,
+            "created_count": 0,
+            "scanned_count": 0,
+        }
+
+    deleted_count = _delete_existing_refactor_tasks(project_id)
+    result = get_refactor_targets(project_id, limit=20)
+    targets = result.get("targets", [])
+    created = 0
+    scanned = 0
+    skipped = 0
+
+    for target in targets:
+        scanned += 1
+        if _process_refactor_target(
+            project_id, target, project_root=project_root, skip_existing=False
+        ):
+            created += 1
+        else:
+            skipped += 1
+
+    logger.info(
+        f"Refactor task regeneration complete for {project_id}: "
+        f"deleted={deleted_count}, created={created}, scanned={scanned}, skipped={skipped}"
+    )
+    return {
+        "deleted_count": deleted_count,
+        "created_count": created,
+        "scanned_count": scanned,
+        "skipped_count": skipped,
+    }
+
+
 @celery_app.task(
     name="summitflow.regenerate_refactor_tasks",
     acks_late=True,
@@ -142,34 +195,7 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
 def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
     """Delete all existing refactor tasks and regenerate from current scan."""
     try:
-        project_root = get_project_root_path(project_id)
-        if not project_root:
-            logger.error(f"Project {project_id} not found or has no root_path")
-            return {
-                "error": f"Project {project_id} not found",
-                "deleted_count": 0,
-                "created_count": 0,
-                "scanned_count": 0,
-            }
-
-        deleted_count = _delete_existing_refactor_tasks(project_id)
-        result = get_refactor_targets(project_id, limit=20)
-        targets = result.get("targets", [])
-        created = 0
-        scanned = 0
-
-        for target in targets:
-            scanned += 1
-            if _process_refactor_target(
-                project_id, target, project_root=project_root, skip_existing=False
-            ):
-                created += 1
-
-        logger.info(
-            f"Refactor task regeneration complete for {project_id}: "
-            f"deleted={deleted_count}, created={created}, scanned={scanned}"
-        )
-        return {"deleted_count": deleted_count, "created_count": created, "scanned_count": scanned}
+        return regenerate_refactor_tasks_sync(project_id)
     except Exception as e:
         logger.error(f"Error regenerating refactor tasks: {e}")
         return {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}

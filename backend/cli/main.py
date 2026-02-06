@@ -24,6 +24,7 @@ from .commands import (
     logs,
     memory,
     projects,
+    refactor,
     session_events,
     sessions,
     step,
@@ -95,6 +96,8 @@ PROJECTS: projects list | projects current
 TEST: test list [--type T] | import --framework pytest|vitest
 
 GIT: git status | git sync
+
+REFACTOR: refactor regenerate [--json]
 
 BACKUP:
   backup list [--limit N] [--status S]
@@ -180,6 +183,7 @@ app.add_typer(complete.app, name="complete")
 app.add_typer(session_events.app, name="session-events")
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
+app.add_typer(refactor.app, name="refactor")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 
