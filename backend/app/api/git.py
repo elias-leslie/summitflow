@@ -328,9 +328,9 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
     if not project_root:
         from ..utils.git_helpers import CONFIG_REPOS
 
-        for repo in CONFIG_REPOS:
-            if repo.name == project_id:
-                project_root = str(repo)
+        for config_repo in CONFIG_REPOS:
+            if config_repo.name == project_id:
+                project_root = str(config_repo)
                 break
 
     if not project_root:
@@ -373,16 +373,16 @@ async def smart_sync_project(project_id: str) -> dict[str, Any]:
                 "raw_output": output + stderr.decode(),
             }
 
-        repo = data.get("repos", [{}])[0] if data.get("repos") else {}
+        repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
 
         return {
             "success": proc.returncode == 0,
-            "status": repo.get("status", data.get("status", "UNKNOWN")),
-            "gates": repo.get("gates", ""),
-            "errors": [repo["reason"]] if repo.get("reason") else [],
-            "message": repo.get("message", ""),
-            "reason": repo.get("reason", ""),
-            "pushed": repo.get("pushed", False),
+            "status": repo_data.get("status", data.get("status", "UNKNOWN")),
+            "gates": repo_data.get("gates", ""),
+            "errors": [repo_data["reason"]] if repo_data.get("reason") else [],
+            "message": repo_data.get("message", ""),
+            "reason": repo_data.get("reason", ""),
+            "pushed": repo_data.get("pushed", False),
             "raw_output": output,
         }
 

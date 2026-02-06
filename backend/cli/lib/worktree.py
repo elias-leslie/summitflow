@@ -92,7 +92,7 @@ def _sanitize_task_id(task_id: str) -> str:
 
 def _run_git(
     args: list[str], cwd: Path | None = None, check: bool = True
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Run a git command.
 
     Args:
