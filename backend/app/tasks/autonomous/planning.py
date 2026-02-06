@@ -298,7 +298,7 @@ def _route_based_on_complexity(task_id: str, title: str, description: str) -> No
     task_store.update_task(task_id, complexity=result.tier.value)
 
     if result.tier == ComplexityTier.COMPLEX:
-        task_store.update_task_status(task_id, "human_review")
+        task_store.update_task_status(task_id, "needs_review")
         log_task_event(
             task_id,
             f"Complexity: {result.tier.value} - Routing to Human Review for discussion. "

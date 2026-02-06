@@ -227,7 +227,7 @@ Provide a structured recommendation:
     except Exception as e:
         logger.warning("Failed to generate recommendation", error=str(e))
 
-    task_store.update_task_status(task_id, "human_review")
+    task_store.update_task_status(task_id, "needs_review")
     _add_escalation_message(task_id, subtask_id, recommendation, attempts)
 
     return {

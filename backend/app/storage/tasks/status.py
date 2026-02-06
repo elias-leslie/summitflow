@@ -33,7 +33,7 @@ from .core import TASK_COLUMNS, _row_to_dict, get_task
 # Valid task status transitions (extended for git management workflow)
 VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
-    "pending": {"queue", "running", "paused", "blocked", "cancelled"},
+    "pending": {"queue", "running", "paused", "blocked", "cancelled", "needs_review"},
     # Queue state (autonomous execution pipeline)
     "queue": {"running", "pending", "blocked", "cancelled", "human_review"},
     # Work states - can transition to abandoned (rollback without DB restore)
