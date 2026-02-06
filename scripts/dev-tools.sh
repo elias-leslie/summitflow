@@ -122,7 +122,7 @@ get_changed_files() {
 
 # Get changed Python files in backend
 get_changed_python_files() {
-    get_changed_files "py" "$PROJECT_DIR" | grep -E "^$BACKEND_PATH" || true
+    get_changed_files "py" "$PROJECT_DIR" | grep -E "^$BACKEND_PATH" | grep -v "alembic/versions/" || true
 }
 
 # Get changed TypeScript files in frontend
