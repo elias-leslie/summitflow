@@ -260,7 +260,21 @@ EOF
     # Push if requested
     if $PUSH; then
         local push_out push_status=0
+        
+        # Stash any unstaged changes (e.g. package-lock.json genererated post-commit)
+        # to ensure rebase works cleanly.
+        local stashed=false
+        if [[ -n "$(git status --porcelain)" ]]; then
+            git stash push -u -m "Auto-stash before sf-commit sync" &>/dev/null
+            stashed=true
+        fi
+
         push_out=$(git pull --rebase 2>&1 && git push 2>&1) || push_status=$?
+        
+        # Pop stash if we stashed
+        if $stashed; then
+            git stash pop &>/dev/null || true
+        fi
 
         if [[ $push_status -eq 0 ]]; then
             pushed="true"
