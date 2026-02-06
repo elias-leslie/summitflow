@@ -285,6 +285,20 @@ EOF
     gates="$gates|hooks:PASS"
     sha=$(git rev-parse --short HEAD)
 
+    # Follow-up commit for formatter leftovers
+    # Pre-commit formatters (ruff-format, prettier, trailing-whitespace) may leave
+    # dirty files after a successful commit. Commit those before pushing so users
+    # don't need to run smart-sync twice.
+    if [[ -n "$(git status --porcelain)" ]]; then
+        git add -A
+        local followup_status=0
+        SKIP=ruff,mypy,eslint,tsc git commit -m "style: auto-format from pre-commit hooks" 2>&1 || followup_status=$?
+        if [[ $followup_status -eq 0 ]]; then
+            sha=$(git rev-parse --short HEAD)
+            gates="$gates|followup:PASS"
+        fi
+    fi
+
     # Cross-layer check (warning only)
     local cross_warn
     cross_warn=$(cross_layer_check)
@@ -293,21 +307,7 @@ EOF
     # Push if requested
     if $PUSH; then
         local push_out push_status=0
-        
-        # Stash any unstaged changes (e.g. package-lock.json genererated post-commit)
-        # to ensure rebase works cleanly.
-        local stashed=false
-        if [[ -n "$(git status --porcelain)" ]]; then
-            git stash push -u -m "Auto-stash before sf-commit sync" &>/dev/null
-            stashed=true
-        fi
-
         push_out=$(git pull --rebase 2>&1 && git push 2>&1) || push_status=$?
-        
-        # Pop stash if we stashed
-        if $stashed; then
-            git stash pop &>/dev/null || true
-        fi
 
         if [[ $push_status -eq 0 ]]; then
             pushed="true"
