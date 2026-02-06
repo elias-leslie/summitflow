@@ -112,6 +112,36 @@ def sync_repository(repo_path: Path) -> SyncResult:
     Returns:
         SyncResult with status (up_to_date, updated, skipped, failed).
     """
+    return pull_repository(repo_path)
+
+
+def fetch_repository(repo_path: Path) -> SyncResult:
+    """Fetch changes from remote without merging."""
+    result = SyncResult(
+        path=str(repo_path),
+        name=repo_path.name,
+        branch="unknown",
+        status="unknown",
+    )
+
+    repo_status = get_repo_status(repo_path)
+    if repo_status:
+        result.branch = repo_status.branch
+
+    # Run fetch
+    git_result = run_git(["fetch", "--all", "--prune"], repo_path)
+
+    if git_result.returncode == 0:
+        result.status = "updated"
+    else:
+        result.status = "failed"
+        result.error = git_result.stderr.strip()
+
+    return result
+
+
+def pull_repository(repo_path: Path) -> SyncResult:
+    """Pull changes from remote (fast-forward only)."""
     repo_status = get_repo_status(repo_path)
     if not repo_status:
         return SyncResult(
@@ -143,6 +173,37 @@ def sync_repository(repo_path: Path) -> SyncResult:
             result.status = "up_to_date"
         else:
             result.status = "updated"
+    else:
+        result.status = "failed"
+        result.error = git_result.stderr.strip()
+
+    return result
+
+
+def push_repository(repo_path: Path) -> SyncResult:
+    """Push changes to remote."""
+    repo_status = get_repo_status(repo_path)
+    if not repo_status:
+        return SyncResult(
+            path=str(repo_path),
+            name=repo_path.name,
+            branch="unknown",
+            status="failed",
+            error="Could not get repository status",
+        )
+
+    result = SyncResult(
+        path=str(repo_path),
+        name=repo_path.name,
+        branch=repo_status.branch,
+        status="unknown",
+    )
+
+    # Push to remote
+    git_result = run_git(["push"], repo_path)
+
+    if git_result.returncode == 0:
+        result.status = "updated"
     else:
         result.status = "failed"
         result.error = git_result.stderr.strip()

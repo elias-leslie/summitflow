@@ -131,8 +131,25 @@ generate_message() {
         echo "$custom"
         return
     fi
+    
+    # Try AI Agent Generation
+    if command -v st &>/dev/null; then
+        local diff
+        diff=$(git diff --cached 2>/dev/null)
+        if [[ -n "$diff" ]]; then
+            local ai_msg
+            ai_msg=$(st complete --agent git-agent --raw "Generate a conventional commit message for the following diff. Output ONLY the message:\n\n$diff" 2>/dev/null)
+            
+            if [[ -n "$ai_msg" && ! "$ai_msg" =~ "Error" ]]; then
+                # Clean up quotes if agent added them
+                ai_msg=$(echo "$ai_msg" | sed 's/^"//' | sed 's/"$//')
+                echo "$ai_msg"
+                return
+            fi
+        fi
+    fi
 
-    # Auto-generate based on diff
+    # Auto-generate based on diff (Fallback)
     local summary
     summary=$(git diff --cached --stat | tail -1 | sed 's/^ *//')
 

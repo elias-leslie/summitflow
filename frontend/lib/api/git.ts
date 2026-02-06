@@ -98,3 +98,61 @@ export async function createPullRequest(
     },
   )
 }
+
+/**
+ * Pull changes for a specific project's repository.
+ */
+export async function pullRepository(projectId: string): Promise<GitSyncResponse> {
+  return fetchWithErrorHandling<GitSyncResponse>(
+    `${getApiBase()}/api/projects/${projectId}/git/pull`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to pull repository',
+    },
+  )
+}
+
+/**
+ * Push changes for a specific project's repository.
+ */
+export async function pushRepository(projectId: string): Promise<GitSyncResponse> {
+  return fetchWithErrorHandling<GitSyncResponse>(
+    `${getApiBase()}/api/projects/${projectId}/git/push`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to push repository',
+    },
+  )
+}
+
+/**
+ * Fetch changes for a specific project's repository.
+ */
+export async function fetchRepository(projectId: string): Promise<GitSyncResponse> {
+  return fetchWithErrorHandling<GitSyncResponse>(
+    `${getApiBase()}/api/projects/${projectId}/git/fetch`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to fetch repository',
+    },
+  )
+}
+
+export interface SmartSyncResponse {
+  success: boolean
+  status: string
+  gates: string
+  errors: string[]
+  message: string
+  raw_output: string
+}
+
+export async function smartSyncProject(projectId: string): Promise<SmartSyncResponse> {
+  return fetchWithErrorHandling<SmartSyncResponse>(
+    `${getApiBase()}/api/projects/${projectId}/git/smart-sync`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to smart sync project',
+    },
+  )
+}

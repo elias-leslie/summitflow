@@ -1,266 +1,338 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
-  CheckCircle,
   GitBranch,
   RefreshCw,
+  GitPullRequest,
+  Check,
+  Clock,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Sparkles
 } from 'lucide-react'
 import { WorktreeList } from '@/components/git/WorktreeList'
-import { fetchGitStatus, type RepoStatus } from '@/lib/api'
+import { fetchGitStatus, smartSyncProject, type RepoStatus } from '@/lib/api'
+import { useState } from 'react'
+
+// --- Design System Tokens (Stitch "Outrun" Theme) ---
+const THEME = {
+  colors: {
+    void: 'bg-[#0a0612]', // Deep Void
+    card: 'bg-gradient-to-br from-slate-900 to-[#0f0a18]', // Elevated Surface
+    border: 'border-slate-800',
+    borderGlow: 'hover:border-pink-500/30 hover:shadow-[0_0_15px_rgba(255,0,102,0.15)]',
+    text: {
+      primary: 'text-slate-200',
+      secondary: 'text-slate-500',
+      header: 'font-display tracking-tight text-white',
+      mono: 'font-mono text-cyan-400',
+    },
+    accent: {
+      pink: 'text-[#ff0066]',
+      cyan: 'text-[#00f5ff]',
+      amber: 'text-amber-400',
+    }
+  }
+}
 
 function getStateInfo(state: RepoStatus['state']) {
   switch (state) {
     case 'clean':
-      return {
-        label: 'Clean',
-        icon: CheckCircle,
-        color: 'text-emerald-400',
-        bg: 'bg-emerald-500/10',
-        border: 'border-emerald-500/30',
-      }
+      return { label: 'Clean', icon: Check, color: 'text-emerald-400', bg: 'bg-emerald-500/10' }
     case 'dirty':
-      return {
-        label: 'Dirty',
-        icon: AlertCircle,
-        color: 'text-amber-400',
-        bg: 'bg-amber-500/10',
-        border: 'border-amber-500/30',
-      }
+      return { label: 'Dirty', icon: AlertCircle, color: THEME.colors.accent.pink, bg: 'bg-pink-500/10' }
     case 'behind':
-      return {
-        label: 'Behind',
-        icon: ArrowDown,
-        color: 'text-rose-400',
-        bg: 'bg-rose-500/10',
-        border: 'border-rose-500/30',
-      }
+      return { label: 'Behind', icon: ArrowDown, color: THEME.colors.accent.amber, bg: 'bg-amber-500/10' }
     case 'ahead':
-      return {
-        label: 'Ahead',
-        icon: ArrowUp,
-        color: 'text-violet-400',
-        bg: 'bg-violet-500/10',
-        border: 'border-violet-500/30',
-      }
+      return { label: 'Ahead', icon: ArrowUp, color: THEME.colors.accent.cyan, bg: 'bg-cyan-500/10' }
     default:
-      return {
-        label: state,
-        icon: GitBranch,
-        color: 'text-slate-400',
-        bg: 'bg-slate-500/10',
-        border: 'border-slate-500/30',
-      }
+      return { label: state, icon: GitBranch, color: 'text-slate-400', bg: 'bg-slate-500/10' }
   }
+}
+
+function StatsWidget({ label, value, icon: Icon, color }: { label: string, value: number, icon: any, color: string }) {
+  return (
+    <div className="flex flex-col p-4 rounded-lg bg-slate-900/50 border border-slate-800">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon className={clsx("w-4 h-4", color)} />
+        <span className="text-xs text-slate-500 uppercase tracking-wider">{label}</span>
+      </div>
+      <span className={clsx("text-2xl font-bold font-mono", color)}>{value}</span>
+    </div>
+  )
 }
 
 function GitProjectCard({ repo }: { repo: RepoStatus }) {
   const stateInfo = getStateInfo(repo.state)
   const StateIcon = stateInfo.icon
+  const queryClient = useQueryClient()
+  const [showDetails, setShowDetails] = useState(false)
+
+  const syncMutation = useMutation({
+    mutationFn: () => smartSyncProject(repo.name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-status'] })
+    }
+  })
+
+  const isWorking = syncMutation.isPending
+  const result = syncMutation.data
 
   return (
     <div
-      data-testid="git-project-card"
       className={clsx(
-        'card-elevated p-5 rounded-lg transition-all duration-200',
-        'hover:border-violet-500/50 hover:shadow-[0_0_20px_rgba(139,92,246,0.15)]',
+        'group relative overflow-hidden rounded-xl border transition-all duration-300',
+        THEME.colors.card,
+        THEME.colors.border,
+        THEME.colors.borderGlow
       )}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-violet-500/15 flex items-center justify-center">
-            <GitBranch className="w-5 h-5 text-violet-400" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-white">{repo.name}</h3>
-            <p className="text-xs text-slate-500 mono truncate max-w-[200px]">
-              {repo.path}
-            </p>
+      {/* Dirty Pulse Effect */}
+      {repo.state === 'dirty' && (
+        <div className="absolute top-0 right-0 w-2 h-2 m-3 rounded-full bg-pink-500 animate-pulse shadow-[0_0_10px_#ff0066]" />
+      )}
+
+      <div className="p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-slate-800/50 flex items-center justify-center border border-slate-700/50">
+              <GitBranch className={clsx("w-5 h-5", THEME.colors.accent.cyan)} />
+            </div>
+            <div>
+              <h3 className={clsx("font-semibold text-lg", THEME.colors.text.header)}>{repo.name}</h3>
+              <p className="text-xs text-slate-500 mono truncate max-w-[180px]">{repo.path}</p>
+            </div>
           </div>
         </div>
 
-        {/* Status Badge */}
-        <div
-          className={clsx(
-            'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border',
-            stateInfo.bg,
-            stateInfo.color,
-            stateInfo.border,
-          )}
-        >
-          <StateIcon className="w-3.5 h-3.5" />
-          {stateInfo.label}
+        {/* Branch Info */}
+        <div className="flex items-center gap-3 mb-4 p-2 rounded bg-slate-950/50 border border-slate-800/50">
+          <GitBranch className="w-3.5 h-3.5 text-slate-600" />
+          <span className={clsx("text-sm", THEME.colors.text.mono)}>{repo.branch}</span>
+          <div className="h-4 w-[1px] bg-slate-800 mx-1" />
+          <span className={clsx("text-xs flex items-center gap-1.5", stateInfo.color)}>
+            <StateIcon className="w-3 h-3" />
+            {stateInfo.label}
+          </span>
         </div>
-      </div>
 
-      {/* Branch */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs text-slate-500 uppercase tracking-wider">
-          Branch:
-        </span>
-        <span className="text-sm text-slate-300 mono">{repo.branch}</span>
-      </div>
-
-      {/* Stats Row */}
-      <div className="flex items-center gap-4 text-sm">
-        {repo.uncommitted > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-amber-400 font-medium">
+        {/* Sync Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-5">
+          <div className="text-center p-2 rounded bg-slate-900/40">
+            <span className={clsx("block text-sm font-bold", repo.uncommitted > 0 ? "text-pink-400" : "text-slate-600")}>
               {repo.uncommitted}
             </span>
-            <span className="text-slate-500">uncommitted</span>
+            <span className="text-[10px] text-slate-500 uppercase">Changes</span>
           </div>
-        )}
-        {repo.ahead > 0 && (
-          <div className="flex items-center gap-1.5">
-            <ArrowUp className="w-3.5 h-3.5 text-violet-400" />
-            <span className="text-violet-400 font-medium">{repo.ahead}</span>
-            <span className="text-slate-500">ahead</span>
+          <div className="text-center p-2 rounded bg-slate-900/40">
+            <span className={clsx("block text-sm font-bold", repo.ahead > 0 ? "text-cyan-400" : "text-slate-600")}>
+              {repo.ahead}
+            </span>
+            <span className="text-[10px] text-slate-500 uppercase">Ahead</span>
           </div>
-        )}
-        {repo.behind > 0 && (
-          <div className="flex items-center gap-1.5">
-            <ArrowDown className="w-3.5 h-3.5 text-rose-400" />
-            <span className="text-rose-400 font-medium">{repo.behind}</span>
-            <span className="text-slate-500">behind</span>
+          <div className="text-center p-2 rounded bg-slate-900/40">
+            <span className={clsx("block text-sm font-bold", repo.behind > 0 ? "text-amber-400" : "text-slate-600")}>
+              {repo.behind}
+            </span>
+            <span className="text-[10px] text-slate-500 uppercase">Behind</span>
           </div>
-        )}
-        {repo.uncommitted === 0 && repo.ahead === 0 && repo.behind === 0 && (
-          <span className="text-slate-500 text-xs">Up to date</span>
-        )}
-      </div>
+        </div>
 
-      {/* Action buttons placeholder for future CRUD */}
-      <div className="mt-4 pt-4 border-t border-slate-700/50 flex items-center gap-2">
-        <span className="text-xs text-slate-600 italic">
-          Actions coming soon...
-        </span>
+        {/* Smart Sync Action */}
+        <div className="border-t border-slate-800/60 pt-4">
+          <button
+            disabled={isWorking}
+            onClick={() => syncMutation.mutate()}
+            className={clsx(
+              "w-full flex items-center justify-center gap-2 p-3 rounded-lg font-medium transition-all shadow-lg",
+              isWorking
+                ? "bg-slate-800 text-slate-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white shadow-pink-500/20 hover:shadow-pink-500/40"
+            )}
+          >
+            {isWorking ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Running Checks...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Smart Sync</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Sync Result / Gate Keeper */}
+        {result && (
+          <div className={clsx(
+            "mt-4 rounded border p-3",
+            result.success
+              ? "bg-emerald-500/5 border-emerald-500/20"
+              : "bg-pink-500/5 border-pink-500/20"
+          )}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {result.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-pink-500" />
+                )}
+                <span className={clsx("text-sm font-medium", result.success ? "text-emerald-400" : "text-pink-400")}>
+                  {result.status}
+                </span>
+              </div>
+              {result.errors.length > 0 && (
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-900 text-pink-400 border border-pink-500/30">
+                  {result.errors.length} Issues
+                </span>
+              )}
+            </div>
+
+            {/* AI Message Preview */}
+            {result.message && (
+              <div className="mb-2 text-xs font-mono text-slate-400 bg-slate-950/50 p-2 rounded border border-slate-800">
+                <span className="text-purple-400">$</span> {result.message}
+              </div>
+            )}
+
+            {/* Details Accordion */}
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="w-full flex items-center justify-between text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider"
+            >
+              <span>View Log Output</span>
+              {showDetails ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
+
+            {showDetails && (
+              <div className="mt-2 bg-black/80 rounded p-2 overflow-x-auto border border-slate-800">
+                <pre className="text-[10px] font-mono leading-relaxed text-slate-300">
+                  {result.raw_output}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 export function GitClient() {
-  const {
-    data: gitStatus,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
+  const { data: gitStatus, isLoading, isError, refetch } = useQuery({
     queryKey: ['git-status'],
     queryFn: fetchGitStatus,
     staleTime: 30000,
     refetchInterval: 60000,
   })
 
+  // Derived Stats
+  const totalRepos = gitStatus?.total ?? 0
+  const dirtyCount = gitStatus?.repositories.filter(r => r.state === 'dirty').length ?? 0
+  const syncCount = gitStatus?.repositories.filter(r => r.behind > 0 || r.ahead > 0).length ?? 0
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <section className="animate-in">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="display font-semibold text-2xl text-white flex items-center gap-3">
-            <GitBranch className="w-7 h-7 text-violet-400" />
-            Git Repositories
+    <div className="p-6 space-y-8 max-w-7xl mx-auto">
+      {/* Header Section */}
+      <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3 mb-2">
+            <div className="p-2 rounded bg-pink-500/10 border border-pink-500/20">
+              <GitBranch className="w-6 h-6 text-pink-500" />
+            </div>
+            Git Operations
           </h1>
-          <button
-            onClick={() => refetch()}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
-            <RefreshCw
-              className={clsx('w-4 h-4', isLoading && 'animate-spin')}
-            />
-            Refresh
-          </button>
+          <p className="text-slate-400 max-w-2xl">
+            Command center for version control across all managed workspaces.
+          </p>
         </div>
-        <p className="text-slate-400">
-          View and manage git status across all managed repositories.
-        </p>
+
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md border border-slate-700 transition-all shadow-lg hover:shadow-cyan-500/10 hover:border-cyan-500/30"
+        >
+          <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
+          <span>Refresh All</span>
+        </button>
       </section>
 
-      {/* Active Worktrees Section */}
       <WorktreeList />
 
-      {/* Summary */}
+      {/* Stats Dashboard */}
       {gitStatus && (
-        <section className="animate-in stagger-1">
-          <div className="flex items-center gap-6 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Total:</span>
-              <span className="text-white font-semibold">
-                {gitStatus.total} repos
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-emerald-400 font-semibold">
-                {
-                  gitStatus.repositories.filter((r) => r.state === 'clean')
-                    .length
-                }
-              </span>
-              <span className="text-slate-500">clean</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-amber-400 font-semibold">
-                {
-                  gitStatus.repositories.filter((r) => r.state === 'dirty')
-                    .length
-                }
-              </span>
-              <span className="text-slate-500">dirty</span>
-            </div>
-            {gitStatus.repositories.filter((r) => r.behind > 0).length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-rose-400 font-semibold">
-                  {gitStatus.repositories.filter((r) => r.behind > 0).length}
-                </span>
-                <span className="text-slate-500">behind remote</span>
-              </div>
-            )}
-          </div>
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-8 delay-100 duration-500">
+          <StatsWidget
+            label="Total Repositories"
+            value={totalRepos}
+            icon={GitPullRequest}
+            color="text-white"
+          />
+          <StatsWidget
+            label="Changes Pending"
+            value={dirtyCount}
+            icon={AlertCircle}
+            color={dirtyCount > 0 ? "text-pink-500" : "text-slate-500"}
+          />
+          <StatsWidget
+            label="Sync Required"
+            value={syncCount}
+            icon={Clock}
+            color={syncCount > 0 ? "text-cyan-400" : "text-emerald-500"}
+          />
         </section>
       )}
 
-      {/* Loading */}
+      {/* Loading State */}
       {isLoading && (
-        <div className="card p-8 text-center">
-          <div className="inline-flex items-center gap-2 text-slate-400">
-            <div className="w-4 h-4 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            Loading repositories...
+        <div className="h-64 flex items-center justify-center border border-dashed border-slate-800 rounded-xl bg-slate-900/20">
+          <div className="flex flex-col items-center gap-3 text-slate-500">
+            <RefreshCw className="w-8 h-8 animate-spin text-cyan-500" />
+            <p>Scanning workspaces...</p>
           </div>
         </div>
       )}
 
-      {/* Error */}
+      {/* Error State */}
       {isError && (
-        <div className="card p-6 border-rose-500/30">
-          <div className="flex items-center gap-3 text-rose-400">
-            <AlertCircle className="w-5 h-5" />
-            <span>Failed to load git status. Please try again.</span>
+        <div className="p-6 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 flex items-center gap-3">
+          <XCircle className="w-6 h-6 text-red-500" />
+          <div>
+            <h3 className="font-semibold text-white">Connection Failed</h3>
+            <p className="text-sm opacity-80">Unable to reach the Git service. Please verify the backend is running.</p>
           </div>
         </div>
       )}
 
-      {/* Repository Grid */}
+      {/* Main Grid */}
       {gitStatus && !isLoading && (
-        <section className="animate-in stagger-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {gitStatus.repositories.map((repo) => (
-              <GitProjectCard key={repo.path} repo={repo} />
-            ))}
-          </div>
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 delay-200 duration-500">
+          {gitStatus.repositories.map((repo) => (
+            <GitProjectCard key={repo.path} repo={repo} />
+          ))}
         </section>
       )}
 
       {/* Empty State */}
       {gitStatus?.repositories.length === 0 && (
-        <div className="card p-8 text-center">
-          <GitBranch className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-400">No repositories configured.</p>
+        <div className="text-center py-20">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800/50 mb-4">
+            <GitBranch className="w-8 h-8 text-slate-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-white mb-2">No Repositories Found</h3>
+          <p className="text-slate-400 max-w-sm mx-auto">
+            Your workspace appears empty. Initialize a git repository to see it here.
+          </p>
         </div>
       )}
     </div>
