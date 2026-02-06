@@ -1424,7 +1424,6 @@ def _execute_subtask(
                     execute_tools=True,
                     project_id=project_id,
                     use_memory=True,
-                    resume_session_id=agent_session_id,  # Continue from previous session
                     trace_id=task_id,
                 )
                 # Update session ID for next iteration
