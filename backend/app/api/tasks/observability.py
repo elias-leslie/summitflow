@@ -24,6 +24,7 @@ class AgentHubEvent(BaseModel):
     """Single event from Agent Hub session."""
 
     id: str
+    session_id: str | None = None
     turn: int
     sequence: int
     event_type: str
@@ -200,6 +201,7 @@ async def get_task_agent_events(
             all_events.append(
                 AgentHubEvent(
                     id=event.get("id", ""),
+                    session_id=session_id,
                     turn=event.get("turn", 0),
                     sequence=event.get("sequence", 0),
                     event_type=event.get("event_type", ""),
@@ -222,7 +224,7 @@ async def get_task_agent_events(
         if session_max_turn > max_turn:
             max_turn = session_max_turn
 
-    all_events.sort(key=lambda e: (e.turn, e.sequence))
+    all_events.sort(key=lambda e: e.created_at)
 
     return AgentHubEventsResponse(
         task_id=task_id,

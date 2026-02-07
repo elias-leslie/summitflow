@@ -361,6 +361,12 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                 include_roles=AUTOCODE_ROLES,
             )
 
+            pristine_session_id = response.session_id
+            if pristine_session_id:
+                from ...storage.tasks.core import add_agent_hub_session
+
+                add_agent_hub_session(task_id, pristine_session_id)
+
             logger.info(
                 "pristine_self_heal_agent_completed",
                 project_id=project_id,

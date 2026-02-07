@@ -123,6 +123,41 @@ def _get_task_events(
         raise typer.Exit(1) from None
 
 
+def _summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
+    """Extract human-readable summary from tool input."""
+    if tool_name == "bash":
+        cmd = tool_input.get("command", "")
+        return f"$ {cmd[:150]}" if cmd else ""
+    if tool_name == "read_file":
+        path = tool_input.get("path", "")
+        offset = tool_input.get("offset")
+        return f"path={path}" + (f" offset={offset}" if offset else "")
+    if tool_name == "write_file":
+        path = tool_input.get("path", "")
+        content = tool_input.get("content", "")
+        return f"path={path} ({len(content)} bytes)"
+    if tool_name in ("grep", "search"):
+        pattern = tool_input.get("pattern", "")
+        path = tool_input.get("path", ".")
+        return f"pattern={pattern!r} path={path}"
+    if tool_name == "glob":
+        pattern = tool_input.get("pattern", "")
+        return f"pattern={pattern!r}"
+    return json.dumps(tool_input)[:120]
+
+
+def _summarize_tool_output(tool_output: dict[str, Any]) -> str:
+    """Extract human-readable summary from tool output."""
+    content: str = tool_output.get("content", "")
+    is_error = tool_output.get("is_error", False)
+    if is_error:
+        return f"ERROR: {content[:150]}"
+    if len(content) <= 120:
+        return content
+    lines = content.split("\n")
+    return f"({len(lines)} lines) {lines[0][:100]}..."
+
+
 def _format_event(event: dict[str, Any], verbose: bool = False) -> str:
     """Format a single event for display."""
     event_type = event.get("event_type", "unknown")
@@ -155,19 +190,22 @@ def _format_event(event: dict[str, Any], verbose: bool = False) -> str:
     if model and verbose:
         header += f" [{model}]"
 
-    if event_type in ("tool_use", "tool_result"):
+    if event_type == "tool_use":
         tool_input = event.get("tool_input")
+        if tool_input and tool_name:
+            if verbose:
+                content = json.dumps(tool_input, indent=2)
+            else:
+                content = _summarize_tool_input(tool_name, tool_input)
+        elif tool_input:
+            content = json.dumps(tool_input)[:120]
+    elif event_type == "tool_result":
         tool_output = event.get("tool_output")
-        if event_type == "tool_use" and tool_input:
-            input_str = json.dumps(tool_input)
-            if len(input_str) > 100 and not verbose:
-                input_str = input_str[:100] + "..."
-            content = input_str
-        elif event_type == "tool_result" and tool_output:
-            output_str = json.dumps(tool_output)
-            if len(output_str) > 100 and not verbose:
-                output_str = output_str[:100] + "..."
-            content = output_str
+        if tool_output:
+            if verbose:
+                content = json.dumps(tool_output, indent=2)
+            else:
+                content = _summarize_tool_output(tool_output)
 
     if content and len(content) > 200 and not verbose:
         content = content[:200] + "..."
@@ -192,7 +230,7 @@ def _display_events(
     """Display events with header and footer."""
     typer.echo(f"\n {label}")
     if session_ids:
-        typer.echo(f" Sessions: {', '.join(session_ids[:5])}")
+        typer.echo(f" Sessions: {len(session_ids)} ({', '.join(s[:8] for s in session_ids)})")
     typer.echo(f" Events: {total} | Max turn: {max_turn}")
     if event_type:
         typer.echo(f" Filter: type={event_type}")
@@ -200,7 +238,14 @@ def _display_events(
         typer.echo(f" Filter: turn={turn_filter}")
     typer.echo("-" * 60)
 
+    current_session: str | None = None
+    session_index = 0
     for event in events:
+        event_session = event.get("session_id")
+        if event_session and event_session != current_session:
+            session_index += 1
+            current_session = event_session
+            typer.echo(f"\033[33m--- Session {session_index}: {event_session[:8]} ---\033[0m")
         typer.echo(_format_event(event, verbose))
         typer.echo()
 
