@@ -52,6 +52,35 @@ logger = get_logger(__name__)
 
 MAX_ITERATIONS = 50
 
+AUTOCODE_ROLES = ["system", "autocode"]
+
+
+def _get_prompt_template(slug: str, default: str) -> str:
+    """Fetch prompt content from Agent Hub API by slug, with fallback.
+
+    Args:
+        slug: Prompt slug to look up (e.g., 'autocode-subtask')
+        default: Fallback content if API call fails
+
+    Returns:
+        Prompt content from DB, or the default string
+    """
+    try:
+        import httpx
+
+        from ...services.agent_hub_client import AGENT_HUB_URL
+
+        response = httpx.get(f"{AGENT_HUB_URL}/api/prompts/{slug}", timeout=5.0)
+        if response.is_success:
+            data = response.json()
+            content = data.get("content", "")
+            if content:
+                return content
+    except Exception as e:
+        logger.debug("prompt_template_fetch_failed", slug=slug, error=str(e))
+    return default
+
+
 # Map task_type to agent_slug for specialized execution
 TASK_TYPE_AGENT_MAP: dict[str, str] = {
     "refactor": "refactor",
@@ -314,13 +343,12 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
             )
 
             client = get_sync_client()
-            fix_prompt = f"""Fix the quality gate errors below.
-
-## Errors from `dt --check`:
-```
-{output[:8000]}
-```
-"""
+            pristine_template = _get_prompt_template(
+                "autocode-pristine-fix",
+                "# Fix Quality Gate Errors\n\nFix the quality gate errors below.\n\n"
+                "## Errors from `dt --check`:\n```\n{errors_output}\n```",
+            )
+            fix_prompt = pristine_template.format_map({"errors_output": output[:8000]})
 
             response = client.complete(
                 messages=[{"role": "user", "content": fix_prompt}],
@@ -330,6 +358,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                 execute_tools=True,
                 project_id=project_id,
                 use_memory=False,
+                include_roles=AUTOCODE_ROLES,
             )
 
             logger.info(
@@ -1063,6 +1092,20 @@ def start_execution(
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
 
+def _build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
+    """Build formatted failures block from failed step results."""
+    parts = []
+    for fail in failed_steps:
+        step_num = fail.get("step_number", "?")
+        reason = fail.get("reason", "unknown")
+        output = fail.get("output", "")[:500]
+        parts.append(f"### Step {step_num}: FAILED")
+        parts.append(f"Reason: {reason}")
+        if output:
+            parts.append(f"Output:\n```\n{output}\n```")
+    return "\n\n".join(parts)
+
+
 def _build_fix_prompt(
     subtask: dict[str, Any],
     failed_steps: list[dict[str, Any]],
@@ -1083,42 +1126,29 @@ def _build_fix_prompt(
     subtask_short_id = subtask.get("subtask_id", "")
     subtask_desc = subtask.get("description", "")
 
-    prompt_parts = [
-        f"# Fix Required for Subtask {subtask_short_id}",
-        f"\nDescription: {subtask_desc}",
-        "\n## Verification Failures",
-        "The following verification steps failed:",
-    ]
+    failures_block = _build_failures_block(failed_steps)
 
-    for fail in failed_steps:
-        step_num = fail.get("step_number", "?")
-        reason = fail.get("reason", "unknown")
-        output = fail.get("output", "")[:500]
-        prompt_parts.append(f"\n### Step {step_num}: FAILED")
-        prompt_parts.append(f"Reason: {reason}")
-        if output:
-            prompt_parts.append(f"Output:\n```\n{output}\n```")
-
+    supervisor_block = ""
     if supervisor_guidance:
-        prompt_parts.append("\n## Supervisor Guidance")
-        prompt_parts.append(supervisor_guidance)
+        supervisor_block = f"\n## Supervisor Guidance\n{supervisor_guidance}"
 
-    # Include steps from subtask for reference
     steps = subtask.get("steps_from_table", [])
-    if steps:
-        prompt_parts.append("\n## Steps (for reference)")
-        for step in steps:
-            step_num = step.get("step_number", 0)
-            desc = step.get("description", "")
-            verify = step.get("verify_command", "")
-            expect = step.get("expected_output", "")
-            prompt_parts.append(f"{step_num}. {desc}")
-            if verify:
-                prompt_parts.append(f"   Verify: {verify}")
-            if expect:
-                prompt_parts.append(f"   Expected: {expect}")
+    steps_block = _build_steps_block(steps)
 
-    return "\n".join(prompt_parts)
+    template = _get_prompt_template(
+        "autocode-fix",
+        "# Fix Required for Subtask {subtask_id}\n\nDescription: {description}\n\n"
+        "## Verification Failures\nThe following verification steps failed:\n\n"
+        "{failures_block}\n\n{supervisor_block}\n\n## Steps (for reference)\n{steps_block}",
+    )
+
+    return template.format_map({
+        "subtask_id": subtask_short_id,
+        "description": subtask_desc,
+        "failures_block": failures_block,
+        "supervisor_block": supervisor_block,
+        "steps_block": steps_block,
+    })
 
 
 def _execute_subtask(
@@ -1201,6 +1231,7 @@ def _execute_subtask(
             project_id=project_id,
             use_memory=True,
             trace_id=task_id,
+            include_roles=AUTOCODE_ROLES,
         )
         # Store session ID for continuation in retry attempts
         agent_session_id = response.session_id
@@ -1416,6 +1447,7 @@ def _execute_subtask(
                     project_id=project_id,
                     use_memory=True,
                     trace_id=task_id,
+                    include_roles=AUTOCODE_ROLES,
                 )
                 # Update session ID for next iteration
                 new_session_id = response.session_id
@@ -1547,6 +1579,24 @@ def _execute_subtask(
         }
 
 
+def _build_steps_block(steps: list[dict[str, Any]]) -> str:
+    """Build formatted steps block from step dicts."""
+    if not steps:
+        return ""
+    lines = ["Steps to complete:"]
+    for step in steps:
+        step_num = step.get("step_number", 0)
+        desc = step.get("description", "")
+        verify = step.get("verify_command", "")
+        expect = step.get("expected_output", "")
+        lines.append(f"{step_num}. {desc}")
+        if verify:
+            lines.append(f"   Verify: {verify}")
+        if expect:
+            lines.append(f"   Expected: {expect}")
+    return "\n".join(lines)
+
+
 def _build_subtask_prompt(
     task_id: str,
     subtask: dict[str, Any],
@@ -1561,41 +1611,36 @@ def _build_subtask_prompt(
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
-    prompt_parts = [f"# Task Objective\n{objective}"]
-
+    spirit_anti_block = ""
     if spirit_anti:
-        prompt_parts.append(f"\n# Guiding Principles\n{spirit_anti}")
+        spirit_anti_block = f"\n# Guiding Principles\n{spirit_anti}"
 
+    handoff_block = ""
     if handoff.get("previous_summaries"):
-        prompt_parts.append("\n# Previous Work Summary")
+        handoff_lines = ["\n# Previous Work Summary"]
         for summary in handoff["previous_summaries"]:
-            prompt_parts.append(f"- Subtask {summary['short_id']}: {summary['summary']}")
-
-    prompt_parts.append(f"\n# Current Subtask: {subtask_short_id}")
-    prompt_parts.append(f"Description: {subtask.get('description', '')}")
+            handoff_lines.append(f"- Subtask {summary['short_id']}: {summary['summary']}")
+        handoff_block = "\n".join(handoff_lines)
 
     steps = subtask.get("steps_from_table", [])
-    if steps:
-        prompt_parts.append("\nSteps to complete:")
-        for step in steps:
-            step_num = step.get("step_number", 0)
-            desc = step.get("description", "")
-            verify = step.get("verify_command", "")
-            expect = step.get("expected_output", "")
-            prompt_parts.append(f"{step_num}. {desc}")
-            if verify:
-                prompt_parts.append(f"   Verify: {verify}")
-            if expect:
-                prompt_parts.append(f"   Expected: {expect}")
+    steps_block = _build_steps_block(steps)
 
-    prompt_parts.append(f"""
-# Execution Context
-task_id: {task_id}
-subtask_id: {subtask_short_id}
-project_id: {project_id}
-project_path: {project_path}""")
+    template = _get_prompt_template(
+        "autocode-subtask",
+        "# Task Objective\n{objective}\n\n{spirit_anti_block}\n\n{handoff_block}\n\n"
+        "# Current Subtask: {subtask_id}\nDescription: {description}\n\n"
+        "{steps_block}\n\n# Working Directory\n{project_path}",
+    )
 
-    return "\n".join(prompt_parts)
+    return template.format_map({
+        "objective": objective,
+        "spirit_anti_block": spirit_anti_block,
+        "handoff_block": handoff_block,
+        "subtask_id": subtask_short_id,
+        "description": subtask.get("description", ""),
+        "steps_block": steps_block,
+        "project_path": project_path,
+    })
 
 
 def _verify_steps(

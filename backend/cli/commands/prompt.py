@@ -14,6 +14,8 @@ app = typer.Typer(help="Prompt management (Agent Hub)")
 
 DEFAULT_PROMPTS_DIR = Path.home() / "agent-hub" / "backend" / "prompts"
 
+AUTOCODE_AGENTS = ["coder", "refactor", "planner", "reviewer"]
+
 SEED_MAP: dict[str, dict[str, Any]] = {
     "coder.md": {"slug": "coder", "name": "Coder Agent", "is_global": False, "assign": ("coder", "system", 0)},
     "planner.md": {"slug": "planner", "name": "Planner Agent", "is_global": False, "assign": ("planner", "system", 0)},
@@ -25,6 +27,27 @@ SEED_MAP: dict[str, dict[str, Any]] = {
     "qa.md": {"slug": "qa", "name": "QA Agent", "is_global": False, "assign": ("qa", "system", 0)},
     "qa_plan_defect.md": {"slug": "qa-plan-defect", "name": "QA Plan Defect", "is_global": False, "assign": ("qa", "plan-defect", 10)},
     "safety_directive.md": {"slug": "safety-directive", "name": "Safety Directive", "is_global": True, "assign": None},
+    "autocode-execution.md": {
+        "slug": "autocode-execution", "name": "Autocode Execution",
+        "is_global": False,
+        "assign": None,
+        "multi_assign": [(agent, "autocode", 100) for agent in AUTOCODE_AGENTS],
+    },
+    "autocode-subtask.md": {
+        "slug": "autocode-subtask", "name": "Autocode Subtask Template",
+        "is_global": False,
+        "assign": None,
+    },
+    "autocode-fix.md": {
+        "slug": "autocode-fix", "name": "Autocode Fix Template",
+        "is_global": False,
+        "assign": None,
+    },
+    "autocode-pristine-fix.md": {
+        "slug": "autocode-pristine-fix", "name": "Autocode Pristine Fix Template",
+        "is_global": False,
+        "assign": None,
+    },
 }
 
 
@@ -248,30 +271,38 @@ def seed_prompts(
         return
 
     assign_created = assign_skipped = 0
-    for _filename, meta in SEED_MAP.items():
-        assign_info = meta.get("assign")
-        if not assign_info:
-            continue
-        agent_slug, role, priority = assign_info
+
+    def _try_assign(agent_slug: str, prompt_slug: str, role: str, priority: int) -> None:
+        nonlocal assign_created, assign_skipped
         try:
             agent_data = _api("GET", f"/agents/{agent_slug}/assignments")
         except SystemExit:
             output_error(f"Agent '{agent_slug}' not found — skipping assignment")
             assign_skipped += 1
-            continue
+            return
 
         already = any(
-            a.get("prompt", {}).get("slug") == meta["slug"] for a in agent_data.get("assignments", [])
+            a.get("prompt", {}).get("slug") == prompt_slug for a in agent_data.get("assignments", [])
         )
         if already:
             assign_skipped += 1
-            continue
+            return
 
         try:
-            _api("POST", f"/agents/{agent_slug}/assignments", json={"prompt_slug": meta["slug"], "role": role, "priority": priority})
+            _api("POST", f"/agents/{agent_slug}/assignments", json={"prompt_slug": prompt_slug, "role": role, "priority": priority})
             assign_created += 1
         except SystemExit:
             assign_skipped += 1
+
+    for _filename, meta in SEED_MAP.items():
+        assign_info = meta.get("assign")
+        if assign_info:
+            agent_slug, role, priority = assign_info
+            _try_assign(agent_slug, meta["slug"], role, priority)
+
+        for multi in meta.get("multi_assign", []):
+            agent_slug, role, priority = multi
+            _try_assign(agent_slug, meta["slug"], role, priority)
 
     assign_total = assign_created + assign_skipped
     if is_compact():
