@@ -149,6 +149,26 @@ def _get_branch_name(task_id: str) -> str:
     return f"{task_id}/main"
 
 
+def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
+    """Symlink gitignored dependency directories from main repo into worktree.
+
+    git worktree add doesn't include gitignored dirs (node_modules, .venv).
+    Without these, tools like `dt --check` fail when they detect frontend/
+    exists but node_modules/ is missing.
+    """
+    symlink_pairs = [
+        ("frontend/node_modules", "frontend"),
+        ("backend/.venv", "backend"),
+    ]
+    for dep_rel, parent_rel in symlink_pairs:
+        main_dep = repo_root / dep_rel
+        wt_parent = worktree_path / parent_rel
+        if main_dep.exists() and wt_parent.exists():
+            wt_dep = worktree_path / dep_rel
+            if not wt_dep.exists():
+                wt_dep.symlink_to(main_dep)
+
+
 def create_worktree(
     task_id: str, base_branch: str = "main", project_id: str | None = None
 ) -> WorktreeInfo:
@@ -203,6 +223,8 @@ def create_worktree(
                 raise WorktreeError(f"Failed to create worktree for task '{task_id}': {e}") from err
         else:
             raise
+
+    _symlink_gitignored_deps(repo_root, worktree_path)
 
     return WorktreeInfo(
         path=worktree_path,
