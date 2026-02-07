@@ -1035,6 +1035,12 @@ def start_execution(
 
     if not incomplete:
         try:
+            task_store.update_task(task_id, verification_result={
+                "execution_clean": True,
+                "subtask_count": total,
+                "total_self_fix_attempts": 0,
+                "total_supervisor_attempts": 0,
+            })
             task_store.update_task_status(task_id, "ai_reviewing")
             _emit_log(
                 task_id,
@@ -1157,11 +1163,26 @@ def start_execution(
 
         if final_gate_passed:
             try:
+                execution_clean = all(
+                    r.get("self_fix_attempts", 0) == 0
+                    and r.get("supervisor_guided_attempts", 0) == 0
+                    for r in results
+                )
+                task_store.update_task(task_id, verification_result={
+                    "execution_clean": execution_clean,
+                    "subtask_count": len(results),
+                    "total_self_fix_attempts": sum(
+                        r.get("self_fix_attempts", 0) for r in results
+                    ),
+                    "total_supervisor_attempts": sum(
+                        r.get("supervisor_guided_attempts", 0) for r in results
+                    ),
+                })
                 task_store.update_task_status(task_id, "ai_reviewing")
                 _emit_log(
                     task_id,
                     "info",
-                    "All subtasks passed + quality gate passed, starting QA review",
+                    f"All subtasks passed + quality gate passed, starting QA review (clean={execution_clean})",
                     project_id=project_id,
                 )
                 ai_review.delay(task_id, project_id)

@@ -6,6 +6,7 @@ Creates implementation plans by running the planner agent in the project directo
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from celery import Task, shared_task
@@ -101,10 +102,21 @@ def _parse_plan_response(content: str) -> dict[str, Any]:
     return {"objective": "Could not parse plan", "subtasks": [], "constraints": []}
 
 
+_ABSOLUTE_CD_PATTERN = re.compile(r"\bcd\s+/[^\s;|&]+")
+_ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
+
+
+def _validate_verify_command(cmd: str) -> str | None:
+    """Return error message if verify_command has absolute paths, else None."""
+    if _ABSOLUTE_CD_PATTERN.search(cmd):
+        return f"verify_command contains absolute cd path: {cmd[:80]}"
+    if _ABSOLUTE_PATH_PREFIX.search(cmd):
+        return f"verify_command contains absolute path: {cmd[:80]}"
+    return None
+
+
 def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
     """Validate and fix common issues in verify_commands."""
-    import re
-
     generic_outputs = {"success", "found", "ok", "done", "pass", "passed", "true", "yes"}
 
     for subtask in plan.get("subtasks", []):
@@ -113,31 +125,28 @@ def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
             expected = step.get("expected_output", "")
 
             if verify:
-                if "/home/" in verify:
+                error = _validate_verify_command(verify)
+                if error:
                     logger.warning(
-                        "Absolute path in verify_command",
+                        "invalid_verify_command",
                         subtask=subtask.get("subtask_id"),
-                        verify=verify[:100],
+                        error=error,
                     )
-                    step["verify_command"] = re.sub(r"/home/\w+/\w+/", "", verify)
+                    step["verify_command"] = None
 
-                if "cat " in verify and "| grep" in verify:
-                    logger.warning(
-                        "cat|grep pattern in verify_command",
-                        subtask=subtask.get("subtask_id"),
-                    )
+                elif "cat " in verify and "| grep" in verify:
                     step["verify_command"] = re.sub(
                         r"cat\s+(\S+)\s*\|\s*grep\s+(.+)",
                         r"rg \2 \1",
                         verify,
                     )
 
-                if verify.startswith("grep "):
+                elif verify.startswith("grep "):
                     step["verify_command"] = "rg " + verify[5:]
 
             if expected and expected.lower().strip() in generic_outputs:
                 logger.warning(
-                    "Generic expected_output",
+                    "generic_expected_output",
                     subtask=subtask.get("subtask_id"),
                     expected=expected,
                 )

@@ -1,8 +1,8 @@
 """AI Review task using Agent Hub complete() with reviewer agent.
 
-Reviews git diffs and routes tasks based on complexity:
-- SIMPLE: Auto-merge if approved
-- STANDARD/COMPLEX: Human review if approved
+Reviews git diffs and routes tasks based on verdict + execution cleanliness:
+- APPROVED + clean execution (or SIMPLE): Auto-merge
+- APPROVED + had retries: Human review
 - Rejected: Create fix subtask and retry
 """
 
@@ -153,35 +153,47 @@ def _route_based_on_verdict(
     verdict = review_result.get("verdict", "").upper()
 
     if verdict == "APPROVED":
-        if complexity == "SIMPLE":
-            # SIMPLE tasks auto-merge after AI approval
+        task = task_store.get_task(task_id)
+        verification = (task.get("verification_result") or {}) if task else {}
+        execution_clean = verification.get("execution_clean", False)
+
+        if complexity == "SIMPLE" or execution_clean:
             _auto_merge(task_id)
             task_store.update_task_status(task_id, "completed")
             log_task_event(
                 task_id,
-                "AI Review: APPROVED - Auto-merged (SIMPLE)",
+                f"AI Review: APPROVED - Auto-merged ({complexity}, clean={execution_clean})",
             )
-            logger.info("QA approved, auto-merged SIMPLE task", task_id=task_id)
+            logger.info(
+                "QA approved, auto-merged",
+                task_id=task_id,
+                complexity=complexity,
+                execution_clean=execution_clean,
+            )
         else:
-            # STANDARD/COMPLEX tasks need human review
             task_store.update_task_status(task_id, "human_review")
             log_task_event(
                 task_id,
-                f"AI Review: APPROVED - Requires human review ({complexity})",
+                f"AI Review: APPROVED - Human review ({complexity}, had retries)",
             )
             logger.info(
-                "QA approved, human review required", task_id=task_id, complexity=complexity
+                "QA approved, human review required",
+                task_id=task_id,
+                complexity=complexity,
             )
 
     elif verdict in ("NEEDS_FIX", "REJECT", "REJECTED"):
         concerns = review_result.get("concerns", [])
         if not concerns:
-            # False positive - no actual issues to fix, treat as APPROVED
+            task = task_store.get_task(task_id)
+            verification = (task.get("verification_result") or {}) if task else {}
+            execution_clean = verification.get("execution_clean", False)
+
             log_task_event(
                 task_id,
                 f"AI Review: {verdict} returned with no concerns - treating as APPROVED",
             )
-            if complexity == "SIMPLE":
+            if complexity == "SIMPLE" or execution_clean:
                 _auto_merge(task_id)
                 task_store.update_task_status(task_id, "completed")
             else:
@@ -277,7 +289,7 @@ def _auto_merge(task_id: str) -> None:
         logger.warning("Cannot auto-merge: no project_id", task_id=task_id)
         return
 
-    logger.info("Triggering auto-merge for SIMPLE task", task_id=task_id, project_id=project_id)
+    logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
     merge_and_cleanup_task_worktree.delay(task_id, project_id)
 
 

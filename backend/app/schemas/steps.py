@@ -3,10 +3,11 @@
 Defines schemas for the task_subtask_steps table operations.
 """
 
+import re
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StepCreate(BaseModel):
@@ -97,6 +98,15 @@ class StepCreateWithVerification(BaseModel):
     )
     expected_output: str = Field(min_length=1, description="Description of what success looks like")
     spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+    @field_validator("verify_command")
+    @classmethod
+    def reject_absolute_paths(cls, v: str) -> str:
+        if re.search(r"\bcd\s+/[^\s;|&]+", v):
+            raise ValueError(f"verify_command must not contain absolute cd paths: {v[:80]}")
+        if re.search(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+", v):
+            raise ValueError(f"verify_command must not contain absolute paths: {v[:80]}")
+        return v
 
 
 class StepFieldsUpdate(BaseModel):
