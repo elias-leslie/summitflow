@@ -1734,19 +1734,48 @@ def _verify_steps(
     project_path: str,
     project_id: str,
 ) -> list[dict[str, Any]]:
-    """Run verify_command for each step and check expected_output."""
+    """Run verify_command for each step and check expected_output.
+
+    Short-circuits: once a step fails, remaining steps are skipped.
+    Steps already marked plan_defect are also skipped.
+    """
     results: list[dict[str, Any]] = []
+    first_failed: int | None = None
 
     for step in steps:
         step_num = step.get("step_number", 0)
+        step_desc = step.get("description", "")[:50]
+
+        if step.get("status") == "plan_defect":
+            results.append({
+                "step_number": step_num,
+                "passed": True,
+                "output": "plan_defect — skipped",
+                "reason": "",
+                "returncode": 0,
+            })
+            continue
+
+        if first_failed is not None:
+            _emit_log(
+                task_id, "info",
+                f"Step {step_num} ({step_desc}): skipped (step {first_failed} failed)",
+                source="verify", project_id=project_id,
+            )
+            results.append({
+                "step_number": step_num,
+                "passed": False,
+                "output": f"Skipped: prerequisite step {first_failed} failed",
+                "reason": f"skipped:prerequisite_step_{first_failed}_failed",
+                "returncode": -1,
+            })
+            continue
 
         result = verify_step(step, project_path, project_id=project_id)
 
         update_step_passes(subtask_id, step_num, result.passed, project_root=project_path)
         status = "passed" if result.passed else "failed"
 
-        # Emit detailed verification result
-        step_desc = step.get("description", "")[:50]
         verify_cmd = step.get("verify_command", "")[:60]
         output_preview = result.output[:200] if result.output else "(no output)"
 
@@ -1758,44 +1787,36 @@ def _verify_steps(
             project_id=project_id,
         )
 
-        # Log verification details (command, output, reason)
         _emit_log(
-            task_id,
-            "debug",
-            f"  cmd: {verify_cmd}",
-            source="verify",
-            project_id=project_id,
-            visibility="internal",
+            task_id, "debug", f"  cmd: {verify_cmd}",
+            source="verify", project_id=project_id, visibility="internal",
         )
         _emit_log(
             task_id,
             "debug" if result.passed else "warn",
             f"  output: {output_preview}",
-            source="verify",
-            project_id=project_id,
+            source="verify", project_id=project_id,
         )
         if not result.passed and result.reason:
             _emit_log(
-                task_id,
-                "warn",
-                f"  reason: {result.reason}",
-                source="verify",
-                project_id=project_id,
+                task_id, "warn", f"  reason: {result.reason}",
+                source="verify", project_id=project_id,
             )
 
         _emit_progress(
             task_id, subtask_id=subtask_id, step=step_num, status=status, project_id=project_id
         )
 
-        results.append(
-            {
-                "step_number": step_num,
-                "passed": result.passed,
-                "output": result.output[:500],
-                "reason": result.reason,
-                "returncode": result.returncode,
-            }
-        )
+        results.append({
+            "step_number": step_num,
+            "passed": result.passed,
+            "output": result.output[:500],
+            "reason": result.reason,
+            "returncode": result.returncode,
+        })
+
+        if not result.passed:
+            first_failed = step_num
 
     return results
 
