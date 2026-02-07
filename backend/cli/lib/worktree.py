@@ -160,6 +160,7 @@ def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
         ("frontend/node_modules", "frontend"),
         ("backend/.venv", "backend"),
     ]
+    created_symlinks: list[str] = []
     for dep_rel, parent_rel in symlink_pairs:
         main_dep = repo_root / dep_rel
         wt_parent = worktree_path / parent_rel
@@ -167,6 +168,21 @@ def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
             wt_dep = worktree_path / dep_rel
             if not wt_dep.exists():
                 wt_dep.symlink_to(main_dep)
+                created_symlinks.append(dep_rel)
+
+    if created_symlinks:
+        git_dir = worktree_path / ".git"
+        if git_dir.is_file():
+            real_git = Path(git_dir.read_text().strip().removeprefix("gitdir: "))
+            exclude_file = real_git / "info" / "exclude"
+        else:
+            exclude_file = git_dir / "info" / "exclude"
+        exclude_file.parent.mkdir(parents=True, exist_ok=True)
+        existing = exclude_file.read_text() if exclude_file.exists() else ""
+        with open(exclude_file, "a") as f:
+            for dep in created_symlinks:
+                if dep not in existing:
+                    f.write(f"{dep}\n")
 
 
 def create_worktree(
