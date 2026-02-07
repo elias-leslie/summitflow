@@ -133,11 +133,23 @@ def _get_prompt_template(slug: str) -> str:
     """
     import httpx
 
-    from ...services.agent_hub_client import AGENT_HUB_URL
+    from ...services.agent_hub_client import (
+        AGENT_HUB_URL,
+        SUMMITFLOW_CLIENT_ID,
+        SUMMITFLOW_CLIENT_SECRET,
+        SUMMITFLOW_REQUEST_SOURCE,
+    )
 
     url = f"{AGENT_HUB_URL}/api/prompts/{slug}"
+    headers: dict[str, str] = {}
+    if SUMMITFLOW_CLIENT_ID and SUMMITFLOW_CLIENT_SECRET:
+        headers = {
+            "X-Client-Id": SUMMITFLOW_CLIENT_ID,
+            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET,
+            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE or "summitflow",
+        }
     try:
-        response = httpx.get(url, timeout=5.0)
+        response = httpx.get(url, headers=headers, timeout=5.0)
     except httpx.HTTPError as e:
         raise RuntimeError(f"Cannot fetch prompt '{slug}' from {url}: {e}") from e
 
