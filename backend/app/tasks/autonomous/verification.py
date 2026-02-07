@@ -141,6 +141,15 @@ def verify_step(
     if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):
         timeout = max(timeout, 300)
 
+    effective_cwd = working_dir
+    backend_dir = str(Path(working_dir) / "backend")
+    if Path(backend_dir).is_dir():
+        if "pytest backend/" in expanded_cmd or "python -c" in expanded_cmd:
+            effective_cwd = backend_dir
+            expanded_cmd = expanded_cmd.replace("backend/tests/", "tests/").replace(
+                "backend/.venv/", ".venv/"
+            )
+
     logger.info(
         "Verifying step",
         step_num=step_num,
@@ -148,7 +157,7 @@ def verify_step(
         expanded_cmd=expanded_cmd[:80] if expanded_cmd != verify_cmd else None,
         check_type=check_type,
         check_value=check_value[:50] if check_value else None,
-        cwd=working_dir,
+        cwd=effective_cwd,
     )
 
     try:
@@ -158,7 +167,7 @@ def verify_step(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=working_dir,
+            cwd=effective_cwd,
         )
 
         output = result.stdout.strip()
