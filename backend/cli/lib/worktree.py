@@ -196,8 +196,15 @@ def create_worktree(
         # Directory exists but not a valid worktree, clean it up
         shutil.rmtree(worktree_path)
 
-    # Get repo root to run git commands from
-    repo_root = _get_repo_root()
+    # Get repo root for the target project (not CWD which may be wrong in Celery)
+    project_cwd: Path | None = None
+    if project_id:
+        from app.storage.projects import get_project_root_path
+
+        root_path = get_project_root_path(project_id)
+        if root_path:
+            project_cwd = Path(root_path)
+    repo_root = _get_repo_root(cwd=project_cwd)
 
     # Ensure base branch exists and is up to date
     try:
