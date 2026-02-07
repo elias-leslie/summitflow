@@ -19,6 +19,7 @@ class TestInfrastructureFailureClassification:
             ("Permission denied: ./run_tests.sh", "", 126),
             ("ModuleNotFoundError: No module named 'nonexistent'", "", 1),
             ("ImportError: cannot import name 'Missing' from 'pkg'", "", 1),
+            ("ImportError while loading conftest '/path/to/conftest.py'", "", 1),
             ("Error: timed out after 60s", "", 1),
             ("Connection refused (localhost:8003)", "", 1),
         ],

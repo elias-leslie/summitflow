@@ -89,6 +89,8 @@ def update_step_passes(
     step_number: int,
     passes: bool,
     project_root: str | None = None,
+    *,
+    already_verified: bool = False,
 ) -> dict[str, Any] | None:
     """Update step passes status with mandatory verification.
 
@@ -98,6 +100,8 @@ def update_step_passes(
     3. Only marks step passes=true if verification passes (exit code 0)
     4. Raises StepVerificationError on failure or missing verify_command
 
+    When already_verified is True, skips re-verification (caller already ran it).
+
     When passes is set to False, clears passed_at without verification.
 
     Args:
@@ -106,6 +110,7 @@ def update_step_passes(
         passes: Whether the step passes
         project_root: Working directory for verify_command execution.
                       If None, defaults to /home/kasadis/summitflow.
+        already_verified: Skip re-running verify_command (caller already verified).
 
     Returns:
         Updated step dict or None if not found.
@@ -134,6 +139,26 @@ def update_step_passes(
             return None
 
         logger.debug("Updated step %d passes=False for subtask %s", step_number, subtask_id)
+        return _row_to_dict(row)
+
+    if already_verified:
+        passed_at = datetime.now(UTC)
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE task_subtask_steps
+                SET passes = %s, passed_at = %s
+                WHERE subtask_id = %s AND step_number = %s
+                RETURNING {STEP_COLUMNS}
+                """,
+                (passes, passed_at, subtask_id, step_number),
+            )
+            row = cur.fetchone()
+            conn.commit()
+        if not row:
+            logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+            return None
+        logger.info("Step %d passed for subtask %s (pre-verified)", step_number, subtask_id)
         return _row_to_dict(row)
 
     # passes=True: Get the step to check for verify_command

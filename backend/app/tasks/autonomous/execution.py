@@ -64,6 +64,7 @@ INFRASTRUCTURE_PATTERNS = [
     "is not installed",
     "ModuleNotFoundError",
     "ImportError: cannot import",
+    "ImportError while loading",
     "FileNotFoundError",
     "timed out",
     "Connection refused",
@@ -1785,7 +1786,10 @@ def _verify_steps(
 
         result = verify_step(step, project_path, project_id=project_id)
 
-        update_step_passes(subtask_id, step_num, result.passed, project_root=project_path)
+        update_step_passes(
+            subtask_id, step_num, result.passed,
+            project_root=project_path, already_verified=True,
+        )
         status = "passed" if result.passed else "failed"
 
         verify_cmd = step.get("verify_command", "")[:60]

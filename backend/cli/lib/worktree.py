@@ -149,6 +149,44 @@ def _get_branch_name(task_id: str) -> str:
     return f"{task_id}/main"
 
 
+def _discover_dep_dirs(repo_root: Path, max_depth: int = 3) -> list[tuple[str, str]]:
+    """Discover gitignored dependency directories (.venv, node_modules) in repo.
+
+    Walks up to max_depth levels deep, skips inside dep dirs themselves.
+    Returns (relative_path, parent_relative_path) pairs.
+    """
+    dep_names = {".venv", "node_modules"}
+    pairs: list[tuple[str, str]] = []
+    found: set[Path] = set()
+
+    def _walk(directory: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(directory.iterdir())
+        except PermissionError:
+            return
+        for entry in entries:
+            if not entry.is_dir() or entry.name.startswith(".git"):
+                continue
+            if entry.name in dep_names:
+                rel = entry.relative_to(repo_root)
+                result = subprocess.run(
+                    ["git", "check-ignore", "-q", str(rel)],
+                    cwd=repo_root,
+                    capture_output=True,
+                )
+                if result.returncode == 0:
+                    parent_rel = str(rel.parent) if len(rel.parts) > 1 else "."
+                    pairs.append((str(rel), parent_rel))
+                    found.add(entry)
+            elif entry not in found:
+                _walk(entry, depth + 1)
+
+    _walk(repo_root, 1)
+    return pairs
+
+
 def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
     """Symlink gitignored dependency directories from main repo into worktree.
 
@@ -156,13 +194,11 @@ def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
     Without these, tools like `dt --check` fail when they detect frontend/
     exists but node_modules/ is missing.
     """
-    symlink_pairs = [
-        ("frontend/node_modules", "frontend"),
-    ]
+    symlink_pairs = _discover_dep_dirs(repo_root)
     created_symlinks: list[str] = []
     for dep_rel, parent_rel in symlink_pairs:
         main_dep = repo_root / dep_rel
-        wt_parent = worktree_path / parent_rel
+        wt_parent = worktree_path / parent_rel if parent_rel != "." else worktree_path
         if main_dep.exists() and wt_parent.exists():
             wt_dep = worktree_path / dep_rel
             if not wt_dep.exists():
