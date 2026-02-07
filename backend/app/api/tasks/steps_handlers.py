@@ -74,6 +74,7 @@ def handle_update_step_passes(
     step_number: int,
     passes: bool,
     project_root: str | None = None,
+    project_id: str | None = None,
 ) -> StepResponse:
     """Handle step passes update with verification and error handling.
 
@@ -82,6 +83,7 @@ def handle_update_step_passes(
         step_number: Step number to update
         passes: Whether the step passes
         project_root: Optional project root for verification
+        project_id: Project ID for resolving venv in worktree contexts
 
     Returns:
         Updated step as StepResponse
@@ -92,7 +94,10 @@ def handle_update_step_passes(
     from ...storage.steps import StepGateError, StepVerificationError, update_step_passes
 
     try:
-        updated = update_step_passes(table_id, step_number, passes, project_root=project_root)
+        updated = update_step_passes(
+            table_id, step_number, passes,
+            project_root=project_root, project_id=project_id,
+        )
     except StepGateError as e:
         raise HTTPException(
             status_code=400,

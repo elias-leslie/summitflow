@@ -59,7 +59,11 @@ def get_next_task_from_subtasks(
     return None
 
 
-def mark_subtask_complete(current_task: dict[str, Any], repo_path: Path | str) -> None:
+def mark_subtask_complete(
+    current_task: dict[str, Any],
+    repo_path: Path | str,
+    project_id: str | None = None,
+) -> None:
     """Mark subtask and its steps as complete."""
     subtask_full_id = current_task.get("subtask_full_id")
     if not subtask_full_id:
@@ -74,6 +78,7 @@ def mark_subtask_complete(current_task: dict[str, Any], repo_path: Path | str) -
                 step_number,
                 True,
                 project_root=str(repo_path),
+                project_id=project_id,
             )
             logger.debug(
                 "step_marked_complete",

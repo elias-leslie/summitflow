@@ -11,7 +11,6 @@ Supports multiple verification patterns:
 
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +18,7 @@ from typing import Any
 
 from ...core.debug import debug_error, debug_success
 from ...logging_config import get_logger
-from ...storage.projects import get_project_root_path
+from ...storage.projects import build_project_env
 
 logger = get_logger(__name__)
 
@@ -27,40 +26,6 @@ COMMAND_ALIASES: dict[str, str] = {
     # dt commands run as-is - they have proper TOON output format
     # No expansion needed since dt is in PATH (~/.local/bin/dt)
 }
-
-
-def build_project_env(project_id: str | None) -> dict[str, str]:
-    """Build environment dict with the correct project venv on PATH.
-
-    Single source of truth for subprocess environment in verification.
-    Resolves the main repo's venv from project_id (handles worktrees
-    since worktrees don't have their own .venv).
-
-    Used by: verify_step, run_smoke_tests, _smoke_test_module.
-    """
-    env = os.environ.copy()
-    if not project_id:
-        return env
-
-    main_repo = get_project_root_path(project_id)
-    if not main_repo:
-        return env
-
-    candidates = [
-        Path(main_repo) / "backend" / ".venv",
-        Path(main_repo) / ".venv",
-    ]
-    for venv_path in candidates:
-        if (venv_path / "bin" / "python").exists():
-            venv_bin = str(venv_path / "bin")
-            env["VIRTUAL_ENV"] = str(venv_path)
-            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
-            env.pop("PYTHONHOME", None)
-            logger.info("resolved_project_venv", venv=str(venv_path), project_id=project_id)
-            return env
-
-    logger.debug("no_venv_found", project_id=project_id, main_repo=main_repo)
-    return env
 
 
 @dataclass

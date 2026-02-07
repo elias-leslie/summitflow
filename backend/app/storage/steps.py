@@ -45,7 +45,6 @@ from .steps_exceptions import (
 from .steps_verification import (
     VERIFY_COMMAND_TIMEOUT,
     _parse_expected,
-    _resolve_venv_paths,
     run_verify_command,
 )
 
@@ -66,7 +65,6 @@ __all__ = [
     "StepGateError",
     "StepVerificationError",
     "_parse_expected",
-    "_resolve_venv_paths",
     "_row_to_dict",
     "append_steps",
     "bulk_create_steps",
@@ -91,12 +89,13 @@ def update_step_passes(
     project_root: str | None = None,
     *,
     already_verified: bool = False,
+    project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Update step passes status with mandatory verification.
 
     When passes is set to True:
     1. Fetches the step's verify_command (required)
-    2. Runs the verify_command
+    2. Runs the verify_command with proper project venv
     3. Only marks step passes=true if verification passes (exit code 0)
     4. Raises StepVerificationError on failure or missing verify_command
 
@@ -111,6 +110,7 @@ def update_step_passes(
         project_root: Working directory for verify_command execution.
                       If None, defaults to /home/kasadis/summitflow.
         already_verified: Skip re-running verify_command (caller already verified).
+        project_id: Project ID for resolving venv paths in worktree contexts.
 
     Returns:
         Updated step dict or None if not found.
@@ -207,7 +207,9 @@ def update_step_passes(
     check_type, check_value = _parse_expected(expected_output)
 
     # Run verification from project root
-    status, exit_code, output = run_verify_command(verify_command, cwd=project_root)
+    status, exit_code, output = run_verify_command(
+        verify_command, cwd=project_root, project_id=project_id,
+    )
 
     if status != "passed":
         message = (

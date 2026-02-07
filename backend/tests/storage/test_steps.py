@@ -144,7 +144,7 @@ class TestUpdateStepPasses:
         assert updated is not None
         assert updated["passes"] is True
         assert updated["passed_at"] is not None
-        mock_verify.assert_called_once_with("echo pass", cwd=None)
+        mock_verify.assert_called_once_with("echo pass", cwd=None, project_id=None)
 
     @patch("app.storage.steps.run_verify_command")
     def test_update_step_passes_false(self, mock_verify, test_subtask):

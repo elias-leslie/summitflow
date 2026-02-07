@@ -2,69 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import subprocess
-from pathlib import Path
 
-# Timeout for verify_command execution (120 seconds / 2 minutes)
-# Increased from 30s to allow full test suites to complete
 VERIFY_COMMAND_TIMEOUT = 120
-
-
-def _resolve_venv_paths(cmd: str, cwd: str | None) -> str:
-    """Resolve .venv paths to absolute paths.
-
-    For multi-project tasks, if the command explicitly `cd`s to a different
-    project's directory, we use that project's venv instead.
-
-    Args:
-        cmd: Command that may contain .venv references
-        cwd: Working directory
-
-    Returns:
-        Command with absolute venv paths
-    """
-    if ".venv" not in cmd:
-        return cmd
-
-    if not cwd:
-        return cmd
-
-    from .projects import get_project_root_path
-
-    # Check if command explicitly cd's to a different project's backend
-    # Pattern: cd /home/kasadis/<project>/backend or cd /home/kasadis/<project>
-    cd_match = re.search(r"cd\s+(/home/kasadis/([^/\s]+)(?:/backend)?)\s*&&", cmd)
-    if cd_match:
-        explicit_project = cd_match.group(2)
-        explicit_repo = get_project_root_path(explicit_project)
-        if explicit_repo:
-            explicit_venv = Path(explicit_repo) / "backend" / ".venv"
-            if explicit_venv.exists():
-                abs_venv = f"{explicit_venv}/bin/"
-                # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
-                if "backend/.venv/bin/" in cmd:
-                    return cmd.replace("backend/.venv/bin/", abs_venv)
-                return cmd.replace(".venv/bin/", abs_venv)
-
-    # Check if cwd has backend/.venv
-    cwd_path = Path(cwd)
-    if (cwd_path / "backend" / ".venv").exists():
-        abs_venv = f"{cwd_path}/backend/.venv/bin/"
-        # Handle both `backend/.venv/bin/` and `.venv/bin/` patterns
-        if "backend/.venv/bin/" in cmd:
-            return cmd.replace("backend/.venv/bin/", abs_venv)
-        return cmd.replace(".venv/bin/", abs_venv)
-
-    # Try parent directory (for when cwd is backend/)
-    if cwd_path.name == "backend" and (cwd_path / ".venv").exists():
-        abs_venv = f"{cwd_path}/.venv/bin/"
-        if "backend/.venv/bin/" in cmd:
-            # Strip redundant backend/ since we're already in backend/
-            return cmd.replace("backend/.venv/bin/", abs_venv)
-        return cmd.replace(".venv/bin/", abs_venv)
-
-    return cmd
 
 
 def _parse_expected(expected: str | None) -> tuple[str, str | None]:
@@ -115,6 +55,7 @@ def run_verify_command(
     verify_command: str,
     timeout: int = VERIFY_COMMAND_TIMEOUT,
     cwd: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[str, int, str]:
     """Execute a verify_command and return classification.
 
@@ -123,6 +64,8 @@ def run_verify_command(
         timeout: Command timeout in seconds
         cwd: Working directory to run from. If None, uses /home/kasadis/summitflow
              as fallback for backwards compatibility.
+        project_id: Project ID for resolving venv paths. When provided,
+                    sets up the correct venv environment (handles worktrees).
 
     Returns:
         Tuple of (status, exit_code, output) where status is one of:
@@ -130,20 +73,19 @@ def run_verify_command(
         - 'failed': Exit code != 0
         - 'crashed': Exit code 126-127 or exception
     """
-    # Default to summitflow for backwards compatibility
-    working_dir = cwd or "/home/kasadis/summitflow"
+    from .projects import build_project_env
 
-    # Resolve .venv paths to absolute paths
-    resolved_command = _resolve_venv_paths(verify_command, working_dir)
+    working_dir = cwd or "/home/kasadis/summitflow"
+    env = build_project_env(project_id)
 
     try:
-        # Use bash explicitly since commands may use bash-specific features like 'source'
         result = subprocess.run(
-            ["bash", "-c", resolved_command],
+            ["bash", "-c", verify_command],
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=working_dir,
+            env=env,
         )
 
         exit_code = result.returncode

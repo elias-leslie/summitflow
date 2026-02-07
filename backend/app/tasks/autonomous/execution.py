@@ -102,7 +102,7 @@ def _auto_defect_step(
 
         fix_step_num: int = fix_steps[0]["step_number"]
 
-        update_step_passes(subtask_id, fix_step_num, passes=True)
+        update_step_passes(subtask_id, fix_step_num, passes=True, project_id=project_id)
 
         update_step_status(
             subtask_id, step_number, status="plan_defect", fix_step_number=fix_step_num
@@ -126,12 +126,19 @@ def _auto_defect_step(
         return False
 
 
+_prompt_cache: dict[str, str] = {}
+
+
 def _get_prompt_template(slug: str) -> str:
     """Fetch prompt content from Agent Hub API by slug.
 
+    Results are cached for the process lifetime to avoid repeated HTTP calls.
     Raises RuntimeError if the prompt cannot be fetched — DB is the sole
     source of truth, there are no hardcoded fallbacks.
     """
+    if slug in _prompt_cache:
+        return _prompt_cache[slug]
+
     import httpx
 
     from ...services.agent_hub_client import (
@@ -164,6 +171,8 @@ def _get_prompt_template(slug: str) -> str:
     content: str = data.get("content", "")
     if not content:
         raise RuntimeError(f"Prompt '{slug}' exists but has empty content")
+
+    _prompt_cache[slug] = content
     return content
 
 
@@ -406,6 +415,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                     ["git", "checkout", "."],
                     cwd=str(repo_path),
                     capture_output=True,
+                    timeout=30,
                 )
                 return False
 
@@ -503,9 +513,6 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
         project_id=project_id,
     )
     return False
-
-
-WORKER_STUCK_THRESHOLD = 3
 
 
 def _get_project_path(project_id: str, task_id: str | None = None) -> str:
@@ -737,6 +744,7 @@ def _has_uncommitted_changes(project_path: str) -> bool:
         cwd=project_path,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     return bool(result.stdout.strip())
 
@@ -752,6 +760,7 @@ def _auto_commit(project_path: str, message: str) -> bool:
             cwd=project_path,
             capture_output=True,
             text=True,
+            timeout=30,
         )
         if add_result.returncode != 0:
             logger.warning("git_add_failed", error=add_result.stderr)
@@ -762,6 +771,7 @@ def _auto_commit(project_path: str, message: str) -> bool:
             cwd=project_path,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         if commit_result.returncode != 0:
             if "nothing to commit" in commit_result.stdout.lower():
@@ -982,12 +992,24 @@ def start_execution(
                 "reason": "pristine_self_heal_failed",
             }
 
-    # Create worktree for isolated execution
     worktree = create_task_worktree(task_id, project_id)
     if worktree:
         _emit_log(task_id, "info", f"Worktree ready: {worktree.path}", project_id=project_id)
+    else:
+        _emit_error(
+            task_id,
+            "Worktree creation failed — refusing to execute on main branch",
+            recoverable=False,
+            project_id=project_id,
+        )
+        task_store.update_task_status(task_id, "blocked")
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "error": "Worktree creation failed",
+            "reason": "worktree_creation_failed",
+        }
 
-    # Get execution path (worktree if created, otherwise project root)
     project_path = _get_project_path(project_id, task_id)
     if _has_uncommitted_changes(project_path):
         _emit_log(
@@ -1078,14 +1100,25 @@ def start_execution(
                 )
 
         if result.get("status") == "failed":
-            # Self-healing loop was already exhausted within _execute_subtask
-            # Check if we should escalate to human review
             self_fix_attempts = result.get("self_fix_attempts", 0)
             supervisor_guided_attempts = result.get("supervisor_guided_attempts", 0)
             total_attempts = 1 + self_fix_attempts + supervisor_guided_attempts
 
+            # Circuit breaker: if same issue repeating across subtasks, stop
+            issue_id = result.get("issue_id")
+            if issue_id and issue_counts.get(issue_id, 0) >= 2:
+                _emit_log(
+                    task_id,
+                    "error",
+                    f"Circuit breaker: issue {issue_id} repeated {issue_counts[issue_id]} times, "
+                    "skipping remaining subtasks",
+                    source="orchestrator",
+                    project_id=project_id,
+                )
+                task_store.update_task_status(task_id, "needs_review")
+                return {"task_id": task_id, "status": "escalated", "subtask_results": results}
+
             if supervisor_guided_attempts > 0:
-                # Supervisor guidance was already tried - escalate to human
                 _emit_log(
                     task_id,
                     "error",
@@ -1104,8 +1137,6 @@ def start_execution(
                 )
                 return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
-            # Self-healing wasn't fully attempted (edge case: exception before loop)
-            # Mark as blocked for retry
             break
 
     all_passed = all(r.get("status") == "passed" for r in results)

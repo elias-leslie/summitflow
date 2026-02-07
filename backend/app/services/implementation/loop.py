@@ -234,7 +234,7 @@ def _handle_success(
     update_session(project_id, session_id, build_state=build_state)
 
     if build_state.get("using_subtasks_table"):
-        mark_subtask_complete(current_task, str(repo_path))
+        mark_subtask_complete(current_task, str(repo_path), project_id=project_id)
 
     update_phase_callback(task_id, "verify", build_state)
     step_check = check_step_completion(project_id, task)
