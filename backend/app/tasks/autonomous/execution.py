@@ -547,6 +547,7 @@ def _emit_log(
     *,
     project_id: str | None = None,
     visibility: EventVisibility = "user",
+    sequence: int | None = None,
 ) -> None:
     """Emit a log event via Redis pub/sub."""
     from ...storage.events import EventLevel
@@ -559,12 +560,16 @@ def _emit_log(
         "debug": "debug",
     }
 
+    data: dict[str, Any] = {"level": level, "message": message, "source": source}
+    if sequence is not None:
+        data["sequence"] = sequence
+
     publish_ws_event(
         task_id,
         {
             "type": "log",
             "task_id": task_id,
-            "data": {"level": level, "message": message, "source": source},
+            "data": data,
             "timestamp": datetime.now(UTC).isoformat(),
         },
         project_id=project_id,
@@ -660,6 +665,7 @@ def _emit_progress_log(
     if not progress_log:
         return
 
+    seq = 0
     for entry in progress_log:
         turn = getattr(entry, "turn", 0)
         status = getattr(entry, "status", "unknown")
@@ -696,7 +702,9 @@ def _emit_progress_log(
             source="agent",
             project_id=project_id,
             visibility=visibility,
+            sequence=seq,
         )
+        seq += 1
 
         # Emit tool results as separate events for detail
         for result in tool_results:
@@ -709,7 +717,9 @@ def _emit_progress_log(
                 source="agent",
                 project_id=project_id,
                 visibility="internal",
+                sequence=seq,
             )
+            seq += 1
 
 
 def _reset_steps_for_rerun(subtasks: list[dict[str, Any]]) -> None:
