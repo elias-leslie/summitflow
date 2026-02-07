@@ -57,30 +57,13 @@ def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) ->
     git_diff = _get_git_diff(task_id, project_id)
     complexity = task.get("complexity") or "STANDARD"
 
-    prompt = f"""Review this code change for quality, correctness, and security.
-
-Task: {task.get("title", "")}
+    prompt = f"""Task: {task.get("title", "")}
 Complexity: {complexity}
 
 Git Diff:
 ```
 {git_diff[:5000]}
-```
-
-Provide your review with one of these verdicts:
-1. APPROVED - Code is correct and complete
-2. NEEDS_FIX - Implementation has issues that need fixing
-3. PLAN_DEFECT - Implementation is correct but verify_command is wrong
-4. ESCALATE - Issue too complex for AI review
-
-Output format:
-{{
-    "verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE",
-    "summary": "...",
-    "concerns": ["..."],
-    "recommendation": "...",
-    "fix_steps": ["..."]  // For NEEDS_FIX
-}}"""
+```"""
 
     try:
         client = get_sync_client()

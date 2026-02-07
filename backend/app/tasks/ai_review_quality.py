@@ -107,26 +107,8 @@ def run_ui_review(
     try:
         reviewer = get_agent("reviewer")
 
-        prompt = f"""Review this UI/frontend task for design quality:
-
-Task: {task.get("title", "No title")}
-Description: {task.get("description", "No description")}
-
-Consider:
-1. Component structure and reusability
-2. Accessibility (a11y) concerns
-3. Responsive design patterns
-4. State management patterns
-5. Error handling and loading states
-
-Respond with JSON:
-{{
-    "verdict": "APPROVE" | "REQUEST_FIX" | "REJECT",
-    "summary": "One sentence summary",
-    "issues": ["Issue 1", ...],
-    "suggestions": ["Suggestion 1", ...],
-    "confidence": 0.95
-}}"""
+        prompt = f"""Task: {task.get("title", "No title")}
+Description: {task.get("description", "No description")}"""
 
         response = reviewer.generate(
             prompt=prompt,

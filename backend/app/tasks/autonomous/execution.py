@@ -314,20 +314,12 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
             )
 
             client = get_sync_client()
-            fix_prompt = f"""Fix the quality gate errors below. Only edit source files.
+            fix_prompt = f"""Fix the quality gate errors below.
 
 ## Errors from `dt --check`:
 ```
 {output[:8000]}
 ```
-
-## Rules
-- Read failing files, fix the errors, write files back
-- Run `dt --quick --changed-only` to verify your fixes
-- Do NOT create tasks, issues, or tickets
-- Do NOT run st, git, or commit commands
-- Do NOT add features or change behavior
-- Make minimal changes to pass quality gates
 """
 
             response = client.complete(
@@ -1111,11 +1103,6 @@ def _build_fix_prompt(
         prompt_parts.append("\n## Supervisor Guidance")
         prompt_parts.append(supervisor_guidance)
 
-    prompt_parts.append("\n## Your Task")
-    prompt_parts.append("Fix the issues identified above. Focus on making the verification pass.")
-    prompt_parts.append("After making changes, the same verification commands will run again.")
-    prompt_parts.append("Do NOT create tasks, issues, or tickets. Only edit source files.")
-
     # Include steps from subtask for reference
     steps = subtask.get("steps_from_table", [])
     if steps:
@@ -1606,8 +1593,7 @@ def _build_subtask_prompt(
 task_id: {task_id}
 subtask_id: {subtask_short_id}
 project_id: {project_id}
-project_path: {project_path}
-api_base: http://localhost:8001""")
+project_path: {project_path}""")
 
     return "\n".join(prompt_parts)
 

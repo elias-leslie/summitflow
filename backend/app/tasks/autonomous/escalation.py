@@ -85,19 +85,9 @@ def get_supervisor_guidance_sync(
         if step_details:
             step_context = "\n\nFailed step details:\n" + "\n".join(step_details)
 
-    prompt = f"""A worker agent has failed to fix this issue after multiple attempts.
-Analyze the error and provide specific guidance on how to fix it.
-
-Task ID: {task_id}
+    prompt = f"""Task ID: {task_id}
 Subtask: {subtask_id}
-Issue: {issue_description}{step_context}
-
-Provide SPECIFIC guidance:
-1. What is the root cause of this failure?
-2. What exact change should the worker make?
-3. What should the worker verify after the fix?
-
-Be specific and actionable. The worker will use this guidance to attempt another fix."""
+Issue: {issue_description}{step_context}"""
 
     try:
         client = get_sync_client()
@@ -154,19 +144,10 @@ def supervisor_guidance(
     if failure_count >= QA_SUPERVISOR_STUCK_THRESHOLD:
         return _escalate_to_human(task_id, subtask_id, issue_description, failure_count)
 
-    prompt = f"""A worker agent is stuck on this issue. Provide GUIDANCE only, not implementation.
-
-Task ID: {task_id}
+    prompt = f"""Task ID: {task_id}
 Subtask: {subtask_id}
 Issue: {issue_description}
-Worker Attempts: {failure_count}
-
-Analyze the issue and provide:
-1. Root cause analysis
-2. Suggested approach to fix
-3. Key considerations
-
-DO NOT write code. Guide the worker on HOW to approach this."""
+Worker Attempts: {failure_count}"""
 
     try:
         client = get_sync_client()
@@ -203,17 +184,10 @@ def _escalate_to_human(
     """Escalate to human review with problem/solution recommendation."""
     logger.info("Escalating to human review", task_id=task_id, subtask_id=subtask_id)
 
-    prompt = f"""This issue needs human review. Generate a clear problem/solution recommendation.
-
-Task ID: {task_id}
+    prompt = f"""Task ID: {task_id}
 Subtask: {subtask_id}
 Issue: {issue_description}
-Total Attempts: {attempts}
-
-Provide a structured recommendation:
-1. PROBLEM: Clear statement of what's wrong
-2. ANALYSIS: Root cause and why automation couldn't solve it
-3. RECOMMENDATION: Proposed direction for human to approve/modify"""
+Total Attempts: {attempts}"""
 
     recommendation = f"Issue in {subtask_id}: {issue_description}"
 
