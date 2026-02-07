@@ -36,7 +36,8 @@ from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.events import EventVisibility
 from ...storage.projects import get_project_root_path
-from ...storage.steps import get_steps_for_subtask, update_step_passes
+from ...storage.steps import get_steps_for_subtask, update_step_passes, update_step_status
+from ...storage.steps_crud import append_steps
 from ...storage.subtasks import (
     get_handoff_context,
     get_subtasks_for_task,
@@ -53,6 +54,75 @@ logger = get_logger(__name__)
 MAX_ITERATIONS = 50
 
 AUTOCODE_ROLES = ["system", "autocode"]
+
+INFRASTRUCTURE_PATTERNS = [
+    "command not found",
+    "No such file or directory",
+    "Permission denied",
+    "not recognized as",
+    "cannot execute binary",
+    "is not installed",
+    "ModuleNotFoundError",
+    "ImportError: cannot import",
+    "FileNotFoundError",
+    "timed out",
+    "Connection refused",
+]
+
+
+def _is_infrastructure_failure(output: str, reason: str, returncode: int) -> bool:
+    """Classify whether a step failure is infrastructure (plan defect) vs code."""
+    combined = f"{output}\n{reason}".lower()
+    return any(pat.lower() in combined for pat in INFRASTRUCTURE_PATTERNS)
+
+
+def _auto_defect_step(
+    subtask_id: str,
+    step_number: int,
+    output: str,
+    task_id: str,
+    project_id: str,
+) -> bool:
+    """Auto-mark an infrastructure failure as plan_defect.
+
+    Creates a "no-op" fix step that passes (echo OK), marks it passed,
+    then marks the original step as plan_defect pointing to the fix step.
+
+    Returns True if auto-defect succeeded.
+    """
+    try:
+        fix_steps = append_steps(subtask_id, [{
+            "description": f"Fix: auto-defect for step {step_number} (infrastructure failure)",
+            "verify_command": "echo OK",
+            "expected_output": "OK",
+        }])
+        if not fix_steps:
+            return False
+
+        fix_step_num: int = fix_steps[0]["step_number"]
+
+        update_step_passes(subtask_id, fix_step_num, passes=True)
+
+        update_step_status(
+            subtask_id, step_number, status="plan_defect", fix_step_number=fix_step_num
+        )
+
+        _emit_log(
+            task_id,
+            "warn",
+            f"Step {step_number} auto-defected (infrastructure failure → fix step {fix_step_num})",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        return True
+    except Exception as e:
+        logger.warning(
+            "auto_defect_failed",
+            subtask_id=subtask_id,
+            step_number=step_number,
+            error=str(e),
+        )
+        return False
 
 
 def _get_prompt_template(slug: str) -> str:
@@ -1359,6 +1429,25 @@ def _execute_subtask(
 
             failed_steps = [r for r in step_results if not r["passed"]]
             failed_count = len(failed_steps)
+
+            # Auto-defect infrastructure failures before retry
+            infra_failures = [
+                f for f in failed_steps
+                if _is_infrastructure_failure(
+                    f.get("output", ""), f.get("reason", ""), f.get("returncode", 1)
+                )
+            ]
+            if infra_failures:
+                for f in infra_failures:
+                    _auto_defect_step(
+                        subtask_id, f["step_number"], f.get("output", ""),
+                        task_id, project_id,
+                    )
+                failed_steps = [f for f in failed_steps if f not in infra_failures]
+                failed_count = len(failed_steps)
+                if not failed_steps:
+                    steps = get_steps_for_subtask(subtask_id)
+                    continue
 
             # Determine which phase we're in
             if self_fix_attempts < SELF_HEAL_MAX_ATTEMPTS:

@@ -5,6 +5,7 @@ Tests the pre-execution self-healing loop that fixes quality gate failures.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -87,6 +88,13 @@ class TestPristineSelfHeal:
             client.complete.return_value = response
             mock.return_value = client
             yield client
+
+    @pytest.fixture(autouse=True)
+    def mock_prompt_template(self) -> Generator[MagicMock, None, None]:
+        """Mock _get_prompt_template to avoid hitting real API."""
+        with patch("app.tasks.autonomous.execution._get_prompt_template") as mock:
+            mock.return_value = "Fix errors:\n```\n{errors_output}\n```"
+            yield mock
 
     def test_pristine_already_clean(self, mock_project_path, mock_dt_found, mock_subprocess):
         """If dt --check passes on first try, return True without agent call."""
