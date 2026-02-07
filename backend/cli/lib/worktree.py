@@ -155,7 +155,7 @@ def _discover_dep_dirs(repo_root: Path, max_depth: int = 3) -> list[tuple[str, s
     Walks up to max_depth levels deep, skips inside dep dirs themselves.
     Returns (relative_path, parent_relative_path) pairs.
     """
-    dep_names = {".venv", "node_modules"}
+    dep_names = {"node_modules"}
     pairs: list[tuple[str, str]] = []
     found: set[Path] = set()
 
