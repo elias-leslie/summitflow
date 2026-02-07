@@ -24,6 +24,7 @@ from .commands import (
     logs,
     memory,
     projects,
+    prompt,
     refactor,
     session_events,
     sessions,
@@ -112,6 +113,10 @@ SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status
 
+PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path | delete <slug>
+        prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
+        prompt seed [--dir path] [--dry-run] | sync [--dir path] [--dry-run]
+
 MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
 
 TOOLS: tools status [--hours N]
@@ -185,6 +190,7 @@ app.add_typer(complete.app, name="complete")
 app.add_typer(session_events.app, name="session-events")
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
+app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias

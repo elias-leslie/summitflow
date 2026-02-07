@@ -70,6 +70,8 @@ def agent_hub_request(
                 response = client.get(url, params=params, headers=headers)
             elif method == "DELETE":
                 response = client.delete(url, headers=headers)
+            elif method == "PUT":
+                response = client.put(url, json=json, headers=headers)
             elif method == "PATCH":
                 response = client.patch(url, json=json, headers=headers)
             else:
@@ -82,6 +84,9 @@ def agent_hub_request(
                     detail = response.text
                 output_error(f"API error ({response.status_code}): {detail}")
                 raise typer.Exit(1) from None
+
+            if response.status_code == 204:
+                return {"success": True}
 
             return cast(dict[str, Any], response.json())
     except httpx.ConnectError:
