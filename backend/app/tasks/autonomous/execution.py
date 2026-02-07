@@ -1527,7 +1527,8 @@ def _execute_subtask(
                         for f in failed_steps
                     )
                     supervisor_guidance_text = get_supervisor_guidance_sync(
-                        task_id, subtask_short_id, error_desc, failed_steps
+                        task_id, subtask_short_id, error_desc, failed_steps,
+                        project_id=project_id,
                     )
 
                     if supervisor_guidance_text:

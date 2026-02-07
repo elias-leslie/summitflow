@@ -52,6 +52,7 @@ def get_supervisor_guidance_sync(
     subtask_id: str,
     issue_description: str,
     step_outputs: list[dict[str, Any]] | None = None,
+    project_id: str | None = None,
 ) -> str | None:
     """Get supervisor guidance synchronously for self-healing loop.
 
@@ -94,6 +95,7 @@ Issue: {issue_description}{step_context}"""
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug="supervisor",
+            project_id=project_id or "summitflow",
         )
 
         guidance: str = response.content
@@ -116,6 +118,7 @@ def supervisor_guidance(
     subtask_id: str,
     issue_description: str,
     failure_count: int,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Get supervisor guidance for a stuck worker (async Celery task).
 
@@ -142,7 +145,9 @@ def supervisor_guidance(
     )
 
     if failure_count >= QA_SUPERVISOR_STUCK_THRESHOLD:
-        return _escalate_to_human(task_id, subtask_id, issue_description, failure_count)
+        return _escalate_to_human(
+            task_id, subtask_id, issue_description, failure_count, project_id=project_id,
+        )
 
     prompt = f"""Task ID: {task_id}
 Subtask: {subtask_id}
@@ -154,6 +159,7 @@ Worker Attempts: {failure_count}"""
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug="supervisor",
+            project_id=project_id or "summitflow",
         )
 
         guidance = response.content
@@ -172,7 +178,9 @@ Worker Attempts: {failure_count}"""
 
     except Exception as e:
         logger.warning("Supervisor guidance failed", error=str(e))
-        return _escalate_to_human(task_id, subtask_id, issue_description, failure_count)
+        return _escalate_to_human(
+            task_id, subtask_id, issue_description, failure_count, project_id=project_id,
+        )
 
 
 def _escalate_to_human(
@@ -180,6 +188,7 @@ def _escalate_to_human(
     subtask_id: str,
     issue_description: str,
     attempts: int,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Escalate to human review with problem/solution recommendation."""
     logger.info("Escalating to human review", task_id=task_id, subtask_id=subtask_id)
@@ -196,6 +205,7 @@ Total Attempts: {attempts}"""
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug="supervisor",
+            project_id=project_id or "summitflow",
         )
         recommendation = response.content
     except Exception as e:
