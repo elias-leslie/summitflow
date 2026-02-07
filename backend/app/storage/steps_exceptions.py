@@ -25,14 +25,13 @@ class StepVerificationError(Exception):
         next_steps: Guidance for what to do next
     """
 
-    # Standard guidance for all verification failures
     NEXT_STEPS_GUIDANCE = """
 Next steps:
   1. Fix your implementation to match the expected behavior
-  2. If the plan is wrong, create a fix subtask: st subtask create <parent-id> -d "Fix: ..."
-  3. Log the issue: st log <task-id> "Plan defect: ..."
+  2. If the plan/verify_command is wrong: st step defect <subtask-id> <step#> -v "correct_cmd" -e "correct_expect"
+     (creates fix step, verifies, marks defect — all in one command)
 
-Do NOT modify the verify_command - verification gates are immutable."""
+Do NOT modify the verify_command directly — use st step defect for plan corrections."""
 
     def __init__(
         self,
