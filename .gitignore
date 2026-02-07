@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv
 .venv/
 *.egg-info/
 dist/
@@ -11,6 +12,7 @@ build/
 !backend/app/services/build/
 
 # Node
+node_modules
 node_modules/
 .next/
 out/
