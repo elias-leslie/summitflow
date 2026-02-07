@@ -55,30 +55,33 @@ MAX_ITERATIONS = 50
 AUTOCODE_ROLES = ["system", "autocode"]
 
 
-def _get_prompt_template(slug: str, default: str) -> str:
-    """Fetch prompt content from Agent Hub API by slug, with fallback.
+def _get_prompt_template(slug: str) -> str:
+    """Fetch prompt content from Agent Hub API by slug.
 
-    Args:
-        slug: Prompt slug to look up (e.g., 'autocode-subtask')
-        default: Fallback content if API call fails
-
-    Returns:
-        Prompt content from DB, or the default string
+    Raises RuntimeError if the prompt cannot be fetched — DB is the sole
+    source of truth, there are no hardcoded fallbacks.
     """
+    import httpx
+
+    from ...services.agent_hub_client import AGENT_HUB_URL
+
+    url = f"{AGENT_HUB_URL}/api/prompts/{slug}"
     try:
-        import httpx
+        response = httpx.get(url, timeout=5.0)
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"Cannot fetch prompt '{slug}' from {url}: {e}") from e
 
-        from ...services.agent_hub_client import AGENT_HUB_URL
+    if not response.is_success:
+        raise RuntimeError(
+            f"Prompt '{slug}' not found (HTTP {response.status_code}). "
+            f"Seed it with: st prompt create {slug} '<name>' -f <file>"
+        )
 
-        response = httpx.get(f"{AGENT_HUB_URL}/api/prompts/{slug}", timeout=5.0)
-        if response.is_success:
-            data = response.json()
-            content: str = data.get("content", "")
-            if content:
-                return content
-    except Exception as e:
-        logger.debug("prompt_template_fetch_failed", slug=slug, error=str(e))
-    return default
+    data = response.json()
+    content: str = data.get("content", "")
+    if not content:
+        raise RuntimeError(f"Prompt '{slug}' exists but has empty content")
+    return content
 
 
 # Map task_type to agent_slug for specialized execution
@@ -343,11 +346,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
             )
 
             client = get_sync_client()
-            pristine_template = _get_prompt_template(
-                "autocode-pristine-fix",
-                "# Fix Quality Gate Errors\n\nFix the quality gate errors below.\n\n"
-                "## Errors from `dt --check`:\n```\n{errors_output}\n```",
-            )
+            pristine_template = _get_prompt_template("autocode-pristine-fix")
             fix_prompt = pristine_template.format_map({"errors_output": output[:8000]})
 
             response = client.complete(
@@ -1141,12 +1140,7 @@ def _build_fix_prompt(
     steps = subtask.get("steps_from_table", [])
     steps_block = _build_steps_block(steps)
 
-    template = _get_prompt_template(
-        "autocode-fix",
-        "# Fix Required for Subtask {subtask_id}\n\nDescription: {description}\n\n"
-        "## Verification Failures\nThe following verification steps failed:\n\n"
-        "{failures_block}\n\n{supervisor_block}\n\n## Steps (for reference)\n{steps_block}",
-    )
+    template = _get_prompt_template("autocode-fix")
 
     return template.format_map({
         "subtask_id": subtask_short_id,
@@ -1631,12 +1625,7 @@ def _build_subtask_prompt(
     steps = subtask.get("steps_from_table", [])
     steps_block = _build_steps_block(steps)
 
-    template = _get_prompt_template(
-        "autocode-subtask",
-        "# Task Objective\n{objective}\n\n{spirit_anti_block}\n\n{handoff_block}\n\n"
-        "# Current Subtask: {subtask_id}\nDescription: {description}\n\n"
-        "{steps_block}\n\n# Working Directory\n{project_path}",
-    )
+    template = _get_prompt_template("autocode-subtask")
 
     return template.format_map({
         "objective": objective,

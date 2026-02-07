@@ -1,4 +1,4 @@
-"""Prompt management CLI — CRUD, assignments, seed, and sync."""
+"""Prompt management CLI — CRUD, assignments, import/export."""
 
 from __future__ import annotations
 
@@ -6,49 +6,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+import yaml
 
 from ..output import is_compact, output_error, output_json
 from .memory_api import agent_hub_request
 
 app = typer.Typer(help="Prompt management (Agent Hub)")
-
-DEFAULT_PROMPTS_DIR = Path.home() / "agent-hub" / "backend" / "prompts"
-
-AUTOCODE_AGENTS = ["coder", "refactor", "planner", "reviewer"]
-
-SEED_MAP: dict[str, dict[str, Any]] = {
-    "coder.md": {"slug": "coder", "name": "Coder Agent", "is_global": False, "assign": ("coder", "system", 0)},
-    "planner.md": {"slug": "planner", "name": "Planner Agent", "is_global": False, "assign": ("planner", "system", 0)},
-    "reviewer.md": {"slug": "reviewer", "name": "Reviewer Agent", "is_global": False, "assign": ("reviewer", "system", 0)},
-    "refactor.md": {"slug": "refactor", "name": "Refactor Agent", "is_global": False, "assign": ("refactor", "system", 0)},
-    "validator.md": {"slug": "validator", "name": "Validator Agent", "is_global": False, "assign": ("validator", "system", 0)},
-    "explorer.md": {"slug": "explorer", "name": "Explorer Agent", "is_global": False, "assign": ("explorer", "system", 0)},
-    "designer.md": {"slug": "designer", "name": "Designer Agent", "is_global": False, "assign": ("designer", "system", 0)},
-    "qa.md": {"slug": "qa", "name": "QA Agent", "is_global": False, "assign": ("qa", "system", 0)},
-    "qa_plan_defect.md": {"slug": "qa-plan-defect", "name": "QA Plan Defect", "is_global": False, "assign": ("qa", "plan-defect", 10)},
-    "safety_directive.md": {"slug": "safety-directive", "name": "Safety Directive", "is_global": True, "assign": None},
-    "autocode-execution.md": {
-        "slug": "autocode-execution", "name": "Autocode Execution",
-        "is_global": False,
-        "assign": None,
-        "multi_assign": [(agent, "autocode", 100) for agent in AUTOCODE_AGENTS],
-    },
-    "autocode-subtask.md": {
-        "slug": "autocode-subtask", "name": "Autocode Subtask Template",
-        "is_global": False,
-        "assign": None,
-    },
-    "autocode-fix.md": {
-        "slug": "autocode-fix", "name": "Autocode Fix Template",
-        "is_global": False,
-        "assign": None,
-    },
-    "autocode-pristine-fix.md": {
-        "slug": "autocode-pristine-fix", "name": "Autocode Pristine Fix Template",
-        "is_global": False,
-        "assign": None,
-    },
-}
 
 
 def _api(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
@@ -214,15 +177,56 @@ def list_assignments(
         output_json(data)
 
 
-@app.command("seed")
-def seed_prompts(
-    prompts_dir: Annotated[
-        Path, typer.Option("--dir", help="Directory with .md prompt files"),
-    ] = DEFAULT_PROMPTS_DIR,
+@app.command("export")
+def export_prompts(
+    slug: Annotated[str | None, typer.Argument(help="Prompt slug (omit for all)")] = None,
+    output_file: Annotated[Path | None, typer.Option("-o", "--output", help="Output file")] = None,
+) -> None:
+    """Export prompt(s) to YAML. Use for editing, then re-import."""
+    if slug:
+        p = _api("GET", f"/{slug}")
+        entries = [p]
+    else:
+        data = _api("GET", "")
+        entries = data.get("prompts", [])
+
+    export_data = []
+    for p in entries:
+        entry: dict[str, Any] = {
+            "slug": p["slug"],
+            "name": p["name"],
+            "is_global": p.get("is_global", False),
+        }
+        if p.get("description"):
+            entry["description"] = p["description"]
+        entry["content"] = p.get("content", "")
+        export_data.append(entry)
+
+    yaml_str = yaml.dump(export_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    if output_file:
+        output_file.write_text(yaml_str)
+        if is_compact():
+            print(f"EXPORTED[{len(export_data)}]:{output_file}")
+        else:
+            output_json({"exported": len(export_data), "file": str(output_file)})
+    else:
+        print(yaml_str)
+
+
+@app.command("import")
+def import_prompts(
+    file: Annotated[Path, typer.Argument(help="YAML file to import")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without changes")] = False,
 ) -> None:
-    if not prompts_dir.is_dir():
-        output_error(f"Prompts directory not found: {prompts_dir}")
+    """Import prompts from YAML. Creates if missing, updates if changed."""
+    if not file.exists():
+        output_error(f"File not found: {file}")
+        raise typer.Exit(1)
+
+    entries = yaml.safe_load(file.read_text())
+    if not isinstance(entries, list):
+        output_error("YAML must be a list of prompt objects")
         raise typer.Exit(1)
 
     existing_data = _api("GET", "")
@@ -230,14 +234,16 @@ def seed_prompts(
 
     created = updated = skipped = 0
 
-    for filename, meta in SEED_MAP.items():
-        filepath = prompts_dir / filename
-        if not filepath.exists():
-            output_error(f"Missing: {filepath}")
+    for entry in entries:
+        slug = entry.get("slug")
+        if not slug:
+            output_error("Entry missing 'slug' — skipping")
             continue
 
-        content = filepath.read_text()
-        slug = meta["slug"]
+        content = entry.get("content", "")
+        name = entry.get("name", slug)
+        is_global = entry.get("is_global", False)
+
         ex = existing.get(slug)
 
         if ex and ex.get("content", "").strip() == content.strip():
@@ -247,7 +253,7 @@ def seed_prompts(
         if dry_run:
             action = "update" if ex else "create"
             lines = _line_count(content)
-            print(f"  [dry-run] {action}: {slug} ({lines}L)")
+            print(f"  [{action}] {slug} ({lines}L)")
             if ex:
                 updated += 1
             else:
@@ -255,112 +261,63 @@ def seed_prompts(
             continue
 
         if ex:
-            _api("PUT", f"/{slug}", json={"content": content, "name": meta["name"], "is_global": meta["is_global"]})
+            payload: dict[str, Any] = {"content": content, "name": name, "is_global": is_global}
+            if entry.get("description"):
+                payload["description"] = entry["description"]
+            _api("PUT", f"/{slug}", json=payload)
             updated += 1
         else:
-            _api("POST", "", json={"slug": slug, "name": meta["name"], "content": content, "is_global": meta["is_global"]})
+            payload = {"slug": slug, "name": name, "content": content, "is_global": is_global}
+            if entry.get("description"):
+                payload["description"] = entry["description"]
+            _api("POST", "", json=payload)
             created += 1
 
     total = created + updated + skipped
     if is_compact():
-        print(f"SEED[{total}]:created={created}|updated={updated}|skip={skipped}")
+        print(f"IMPORT[{total}]:created={created}|updated={updated}|skip={skipped}")
     else:
         output_json({"total": total, "created": created, "updated": updated, "skipped": skipped})
 
-    if dry_run:
+    assignments = [a for entry in entries for a in entry.get("assignments", [])]
+    if not assignments or dry_run:
         return
 
     assign_created = assign_skipped = 0
+    for assignment in assignments:
+        agent_slug = assignment.get("agent")
+        prompt_slug = assignment.get("prompt")
+        role = assignment.get("role", "system")
+        priority = assignment.get("priority", 0)
 
-    def _try_assign(agent_slug: str, prompt_slug: str, role: str, priority: int) -> None:
-        nonlocal assign_created, assign_skipped
+        if not agent_slug or not prompt_slug:
+            continue
+
         try:
             agent_data = _api("GET", f"/agents/{agent_slug}/assignments")
         except SystemExit:
-            output_error(f"Agent '{agent_slug}' not found — skipping assignment")
             assign_skipped += 1
-            return
+            continue
 
         already = any(
             a.get("prompt", {}).get("slug") == prompt_slug for a in agent_data.get("assignments", [])
         )
         if already:
             assign_skipped += 1
-            return
+            continue
 
         try:
-            _api("POST", f"/agents/{agent_slug}/assignments", json={"prompt_slug": prompt_slug, "role": role, "priority": priority})
+            _api(
+                "POST",
+                f"/agents/{agent_slug}/assignments",
+                json={"prompt_slug": prompt_slug, "role": role, "priority": priority},
+            )
             assign_created += 1
         except SystemExit:
             assign_skipped += 1
-
-    for _filename, meta in SEED_MAP.items():
-        assign_info = meta.get("assign")
-        if assign_info:
-            agent_slug, role, priority = assign_info
-            _try_assign(agent_slug, meta["slug"], role, priority)
-
-        for multi in meta.get("multi_assign", []):
-            agent_slug, role, priority = multi
-            _try_assign(agent_slug, meta["slug"], role, priority)
 
     assign_total = assign_created + assign_skipped
     if is_compact():
         print(f"ASSIGN[{assign_total}]:created={assign_created}|skip={assign_skipped}")
     else:
         output_json({"assignments": {"total": assign_total, "created": assign_created, "skipped": assign_skipped}})
-
-
-@app.command("sync")
-def sync_prompts(
-    prompts_dir: Annotated[
-        Path, typer.Option("--dir", help="Directory with .md prompt files"),
-    ] = DEFAULT_PROMPTS_DIR,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without changes")] = False,
-) -> None:
-    if not prompts_dir.is_dir():
-        output_error(f"Prompts directory not found: {prompts_dir}")
-        raise typer.Exit(1)
-
-    existing_data = _api("GET", "")
-    existing = {p["slug"]: p for p in existing_data.get("prompts", [])}
-
-    updated_count = unchanged = missing = 0
-
-    for filename, meta in SEED_MAP.items():
-        filepath = prompts_dir / filename
-        slug = meta["slug"]
-
-        if not filepath.exists():
-            missing += 1
-            if is_compact():
-                print(f"  MISSING:{slug} ({filename})")
-            continue
-
-        content = filepath.read_text()
-        ex = existing.get(slug)
-
-        if not ex:
-            missing += 1
-            if is_compact():
-                print(f"  NOT_IN_DB:{slug}")
-            continue
-
-        if ex.get("content", "").strip() == content.strip():
-            unchanged += 1
-            continue
-
-        if dry_run:
-            lines = _line_count(content)
-            print(f"  [dry-run] update: {slug} ({lines}L)")
-            updated_count += 1
-            continue
-
-        _api("PUT", f"/{slug}", json={"content": content})
-        updated_count += 1
-
-    total = updated_count + unchanged + missing
-    if is_compact():
-        print(f"SYNC[{total}]:updated={updated_count}|unchanged={unchanged}|missing={missing}")
-    else:
-        output_json({"total": total, "updated": updated_count, "unchanged": unchanged, "missing": missing})

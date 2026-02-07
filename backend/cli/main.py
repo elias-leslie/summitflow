@@ -115,7 +115,7 @@ AUTONOMOUS: autonomous enable | disable | status
 
 PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path | delete <slug>
         prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
-        prompt seed [--dir path] [--dry-run] | sync [--dir path] [--dry-run]
+        prompt export [slug] [-o file] | import <file> [--dry-run]
 
 MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
 
