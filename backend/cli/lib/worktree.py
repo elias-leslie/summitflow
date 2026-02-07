@@ -158,7 +158,6 @@ def _symlink_gitignored_deps(repo_root: Path, worktree_path: Path) -> None:
     """
     symlink_pairs = [
         ("frontend/node_modules", "frontend"),
-        ("backend/.venv", "backend"),
     ]
     created_symlinks: list[str] = []
     for dep_rel, parent_rel in symlink_pairs:

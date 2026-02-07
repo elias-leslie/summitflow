@@ -73,7 +73,7 @@ def _get_prompt_template(slug: str, default: str) -> str:
         response = httpx.get(f"{AGENT_HUB_URL}/api/prompts/{slug}", timeout=5.0)
         if response.is_success:
             data = response.json()
-            content = data.get("content", "")
+            content: str = data.get("content", "")
             if content:
                 return content
     except Exception as e:
@@ -1318,7 +1318,7 @@ def _execute_subtask(
                     source="verify",
                     project_id=project_id,
                 )
-                smoke_result = run_smoke_tests(project_path)
+                smoke_result = run_smoke_tests(project_path, project_id=project_id)
                 if not smoke_result.passed:
                     all_passed = False
                     for failure in smoke_result.failures:

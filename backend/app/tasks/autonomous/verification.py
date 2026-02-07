@@ -5,12 +5,13 @@ Supports multiple verification patterns:
 - Exit code checks (returncode == 0)
 - Output contains checks (expected string in stdout)
 - Command aliases (dt -> actual commands)
-- Venv path resolution (resolves relative .venv paths to absolute)
+- Project environment resolution (venv from main repo for worktrees)
 - Smoke tests for changed Python files (import + __all__ checks)
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,32 +29,38 @@ COMMAND_ALIASES: dict[str, str] = {
 }
 
 
-def _resolve_venv_paths(cmd: str, project_id: str) -> str:
-    """Resolve .venv paths to absolute paths.
+def build_project_env(project_id: str | None) -> dict[str, str]:
+    """Build environment dict with the correct project venv on PATH.
 
-    Args:
-        cmd: Command that may contain .venv references
-        project_id: Project ID to look up repo path
+    Single source of truth for subprocess environment in verification.
+    Resolves the main repo's venv from project_id (handles worktrees
+    since worktrees don't have their own .venv).
 
-    Returns:
-        Command with absolute venv paths
+    Used by: verify_step, run_smoke_tests, _smoke_test_module.
     """
-    if ".venv" not in cmd:
-        return cmd
+    env = os.environ.copy()
+    if not project_id:
+        return env
 
     main_repo = get_project_root_path(project_id)
     if not main_repo:
-        return cmd
+        return env
 
-    main_backend_venv = Path(main_repo) / "backend" / ".venv"
-    if not main_backend_venv.exists():
-        return cmd
+    candidates = [
+        Path(main_repo) / "backend" / ".venv",
+        Path(main_repo) / ".venv",
+    ]
+    for venv_path in candidates:
+        if (venv_path / "bin" / "python").exists():
+            venv_bin = str(venv_path / "bin")
+            env["VIRTUAL_ENV"] = str(venv_path)
+            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+            env.pop("PYTHONHOME", None)
+            logger.info("resolved_project_venv", venv=str(venv_path), project_id=project_id)
+            return env
 
-    # Handle both "backend/.venv/bin/" and bare ".venv/bin/" patterns
-    # Must check backend/ prefix first to avoid double-replacement
-    if "backend/.venv/bin/" in cmd:
-        return cmd.replace("backend/.venv/bin/", f"{main_backend_venv}/bin/")
-    return cmd.replace(".venv/bin/", f"{main_backend_venv}/bin/")
+    logger.debug("no_venv_found", project_id=project_id, main_repo=main_repo)
+    return env
 
 
 @dataclass
@@ -134,21 +141,19 @@ def verify_step(
         )
 
     expanded_cmd = expand_command(verify_cmd)
-    if project_id:
-        expanded_cmd = _resolve_venv_paths(expanded_cmd, project_id)
     check_type, check_value = parse_expected(expected)
+    env = build_project_env(project_id)
 
     if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):
         timeout = max(timeout, 300)
 
     effective_cwd = working_dir
     backend_dir = str(Path(working_dir) / "backend")
-    if Path(backend_dir).is_dir():
-        if "pytest backend/" in expanded_cmd or "python -c" in expanded_cmd:
-            effective_cwd = backend_dir
-            expanded_cmd = expanded_cmd.replace("backend/tests/", "tests/").replace(
-                "backend/.venv/", ".venv/"
-            )
+    if Path(backend_dir).is_dir() and (
+        "pytest backend/" in expanded_cmd or "python -c" in expanded_cmd
+    ):
+        effective_cwd = backend_dir
+        expanded_cmd = expanded_cmd.replace("backend/tests/", "tests/")
 
     logger.info(
         "Verifying step",
@@ -168,6 +173,7 @@ def verify_step(
             text=True,
             timeout=timeout,
             cwd=effective_cwd,
+            env=env,
         )
 
         output = result.stdout.strip()
@@ -304,41 +310,35 @@ def _file_to_module(project_path: str, file_path: str) -> str | None:
     return module_name if module_name else None
 
 
-def _smoke_test_module(project_path: str, module_name: str) -> dict[str, str] | None:
+def _smoke_test_module(
+    project_path: str,
+    module_name: str,
+    env: dict[str, str],
+) -> dict[str, str] | None:
     """Attempt to import a module to catch import-time errors.
 
-    This is a simple smoke test that verifies the module can be imported.
-    Catches: import errors, circular imports, missing dependencies, syntax errors.
-
-    For function-body bugs (like fmt._truncate), rely on unit tests.
-    Per Gemini Pro: AST analysis is overkill - if mypy passes, a custom parser
-    adds maintenance weight without solving the core problem.
+    Uses the resolved project env (with correct venv on PATH) so bare
+    'python' resolves to the project's interpreter.
 
     Args:
-        project_path: Project root (for venv path)
+        project_path: Project root (or worktree path)
         module_name: Dotted module name like 'cli.output'
+        env: Pre-built environment dict from build_project_env()
 
     Returns:
         Error dict with 'module' and 'error' keys, or None if passed.
     """
-    # Use project's venv Python
     backend_path = Path(project_path) / "backend"
-    venv_python = backend_path / ".venv" / "bin" / "python"
-    if not venv_python.exists():
-        venv_python = Path(project_path) / ".venv" / "bin" / "python"
-
-    python_cmd = str(venv_python) if venv_python.exists() else "python"
-
-    # Simple import test - catches import errors, circular imports, missing deps
     import_cmd = f"import {module_name}"
 
     try:
         result = subprocess.run(
-            [python_cmd, "-c", import_cmd],
+            ["python", "-c", import_cmd],
             cwd=str(backend_path) if backend_path.exists() else project_path,
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
 
         if result.returncode != 0:
@@ -360,7 +360,11 @@ def _smoke_test_module(project_path: str, module_name: str) -> dict[str, str] | 
         return {"module": module_name, "error": str(e)[:500]}
 
 
-def run_smoke_tests(project_path: str, changed_files: list[str] | None = None) -> SmokeTestResult:
+def run_smoke_tests(
+    project_path: str,
+    changed_files: list[str] | None = None,
+    project_id: str | None = None,
+) -> SmokeTestResult:
     """Run smoke tests on changed Python files.
 
     Automatically detects changed files if not provided.
@@ -369,6 +373,7 @@ def run_smoke_tests(project_path: str, changed_files: list[str] | None = None) -
     Args:
         project_path: Project root path
         changed_files: Optional list of changed files (auto-detected if None)
+        project_id: Project ID for resolving venv
 
     Returns:
         SmokeTestResult with pass/fail status and any failures.
@@ -380,6 +385,7 @@ def run_smoke_tests(project_path: str, changed_files: list[str] | None = None) -
         logger.info("smoke_test_skipped", reason="no changed files")
         return SmokeTestResult(passed=True)
 
+    env = build_project_env(project_id)
     failures: list[dict[str, str]] = []
     tested: list[str] = []
 
@@ -389,7 +395,7 @@ def run_smoke_tests(project_path: str, changed_files: list[str] | None = None) -
             continue
 
         tested.append(module_name)
-        error = _smoke_test_module(project_path, module_name)
+        error = _smoke_test_module(project_path, module_name, env)
         if error:
             failures.append(error)
             logger.warning(
