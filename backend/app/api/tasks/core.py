@@ -377,17 +377,20 @@ async def update_task_status(
     # Dispatch autonomous execution tasks on status transitions
     dispatch_autonomous_task(task_id, update.status, project_id)
 
-    # Populate verification_result on completion (step-level verification)
+    # Merge step-level verification into verification_result on completion
+    # Preserves existing keys (e.g. execution_clean from autocode pipeline)
     if update.status == "completed" and updated:
         step_status = await asyncio.to_thread(get_step_verification_status, task_id)
-        verification_result = {
+        existing = updated.get("verification_result") or {}
+        merged = {
+            **existing,
             "total": step_status["total"],
             "verified": step_status["verified"],
             "unverified": step_status["unverified"],
             "all_verified": step_status["all_verified"],
         }
         updated = await asyncio.to_thread(
-            task_store.update_task, task_id, verification_result=verification_result
+            task_store.update_task, task_id, verification_result=merged
         )
 
     if updated is None:

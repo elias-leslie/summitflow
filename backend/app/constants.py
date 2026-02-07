@@ -88,10 +88,10 @@ QA_SUPERVISOR_STUCK_THRESHOLD = 2
 PRISTINE_SELF_HEAL_MAX_ATTEMPTS = 3
 
 # Number of self-fix attempts before requesting supervisor guidance
-SELF_HEAL_MAX_ATTEMPTS = 2
+SELF_HEAL_MAX_ATTEMPTS = 3
 
 # Number of supervisor-guided fix attempts before escalating to human
-SUPERVISOR_GUIDED_MAX_ATTEMPTS = 2
+SUPERVISOR_GUIDED_MAX_ATTEMPTS = 3
 
 # Total number of QA review attempts before escalation to human
 QA_ESCALATION_THRESHOLD = 5

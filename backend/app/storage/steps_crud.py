@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -12,6 +13,19 @@ from psycopg.rows import TupleRow
 from .connection import get_connection
 
 logger = logging.getLogger(__name__)
+
+_ABSOLUTE_CD_PATTERN = re.compile(r"\bcd\s+/[^\s;|&]+")
+_ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
+
+
+def _sanitize_verify_command(cmd: str | None) -> str | None:
+    """Nullify verify_commands containing absolute paths that break worktree isolation."""
+    if not cmd:
+        return cmd
+    if _ABSOLUTE_CD_PATTERN.search(cmd) or _ABSOLUTE_PATH_PREFIX.search(cmd):
+        logger.warning("Rejected verify_command with absolute path: %s", cmd[:80])
+        return None
+    return cmd
 
 # Column list for all step SELECT/RETURNING queries (12 columns)
 STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, expected_output, status, fix_step_number"""
@@ -76,6 +90,7 @@ def create_step(
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
 
+    verify_command = _sanitize_verify_command(verify_command)
     spec_json = json.dumps(spec) if spec else None
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -183,7 +198,7 @@ def bulk_create_steps(
             else:
                 description = step.get("description", "")
                 spec = step.get("spec")
-                verify_command = step.get("verify_command")
+                verify_command = _sanitize_verify_command(step.get("verify_command"))
                 expected_output = step.get("expected_output")
 
             spec_json = json.dumps(spec) if spec else None
@@ -251,7 +266,7 @@ def append_steps(
             else:
                 description = step.get("description", "")
                 spec = step.get("spec")
-                verify_command = step.get("verify_command")
+                verify_command = _sanitize_verify_command(step.get("verify_command"))
                 expected_output = step.get("expected_output")
 
             spec_json = json.dumps(spec) if spec else None
@@ -335,6 +350,7 @@ def insert_step(
     if position < 1:
         raise ValueError("Position must be >= 1")
 
+    verify_command = _sanitize_verify_command(verify_command)
     spec_json = json.dumps(spec) if spec else None
 
     with get_connection() as conn, conn.cursor() as cur:
