@@ -10,6 +10,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -443,6 +444,20 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
             pristine_template = _get_prompt_template("autocode-pristine-fix")
             fix_prompt = pristine_template.format_map({"errors_output": output[:8000]})
 
+            # Pre-create session ID on first attempt for realtime observability
+            if not pristine_session_id:
+                from ...storage.tasks.core import add_agent_hub_session
+
+                pristine_session_id = str(uuid.uuid4())
+                add_agent_hub_session(task_id, pristine_session_id)
+                _emit_log(
+                    task_id,
+                    "info",
+                    f"Pristine agent session started: {pristine_session_id}",
+                    source="pristine",
+                    project_id=project_id,
+                )
+
             pristine_kwargs: dict[str, Any] = {
                 "messages": [{"role": "user", "content": fix_prompt}],
                 "agent_slug": "coder",
@@ -452,19 +467,16 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
                 "project_id": project_id,
                 "use_memory": False,
                 "include_roles": AUTOCODE_ROLES,
+                "session_id": pristine_session_id,
             }
-            if pristine_session_id:
-                pristine_kwargs["session_id"] = pristine_session_id
 
             response = client.complete(**pristine_kwargs)
 
-            new_pristine_session = response.session_id
-            if new_pristine_session:
-                if new_pristine_session != pristine_session_id:
-                    from ...storage.tasks.core import add_agent_hub_session
+            if response.session_id and response.session_id != pristine_session_id:
+                from ...storage.tasks.core import add_agent_hub_session
 
-                    add_agent_hub_session(task_id, new_pristine_session)
-                pristine_session_id = new_pristine_session
+                add_agent_hub_session(task_id, response.session_id)
+                pristine_session_id = response.session_id
 
             logger.info(
                 "pristine_self_heal_agent_completed",
@@ -1371,8 +1383,24 @@ def _execute_subtask(
             prompt_length=len(prompt),
             prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
         )
+        # Pre-create session ID so events are queryable during execution
+        from ...storage.tasks.core import add_agent_hub_session
+
+        agent_session_id = str(uuid.uuid4())
+        add_agent_hub_session(task_id, agent_session_id)
+
         logger.info(
-            "Calling Agent Hub complete (agentic mode)", agent_slug=agent_slug, max_turns=50
+            "Calling Agent Hub complete (agentic mode)",
+            agent_slug=agent_slug,
+            max_turns=50,
+            session_id=agent_session_id,
+        )
+        _emit_log(
+            task_id,
+            "info",
+            f"Agent session started: {agent_session_id}",
+            source="orchestrator",
+            project_id=project_id,
         )
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
@@ -1384,15 +1412,12 @@ def _execute_subtask(
             use_memory=True,
             trace_id=task_id,
             include_roles=AUTOCODE_ROLES,
+            session_id=agent_session_id,
         )
-        # Store session ID for continuation in retry attempts
-        agent_session_id = response.session_id
-
-        # Store Agent Hub session ID for observability
-        if agent_session_id:
-            from ...storage.tasks.core import add_agent_hub_session
-
-            add_agent_hub_session(task_id, agent_session_id)
+        # Update session ID if Agent Hub returned a different one
+        if response.session_id and response.session_id != agent_session_id:
+            add_agent_hub_session(task_id, response.session_id)
+            agent_session_id = response.session_id
 
         # Surface progress_log to execution timeline
         if response.progress_log:
@@ -1602,10 +1627,16 @@ def _execute_subtask(
 
             # Call agent with fix prompt, continuing existing session for context
             continuation = agent_session_id is not None
+            if not continuation:
+                agent_session_id = str(uuid.uuid4())
+                from ...storage.tasks.core import add_agent_hub_session
+
+                add_agent_hub_session(task_id, agent_session_id)
+
             _emit_log(
                 task_id,
                 "info",
-                f"Calling agent for fix attempt ({'continuing session' if continuation else 'new session'})...",
+                f"Calling agent for fix attempt ({'continuing session' if continuation else 'new session'} {agent_session_id})...",
                 source="orchestrator",
                 project_id=project_id,
             )
@@ -1621,18 +1652,16 @@ def _execute_subtask(
                     "use_memory": True,
                     "trace_id": task_id,
                     "include_roles": AUTOCODE_ROLES,
+                    "session_id": agent_session_id,
                 }
-                if continuation:
-                    fix_kwargs["session_id"] = agent_session_id
 
                 response = client.complete(**fix_kwargs)
-                # Update session ID for next iteration
-                new_session_id = response.session_id
-                if new_session_id and new_session_id != agent_session_id:
+                # Update session ID if Agent Hub returned a different one
+                if response.session_id and response.session_id != agent_session_id:
                     from ...storage.tasks.core import add_agent_hub_session
 
-                    add_agent_hub_session(task_id, new_session_id)
-                agent_session_id = new_session_id or agent_session_id
+                    add_agent_hub_session(task_id, response.session_id)
+                agent_session_id = response.session_id or agent_session_id
 
                 # Surface progress_log to execution timeline
                 if response.progress_log:
