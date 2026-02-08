@@ -7,7 +7,7 @@ import {
   Archive,
   Calendar,
   CheckCircle2,
-  Clock,
+  ChevronDown,
   Database,
   Eye,
   HardDrive,
@@ -20,7 +20,8 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import { StatusBadge } from '@/components/backup/StatusBadge'
 import {
   type Backup,
   createBackup,
@@ -28,68 +29,8 @@ import {
   fetchBackupSchedule,
   fetchStorageSummary,
 } from '@/lib/api/backups'
+import { formatBytes, formatDate } from '@/lib/format'
 import { fetchProjects, type Project } from '@/lib/api/projects'
-
-function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return '-'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let i = 0
-  let size = bytes
-  while (size >= 1024 && i < units.length - 1) {
-    size /= 1024
-    i++
-  }
-  return `${size.toFixed(1)} ${units[i]}`
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function StatusBadge({ status }: { status: Backup['status'] }) {
-  const config = {
-    pending: {
-      icon: Clock,
-      className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    },
-    running: {
-      icon: RefreshCw,
-      className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    },
-    completed: {
-      icon: CheckCircle2,
-      className: 'bg-green-500/20 text-green-400 border-green-500/30',
-    },
-    failed: {
-      icon: XCircle,
-      className: 'bg-red-500/20 text-red-400 border-red-500/30',
-    },
-  }[status]
-
-  const Icon = config.icon
-
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border',
-        config.className,
-      )}
-    >
-      <Icon
-        className={clsx('w-3 h-3', status === 'running' && 'animate-spin')}
-      />
-      {status}
-    </span>
-  )
-}
 
 interface CreateBackupModalProps {
   projects: Project[]
@@ -207,7 +148,9 @@ function CreateBackupModal({
 
         {createMutation.isError && (
           <p className="mt-3 text-sm text-red-400">
-            Failed to create backup. Please try again.
+            {createMutation.error instanceof Error
+              ? createMutation.error.message
+              : 'Failed to create backup. Please try again.'}
           </p>
         )}
       </div>
@@ -246,7 +189,7 @@ function ScheduleCard({ projectId, projectName }: ScheduleCardProps) {
             </p>
           </div>
           <Link
-            href={`/projects/${projectId}/backups`}
+            href={`/projects/${projectId}/backups?from=backups`}
             className="text-xs text-phosphor-400 hover:text-phosphor-300"
           >
             Configure
@@ -287,7 +230,7 @@ function ScheduleCard({ projectId, projectName }: ScheduleCardProps) {
             {schedule.enabled ? schedule.frequency : 'disabled'}
           </span>
           <Link
-            href={`/projects/${projectId}/backups`}
+            href={`/projects/${projectId}/backups?from=backups`}
             className="text-xs text-phosphor-400 hover:text-phosphor-300"
           >
             Edit
@@ -310,19 +253,116 @@ function ScheduleCard({ projectId, projectName }: ScheduleCardProps) {
   )
 }
 
+function BackupExpandedRow({ backup, projectName }: { backup: Backup; projectName: string }) {
+  return (
+    <tr>
+      <td colSpan={7} className="px-4 py-0">
+        <div className="py-4 pl-6 border-l-2 border-slate-600 ml-2 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-slate-500 text-xs mb-0.5">Project</p>
+              <p className="text-slate-200">{projectName}</p>
+            </div>
+            <div>
+              <p className="text-slate-500 text-xs mb-0.5">Type</p>
+              <p className="text-slate-200">{backup.backup_type}</p>
+            </div>
+            <div>
+              <p className="text-slate-500 text-xs mb-0.5">Location</p>
+              <p className="text-slate-200 truncate">{backup.location || '-'}</p>
+            </div>
+            <div>
+              <p className="text-slate-500 text-xs mb-0.5">Name</p>
+              <p className="text-slate-200 font-mono text-xs truncate">{backup.name || '-'}</p>
+            </div>
+          </div>
+
+          {(backup.db_size_bytes || backup.files_size_bytes) && (
+            <div className="flex items-center gap-6 text-sm">
+              {backup.db_size_bytes != null && (
+                <div className="flex items-center gap-2">
+                  <Database className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-slate-400">Database:</span>
+                  <span className="text-slate-200">{formatBytes(backup.db_size_bytes)}</span>
+                </div>
+              )}
+              {backup.files_size_bytes != null && (
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-slate-400">Files:</span>
+                  <span className="text-slate-200">{formatBytes(backup.files_size_bytes)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-6 text-sm">
+            {backup.started_at && (
+              <div>
+                <span className="text-slate-500">Started: </span>
+                <span className="text-slate-300">{formatDate(backup.started_at)}</span>
+              </div>
+            )}
+            {backup.completed_at && (
+              <div>
+                <span className="text-slate-500">Completed: </span>
+                <span className="text-slate-300">{formatDate(backup.completed_at)}</span>
+              </div>
+            )}
+            {backup.started_at && backup.completed_at && (
+              <div>
+                <span className="text-slate-500">Duration: </span>
+                <span className="text-slate-300">
+                  {Math.round(
+                    (new Date(backup.completed_at).getTime() -
+                      new Date(backup.started_at).getTime()) /
+                      1000,
+                  )}
+                  s
+                </span>
+              </div>
+            )}
+          </div>
+
+          {backup.note && (
+            <div className="text-sm">
+              <span className="text-slate-500">Note: </span>
+              <span className="text-slate-300">{backup.note}</span>
+            </div>
+          )}
+
+          {backup.status === 'failed' && backup.error_message && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-xs text-red-400 font-medium mb-1">Error</p>
+              <p className="text-sm text-red-300 whitespace-pre-wrap">{backup.error_message}</p>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 export function BackupsClient() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showSchedules, setShowSchedules] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // Fetch projects for the create modal and schedules
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: fetchProjects,
   })
 
-  // Fetch all backups
+  const projectMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const p of projects) {
+      map[p.id] = p.name
+    }
+    return map
+  }, [projects])
+
   const {
     data: backupsData,
     isLoading: backupsLoading,
@@ -335,10 +375,16 @@ export function BackupsClient() {
         limit: 100,
         status: statusFilter || undefined,
       }),
-    refetchInterval: 10000,
+    refetchInterval: (query) => {
+      const backups = query.state.data?.backups
+      if (!backups) return 10000
+      const hasActive = backups.some(
+        (b) => b.status === 'pending' || b.status === 'running',
+      )
+      return hasActive ? 5000 : false
+    },
   })
 
-  // Fetch storage summary
   const { data: storageSummary, isLoading: storageLoading } = useQuery({
     queryKey: ['storage-summary'],
     queryFn: () => fetchStorageSummary(),
@@ -353,7 +399,6 @@ export function BackupsClient() {
 
   return (
     <main className="content-container py-8">
-      {/* Create Backup Modal */}
       {showCreateModal && (
         <CreateBackupModal
           projects={projects}
@@ -362,7 +407,6 @@ export function BackupsClient() {
         />
       )}
 
-      {/* Header */}
       <header className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100 flex items-center gap-3">
@@ -385,7 +429,7 @@ export function BackupsClient() {
       </header>
 
       {/* Storage Summary Cards */}
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -436,6 +480,25 @@ export function BackupsClient() {
                 )}
               </p>
               <p className="text-xs text-slate-400">Completed</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-500/20 rounded-lg">
+              <RefreshCw className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-100">
+                {storageLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  (storageSummary?.by_status?.pending ?? 0) +
+                  (storageSummary?.by_status?.running ?? 0)
+                )}
+              </p>
+              <p className="text-xs text-slate-400">In Progress</p>
             </div>
           </div>
         </div>
@@ -548,14 +611,15 @@ export function BackupsClient() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-700 bg-slate-800/80">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider w-8" />
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Project
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Backup ID
+                    Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Status
+                    Type
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Size
@@ -569,55 +633,90 @@ export function BackupsClient() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {backups.map((backup) => (
-                  <tr
-                    key={backup.id}
-                    className="hover:bg-slate-700/30 transition-colors"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/projects/${backup.project_id}/backups`}
-                        className="text-sm text-phosphor-400 hover:text-phosphor-300"
-                      >
-                        {backup.project_id}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-mono text-slate-200">
-                        {backup.id}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={backup.status} />
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">
-                      {formatBytes(backup.size_bytes)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-400">
-                      {formatDate(backup.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link
-                          href={`/projects/${backup.project_id}/backups`}
-                          className="p-1.5 text-slate-400 hover:text-phosphor-400 transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                        {backup.status === 'completed' && (
-                          <Link
-                            href={`/projects/${backup.project_id}/backups/${backup.id}/restore`}
-                            className="p-1.5 text-slate-400 hover:text-yellow-400 transition-colors"
-                            title="Restore"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                          </Link>
+                {backups.map((backup) => {
+                  const isExpanded = expandedId === backup.id
+                  return (
+                    <Fragment key={backup.id}>
+                      <tr
+                        className={clsx(
+                          'hover:bg-slate-700/30 transition-colors cursor-pointer',
+                          isExpanded && 'bg-slate-700/20',
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        onClick={() =>
+                          setExpandedId(isExpanded ? null : backup.id)
+                        }
+                      >
+                        <td className="px-4 py-3">
+                          <ChevronDown
+                            className={clsx(
+                              'w-4 h-4 text-slate-500 transition-transform',
+                              isExpanded && 'rotate-180',
+                            )}
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link
+                            href={`/projects/${backup.project_id}/backups?from=backups`}
+                            className="text-sm text-phosphor-400 hover:text-phosphor-300"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {projectMap[backup.project_id] || backup.project_id}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={backup.status} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={clsx(
+                              'text-xs px-2 py-0.5 rounded-full',
+                              backup.backup_type === 'scheduled'
+                                ? 'bg-indigo-500/20 text-indigo-400'
+                                : 'bg-slate-600 text-slate-300',
+                            )}
+                          >
+                            {backup.backup_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-300">
+                          {formatBytes(backup.size_bytes)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-400">
+                          {formatDate(backup.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div
+                            className="flex items-center justify-end gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link
+                              href={`/projects/${backup.project_id}/backups?from=backups`}
+                              className="p-1.5 text-slate-400 hover:text-phosphor-400 transition-colors"
+                              title="View in Project"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Link>
+                            {backup.status === 'completed' && (
+                              <Link
+                                href={`/projects/${backup.project_id}/backups/${backup.id}/restore`}
+                                className="p-1.5 text-slate-400 hover:text-yellow-400 transition-colors"
+                                title="Restore"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </Link>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <BackupExpandedRow
+                          backup={backup}
+                          projectName={projectMap[backup.project_id] || backup.project_id}
+                        />
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
