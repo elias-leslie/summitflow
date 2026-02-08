@@ -488,3 +488,80 @@ class TestInsertStep:
         """Position < 1 raises ValueError."""
         with pytest.raises(ValueError, match="Position must be >= 1"):
             step_store.insert_step(test_subtask["id"], 0, "Invalid")
+
+
+class TestSanitizeVerifyCommand:
+    """Tests for _sanitize_verify_command absolute path rejection."""
+
+    def test_sanitize_none_passes_through(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        assert _sanitize_verify_command(None) is None
+
+    def test_sanitize_empty_passes_through(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        assert _sanitize_verify_command("") == ""
+
+    def test_sanitize_relative_command_passes(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        cmd = "rg 'pattern' backend/app/main.py"
+        assert _sanitize_verify_command(cmd) == cmd
+
+    def test_sanitize_rejects_cd_absolute_path(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="absolute path"):
+            _sanitize_verify_command("cd /home/user/project && grep foo bar.py")
+
+    def test_sanitize_rejects_absolute_home_path(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="absolute path"):
+            _sanitize_verify_command("cat /home/user/project/file.txt")
+
+    def test_sanitize_rejects_absolute_tmp_path(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="absolute path"):
+            _sanitize_verify_command("ls /tmp/test-output")
+
+    def test_sanitize_rejects_absolute_opt_path(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="absolute path"):
+            _sanitize_verify_command("test -f /opt/app/config.yaml")
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo hello",
+            "rg pattern src/",
+            "test -f backend/app/main.py",
+            "pytest tests/",
+            "dt --quick --changed-only",
+        ],
+    )
+    def test_sanitize_allows_relative_commands(self, cmd):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        assert _sanitize_verify_command(cmd) == cmd
+
+    def test_create_step_raises_on_absolute_path(self, test_subtask):
+        """Integration: create_step propagates ValueError from sanitizer."""
+        with pytest.raises(ValueError, match="absolute path"):
+            step_store.create_step(
+                test_subtask["id"],
+                1,
+                "Bad step",
+                verify_command="cd /home/user/project && echo test",
+            )
+
+    def test_bulk_create_raises_on_absolute_path(self, test_subtask):
+        """Integration: bulk_create_steps propagates ValueError from sanitizer."""
+        steps = [
+            {"description": "Bad step", "verify_command": "cat /home/user/file.txt", "expected_output": "content"},
+        ]
+        with pytest.raises(ValueError, match="absolute path"):
+            step_store.bulk_create_steps(test_subtask["id"], steps)

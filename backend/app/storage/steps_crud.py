@@ -19,12 +19,20 @@ _ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+"
 
 
 def _sanitize_verify_command(cmd: str | None) -> str | None:
-    """Nullify verify_commands containing absolute paths that break worktree isolation."""
+    """Reject verify_commands containing absolute paths that break worktree isolation.
+
+    Raises ValueError instead of silently returning None, because silent nullification
+    causes steps to auto-pass without actual verification (verify_step treats
+    None verify_command as passed).
+    """
     if not cmd:
         return cmd
     if _ABSOLUTE_CD_PATTERN.search(cmd) or _ABSOLUTE_PATH_PREFIX.search(cmd):
-        logger.warning("Rejected verify_command with absolute path: %s", cmd[:80])
-        return None
+        msg = (
+            f"verify_command contains absolute path (use relative paths — "
+            f"commands run with cwd=worktree): {cmd[:120]}"
+        )
+        raise ValueError(msg)
     return cmd
 
 # Column list for all step SELECT/RETURNING queries (12 columns)

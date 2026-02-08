@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 from datetime import UTC
 from pathlib import Path
 from typing import Annotated, Any
@@ -879,6 +880,14 @@ def verify_plan(
                 issues.append(
                     f"subtask {subtask_id} step {step_num}: missing required 'verify_command'"
                 )
+            elif re.search(r"\bcd\s+/[^\s;|&]+", step["verify_command"]) or re.search(
+                r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+", step["verify_command"]
+            ):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: verify_command contains absolute path "
+                    f"(use relative paths — commands run with cwd=worktree): "
+                    f"{step['verify_command'][:80]}"
+                )
             if not step.get("expected_output"):
                 issues.append(
                     f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
@@ -1162,6 +1171,14 @@ def import_plan(
             if not step.get("verify_command"):
                 issues.append(
                     f"subtask {subtask_id} step {step_num}: missing required 'verify_command'"
+                )
+            elif re.search(r"\bcd\s+/[^\s;|&]+", step["verify_command"]) or re.search(
+                r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+", step["verify_command"]
+            ):
+                issues.append(
+                    f"subtask {subtask_id} step {step_num}: verify_command contains absolute path "
+                    f"(use relative paths — commands run with cwd=worktree): "
+                    f"{step['verify_command'][:80]}"
                 )
             if not step.get("expected_output"):
                 issues.append(
