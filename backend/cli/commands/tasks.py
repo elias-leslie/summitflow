@@ -986,10 +986,19 @@ def autocode(
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
-    client = STClient()
+    client = STClient(require_project=False)
 
     try:
         task = client.get_task(task_id)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+
+    task_project_id = task.get("project_id", "summitflow")
+    if task_project_id != client.project_id:
+        client = STClient(project_id=task_project_id, require_project=False)
+
+    try:
         subtasks_response = client.get_subtasks(task_id)
         subtasks = subtasks_response.get("subtasks", [])
     except APIError as e:
@@ -1038,7 +1047,7 @@ def autocode(
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    project_id = task.get("project_id", "summitflow")
+    project_id = task_project_id
     dispatcher = get_dispatcher()
     published = dispatcher.publish_task_ready(task_id, project_id, schedule)
 
