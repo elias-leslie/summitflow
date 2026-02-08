@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Database,
   Eye,
+  FileCheck,
   HardDrive,
   Loader2,
   Plus,
@@ -17,6 +18,8 @@ import {
   PowerOff,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
+  ShieldX,
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -328,6 +331,79 @@ function BackupExpandedRow({ backup, projectName }: { backup: Backup; projectNam
             <div className="text-sm">
               <span className="text-slate-500">Note: </span>
               <span className="text-slate-300">{backup.note}</span>
+            </div>
+          )}
+
+          {backup.verified != null && (
+            <div
+              className={clsx(
+                'p-3 rounded-lg border',
+                backup.verified
+                  ? 'bg-green-500/10 border-green-500/30'
+                  : 'bg-red-500/10 border-red-500/30',
+              )}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                {backup.verified ? (
+                  <ShieldCheck className="w-4 h-4 text-green-400" />
+                ) : (
+                  <ShieldX className="w-4 h-4 text-red-400" />
+                )}
+                <span
+                  className={clsx(
+                    'text-sm font-medium',
+                    backup.verified ? 'text-green-400' : 'text-red-400',
+                  )}
+                >
+                  {backup.verified ? 'Verified' : 'Verification Failed'}
+                </span>
+                {backup.verified_at && (
+                  <span className="text-xs text-slate-500 ml-auto">
+                    {formatDate(backup.verified_at)}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                {backup.checksum && (
+                  <div>
+                    <p className="text-slate-500 text-xs mb-0.5">Checksum</p>
+                    <p className="text-slate-300 font-mono text-xs truncate" title={backup.checksum}>
+                      {backup.checksum}
+                    </p>
+                  </div>
+                )}
+                {backup.total_files != null && (
+                  <div>
+                    <p className="text-slate-500 text-xs mb-0.5">Files</p>
+                    <p className="text-slate-300 flex items-center gap-1">
+                      <FileCheck className="w-3 h-3 text-slate-500" />
+                      {backup.total_files.toLocaleString()}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {backup.verification_json?.tree && Object.keys(backup.verification_json.tree).length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50">
+                  <p className="text-xs text-slate-500 mb-1">Archive Contents</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0.5">
+                    {Object.entries(backup.verification_json.tree)
+                      .sort(([, a], [, b]) => b.count - a.count)
+                      .map(([name, info]) => (
+                        <div key={name} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 truncate">{name}</span>
+                          <span className="text-slate-500 ml-2">{info.count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {backup.verification_json?.errors && backup.verification_json.errors.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-red-500/20">
+                  {backup.verification_json.errors.map((err) => (
+                    <p key={err} className="text-xs text-red-400">{err}</p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -664,7 +740,18 @@ export function BackupsClient() {
                           </Link>
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={backup.status} />
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={backup.status} />
+                            {backup.verified != null && (
+                              <span title={backup.verified ? 'Verified' : 'Verification failed'}>
+                                {backup.verified ? (
+                                  <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                                ) : (
+                                  <ShieldX className="w-3.5 h-3.5 text-red-400" />
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <span

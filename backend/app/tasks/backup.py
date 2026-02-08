@@ -8,6 +8,7 @@ Tasks:
 
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -146,8 +147,19 @@ def _run_backup(
         )
 
         if result.returncode == 0:
-            # Parse output for size info
+            # Parse output for size and verification info
             size_info = _parse_backup_output(result.stdout)
+            verification = size_info.pop("verification", None)
+
+            verification_kwargs: dict[str, Any] = {}
+            if verification:
+                verification_kwargs["verified"] = verification.get("verified")
+                verification_kwargs["verified_at"] = verification.get("verified_at")
+                verification_kwargs["checksum"] = verification.get("checksum")
+                total = verification.get("total_files")
+                if total is not None:
+                    verification_kwargs["total_files"] = int(total)
+                verification_kwargs["verification_json"] = verification
 
             backup_store.update_backup_status(
                 backup_id,
@@ -156,6 +168,7 @@ def _run_backup(
                 db_size_bytes=size_info.get("db_bytes"),
                 files_size_bytes=size_info.get("files_bytes"),
                 location=size_info.get("location"),
+                **verification_kwargs,
             )
 
             logger.info(
@@ -163,6 +176,7 @@ def _run_backup(
                 backup_id=backup_id,
                 project_id=project_id,
                 size_bytes=size_info.get("total_bytes"),
+                verified=verification.get("verified") if verification else None,
             )
 
             return {
@@ -409,13 +423,12 @@ def _get_project_root(project_id: str) -> str | None:
 
 
 def _parse_backup_output(output: str) -> dict[str, Any]:
-    """Parse backup.sh output for size and location info."""
+    """Parse backup.sh output for size, location, and verification info."""
     result: dict[str, Any] = {}
 
     for line in output.split("\n"):
         line = line.strip()
         if line.startswith("Size:"):
-            # Parse "Size: 123M" or "Size: 123456 bytes"
             size_str = line.split(":", 1)[1].strip()
             result["total_bytes"] = _parse_size(size_str)
         elif line.startswith("DB Size:"):
@@ -423,6 +436,12 @@ def _parse_backup_output(output: str) -> dict[str, Any]:
             result["db_bytes"] = _parse_size(size_str)
         elif line.startswith("Location:"):
             result["location"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Verification:"):
+            json_str = line.split(":", 1)[1].strip()
+            try:
+                result["verification"] = json.loads(json_str)
+            except (json.JSONDecodeError, ValueError):
+                logger.warning("failed_to_parse_verification_json", raw=json_str[:200])
 
     return result
 

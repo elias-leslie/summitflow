@@ -40,6 +40,11 @@ class BackupResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
+    verified: bool | None = None
+    verified_at: datetime | None = None
+    checksum: str | None = None
+    total_files: int | None = None
+    verification_json: dict[str, Any] | None = None
 
 
 class BackupListResponse(BaseModel):
@@ -118,6 +123,13 @@ def _backup_to_response(backup: dict[str, Any]) -> BackupResponse:
         if backup.get("completed_at")
         else None,
         error_message=backup.get("error_message"),
+        verified=backup.get("verified"),
+        verified_at=datetime.fromisoformat(backup["verified_at"])
+        if backup.get("verified_at")
+        else None,
+        checksum=backup.get("checksum"),
+        total_files=backup.get("total_files"),
+        verification_json=backup.get("verification_json"),
     )
 
 

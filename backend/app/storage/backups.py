@@ -8,6 +8,7 @@ This module handles all database interactions for backup records:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,12 +16,13 @@ from .connection import generate_prefixed_id, get_connection
 
 # Base SELECT columns for backup queries
 BACKUP_COLUMNS = """id, project_id, name, backup_type, status, size_bytes, db_size_bytes,
-       files_size_bytes, location, note, created_at, started_at, completed_at, error_message"""
+       files_size_bytes, location, note, created_at, started_at, completed_at, error_message,
+       verified, verified_at, checksum, total_files, verification_json"""
 
 BACKUP_SCHEDULE_COLUMNS = """id, project_id, enabled, frequency, retention_count,
        last_run_at, next_run_at, created_at, updated_at"""
 
-EXPECTED_BACKUP_COLUMNS = 14
+EXPECTED_BACKUP_COLUMNS = 19
 EXPECTED_SCHEDULE_COLUMNS = 9
 
 
@@ -47,6 +49,11 @@ def _row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
         "started_at": row[11].isoformat() if row[11] else None,
         "completed_at": row[12].isoformat() if row[12] else None,
         "error_message": row[13],
+        "verified": row[14],
+        "verified_at": row[15].isoformat() if row[15] else None,
+        "checksum": row[16],
+        "total_files": row[17],
+        "verification_json": row[18],
     }
 
 
@@ -174,6 +181,11 @@ def update_backup_status(
     files_size_bytes: int | None = None,
     location: str | None = None,
     error_message: str | None = None,
+    verified: bool | None = None,
+    verified_at: str | None = None,
+    checksum: str | None = None,
+    total_files: int | None = None,
+    verification_json: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Update backup status and optional fields.
 
@@ -185,6 +197,11 @@ def update_backup_status(
         files_size_bytes: Project files size
         location: Backup storage location
         error_message: Error message if failed
+        verified: Whether archive passed integrity checks
+        verified_at: When verification was performed (ISO format)
+        checksum: SHA256 checksum of the archive
+        total_files: Number of files in the archive
+        verification_json: Full verification output (tree, errors, etc.)
 
     Returns:
         Updated backup record or None if not found
@@ -211,6 +228,26 @@ def update_backup_status(
     if error_message is not None:
         updates.append("error_message = %s")
         params.append(error_message)
+
+    if verified is not None:
+        updates.append("verified = %s")
+        params.append(verified)
+
+    if verified_at is not None:
+        updates.append("verified_at = %s")
+        params.append(verified_at)
+
+    if checksum is not None:
+        updates.append("checksum = %s")
+        params.append(checksum)
+
+    if total_files is not None:
+        updates.append("total_files = %s")
+        params.append(total_files)
+
+    if verification_json is not None:
+        updates.append("verification_json = %s")
+        params.append(json.dumps(verification_json))
 
     # Update timestamps based on status
     if status == "running":

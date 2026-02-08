@@ -294,6 +294,7 @@ main() {
     verification=$(verify_backup "$archive_path")
 
     display_verification "$verification"
+    echo "Verification: $verification"
 
     # Local only mode
     if [ "$LOCAL_ONLY" = true ]; then

@@ -19,6 +19,18 @@ export interface Backup {
   started_at: string | null
   completed_at: string | null
   error_message: string | null
+  verified: boolean | null
+  verified_at: string | null
+  checksum: string | null
+  total_files: number | null
+  verification_json: {
+    verified: boolean
+    verified_at: string
+    errors: string[]
+    tree: Record<string, { count: number }>
+    total_files: number
+    checksum: string
+  } | null
 }
 
 export interface BackupListResponse {

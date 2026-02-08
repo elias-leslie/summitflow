@@ -18,6 +18,7 @@ from typing import Any
 
 import redis as _redis_lib
 from celery import Task, shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 
 from ...config import REDIS_URL
 from ...constants import (
@@ -1022,9 +1023,29 @@ def start_execution(
 
     _emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
 
+    try:
+        return _execute_task_locked(task_id, project_id)
+    except SoftTimeLimitExceeded:
+        logger.error("execution_soft_timeout", task_id=task_id)
+        _emit_log(
+            task_id,
+            "error",
+            "Execution timed out (soft limit). Setting task to blocked.",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        with contextlib.suppress(Exception):
+            task_store.update_task_status(task_id, "blocked", error_message="Soft time limit exceeded")
+        return {"task_id": task_id, "status": "timeout", "reason": "soft_time_limit"}
+    finally:
+        with contextlib.suppress(Exception):
+            _r.delete(_lock_key)
+
+
+def _execute_task_locked(task_id: str, project_id: str) -> dict[str, Any]:
+    """Inner execution body, always runs under Redis lock released by caller."""
     task = task_store.get_task(task_id)
     if not task:
-        _r.delete(_lock_key)
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
@@ -1301,10 +1322,6 @@ def start_execution(
                 project_id=project_id,
             )
 
-    # Release execution lock on completion
-    with contextlib.suppress(Exception):
-        _r.delete(_lock_key)
-
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
 
@@ -1545,6 +1562,22 @@ def _execute_subtask(
         # 3. Escalate to outer loop for human review
 
         steps = subtask.get("steps_from_table", [])
+        if not steps:
+            _emit_log(
+                task_id,
+                "error",
+                f"Subtask {subtask_short_id} has 0 steps — cannot verify",
+                source="orchestrator",
+                project_id=project_id,
+            )
+            return {
+                "subtask_id": subtask_short_id,
+                "status": "failed",
+                "passed": False,
+                "reason": "zero_steps",
+                "step_results": [],
+            }
+
         supervisor_guidance_text: str | None = None
         self_fix_attempts = 0
         supervisor_guided_attempts = 0
