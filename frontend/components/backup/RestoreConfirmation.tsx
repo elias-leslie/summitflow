@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { type Backup, restoreBackup } from '@/lib/api/backups'
+import { formatBytes, formatDate } from '@/lib/format'
 
 type RestoreStep = 'preview' | 'confirm' | 'restoring' | 'success' | 'error'
 
@@ -22,30 +23,6 @@ interface RestoreConfirmationProps {
   projectName: string
   onClose: () => void
   onSuccess?: () => void
-}
-
-function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return '-'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let i = 0
-  let size = bytes
-  while (size >= 1024 && i < units.length - 1) {
-    size /= 1024
-    i++
-  }
-  return `${size.toFixed(1)} ${units[i]}`
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 export function RestoreConfirmation({
@@ -79,7 +56,6 @@ export function RestoreConfirmation({
     }
   }
 
-  // Step indicators
   const StepIndicator = ({
     stepNum,
     label,
@@ -118,7 +94,6 @@ export function RestoreConfirmation({
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 rounded-lg border border-slate-700 w-full max-w-lg">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-yellow-500/20 rounded-lg">
@@ -134,7 +109,6 @@ export function RestoreConfirmation({
             </div>
           </div>
 
-          {/* Progress Steps */}
           {(step === 'preview' || step === 'confirm') && (
             <div className="flex items-center gap-4 mt-4">
               <StepIndicator
@@ -154,9 +128,7 @@ export function RestoreConfirmation({
           )}
         </div>
 
-        {/* Content */}
         <div className="p-6">
-          {/* Step 1: Preview */}
           {step === 'preview' && (
             <div className="space-y-4">
               <div className="p-4 bg-slate-700/50 rounded-lg space-y-3">
@@ -218,7 +190,6 @@ export function RestoreConfirmation({
             </div>
           )}
 
-          {/* Step 2: Confirm with project name */}
           {step === 'confirm' && (
             <div className="space-y-4">
               <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
@@ -263,7 +234,6 @@ export function RestoreConfirmation({
             </div>
           )}
 
-          {/* Restoring state */}
           {step === 'restoring' && (
             <div className="py-8 text-center">
               <Loader2 className="w-12 h-12 text-phosphor-400 animate-spin mx-auto mb-4" />
@@ -278,7 +248,6 @@ export function RestoreConfirmation({
             </div>
           )}
 
-          {/* Success state */}
           {step === 'success' && (
             <div className="py-8 text-center">
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -295,7 +264,6 @@ export function RestoreConfirmation({
             </div>
           )}
 
-          {/* Error state */}
           {step === 'error' && (
             <div className="py-8 text-center">
               <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -309,7 +277,6 @@ export function RestoreConfirmation({
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-700 flex justify-between">
           {step === 'preview' && (
             <>

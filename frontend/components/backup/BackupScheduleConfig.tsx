@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
+  AlertCircle,
   Calendar,
   CheckCircle2,
   Clock,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { fetchBackupSchedule, updateBackupSchedule } from '@/lib/api/backups'
+import { formatDate } from '@/lib/format'
 
 interface BackupScheduleConfigProps {
   projectId: string
@@ -23,18 +25,6 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Monthly', description: 'Backup once a month' },
 ]
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'Never'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
   const queryClient = useQueryClient()
 
@@ -43,13 +33,13 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
   const [retentionCount, setRetentionCount] = useState(5)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const { data: schedule, isLoading } = useQuery({
     queryKey: ['backup-schedule', projectId],
     queryFn: () => fetchBackupSchedule(projectId),
   })
 
-  // Sync form state when data loads
   useEffect(() => {
     if (schedule) {
       setEnabled(schedule.enabled)
@@ -61,6 +51,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
   const handleSave = async () => {
     setSaving(true)
     setSaveSuccess(false)
+    setSaveError(null)
 
     try {
       await updateBackupSchedule(projectId, {
@@ -74,17 +65,17 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 2000)
     } catch (err) {
-      console.error('Failed to save schedule:', err)
+      setSaveError(
+        err instanceof Error ? err.message : 'Failed to save schedule',
+      )
     } finally {
       setSaving(false)
     }
   }
 
-  // For existing schedules: check if any field differs from saved values
-  // For new schedules (no schedule): any configuration is a change (user enabled backups)
   const isNewSchedule = !schedule
   const hasChanges = isNewSchedule
-    ? enabled // For new schedules, enabling is the trigger to save
+    ? enabled
     : enabled !== schedule.enabled ||
       frequency !== schedule.frequency ||
       retentionCount !== schedule.retention_count
@@ -110,7 +101,6 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
       </p>
 
       <div className="space-y-6">
-        {/* Enable/Disable Toggle */}
         <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg">
           <div className="flex items-center gap-3">
             {enabled ? (
@@ -145,7 +135,6 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           </button>
         </div>
 
-        {/* Frequency Selector */}
         <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label className="block text-sm font-medium text-slate-300 mb-3">
             Backup Frequency
@@ -174,7 +163,6 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           </div>
         </div>
 
-        {/* Retention Count */}
         <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label
             htmlFor="retention-count"
@@ -201,7 +189,6 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           </p>
         </div>
 
-        {/* Schedule Info */}
         {schedule && (
           <div className="p-4 bg-slate-700/30 rounded-lg space-y-2">
             <div className="flex items-center justify-between text-sm">
@@ -210,7 +197,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
                 Last Backup
               </span>
               <span className="text-slate-200">
-                {formatDate(schedule.last_run_at)}
+                {schedule.last_run_at ? formatDate(schedule.last_run_at) : 'Never'}
               </span>
             </div>
             {enabled && schedule.next_run_at && (
@@ -227,12 +214,17 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           </div>
         )}
 
-        {/* Save Button */}
         <div className="flex items-center justify-end gap-3 pt-2">
           {saveSuccess && (
             <span className="text-sm text-green-400 flex items-center gap-1">
               <CheckCircle2 className="w-4 h-4" />
               Saved
+            </span>
+          )}
+          {saveError && (
+            <span className="text-sm text-red-400 flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" />
+              {saveError}
             </span>
           )}
           <button
