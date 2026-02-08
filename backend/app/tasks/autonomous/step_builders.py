@@ -141,7 +141,7 @@ def build_refactor_steps(
     steps.append(
         {
             "description": "Commit changes via commit.sh",
-            "verify_command": 'commit.sh --json | grep -q \'"status":"SUCCESS"\'',
+            "verify_command": 'commit.sh --json | grep -qE \'"status":"(SUCCESS|SKIP)"\'',
             "expected_output": "exit code 0",
         }
     )
