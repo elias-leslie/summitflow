@@ -11,13 +11,15 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
+# Import config which handles ~/.env.local loading via pydantic-settings
+from app.config import DATABASE_URL as _app_db_url
+
 # this is the Alembic Config object
 config = context.config
 
-# Override sqlalchemy.url with DATABASE_URL from environment
-database_url = os.environ.get("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+# Use DATABASE_URL from env (if explicitly set) or from app config
+database_url = os.environ.get("DATABASE_URL") or _app_db_url
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:

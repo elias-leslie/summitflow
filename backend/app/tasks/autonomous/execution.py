@@ -791,6 +791,45 @@ def _check_worktree_health(project_path: str, task_id: str, project_id: str) -> 
     return True
 
 
+def _check_main_repo_leakage(
+    task_id: str, project_id: str, project_path: str,
+) -> bool:
+    """Detect if agent wrote files to main repo instead of worktree.
+
+    Compares project_path (worktree) against project root. If they differ
+    and main repo has new uncommitted changes, the agent leaked files.
+
+    Returns True if leakage detected, False otherwise.
+    """
+    main_root = get_project_root_path(project_id)
+    if not main_root or main_root == project_path:
+        return False
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=main_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        dirty_files = result.stdout.strip()
+        if dirty_files:
+            _emit_log(
+                task_id,
+                "warn",
+                f"WORKTREE LEAKAGE: Agent modified main repo. "
+                f"Files: {dirty_files[:200]}",
+                source="orchestrator",
+                project_id=project_id,
+            )
+            return True
+    except Exception as e:
+        logger.warning("main_repo_leakage_check_failed", error=str(e))
+
+    return False
+
+
 def _has_uncommitted_changes(project_path: str) -> bool:
     """Check if the working tree has uncommitted changes."""
     result = subprocess.run(
@@ -1237,6 +1276,8 @@ def _execute_task_locked(task_id: str, project_id: str) -> dict[str, Any]:
                 return {"task_id": task_id, "status": "escalated", "subtask_results": results}
 
             break
+
+    _check_main_repo_leakage(task_id, project_id, project_path)
 
     all_passed = all(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):

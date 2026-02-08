@@ -8,6 +8,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 
@@ -400,3 +401,214 @@ class TestInitialWorktreeGuard:
 
         assert result["status"] == "failed"
         assert result["reason"] == "worktree_invalid"
+
+
+class TestMainRepoLeakageDetection:
+    """Detect when agent writes files to main repo instead of worktree."""
+
+    @patch("app.tasks.autonomous.execution._emit_log")
+    @patch("app.tasks.autonomous.execution.subprocess")
+    @patch("app.tasks.autonomous.execution.get_project_root_path")
+    def test_leakage_detected_when_main_repo_dirty(
+        self,
+        mock_root: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+    ) -> None:
+        """Returns True and logs warning when main repo has uncommitted changes."""
+        from app.tasks.autonomous.execution import _check_main_repo_leakage
+
+        mock_root.return_value = "/home/test/project"
+        result_obj = MagicMock()
+        result_obj.stdout = " M leaked_file.py\n"
+        mock_subprocess.run.return_value = result_obj
+
+        detected = _check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+
+        assert detected is True
+        assert any("WORKTREE LEAKAGE" in str(c) for c in mock_log.call_args_list)
+
+    @patch("app.tasks.autonomous.execution._emit_log")
+    @patch("app.tasks.autonomous.execution.subprocess")
+    @patch("app.tasks.autonomous.execution.get_project_root_path")
+    def test_no_leakage_when_main_repo_clean(
+        self,
+        mock_root: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+    ) -> None:
+        """Returns False when main repo is clean."""
+        from app.tasks.autonomous.execution import _check_main_repo_leakage
+
+        mock_root.return_value = "/home/test/project"
+        result_obj = MagicMock()
+        result_obj.stdout = ""
+        mock_subprocess.run.return_value = result_obj
+
+        detected = _check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+
+        assert detected is False
+
+    @patch("app.tasks.autonomous.execution._emit_log")
+    @patch("app.tasks.autonomous.execution.get_project_root_path")
+    def test_skipped_when_same_path(
+        self,
+        mock_root: MagicMock,
+        mock_log: MagicMock,
+    ) -> None:
+        """Returns False immediately when project_path equals main root."""
+        from app.tasks.autonomous.execution import _check_main_repo_leakage
+
+        mock_root.return_value = "/home/test/project"
+
+        detected = _check_main_repo_leakage("task-1", "test-project", "/home/test/project")
+
+        assert detected is False
+        mock_log.assert_not_called()
+
+
+class TestZeroStepSubtask:
+    """Zero-step subtask must fail verification, not silently pass."""
+
+    @patch("app.tasks.autonomous.execution._emit_log")
+    @patch("app.tasks.autonomous.execution._emit_progress")
+    @patch("app.tasks.autonomous.execution._emit_progress_log")
+    @patch("app.tasks.autonomous.execution._check_worktree_health")
+    @patch("app.tasks.autonomous.execution._get_project_path")
+    @patch("app.tasks.autonomous.execution._build_subtask_prompt")
+    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.execution._has_uncommitted_changes")
+    @patch("app.tasks.autonomous.execution.get_handoff_context")
+    @patch("app.tasks.autonomous.execution.get_task_spirit")
+    @patch("app.tasks.autonomous.execution.acknowledge_no_citations", create=True)
+    def test_zero_steps_returns_failed(
+        self,
+        mock_ack_citations: MagicMock,
+        mock_spirit: MagicMock,
+        mock_handoff: MagicMock,
+        mock_uncommitted: MagicMock,
+        mock_client_factory: MagicMock,
+        mock_build_prompt: MagicMock,
+        mock_project_path: MagicMock,
+        mock_worktree_health: MagicMock,
+        mock_progress_log: MagicMock,
+        mock_progress: MagicMock,
+        mock_log: MagicMock,
+    ) -> None:
+        """Subtask with 0 steps returns failed with reason=zero_steps."""
+        from app.tasks.autonomous.execution import _execute_subtask
+
+        mock_project_path.return_value = "/tmp/test-worktree"
+        mock_worktree_health.return_value = True
+        mock_build_prompt.return_value = "test prompt"
+        mock_uncommitted.return_value = False
+        mock_spirit.return_value = {"objective": "test", "spirit_anti": ""}
+        mock_handoff.return_value = {}
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "done"
+        mock_response.session_id = "session-1"
+        mock_response.progress_log = []
+        mock_response.context_usage = None
+        mock_response.cited_uuids = []
+        mock_client.complete.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        subtask = {
+            "id": "sub-1",
+            "subtask_id": "1.1",
+            "description": "empty subtask",
+            "steps_from_table": [],
+        }
+
+        with patch("app.storage.tasks.core.add_agent_hub_session"):
+            result = _execute_subtask("task-1", subtask, "test-project", {})
+
+        assert result["status"] == "failed"
+        assert result["reason"] == "zero_steps"
+        assert result["passed"] is False
+
+
+class TestRedisLockReleasedOnFailure:
+    """Redis execution lock must be released on all exit paths."""
+
+    @patch("app.tasks.autonomous.execution._execute_task_locked")
+    @patch("app.tasks.autonomous.execution._redis_lib")
+    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.execution._emit_log")
+    def test_lock_released_on_normal_return(
+        self,
+        mock_log: MagicMock,
+        mock_store: MagicMock,
+        mock_redis: MagicMock,
+        mock_locked: MagicMock,
+    ) -> None:
+        """Lock is deleted in finally block after normal execution."""
+        from app.tasks.autonomous.execution import start_execution
+
+        mock_r = MagicMock()
+        mock_r.set.return_value = True
+        mock_redis.from_url.return_value = mock_r
+        mock_locked.return_value = {"task_id": "t-1", "status": "executed"}
+
+        async_result = start_execution.apply(args=("t-1", "test-project"))
+        result: dict[str, Any] = async_result.result  # type: ignore[assignment]
+        assert result["status"] == "executed"
+        mock_r.delete.assert_called_once_with("summitflow:execution_lock:t-1")
+
+    @patch("app.tasks.autonomous.execution._execute_task_locked")
+    @patch("app.tasks.autonomous.execution._redis_lib")
+    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.execution._emit_log")
+    def test_lock_released_on_exception(
+        self,
+        mock_log: MagicMock,
+        mock_store: MagicMock,
+        mock_redis: MagicMock,
+        mock_locked: MagicMock,
+    ) -> None:
+        """Lock is deleted in finally block even when execution raises."""
+        mock_r = MagicMock()
+        mock_r.set.return_value = True
+        mock_redis.from_url.return_value = mock_r
+        mock_locked.side_effect = RuntimeError("boom")
+
+        from app.tasks.autonomous.execution import start_execution
+
+        try:
+            start_execution.apply(args=("t-1", "test-project"))
+        except Exception:
+            pass
+
+        mock_r.delete.assert_called_once_with("summitflow:execution_lock:t-1")
+
+    @patch("app.tasks.autonomous.execution._execute_task_locked")
+    @patch("app.tasks.autonomous.execution._redis_lib")
+    @patch("app.tasks.autonomous.execution.task_store")
+    @patch("app.tasks.autonomous.execution._emit_log")
+    def test_soft_timeout_releases_lock_and_blocks_task(
+        self,
+        mock_log: MagicMock,
+        mock_store: MagicMock,
+        mock_redis: MagicMock,
+        mock_locked: MagicMock,
+    ) -> None:
+        """SoftTimeLimitExceeded is caught, task blocked, lock released."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        from app.tasks.autonomous.execution import start_execution
+
+        mock_r = MagicMock()
+        mock_r.set.return_value = True
+        mock_redis.from_url.return_value = mock_r
+        mock_locked.side_effect = SoftTimeLimitExceeded()
+
+        async_result = start_execution.apply(args=("t-1", "test-project"))
+        result: dict[str, Any] = async_result.result  # type: ignore[assignment]
+        assert result["status"] == "timeout"
+        assert result["reason"] == "soft_time_limit"
+        mock_r.delete.assert_called_once_with("summitflow:execution_lock:t-1")
+        mock_store.update_task_status.assert_called_once_with(
+            "t-1", "blocked", error_message="Soft time limit exceeded"
+        )
