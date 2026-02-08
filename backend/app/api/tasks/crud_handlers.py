@@ -50,8 +50,8 @@ async def handle_batch_create_tasks(project_id: str, body: BatchTaskRequest) -> 
                     await asyncio.to_thread(
                         upsert_task_spirit,
                         task_id=task["id"],
-                        **item.model_dump(include={*spirit_fields, "complexity"}),
                         objective=item.objective or "",
+                        **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),
                     )
                 except Exception as e:
                     logger.warning(f"Failed to create task_spirit for task {task['id']}: {e}")
