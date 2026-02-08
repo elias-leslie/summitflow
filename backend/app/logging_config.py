@@ -11,12 +11,11 @@ import os
 import sys
 from typing import Any
 
+from .logging_constants import DATE_FORMAT, DEFAULT_LOG_LEVEL, LOG_FORMAT
+
 
 def _parse_log_level(level_str: str | None) -> int:
     """Parse log level string to logging constant."""
-    if not level_str:
-        return logging.INFO
-
     level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -26,14 +25,19 @@ def _parse_log_level(level_str: str | None) -> int:
         "CRITICAL": logging.CRITICAL,
     }
 
-    return level_map.get(level_str.upper(), logging.INFO)
+    default_level = level_map.get(DEFAULT_LOG_LEVEL.upper(), logging.INFO)
+
+    if not level_str:
+        return default_level
+
+    return level_map.get(level_str.upper(), default_level)
 
 
 # Configure root logger
 _log_level = _parse_log_level(os.getenv("LOG_LEVEL"))
 _handler = logging.StreamHandler(sys.stdout)
 _handler.setLevel(_log_level)
-_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+_handler.setFormatter(logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT))
 
 logging.root.setLevel(_log_level)
 logging.root.handlers = [_handler]
