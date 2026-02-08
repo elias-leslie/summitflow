@@ -157,6 +157,13 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     else:
         base_branch = "main"
 
+    # Resolve project root for cross-project support
+    repo_cwd: str | None = None
+    if project_id:
+        from app.storage.projects import get_project_root_path
+
+        repo_cwd = get_project_root_path(project_id)
+
     task_branch = f"{task_id}/main"
 
     # Step 1: Ensure we're on base branch
@@ -165,6 +172,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,
+        cwd=repo_cwd,
     )
     current_branch = current.stdout.strip() if current.returncode == 0 else ""
 
@@ -175,6 +183,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
                 check=True,
                 capture_output=True,
                 text=True,
+                cwd=repo_cwd,
             )
         except subprocess.CalledProcessError as e:
             print(f"Error: Failed to checkout {base_branch}: {e.stderr}", file=sys.stderr)
@@ -187,6 +196,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
             check=True,
             capture_output=True,
             text=True,
+            cwd=repo_cwd,
         )
         print(f"Merged {task_branch} into {base_branch}")
     except subprocess.CalledProcessError as e:
@@ -206,6 +216,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
             check=True,
             capture_output=True,
             text=True,
+            cwd=repo_cwd,
         )
         print(f"Deleted branch {task_branch}")
     except subprocess.CalledProcessError as e:
