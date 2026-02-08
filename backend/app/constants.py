@@ -93,6 +93,9 @@ SELF_HEAL_MAX_ATTEMPTS = 3
 # Number of supervisor-guided fix attempts before escalating to human
 SUPERVISOR_GUIDED_MAX_ATTEMPTS = 3
 
+# Context window usage threshold (%) for starting a fresh session
+CONTEXT_FRESHNESS_THRESHOLD = 80
+
 # Total number of QA review attempts before escalation to human
 QA_ESCALATION_THRESHOLD = 5
 

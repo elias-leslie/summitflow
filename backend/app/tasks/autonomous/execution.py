@@ -18,6 +18,7 @@ from typing import Any
 from celery import Task, shared_task
 
 from ...constants import (
+    CONTEXT_FRESHNESS_THRESHOLD,
     PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
     SELF_HEAL_MAX_ATTEMPTS,
     SUPERVISOR_GUIDED_MAX_ATTEMPTS,
@@ -1443,6 +1444,19 @@ def _execute_subtask(
                 visibility="internal",
             )
 
+        # Log context window usage after initial execution
+        ctx = response.context_usage
+        if ctx:
+            level = "warn" if ctx.percent_used >= CONTEXT_FRESHNESS_THRESHOLD else "info"
+            _emit_log(
+                task_id,
+                level,
+                f"Context usage after initial execution: {ctx.percent_used:.0f}% "
+                f"({ctx.used_tokens}/{ctx.limit_tokens} tokens)",
+                source="orchestrator",
+                project_id=project_id,
+            )
+
         # Log memory citations used
         if response.cited_uuids:
             citations_str = ", ".join(response.cited_uuids[:5])
@@ -1676,6 +1690,33 @@ def _execute_subtask(
                     source="agent",
                     project_id=project_id,
                 )
+
+                # Check context window usage - start fresh session if approaching limit
+                ctx = response.context_usage
+                if ctx and ctx.percent_used >= CONTEXT_FRESHNESS_THRESHOLD:
+                    _emit_log(
+                        task_id,
+                        "warn",
+                        f"Context window at {ctx.percent_used:.0f}% "
+                        f"({ctx.used_tokens}/{ctx.limit_tokens} tokens). "
+                        "Starting fresh session for next attempt.",
+                        source="orchestrator",
+                        project_id=project_id,
+                    )
+                    agent_session_id = str(uuid.uuid4())
+                    from ...storage.tasks.core import add_agent_hub_session
+
+                    add_agent_hub_session(task_id, agent_session_id)
+                elif ctx:
+                    _emit_log(
+                        task_id,
+                        "debug",
+                        f"Context usage: {ctx.percent_used:.0f}% "
+                        f"({ctx.used_tokens}/{ctx.limit_tokens} tokens)",
+                        source="orchestrator",
+                        project_id=project_id,
+                        visibility="internal",
+                    )
 
                 # Auto-commit fix attempt
                 if _has_uncommitted_changes(project_path):
