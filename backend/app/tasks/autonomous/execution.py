@@ -1944,7 +1944,14 @@ def _execute_subtask(
         }
 
     except Exception as e:
-        logger.warning("Subtask execution failed", subtask_id=subtask_short_id, error=str(e))
+        import traceback
+
+        logger.warning(
+            "Subtask execution failed",
+            subtask_id=subtask_short_id,
+            error=str(e),
+            traceback=traceback.format_exc(),
+        )
         error_str = str(e)
         issue_id = _compute_issue_id(error_str)
         issue_counts[issue_id] = issue_counts.get(issue_id, 0) + 1
@@ -2078,7 +2085,7 @@ def _verify_steps(
         )
         status = "passed" if result.passed else "failed"
 
-        verify_cmd = step.get("verify_command", "")[:60]
+        verify_cmd = (step.get("verify_command") or "")[:60]
         output_preview = result.output[:200] if result.output else "(no output)"
 
         _emit_log(
