@@ -83,6 +83,7 @@ from .task_subtasks import (
 TaskResponse.model_rebuild()
 TaskCreate.model_rebuild()
 TaskUpdate.model_rebuild()
+BatchTaskResponse.model_rebuild()
 CapabilityContext.model_rebuild()
 DiscussionResponse.model_rebuild()
 
