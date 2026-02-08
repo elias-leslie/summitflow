@@ -354,6 +354,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
 
     cmd = [dt_cmd, "--check"]
     previous_error_count: int | None = None
+    pristine_session_id: str | None = None
 
     _emit_log(
         task_id,
@@ -442,22 +443,28 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
             pristine_template = _get_prompt_template("autocode-pristine-fix")
             fix_prompt = pristine_template.format_map({"errors_output": output[:8000]})
 
-            response = client.complete(
-                messages=[{"role": "user", "content": fix_prompt}],
-                agent_slug="coder",
-                working_dir=str(repo_path),
-                max_turns=10,
-                execute_tools=True,
-                project_id=project_id,
-                use_memory=False,
-                include_roles=AUTOCODE_ROLES,
-            )
-
-            pristine_session_id = response.session_id
+            pristine_kwargs: dict[str, Any] = {
+                "messages": [{"role": "user", "content": fix_prompt}],
+                "agent_slug": "coder",
+                "working_dir": str(repo_path),
+                "max_turns": 10,
+                "execute_tools": True,
+                "project_id": project_id,
+                "use_memory": False,
+                "include_roles": AUTOCODE_ROLES,
+            }
             if pristine_session_id:
-                from ...storage.tasks.core import add_agent_hub_session
+                pristine_kwargs["session_id"] = pristine_session_id
 
-                add_agent_hub_session(task_id, pristine_session_id)
+            response = client.complete(**pristine_kwargs)
+
+            new_pristine_session = response.session_id
+            if new_pristine_session:
+                if new_pristine_session != pristine_session_id:
+                    from ...storage.tasks.core import add_agent_hub_session
+
+                    add_agent_hub_session(task_id, new_pristine_session)
+                pristine_session_id = new_pristine_session
 
             logger.info(
                 "pristine_self_heal_agent_completed",
@@ -1593,31 +1600,35 @@ def _execute_subtask(
                     subtask, failed_steps, response.content, supervisor_guidance_text
                 )
 
-            # Call agent with fix prompt
+            # Call agent with fix prompt, continuing existing session for context
+            continuation = agent_session_id is not None
             _emit_log(
                 task_id,
                 "info",
-                "Calling agent for fix attempt...",
+                f"Calling agent for fix attempt ({'continuing session' if continuation else 'new session'})...",
                 source="orchestrator",
                 project_id=project_id,
             )
 
             try:
-                response = client.complete(
-                    messages=[{"role": "user", "content": fix_prompt}],
-                    agent_slug=agent_slug,
-                    working_dir=project_path,
-                    max_turns=15,  # Shorter for fix attempts
-                    execute_tools=True,
-                    project_id=project_id,
-                    use_memory=True,
-                    trace_id=task_id,
-                    include_roles=AUTOCODE_ROLES,
-                )
+                fix_kwargs: dict[str, Any] = {
+                    "messages": [{"role": "user", "content": fix_prompt}],
+                    "agent_slug": agent_slug,
+                    "working_dir": project_path,
+                    "max_turns": 15,
+                    "execute_tools": True,
+                    "project_id": project_id,
+                    "use_memory": True,
+                    "trace_id": task_id,
+                    "include_roles": AUTOCODE_ROLES,
+                }
+                if continuation:
+                    fix_kwargs["session_id"] = agent_session_id
+
+                response = client.complete(**fix_kwargs)
                 # Update session ID for next iteration
                 new_session_id = response.session_id
                 if new_session_id and new_session_id != agent_session_id:
-                    # New session created during retry - store it for observability
                     from ...storage.tasks.core import add_agent_hub_session
 
                     add_agent_hub_session(task_id, new_session_id)
