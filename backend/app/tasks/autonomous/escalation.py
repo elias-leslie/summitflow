@@ -2,8 +2,7 @@
 
 Escalation tiers:
 - Worker: 3 failures on same issue -> escalate to supervisor
-- Supervisor: 2 failures -> escalate to human review
-- Human: Review with recommendation statement
+- Supervisor: 2 failures -> block with recommendation
 """
 
 from __future__ import annotations
@@ -145,7 +144,7 @@ def supervisor_guidance(
     )
 
     if failure_count >= QA_SUPERVISOR_STUCK_THRESHOLD:
-        return _escalate_to_human(
+        return _block_with_recommendation(
             task_id, subtask_id, issue_description, failure_count, project_id=project_id,
         )
 
@@ -178,20 +177,20 @@ Worker Attempts: {failure_count}"""
 
     except Exception as e:
         logger.warning("Supervisor guidance failed", error=str(e))
-        return _escalate_to_human(
+        return _block_with_recommendation(
             task_id, subtask_id, issue_description, failure_count, project_id=project_id,
         )
 
 
-def _escalate_to_human(
+def _block_with_recommendation(
     task_id: str,
     subtask_id: str,
     issue_description: str,
     attempts: int,
     project_id: str | None = None,
 ) -> dict[str, Any]:
-    """Escalate to human review with problem/solution recommendation."""
-    logger.info("Escalating to human review", task_id=task_id, subtask_id=subtask_id)
+    """Block task with supervisor recommendation."""
+    logger.info("Blocking task with recommendation", task_id=task_id, subtask_id=subtask_id)
 
     prompt = f"""Task ID: {task_id}
 Subtask: {subtask_id}
@@ -211,13 +210,13 @@ Total Attempts: {attempts}"""
     except Exception as e:
         logger.warning("Failed to generate recommendation", error=str(e))
 
-    task_store.update_task_status(task_id, "needs_review")
+    task_store.update_task_status(task_id, "blocked")
     _add_escalation_message(task_id, subtask_id, recommendation, attempts)
 
     return {
         "task_id": task_id,
         "subtask_id": subtask_id,
-        "status": "escalated_to_human",
+        "status": "blocked",
         "recommendation": recommendation,
         "total_attempts": attempts,
     }

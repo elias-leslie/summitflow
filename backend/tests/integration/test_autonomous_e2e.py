@@ -13,6 +13,7 @@ Each test creates real database records, mocks Agent Hub, and verifies state tra
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -69,7 +70,7 @@ def test_project_id() -> str:
 
 
 @pytest.fixture
-def cleanup_tasks():
+def cleanup_tasks() -> Generator[list[str], None, None]:
     """Track and cleanup test tasks after tests."""
     task_ids: list[str] = []
     yield task_ids
@@ -291,10 +292,10 @@ class TestPlanningE2E:
         assert updated_task["status"] == "queue"
         assert updated_task["complexity"] == "SIMPLE"
 
-    def test_complex_task_routes_to_human_review(
+    def test_complex_task_supervisor_approved_queues(
         self, test_project_id: str, cleanup_tasks: list[str]
     ) -> None:
-        """Complex tasks should route to human_review after planning."""
+        """Complex tasks approved by supervisor should be queued for execution."""
         task = task_store.create_task(
             project_id=test_project_id,
             title="Implement real-time collaboration",
@@ -327,12 +328,13 @@ class TestPlanningE2E:
         )
 
         mock_response = create_mock_agent_response(plan_json)
+        mock_supervisor_response = create_mock_agent_response("APPROVED - proceed with execution")
 
         with (
             patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
             patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
         ):
-            mock_client.return_value.complete.return_value = mock_response
+            mock_client.return_value.complete.side_effect = [mock_response, mock_supervisor_response]
             mock_assessor_instance = MagicMock()
             mock_assessor_instance.assess_sync.return_value = MagicMock(
                 tier=ComplexityTier.COMPLEX,
@@ -346,9 +348,9 @@ class TestPlanningE2E:
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
-        assert updated_task["status"] == "human_review"
+        assert updated_task["status"] == "queue"
         assert updated_task["complexity"] == "COMPLEX"
-        assert task_events_contain(task_id, "Human Review")
+        assert task_events_contain(task_id, "Supervisor approved")
 
 
 @pytest.mark.e2e
@@ -510,10 +512,10 @@ class TestAIReviewE2E:
         assert updated_task["status"] == "completed"
         assert task_events_contain(task_id, "Auto-merged (SIMPLE)")
 
-    def test_standard_approved_goes_to_human_review(
+    def test_standard_approved_auto_merges(
         self, test_project_id: str, cleanup_tasks: list[str]
     ) -> None:
-        """STANDARD task approved by AI should go to human_review."""
+        """STANDARD task approved by AI should auto-merge (no human gate)."""
         task = task_store.create_task(
             project_id=test_project_id,
             title="Add new API endpoint",
@@ -523,16 +525,16 @@ class TestAIReviewE2E:
         )
         task_id = task["id"]
         cleanup_tasks.append(task_id)
-        # Transition: pending → running → pr_created
+        # Transition: pending → running → ai_reviewing
         task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "pr_created")
+        task_store.update_task_status(task_id, "ai_reviewing")
 
         review_json = json.dumps(
             {
                 "verdict": "APPROVED",
                 "summary": "New endpoint follows patterns, tests included",
                 "concerns": [],
-                "recommendation": "Good to merge after human review",
+                "recommendation": "Good to merge",
             }
         )
 
@@ -541,6 +543,7 @@ class TestAIReviewE2E:
         with (
             patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
             patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review._auto_merge") as mock_merge,
         ):
             mock_client.return_value.complete.return_value = mock_response
             mock_diff.return_value = "+ def get_users():"
@@ -552,8 +555,8 @@ class TestAIReviewE2E:
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
-        assert updated_task["status"] == "human_review"
-        assert task_events_contain(task_id, "STANDARD")
+        assert updated_task["status"] == "completed"
+        mock_merge.assert_called_once_with(task_id)
 
     def test_rejected_creates_fix_subtask(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -678,7 +681,9 @@ class TestFullAutonomousPipeline:
             triage_result = triage_idea(task_id, test_project_id)
 
         assert triage_result["status"] == "completed"
-        assert task_store.get_task(task_id)["status"] == "queue"
+        task_data = task_store.get_task(task_id)
+        assert task_data is not None
+        assert task_data["status"] == "queue"
 
         plan_response = create_mock_agent_response(
             json.dumps(

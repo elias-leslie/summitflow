@@ -80,7 +80,7 @@ export function TaskModalActions({
   const isPaused = task.status === 'paused'
   const isCompleted = task.status === 'completed'
   const isPending = task.status === 'pending'
-  const isHumanReview = task.status === 'human_review'
+  const isBlocked = task.status === 'blocked'
   const isAiReviewing = task.status === 'ai_reviewing'
 
   // Resolve which agent will be used
@@ -141,7 +141,7 @@ export function TaskModalActions({
           </Button>
         </>
       )}
-      {isHumanReview && (
+      {isBlocked && (
         <>
           <Button
             variant="outline"

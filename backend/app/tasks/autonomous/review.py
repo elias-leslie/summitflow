@@ -1,9 +1,10 @@
 """AI Review task using Agent Hub complete() with reviewer agent.
 
-Reviews git diffs and routes tasks based on verdict + execution cleanliness:
-- APPROVED + clean execution (or SIMPLE): Auto-merge
-- APPROVED + had retries: Human review
-- Rejected: Create fix subtask and retry
+Reviews git diffs and routes tasks based on verdict:
+- APPROVED: Always auto-merge
+- NEEDS_FIX with no concerns: Treat as APPROVED, auto-merge
+- NEEDS_FIX with concerns: Create fix subtask and retry
+- ESCALATE/unknown: Supervisor triage → approve, fix, or block
 """
 
 from __future__ import annotations
@@ -98,7 +99,7 @@ Git Diff:
 
     except Exception as e:
         logger.warning("AI review failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "human_review")
+        task_store.update_task_status(task_id, "blocked")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 
 
@@ -150,6 +151,36 @@ def _parse_review_response(content: str) -> dict[str, Any]:
     return {"verdict": "NEEDS_FIX", "summary": content}
 
 
+def _supervisor_resolve_escalation(
+    task_id: str, review_summary: str, project_id: str,
+) -> str:
+    """Supervisor triages an ESCALATE verdict. Returns 'fix', 'approve', or 'block'."""
+    prompt = (
+        f"AI reviewer escalated task {task_id}.\n"
+        f"Reviewer said: {review_summary[:500]}\n\n"
+        f"Options:\n"
+        f"- FIX: Create a fix subtask to address the concern\n"
+        f"- APPROVE: Override and auto-merge anyway\n"
+        f"- BLOCK: Park the task\n"
+        f"Reply FIX, APPROVE, or BLOCK."
+    )
+    try:
+        client = get_sync_client()
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            agent_slug="supervisor",
+            project_id=project_id,
+        )
+        upper = response.content.upper()
+        if "APPROVE" in upper:
+            return "approve"
+        if "FIX" in upper:
+            return "fix"
+        return "block"
+    except Exception:
+        return "block"
+
+
 def _route_based_on_verdict(
     task_id: str,
     complexity: str,
@@ -158,62 +189,39 @@ def _route_based_on_verdict(
     """Route task based on AI review verdict.
 
     Verdicts:
-    - APPROVED: SIMPLE → completed (auto-merge), others → human_review
-    - NEEDS_FIX: Log issues, create fix subtask, retry execution
+    - APPROVED: Always auto-merge
+    - NEEDS_FIX with no concerns: Treat as APPROVED, auto-merge
+    - NEEDS_FIX with concerns: Create fix subtask, retry execution
     - PLAN_DEFECT: Add fix step, mark original as defect, retry
-    - ESCALATE: Move to human_review
+    - ESCALATE/unknown: Supervisor triage → approve, fix, or block
     """
     verdict = review_result.get("verdict", "").upper()
 
     if verdict == "APPROVED":
-        task = task_store.get_task(task_id)
-        verification = (task.get("verification_result") or {}) if task else {}
-        execution_clean = verification.get("execution_clean", False)
-
-        if complexity == "SIMPLE" or execution_clean:
-            _auto_merge(task_id)
-            task_store.update_task_status(task_id, "completed")
-            log_task_event(
-                task_id,
-                f"AI Review: APPROVED - Auto-merged ({complexity}, clean={execution_clean})",
-            )
-            logger.info(
-                "QA approved, auto-merged",
-                task_id=task_id,
-                complexity=complexity,
-                execution_clean=execution_clean,
-            )
-        else:
-            task_store.update_task_status(task_id, "human_review")
-            log_task_event(
-                task_id,
-                f"AI Review: APPROVED - Human review ({complexity}, had retries)",
-            )
-            logger.info(
-                "QA approved, human review required",
-                task_id=task_id,
-                complexity=complexity,
-            )
+        _auto_merge(task_id)
+        task_store.update_task_status(task_id, "completed")
+        log_task_event(
+            task_id,
+            f"AI Review: APPROVED - Auto-merged ({complexity})",
+        )
+        logger.info(
+            "QA approved, auto-merged",
+            task_id=task_id,
+            complexity=complexity,
+        )
 
     elif verdict in ("NEEDS_FIX", "REJECT", "REJECTED"):
         concerns = review_result.get("concerns", [])
         if not concerns:
-            task = task_store.get_task(task_id)
-            verification = (task.get("verification_result") or {}) if task else {}
-            execution_clean = verification.get("execution_clean", False)
-
             log_task_event(
                 task_id,
-                f"AI Review: {verdict} returned with no concerns - treating as APPROVED",
+                f"AI Review: {verdict} with no concerns - treating as APPROVED",
             )
-            if complexity == "SIMPLE" or execution_clean:
-                _auto_merge(task_id)
-                task_store.update_task_status(task_id, "completed")
-            else:
-                task_store.update_task_status(task_id, "human_review")
+            _auto_merge(task_id)
+            task_store.update_task_status(task_id, "completed")
+            logger.info("QA no concerns, auto-merged", task_id=task_id)
         else:
             _create_fix_subtask(task_id, review_result)
-            # Transition to running (ai_reviewing → running is valid)
             task_store.update_task_status(task_id, "running")
             log_task_event(
                 task_id,
@@ -223,7 +231,6 @@ def _route_based_on_verdict(
 
     elif verdict == "PLAN_DEFECT":
         _handle_plan_defect(task_id, review_result)
-        # Transition to running (ai_reviewing → running is valid)
         task_store.update_task_status(task_id, "running")
         log_task_event(
             task_id,
@@ -232,12 +239,34 @@ def _route_based_on_verdict(
         logger.info("Plan defect detected, added fix step", task_id=task_id)
 
     else:
-        task_store.update_task_status(task_id, "human_review")
-        log_task_event(
-            task_id,
-            f"AI Review: ESCALATE - {review_result.get('summary', 'Issue requires human review')[:200]}",
-        )
-        logger.info("QA escalated to human review", task_id=task_id)
+        task = task_store.get_task(task_id)
+        project_id = task.get("project_id", "summitflow") if task else "summitflow"
+        summary = review_result.get("summary", "Unknown issue")
+        decision = _supervisor_resolve_escalation(task_id, summary, project_id)
+
+        if decision == "approve":
+            _auto_merge(task_id)
+            task_store.update_task_status(task_id, "completed")
+            log_task_event(
+                task_id,
+                "AI Review: ESCALATE - Supervisor approved, auto-merged",
+            )
+            logger.info("Escalation overridden by supervisor, auto-merged", task_id=task_id)
+        elif decision == "fix":
+            _create_fix_subtask(task_id, {"concerns": [summary[:500]], "recommendation": summary[:500]})
+            task_store.update_task_status(task_id, "running")
+            log_task_event(
+                task_id,
+                "AI Review: ESCALATE - Supervisor created fix subtask",
+            )
+            logger.info("Escalation resolved with fix subtask", task_id=task_id)
+        else:
+            task_store.update_task_status(task_id, "blocked")
+            log_task_event(
+                task_id,
+                f"AI Review: ESCALATE - Blocked. {summary[:200]}",
+            )
+            logger.info("QA escalated, blocked by supervisor", task_id=task_id)
 
 
 def _handle_plan_defect(task_id: str, review_result: dict[str, Any]) -> None:

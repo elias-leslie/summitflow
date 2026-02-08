@@ -46,7 +46,6 @@ function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
     case 'running':
       return 'Execute'
     case 'ai_reviewing':
-    case 'human_review':
     case 'pr_created':
       return 'Review'
     default:
@@ -252,7 +251,6 @@ export function TaskCard({
 
         {/* AI Review Status Bar - shown for relevant states */}
         {(task.status === 'ai_reviewing' ||
-          task.status === 'human_review' ||
           task.status === 'pr_created') && (
           <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-slate-800/50">
             <span
@@ -295,7 +293,6 @@ export function TaskCard({
             </div>
           ) : task.pull_request_url &&
             task.status !== 'ai_reviewing' &&
-            task.status !== 'human_review' &&
             task.status !== 'pr_created' ? (
             <a
               href={task.pull_request_url}

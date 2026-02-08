@@ -123,7 +123,7 @@ def review_pull_request(
 
             # Update task and escalate to human review
             task_store.update_task(task_id, review_result=result.to_dict())
-            task_store.update_task_status(task_id, "human_review")
+            task_store.update_task_status(task_id, "blocked")
             _notify_human_review_needed(task_id, escalation_reason)
 
             return result.to_dict()
@@ -156,7 +156,7 @@ def review_pull_request(
 
             # Update task and escalate to human review
             task_store.update_task(task_id, review_result=result.to_dict())
-            task_store.update_task_status(task_id, "human_review")
+            task_store.update_task_status(task_id, "blocked")
             _notify_human_review_needed(task_id, escalation_reason)
 
             return result.to_dict()
@@ -246,7 +246,7 @@ def review_pull_request(
             logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
         else:
             # Failed: escalate to human review
-            task_store.update_task_status(task_id, "human_review")
+            task_store.update_task_status(task_id, "blocked")
             _notify_human_review_needed(task_id, summary)
             logger.info("review_escalated", task_id=task_id)
 

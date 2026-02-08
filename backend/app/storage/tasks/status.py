@@ -2,24 +2,24 @@
 
 This module handles task status validation and updates.
 
-Status values (extended for git management workflow):
+Status values:
 - pending: Task created, not started
 - running: Work in progress
-- paused: Temporarily paused (human workflow) - maps to "blocked" concept
+- paused: Temporarily paused
 - failed: Task failed, can retry
-- blocked: Task blocked by dependency or issue (agent workflow)
+- blocked: Task blocked by dependency, issue, or escalation
 - pr_created: Pull request created, awaiting review
 - ai_reviewing: AI review in progress
-- human_review: Needs human review (escalated from AI)
 - completed: Successfully completed
 - cancelled: Task cancelled (auto-cancelled or never started)
 - abandoned: Task was claimed but rolled back (append-only, never deleted)
 
-Kanban column mapping (5 columns per decision d2):
+Kanban column mapping (6 columns):
+- Ideas: pending (crowdsourced)
 - Planning: pending
-- In Progress: running, paused, blocked
-- AI Review: pr_created, ai_reviewing
-- Human Review: human_review
+- Queue: queue
+- Active: running, paused, ai_reviewing, pr_created
+- Blocked: blocked
 - Done: completed, failed, cancelled, abandoned
 """
 
@@ -30,12 +30,12 @@ from typing import Any
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, get_task
 
-# Valid task status transitions (extended for git management workflow)
+# Valid task status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
-    "pending": {"queue", "running", "paused", "blocked", "cancelled", "needs_review"},
+    "pending": {"queue", "running", "paused", "blocked", "cancelled"},
     # Queue state (autonomous execution pipeline)
-    "queue": {"running", "pending", "blocked", "cancelled", "human_review"},
+    "queue": {"running", "pending", "blocked", "cancelled"},
     # Work states - can transition to abandoned (rollback without DB restore)
     "running": {
         "queue",
@@ -45,8 +45,6 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "pr_created",
         "completed",
         "ai_reviewing",
-        "human_reviewing",
-        "needs_review",
         "cancelled",
         "abandoned",
     },
@@ -54,34 +52,27 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "blocked": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     "failed": {"queue", "pending", "running", "cancelled"},
     # PR/Review states (agent workflow)
-    "pr_created": {"ai_reviewing", "human_review", "failed", "cancelled", "abandoned"},
-    "ai_reviewing": {"completed", "human_review", "running", "failed", "abandoned"},
-    "human_review": {"completed", "running", "cancelled", "abandoned"},
-    # Verification workflow states (migration 073)
-    "needs_review": {"completed", "running", "failed", "cancelled", "abandoned"},
-    "human_reviewing": {"completed", "running", "failed", "cancelled", "abandoned"},
+    "pr_created": {"ai_reviewing", "blocked", "failed", "cancelled", "abandoned"},
+    "ai_reviewing": {"completed", "blocked", "running", "failed", "abandoned"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
     "cancelled": set(),
     "abandoned": set(),  # Terminal - claimed but rolled back
 }
 
-# Status to kanban column mapping (6 columns with Queue)
+# Status to kanban column mapping (6 columns)
 STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
     "pending": "Planning",
-    "queue": "Queue",  # Queued for autonomous execution
-    "running": "In Progress",
-    "paused": "In Progress",
-    "blocked": "In Progress",
-    "pr_created": "AI Review",
-    "ai_reviewing": "AI Review",
-    "human_review": "Human Review",
-    "needs_review": "Human Review",  # Awaiting QA signoff
-    "human_reviewing": "Human Review",  # Criteria escalated to human
+    "queue": "Queue",
+    "running": "Active",
+    "paused": "Active",
+    "pr_created": "Active",
+    "ai_reviewing": "Active",
+    "blocked": "Blocked",
     "completed": "Done",
     "failed": "Done",
     "cancelled": "Done",
-    "abandoned": "Done",  # Claimed but rolled back
+    "abandoned": "Done",
 }
 
 
@@ -92,7 +83,7 @@ def status_to_kanban_column(status: str) -> str:
         status: Task status value
 
     Returns:
-        Kanban column name (Planning, In Progress, AI Review, Human Review, Done)
+        Kanban column name (Planning, Queue, Active, Blocked, Done)
     """
     return STATUS_TO_KANBAN_COLUMN.get(status, "Planning")
 
@@ -139,7 +130,6 @@ def update_task_status(
         "blocked",
         "pr_created",
         "ai_reviewing",
-        "human_review",
         "completed",
         "cancelled",
         "abandoned",

@@ -29,14 +29,13 @@ import { DragOverlayTaskCard, TaskCard } from './TaskCard'
 // Types
 // ============================================================================
 
-// Kanban columns for git management workflow (7 columns: Ideas + 6 workflow per decision d2/d4/d9)
+// Kanban columns (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
 export type TaskKanbanColumn =
   | 'ideas'
   | 'planning'
   | 'queue'
-  | 'in_progress'
-  | 'ai_review'
-  | 'human_review'
+  | 'active'
+  | 'blocked'
   | 'done'
 
 export interface KanbanColumn {
@@ -55,7 +54,7 @@ interface TaskKanbanBoardProps {
 }
 
 // ============================================================================
-// Status Mapping (5 columns per decision d2)
+// Status Mapping (6 columns)
 // ============================================================================
 
 // Map task status to Kanban column
@@ -65,15 +64,13 @@ const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   pending: 'planning',
   // Queue column (waiting for execution)
   queue: 'queue',
-  // In Progress column
-  running: 'in_progress',
-  paused: 'in_progress',
-  blocked: 'in_progress',
-  // AI Review column
-  pr_created: 'ai_review',
-  ai_reviewing: 'ai_review',
-  // Human Review column
-  human_review: 'human_review',
+  // Active column (all running/transient states)
+  running: 'active',
+  paused: 'active',
+  pr_created: 'active',
+  ai_reviewing: 'active',
+  // Blocked column
+  blocked: 'blocked',
   // Done column
   completed: 'done',
   failed: 'done',
@@ -92,26 +89,24 @@ function isCrowdsourcedIdea(task: Task): boolean {
 
 // Map Kanban column to task status (for drag-drop)
 const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
-  ideas: 'pending', // Ideas are pending tasks with crowdsourced label
+  ideas: 'pending',
   planning: 'pending',
   queue: 'queue',
-  in_progress: 'running',
-  ai_review: 'ai_reviewing',
-  human_review: 'human_review',
+  active: 'running',
+  blocked: 'blocked',
   done: 'completed',
 }
 
 // ============================================================================
-// Column Configuration (6 columns: Ideas + 5 workflow per decision d2/d4)
+// Column Configuration (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
 // ============================================================================
 
 const COLUMNS: KanbanColumn[] = [
   { id: 'ideas', title: 'Ideas', color: 'yellow', icon: 'lightbulb' },
   { id: 'planning', title: 'Planning', color: 'slate', icon: null },
   { id: 'queue', title: 'Queue', color: 'sky', icon: null },
-  { id: 'in_progress', title: 'In Progress', color: 'blue', icon: null },
-  { id: 'ai_review', title: 'AI Review', color: 'amber', icon: 'sparkles' },
-  { id: 'human_review', title: 'Human Review', color: 'violet', icon: 'eye' },
+  { id: 'active', title: 'Active', color: 'blue', icon: null },
+  { id: 'blocked', title: 'Blocked', color: 'orange', icon: null },
   { id: 'done', title: 'Done', color: 'phosphor', icon: null },
 ]
 
@@ -197,6 +192,11 @@ function DroppableColumn({
       header: 'text-amber-400',
       border: 'border-amber-500/30',
       bg: 'bg-amber-950/20',
+    },
+    orange: {
+      header: 'text-orange-400',
+      border: 'border-orange-500/30',
+      bg: 'bg-orange-950/20',
     },
     violet: {
       header: 'text-violet-400',
@@ -367,9 +367,8 @@ export function TaskKanbanBoard({
       ideas: [],
       planning: [],
       queue: [],
-      in_progress: [],
-      ai_review: [],
-      human_review: [],
+      active: [],
+      blocked: [],
       done: [],
     }
 

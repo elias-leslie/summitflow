@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   CheckSquare,
   Clock,
-  Eye,
   GitPullRequest,
   Loader2,
   OctagonX,
@@ -207,10 +206,6 @@ export const statusConfig: Record<TaskStatus, StatusConfig> = {
     className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
   },
-  human_review: {
-    label: 'Human Review',
-    className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  },
   completed: {
     label: 'Completed',
     className: 'bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30',
@@ -271,11 +266,6 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
     icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
     className: 'text-amber-400',
     title: 'AI reviewing',
-  },
-  human_review: {
-    icon: <Eye className="h-3.5 w-3.5" />,
-    className: 'text-violet-400',
-    title: 'Human review required',
   },
   completed: {
     icon: <Check className="h-3.5 w-3.5" />,

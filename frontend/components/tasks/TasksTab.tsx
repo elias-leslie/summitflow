@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
-  Eye,
   GitPullRequest,
   Loader2,
   OctagonX,
@@ -167,10 +166,6 @@ const statusConfig: Record<
     icon: <Bot className="h-3.5 w-3.5" />,
     className: 'text-amber-400',
   },
-  human_review: {
-    icon: <Eye className="h-3.5 w-3.5" />,
-    className: 'text-violet-400',
-  },
   completed: {
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     className: 'text-green-400',
@@ -236,10 +231,6 @@ function TaskRow({
     pr_created: {
       label: 'AI Review',
       className: 'bg-purple-600/50 text-purple-300',
-    },
-    human_review: {
-      label: 'Human Review',
-      className: 'bg-violet-600/50 text-violet-300',
     },
     completed: { label: 'Done', className: 'bg-green-600/50 text-green-300' },
     failed: { label: 'Done', className: 'bg-red-600/50 text-red-300' },

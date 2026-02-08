@@ -403,7 +403,7 @@ class TestEscalationToHumanReview:
 
         assert result["verdict"] == "FAIL"
         assert "Security" in result["summary"]
-        mock_store.update_task_status.assert_called_with("task-123", "human_review")
+        mock_store.update_task_status.assert_called_with("task-123", "blocked")
         mock_notify.assert_called_once()
 
     @patch("app.tasks.ai_review._get_project_path")

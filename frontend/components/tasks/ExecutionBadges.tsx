@@ -10,7 +10,6 @@ import {
   GitPullRequest,
   Loader2,
   RefreshCw,
-  User,
   XCircle,
   Zap,
 } from 'lucide-react'
@@ -78,11 +77,6 @@ const statusIcons: Record<
     icon: <Eye className="h-3 w-3 animate-pulse" />,
     color: 'text-cyan-400',
     bg: 'bg-cyan-500/20',
-  },
-  human_review: {
-    icon: <User className="h-3 w-3" />,
-    color: 'text-orange-400',
-    bg: 'bg-orange-500/20',
   },
   completed: {
     icon: <CheckCircle2 className="h-3 w-3" />,
