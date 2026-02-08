@@ -1,0 +1,30 @@
+[Unit]
+Description=Hatchet Workflow Engine (Docker)
+After=network.target
+
+[Service]
+Type=simple
+Environment="HOME=%h"
+EnvironmentFile=-%h/.env.local
+ExecStartPre=/usr/bin/docker pull ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
+ExecStart=/usr/bin/docker run --rm --name hatchet-engine \
+    --network host \
+    -e DATABASE_URL=${HATCHET_DATABASE_URL} \
+    -e SERVER_AUTH_COOKIE_INSECURE=true \
+    -e SERVER_GRPC_BIND_ADDRESS=0.0.0.0 \
+    -e SERVER_GRPC_PORT=7077 \
+    -e SERVER_PORT=8888 \
+    ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
+ExecStop=/usr/bin/docker stop hatchet-engine
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hatchet-engine
+
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
