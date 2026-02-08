@@ -11,9 +11,13 @@ ExecStart=/usr/bin/docker run --rm --name hatchet-engine \
     --network host \
     -e DATABASE_URL=${HATCHET_DATABASE_URL} \
     -e SERVER_AUTH_COOKIE_INSECURE=true \
+    -e SERVER_AUTH_COOKIE_DOMAIN=localhost \
+    -e SERVER_AUTH_SET_EMAIL_VERIFIED=true \
+    -e SERVER_URL=http://localhost:8888 \
+    -e SERVER_GRPC_INSECURE=true \
     -e SERVER_GRPC_BIND_ADDRESS=0.0.0.0 \
     -e SERVER_GRPC_PORT=7077 \
-    -e SERVER_PORT=8888 \
+    -e SERVER_GRPC_BROADCAST_ADDRESS=localhost:7077 \
     ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
 ExecStop=/usr/bin/docker stop hatchet-engine
 Restart=always
