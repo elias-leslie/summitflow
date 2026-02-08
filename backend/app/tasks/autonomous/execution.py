@@ -6,6 +6,7 @@ Uses complete() with execute_tools=True for agentic execution.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import shutil
@@ -15,8 +16,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import redis as _redis_lib
 from celery import Task, shared_task
 
+from ...config import REDIS_URL
 from ...constants import (
     CONTEXT_FRESHNESS_THRESHOLD,
     PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
@@ -999,30 +1002,31 @@ def start_execution(
     """
     debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
+
+    # Execution lock: Redis SET NX prevents concurrent/duplicate executions.
+    # Survives Celery worker restarts (acks_late redelivery) and duplicate dispatches.
+    _r = _redis_lib.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
+    _lock_key = f"summitflow:execution_lock:{task_id}"
+    _lock_acquired = _r.set(_lock_key, "1", nx=True, ex=3600)
+    if not _lock_acquired:
+        logger.warning(
+            "Duplicate execution blocked by Redis lock",
+            task_id=task_id,
+            lock_key=_lock_key,
+        )
+        return {
+            "task_id": task_id,
+            "status": "skipped",
+            "reason": "execution_lock_held",
+        }
+
     _emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
 
     task = task_store.get_task(task_id)
     if not task:
+        _r.delete(_lock_key)
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
-
-    # Idempotency guard: if already running with a valid claim by another worker,
-    # this is a duplicate dispatch — refuse to execute
-    if task["status"] == "running" and task.get("claimed_by"):
-        celery_worker_id = getattr(self.request, "hostname", None) or "unknown"
-        if task["claimed_by"] != celery_worker_id:
-            logger.warning(
-                "Duplicate execution detected, task already claimed",
-                task_id=task_id,
-                claimed_by=task["claimed_by"],
-                this_worker=celery_worker_id,
-            )
-            return {
-                "task_id": task_id,
-                "status": "skipped",
-                "reason": "duplicate_execution",
-                "claimed_by": task["claimed_by"],
-            }
 
     # Extract agent routing info
     task_type = task.get("task_type")
@@ -1296,6 +1300,10 @@ def start_execution(
                 f"Failed to set blocked status: {type(e).__name__}: {e!s}",
                 project_id=project_id,
             )
+
+    # Release execution lock on completion
+    with contextlib.suppress(Exception):
+        _r.delete(_lock_key)
 
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 

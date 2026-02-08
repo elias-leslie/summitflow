@@ -151,34 +151,24 @@ class TestClaimTaskQueueStatus:
 
 
 class TestStartExecutionIdempotency:
-    """Tests for start_execution() duplicate execution guard."""
+    """Tests for start_execution() Redis execution lock guard."""
 
-    @patch("app.tasks.autonomous.execution.task_store")
-    @patch("app.tasks.autonomous.execution._emit_log")
-    @patch("app.tasks.autonomous.execution._emit_error")
+    @patch("app.tasks.autonomous.execution._redis_lib")
     @patch("app.tasks.autonomous.execution.debug_section")
-    def test_start_execution_rejects_duplicate_worker(
+    def test_start_execution_rejects_when_lock_held(
         self,
         mock_debug: MagicMock,
-        mock_emit_error: MagicMock,
-        mock_emit_log: MagicMock,
-        mock_store: MagicMock,
+        mock_redis: MagicMock,
     ) -> None:
-        """start_execution skips if task already claimed by different worker."""
+        """start_execution skips if Redis execution lock is already held."""
         from app.tasks.autonomous.execution import start_execution
 
-        mock_store.get_task.return_value = {
-            "id": "task-123",
-            "status": "running",
-            "claimed_by": "other-worker",
-        }
+        mock_conn = MagicMock()
+        mock_redis.from_url.return_value = mock_conn
+        mock_conn.set.return_value = False
 
-        # Celery bound tasks: self is injected via apply().
-        # Mock the request object on the task itself.
-        start_execution.request.hostname = "this-worker"
         async_result = start_execution.apply(args=("task-123", "test-project"))
         result: dict[str, str] = async_result.result  # type: ignore[assignment]
 
         assert result["status"] == "skipped"
-        assert result["reason"] == "duplicate_execution"
-        assert result["claimed_by"] == "other-worker"
+        assert result["reason"] == "execution_lock_held"
