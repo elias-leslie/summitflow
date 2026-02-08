@@ -55,6 +55,19 @@ def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) ->
 
     # Get diff from worktree if task has one, otherwise project root
     git_diff = _get_git_diff(task_id, project_id)
+
+    # Zero-diff guard: reject tasks with no code changes
+    if not git_diff or git_diff.strip() in ("(no changes)", ""):
+        logger.warning("Zero-diff detected, rejecting review", task_id=task_id)
+        log_task_event(task_id, "Review rejected: no code changes detected", source="review", level="warning")
+        task_store.update_task_status(task_id, "failed")
+        return {
+            "task_id": task_id,
+            "status": "rejected",
+            "verdict": "REJECTED",
+            "message": "No code changes detected — task produced zero diff",
+        }
+
     complexity = task.get("complexity") or "STANDARD"
 
     prompt = f"""Task: {task.get("title", "")}

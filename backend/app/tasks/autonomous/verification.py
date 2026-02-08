@@ -97,12 +97,16 @@ def verify_step(
     expected = step.get("expected_output", "")
 
     if not verify_cmd:
+        logger.warning(
+            "Step has no verify_command — cannot pass without verification",
+            step_num=step_num,
+        )
         return VerificationResult(
-            passed=True,
+            passed=False,
             step_number=step_num,
-            output="",
-            returncode=0,
-            reason="no_verify_command",
+            output="Step has no verify_command. Every step must have verification.",
+            returncode=-1,
+            reason="missing_verify_command",
         )
 
     expanded_cmd = expand_command(verify_cmd)
