@@ -730,6 +730,8 @@ export type AgentEventType =
 
 export interface AgentHubEvent {
   id: string
+  session_id: string | null
+  session_index: number
   turn: number
   sequence: number
   event_type: AgentEventType

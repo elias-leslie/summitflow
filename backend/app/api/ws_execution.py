@@ -135,42 +135,16 @@ class ConnectionManager:
     ) -> None:
         """Replay missed messages to a reconnecting client.
 
-        Queries events table for historical events, then checks ephemeral cache
-        for very recent messages not yet in DB.
+        Historical events are loaded via HTTP (useTimelineHistory hook) to avoid
+        duplicates. This method only replays from the ephemeral cache for very
+        recent messages that may not yet be queryable via the API.
 
         Args:
             websocket: The WebSocket to send messages to
             task_id: The task to replay messages for
             from_sequence: Send messages after this sequence number
-            trace_id: Trace ID for DB query (defaults to task_id)
+            trace_id: Trace ID (unused, kept for API compatibility)
         """
-        from ..storage.events import get_events_by_trace
-
-        if trace_id is None:
-            trace_id = task_id
-
-        # Query DB for historical events
-        db_events = get_events_by_trace(trace_id, visibility="user", limit=self.MAX_REPLAY_MESSAGES)
-        for event in db_events:
-            try:
-                await websocket.send_json(
-                    {
-                        "type": event["event_type"],
-                        "task_id": task_id,
-                        "data": {
-                            "message": event["message"],
-                            "level": event["level"],
-                            "source": event["source"],
-                            **event["attributes"],
-                        },
-                        "timestamp": event["timestamp"].isoformat(),
-                        "sequence": 0,  # Historical events don't have sequence
-                    }
-                )
-            except Exception:
-                break
-
-        # Check ephemeral cache for very recent messages
         async with self._lock:
             cache = self._redis_cache.get(task_id, [])
             messages_to_replay = [m for m in cache if m.sequence > from_sequence]

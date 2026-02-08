@@ -94,14 +94,15 @@ export function ExecutionTimeline({
       const timeA = new Date(a.timestamp).getTime()
       const timeB = new Date(b.timestamp).getTime()
       if (timeA !== timeB) return timeA - timeB
-      // Fall back to sequence if timestamps match
       return a.sequence - b.sequence
     })
 
-    // Deduplicate by sequence + timestamp (composite key)
+    // Deduplicate by content: timestamp + message + source
     const seen = new Set<string>()
     return combined.filter((event) => {
-      const key = `${event.timestamp}-${event.sequence}`
+      const msg = typeof event.data?.message === 'string' ? event.data.message : ''
+      const src = typeof event.data?.source === 'string' ? event.data.source : ''
+      const key = `${event.timestamp}-${msg}-${src}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
