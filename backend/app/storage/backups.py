@@ -349,6 +349,32 @@ def list_due_schedules() -> list[dict[str, Any]]:
     return [_row_to_schedule(row) for row in rows]
 
 
+
+def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
+    """Delete failed/running backup records older than max_age_days.
+
+    Args:
+        max_age_days: Delete stale records older than this many days
+
+    Returns:
+        Number of records deleted
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM backups
+            WHERE status IN ('failed', 'running')
+              AND created_at < NOW() - INTERVAL '%s days'
+            RETURNING id
+            """,
+            (max_age_days,),
+        )
+        deleted = cur.fetchall()
+        conn.commit()
+
+    return len(deleted)
+
+
 # ============================================================
 # Aggregation Functions
 # ============================================================

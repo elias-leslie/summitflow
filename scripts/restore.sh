@@ -155,7 +155,8 @@ find_latest_backup() {
 
     # Check local
     if [ -d "$LOCAL_BACKUP_DIR" ]; then
-        local local_latest=$(ls -1t "$LOCAL_BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
+        local local_latest
+        read -r local_latest < <(ls -1t "$LOCAL_BACKUP_DIR"/*.tar.gz 2>/dev/null) || true
         if [ -n "$local_latest" ] && [ -f "$local_latest" ]; then
             local mtime=$(stat -c %Y "$local_latest" 2>/dev/null || stat -f %m "$local_latest" 2>/dev/null)
             if [ "$mtime" -gt "$latest_time" ]; then
@@ -167,7 +168,8 @@ find_latest_backup() {
 
     # Check pending
     if [ -d "$PENDING_BACKUP_DIR" ]; then
-        local pending_latest=$(ls -1t "$PENDING_BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
+        local pending_latest
+        read -r pending_latest < <(ls -1t "$PENDING_BACKUP_DIR"/*.tar.gz 2>/dev/null) || true
         if [ -n "$pending_latest" ] && [ -f "$pending_latest" ]; then
             local mtime=$(stat -c %Y "$pending_latest" 2>/dev/null || stat -f %m "$pending_latest" 2>/dev/null)
             if [ "$mtime" -gt "$latest_time" ]; then

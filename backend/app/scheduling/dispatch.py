@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 # Lock settings for distributed locking
 DISPATCH_LOCK_PREFIX = "summitflow:dispatch_lock:"
-DISPATCH_LOCK_TTL = 60  # Lock TTL in seconds (auto-expires if process crashes)
+DISPATCH_LOCK_TTL = 3600  # Lock TTL in seconds — matches execution time_limit to prevent re-dispatch
 
 CHANNEL_TASK_DISPATCH = "summitflow:task_dispatch"
 CHANNEL_SCHEDULED = "summitflow:scheduled_tasks"

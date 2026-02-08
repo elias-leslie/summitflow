@@ -21,12 +21,12 @@ from app.celery_app import celery_app
 from app.logging_config import get_logger
 from app.scheduling import get_dispatcher
 from app.scheduling.dispatch import DispatchEvent
-from app.services.worktree import create_task_worktree
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
+from app.storage.tasks.claims import claim_task
 
 from .execution import start_execution
 from .planning import create_plan
@@ -210,22 +210,17 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                 logger.info("Dispatched to planning", task_id=task_id)
 
             elif stage == "execution":
-                # Create worktree for task isolation before execution
-                worktree = create_task_worktree(task_id, project_id)
-                if worktree:
+                # Atomically claim task to prevent duplicate dispatch
+                worker_id = f"pickup-{project_id}"
+                claimed = claim_task(task_id, worker_id, lock_duration_minutes=60)
+                if not claimed:
                     logger.info(
-                        "Created worktree for execution",
-                        task_id=task_id,
-                        worktree_path=str(worktree.path),
-                        branch=worktree.branch,
-                    )
-                else:
-                    logger.warning(
-                        "Worktree creation failed, using project root",
+                        "Task already claimed, skipping",
                         task_id=task_id,
                     )
+                    dispatched["skipped"] += 1
+                    continue
 
-                task_store.update_task_status(task_id, "running")
                 start_execution.delay(task_id, project_id)
                 dispatched["execution"] += 1
                 logger.info("Dispatched to execution", task_id=task_id)
@@ -313,6 +308,28 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
     """
     logger.info("Immediate dispatch requested", task_id=task_id, project_id=project_id)
 
+    # Guard: check task status before any dispatch
+    task = task_store.get_task(task_id)
+    if not task:
+        logger.warning("Task not found for dispatch", task_id=task_id)
+        return {"status": "error", "task_id": task_id, "reason": "task_not_found"}
+
+    if task["status"] == "running":
+        logger.info(
+            "Task already running, skipping duplicate dispatch",
+            task_id=task_id,
+            claimed_by=task.get("claimed_by"),
+        )
+        return {"status": "already_running", "task_id": task_id}
+
+    if task["status"] not in ("queue", "pending", "blocked"):
+        logger.info(
+            "Task not in dispatchable status",
+            task_id=task_id,
+            status=task["status"],
+        )
+        return {"status": "skipped", "task_id": task_id, "reason": f"status={task['status']}"}
+
     if not agent_configs.is_autonomous_enabled(project_id):
         return {
             "status": "disabled",
@@ -356,7 +373,16 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
             return {"status": "dispatched", "task_id": task_id, "stage": "planning"}
 
         elif stage == "execution":
-            task_store.update_task_status(task_id, "running")
+            # Atomically claim task to prevent duplicate execution
+            worker_id = f"dispatch-{project_id}"
+            claimed = claim_task(task_id, worker_id, lock_duration_minutes=60)
+            if not claimed:
+                logger.info(
+                    "Task already claimed, skipping duplicate execution dispatch",
+                    task_id=task_id,
+                )
+                return {"status": "already_claimed", "task_id": task_id}
+
             start_execution.delay(task_id, project_id)
             logger.info("Dispatched to execution (immediate)", task_id=task_id)
             return {"status": "dispatched", "task_id": task_id, "stage": "execution"}

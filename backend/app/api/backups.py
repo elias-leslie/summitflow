@@ -1,15 +1,19 @@
 """Backup Management API - Create, list, and restore backups."""
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..tasks.backup import create_backup, restore_backup
 
 router = APIRouter()
+
+logger = get_logger(__name__)
 
 
 class BackupCreate(BaseModel):
@@ -288,8 +292,9 @@ async def preview_restore(project_id: str, backup_id: str) -> dict[str, Any]:
             status_code=404, detail=f"Backup {backup_id} not found in project {project_id}"
         )
 
-    # Run dry-run synchronously
-    result = restore_backup(
+    # Run dry-run in a thread to avoid blocking the async event loop
+    result = await asyncio.to_thread(
+        restore_backup,
         project_id=project_id,
         backup_id=backup_id,
         dry_run=True,
@@ -316,9 +321,21 @@ async def delete_backup(project_id: str, backup_id: str) -> dict[str, Any]:
             status_code=404, detail=f"Backup {backup_id} not found in project {project_id}"
         )
 
+    location = backup.get("location")
+    backup_name = backup.get("name")
+
     deleted = backup_store.delete_backup_record(backup_id)
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete backup")
+
+    if location and location != "pending_upload":
+        logger.info(
+            "backup_record_deleted_files_remain",
+            backup_id=backup_id,
+            backup_name=backup_name,
+            location=location,
+        )
+
     return {"deleted": True, "backup_id": backup_id}
 
 

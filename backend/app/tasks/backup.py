@@ -13,8 +13,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import redis
 from celery import shared_task
 
+from ..config import REDIS_URL
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.connection import get_connection
@@ -26,6 +28,26 @@ SCRIPT_DIR = Path.home() / "summitflow" / "scripts"
 BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
 RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
 
+BACKUP_LOCK_PREFIX = "summitflow:backup_lock:"
+BACKUP_LOCK_TTL = 900  # 15 minutes (matches time_limit)
+
+
+def _get_redis() -> redis.Redis:
+    """Get Redis connection for backup locks."""
+    return redis.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call,no-any-return]
+
+
+def _acquire_backup_lock(project_id: str) -> bool:
+    """Acquire a per-project backup lock. Returns True if acquired."""
+    r = _get_redis()
+    return bool(r.set(f"{BACKUP_LOCK_PREFIX}{project_id}", "1", nx=True, ex=BACKUP_LOCK_TTL))
+
+
+def _release_backup_lock(project_id: str) -> None:
+    """Release a per-project backup lock."""
+    r = _get_redis()
+    r.delete(f"{BACKUP_LOCK_PREFIX}{project_id}")
+
 
 @shared_task(
     name="summitflow.create_backup",
@@ -33,10 +55,6 @@ RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
     acks_late=True,
     time_limit=900,  # 15 minutes hard limit
     soft_time_limit=840,  # 14 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=300,  # Max 5 minutes between retries
-    max_retries=3,
 )
 def create_backup(
     self: Any,
@@ -44,6 +62,7 @@ def create_backup(
     note: str | None = None,
     backup_type: str = "manual",
     keep_local: bool = False,
+    retention_count: int | None = None,
 ) -> dict[str, Any]:
     """Create a backup for a project.
 
@@ -54,6 +73,7 @@ def create_backup(
         note: Optional user note
         backup_type: 'manual' or 'scheduled'
         keep_local: If True, keep local copy in addition to SMB
+        retention_count: Number of backups to retain (overrides default)
 
     Returns:
         Backup record dict
@@ -72,6 +92,31 @@ def create_backup(
         logger.error("create_backup_failed", project_id=project_id, error=error_msg)
         return {"status": "failed", "error": error_msg}
 
+    # Acquire per-project lock to prevent concurrent backups
+    if not _acquire_backup_lock(project_id):
+        logger.info(
+            "create_backup_skipped_locked",
+            project_id=project_id,
+            task_id=self.request.id,
+        )
+        return {"status": "skipped", "error": f"Backup already running for {project_id}"}
+
+    try:
+        return _run_backup(self, project_id, project_dir, note, backup_type, keep_local, retention_count)
+    finally:
+        _release_backup_lock(project_id)
+
+
+def _run_backup(
+    task: Any,
+    project_id: str,
+    project_dir: str,
+    note: str | None,
+    backup_type: str,
+    keep_local: bool,
+    retention_count: int | None = None,
+) -> dict[str, Any]:
+    """Execute backup with lock already held."""
     # Create pending backup record
     backup_record = backup_store.create_backup_record(
         project_id=project_id,
@@ -87,6 +132,8 @@ def create_backup(
     cmd = ["bash", str(BACKUP_SCRIPT)]
     if keep_local:
         cmd.append("--keep-local")
+    if retention_count is not None:
+        cmd.extend(["--retention", str(retention_count)])
 
     try:
         # Run backup.sh
@@ -146,7 +193,7 @@ def create_backup(
 
             # Actual failure
             error_msg = result.stderr or result.stdout or "Unknown error"
-            backup_store.update_backup_status(backup_id, "failed", error_message=error_msg[:500])
+            backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
             logger.error(
                 "create_backup_failed",
                 backup_id=backup_id,
@@ -162,7 +209,7 @@ def create_backup(
 
     except Exception as e:
         error_msg = str(e)
-        backup_store.update_backup_status(backup_id, "failed", error_message=error_msg[:500])
+        backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
         logger.error("create_backup_exception", backup_id=backup_id)
         return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
@@ -296,6 +343,11 @@ def run_scheduled_backups() -> dict[str, Any]:
     """
     logger.info("run_scheduled_backups_started")
 
+    # Clean up stale backup records (failed/running older than 30 days)
+    cleaned = backup_store.cleanup_stale_backup_records(max_age_days=30)
+    if cleaned:
+        logger.info("cleaned_stale_backup_records", count=cleaned)
+
     due_schedules = backup_store.list_due_schedules()
 
     if not due_schedules:
@@ -314,11 +366,14 @@ def run_scheduled_backups() -> dict[str, Any]:
             frequency=frequency,
         )
 
+        retention_count = schedule.get("retention_count")
+
         # Trigger backup task
         task = create_backup.delay(
             project_id=project_id,
             backup_type="scheduled",
             note=f"Scheduled {frequency} backup",
+            retention_count=retention_count,
         )
 
         # Calculate next run time

@@ -1006,6 +1006,24 @@ def start_execution(
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
+    # Idempotency guard: if already running with a valid claim by another worker,
+    # this is a duplicate dispatch — refuse to execute
+    if task["status"] == "running" and task.get("claimed_by"):
+        celery_worker_id = getattr(self.request, "hostname", None) or "unknown"
+        if task["claimed_by"] != celery_worker_id:
+            logger.warning(
+                "Duplicate execution detected, task already claimed",
+                task_id=task_id,
+                claimed_by=task["claimed_by"],
+                this_worker=celery_worker_id,
+            )
+            return {
+                "task_id": task_id,
+                "status": "skipped",
+                "reason": "duplicate_execution",
+                "claimed_by": task["claimed_by"],
+            }
+
     # Extract agent routing info
     task_type = task.get("task_type")
     agent_override = task.get("agent_override")
