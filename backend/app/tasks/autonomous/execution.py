@@ -767,6 +767,26 @@ def _compute_issue_id(error: str) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()[:8]
 
 
+def _check_worktree_health(project_path: str, task_id: str, project_id: str) -> bool:
+    """Check worktree is still a valid git working directory."""
+    path = Path(project_path)
+    if not path.is_dir():
+        _emit_log(
+            task_id, "error",
+            f"WORKTREE GONE: {project_path} removed during execution",
+            source="orchestrator", project_id=project_id,
+        )
+        return False
+    if not (path / ".git").exists():
+        _emit_log(
+            task_id, "error",
+            f"WORKTREE CORRUPTED: {project_path} not a git worktree",
+            source="orchestrator", project_id=project_id,
+        )
+        return False
+    return True
+
+
 def _has_uncommitted_changes(project_path: str) -> bool:
     """Check if the working tree has uncommitted changes."""
     result = subprocess.run(
@@ -1357,6 +1377,14 @@ def _execute_subtask(
     try:
         # Use task worktree if available for isolated execution
         project_path = _get_project_path(project_id, task_id)
+
+        if not _check_worktree_health(project_path, task_id, project_id):
+            return {
+                "subtask_id": subtask_short_id,
+                "status": "failed",
+                "reason": "worktree_invalid",
+            }
+
         prompt = _build_subtask_prompt(task_id, subtask, project_id, project_path)
 
         # Resolve which agent to use: override > task_type mapping > default
@@ -1497,6 +1525,20 @@ def _execute_subtask(
         total_max_attempts = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
 
         for heal_attempt in range(total_max_attempts + 1):
+            if heal_attempt > 0:
+                steps = get_steps_for_subtask(subtask_id)
+
+            if not _check_worktree_health(project_path, task_id, project_id):
+                step_results = [{
+                    "step_number": 0,
+                    "passed": False,
+                    "output": "Worktree destroyed during execution",
+                    "reason": "worktree_destroyed",
+                    "returncode": -1,
+                }]
+                all_passed = False
+                break
+
             step_results = _verify_steps(task_id, subtask_id, steps, project_path, project_id)
             all_passed = all(r["passed"] for r in step_results)
 

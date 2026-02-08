@@ -158,6 +158,18 @@ def merge_and_cleanup_task_worktree(
         Dict with merge/cleanup result
     """
     try:
+        task = task_store.get_task(task_id)
+        if task and task.get("status") == "running":
+            logger.warning(
+                "merge_blocked_task_running",
+                extra={"task_id": task_id},
+            )
+            return {
+                "task_id": task_id,
+                "status": "blocked",
+                "reason": "task_still_running",
+            }
+
         worktree = get_task_worktree(task_id, project_id)
         if not worktree:
             return {

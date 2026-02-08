@@ -147,7 +147,14 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     Raises:
         SystemExit: On merge failure
     """
+    from app.storage import tasks as task_store
+
     from .worktree import get_worktree_info, remove_worktree
+
+    task = task_store.get_task(task_id)
+    if task and task.get("status") == "running":
+        print(f"Error: Cannot merge - task {task_id} is still running", file=sys.stderr)
+        sys.exit(1)
 
     # Load project_id and base_branch from metadata
     meta = load_snapshot_meta(task_id)
