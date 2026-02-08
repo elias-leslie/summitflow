@@ -11,6 +11,7 @@ This module provides Celery tasks for autonomous task execution:
 
 from __future__ import annotations
 
+from .cleanup import merge_and_cleanup_task_worktree, reset_expired_task_claims
 from .escalation import check_worker_stuck, supervisor_guidance
 from .execution import start_execution
 from .pickup import (
@@ -31,8 +32,10 @@ __all__ = [
     "create_plan",
     "dispatch_task_immediate",
     "generate_tasks_from_scan",
+    "merge_and_cleanup_task_worktree",
     "process_scheduled_tasks",
     "regenerate_refactor_tasks",
+    "reset_expired_task_claims",
     "review_pending_tasks",
     "start_execution",
     "supervisor_guidance",

@@ -1372,13 +1372,13 @@ def _execute_subtask(
             prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
         )
         logger.info(
-            "Calling Agent Hub complete (agentic mode)", agent_slug=agent_slug, max_turns=30
+            "Calling Agent Hub complete (agentic mode)", agent_slug=agent_slug, max_turns=50
         )
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug=agent_slug,
             working_dir=project_path,
-            max_turns=30,
+            max_turns=50,
             execute_tools=True,
             project_id=project_id,
             use_memory=True,
@@ -1615,7 +1615,7 @@ def _execute_subtask(
                     "messages": [{"role": "user", "content": fix_prompt}],
                     "agent_slug": agent_slug,
                     "working_dir": project_path,
-                    "max_turns": 15,
+                    "max_turns": 25,
                     "execute_tools": True,
                     "project_id": project_id,
                     "use_memory": True,
