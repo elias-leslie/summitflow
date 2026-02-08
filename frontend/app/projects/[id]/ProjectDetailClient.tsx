@@ -5,7 +5,6 @@ import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { BottomExecutionDock } from '@/components/execution/BottomExecutionDock'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
@@ -136,10 +135,6 @@ export function ProjectDetailClient() {
     refetchKanbanTasks()
   }
 
-  const runningTasks = kanbanTasks
-    .filter((t) => t.status === 'running')
-    .map((task) => ({ task }))
-
   const handleTaskUpdate = (task: Task) => {
     setSelectedTask(task)
     refetchKanbanTasks()
@@ -211,9 +206,6 @@ export function ProjectDetailClient() {
               onOpenChange={handleCreateDialogChange}
               projectId={projectId}
             />
-            {runningTasks.length > 0 && (
-              <BottomExecutionDock runningTasks={runningTasks} />
-            )}
             {escalationTask && (
               <EscalationPanel
                 task={escalationTask}

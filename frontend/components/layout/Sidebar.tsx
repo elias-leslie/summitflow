@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   Activity,
@@ -11,20 +11,13 @@ import {
   FolderKanban,
   Kanban,
   ListTodo,
-  Loader2,
   Palette,
   Settings2,
-  Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  fetchProject,
-  fetchProjects,
-  getAutonomousSettings,
-  updateAutonomousSettings,
-} from '@/lib/api'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { fetchProject, fetchProjects } from '@/lib/api'
 
 // =============================================================================
 // Types & Constants
@@ -126,135 +119,6 @@ function SidebarHeader({ isCollapsed }: SidebarHeaderProps) {
         Projects
       </span>
     </div>
-  )
-}
-
-// =============================================================================
-// Project Auto-exec Toggle Component
-// =============================================================================
-
-interface ProjectAutoExecToggleProps {
-  projectId: string
-  isActive: boolean
-}
-
-function ProjectAutoExecToggle({ projectId }: ProjectAutoExecToggleProps) {
-  const queryClient = useQueryClient()
-
-  const { data: autonomousSettings, isLoading } = useQuery({
-    queryKey: ['autonomous-settings', projectId],
-    queryFn: () => getAutonomousSettings(projectId),
-    staleTime: 60000,
-    refetchInterval: 60000,
-  })
-
-  // Calculate if currently in execution window
-  const [isInTimeWindow, setIsInTimeWindow] = useState(false)
-  useEffect(() => {
-    if (!autonomousSettings) {
-      setIsInTimeWindow(false)
-      return
-    }
-    const now = new Date()
-    const currentHour = now.getHours()
-    const { start_hour, end_hour } = autonomousSettings
-    if (start_hour === 0 && end_hour === 24) {
-      setIsInTimeWindow(true)
-    } else if (start_hour < end_hour) {
-      setIsInTimeWindow(currentHour >= start_hour && currentHour < end_hour)
-    } else {
-      setIsInTimeWindow(currentHour >= start_hour || currentHour < end_hour)
-    }
-  }, [autonomousSettings])
-
-  const status = useMemo(() => {
-    if (!autonomousSettings)
-      return { label: 'Off', color: 'slate', active: false }
-    if (!autonomousSettings.enabled)
-      return { label: 'Off', color: 'slate', active: false }
-    if (!isInTimeWindow)
-      return { label: 'Paused', color: 'amber', active: false }
-    return { label: 'Active', color: 'phosphor', active: true }
-  }, [autonomousSettings, isInTimeWindow])
-
-  const toggleMutation = useMutation({
-    mutationFn: () =>
-      updateAutonomousSettings(projectId, {
-        enabled: !autonomousSettings?.enabled,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['autonomous-settings', projectId],
-      })
-      queryClient.invalidateQueries({ queryKey: ['all-autonomous-settings'] })
-    },
-  })
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!isLoading && autonomousSettings) {
-      toggleMutation.mutate()
-    }
-  }
-
-  const isItemActive = false // Auto-exec toggle doesn't have an active state like other nav items
-
-  return (
-    <button
-      onClick={handleToggle}
-      disabled={isLoading || toggleMutation.isPending}
-      className={clsx(
-        'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 w-full',
-        isItemActive
-          ? 'bg-slate-500/15 text-slate-300'
-          : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
-        (isLoading || toggleMutation.isPending) &&
-          'opacity-50 cursor-not-allowed',
-      )}
-    >
-      <div
-        className={clsx(
-          'flex items-center justify-center w-4 h-4 flex-shrink-0 transition-colors duration-200',
-          status.active
-            ? 'text-phosphor-400'
-            : status.color === 'amber'
-              ? 'text-amber-400'
-              : 'text-slate-500 group-hover:text-slate-300',
-        )}
-      >
-        {isLoading || toggleMutation.isPending ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Zap className={clsx('w-4 h-4', status.active && 'animate-pulse')} />
-        )}
-      </div>
-      <span className="truncate">Auto-exec</span>
-      <div className="ml-auto flex items-center gap-1.5">
-        <div
-          className={clsx(
-            'w-1.5 h-1.5 rounded-full',
-            status.active
-              ? 'bg-phosphor-400 shadow-[0_0_6px_rgba(0,245,255,0.5)]'
-              : status.color === 'amber'
-                ? 'bg-amber-400'
-                : 'bg-slate-600',
-          )}
-        />
-        <span
-          className={clsx(
-            'text-2xs font-medium uppercase tracking-wider',
-            status.active
-              ? 'text-phosphor-400'
-              : status.color === 'amber'
-                ? 'text-amber-400'
-                : 'text-slate-600',
-          )}
-        >
-          {status.label}
-        </span>
-      </div>
-    </button>
   )
 }
 
@@ -464,9 +328,6 @@ function ProjectsAccordion({
                     </Link>
                   )
                 })}
-
-                {/* Auto-exec Toggle */}
-                <ProjectAutoExecToggle projectId={p.id} isActive={isActive} />
 
                 {/* Settings link */}
                 <Link
