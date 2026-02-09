@@ -335,6 +335,10 @@ def cleanup_worktrees(
         bool,
         typer.Option("--dry-run", help="Show what would be cleaned up without doing it"),
     ] = False,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Scan all projects (default: current project only)"),
+    ] = False,
 ) -> None:
     """List orphaned/stale worktrees with cleanup recommendations.
 
@@ -353,8 +357,12 @@ def cleanup_worktrees(
         st cleanup worktrees --stale-days 14   # Mark stale after 14 days
         st cleanup worktrees --dry-run          # Preview cleanup
     """
-    # Get all worktrees
-    worktrees = get_active_worktrees()
+    # Get worktrees scoped to current project (unless --all)
+    project_id: str | None = None
+    if not all_projects:
+        from ..config import get_config_optional
+        project_id = get_config_optional().project_id or None
+    worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
         output_success("No worktrees found")
@@ -454,12 +462,21 @@ def cleanup_worktrees(
 
 
 @app.command("status")
-def cleanup_status() -> None:
+def cleanup_status(
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Show all projects (default: current project only)"),
+    ] = False,
+) -> None:
     """Show summary of worktrees and their cleanup status.
 
     Quick overview without detailed analysis.
     """
-    worktrees = get_active_worktrees()
+    project_id: str | None = None
+    if not all_projects:
+        from ..config import get_config_optional
+        project_id = get_config_optional().project_id or None
+    worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
         output_json({"worktrees": [], "total": 0})
