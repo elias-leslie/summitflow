@@ -1,11 +1,11 @@
-"""Celery task for processing crowdsourced ideas."""
+"""Background task for processing crowdsourced ideas."""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
-from app.celery_app import celery_app
 from app.storage.connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -112,17 +112,10 @@ def update_idea_status(idea_id: str, status: str) -> None:
         conn.commit()
 
 
-@celery_app.task(
-    name="summitflow.process_crowdsourced_ideas",
-    acks_late=True,
-    time_limit=1800,  # 30 minutes hard limit
-    soft_time_limit=1680,  # 28 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=300,  # Max 5 minutes between retries
-    max_retries=3,
-)
-def process_crowdsourced_ideas(project_id: str) -> dict[str, Any]:
+def process_crowdsourced_ideas(
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Process approved crowdsourced ideas for a project.
 
     Executes ideas sequentially up to the daily budget limit.
@@ -188,10 +181,8 @@ def process_crowdsourced_ideas(project_id: str) -> dict[str, Any]:
             # This triggers the existing implementation pipeline
             logger.info(f"Dispatching idea {idea_id} via task {task_id}")
 
-            from .execution import start_execution
-
-            # Trigger async execution - the task will be picked up
-            start_execution.delay(task_id, project_id)
+            if dispatch:
+                dispatch("execute", task_id, project_id)
 
             # Estimate cost (placeholder - real cost tracking would come from Agent Hub)
             estimated_cost = 0.50  # Conservative estimate per task

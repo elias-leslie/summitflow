@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from celery import Task, shared_task
-
 from ...constants import (
     QA_SUPERVISOR_STUCK_THRESHOLD,
     QA_WORKER_STUCK_THRESHOLD,
@@ -110,9 +108,7 @@ Issue: {issue_description}{step_context}"""
         return None
 
 
-@shared_task(bind=True, name="autonomous.supervisor_guidance")
 def supervisor_guidance(
-    self: Task[..., dict[str, Any]],
     task_id: str,
     subtask_id: str,
     issue_description: str,

@@ -269,4 +269,9 @@ async def self_healing_wf(input: SelfHealingInput, ctx: Context) -> dict[str, An
 async def process_ideas_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.ideas import process_crowdsourced_ideas
 
-    return await asyncio.to_thread(process_crowdsourced_ideas, input.project_id)
+    from .pipeline import _make_dispatch_callback
+
+    dispatch = _make_dispatch_callback()
+    return await asyncio.to_thread(
+        process_crowdsourced_ideas, input.project_id, dispatch=dispatch
+    )
