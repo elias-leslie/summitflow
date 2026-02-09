@@ -3,7 +3,11 @@
 This package provides data access for agent execution tasks.
 
 Modules:
-    core: CRUD operations and row mapping
+    core: CRUD operations
+    columns: Column definitions and constants
+    mapping: Row to dict conversions
+    update: Update operations
+    sessions: Agent Hub session management
     status: State machine and status transitions
     claims: Distributed locking for concurrent execution
     queries: Task listing, filtering, and ready/blocked queries
@@ -29,6 +33,7 @@ from .queries import (
     list_ready_tasks,
     list_tasks,
 )
+from .sessions import add_agent_hub_session, get_agent_hub_sessions
 from .status import (
     VALID_TRANSITIONS,
     add_commit,
@@ -42,12 +47,14 @@ __all__ = [
     "TASK_COLUMNS_ALIASED",
     "VALID_TRANSITIONS",
     "_row_to_dict",
+    "add_agent_hub_session",
     "add_commit",
     "bug_task_exists_for_error",
     "claim_task",
     "count_running_tasks",
     "create_task",
     "delete_task",
+    "get_agent_hub_sessions",
     "get_stale_tasks",
     "get_task",
     "get_tasks_by_enrichment_status",
