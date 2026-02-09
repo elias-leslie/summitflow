@@ -46,7 +46,7 @@ class TestTimeWindowChecks:
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
     @patch("app.tasks.autonomous.pickup.task_store")
-    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup_queries.get_queued_autonomous_tasks")
     def test_within_hours_continues_execution(
         self,
         mock_get_tasks: MagicMock,
@@ -109,7 +109,7 @@ class TestConcurrencyLimitChecks:
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
     @patch("app.tasks.autonomous.pickup.task_store")
-    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup_queries.get_queued_autonomous_tasks")
     def test_under_concurrency_limit_continues_execution(
         self,
         mock_get_tasks: MagicMock,
@@ -144,7 +144,7 @@ class TestTaskDispatching:
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
     @patch("app.tasks.autonomous.pickup.task_store")
-    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup_queries.get_queued_autonomous_tasks")
     @patch("app.tasks.autonomous.pickup._determine_next_stage")
     def test_task_dispatched_to_triage(
         self,
@@ -187,7 +187,7 @@ class TestTaskDispatching:
     @patch("app.storage.agent_configs.is_within_autonomous_hours")
     @patch("app.storage.agent_configs.get_autonomous_schedule")
     @patch("app.tasks.autonomous.pickup.task_store")
-    @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup_queries.get_queued_autonomous_tasks")
     def test_no_tasks_returns_zero_dispatched(
         self,
         mock_get_tasks: MagicMock,
