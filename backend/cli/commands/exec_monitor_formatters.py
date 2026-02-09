@@ -1,0 +1,113 @@
+"""Formatting utilities for execution log display."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ..output_context import OutputContext
+
+
+def subtask_summary(subtasks: list[dict[str, Any]]) -> str:
+    """Generate a compact summary of subtask statuses."""
+    if not subtasks:
+        return "0/0"
+
+    total = len(subtasks)
+    passed = sum(1 for s in subtasks if s.get("status") == "passed")
+    failed = sum(1 for s in subtasks if s.get("status") == "failed")
+    in_progress = sum(1 for s in subtasks if s.get("status") == "in_progress")
+
+    if failed > 0:
+        return f"{passed}/{total}({failed}F)"
+    elif in_progress > 0:
+        return f"{passed}/{total}({in_progress}W)"
+    else:
+        return f"{passed}/{total}"
+
+
+def print_events(
+    out: OutputContext, events: list[Any], debug: bool = False, json_output: bool = False
+) -> None:
+    """Print a list of events."""
+    import json
+
+    for event in reversed(events):  # Show oldest first
+        if json_output:
+            # One JSON object per line for agent parsing
+            print(json.dumps(event))
+            continue
+
+        timestamp = event.get("timestamp", "")[:19]  # Truncate to seconds
+        level = event.get("level", "info")[:4].upper()
+        message = event.get("message", "")
+        source = event.get("source", "")
+        visibility = event.get("visibility", "user")
+        attributes = event.get("attributes", {})
+
+        # Level colors for terminal
+        level_prefix = {
+            "DEBU": ".",
+            "INFO": " ",
+            "WARN": "!",
+            "ERRO": "X",
+        }.get(level, " ")
+
+        # Debug visibility indicator
+        vis_indicator = ""
+        if debug and visibility == "debug":
+            vis_indicator = "[D] "
+        elif debug and visibility == "internal":
+            vis_indicator = "[I] "
+
+        if out.is_compact:
+            # TOON format: timestamp|level|message
+            print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
+        else:
+            # Human-readable format
+            source_str = f" [{source}]" if source else ""
+            print(f"{level_prefix} {timestamp} {vis_indicator}{message}{source_str}")
+
+            # Show attributes in debug mode
+            if debug and attributes:
+                elapsed = attributes.get("elapsed_ms")
+                if elapsed is not None:
+                    print(f"    elapsed: {elapsed:.1f}ms")
+                for key, value in attributes.items():
+                    if key not in ("elapsed_ms", "level", "message", "source"):
+                        if isinstance(value, str) and len(value) > 60:
+                            value = value[:60] + "..."
+                        print(f"    {key}: {value}")
+
+
+def print_header(
+    out: OutputContext,
+    task: dict[str, Any],
+    subtasks: list[dict[str, Any]],
+    debug: bool = False,
+    json_output: bool = False,
+) -> None:
+    """Print task header with status and subtasks."""
+    if json_output:
+        return
+
+    task_id = task.get("id", "unknown")
+    title = task.get("title", "Unknown")[:50]
+    status = task.get("status", "unknown")
+    summary = subtask_summary(subtasks)
+
+    if out.is_compact:
+        print(f"EXEC:{task_id}|{status}|{summary}|{title}")
+    else:
+        print(f"Task: {task_id}")
+        print(f"Title: {title}")
+        print(f"Status: {status}")
+        if subtasks:
+            print(f"Subtasks: {summary}")
+            for s in subtasks:
+                s_id = s.get("subtask_id", "?")
+                s_status = s.get("status", "?")
+                s_desc = s.get("description", "")[:40]
+                print(f"  {s_id}: {s_status} - {s_desc}")
+        if debug:
+            print("Mode: debug (showing all visibility levels)")
+        print("-" * 60)
