@@ -1,4 +1,4 @@
-"""Tests for backup Celery tasks."""
+"""Tests for backup tasks."""
 
 from unittest.mock import MagicMock, patch
 

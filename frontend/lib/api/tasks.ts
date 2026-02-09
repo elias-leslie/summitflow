@@ -130,7 +130,6 @@ export interface TaskDependency {
 export interface StartTaskResult {
   status: string
   task_id: string
-  celery_task_id?: string
 }
 
 // ============================================================================
@@ -283,7 +282,7 @@ export interface ExecuteTaskResponse {
 
 /**
  * Start autonomous orchestrator execution for a task.
- * Queues the task for execution via Celery with streaming to WebSocket.
+ * Queues the task for execution via Hatchet workflow with streaming to WebSocket.
  */
 export async function executeTask(
   projectId: string,

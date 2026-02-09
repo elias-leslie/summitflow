@@ -1,7 +1,7 @@
 """Redis pub/sub for cross-process WebSocket messaging.
 
-Enables Celery workers to publish messages that FastAPI WebSocket handlers receive.
-This solves the process isolation problem: Celery workers can't directly access
+Enables background workers to publish messages that FastAPI WebSocket handlers receive.
+This solves the process isolation problem: Hatchet workers can't directly access
 FastAPI's in-memory ConnectionManager.
 
 Events are persisted to PostgreSQL for historical queries, then published to Redis
@@ -9,7 +9,7 @@ for live streaming. If Redis fails after DB write, event is persisted but live
 clients may miss it until reconnect (acceptable trade-off).
 
 Usage:
-    # In Celery worker (sync):
+    # In background worker (sync):
     publish_ws_event(task_id, {"type": "log", "data": {...}}, project_id="proj", trace_id="task-123")
 
     # In FastAPI WebSocket handler (async):
@@ -71,7 +71,7 @@ def publish_ws_event(
     level: EventLevel = "info",
     visibility: EventVisibility = "user",
 ) -> bool:
-    """Publish a WebSocket event to Redis (sync, for Celery workers).
+    """Publish a WebSocket event to Redis (sync, for background workers).
 
     Persists event to PostgreSQL first, then publishes to Redis for live streaming.
     If Redis fails after DB write, event is still persisted.

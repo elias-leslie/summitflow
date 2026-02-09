@@ -12,15 +12,15 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 export PROJECT_DIR PROJECT_NAME
 case "$PROJECT_NAME" in
-    summitflow) export SERVICE_PREFIX="summitflow" FRONTEND_PORT=3001 BACKEND_PORT=8001 HAS_CELERY=true HAS_REDIS=false ;;
+    summitflow) export SERVICE_PREFIX="summitflow" FRONTEND_PORT=3001 BACKEND_PORT=8001 HAS_CELERY=false HAS_HATCHET=true HAS_REDIS=false ;;
     terminal) export SERVICE_PREFIX="summitflow-terminal" FRONTEND_PORT=3002 BACKEND_PORT=8002 HAS_CELERY=false HAS_REDIS=false ;;
     portfolio-ai) export SERVICE_PREFIX="portfolio" FRONTEND_PORT=3000 BACKEND_PORT=8000 HAS_CELERY=true HAS_REDIS=true ;;
-    agent-hub) export SERVICE_PREFIX="agent-hub" FRONTEND_PORT=3003 BACKEND_PORT=8003 HAS_CELERY=true HAS_REDIS=false ;;
+    agent-hub) export SERVICE_PREFIX="agent-hub" FRONTEND_PORT=3003 BACKEND_PORT=8003 HAS_CELERY=false HAS_HATCHET=true HAS_REDIS=false ;;
     monkey-fight) export SERVICE_PREFIX="monkey-fight" FRONTEND_PORT=4001 BACKEND_PORT=0 HAS_CELERY=false HAS_REDIS=false HAS_BACKEND=false IS_VITE=true ;;
     *) export SERVICE_PREFIX=$(echo "$PROJECT_NAME" | tr '-' '_') FRONTEND_PORT=3000 BACKEND_PORT=8000 HAS_CELERY=false HAS_REDIS=false ;;
 esac
 export BACKEND_SERVICE="${SERVICE_PREFIX}-backend" FRONTEND_SERVICE="${SERVICE_PREFIX}-frontend"
-export CELERY_SERVICE="${SERVICE_PREFIX}-celery" CELERY_BEAT_SERVICE="${SERVICE_PREFIX}-celery-beat" REDIS_SERVICE="${SERVICE_PREFIX}-redis"
+export CELERY_SERVICE="${SERVICE_PREFIX}-celery" CELERY_BEAT_SERVICE="${SERVICE_PREFIX}-celery-beat" HATCHET_SERVICE="${SERVICE_PREFIX}-hatchet-worker" REDIS_SERVICE="${SERVICE_PREFIX}-redis"
 [ "$PROJECT_NAME" = "terminal" ] && export BACKEND_SERVICE="summitflow-terminal" FRONTEND_SERVICE="summitflow-terminal-frontend"
 [ "$PROJECT_NAME" = "monkey-fight" ] && export FRONTEND_SERVICE="monkey-fight"
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }

@@ -1,1 +1,1 @@
-"""Tests for Celery tasks."""
+"""Tests for background tasks."""

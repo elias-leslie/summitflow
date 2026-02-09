@@ -7,7 +7,7 @@
 # Usage:
 #   ./scripts/rebuild.sh              # Full rebuild (frontend + all services)
 #   ./scripts/rebuild.sh --frontend   # Frontend only (rebuild + restart frontend)
-#   ./scripts/rebuild.sh --backend    # Backend only (restart backend + celery)
+#   ./scripts/rebuild.sh --backend    # Backend only (restart backend + worker)
 #   ./scripts/rebuild.sh --restart    # Restart only (no rebuild)
 #   ./scripts/rebuild.sh --status     # Show service status
 #
@@ -35,7 +35,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --frontend, -f  Frontend only (rebuild + restart frontend)"
-            echo "  --backend, -b   Backend only (restart backend + celery)"
+            echo "  --backend, -b   Backend only (restart backend + worker)"
             echo "  --restart, -r   Restart only (no rebuild)"
             echo "  --status, -s    Show service status"
             echo ""
@@ -119,10 +119,15 @@ main() {
         # Backend
         restart_service "$BACKEND_SERVICE" || ((errors++))
 
-        # Celery (if exists)
+        # Celery (if exists - portfolio-ai)
         if [ "$HAS_CELERY" = true ]; then
             restart_service "$CELERY_SERVICE" || ((errors++))
             restart_service "$CELERY_BEAT_SERVICE" || ((errors++))
+        fi
+
+        # Hatchet worker (if exists - summitflow, agent-hub)
+        if [ "$HAS_HATCHET" = true ]; then
+            restart_service "$HATCHET_SERVICE" || ((errors++))
         fi
 
         # Redis (if exists)
