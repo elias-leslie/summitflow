@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.services.explorer import scan
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.projects import get_project_root_path
@@ -161,6 +162,11 @@ def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
         }
 
     deleted_count = delete_existing_refactor_tasks(project_id)
+
+    # Refresh explorer_entries with current filesystem state before generating tasks.
+    # Without this, stale DB metadata (old line counts) causes tasks for already-refactored files.
+    scan(project_id, "file")
+
     result = generate_refactor_tasks_internal(project_id, skip_existing=False, project_root=project_root)
 
     logger.info(
