@@ -69,13 +69,8 @@ def build_quality_steps() -> list[dict[str, str]]:
     """Shared quality gate steps reusable across task types."""
     return [
         {
-            "description": "Auto-fix lint and format issues",
-            "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
-            "expected_output": "exit code 0",
-        },
-        {
-            "description": "Lint and type check (no full test suite)",
-            "verify_command": "dt --quick",
+            "description": "Quality gate: auto-fix, lint, types",
+            "verify_command": "dt --fix 2>/dev/null; dt --quick",
             "expected_output": "exit code 0",
         },
     ]
@@ -103,28 +98,13 @@ def build_refactor_steps(
     """
     steps = [
         {
-            "description": f"Analyze {relative_path} for refactoring opportunities",
-            "verify_command": f"test -f {relative_path}",
-            "expected_output": "exit code 0",
-        },
-        {
-            "description": f"Split/refactor to reduce line count from {lines} to <{target_lines}",
+            "description": f"Refactor {relative_path} from {lines} to <{target_lines} lines",
             "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
             "expected_output": "exit code 0",
         },
         {
-            "description": "Auto-fix lint/format then verify",
-            "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
-            "expected_output": "exit code 0",
-        },
-        {
-            "description": f"Verify tests for {relative_path}",
-            "verify_command": get_targeted_test_command(relative_path),
-            "expected_output": "exit code 0",
-        },
-        {
-            "description": "Lint and type check (no full test suite)",
-            "verify_command": "dt --quick",
+            "description": "Quality gate: auto-fix, lint, types, targeted tests",
+            "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick",
             "expected_output": "exit code 0",
         },
     ]
@@ -137,13 +117,5 @@ def build_refactor_steps(
                 "expected_output": "exit code 0",
             }
         )
-
-    steps.append(
-        {
-            "description": "Verify changes are committed",
-            "verify_command": "git log --oneline -1",
-            "expected_output": "exit code 0",
-        }
-    )
 
     return steps
