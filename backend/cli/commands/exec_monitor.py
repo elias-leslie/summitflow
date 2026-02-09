@@ -14,6 +14,8 @@ from ..client import APIError, STClient
 from ..context import require_task_id
 from ..output import handle_api_error
 from ..output_context import OutputContext
+from .exec_monitor_follower import follow_events
+from .exec_monitor_formatters import print_events, print_header
 
 
 def exec_log_command(
@@ -77,24 +79,6 @@ def exec_log_command(
 exec_monitor_command = exec_log_command
 
 
-def _subtask_summary(subtasks: list[dict[str, Any]]) -> str:
-    """Generate a compact summary of subtask statuses."""
-    if not subtasks:
-        return "0/0"
-
-    total = len(subtasks)
-    passed = sum(1 for s in subtasks if s.get("status") == "passed")
-    failed = sum(1 for s in subtasks if s.get("status") == "failed")
-    in_progress = sum(1 for s in subtasks if s.get("status") == "in_progress")
-
-    if failed > 0:
-        return f"{passed}/{total}({failed}F)"
-    elif in_progress > 0:
-        return f"{passed}/{total}({in_progress}W)"
-    else:
-        return f"{passed}/{total}"
-
-
 def _display_events(
     out: OutputContext,
     task: dict[str, Any],
@@ -107,145 +91,20 @@ def _display_events(
     json_output: bool = False,
 ) -> None:
     """Display events for a task."""
-    import json
-    import time
-
     task_id = task.get("id", "unknown")
     project_id = task.get("project_id", "unknown")
-    title = task.get("title", "Unknown")[:50]
     status = task.get("status", "unknown")
 
-    # Summarize subtask status
-    subtask_summary = _subtask_summary(subtasks)
-
-    # Header (skip for JSON output)
-    if not json_output:
-        if out.is_compact:
-            print(f"EXEC:{task_id}|{status}|{subtask_summary}|{title}")
-        else:
-            print(f"Task: {task_id}")
-            print(f"Title: {title}")
-            print(f"Status: {status}")
-            if subtasks:
-                print(f"Subtasks: {subtask_summary}")
-                for s in subtasks:
-                    s_id = s.get("subtask_id", "?")
-                    s_status = s.get("status", "?")
-                    s_desc = s.get("description", "")[:40]
-                    print(f"  {s_id}: {s_status} - {s_desc}")
-            if debug:
-                print("Mode: debug (showing all visibility levels)")
-            print("-" * 60)
+    # Header
+    print_header(out, task, subtasks, debug, json_output)
 
     # Initial events
     events_list = events.get("events", []) if isinstance(events, dict) else events
-    _print_events(out, events_list, debug, json_output)
+    print_events(out, events_list, debug, json_output)
 
     if not follow:
         return
 
     # Follow mode - poll for new events
     last_event_id = events_list[-1].get("id") if events_list else None
-    if not json_output:
-        print("\n[Following... Press Ctrl+C to stop]\n")
-
-    try:
-        while True:
-            time.sleep(2)
-
-            # Check task status
-            try:
-                task = client.get_task(task_id)
-                new_status = task.get("status", "unknown")
-
-                if new_status != status:
-                    status = new_status
-                    if json_output:
-                        print(json.dumps({"type": "status_change", "status": status}))
-                    else:
-                        print(f"\n[Status changed: {status}]")
-
-                if status in ("completed", "cancelled", "failed", "closed"):
-                    if json_output:
-                        print(json.dumps({"type": "task_ended", "status": status}))
-                    else:
-                        print(f"\n[Task {status}]")
-                    break
-
-                # Get new events
-                new_events = client.get_events(project_id, task_id, limit=10, include_debug=debug)
-                events_list = (
-                    new_events.get("events", []) if isinstance(new_events, dict) else new_events
-                )
-
-                if events_list:
-                    # Filter to only new events
-                    if last_event_id:
-                        new_only = [e for e in events_list if e.get("id") != last_event_id]
-                        # Check if we have events newer than last
-                        if new_only and events_list[0].get("id") != last_event_id:
-                            _print_events(out, new_only, debug, json_output)
-                            last_event_id = events_list[0].get("id")
-                    else:
-                        last_event_id = events_list[0].get("id")
-            except APIError:
-                # Ignore transient errors in follow mode
-                pass
-
-    except KeyboardInterrupt:
-        if not json_output:
-            print("\n[Stopped]")
-
-
-def _print_events(
-    out: OutputContext, events: list[Any], debug: bool = False, json_output: bool = False
-) -> None:
-    """Print a list of events."""
-    import json
-
-    for event in reversed(events):  # Show oldest first
-        if json_output:
-            # One JSON object per line for agent parsing
-            print(json.dumps(event))
-            continue
-
-        timestamp = event.get("timestamp", "")[:19]  # Truncate to seconds
-        level = event.get("level", "info")[:4].upper()
-        message = event.get("message", "")
-        source = event.get("source", "")
-        visibility = event.get("visibility", "user")
-        attributes = event.get("attributes", {})
-
-        # Level colors for terminal
-        level_prefix = {
-            "DEBU": ".",
-            "INFO": " ",
-            "WARN": "!",
-            "ERRO": "X",
-        }.get(level, " ")
-
-        # Debug visibility indicator
-        vis_indicator = ""
-        if debug and visibility == "debug":
-            vis_indicator = "[D] "
-        elif debug and visibility == "internal":
-            vis_indicator = "[I] "
-
-        if out.is_compact:
-            # TOON format: timestamp|level|message
-            print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
-        else:
-            # Human-readable format
-            source_str = f" [{source}]" if source else ""
-            print(f"{level_prefix} {timestamp} {vis_indicator}{message}{source_str}")
-
-            # Show attributes in debug mode
-            if debug and attributes:
-                elapsed = attributes.get("elapsed_ms")
-                if elapsed is not None:
-                    print(f"    elapsed: {elapsed:.1f}ms")
-                for key, value in attributes.items():
-                    if key not in ("elapsed_ms", "level", "message", "source"):
-                        if isinstance(value, str) and len(value) > 60:
-                            value = value[:60] + "..."
-                        print(f"    {key}: {value}")
+    follow_events(out, task_id, project_id, status, last_event_id, client, debug, json_output)
