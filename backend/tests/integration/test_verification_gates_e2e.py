@@ -5,8 +5,8 @@ Tests the full task lifecycle through CLI commands, verifying that:
 2. st import rejects bad plans with same validations
 3. st subtask create rejects subtasks without proper steps
 4. st subtask pass fails on subtasks with no steps or incomplete steps
-5. st close fails on tasks with zero verified steps
-6. Happy path: valid plan → complete steps → close task
+5. st done fails on tasks with zero verified steps
+6. Happy path: valid plan → complete steps → done task
 
 These tests exercise the REAL CLI and API, not mocks.
 """

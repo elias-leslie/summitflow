@@ -98,7 +98,7 @@ class TaskStatusUpdate(BaseModel):
     reason: str | None = None  # Completion reason (logged to events table)
     skip_gates: bool = Field(
         default=False,
-        description="Skip completion gates (for st close cleanup path only)",
+        description="Skip completion gate validation (for autonomous pipeline)",
     )
 
 

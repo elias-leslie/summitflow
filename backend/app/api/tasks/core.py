@@ -351,7 +351,7 @@ async def update_task_status(
 
     # Gate checks when completing
     # These gates ensure work is actually done before marking complete
-    # skip_gates is only for `st close` cleanup path (already merged manually)
+    # skip_gates bypasses completion gate validation (e.g. autonomous pipeline)
     if update.status == "completed" and not update.skip_gates:
         from .crud_handlers import validate_completion_gates
 

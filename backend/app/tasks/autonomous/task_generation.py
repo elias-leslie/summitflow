@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from typing import Any
 
 from app.storage import log_task_event
@@ -14,14 +13,10 @@ from app.storage.tasks import delete_task
 from app.storage.tasks.queries import list_tasks
 from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
 from app.tasks.autonomous.task_builders import (
-    create_architecture_task,
     create_refactor_task,
     create_schema_task,
 )
 from app.tasks.autonomous.violation_handlers import (
-    get_consolidated_architecture_done_when,
-    get_consolidated_architecture_objective,
-    get_consolidated_architecture_title,
     get_violation_done_when,
     get_violation_objective,
     get_violation_steps,
@@ -32,20 +27,34 @@ logger = logging.getLogger(__name__)
 
 
 def _delete_existing_refactor_tasks(project_id: str) -> int:
-    """Delete all existing refactor tasks for a project."""
+    """Delete existing refactor tasks for a project, preserving in-progress work.
+
+    Skips tasks that are running, paused, or blocked — these represent
+    active work that should not be destroyed by a regenerate cycle.
+    """
+    protected_statuses = {"running", "paused", "blocked"}
     refactor_tasks = list_tasks(project_id=project_id, task_type_filter="refactor", limit=500)
     deleted = 0
+    protected = 0
     for task in refactor_tasks:
         task_id = task.get("id")
-        if task_id:
-            try:
-                if delete_task(task_id):
-                    deleted += 1
-                    logger.info(f"Deleted refactor task {task_id}: {task.get('title', '')[:50]}")
-            except Exception as e:
-                logger.warning(f"Failed to delete task {task_id}: {e}")
-    if deleted > 0:
-        logger.info(f"Cleaned up {deleted} existing refactor tasks for {project_id}")
+        if not task_id:
+            continue
+        if task.get("status") in protected_statuses:
+            protected += 1
+            logger.info(f"Protecting in-progress task {task_id}: {task.get('title', '')[:50]}")
+            continue
+        try:
+            if delete_task(task_id):
+                deleted += 1
+                logger.info(f"Deleted refactor task {task_id}: {task.get('title', '')[:50]}")
+        except Exception as e:
+            logger.warning(f"Failed to delete task {task_id}: {e}")
+    if deleted > 0 or protected > 0:
+        logger.info(
+            f"Refactor task cleanup for {project_id}: "
+            f"deleted={deleted}, protected={protected}"
+        )
     return deleted
 
 
@@ -276,65 +285,17 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
 
 
 def generate_architecture_tasks(project_id: str) -> dict[str, Any]:
-    """Generate tasks from architecture violations detected by Explorer."""
-    from app.storage import explorer_entries
+    """Architecture task generation — disabled.
 
-    try:
-        entries = explorer_entries.get_entries(project_id, {"type": "architecture"})
-        violations_by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    Architecture violations are still detected by Explorer scans and stored
+    in explorer_entries (visible on the Explorer health dashboard). Task
+    generation is disabled because auto-generated architecture tasks lack
+    actionable subtasks/steps and created unexecutable noise.
 
-        for entry in entries:
-            metadata = entry.get("metadata", {})
-            violations = metadata.get("violations", [])
-            module_path = entry.get("path", "")
-            for violation in violations:
-                violation_type = violation.get("violation_type", "")
-                violations_by_type[violation_type].append({**violation, "module_path": module_path})
-
-        if not violations_by_type:
-            logger.info(f"No architecture violations found for {project_id}")
-            return {"created_count": 0, "scanned_count": 0, "skipped_count": 0}
-
-        created = 0
-        skipped = 0
-        scanned = len(violations_by_type)
-
-        for violation_type, violations in violations_by_type.items():
-            issue_path = f"architecture:{violation_type}"
-            if task_store.task_exists_for_file(project_id, issue_path):
-                skipped += 1
-                logger.info(f"Skipping {violation_type}: task already exists")
-                continue
-
-            affected_files = list(
-                {v.get("file_path", "") for v in violations if v.get("file_path")}
-            )
-            severity = "error" if violation_type == "parallel_implementation" else "warning"
-            tier = 2 if violation_type == "parallel_implementation" else 1
-            complexity = "STANDARD" if len(affected_files) > 5 else "SIMPLE"
-            auto_approve = tier == 1 and len(affected_files) <= 5
-
-            task_id, _ = create_architecture_task(
-                project_id=project_id,
-                violation_type=violation_type,
-                violations=violations,
-                affected_files=affected_files,
-                title=get_consolidated_architecture_title(violation_type, len(affected_files)),
-                severity=severity,
-                tier=tier,
-                objective=get_consolidated_architecture_objective(violation_type, affected_files),
-                done_when=get_consolidated_architecture_done_when(violation_type),
-                complexity=complexity,
-                auto_approve=auto_approve,
-            )
-            if task_id:
-                created += 1
-
-        logger.info(
-            f"Architecture task generation complete for {project_id}: "
-            f"created={created}, scanned={scanned}, skipped={skipped}"
-        )
-        return {"created_count": created, "scanned_count": scanned, "skipped_count": skipped}
-    except Exception as e:
-        logger.error(f"Error generating architecture tasks: {e}")
-        return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
+    Users can manually create tasks when they want to act on violations.
+    """
+    logger.info(
+        f"Architecture task generation disabled for {project_id}. "
+        "Violations are still tracked in Explorer health dashboard."
+    )
+    return {"created_count": 0, "scanned_count": 0, "skipped_count": 0}
