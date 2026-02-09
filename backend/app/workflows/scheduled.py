@@ -38,8 +38,10 @@ from .models import (
 )
 async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.pickup import autonomous_work_pickup
+    from .pipeline import _make_dispatch_callback
 
-    return await asyncio.to_thread(autonomous_work_pickup, input.project_id)
+    dispatch = _make_dispatch_callback()
+    return await asyncio.to_thread(autonomous_work_pickup, input.project_id, dispatch=dispatch)
 
 
 @hatchet.task(
@@ -57,8 +59,10 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
 )
 async def review_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.pickup import review_pending_tasks
+    from .pipeline import _make_dispatch_callback
 
-    return await asyncio.to_thread(review_pending_tasks, input.project_id)
+    dispatch = _make_dispatch_callback()
+    return await asyncio.to_thread(review_pending_tasks, input.project_id, dispatch=dispatch)
 
 
 @hatchet.task(
@@ -95,8 +99,10 @@ async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 )
 async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.explorer_tasks import scan_all_projects
+    from .pipeline import _make_dispatch_callback
 
-    return await asyncio.to_thread(scan_all_projects, dry_run=False)
+    dispatch = _make_dispatch_callback()
+    return await asyncio.to_thread(scan_all_projects, dry_run=False, dispatch=dispatch)
 
 
 @hatchet.task(

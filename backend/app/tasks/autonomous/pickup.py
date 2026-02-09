@@ -14,24 +14,17 @@ This ensures each task runs in isolation without affecting the main branch.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from app.celery_app import celery_app
 from app.logging_config import get_logger
-from app.scheduling import get_dispatcher
-from app.scheduling.dispatch import DispatchEvent
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 from app.storage.tasks.claims import claim_task
-
-from .execution import start_execution
-from .planning import create_plan
-from .review import ai_review
-from .triage import triage_idea
 
 logger = get_logger(__name__)
 
@@ -132,17 +125,10 @@ def _determine_next_stage(task_id: str) -> str:
     return "unknown"
 
 
-@celery_app.task(
-    name="summitflow.autonomous_work_pickup",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
-def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
+def autonomous_work_pickup(
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Pick up queued autonomous tasks and dispatch to appropriate pipeline stage.
 
     This task runs periodically to:
@@ -200,12 +186,14 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
 
         try:
             if stage == "triage":
-                triage_idea.delay(task_id, project_id)
+                if dispatch:
+                    dispatch("triage", task_id, project_id)
                 dispatched["triage"] += 1
                 logger.info("Dispatched to triage", task_id=task_id)
 
             elif stage == "planning":
-                create_plan.delay(task_id, project_id)
+                if dispatch:
+                    dispatch("plan", task_id, project_id)
                 dispatched["planning"] += 1
                 logger.info("Dispatched to planning", task_id=task_id)
 
@@ -221,7 +209,8 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
                     dispatched["skipped"] += 1
                     continue
 
-                start_execution.delay(task_id, project_id)
+                if dispatch:
+                    dispatch("execute", task_id, project_id)
                 dispatched["execution"] += 1
                 logger.info("Dispatched to execution", task_id=task_id)
 
@@ -239,17 +228,10 @@ def autonomous_work_pickup(project_id: str) -> dict[str, Any]:
     return {"project_id": project_id, "dispatched": total, "breakdown": dispatched}
 
 
-@celery_app.task(
-    name="summitflow.review_pending_tasks",
-    acks_late=True,
-    time_limit=900,  # 15 minutes hard limit
-    soft_time_limit=840,  # 14 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=180,  # Max 3 minutes between retries
-    max_retries=3,
-)
-def review_pending_tasks(project_id: str) -> dict[str, Any]:
+def review_pending_tasks(
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Pick up tasks awaiting AI review and dispatch to reviewer.
 
     This task runs periodically to:
@@ -272,7 +254,8 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
     for task in tasks:
         task_id = task["id"]
         try:
-            ai_review.delay(task_id, project_id)
+            if dispatch:
+                dispatch("review", task_id, project_id)
             dispatched += 1
             logger.info("Dispatched to AI review", task_id=task_id)
         except Exception as e:
@@ -283,17 +266,11 @@ def review_pending_tasks(project_id: str) -> dict[str, Any]:
     return {"project_id": project_id, "dispatched": dispatched}
 
 
-@celery_app.task(
-    name="summitflow.dispatch_task_immediate",
-    acks_late=True,
-    time_limit=300,  # 5 minutes hard limit
-    soft_time_limit=240,  # 4 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=60,  # Max 1 minute between retries
-    max_retries=3,
-)
-def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
+def dispatch_task_immediate(
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Dispatch a single task immediately (event-driven path).
 
     Called when st autocode publishes to Redis pub/sub.
@@ -363,12 +340,14 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
 
     try:
         if stage == "triage":
-            triage_idea.delay(task_id, project_id)
+            if dispatch:
+                dispatch("triage", task_id, project_id)
             logger.info("Dispatched to triage (immediate)", task_id=task_id)
             return {"status": "dispatched", "task_id": task_id, "stage": "triage"}
 
         elif stage == "planning":
-            create_plan.delay(task_id, project_id)
+            if dispatch:
+                dispatch("plan", task_id, project_id)
             logger.info("Dispatched to planning (immediate)", task_id=task_id)
             return {"status": "dispatched", "task_id": task_id, "stage": "planning"}
 
@@ -383,7 +362,8 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
                 )
                 return {"status": "already_claimed", "task_id": task_id}
 
-            start_execution.delay(task_id, project_id)
+            if dispatch:
+                dispatch("execute", task_id, project_id)
             logger.info("Dispatched to execution (immediate)", task_id=task_id)
             return {"status": "dispatched", "task_id": task_id, "stage": "execution"}
 
@@ -396,61 +376,3 @@ def dispatch_task_immediate(task_id: str, project_id: str) -> dict[str, Any]:
         return {"status": "error", "task_id": task_id, "error": str(e)}
 
 
-@celery_app.task(
-    name="summitflow.process_scheduled_tasks",
-    acks_late=True,
-    time_limit=120,  # 2 minutes hard limit
-    soft_time_limit=90,  # 1.5 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=30,  # Max 30 seconds between retries
-    max_retries=3,
-)
-def process_scheduled_tasks() -> dict[str, Any]:
-    """Process scheduled tasks that are due for execution.
-
-    Checks Redis sorted set for tasks with schedule <= now.
-    Called periodically by Celery Beat (every 1 minute).
-
-    Returns:
-        Dict with processing results
-    """
-    dispatcher = get_dispatcher()
-    due_events = dispatcher.get_due_scheduled_tasks()
-
-    if not due_events:
-        return {"processed": 0}
-
-    processed = 0
-    for event in due_events:
-        try:
-            dispatch_task_immediate.delay(event.task_id, event.project_id)
-            processed += 1
-            logger.info(
-                "Dispatched scheduled task",
-                task_id=event.task_id,
-                queued_at=event.queued_at.isoformat(),
-            )
-        except Exception as e:
-            logger.warning(
-                "Failed to dispatch scheduled task",
-                task_id=event.task_id,
-                error=str(e),
-            )
-
-    return {"processed": processed}
-
-
-def handle_dispatch_event(event: DispatchEvent) -> None:
-    """Handle a dispatch event from Redis pub/sub.
-
-    Called by the subscriber when a task is queued via st autocode.
-    """
-    if event.schedule is None:
-        dispatch_task_immediate.delay(event.task_id, event.project_id)
-    else:
-        logger.debug(
-            "Scheduled task stored, will be processed by Beat",
-            task_id=event.task_id,
-            schedule=event.schedule.to_dict(),
-        )

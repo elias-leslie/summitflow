@@ -6,22 +6,17 @@ Uses complete() with execute_tools=True for agentic execution.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import re
 import shutil
 import subprocess
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import redis as _redis_lib
-from celery import Task, shared_task
-from celery.exceptions import SoftTimeLimitExceeded
-
-from ...config import REDIS_URL
 from ...constants import (
     CONTEXT_FRESHNESS_THRESHOLD,
     PRISTINE_SELF_HEAL_MAX_ATTEMPTS,
@@ -53,7 +48,6 @@ from ...storage.subtasks import (
 )
 from ...storage.task_spirit import get_task_spirit
 from .escalation import get_supervisor_guidance_sync
-from .review import ai_review
 from .verification import run_smoke_tests, verify_step
 
 logger = get_logger(__name__)
@@ -1042,25 +1036,22 @@ def _auto_fix_quality(project_path: str) -> bool:
         return False
 
 
-@shared_task(
-    bind=True,
-    name="autonomous.start_execution",
-    acks_late=True,
-    time_limit=3600,  # 60 minutes hard limit (execution can be long)
-    soft_time_limit=3300,  # 55 minutes soft limit
-    max_retries=2,  # Fewer retries - execution has internal retry logic
-)
 def start_execution(
-    self: Task[..., dict[str, Any]], task_id: str, project_id: str
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Start autonomous execution of a task.
 
     Executes subtasks in order with fresh context per subtask.
     Uses complete() with execute_tools=True for agentic execution.
 
+    Concurrency is handled by Hatchet ConcurrencyExpression (max_runs=1 per task_id).
+
     Args:
         task_id: The task ID to execute
         project_id: The project ID
+        dispatch: Optional callback to trigger downstream workflows
 
     Returns:
         Execution result with status
@@ -1068,46 +1059,17 @@ def start_execution(
     debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
 
-    # Execution lock: Redis SET NX prevents concurrent/duplicate executions.
-    # Survives Celery worker restarts (acks_late redelivery) and duplicate dispatches.
-    _r = _redis_lib.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
-    _lock_key = f"summitflow:execution_lock:{task_id}"
-    _lock_acquired = _r.set(_lock_key, "1", nx=True, ex=3600)
-    if not _lock_acquired:
-        logger.warning(
-            "Duplicate execution blocked by Redis lock",
-            task_id=task_id,
-            lock_key=_lock_key,
-        )
-        return {
-            "task_id": task_id,
-            "status": "skipped",
-            "reason": "execution_lock_held",
-        }
-
     _emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
 
-    try:
-        return _execute_task_locked(task_id, project_id)
-    except SoftTimeLimitExceeded:
-        logger.error("execution_soft_timeout", task_id=task_id)
-        _emit_log(
-            task_id,
-            "error",
-            "Execution timed out (soft limit). Setting task to blocked.",
-            source="orchestrator",
-            project_id=project_id,
-        )
-        with contextlib.suppress(Exception):
-            task_store.update_task_status(task_id, "blocked", error_message="Soft time limit exceeded")
-        return {"task_id": task_id, "status": "timeout", "reason": "soft_time_limit"}
-    finally:
-        with contextlib.suppress(Exception):
-            _r.delete(_lock_key)
+    return _execute_task_locked(task_id, project_id, dispatch=dispatch)
 
 
-def _execute_task_locked(task_id: str, project_id: str) -> dict[str, Any]:
-    """Inner execution body, always runs under Redis lock released by caller."""
+def _execute_task_locked(
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
+    """Inner execution body. Concurrency handled by Hatchet."""
     task = task_store.get_task(task_id)
     if not task:
         _emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
@@ -1205,7 +1167,8 @@ def _execute_task_locked(task_id: str, project_id: str) -> dict[str, Any]:
                 "All subtasks already complete, starting QA review",
                 project_id=project_id,
             )
-            ai_review.delay(task_id, project_id)
+            if dispatch:
+                dispatch("review", task_id, project_id)
         except Exception as e:
             _emit_log(
                 task_id,
@@ -1347,7 +1310,8 @@ def _execute_task_locked(task_id: str, project_id: str) -> dict[str, Any]:
                     f"All subtasks passed + quality gate passed, starting QA review (clean={execution_clean})",
                     project_id=project_id,
                 )
-                ai_review.delay(task_id, project_id)
+                if dispatch:
+                    dispatch("review", task_id, project_id)
             except Exception as e:
                 _emit_log(
                     task_id,

@@ -16,7 +16,14 @@ from .models import TaskInput
 
 
 async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
-    """Trigger a downstream pipeline workflow by stage name."""
+    """Trigger a downstream workflow by stage name.
+
+    Supports both pipeline stages and utility/post-scan stages.
+    For pipeline stages, task_id is the actual task ID.
+    For post-scan stages, project_id is used (task_id may be empty).
+    """
+    from .models import ProjectInput
+
     workflow_map = {
         "triage": triage_wf,
         "plan": plan_wf,
@@ -27,6 +34,25 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     wf = workflow_map.get(stage)
     if wf:
         await wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
+        return
+
+    # Post-scan utility workflows (keyed by project_id)
+    from .scheduled import task_generation_wf
+    from .utility import (
+        arch_tasks_wf,
+        check_resolved_wf,
+        schema_tasks_wf,
+    )
+
+    utility_map = {
+        "generate_tasks": task_generation_wf,
+        "schema_tasks": schema_tasks_wf,
+        "architecture_tasks": arch_tasks_wf,
+        "check_resolved": check_resolved_wf,
+    }
+    util_wf = utility_map.get(stage)
+    if util_wf:
+        await util_wf.aio_run_no_wait(ProjectInput(project_id=project_id))
 
 
 def _make_dispatch_callback() -> Any:

@@ -1,4 +1,4 @@
-"""Celery tasks for backup and restore operations.
+"""Background tasks for backup and restore operations.
 
 Tasks:
 - create_backup: Create a new backup for a project
@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import redis
-from celery import shared_task
 
 from ..config import REDIS_URL
 from ..logging_config import get_logger
@@ -50,15 +49,7 @@ def _release_backup_lock(project_id: str) -> None:
     r.delete(f"{BACKUP_LOCK_PREFIX}{project_id}")
 
 
-@shared_task(
-    name="summitflow.create_backup",
-    bind=True,
-    acks_late=True,
-    time_limit=900,  # 15 minutes hard limit
-    soft_time_limit=840,  # 14 minutes soft limit
-)
 def create_backup(
-    self: Any,
     project_id: str,
     note: str | None = None,
     backup_type: str = "manual",
@@ -83,7 +74,6 @@ def create_backup(
         "create_backup_started",
         project_id=project_id,
         backup_type=backup_type,
-        task_id=self.request.id,
     )
 
     # Get project root path first to validate project exists
@@ -98,18 +88,16 @@ def create_backup(
         logger.info(
             "create_backup_skipped_locked",
             project_id=project_id,
-            task_id=self.request.id,
         )
         return {"status": "skipped", "error": f"Backup already running for {project_id}"}
 
     try:
-        return _run_backup(self, project_id, project_dir, note, backup_type, keep_local, retention_count)
+        return _run_backup(project_id, project_dir, note, backup_type, keep_local, retention_count)
     finally:
         _release_backup_lock(project_id)
 
 
 def _run_backup(
-    task: Any,
     project_id: str,
     project_dir: str,
     note: str | None,
@@ -228,16 +216,7 @@ def _run_backup(
         return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
 
-@shared_task(
-    name="summitflow.restore_backup",
-    bind=True,
-    acks_late=True,
-    time_limit=2100,  # 35 minutes hard limit (restore can take longer)
-    soft_time_limit=1980,  # 33 minutes soft limit
-    max_retries=2,  # Fewer retries for restore - manual intervention preferred
-)
 def restore_backup(
-    self: Any,
     project_id: str,
     backup_id: str | None = None,
     backup_file: str | None = None,
@@ -265,7 +244,6 @@ def restore_backup(
         project_id=project_id,
         backup_id=backup_id,
         dry_run=dry_run,
-        task_id=self.request.id,
     )
 
     # Get project root path
@@ -337,16 +315,6 @@ def restore_backup(
         return {"status": "failed", "error": str(e)}
 
 
-@shared_task(
-    name="summitflow.run_scheduled_backups",
-    acks_late=True,
-    time_limit=300,  # 5 minutes hard limit
-    soft_time_limit=240,  # 4 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def run_scheduled_backups() -> dict[str, Any]:
     """Check and run due scheduled backups.
 
@@ -382,8 +350,8 @@ def run_scheduled_backups() -> dict[str, Any]:
 
         retention_count = schedule.get("retention_count")
 
-        # Trigger backup task
-        task = create_backup.delay(
+        # Run backup directly (Hatchet handles async scheduling)
+        create_backup(
             project_id=project_id,
             backup_type="scheduled",
             note=f"Scheduled {frequency} backup",
@@ -397,7 +365,6 @@ def run_scheduled_backups() -> dict[str, Any]:
         results.append(
             {
                 "project_id": project_id,
-                "task_id": task.id,
                 "next_run": next_run.isoformat() if next_run else None,
             }
         )

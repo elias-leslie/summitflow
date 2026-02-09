@@ -10,9 +10,8 @@ Reviews git diffs and routes tasks based on verdict:
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from typing import Any
-
-from celery import Task, shared_task
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
@@ -23,18 +22,11 @@ from ...storage import tasks as task_store
 logger = get_logger(__name__)
 
 
-@shared_task(
-    bind=True,
-    name="autonomous.ai_review",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
-def ai_review(self: Task[..., dict[str, Any]], task_id: str, project_id: str) -> dict[str, Any]:
+def ai_review(
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Run AI review on completed task using reviewer agent (Opus).
 
     Reviews the git diff and provides approval/rejection verdict.
@@ -332,7 +324,7 @@ def _auto_merge(task_id: str) -> None:
         return
 
     logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
-    merge_and_cleanup_task_worktree.delay(task_id, project_id)
+    merge_and_cleanup_task_worktree(task_id, project_id)
 
 
 def _create_fix_subtask(task_id: str, review_result: dict[str, Any]) -> None:

@@ -1,4 +1,4 @@
-"""AI Review Celery task for pull request validation.
+"""AI Review task for pull request validation.
 
 This task implements the AI review gate for the git management workflow.
 It runs when a task transitions to ai_reviewing status after PR creation.
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.celery_app import celery_app
 from app.logging_config import get_logger
 from app.storage import log_task_event
 from app.storage import tasks as task_store
@@ -42,14 +41,7 @@ from .ai_review_utils import (
 logger = get_logger(__name__)
 
 
-@celery_app.task(
-    name="summitflow.review_pull_request",
-    bind=True,
-    max_retries=3,
-    default_retry_delay=60,
-)
 def review_pull_request(
-    self: Any,
     task_id: str,
     pr_url: str | None = None,
 ) -> dict[str, Any]:
@@ -202,15 +194,8 @@ def review_pull_request(
             summary = f"Security concerns detected: {security_escalation}"
             all_issues.insert(0, f"SECURITY: {security_escalation}")
         elif error_checks:
-            # Errors are retriable
-            try:
-                raise self.retry(
-                    exc=Exception(f"Check errors: {error_checks}"),
-                    countdown=60 * (2**self.request.retries),  # Exponential backoff
-                )
-            except self.MaxRetriesExceededError:
-                verdict = ReviewVerdict.FAIL
-                summary = f"Review failed after {self.request.retries + 1} attempts"
+            # Errors are retriable — raise so Hatchet retries automatically
+            raise RuntimeError(f"Check errors: {error_checks}")
         elif failed_checks:
             verdict = ReviewVerdict.NEEDS_FIX
             summary = f"Review found issues in: {', '.join(failed_checks)}"

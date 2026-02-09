@@ -1,4 +1,4 @@
-"""Celery tasks for Explorer scheduled scans.
+"""Background tasks for Explorer scheduled scans.
 
 Tasks:
 - scan_all_projects: Run Explorer scan for all registered projects
@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from collections.abc import Callable
 from typing import Any
-
-from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services import explorer
@@ -27,20 +26,11 @@ logger = get_logger(__name__)
 INTER_PROJECT_DELAY = 5
 
 
-@shared_task(
-    name="summitflow.scan_all_projects",
-    acks_late=True,
-    time_limit=1800,  # 30 minutes hard limit
-    soft_time_limit=1680,  # 28 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=300,  # Max 5 minutes between retries
-    max_retries=3,
-)
 def scan_all_projects(
     project_id: str | None = None,
     entry_type: str | None = None,
     dry_run: bool = False,
+    dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run Explorer scan for all registered projects.
 
@@ -116,21 +106,16 @@ def scan_all_projects(
                     results_count=len(result),
                 )
 
-                # Trigger post-scan tasks
-                # Use send_task to avoid circular import with autonomous.py
-                from celery import current_app
-
-                logger.info(
-                    "triggering_post_scan_tasks",
-                    project_id=proj_id,
-                )
-                current_app.send_task("summitflow.generate_tasks_from_scan", args=[proj_id])
-                current_app.send_task("summitflow.generate_schema_tasks", args=[proj_id])
-                current_app.send_task("summitflow.generate_architecture_tasks", args=[proj_id])
-                # NOTE: generate_bug_tasks disabled - auto-generating tasks from error
-                # observations was too noisy (environmental/transient issues, not real bugs)
-                # Check for resolved issues and auto-close linked tasks
-                current_app.send_task("summitflow.check_resolved_issues", args=[proj_id])
+                # Trigger post-scan tasks via dispatch callback
+                if dispatch:
+                    logger.info(
+                        "triggering_post_scan_tasks",
+                        project_id=proj_id,
+                    )
+                    dispatch("generate_tasks", proj_id, "")
+                    dispatch("schema_tasks", proj_id, "")
+                    dispatch("architecture_tasks", proj_id, "")
+                    dispatch("check_resolved", proj_id, "")
             except Exception as e:
                 errors += 1
                 details.append(
@@ -356,18 +341,8 @@ def _error_issue_still_exists(
     return True
 
 
-@shared_task(
-    name="summitflow.check_resolved_issues",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[str, Any]:
-    """Celery task to check for resolved issues after a scan.
+    """Check for resolved issues after a scan.
 
     Args:
         project_id: Project that was scanned
@@ -400,16 +375,6 @@ def check_resolved_issues(project_id: str, scan_id: int | None = None) -> dict[s
 HEALTH_CHECK_DELAY = 1
 
 
-@shared_task(
-    name="summitflow.run_page_health_checks",
-    acks_late=True,
-    time_limit=1200,  # 20 minutes hard limit
-    soft_time_limit=1080,  # 18 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=180,  # Max 3 minutes between retries
-    max_retries=3,
-)
 def run_page_health_checks(project_id: str) -> dict[str, Any]:
     """Run health checks on all page entries for a project.
 
