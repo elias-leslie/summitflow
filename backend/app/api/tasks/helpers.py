@@ -161,16 +161,19 @@ async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: st
 
     Status triggers:
     - pending -> Idea triage (if task_type is 'idea')
-    - queue -> Begin autonomous execution
+    - queue -> Determine stage (triage/plan/execute) and dispatch
     - cancelled/blocked (from running) -> Emergency stop
     """
     try:
         if new_status == "queue":
-            from ...workflows.models import TaskInput
-            from ...workflows.pipeline import execute_wf
+            from ...services.dispatch import dispatch_task
 
-            await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
-            logger.info("Dispatched autonomous execution", task_id=task_id, status=new_status)
+            result = await dispatch_task(task_id, project_id)
+            logger.info(
+                "Dispatched autonomous execution",
+                task_id=task_id,
+                stage=result.get("stage"),
+            )
 
         elif new_status == "pending":
             task = task_store.get_task(task_id)

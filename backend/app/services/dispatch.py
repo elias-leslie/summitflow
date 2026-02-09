@@ -10,6 +10,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
+from ..tasks.autonomous.pickup import _determine_next_stage
 
 logger = get_logger(__name__)
 
@@ -17,7 +18,9 @@ logger = get_logger(__name__)
 async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
     """Dispatch a task for autonomous execution via Hatchet.
 
-    Validates task state and triggers the appropriate pipeline stage.
+    Determines the appropriate pipeline stage using the canonical
+    _determine_next_stage logic (checks task_spirit + subtasks), then
+    triggers the corresponding Hatchet workflow.
 
     Args:
         task_id: Task to dispatch
@@ -33,16 +36,7 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
     if not task:
         raise ValueError(f"Task {task_id} not found")
 
-    # Determine pipeline stage based on task state
-    has_plan = bool(task.get("plan_content"))
-    task_type = task.get("task_type", "task")
-
-    if task_type == "idea" and not has_plan:
-        stage = "triage"
-    elif not has_plan:
-        stage = "plan"
-    else:
-        stage = "execute"
+    stage = _determine_next_stage(task_id)
 
     # Trigger appropriate Hatchet workflow
     from ..workflows.models import TaskInput
@@ -53,7 +47,7 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
         from ..workflows.pipeline import triage_wf
 
         await triage_wf.aio_run_no_wait(task_input)
-    elif stage == "plan":
+    elif stage == "planning":
         from ..workflows.pipeline import plan_wf
 
         await plan_wf.aio_run_no_wait(task_input)
