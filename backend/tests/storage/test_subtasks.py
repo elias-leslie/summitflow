@@ -206,7 +206,7 @@ class TestGetSubtasksForTask:
 class TestUpdateSubtaskPasses:
     """Tests for update_subtask_passes function."""
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_update_passes_true(self, mock_verify, test_task):
         """Test marking subtask as passing (with steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -225,7 +225,7 @@ class TestUpdateSubtaskPasses:
         assert updated["passes"] is True
         assert updated["passed_at"] is not None
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_update_passes_false(self, mock_verify, test_task):
         """Test marking subtask as not passing."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -244,7 +244,7 @@ class TestUpdateSubtaskPasses:
         assert updated["passes"] is False
         assert updated["passed_at"] is None
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_update_passes_toggle(self, mock_verify, test_task):
         """Test toggling pass status."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -469,7 +469,7 @@ class TestGetSubtaskSummary:
         assert summary["next_subtask_id"] == "1.1"
         assert summary["progress_percent"] == 0
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_summary_partial(self, mock_verify, test_task):
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -491,7 +491,7 @@ class TestGetSubtaskSummary:
         assert summary["next_subtask_id"] == "1.2"  # Next incomplete
         assert abs(summary["progress_percent"] - 33.3) < 0.1
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_summary_all_complete(self, mock_verify, test_task):
         """Test summary with all complete (subtasks with steps verified)."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -536,7 +536,7 @@ class TestSubtaskGates:
         with pytest.raises(SubtaskGateError, match=r"steps.*are not complete"):
             subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_subtask_gate_allows_all_steps_complete(self, mock_verify, test_task):
         """Can mark subtask as passed when all steps are complete."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -585,7 +585,7 @@ class TestSubtaskGates:
         with pytest.raises(SubtaskGateError, match="subtask has no steps"):
             subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
-    @patch("app.storage.steps.run_verify_command")
+    @patch("app.storage.steps_updates.run_verify_command")
     def test_subtask_gate_partial_completion_blocks(self, mock_verify, test_task):
         """Subtask with some steps complete blocks remaining."""
         mock_verify.return_value = ("passed", 0, "ok")
