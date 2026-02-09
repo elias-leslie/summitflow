@@ -1,4 +1,4 @@
-"""Celery tasks for code health monitoring.
+"""Background tasks for code health monitoring.
 
 Tasks:
 - daily_code_health_scan: Daily scan for code health issues
@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-
-from celery import shared_task
 
 from ..logging_config import get_logger
 from ..services.code_health.classifier import (
@@ -27,15 +25,7 @@ from ..storage import code_health_lists
 logger = get_logger(__name__)
 
 
-@shared_task(
-    name="summitflow.daily_code_health_scan",
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    max_retries=2,
-)
 def daily_code_health_scan(
-    self: Any,
     project_id: str,
 ) -> dict[str, Any]:
     """Run daily code health scan for a project.
@@ -190,15 +180,7 @@ def daily_code_health_scan(
     return summary
 
 
-@shared_task(
-    name="summitflow.weekly_deep_scan",
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    max_retries=2,
-)
 def weekly_deep_scan(
-    self: Any,
     project_id: str,
 ) -> dict[str, Any]:
     """Run weekly deep code health analysis.

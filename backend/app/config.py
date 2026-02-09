@@ -43,6 +43,16 @@ class Settings(BaseSettings):
         description="Redis connection URL",
         json_schema_extra={"env": "REDIS_URL"},
     )
+    hatchet_client_token: str = Field(
+        default="",
+        description="Hatchet client token for workflow orchestration",
+        json_schema_extra={"env": "HATCHET_CLIENT_TOKEN"},
+    )
+    hatchet_client_tls_strategy: str = Field(
+        default="none",
+        description="Hatchet TLS strategy (none for local)",
+        json_schema_extra={"env": "HATCHET_CLIENT_TLS_STRATEGY"},
+    )
     cors_origins: list[str] = Field(
         default=[
             "http://localhost:3001",

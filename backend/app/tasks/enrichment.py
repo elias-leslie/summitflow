@@ -1,4 +1,4 @@
-"""Celery tasks for AI-powered task enrichment.
+"""Background tasks for AI-powered task enrichment.
 
 These tasks run in the background to enrich tasks with AI-generated
 objectives, acceptance criteria, and implementation subtasks.
@@ -9,20 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from celery import shared_task
-
 logger = logging.getLogger(__name__)
 
 
-@shared_task(
-    name="enrich_task_async",
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 2},
-)
 def enrich_task_async(
-    self: Any,
     project_id: str,
     task_id: str,
     raw_request: str,
