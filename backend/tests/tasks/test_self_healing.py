@@ -307,7 +307,7 @@ class TestProcessJournalErrors:
 
 
 class TestOrchestrateTask:
-    """Tests for the orchestrate_self_healing Celery task."""
+    """Tests for the orchestrate_self_healing task."""
 
     @patch("app.tasks.self_healing.get_connection")
     def test_orchestrate_disabled_returns_early(

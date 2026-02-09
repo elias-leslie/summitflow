@@ -1,4 +1,4 @@
-"""Unit tests for code health Celery tasks helper functions."""
+"""Unit tests for code health task helper functions."""
 
 from unittest.mock import MagicMock, patch
 

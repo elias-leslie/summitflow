@@ -332,7 +332,7 @@ def poll_and_fix_all(
     conn: psycopg.Connection[Any],
     max_errors: int = MAX_ERRORS_PER_RUN,
 ) -> dict[str, Any]:
-    """Convenience function for Celery task.
+    """Convenience function for scheduled workflow task.
 
     Args:
         conn: Database connection

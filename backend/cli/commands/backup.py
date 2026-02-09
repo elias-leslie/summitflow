@@ -204,7 +204,7 @@ def restore_backup(
 @app.command("status")
 def backup_status(
     ctx: typer.Context,
-    task_id: Annotated[str | None, typer.Argument(help="Celery task ID")] = None,
+    task_id: Annotated[str | None, typer.Argument(help="Job ID")] = None,
 ) -> None:
     """Show backup/restore job status.
 

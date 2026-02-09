@@ -108,7 +108,7 @@ class ImplementationExecutor:
             session_id: Session ID from start_execution
             max_iterations: Maximum iterations before giving up
             is_manual_execution: True when called via /do_it or API,
-                                 False when called by Celery autonomous pickup.
+                                 False when called by autonomous pickup.
 
         Returns:
             ExecutionResult with success status and details

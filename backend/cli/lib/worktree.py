@@ -247,7 +247,7 @@ def create_worktree(
         # Directory exists but not a valid worktree, clean it up
         shutil.rmtree(worktree_path)
 
-    # Get repo root for the target project (not CWD which may be wrong in Celery)
+    # Get repo root for the target project (not CWD which may be wrong in workers)
     project_cwd: Path | None = None
     if project_id:
         from app.storage.projects import get_project_root_path

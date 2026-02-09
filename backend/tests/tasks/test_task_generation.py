@@ -1,4 +1,4 @@
-"""Tests for task generation and cleanup Celery tasks.
+"""Tests for task generation and cleanup tasks.
 
 Covers:
 - Refactor task generation from scans

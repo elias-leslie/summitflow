@@ -1,4 +1,4 @@
-"""Tests for AI Review Celery task."""
+"""Tests for AI Review task."""
 
 from __future__ import annotations
 
