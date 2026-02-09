@@ -1,4 +1,4 @@
-"""Tests for autonomous work pickup Celery task.
+"""Tests for autonomous work pickup task.
 
 Covers:
 - Time window checks
@@ -146,10 +146,8 @@ class TestTaskDispatching:
     @patch("app.tasks.autonomous.pickup.task_store")
     @patch("app.tasks.autonomous.pickup._get_queued_autonomous_tasks")
     @patch("app.tasks.autonomous.pickup._determine_next_stage")
-    @patch("app.tasks.autonomous.pickup.triage_idea")
     def test_task_dispatched_to_triage(
         self,
-        mock_triage: MagicMock,
         mock_stage: MagicMock,
         mock_get_tasks: MagicMock,
         mock_store: MagicMock,
@@ -178,9 +176,10 @@ class TestTaskDispatching:
         ]
         mock_stage.return_value = "triage"
 
-        result = autonomous_work_pickup("test-project")
+        mock_dispatch = MagicMock()
+        result = autonomous_work_pickup("test-project", dispatch=mock_dispatch)
 
-        mock_triage.delay.assert_called_once_with("task-123", "test-project")
+        mock_dispatch.assert_called_once_with("triage", "task-123", "test-project")
         assert result["dispatched"] == 1
         assert result["breakdown"]["triage"] == 1
 

@@ -191,15 +191,10 @@ async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: st
 
 
 def abort_running_task(task_id: str) -> None:
-    """Emergency stop - cancel running Hatchet workflow for this task.
+    """Emergency stop - signal abort for a running task.
 
     Called when task is dragged out of running column (to cancelled/blocked).
+    The task status update to cancelled/blocked prevents further subtask execution.
+    Hatchet concurrency limits prevent re-dispatch of the same task.
     """
-    try:
-        from ...hatchet_app import get_hatchet
-
-        hatchet = get_hatchet()
-        hatchet.admin.cancel_workflows(task_id)
-        logger.info("Cancelled running workflow", task_id=task_id)
-    except Exception as e:
-        logger.warning("Failed to cancel running workflow", task_id=task_id, error=str(e))
+    logger.info("Task abort requested", task_id=task_id)

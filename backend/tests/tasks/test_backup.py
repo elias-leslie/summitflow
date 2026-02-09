@@ -197,11 +197,9 @@ class TestScheduledBackups:
             )
             conn.commit()
 
-        # Mock create_backup.delay to avoid actual execution
-        with patch("app.tasks.backup.create_backup.delay") as mock_delay:
-            mock_task = MagicMock()
-            mock_task.id = "mock-task-id"
-            mock_delay.return_value = mock_task
+        # Mock create_backup to avoid actual execution
+        with patch("app.tasks.backup.create_backup") as mock_create:
+            mock_create.return_value = {"status": "completed", "backup_id": "mock-backup-id"}
 
             result = run_scheduled_backups()
 
@@ -209,7 +207,7 @@ class TestScheduledBackups:
         assert result["count"] >= 1
 
         # Verify create_backup was called
-        mock_delay.assert_called()
+        mock_create.assert_called()
 
         # Verify schedule was updated
         schedule = backup_store.get_schedule(cleanup_project)

@@ -1,6 +1,6 @@
 """Autonomous execution tasks for SummitFlow.
 
-This module provides Celery tasks for autonomous task execution:
+Plain functions called by Hatchet workflow wrappers:
 - Idea triage
 - Planning with run_agent()
 - Subtask execution with fresh context
@@ -17,7 +17,6 @@ from .execution import start_execution
 from .pickup import (
     autonomous_work_pickup,
     dispatch_task_immediate,
-    process_scheduled_tasks,
     review_pending_tasks,
 )
 from .planning import create_plan
@@ -33,7 +32,6 @@ __all__ = [
     "dispatch_task_immediate",
     "generate_tasks_from_scan",
     "merge_and_cleanup_task_worktree",
-    "process_scheduled_tasks",
     "regenerate_refactor_tasks",
     "reset_expired_task_claims",
     "review_pending_tasks",
