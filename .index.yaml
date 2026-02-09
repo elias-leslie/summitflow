@@ -8,6 +8,8 @@ services:
   backend_port: 8001
   frontend_port: 3001
   infrastructure:
+    hatchet_grpc: 7077
+    hatchet_http: 8888
     neo4j: 7687
     postgres: 5432
     redis: 6379
