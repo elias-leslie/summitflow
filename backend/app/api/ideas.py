@@ -208,7 +208,7 @@ def get_user_notifications(
 
 
 @router.post("/projects/{project_id}/ideas/execute-now")
-def execute_ideas_now(
+async def execute_ideas_now(
     project_id: str,
 ) -> dict[str, Any]:
     """Manually trigger immediate execution of approved ideas.
@@ -222,7 +222,8 @@ def execute_ideas_now(
     Returns:
         Dict with task_id for tracking execution status
     """
-    from ..tasks.autonomous.ideas import process_crowdsourced_ideas
+    from ..workflows.models import ProjectInput
+    from ..workflows.scheduled import process_ideas_wf
 
     # Check throttle
     last_exec = _last_execution.get(project_id)
@@ -241,12 +242,11 @@ def execute_ideas_now(
     # Record execution time
     _last_execution[project_id] = datetime.now(UTC)
 
-    # Dispatch async task
-    task = process_crowdsourced_ideas.delay(project_id)
+    # Dispatch via Hatchet workflow
+    await process_ideas_wf.aio_run_no_wait(ProjectInput(project_id=project_id))
 
     return {
         "status": "dispatched",
-        "task_id": task.id,
         "project_id": project_id,
         "message": f"Crowdsourced idea processing started for {project_id}",
     }

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
-from ..tasks.backup import create_backup, restore_backup
+from ..tasks.backup import restore_backup
 
 router = APIRouter()
 
@@ -65,7 +65,7 @@ class RestoreRequest(BaseModel):
 class RestoreResponse(BaseModel):
     """Response model for restore operation."""
 
-    task_id: str
+    task_id: str | None = None
     status: str
     message: str
 
@@ -168,14 +168,18 @@ async def create_project_backup(
 
     Returns task_id that can be used to track progress.
     """
-    task = create_backup.delay(
-        project_id=project_id,
-        note=request.note,
-        backup_type="manual",
-        keep_local=request.keep_local,
+    from ..workflows.models import BackupInput
+    from ..workflows.utility import backup_create_wf
+
+    await backup_create_wf.aio_run_no_wait(
+        BackupInput(
+            project_id=project_id,
+            note=request.note,
+            backup_type="manual",
+            keep_local=request.keep_local,
+        )
     )
     return RestoreResponse(
-        task_id=task.id,
         status="queued",
         message=f"Backup task queued for project {project_id}",
     )
@@ -276,15 +280,19 @@ async def restore_project_backup(
             status_code=404, detail=f"Backup {backup_id} not found in project {project_id}"
         )
 
-    task = restore_backup.delay(
-        project_id=project_id,
-        backup_id=backup_id,
-        dry_run=request.dry_run,
-        db_only=request.db_only,
-        files_only=request.files_only,
+    from ..workflows.models import RestoreInput
+    from ..workflows.utility import backup_restore_wf
+
+    await backup_restore_wf.aio_run_no_wait(
+        RestoreInput(
+            project_id=project_id,
+            backup_id=backup_id,
+            dry_run=request.dry_run,
+            db_only=request.db_only,
+            files_only=request.files_only,
+        )
     )
     return RestoreResponse(
-        task_id=task.id,
         status="queued",
         message=f"Restore task queued for backup {backup_id}",
     )

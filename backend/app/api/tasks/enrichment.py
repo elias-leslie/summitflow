@@ -80,11 +80,18 @@ async def enrich_task_endpoint(
             task_store.update_task(task["id"], enrichment_status="failed")
             raise HTTPException(status_code=500, detail=f"Enrichment failed: {e}") from None
     else:
-        # Queue for async enrichment
+        # Queue for async enrichment via Hatchet
         try:
-            from ...tasks.enrichment import enrich_task_async
+            from ...workflows.models import EnrichInput
+            from ...workflows.utility import enrich_wf
 
-            enrich_task_async.delay(project_id, task["id"], request.raw_request)
+            await enrich_wf.aio_run_no_wait(
+                EnrichInput(
+                    project_id=project_id,
+                    task_id=task["id"],
+                    raw_request=request.raw_request,
+                )
+            )
         except Exception as e:
             logger.warning("Failed to queue enrichment task: %s", e)  # type: ignore[call-arg]
             # Still return - we can retry later

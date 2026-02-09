@@ -375,7 +375,7 @@ async def update_task_status(
         await asyncio.to_thread(log_task_event, task_id, f"Closed: {update.reason}")
 
     # Dispatch autonomous execution tasks on status transitions
-    dispatch_autonomous_task(task_id, update.status, project_id)
+    await dispatch_autonomous_task(task_id, update.status, project_id)
 
     # Merge step-level verification into verification_result on completion
     # Preserves existing keys (e.g. execution_clean from autocode pipeline)
@@ -412,6 +412,6 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         raise HTTPException(status_code=500, detail="Failed to start execution")
 
     # Dispatch autonomous execution
-    dispatch_autonomous_task(task_id, "queue", project_id)
+    await dispatch_autonomous_task(task_id, "queue", project_id)
 
     return task_to_response(updated)

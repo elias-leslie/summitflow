@@ -217,16 +217,28 @@ def add_stale_metadata_warning(result: dict[str, Any], project_id: str) -> None:
         }
 
 
-def dispatch_celery_task(task_name: str, project_id: str, message: str) -> dict[str, Any]:
-    """Dispatch a Celery task and return standardized response."""
-    from celery import current_app
+async def dispatch_hatchet_workflow(
+    workflow_name: str, project_id: str, message: str
+) -> dict[str, Any]:
+    """Dispatch a Hatchet workflow and return standardized response."""
+    from ..workflows.utility import page_health_wf, refactor_regen_wf
 
-    result = current_app.send_task(task_name, args=[project_id])
+    workflow_map = {
+        "summitflow.run_page_health_checks": page_health_wf,
+        "summitflow.regenerate_refactor_tasks": refactor_regen_wf,
+    }
+
+    wf = workflow_map.get(workflow_name)
+    if not wf:
+        raise ValueError(f"Unknown workflow: {workflow_name}")
+
+    from ..workflows.models import ProjectInput
+
+    await wf.aio_run_no_wait(ProjectInput(project_id=project_id))
 
     return {
         "status": "started",
         "project_id": project_id,
-        "task_id": result.id,
         "message": message,
     }
 

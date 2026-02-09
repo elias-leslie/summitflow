@@ -245,7 +245,7 @@ async def trigger_health_check(
 ) -> dict[str, Any]:
     """Trigger health checks for all page entries."""
     helpers.validate_project_exists(project_id)
-    return helpers.dispatch_celery_task(
+    return await helpers.dispatch_hatchet_workflow(
         "summitflow.run_page_health_checks",
         project_id,
         "Health check started. Results will update page entries.",
@@ -287,7 +287,7 @@ async def regenerate_refactor_tasks(
             result = {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
         status = "completed" if "error" not in result else "error"
         return {"status": status, "project_id": project_id, **result}
-    return helpers.dispatch_celery_task(
+    return await helpers.dispatch_hatchet_workflow(
         "summitflow.regenerate_refactor_tasks",
         project_id,
         "Refactor task regeneration started. Existing tasks will be deleted and new ones created.",

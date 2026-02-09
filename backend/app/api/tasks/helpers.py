@@ -156,8 +156,8 @@ def get_task_or_404(task_id: str) -> dict[str, Any]:
     return task
 
 
-def dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
-    """Dispatch autonomous execution Celery task based on status transition.
+async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
+    """Dispatch autonomous execution via Hatchet workflow based on status transition.
 
     Status triggers:
     - pending -> Idea triage (if task_type is 'idea')
@@ -166,17 +166,19 @@ def dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> 
     """
     try:
         if new_status == "queue":
-            from ...tasks.autonomous import start_execution
+            from ...workflows.models import TaskInput
+            from ...workflows.pipeline import execute_wf
 
-            start_execution.delay(task_id, project_id)
+            await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
             logger.info("Dispatched autonomous execution", task_id=task_id, status=new_status)
 
         elif new_status == "pending":
             task = task_store.get_task(task_id)
             if task and task.get("task_type") == "idea":
-                from ...tasks.autonomous import triage_idea
+                from ...workflows.models import TaskInput
+                from ...workflows.pipeline import triage_wf
 
-                triage_idea.delay(task_id, project_id)
+                await triage_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
                 logger.info("Dispatched idea triage", task_id=task_id)
 
         elif new_status in ("cancelled", "blocked"):

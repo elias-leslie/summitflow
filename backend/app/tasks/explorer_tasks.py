@@ -112,10 +112,10 @@ def scan_all_projects(
                         "triggering_post_scan_tasks",
                         project_id=proj_id,
                     )
-                    dispatch("generate_tasks", proj_id, "")
-                    dispatch("schema_tasks", proj_id, "")
-                    dispatch("architecture_tasks", proj_id, "")
-                    dispatch("check_resolved", proj_id, "")
+                    dispatch("generate_tasks", "", proj_id)
+                    dispatch("schema_tasks", "", proj_id)
+                    dispatch("architecture_tasks", "", proj_id)
+                    dispatch("check_resolved", "", proj_id)
             except Exception as e:
                 errors += 1
                 details.append(
