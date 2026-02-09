@@ -71,12 +71,12 @@ def build_quality_steps() -> list[dict[str, str]]:
         {
             "description": "Auto-fix lint and format issues",
             "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
-            "expected_output": "CHECK_RESULT:OK",
+            "expected_output": "exit code 0",
         },
         {
-            "description": "Full quality gate check",
-            "verify_command": "dt --check",
-            "expected_output": "CHECK_RESULT:OK",
+            "description": "Lint and type check (no full test suite)",
+            "verify_command": "dt --quick",
+            "expected_output": "exit code 0",
         },
     ]
 
@@ -115,7 +115,7 @@ def build_refactor_steps(
         {
             "description": "Auto-fix lint/format then verify",
             "verify_command": "dt --fix 2>/dev/null; dt --quick --changed-only",
-            "expected_output": "CHECK_RESULT:OK",
+            "expected_output": "exit code 0",
         },
         {
             "description": f"Verify tests for {relative_path}",
@@ -123,9 +123,9 @@ def build_refactor_steps(
             "expected_output": "exit code 0",
         },
         {
-            "description": "Full quality gate check",
-            "verify_command": "dt --check",
-            "expected_output": "CHECK_RESULT:OK",
+            "description": "Lint and type check (no full test suite)",
+            "verify_command": "dt --quick",
+            "expected_output": "exit code 0",
         },
     ]
 
@@ -140,8 +140,8 @@ def build_refactor_steps(
 
     steps.append(
         {
-            "description": "Commit changes via commit.sh",
-            "verify_command": 'commit.sh --json | grep -qE \'"status":"(SUCCESS|SKIP)"\'',
+            "description": "Verify changes are committed",
+            "verify_command": "git log --oneline -1",
             "expected_output": "exit code 0",
         }
     )

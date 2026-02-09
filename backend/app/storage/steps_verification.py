@@ -62,8 +62,8 @@ def run_verify_command(
     Args:
         verify_command: The bash command to run
         timeout: Command timeout in seconds
-        cwd: Working directory to run from. If None, uses /home/kasadis/summitflow
-             as fallback for backwards compatibility.
+        cwd: Working directory to run from. Required - raises ValueError if None.
+
         project_id: Project ID for resolving venv paths. When provided,
                     sets up the correct venv environment (handles worktrees).
 
@@ -75,7 +75,12 @@ def run_verify_command(
     """
     from .projects import build_project_env
 
-    working_dir = cwd or "/home/kasadis/summitflow"
+    if not cwd:
+        raise ValueError(
+            "verify_command requires a working directory (cwd). "
+            "Ensure project_id is set and worktree/project root is resolvable."
+        )
+    working_dir = cwd
     env = build_project_env(project_id)
 
     try:
