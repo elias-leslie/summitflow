@@ -15,6 +15,7 @@ def pass_step(
     subtask_id: str,
     step_number: int,
     task_id: str | None = None,
+    already_verified: bool = False,
 ) -> None:
     """Mark a step as passed.
 
@@ -32,7 +33,8 @@ def pass_step(
     client = STClient()
 
     try:
-        client.update_step(task_id, subtask_id, step_number, passes=True)
+        client.update_step(task_id, subtask_id, step_number, passes=True,
+                           already_verified=already_verified)
     except APIError as e:
         detail: dict[str, Any] = e.detail if isinstance(e.detail, dict) else {}
         if detail.get("verification_failed"):

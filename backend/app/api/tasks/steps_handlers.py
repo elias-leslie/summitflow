@@ -75,6 +75,7 @@ def handle_update_step_passes(
     passes: bool,
     project_root: str | None = None,
     project_id: str | None = None,
+    already_verified: bool = False,
 ) -> StepResponse:
     """Handle step passes update with verification and error handling.
 
@@ -96,7 +97,8 @@ def handle_update_step_passes(
     try:
         updated = update_step_passes(
             table_id, step_number, passes,
-            project_root=project_root, project_id=project_id,
+            project_root=project_root,
+            already_verified=already_verified, project_id=project_id,
         )
     except StepGateError as e:
         raise HTTPException(

@@ -22,6 +22,10 @@ class StepUpdate(BaseModel):
     """Request model for updating step pass status."""
 
     passes: bool = Field(description="Whether step passes/is complete")
+    already_verified: bool = Field(
+        default=False,
+        description="Skip server-side verification (caller already ran verify_command)",
+    )
 
 
 class StepResponse(BaseModel):

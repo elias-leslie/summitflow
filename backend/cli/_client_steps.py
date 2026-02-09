@@ -56,9 +56,12 @@ def update_step(
     subtask_id: str,
     step_number: int,
     passes: bool,
+    already_verified: bool = False,
 ) -> dict[str, Any]:
     """Update a step's passes status."""
-    data = {"passes": passes}
+    data: dict[str, Any] = {"passes": passes}
+    if already_verified:
+        data["already_verified"] = True
     response = client.patch(
         global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/steps/{step_number}"),
         json=data,

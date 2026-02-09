@@ -16,9 +16,10 @@ def pass_step(
     subtask_id: str,
     step_number: int,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+    already_verified: Annotated[bool, typer.Option("--already-verified")] = False,
 ) -> None:
-    """Mark step as passed (runs verify_command)."""
-    step_operations.pass_step(subtask_id, step_number, task_id)
+    """Mark step as passed (runs verify_command unless --already-verified)."""
+    step_operations.pass_step(subtask_id, step_number, task_id, already_verified=already_verified)
 
 
 @app.command("new")

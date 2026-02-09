@@ -206,6 +206,38 @@ class TestUpdateStepPasses:
         with pytest.raises(StepVerificationError, match="verification failed"):
             step_store.update_step_passes(test_subtask["id"], 1, True)
 
+    @patch("app.storage.steps_updates.run_verify_command")
+    def test_already_verified_skips_verify_command(self, mock_verify, test_subtask):
+        """Test that already_verified=True skips running verify_command."""
+        step_store.create_step(
+            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="ok"
+        )
+
+        updated = step_store.update_step_passes(
+            test_subtask["id"], 1, True, already_verified=True
+        )
+
+        assert updated is not None
+        assert updated["passes"] is True
+        assert updated["passed_at"] is not None
+        mock_verify.assert_not_called()
+
+    @patch("app.storage.steps_updates.run_verify_command")
+    def test_already_verified_false_still_runs_verification(self, mock_verify, test_subtask):
+        """Test that already_verified=False (default) still runs verify_command."""
+        mock_verify.return_value = ("passed", 0, "ok")
+        step_store.create_step(
+            test_subtask["id"], 1, "Test step", verify_command="echo pass", expected_output="ok"
+        )
+
+        updated = step_store.update_step_passes(
+            test_subtask["id"], 1, True, already_verified=False
+        )
+
+        assert updated is not None
+        assert updated["passes"] is True
+        mock_verify.assert_called_once()
+
 
 class TestBulkCreateSteps:
     """Tests for bulk_create_steps function."""

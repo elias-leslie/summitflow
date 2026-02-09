@@ -235,7 +235,8 @@ class StepOperationsMixin:
         )
 
     def update_step(
-        self, task_id: str, subtask_id: str, step_number: int, passes: bool
+        self, task_id: str, subtask_id: str, step_number: int, passes: bool,
+        already_verified: bool = False,
     ) -> dict[str, Any]:
         return steps_ops.update_step(
             self._client,
@@ -245,6 +246,7 @@ class StepOperationsMixin:
             subtask_id,
             step_number,
             passes,
+            already_verified=already_verified,
         )
 
     def delete_step(
