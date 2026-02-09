@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-13 cron workflows replacing Celery Beat schedule.
+13 cron workflows on Hatchet schedule.
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 

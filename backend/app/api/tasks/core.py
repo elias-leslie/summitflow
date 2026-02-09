@@ -400,7 +400,7 @@ async def update_task_status(
 
 @router.post("/projects/{project_id}/tasks/{task_id}/execute", response_model=TaskResponse)
 async def execute_task(project_id: str, task_id: str) -> TaskResponse:
-    """Queue task for autonomous execution via Celery."""
+    """Queue task for autonomous execution."""
     await asyncio.to_thread(verify_task_project, task_id, project_id)
 
     try:

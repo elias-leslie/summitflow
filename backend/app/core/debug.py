@@ -122,7 +122,7 @@ def _emit_stderr(
     elapsed_ms: float | None = None,
     **attributes: Any,
 ) -> None:
-    """Emit to stderr for immediate visibility in Celery logs."""
+    """Emit to stderr for immediate visibility in worker logs."""
     timestamp = datetime.now(UTC).strftime("%H:%M:%S.%f")[:-3]
     parts = [f"[DEBUG {timestamp}]"]
     if function_name:

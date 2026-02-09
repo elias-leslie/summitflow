@@ -115,7 +115,7 @@ def supervisor_guidance(
     failure_count: int,
     project_id: str | None = None,
 ) -> dict[str, Any]:
-    """Get supervisor guidance for a stuck worker (async Celery task).
+    """Get supervisor guidance for a stuck worker (async task).
 
     NOTE: This async version is kept for backward compatibility.
     Prefer get_supervisor_guidance_sync() for self-healing loop.

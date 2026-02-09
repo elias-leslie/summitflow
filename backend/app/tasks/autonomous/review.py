@@ -306,7 +306,7 @@ def _handle_plan_defect(task_id: str, review_result: dict[str, Any]) -> None:
 def _auto_merge(task_id: str) -> None:
     """Auto-merge changes to main branch.
 
-    Triggers the merge_and_cleanup_task_worktree Celery task to:
+    Triggers the merge_and_cleanup_task_worktree workflow to:
     1. Merge task branch to main
     2. Remove the worktree
     3. Delete the task branch

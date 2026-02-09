@@ -3,7 +3,7 @@
 Provides a consistent API for exploring:
 - Files: Source code structure
 - Database: Tables, columns, relationships
-- Tasks: Celery tasks, schedules
+- Tasks: Background tasks, schedules
 - Endpoints: API routes
 - Pages: Frontend pages (Next.js)
 
@@ -273,7 +273,7 @@ async def regenerate_all_indexes() -> dict[str, Any]:
 async def regenerate_refactor_tasks(
     project_id: str,
     background_tasks: BackgroundTasks,
-    sync: bool = Query(False, description="Run synchronously instead of via Celery"),
+    sync: bool = Query(False, description="Run synchronously instead of via background workflow"),
 ) -> dict[str, Any]:
     """Delete existing refactor tasks and regenerate from current scan."""
     helpers.validate_project_exists(project_id)

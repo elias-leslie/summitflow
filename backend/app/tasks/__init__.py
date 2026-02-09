@@ -1,4 +1,4 @@
-"""SummitFlow Celery tasks."""
+"""SummitFlow background tasks."""
 
 from .ai_review import review_pull_request
 

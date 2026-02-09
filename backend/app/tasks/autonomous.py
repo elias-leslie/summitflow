@@ -6,7 +6,7 @@ Import directly from app.tasks.autonomous.* for new code.
 
 from __future__ import annotations
 
-# Re-export Celery tasks (these register with Celery on import)
+# Re-export task functions
 # Re-export filter functions for backward compatibility
 # Re-export config
 # Re-export utils

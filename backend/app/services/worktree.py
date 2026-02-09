@@ -7,7 +7,7 @@ Each dispatched task gets an isolated worktree at:
 With branch naming:
     <task-id>/main
 
-This module wraps the CLI worktree library for use in Celery tasks.
+This module wraps the CLI worktree library for use in background tasks.
 Creates checkpoint metadata for unified tracking via `st checkpoints`.
 """
 

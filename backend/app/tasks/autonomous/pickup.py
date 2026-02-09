@@ -135,7 +135,7 @@ def autonomous_work_pickup(
     1. Check if within autonomous hours
     2. Find tasks in 'queue' status with autonomous=True
     3. Determine which stage each needs (triage, planning, execution)
-    4. Dispatch to the appropriate Celery task
+    4. Dispatch to the appropriate workflow
 
     Args:
         project_id: Project ID to process
