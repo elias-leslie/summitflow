@@ -971,7 +971,7 @@ def autocode(
         ),
     ] = None,
 ) -> None:
-    """Queue task for autonomous execution via Celery.
+    """Queue task for autonomous execution via Hatchet.
 
     Executes the full autonomous pipeline:
     - Pristine codebase check (dt --check)
@@ -989,8 +989,7 @@ def autocode(
         st autocode task-abc --at "22:00"    # Schedule for 10pm today/tomorrow
         st autocode task-abc --at "in 2h"    # Schedule for 2 hours from now
     """
-    from app.scheduling import OnceSchedule, get_dispatcher
-    from app.scheduling.types import parse_at_time
+    from app.scheduling.types import OnceSchedule, parse_at_time
 
     from ..context import require_task_id
 
@@ -1056,10 +1055,6 @@ def autocode(
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    project_id = task_project_id
-    dispatcher = get_dispatcher()
-    published = dispatcher.publish_task_ready(task_id, project_id, schedule)
-
     if schedule:
         output_json(
             {
@@ -1069,22 +1064,14 @@ def autocode(
                 "message": f"Task scheduled for {schedule.timestamp.strftime('%Y-%m-%d %H:%M UTC')}",
             }
         )
-    elif published:
+    else:
+        # Status update to "queue" triggers Hatchet workflow via dispatch_autonomous_task
         output_json(
             {
                 "task_id": task_id,
                 "status": "queued",
                 "dispatch": "immediate",
                 "message": f"Task queued for immediate execution. Monitor via: st context {task_id}",
-            }
-        )
-    else:
-        output_json(
-            {
-                "task_id": task_id,
-                "status": "queued",
-                "dispatch": "fallback",
-                "message": f"Task queued (Redis unavailable, will be picked up by Beat). Monitor via: st context {task_id}",
             }
         )
 
