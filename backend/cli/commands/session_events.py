@@ -7,345 +7,17 @@ resolves linked Agent Hub sessions.
 
 from __future__ import annotations
 
-import json
-import time
-from typing import Annotated, Any, cast
+from typing import Annotated
 
-import httpx
 import typer
 
-from ..client import APIError, STClient
-from ..config import get_agent_hub_url
 from ..context import require_task_id
-from ..output import handle_api_error, output_error, output_json
+from ..output import output_json
+from .session_events_client import get_session_events, get_task_events
+from .session_events_follow import follow_session_events, follow_task_events
+from .session_events_formatter import display_events
 
 app = typer.Typer(help="Agent Hub session events (observability)")
-
-
-def _load_credentials() -> tuple[str, str, str]:
-    """Load credentials from ~/.env.local."""
-    from pathlib import Path
-
-    env_file = Path.home() / ".env.local"
-    if not env_file.exists():
-        output_error("~/.env.local not found")
-        raise typer.Exit(1)
-
-    creds: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, val = line.split("=", 1)
-            creds[key.strip()] = val.strip()
-
-    client_id = creds.get("SUMMITFLOW_CLIENT_ID") or creds.get("CONSULT_CLIENT_ID")
-    client_secret = creds.get("SUMMITFLOW_CLIENT_SECRET") or creds.get("CONSULT_CLIENT_SECRET")
-    request_source = creds.get("SUMMITFLOW_REQUEST_SOURCE", "st-session-events")
-
-    if not client_id or not client_secret:
-        output_error(
-            "Missing CONSULT_CLIENT_ID/SECRET or SUMMITFLOW_CLIENT_ID/SECRET in ~/.env.local"
-        )
-        raise typer.Exit(1)
-
-    return client_id, client_secret, request_source
-
-
-def _get_session_events(
-    session_id: str,
-    event_type: str | None = None,
-    turn: int | None = None,
-    page: int = 1,
-    page_size: int = 100,
-) -> dict[str, Any]:
-    """Fetch session events from Agent Hub directly by session ID."""
-    client_id, client_secret, request_source = _load_credentials()
-
-    headers = {
-        "X-Client-Id": client_id,
-        "X-Client-Secret": client_secret,
-        "X-Request-Source": request_source,
-    }
-
-    params: dict[str, Any] = {
-        "page": page,
-        "page_size": page_size,
-    }
-    if event_type:
-        params["event_type"] = event_type
-    if turn is not None:
-        params["turn"] = turn
-
-    agent_hub_url = get_agent_hub_url()
-    url = f"{agent_hub_url}/api/sessions/{session_id}/events"
-
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(url, headers=headers, params=params)
-
-            if response.status_code >= 400:
-                try:
-                    detail = response.json().get("detail", response.text)
-                except Exception:
-                    detail = response.text
-                output_error(f"API error ({response.status_code}): {detail}")
-                raise typer.Exit(1) from None
-
-            return cast(dict[str, Any], response.json())
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
-    except typer.Exit:
-        raise
-    except Exception as e:
-        output_error(f"Request failed: {e}")
-        raise typer.Exit(1) from None
-
-
-def _get_task_events(
-    task_id: str,
-    event_type: str | None = None,
-    turn: int | None = None,
-    page: int = 1,
-    page_size: int = 500,
-) -> dict[str, Any]:
-    """Fetch agent events for a task via SummitFlow observability API."""
-    client = STClient()
-    try:
-        return client.get_task_agent_events(
-            task_id,
-            event_type=event_type,
-            turn=turn,
-            page=page,
-            page_size=page_size,
-        )
-    except APIError as e:
-        handle_api_error(e)
-        raise typer.Exit(1) from None
-
-
-def _summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
-    """Extract human-readable summary from tool input."""
-    if tool_name == "bash":
-        cmd = tool_input.get("command", "")
-        return f"$ {cmd[:150]}" if cmd else ""
-    if tool_name == "read_file":
-        path = tool_input.get("path", "")
-        offset = tool_input.get("offset")
-        return f"path={path}" + (f" offset={offset}" if offset else "")
-    if tool_name == "write_file":
-        path = tool_input.get("path", "")
-        content = tool_input.get("content", "")
-        return f"path={path} ({len(content)} bytes)"
-    if tool_name in ("grep", "search"):
-        pattern = tool_input.get("pattern", "")
-        path = tool_input.get("path", ".")
-        return f"pattern={pattern!r} path={path}"
-    if tool_name == "glob":
-        pattern = tool_input.get("pattern", "")
-        return f"pattern={pattern!r}"
-    return json.dumps(tool_input)[:120]
-
-
-def _summarize_tool_output(tool_output: dict[str, Any]) -> str:
-    """Extract human-readable summary from tool output."""
-    content: str = tool_output.get("content", "")
-    is_error = tool_output.get("is_error", False)
-    if is_error:
-        return f"ERROR: {content[:150]}"
-    if len(content) <= 120:
-        return content
-    lines = content.split("\n")
-    return f"({len(lines)} lines) {lines[0][:100]}..."
-
-
-def _format_event(event: dict[str, Any], verbose: bool = False) -> str:
-    """Format a single event for display."""
-    event_type = event.get("event_type", "unknown")
-    turn = event.get("turn", 0)
-    seq = event.get("sequence", 0)
-    content = event.get("content") or ""
-    tool_name = event.get("tool_name")
-    tokens = event.get("tokens")
-    model = event.get("model_used")
-
-    type_colors = {
-        "user_message": "\033[36m",
-        "assistant_message": "\033[32m",
-        "system_message": "\033[33m",
-        "thinking": "\033[35m",
-        "tool_use": "\033[34m",
-        "tool_result": "\033[34m",
-        "memory_inject": "\033[90m",
-        "memory_cite": "\033[90m",
-        "error": "\033[31m",
-    }
-    reset = "\033[0m"
-    color = type_colors.get(event_type, "")
-
-    header = f"{color}[{turn}.{seq}] {event_type}{reset}"
-    if tool_name:
-        header += f" ({tool_name})"
-    if tokens:
-        header += f" [{tokens} tokens]"
-    if model and verbose:
-        header += f" [{model}]"
-
-    if event_type == "tool_use":
-        tool_input = event.get("tool_input")
-        if tool_input and tool_name:
-            if verbose:
-                content = json.dumps(tool_input, indent=2)
-            else:
-                content = _summarize_tool_input(tool_name, tool_input)
-        elif tool_input:
-            content = json.dumps(tool_input)[:120]
-    elif event_type == "tool_result":
-        tool_output = event.get("tool_output")
-        if tool_output:
-            if verbose:
-                content = json.dumps(tool_output, indent=2)
-            else:
-                content = _summarize_tool_output(tool_output)
-
-    if content and len(content) > 200 and not verbose:
-        content = content[:200] + "..."
-
-    if content:
-        indented = "  " + content.replace("\n", "\n  ")
-        return f"{header}\n{indented}"
-    return header
-
-
-def _display_events(
-    events: list[dict[str, Any]],
-    total: int,
-    max_turn: int,
-    label: str,
-    event_type: str | None,
-    turn_filter: int | None,
-    page: int,
-    verbose: bool,
-    session_ids: list[str] | None = None,
-) -> None:
-    """Display events with header and footer."""
-    typer.echo(f"\n {label}")
-    if session_ids:
-        typer.echo(f" Sessions: {len(session_ids)} ({', '.join(s[:8] for s in session_ids)})")
-    typer.echo(f" Events: {total} | Max turn: {max_turn}")
-    if event_type:
-        typer.echo(f" Filter: type={event_type}")
-    if turn_filter is not None:
-        typer.echo(f" Filter: turn={turn_filter}")
-    typer.echo("-" * 60)
-
-    current_session: str | None = None
-    session_index = 0
-    for event in events:
-        event_session = event.get("session_id")
-        if event_session and event_session != current_session:
-            session_index += 1
-            current_session = event_session
-            typer.echo(f"\033[33m--- Session {session_index}: {event_session[:8]} ---\033[0m")
-        typer.echo(_format_event(event, verbose))
-        typer.echo()
-
-    if len(events) < total:
-        typer.echo(f"Showing {len(events)} of {total} events (page {page})")
-
-
-def _follow_task_events(
-    task_id: str,
-    event_type: str | None,
-    verbose: bool,
-    page_size: int,
-) -> None:
-    """Follow agent events for a task in real-time."""
-    client = STClient()
-    seen_event_ids: set[str] = set()
-    last_max_turn = 0
-
-    typer.echo("\n[Following agent events... Press Ctrl+C to stop]\n")
-
-    try:
-        while True:
-            try:
-                result = client.get_task_agent_events(
-                    task_id,
-                    event_type=event_type,
-                    page_size=page_size,
-                )
-            except APIError:
-                time.sleep(2)
-                continue
-
-            events = result.get("events", [])
-            max_turn = result.get("max_turn", 0)
-
-            new_events = [e for e in events if e.get("id") not in seen_event_ids]
-
-            for event in new_events:
-                typer.echo(_format_event(event, verbose))
-                typer.echo()
-                event_id = event.get("id")
-                if event_id:
-                    seen_event_ids.add(event_id)
-
-            if max_turn != last_max_turn and max_turn > 0:
-                last_max_turn = max_turn
-
-            try:
-                task = client.get_task(task_id)
-                status = task.get("status", "")
-                if status in ("completed", "cancelled", "failed", "abandoned", "needs_review"):
-                    typer.echo(f"\n[Task {status}]")
-                    break
-            except APIError:
-                pass
-
-            time.sleep(2)
-
-    except KeyboardInterrupt:
-        typer.echo("\n[Stopped]")
-
-
-def _follow_session_events(
-    session_id: str,
-    event_type: str | None,
-    verbose: bool,
-    page_size: int,
-) -> None:
-    """Follow agent events for a session ID in real-time."""
-    seen_event_ids: set[str] = set()
-
-    typer.echo("\n[Following session events... Press Ctrl+C to stop]\n")
-
-    try:
-        while True:
-            try:
-                result = _get_session_events(
-                    session_id,
-                    event_type=event_type,
-                    page_size=page_size,
-                )
-            except (typer.Exit, Exception):
-                time.sleep(2)
-                continue
-
-            events = result.get("events", [])
-
-            new_events = [e for e in events if e.get("id") not in seen_event_ids]
-
-            for event in new_events:
-                typer.echo(_format_event(event, verbose))
-                typer.echo()
-                event_id = event.get("id")
-                if event_id:
-                    seen_event_ids.add(event_id)
-
-            time.sleep(2)
-
-    except KeyboardInterrupt:
-        typer.echo("\n[Stopped]")
 
 
 @app.callback(invoke_without_command=True)
@@ -398,10 +70,10 @@ def show_events(
         task_id = require_task_id(task)
 
         if follow:
-            _follow_task_events(task_id, event_type, verbose, page_size)
+            follow_task_events(task_id, event_type, verbose, page_size)
             return
 
-        result = _get_task_events(task_id, event_type, turn, page, page_size)
+        result = get_task_events(task_id, event_type, turn, page, page_size)
 
         if raw:
             output_json(result)
@@ -418,7 +90,7 @@ def show_events(
                 typer.echo("No Agent Hub sessions linked to this task yet.")
             return
 
-        _display_events(
+        display_events(
             events, total, max_turn,
             f"Task: {task_id}",
             event_type, turn, page, verbose,
@@ -431,10 +103,10 @@ def show_events(
         return
 
     if follow:
-        _follow_session_events(session_id, event_type, verbose, page_size)
+        follow_session_events(session_id, event_type, verbose, page_size)
         return
 
-    result = _get_session_events(session_id, event_type, turn, page, page_size)
+    result = get_session_events(session_id, event_type, turn, page, page_size)
 
     if raw:
         output_json(result)
@@ -448,7 +120,7 @@ def show_events(
         typer.echo("No events found for this session.")
         return
 
-    _display_events(
+    display_events(
         events, total, max_turn,
         f"Session: {session_id}",
         event_type, turn, page, verbose,
