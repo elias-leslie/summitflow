@@ -1,4 +1,4 @@
-"""Celery tasks for generating tasks from Explorer scans."""
+"""Background tasks for generating tasks from Explorer scans."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-from app.celery_app import celery_app
 from app.storage import log_task_event
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
@@ -106,16 +105,6 @@ def _process_refactor_target(
     return False
 
 
-@celery_app.task(
-    name="summitflow.generate_tasks_from_scan",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results (skips existing)."""
     try:
@@ -182,16 +171,6 @@ def regenerate_refactor_tasks_sync(project_id: str) -> dict[str, Any]:
     }
 
 
-@celery_app.task(
-    name="summitflow.regenerate_refactor_tasks",
-    acks_late=True,
-    time_limit=900,  # 15 minutes hard limit
-    soft_time_limit=840,  # 14 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=180,  # Max 3 minutes between retries
-    max_retries=3,
-)
 def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
     """Delete all existing refactor tasks and regenerate from current scan."""
     try:
@@ -201,16 +180,6 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
 
 
-@celery_app.task(
-    name="summitflow.generate_schema_tasks",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def generate_schema_tasks(project_id: str) -> dict[str, Any]:
     """Generate schema tasks from database table violations."""
     from app.storage import explorer_entries
@@ -267,16 +236,6 @@ def generate_schema_tasks(project_id: str) -> dict[str, Any]:
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(
-    name="summitflow.cleanup_stale_tasks",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
     """Archive auto-generated tasks that have been pending without activity."""
     from app.storage.tasks import get_stale_tasks
@@ -316,16 +275,6 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
         return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}
 
 
-@celery_app.task(
-    name="summitflow.generate_architecture_tasks",
-    acks_late=True,
-    time_limit=600,  # 10 minutes hard limit
-    soft_time_limit=540,  # 9 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=120,  # Max 2 minutes between retries
-    max_retries=3,
-)
 def generate_architecture_tasks(project_id: str) -> dict[str, Any]:
     """Generate tasks from architecture violations detected by Explorer."""
     from app.storage import explorer_entries

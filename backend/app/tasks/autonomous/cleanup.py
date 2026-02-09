@@ -1,4 +1,4 @@
-"""Celery tasks for autonomous system maintenance and cleanup.
+"""Background tasks for autonomous system maintenance and cleanup.
 
 Includes:
 - Task claim expiration handling
@@ -12,7 +12,6 @@ import logging
 import subprocess
 from typing import Any
 
-from app.celery_app import celery_app
 from app.services.worktree import get_task_worktree, remove_task_worktree
 from app.storage import tasks as task_store
 from app.storage.projects import get_project_root_path
@@ -20,16 +19,6 @@ from app.storage.projects import get_project_root_path
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    name="summitflow.reset_expired_task_claims",
-    acks_late=True,
-    time_limit=120,  # 2 minutes hard limit
-    soft_time_limit=90,  # 1.5 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=30,  # Max 30 seconds between retries
-    max_retries=3,
-)
 def reset_expired_task_claims() -> dict[str, int | str]:
     """Reset tasks with expired claim locks.
 
@@ -53,16 +42,6 @@ def reset_expired_task_claims() -> dict[str, int | str]:
         return {"error": str(e), "reset_count": 0}
 
 
-@celery_app.task(
-    name="summitflow.cleanup_task_worktree",
-    acks_late=True,
-    time_limit=180,  # 3 minutes hard limit
-    soft_time_limit=150,  # 2.5 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=60,  # Max 1 minute between retries
-    max_retries=3,
-)
 def cleanup_task_worktree(
     task_id: str,
     delete_branch: bool = False,
@@ -127,16 +106,6 @@ def cleanup_task_worktree(
         }
 
 
-@celery_app.task(
-    name="summitflow.merge_and_cleanup_task_worktree",
-    acks_late=True,
-    time_limit=300,  # 5 minutes hard limit
-    soft_time_limit=240,  # 4 minutes soft limit
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=60,  # Max 1 minute between retries
-    max_retries=3,
-)
 def merge_and_cleanup_task_worktree(
     task_id: str,
     project_id: str,
