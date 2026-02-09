@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 
 from ....logging_config import get_logger
-from .database import get_db_url_for_project
+from .database_config import get_db_url_for_project
 
 logger = get_logger(__name__)
 

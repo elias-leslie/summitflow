@@ -1,112 +1,30 @@
 """Database scanner for Explorer.
 
 Scans PostgreSQL tables and produces entries for explorer_entries table.
-
-Metadata schema (per architecture doc):
-{
-  "row_count": 123456,
-  "column_count": 12,
-  "columns": ["id", "name", "created_at"],
-  "columns_with_data": ["id", "name"],
-  "columns_mostly_null": ["deleted_at"],
-  "completeness_pct": 85,
-  "freshness_days": 0,
-  "category": "core",
-  "relationships": {
-    "references": ["users.id"],
-    "referenced_by": ["orders.product_id"]
-  }
-}
+See database_analysis.py for metadata schema details.
 """
 
 from __future__ import annotations
 
-import os
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
 
 from ....logging_config import get_logger
 from ..base import BaseScanner
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
+from .database_analysis import (
+    analyze_column_completeness,
+    analyze_table_freshness,
+    build_table_metadata,
+    extract_foreign_key_references,
+)
+from .database_categories import categorize_table
+from .database_config import SYSTEM_TABLES, get_db_url_for_project
 from .schema_violations import SchemaViolationDetector
 
 logger = get_logger(__name__)
-
-# Load environment from ~/.env.local
-_env_file = Path.home() / ".env.local"
-if _env_file.exists():
-    load_dotenv(_env_file)
-
-# System tables to exclude
-SYSTEM_TABLES = {
-    "celery_taskmeta",
-    "celery_tasksetmeta",
-    "alembic_version",
-    "spatial_ref_sys",
-}
-
-
-def get_db_url_for_project(project_id: str) -> str | None:
-    """Get database URL for a project using naming convention.
-
-    Convention: PROJECT_ID.upper().replace('-','_') + '_DB_URL'
-    Special case: 'summitflow' uses 'DATABASE_URL' for backwards compatibility.
-
-    Args:
-        project_id: The project identifier
-
-    Returns:
-        Database URL from environment or None if not set
-    """
-    # Special case for summitflow (existing convention)
-    if project_id == "summitflow":
-        return os.environ.get("DATABASE_URL")
-
-    # Convention: agent-hub -> AGENT_HUB_DB_URL
-    env_var = f"{project_id.upper().replace('-', '_')}_DB_URL"
-    url = os.environ.get(env_var)
-
-    if not url:
-        logger.debug(f"No DB URL for {project_id} (tried {env_var})")
-
-    return url
-
-
-def categorize_table(table_name: str) -> str:
-    """Categorize a table by its name pattern."""
-    name = table_name.lower()
-
-    if "user" in name or "auth" in name or "credential" in name:
-        return "auth"
-    if "log" in name or "history" in name or "audit" in name:
-        return "logging"
-    if "config" in name or "setting" in name or "pref" in name:
-        return "config"
-    if "cache" in name or "temp" in name:
-        return "cache"
-    if "metric" in name or "stat" in name or "analytic" in name:
-        return "analytics"
-    if "task" in name or "job" in name or "queue" in name:
-        return "tasks"
-    if "feature" in name or "capability" in name:
-        return "features"
-    if "sitemap" in name or "endpoint" in name or "route" in name:
-        return "sitemap"
-    if "evidence" in name or "artifact" in name:
-        return "evidence"
-    if "vision" in name or "goal" in name:
-        return "vision"
-    if "file" in name or "scan" in name or "explorer" in name:
-        return "files"
-    if "project" in name:
-        return "projects"
-
-    return "data"
 
 
 class DatabaseScanner(BaseScanner):
@@ -172,53 +90,18 @@ class DatabaseScanner(BaseScanner):
         # Columns
         columns = inspector.get_columns(table_name)
         column_names = [col["name"] for col in columns]
-        column_count = len(column_names)
 
-        # Column completeness
-        columns_with_data = []
-        columns_mostly_null = []
-
-        if row_count > 0:
-            for col_name in column_names[:20]:  # Limit for performance
-                try:
-                    result = conn.execute(text(f'SELECT COUNT("{col_name}") FROM "{table_name}"'))
-                    row = result.fetchone()
-                    non_null = int(row[0]) if row else 0
-                    if non_null > 0:
-                        columns_with_data.append(col_name)
-                    if row_count > 0 and (row_count - non_null) / row_count > 0.5:
-                        columns_mostly_null.append(col_name)
-                except Exception:
-                    continue
-
-        completeness_pct = (
-            int((len(columns_with_data) / min(column_count, 20)) * 100) if column_count > 0 else 0
+        # Column completeness analysis
+        columns_with_data, columns_mostly_null, completeness_pct = analyze_column_completeness(
+            table_name, column_names, row_count, conn
         )
 
-        # Freshness detection
-        freshness_days = None
-        date_columns = ["created_at", "updated_at", "timestamp", "date"]
-        for date_col in date_columns:
-            if date_col in column_names:
-                try:
-                    result = conn.execute(text(f'SELECT MAX("{date_col}") FROM "{table_name}"'))
-                    row = result.fetchone()
-                    if row and row[0]:
-                        last_date = row[0]
-                        if hasattr(last_date, "date"):
-                            last_date = last_date.date()
-                        freshness_days = (datetime.now(UTC).date() - last_date).days
-                        break
-                except Exception:
-                    continue
+        # Freshness analysis
+        freshness_days = analyze_table_freshness(table_name, column_names, conn)
 
         # Foreign key relationships
         fks = inspector.get_foreign_keys(table_name)
-        references = [
-            f"{fk['referred_table']}.{fk['referred_columns'][0]}"
-            for fk in fks
-            if fk.get("referred_columns")
-        ]
+        references = extract_foreign_key_references(fks)
 
         # Get indexes for schema violation detection
         indexes = inspector.get_indexes(table_name)
@@ -232,35 +115,30 @@ class DatabaseScanner(BaseScanner):
         )
 
         violations = [
-            {
-                "type": v.violation_type.value,
-                "detail": v.detail,
-                "severity": v.severity,
-            }
+            {"type": v.violation_type.value, "detail": v.detail, "severity": v.severity}
             for v in schema_violations
         ]
 
         category = categorize_table(table_name)
 
+        metadata = build_table_metadata(
+            table_name,
+            row_count,
+            column_names,
+            columns_with_data,
+            columns_mostly_null,
+            completeness_pct,
+            freshness_days,
+            references,
+            violations,
+            category,
+        )
+
         return ExplorerEntryCreate(
             path=table_name,
             name=table_name,
             health_status="unknown",  # Will be set by get_health_status
-            metadata={
-                "row_count": row_count,
-                "column_count": column_count,
-                "columns": column_names,
-                "columns_with_data": columns_with_data,
-                "columns_mostly_null": columns_mostly_null,
-                "completeness_pct": completeness_pct,
-                "freshness_days": freshness_days,
-                "category": category,
-                "relationships": {
-                    "references": references,
-                    "referenced_by": [],  # Populated later if needed
-                },
-                "violations": violations,
-            },
+            metadata=metadata,
         )
 
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
