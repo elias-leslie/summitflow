@@ -23,7 +23,7 @@ def execute_agent_initial(
     agent_slug: str,
     project_path: str,
     project_id: str,
-) -> tuple[Any, str]:
+) -> tuple[Any, str | None]:
     """Execute initial agent call for subtask.
 
     Returns:
@@ -145,7 +145,7 @@ def execute_agent_fix(
     project_path: str,
     project_id: str,
     agent_session_id: str | None,
-) -> tuple[Any, str]:
+) -> tuple[Any, str | None]:
     """Execute agent fix attempt.
 
     Returns:

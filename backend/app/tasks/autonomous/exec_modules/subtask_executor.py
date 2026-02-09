@@ -165,3 +165,6 @@ def execute_subtask(
             "issue_id": issue_id,
             "issue_count": issue_counts[issue_id],
         }
+
+# Re-export constant used by orchestrator.py
+MAX_ITERATIONS = 50

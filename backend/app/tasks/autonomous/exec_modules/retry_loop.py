@@ -35,9 +35,9 @@ def run_self_healing_loop(
     project_path: str,
     project_id: str,
     agent_slug: str,
-    agent_session_id: str,
+    agent_session_id: str | None,
     initial_response_content: str,
-) -> tuple[bool, list[dict[str, Any]], int, int, int, str]:
+) -> tuple[bool, list[dict[str, Any]], int, int, int, str | None]:
     """Run self-healing retry loop until success or exhaustion.
 
     Returns:
