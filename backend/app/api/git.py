@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from ..services.git_service import auto_create_pr
-from ..storage import tasks as task_store
 from ..utils.git_helpers import (
     WORKTREES_BASE_DIR,
     fetch_repository,
@@ -21,6 +17,13 @@ from ..utils.git_helpers import (
     push_repository,
     sync_repository,
 )
+from .git_helpers.db_helpers import get_project_root, get_project_root_with_fallback
+from .git_helpers.endpoints import (
+    create_pull_request_for_task,
+    execute_smart_sync,
+    get_task_pr_status,
+)
+from .git_helpers.response_builders import aggregate_sync_results, build_sync_response_from_result
 from .models.git_models import (
     BranchesResponse,
     GitStatusResponse,
@@ -28,7 +31,7 @@ from .models.git_models import (
     PRCreateRequest,
     PRResponse,
     RepoStatus,
-    SyncResult,
+    WorktreeInfo,
     WorktreesResponse,
 )
 
@@ -55,19 +58,7 @@ async def get_git_status() -> GitStatusResponse:
 )
 async def get_project_git_status(project_id: str) -> GitStatusResponse:
     """Get git status for a specific project's repository."""
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        project_root = row[0]
-
-    if not project_root:
-        raise HTTPException(status_code=400, detail="Project has no root_path configured")
-
-    repo_path = Path(project_root)
+    repo_path = get_project_root(project_id)
     repo_status = get_repo_status(repo_path)
 
     if not repo_status:
@@ -82,28 +73,10 @@ async def sync_repositories() -> GitSyncResponse:
 
     Skips repositories with uncommitted changes.
     """
-    results: list[SyncResult] = []
-    success = 0
-    failed = 0
-    skipped = 0
+    results = [sync_repository(repo_path) for repo_path in get_managed_repos()]
+    counts = aggregate_sync_results(results)
 
-    for repo_path in get_managed_repos():
-        result = sync_repository(repo_path)
-        results.append(result)
-
-        if result.status in ["up_to_date", "updated"]:
-            success += 1
-        elif result.status == "failed":
-            failed += 1
-        elif result.status == "skipped":
-            skipped += 1
-
-    return GitSyncResponse(
-        results=results,
-        success=success,
-        failed=failed,
-        skipped=skipped,
-    )
+    return GitSyncResponse(results=results, **counts)
 
 
 @router.post(
@@ -113,75 +86,19 @@ async def sync_repositories() -> GitSyncResponse:
 )
 async def create_pull_request(task_id: str, request: PRCreateRequest) -> PRResponse:
     """Create a pull request from the task's branch."""
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-    # Get project root
-    project_id = task.get("project_id")
-    if not project_id:
-        raise HTTPException(status_code=400, detail="Task has no project_id")
-
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if not row or not row[0]:
-            raise HTTPException(status_code=400, detail="Project has no root_path configured")
-        project_root = row[0]
-
-    # Create PR
-    try:
-        result = auto_create_pr(
-            task_id=task_id,
-            project_path=project_root,
-            title=request.title,
-            body=request.body,
-        )
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    return PRResponse(
-        pr_url=result["pr_url"],
-        branch_name=result["branch_name"],
-        task_id=task_id,
-    )
+    result = create_pull_request_for_task(task_id, request.title, request.body)
+    return PRResponse(**result)
 
 
-@router.get(
-    "/tasks/{task_id}/pr",
-    tags=["git"],
-)
+@router.get("/tasks/{task_id}/pr", tags=["git"])
 async def get_pr_status(task_id: str) -> dict[str, Any]:
     """Get the pull request status for a task."""
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-    pr_url = task.get("pull_request_url")
-    if not pr_url:
-        return {
-            "task_id": task_id,
-            "has_pr": False,
-            "pr_url": None,
-            "branch_name": task.get("branch_name"),
-        }
-
-    return {
-        "task_id": task_id,
-        "has_pr": True,
-        "pr_url": pr_url,
-        "branch_name": task.get("branch_name"),
-        "status": task.get("status"),
-    }
+    return get_task_pr_status(task_id)
 
 
 @router.get("/git/worktrees", response_model=WorktreesResponse, tags=["git"])
 async def get_worktrees() -> WorktreesResponse:
     """Get list of active worktrees."""
-    from .models.git_models import WorktreeInfo
-
     worktrees: list[WorktreeInfo] = []
 
     if WORKTREES_BASE_DIR.exists():
@@ -203,15 +120,12 @@ async def get_branches() -> BranchesResponse:
     - Whether it has an associated worktree
     - Last commit info
     """
-    # Get all managed repos and aggregate branches
     managed_repos = get_managed_repos()
     if not managed_repos:
         return BranchesResponse(branches=[], count=0)
 
     # Use the first managed repo for now (typically the main project)
-    repo_path = managed_repos[0]
-
-    branches = get_all_branches(repo_path)
+    branches = get_all_branches(managed_repos[0])
 
     return BranchesResponse(branches=branches, count=len(branches))
 
@@ -223,27 +137,11 @@ async def get_branches() -> BranchesResponse:
 )
 async def pull_project_repository(project_id: str) -> GitSyncResponse:
     """Pull changes for a specific project's repository."""
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        project_root = row[0]
-
-    if not project_root:
-        raise HTTPException(status_code=400, detail="Project has no root_path configured")
-
-    repo_path = Path(project_root)
+    repo_path = get_project_root(project_id)
     result = pull_repository(repo_path)
+    counts = build_sync_response_from_result(result)
 
-    return GitSyncResponse(
-        results=[result],
-        success=1 if result.status in ["updated", "up_to_date"] else 0,
-        failed=1 if result.status == "failed" else 0,
-        skipped=1 if result.status == "skipped" else 0,
-    )
+    return GitSyncResponse(results=[result], **counts)
 
 
 @router.post(
@@ -253,27 +151,11 @@ async def pull_project_repository(project_id: str) -> GitSyncResponse:
 )
 async def push_project_repository(project_id: str) -> GitSyncResponse:
     """Push changes for a specific project's repository."""
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        project_root = row[0]
-
-    if not project_root:
-        raise HTTPException(status_code=400, detail="Project has no root_path configured")
-
-    repo_path = Path(project_root)
+    repo_path = get_project_root(project_id)
     result = push_repository(repo_path)
+    counts = build_sync_response_from_result(result)
 
-    return GitSyncResponse(
-        results=[result],
-        success=1 if result.status == "updated" else 0,
-        failed=1 if result.status == "failed" else 0,
-        skipped=0,
-    )
+    return GitSyncResponse(results=[result], **counts)
 
 
 @router.post(
@@ -283,108 +165,15 @@ async def push_project_repository(project_id: str) -> GitSyncResponse:
 )
 async def fetch_project_repository(project_id: str) -> GitSyncResponse:
     """Fetch changes for a specific project's repository."""
-    from ..storage.connection import get_connection
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        project_root = row[0]
-
-    if not project_root:
-        raise HTTPException(status_code=400, detail="Project has no root_path configured")
-
-    repo_path = Path(project_root)
+    repo_path = get_project_root(project_id)
     result = fetch_repository(repo_path)
+    counts = build_sync_response_from_result(result)
 
-    return GitSyncResponse(
-        results=[result],
-        success=1 if result.status == "updated" else 0,
-        failed=1 if result.status == "failed" else 0,
-        skipped=0,
-    )
+    return GitSyncResponse(results=[result], **counts)
 
 
-@router.post(
-    "/projects/{project_id}/git/smart-sync",
-    tags=["git"],
-)
+@router.post("/projects/{project_id}/git/smart-sync", tags=["git"])
 async def smart_sync_project(project_id: str) -> dict[str, Any]:
     """Smart Sync: Check gates -> AI Commit -> Pull -> Push."""
-    import asyncio
-    from asyncio import subprocess  # Fix import
-
-    from ..storage.connection import get_connection
-
-    project_root = None
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        if row:
-            project_root = row[0]
-
-    # Check config repos if not in DB
-    if not project_root:
-        from ..utils.git_helpers import CONFIG_REPOS
-
-        for config_repo in CONFIG_REPOS:
-            if config_repo.name == project_id:
-                project_root = str(config_repo)
-                break
-
-    if not project_root:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-    # project_root is set now
-
-    if not project_root:
-        raise HTTPException(status_code=400, detail="Project has no root_path configured")
-
-    repo_path = Path(project_root)
-
-    script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            str(script_path),
-            "--json",
-            "--push",
-            "--task",
-            "smart-sync",
-            cwd=repo_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-
-        output = stdout.decode()
-        try:
-            data = json.loads(output)
-        except json.JSONDecodeError:
-            return {
-                "success": False,
-                "status": "UNKNOWN",
-                "gates": "",
-                "errors": [stderr.decode()[:200]],
-                "message": "",
-                "reason": "json_parse_failed",
-                "pushed": False,
-                "raw_output": output + stderr.decode(),
-            }
-
-        repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
-
-        return {
-            "success": proc.returncode == 0,
-            "status": repo_data.get("status", data.get("status", "UNKNOWN")),
-            "gates": repo_data.get("gates", ""),
-            "errors": [repo_data["reason"]] if repo_data.get("reason") else [],
-            "message": repo_data.get("message", ""),
-            "reason": repo_data.get("reason", ""),
-            "pushed": repo_data.get("pushed", False),
-            "raw_output": output,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    repo_path = get_project_root_with_fallback(project_id)
+    return await execute_smart_sync(repo_path)
