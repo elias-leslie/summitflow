@@ -99,7 +99,9 @@ export function TaskRow({
 
         {/* Status */}
         <td className="w-28 px-2 py-2">
-          <div className={cn('flex items-center gap-1 text-xs', status.color)}>
+          <div
+            className={cn('flex items-center gap-1 text-xs', status.className)}
+          >
             <StatusIcon
               className={cn(
                 'w-3 h-3',
