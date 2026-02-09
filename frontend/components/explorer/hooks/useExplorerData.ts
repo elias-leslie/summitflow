@@ -19,8 +19,8 @@ import {
   fetchExplorerEntries,
   fetchExplorerStats,
   type StatsResponse,
-  triggerExplorerScan,
 } from '@/lib/api/explorer'
+import { triggerExplorerScan } from '@/lib/api/explorer-scan'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {

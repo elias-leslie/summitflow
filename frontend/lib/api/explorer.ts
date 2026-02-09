@@ -3,7 +3,13 @@
  *
  * API client for the unified explorer endpoints.
  * Follows existing patterns from lib/api.ts.
+ *
+ * Related modules:
+ * - explorer-analysis.ts: Coverage gaps and refactor targets
+ * - explorer-scan.ts: Scan operations, history, and comparisons
  */
+
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // ============================================================================
 // Types - Aligned with backend API contract (docs/explorer-architecture.md)
@@ -129,30 +135,6 @@ export interface StatsResponse {
   lastScanned: string | null
 }
 
-export interface ScanResponse {
-  status: string
-  message: string
-  type: ExplorerEntryType | null
-}
-
-export interface ScanStatusResponse {
-  status: 'idle' | 'running' | 'completed' | 'failed'
-  current_type: string | null
-  types_total: number
-  types_completed: number
-  progress_pct: number
-  started_at: string | null
-  completed_at: string | null
-  error: string | null
-  results: Array<{
-    entry_type: string
-    entries_found: number
-    entries_saved: number
-    duration_ms: number
-    success: boolean
-  }>
-}
-
 // ============================================================================
 // Filter Types
 // ============================================================================
@@ -178,29 +160,19 @@ export async function fetchExplorerEntries(
   projectId: string,
   filters: ExplorerFilters = {},
 ): Promise<ExplorerResponse> {
-  const params = new URLSearchParams()
-
-  if (filters.type) params.append('type', filters.type)
-  if (filters.health) params.append('health', filters.health)
-  if (filters.path) params.append('path', filters.path)
-  if (filters.sort) params.append('sort', filters.sort)
-  if (filters.dir) params.append('dir', filters.dir)
-  if (filters.limit !== undefined)
-    params.append('limit', filters.limit.toString())
-  if (filters.offset !== undefined)
-    params.append('offset', filters.offset.toString())
-
-  const queryString = params.toString()
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer${queryString ? `?${queryString}` : ''}`,
+  const query = buildQueryString({
+    type: filters.type,
+    health: filters.health,
+    path: filters.path,
+    sort: filters.sort,
+    dir: filters.dir,
+    limit: filters.limit,
+    offset: filters.offset,
+  })
+  return fetchWithErrorHandling<ExplorerResponse>(
+    `/api/projects/${projectId}/explorer${query}`,
+    { errorMessage: 'Failed to fetch explorer entries' },
   )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch explorer entries' }))
-    throw new Error(error.detail || 'Failed to fetch explorer entries')
-  }
-  return res.json()
 }
 
 /**
@@ -209,14 +181,10 @@ export async function fetchExplorerEntries(
 export async function fetchExplorerStats(
   projectId: string,
 ): Promise<StatsResponse> {
-  const res = await fetch(`/api/projects/${projectId}/explorer/stats`)
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch explorer stats' }))
-    throw new Error(error.detail || 'Failed to fetch explorer stats')
-  }
-  return res.json()
+  return fetchWithErrorHandling<StatsResponse>(
+    `/api/projects/${projectId}/explorer/stats`,
+    { errorMessage: 'Failed to fetch explorer stats' },
+  )
 }
 
 /**
@@ -272,309 +240,9 @@ export async function fetchExplorerChildren(
   type: ExplorerEntryType,
   parentPath: string = '',
 ): Promise<ExplorerEntry[]> {
-  const params = new URLSearchParams({
-    type,
-    path: parentPath,
-  })
-
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer/children?${params}`,
+  const query = buildQueryString({ type, path: parentPath })
+  return fetchWithErrorHandling<ExplorerEntry[]>(
+    `/api/projects/${projectId}/explorer/children${query}`,
+    { errorMessage: 'Failed to fetch explorer children' },
   )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch explorer children' }))
-    throw new Error(error.detail || 'Failed to fetch explorer children')
-  }
-  return res.json()
-}
-
-/**
- * Trigger a scan for explorer entries.
- * Runs in background, returns immediately.
- *
- * @param projectId - Project to scan
- * @param type - Optional entry type to scan (scans all if not specified)
- */
-export async function triggerExplorerScan(
-  projectId: string,
-  type?: ExplorerEntryType,
-): Promise<ScanResponse> {
-  const params = new URLSearchParams()
-  if (type) params.append('type', type)
-
-  const queryString = params.toString()
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer/scan${queryString ? `?${queryString}` : ''}`,
-    { method: 'POST' },
-  )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to trigger scan' }))
-    throw new Error(error.detail || 'Failed to trigger scan')
-  }
-  return res.json()
-}
-
-/**
- * Get current scan status for polling.
- *
- * @param projectId - Project to check
- */
-export async function fetchScanStatus(
-  projectId: string,
-): Promise<ScanStatusResponse> {
-  const res = await fetch(`/api/projects/${projectId}/explorer/scan/status`)
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch scan status' }))
-    throw new Error(error.detail || 'Failed to fetch scan status')
-  }
-  return res.json()
-}
-
-// ============================================================================
-// Analysis Types
-// ============================================================================
-
-export interface CoverageGapsSummary {
-  total_uncovered: number
-  endpoint_count: number
-  page_count: number
-  table_count: number
-}
-
-export interface CoverageGapsResponse {
-  summary: CoverageGapsSummary
-  uncovered_endpoints: Array<{ id: number; path: string; name: string }>
-  uncovered_pages: Array<{ id: number; path: string; name: string }>
-  uncovered_tables: Array<{ id: number; path: string; name: string }>
-}
-
-export interface RefactorTarget {
-  path: string
-  name: string
-  complexity_score: number
-  lines_of_code: number
-  function_count: number
-  class_count: number
-  priority: 'high' | 'medium' | 'low'
-  reason: string
-}
-
-export interface RefactorTargetsResponse {
-  targets: RefactorTarget[]
-  summary: {
-    high_priority_count: number
-    medium_priority_count: number
-    total_complexity: number
-  }
-  warning?: {
-    message: string
-    stale_count: number
-  }
-}
-
-// ============================================================================
-// Analysis API Functions
-// ============================================================================
-
-/**
- * Fetch coverage gaps (uncovered endpoints, pages, tables).
- */
-export async function fetchCoverageGaps(
-  projectId: string,
-): Promise<CoverageGapsResponse> {
-  const res = await fetch(`/api/projects/${projectId}/analysis/coverage-gaps`)
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch coverage gaps' }))
-    throw new Error(error.detail || 'Failed to fetch coverage gaps')
-  }
-  return res.json()
-}
-
-/**
- * Fetch files that are refactoring candidates.
- *
- * @param projectId - Project to fetch targets for
- * @param options - Optional filters
- * @param options.codeOnly - Filter to code files only (default: true)
- * @param options.extensions - Comma-separated list of extensions to include
- * @param options.limit - Max results (default: 50)
- */
-export async function fetchRefactorTargets(
-  projectId: string,
-  options: {
-    codeOnly?: boolean
-    extensions?: string
-    limit?: number
-  } = {},
-): Promise<RefactorTargetsResponse> {
-  const params = new URLSearchParams()
-
-  // Default to code_only=true
-  params.append('code_only', String(options.codeOnly ?? true))
-
-  if (options.extensions) {
-    params.append('extensions', options.extensions)
-  }
-  if (options.limit !== undefined) {
-    params.append('limit', String(options.limit))
-  }
-
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer/refactor-targets?${params}`,
-  )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch refactor targets' }))
-    throw new Error(error.detail || 'Failed to fetch refactor targets')
-  }
-  return res.json()
-}
-
-// ============================================================================
-// Scan History Types
-// ============================================================================
-
-export interface ScanHistoryEntry {
-  id: number
-  project_id: string
-  scan_type: string // 'file', 'page', 'endpoint', 'database', 'task', 'full'
-
-  // Trigger metadata
-  triggered_by: string // 'manual', 'refactor_it', 'daily_qa_scan', 'audit_it', 'celery_beat'
-  triggered_by_session: string | null
-  triggered_by_user: string | null
-  trigger_context: Record<string, unknown>
-
-  // Timing
-  started_at: string
-  completed_at: string | null
-  duration_ms: number | null
-
-  // Status
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
-  error_message: string | null
-
-  // Metrics
-  metrics: Record<string, unknown>
-  entries_found: number
-  entries_saved: number
-
-  // Comparison
-  previous_scan_id: number | null
-  metrics_delta: Record<string, unknown>
-
-  created_at: string
-}
-
-export interface SparklineDataPoint {
-  date: string // YYYY-MM-DD
-  complexity: number | null
-  scan_count: number
-  high_priority_count: number
-}
-
-export interface SparklineData {
-  dates: string[]
-  complexity: (number | null)[]
-  targets: number[]
-  high_priority: number[]
-}
-
-export interface TriggerBreakdown {
-  trigger: string
-  count: number
-  percentage: number
-}
-
-export interface ScanHistorySummary {
-  total_scans: number
-  avg_duration_ms: number | null
-  complexity_trend: 'improving' | 'stable' | 'degrading' | 'unknown'
-  most_active_trigger: string | null
-  triggers_breakdown: TriggerBreakdown[]
-}
-
-export interface ScanHistoryResponse {
-  scans: ScanHistoryEntry[]
-  sparkline_data: SparklineData
-  summary: ScanHistorySummary
-}
-
-export interface ScanComparison {
-  before_scan: ScanHistoryEntry
-  after_scan: ScanHistoryEntry
-  before_metrics: Record<string, unknown>
-  after_metrics: Record<string, unknown>
-  delta: Record<string, unknown>
-  delta_pct: Record<string, number>
-}
-
-// ============================================================================
-// Scan History API Functions
-// ============================================================================
-
-/**
- * Fetch scan history for a project.
- *
- * @param projectId - Project to fetch history for
- * @param days - Number of days to look back (default: 30, max: 365)
- * @param scanType - Optional filter by scan type
- */
-export async function fetchScanHistory(
-  projectId: string,
-  days: number = 30,
-  scanType?: string,
-): Promise<ScanHistoryResponse> {
-  const params = new URLSearchParams()
-  params.append('days', String(days))
-  if (scanType) {
-    params.append('scan_type', scanType)
-  }
-
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer/scan-history?${params}`,
-  )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch scan history' }))
-    throw new Error(error.detail || 'Failed to fetch scan history')
-  }
-  return res.json()
-}
-
-/**
- * Fetch comparison between two scans.
- *
- * @param projectId - Project ID
- * @param before - Scan ID of the baseline scan
- * @param after - Scan ID of the comparison scan
- */
-export async function fetchScanComparison(
-  projectId: string,
-  before: number,
-  after: number,
-): Promise<ScanComparison> {
-  const params = new URLSearchParams()
-  params.append('before', String(before))
-  params.append('after', String(after))
-
-  const res = await fetch(
-    `/api/projects/${projectId}/explorer/scan-comparison?${params}`,
-  )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch scan comparison' }))
-    throw new Error(error.detail || 'Failed to fetch scan comparison')
-  }
-  return res.json()
 }

@@ -23,13 +23,12 @@ import {
   Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type ExplorerEntryType, fetchExplorerEntries } from '@/lib/api/explorer'
 import {
-  type ExplorerEntryType,
-  fetchExplorerEntries,
   fetchScanStatus,
   type ScanStatusResponse,
   triggerExplorerScan,
-} from '@/lib/api/explorer'
+} from '@/lib/api/explorer-scan'
 import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'

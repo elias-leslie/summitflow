@@ -24,7 +24,7 @@ export function useRefactorTargets(projectId: string) {
 
   const { data, isLoading, error } = useQuery<RefactorTargetsResponse>({
     queryKey: ['refactor-targets', projectId, true],
-    queryFn: () => fetchRefactorTargets(projectId, true),
+    queryFn: () => fetchRefactorTargets(projectId, { codeOnly: true }),
     staleTime: 60000,
     refetchOnWindowFocus: false,
   })

@@ -13,7 +13,7 @@ import {
   fetchScanHistory,
   type ScanComparison,
   type ScanHistoryResponse,
-} from '@/lib/api/explorer'
+} from '@/lib/api/explorer-scan'
 
 // Query key factories for consistent cache management
 export const scanHistoryKeys = {
