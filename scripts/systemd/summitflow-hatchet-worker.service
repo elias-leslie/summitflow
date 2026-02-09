@@ -1,0 +1,23 @@
+[Unit]
+Description=SummitFlow Hatchet Worker
+After=network.target hatchet-engine.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/summitflow/backend
+Environment="PATH=%h/.local/bin:%h/summitflow/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=%h"
+EnvironmentFile=-%h/.env.local
+ExecStart=%h/summitflow/backend/.venv/bin/python -m app.worker
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-hatchet-worker
+
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
