@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-08 15:37 UTC
+generated_at: 2026-02-09 18:58 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -8,8 +8,6 @@ services:
   backend_port: 8001
   frontend_port: 3001
   infrastructure:
-    hatchet_grpc: 7077
-    hatchet_http: 8888
     neo4j: 7687
     postgres: 5432
     redis: 6379
@@ -21,7 +19,7 @@ cli:
   - 'st context         # Show current task details'
   - 'st step pass <subtask> <N>  # Mark step as passed'
   - 'st subtask pass    # Mark subtask as passed'
-  - 'st close           # Close completed task'
+  - 'st done <task-id>  # Complete task (merge + cleanup)'
 pages:
 - / (app)
 - /about (about)
@@ -112,6 +110,7 @@ tables:
 - task_subtask_steps
 - task_subtasks
 - tasks
+- terminal_alembic_version
 - terminal_panes
 - terminal_project_settings
 - terminal_sessions
@@ -135,11 +134,11 @@ tasks:
 folders:
   (root): 17 files - tests
   .claude: 3 files
-  .dev-tools: 4 files
+  .dev-tools: 9 files - tests
   .qna-session: 1 files
-  .st: 5 files
+  .st: 12 files
   assets: 2 files
-  backend: 561 files - api, services, tests
-  frontend: 314 files - api, components, tests
-  scripts: 33 files - services, tests
+  backend: 626 files - api, services, tests
+  frontend: 342 files - api, components, tests
+  scripts: 34 files - services, tests
   tests: 2 files - tests
