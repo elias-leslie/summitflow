@@ -12,38 +12,25 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Loader2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'
-import { DragOverlayTaskCard, TaskCard } from './TaskCard'
+import { DragOverlayTaskCard } from './TaskCard'
+import { KanbanColumn } from './KanbanColumn'
+import { DeleteConfirmDialog } from './DeleteConfirmDialog'
+import {
+  COLUMNS,
+  columnToStatus,
+  statusToColumn,
+  type TaskKanbanColumn,
+} from './columnConfig'
 
 // ============================================================================
 // Types
 // ============================================================================
-
-// Kanban columns (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
-export type TaskKanbanColumn =
-  | 'ideas'
-  | 'planning'
-  | 'queue'
-  | 'active'
-  | 'blocked'
-  | 'done'
-
-export interface KanbanColumn {
-  id: TaskKanbanColumn
-  title: string
-  color: string
-  icon: 'sparkles' | 'eye' | 'lightbulb' | null
-}
 
 interface TaskKanbanBoardProps {
   tasks: Task[]
@@ -54,28 +41,8 @@ interface TaskKanbanBoardProps {
 }
 
 // ============================================================================
-// Status Mapping (6 columns)
+// Utility Functions
 // ============================================================================
-
-// Map task status to Kanban column
-// Note: 'idea' status handled specially via crowdsourced label check
-const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
-  // Planning column
-  pending: 'planning',
-  // Queue column (waiting for execution)
-  queue: 'queue',
-  // Active column (all running/transient states)
-  running: 'active',
-  paused: 'active',
-  pr_created: 'active',
-  ai_reviewing: 'active',
-  // Blocked column
-  blocked: 'blocked',
-  // Done column
-  completed: 'done',
-  failed: 'done',
-  cancelled: 'done',
-}
 
 // Check if task is a crowdsourced idea (should be in Ideas column)
 function isCrowdsourcedIdea(task: Task): boolean {
@@ -84,199 +51,6 @@ function isCrowdsourcedIdea(task: Task): boolean {
   return (
     task.status === 'pending' &&
     task.labels?.some((label) => label.toLowerCase() === 'crowdsourced')
-  )
-}
-
-// Map Kanban column to task status (for drag-drop)
-const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
-  ideas: 'pending',
-  planning: 'pending',
-  queue: 'queue',
-  active: 'running',
-  blocked: 'blocked',
-  done: 'completed',
-}
-
-// ============================================================================
-// Column Configuration (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
-// ============================================================================
-
-const COLUMNS: KanbanColumn[] = [
-  { id: 'ideas', title: 'Ideas', color: 'yellow', icon: 'lightbulb' },
-  { id: 'planning', title: 'Planning', color: 'slate', icon: null },
-  { id: 'queue', title: 'Queue', color: 'sky', icon: null },
-  { id: 'active', title: 'Active', color: 'blue', icon: null },
-  { id: 'blocked', title: 'Blocked', color: 'orange', icon: null },
-  { id: 'done', title: 'Done', color: 'phosphor', icon: null },
-]
-
-// ============================================================================
-// Icons for Column Headers
-// ============================================================================
-
-function LightbulbIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm2 15h-4v-1h4v1zm0-3h-4v-1.26l-.25-.18A5 5 0 0 1 7 9a5 5 0 1 1 10 0 5 5 0 0 1-2.75 4.56l-.25.18V14zm-1 5h-2v1a1 1 0 0 0 1 1 1 1 0 0 0 1-1v-1z" />
-    </svg>
-  )
-}
-
-function SparklesIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2L9.5 8.5 3 11l6.5 2.5L12 20l2.5-6.5L21 11l-6.5-2.5L12 2z" />
-    </svg>
-  )
-}
-
-function EyeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-    </svg>
-  )
-}
-
-// ============================================================================
-// Droppable Column
-// ============================================================================
-
-interface DroppableColumnProps {
-  column: KanbanColumn
-  tasks: Task[]
-  onTaskClick?: (task: Task) => void
-  onExecuteNow?: (taskId: string) => void
-  onDelete?: (taskId: string) => void
-  executingTaskId?: string | null
-  // WebSocket execution state for running tasks
-  runningTaskId?: string | null
-  executionHook?: ReturnType<typeof useExecutionWebSocket>
-}
-
-function DroppableColumn({
-  column,
-  tasks,
-  onTaskClick,
-  onExecuteNow,
-  onDelete,
-  executingTaskId,
-  runningTaskId,
-  executionHook,
-}: DroppableColumnProps) {
-  const colorClasses: Record<
-    string,
-    { header: string; border: string; bg: string }
-  > = {
-    yellow: {
-      header: 'text-yellow-400',
-      border: 'border-yellow-500/30',
-      bg: 'bg-yellow-950/20',
-    },
-    slate: {
-      header: 'text-slate-400',
-      border: 'border-slate-700',
-      bg: 'bg-slate-900/30',
-    },
-    sky: {
-      header: 'text-sky-400',
-      border: 'border-sky-500/30',
-      bg: 'bg-sky-950/20',
-    },
-    blue: {
-      header: 'text-blue-400',
-      border: 'border-blue-700/50',
-      bg: 'bg-slate-900/30',
-    },
-    amber: {
-      header: 'text-amber-400',
-      border: 'border-amber-500/30',
-      bg: 'bg-amber-950/20',
-    },
-    orange: {
-      header: 'text-orange-400',
-      border: 'border-orange-500/30',
-      bg: 'bg-orange-950/20',
-    },
-    violet: {
-      header: 'text-violet-400',
-      border: 'border-violet-500/30',
-      bg: 'bg-violet-950/20',
-    },
-    phosphor: {
-      header: 'text-phosphor-400',
-      border: 'border-phosphor-700/50',
-      bg: 'bg-slate-900/30',
-    },
-  }
-
-  const colors = colorClasses[column.color] || colorClasses.slate
-
-  return (
-    <div
-      className={`flex-shrink-0 w-[85vw] sm:w-[280px] md:w-auto md:flex-1 md:min-w-[220px] md:max-w-[300px] flex flex-col rounded-lg border ${colors.border} ${colors.bg} snap-start md:snap-align-none`}
-    >
-      {/* Column Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <h3
-          className={`text-sm font-medium flex items-center gap-1.5 ${colors.header}`}
-        >
-          {column.icon === 'lightbulb' && <LightbulbIcon className="w-4 h-4" />}
-          {column.icon === 'sparkles' && (
-            <SparklesIcon className="w-4 h-4 animate-pulse" />
-          )}
-          {column.icon === 'eye' && <EyeIcon className="w-4 h-4" />}
-          {column.title}
-        </h3>
-        <span className="text-xs mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
-          {tasks.length}
-        </span>
-      </div>
-
-      {/* Column Content */}
-      <div className="flex-1 p-2 overflow-y-auto min-h-[200px] max-h-[calc(100vh-300px)]">
-        <SortableContext
-          items={tasks.map((t) => t.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="space-y-2">
-            {tasks.length > 0 ? (
-              tasks.map((task) => {
-                const isRunningTask = task.id === runningTaskId
-                return (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onClick={() => onTaskClick?.(task)}
-                    onExecuteNow={
-                      column.id === 'ideas' ? onExecuteNow : undefined
-                    }
-                    onDelete={onDelete}
-                    isExecuting={executingTaskId === task.id}
-                    execution={
-                      isRunningTask ? executionHook?.execution : undefined
-                    }
-                    wsConnected={
-                      isRunningTask ? executionHook?.connected : false
-                    }
-                    onStopExecution={
-                      isRunningTask ? executionHook?.sendStop : undefined
-                    }
-                    onSendMessage={
-                      isRunningTask ? executionHook?.sendMessage : undefined
-                    }
-                  />
-                )
-              })
-            ) : (
-              <div className="flex items-center justify-center h-24 text-xs text-slate-600 italic">
-                No tasks
-              </div>
-            )}
-          </div>
-        </SortableContext>
-      </div>
-    </div>
   )
 }
 
@@ -306,6 +80,53 @@ export function TaskKanbanBoard({
     taskId: runningTask?.id || '',
     enabled: !!runningTask,
   })
+
+  // Group tasks by column
+  const tasksByColumn = useMemo(() => {
+    const grouped: Record<TaskKanbanColumn, Task[]> = {
+      ideas: [],
+      planning: [],
+      queue: [],
+      active: [],
+      blocked: [],
+      done: [],
+    }
+
+    for (const task of tasks) {
+      if (isCrowdsourcedIdea(task)) {
+        grouped.ideas.push(task)
+      } else {
+        const column = statusToColumn[task.status] || 'planning'
+        grouped[column].push(task)
+      }
+    }
+
+    // Sort each column by priority (lower is higher priority)
+    for (const column of Object.values(grouped)) {
+      column.sort((a, b) => a.priority - b.priority)
+    }
+
+    return grouped
+  }, [tasks])
+
+  const activeTask = useMemo(() => {
+    if (!activeId) return null
+    return tasks.find((t) => t.id === activeId) ?? null
+  }, [activeId, tasks])
+
+  // Find which column contains a task
+  const findColumn = (taskId: string): TaskKanbanColumn | null => {
+    for (const [column, columnTasks] of Object.entries(tasksByColumn)) {
+      if (columnTasks.some((t) => t.id === taskId)) {
+        return column as TaskKanbanColumn
+      }
+    }
+    return null
+  }
+
+  // ============================================================================
+  // Event Handlers
+  // ============================================================================
 
   const handleExecuteNow = async (taskId: string) => {
     setExecutingTaskId(taskId)
@@ -341,76 +162,8 @@ export function TaskKanbanBoard({
     }
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
-
-  // Tasks are used directly (filtering can be added via props if needed)
-  const filteredTasks = tasks
-
-  // Group tasks by column (using filtered tasks)
-  const tasksByColumn = useMemo(() => {
-    const grouped: Record<TaskKanbanColumn, Task[]> = {
-      ideas: [],
-      planning: [],
-      queue: [],
-      active: [],
-      blocked: [],
-      done: [],
-    }
-
-    for (const task of filteredTasks) {
-      // Check if task is a crowdsourced idea (pending tasks with crowdsourced label)
-      if (isCrowdsourcedIdea(task)) {
-        grouped.ideas.push(task)
-      } else {
-        const column = statusToColumn[task.status] || 'planning'
-        grouped[column].push(task)
-      }
-    }
-
-    // Sort each column by priority (lower is higher priority)
-    for (const column of Object.values(grouped)) {
-      column.sort((a, b) => a.priority - b.priority)
-    }
-
-    return grouped
-  }, [filteredTasks])
-
-  const activeTask = useMemo(() => {
-    if (!activeId) return null
-    return tasks.find((t) => t.id === activeId) ?? null
-  }, [activeId, tasks])
-
-  // Find which column contains a task
-  const findColumn = (taskId: string): TaskKanbanColumn | null => {
-    for (const [column, columnTasks] of Object.entries(tasksByColumn)) {
-      if (columnTasks.some((t) => t.id === taskId)) {
-        return column as TaskKanbanColumn
-      }
-    }
-    return null
-  }
-
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
-  }
-
-  const handleDragOver = () => {
-    // Handle drag over logic if needed for visual feedback
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -447,24 +200,43 @@ export function TaskKanbanBoard({
     setActiveId(null)
   }
 
-  const handleDragCancel = () => {
-    setActiveId(null)
-  }
+  // ============================================================================
+  // Drag and Drop Sensors
+  // ============================================================================
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
+
+  // ============================================================================
+  // Render
+  // ============================================================================
 
   return (
     <div className="space-y-4">
-      {/* TODO: Add task filters if needed */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
+        onDragCancel={() => setActiveId(null)}
       >
         <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
           {COLUMNS.map((column) => (
-            <DroppableColumn
+            <KanbanColumn
               key={column.id}
               column={column}
               tasks={tasksByColumn[column.id]}
@@ -478,72 +250,19 @@ export function TaskKanbanBoard({
           ))}
         </div>
 
-        {/* Drag Overlay */}
         <DragOverlay>
           {activeTask && <DragOverlayTaskCard task={activeTask} />}
         </DragOverlay>
       </DndContext>
 
-      {/* Delete Confirmation Dialog */}
       {deleteConfirmTask && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setDeleteConfirmTask(null)}
-        >
-          <div
-            className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-3 mb-4">
-              <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-lg font-semibold text-slate-100 mb-2">
-                  Delete Task
-                </h3>
-                <p className="text-sm text-slate-300 mb-2">
-                  Are you sure you want to delete this task?
-                </p>
-                <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
-                  {deleteConfirmTask.id}: {deleteConfirmTask.title}
-                </div>
-                <p className="text-sm text-red-400">
-                  This will permanently delete the task and all its subtasks,
-                  criteria, and dependencies. This cannot be undone.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3">
-              <button
-                onClick={() => setDeleteConfirmTask(null)}
-                disabled={deleteMutation.isPending}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                disabled={deleteMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {deleteMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  'Delete'
-                )}
-              </button>
-            </div>
-
-            {deleteMutation.isError && (
-              <p className="mt-3 text-sm text-red-400">
-                Failed to delete task. Please try again.
-              </p>
-            )}
-          </div>
-        </div>
+        <DeleteConfirmDialog
+          task={deleteConfirmTask}
+          isDeleting={deleteMutation.isPending}
+          isError={deleteMutation.isError}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteConfirmTask(null)}
+        />
       )}
     </div>
   )
