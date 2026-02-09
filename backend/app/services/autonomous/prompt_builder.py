@@ -1,13 +1,4 @@
-"""Prompt builder service for autonomous task execution.
-
-Builds execution prompts with:
-- Task context (title, description, files)
-- Step-level verification commands
-- Filtered rules based on affected files
-- Learned patterns
-- Iteration context (previous failures, advice)
-- Output format instructions
-"""
+"""Prompt builder service for autonomous task execution."""
 
 from __future__ import annotations
 
@@ -16,221 +7,111 @@ from typing import Any
 from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
 
+VERIFICATION_BLOCK = """---
+# Verification
+
+After making changes, the following will be run automatically:
+- `pytest` on affected test files
+- `pyright` for type checking
+- `ruff check` for linting
+
+All must pass for the task to be marked complete.
+"""
+
+OUTPUT_FORMAT_BLOCK = """---
+# Output Format
+
+Output your code changes in this format:
+
+```file:path/to/file.py
+# Complete file contents here
+def example():
+    return "example"
+```
+
+For each file you modify, output the complete file content.
+Do not include explanations outside the code blocks.
+"""
+
 
 def build_execution_prompt(
     task: dict[str, Any],
     context: dict[str, Any],
     iteration_context: dict[str, Any] | None = None,
 ) -> str:
-    """Build execution prompt for a task.
+    """Build execution prompt for a task."""
+    lines = ["# Task Execution", "", f"**Title:** {task.get('title', 'No title')}"]
 
-    Args:
-        task: Task dict with title, description, files_affected
-        context: Context dict from /context/for-task endpoint
-        iteration_context: Optional dict for retries:
-            - iteration: Current iteration number
-            - test_failures: Output from pytest
-            - static_failures: Output from pyright/ruff
-            - advice: Advice from alternate model (if consulted)
-            - handoff_context: Full context if handed off from another model
+    if desc := task.get("description"):
+        lines.append(f"**Description:** {desc}")
 
-    Returns:
-        Complete prompt string for the AI model
-    """
-    lines: list[str] = []
+    if objective := task.get("objective"):
+        lines.extend(["", "## OBJECTIVE", "", objective])
 
-    # Task header
-    lines.append("# Task Execution")
-    lines.append("")
-    lines.append(f"**Title:** {task.get('title', 'No title')}")
-
-    if task.get("description"):
-        lines.append(f"**Description:** {task['description']}")
-
-    lines.append("")
-
-    # Objective - single measurable goal
-    if task.get("objective"):
-        lines.append("## OBJECTIVE")
-        lines.append("")
-        lines.append(task["objective"])
-        lines.append("")
-
-    # Files affected
     files = task.get("files_affected") or context.get("files") or []
     if files:
-        lines.append("**Files to modify:**")
-        for f in files:
-            lines.append(f"- {f}")
-        lines.append("")
+        lines.extend(["", "**Files to modify:**"] + [f"- {f}" for f in files])
 
-    # Steps from subtasks table (preferred) or plan_content (fallback)
-    task_id = task.get("id", "")
-    steps_found = False
+    lines.append("")
+    _add_steps(lines, task)
+    _add_rules(lines, context.get("rule_contents", {}))
+    _add_patterns(lines, context.get("patterns", []))
 
-    # Try subtasks table first (normalized storage)
-    if task_id:
-        subtasks = get_subtasks_for_task(task_id, include_steps=False)
-        if subtasks:
-            # Find first incomplete subtask
-            for subtask in subtasks:
-                if not subtask.get("passes"):
-                    subtask_full_id = subtask.get("id", "")
-                    steps = get_steps_for_subtask(subtask_full_id)
-                    if steps:
-                        lines.append("**Steps to complete:**")
-                        for step in steps:
-                            # Show completion status for each step
-                            marker = "✓" if step.get("passes") else "○"
-                            lines.append(
-                                f"{marker} {step.get('step_number')}. {step.get('description', '')}"
-                            )
-                        lines.append("")
-                        steps_found = True
-                    break
-
-    # Fallback to plan_content if no subtasks found
-    if not steps_found:
-        plan = task.get("plan_content") or {}
-        if isinstance(plan, dict):
-            tasks_list = plan.get("tasks", [])
-            current_id = plan.get("current_task_id")
-
-            # Find current task in plan
-            current_task = None
-            for t in tasks_list:
-                if t.get("id") == current_id:
-                    current_task = t
-                    break
-
-            if current_task:
-                lines.append("**Steps to complete:**")
-                for step in current_task.get("steps", []):
-                    lines.append(f"1. {step}")
-                lines.append("")
-
-    # Rules section
-    rules = context.get("rule_contents", {})
-    if rules:
-        lines.append("---")
-        lines.append("# Relevant Rules")
-        lines.append("")
-        lines.append("Follow these rules when implementing:")
-        lines.append("")
-
-        for rule_name, rule_content in rules.items():
-            lines.append(f"## {rule_name}")
-            lines.append("")
-            # Truncate very long rules
-            if len(rule_content) > 2000:
-                lines.append(rule_content[:2000])
-                lines.append("\n... (truncated)")
-            else:
-                lines.append(rule_content)
-            lines.append("")
-
-    # Patterns section
-    patterns = context.get("patterns", [])
-    if patterns:
-        lines.append("---")
-        lines.append("# Learned Patterns")
-        lines.append("")
-        lines.append("Apply these patterns from previous successful sessions:")
-        lines.append("")
-
-        for p in patterns:
-            lines.append(f"- **{p.get('pattern', 'No pattern')}**")
-            if p.get("rationale"):
-                lines.append(f"  _{p['rationale']}_")
-        lines.append("")
-
-    # Iteration context (for retries)
     if iteration_context:
-        iteration = iteration_context.get("iteration", 1)
+        _add_iteration_context(lines, iteration_context)
 
-        if iteration > 1:
-            lines.append("---")
-            lines.append("# PREVIOUS ATTEMPT FAILED")
-            lines.append("")
-            lines.append(f"This is attempt #{iteration}. The previous attempt had errors.")
-            lines.append("")
+    lines.extend([VERIFICATION_BLOCK, OUTPUT_FORMAT_BLOCK])
+    return "\n".join(lines).replace("\n\n\n", "\n\n")
 
-            # Test failures
-            test_failures = iteration_context.get("test_failures")
-            if test_failures:
-                lines.append("## Test Failures")
+
+def _add_steps(lines: list[str], task: dict[str, Any]) -> None:
+    """Add steps to the prompt from subtasks or plan content."""
+    if task_id := task.get("id"):
+        for subtask in get_subtasks_for_task(task_id, include_steps=False):
+            if not subtask.get("passes") and (steps := get_steps_for_subtask(subtask.get("id", ""))):
+                lines.append("**Steps to complete:**")
+                for s in steps:
+                    m = "✓" if s.get("passes") else "○"
+                    lines.append(f"{m} {s.get('step_number')}. {s.get('description', '')}")
                 lines.append("")
-                lines.append("```")
-                lines.append(test_failures[:3000])  # Truncate long output
-                if len(test_failures) > 3000:
-                    lines.append("... (truncated)")
-                lines.append("```")
-                lines.append("")
+                return
 
-            # Static analysis failures
-            static_failures = iteration_context.get("static_failures")
-            if static_failures:
-                lines.append("## Static Analysis Errors")
-                lines.append("")
-                lines.append("```")
-                lines.append(static_failures[:2000])
-                if len(static_failures) > 2000:
-                    lines.append("... (truncated)")
-                lines.append("```")
-                lines.append("")
+    plan = task.get("plan_content") or {}
+    if isinstance(plan, dict) and (tasks := plan.get("tasks", [])):
+        current_id = plan.get("current_task_id")
+        if cur := next((t for t in tasks if t.get("id") == current_id), None):
+            lines.append("**Steps to complete:**")
+            lines.extend([f"1. {s}" for s in cur.get("steps", [])] + [""])
 
-            # Advice from alternate model
-            advice = iteration_context.get("advice")
-            if advice:
-                lines.append("## SUGGESTION FROM ALTERNATE MODEL")
-                lines.append("")
-                lines.append(advice)
-                lines.append("")
 
-            lines.append("**Analyze the failures above and fix the issues.")
-            lines.append("Do not repeat the same approach that failed.**")
-            lines.append("")
+def _add_rules(lines: list[str], rules: dict[str, str]) -> None:
+    if not rules:
+        return
+    lines.extend(["---", "# Relevant Rules", "", "Follow these rules when implementing:", ""])
+    for name, content in rules.items():
+        lines.extend([f"## {name}", "", content[:2000] + ("\n... (truncated)" if len(content) > 2000 else ""), ""])
 
-        # Handoff context (full handoff from another model)
-        handoff = iteration_context.get("handoff_context")
-        if handoff:
-            lines.append("---")
-            lines.append("# HANDOFF FROM PREVIOUS MODEL")
-            lines.append("")
-            lines.append(
-                "The previous model was unable to complete this task. "
-                "You are taking over. Here is what they tried:"
-            )
-            lines.append("")
-            lines.append(handoff)
-            lines.append("")
 
-    # Verification commands
-    lines.append("---")
-    lines.append("# Verification")
-    lines.append("")
-    lines.append("After making changes, the following will be run automatically:")
-    lines.append("- `pytest` on affected test files")
-    lines.append("- `pyright` for type checking")
-    lines.append("- `ruff check` for linting")
-    lines.append("")
-    lines.append("All must pass for the task to be marked complete.")
+def _add_patterns(lines: list[str], patterns: list[dict[str, Any]]) -> None:
+    if not patterns:
+        return
+    lines.extend(["---", "# Learned Patterns", "", "Apply these patterns from previous successful sessions:", ""])
+    for p in patterns:
+        lines.append(f"- **{p.get('pattern', 'No pattern')}**")
+        if rationale := p.get("rationale"):
+            lines.append(f"  _{rationale}_")
     lines.append("")
 
-    # Output format instructions
-    lines.append("---")
-    lines.append("# Output Format")
-    lines.append("")
-    lines.append("Output your code changes in this format:")
-    lines.append("")
-    lines.append("```file:path/to/file.py")
-    lines.append("# Complete file contents here")
-    lines.append("def example():")
-    lines.append('    return "example"')
-    lines.append("```")
-    lines.append("")
-    lines.append("For each file you modify, output the complete file content.")
-    lines.append("Do not include explanations outside the code blocks.")
-    lines.append("")
 
-    return "\n".join(lines)
+def _add_iteration_context(lines: list[str], ctx: dict[str, Any]) -> None:
+    if (iteration := ctx.get("iteration", 1)) > 1:
+        lines.extend(["---", "# PREVIOUS ATTEMPT FAILED", "", f"This is attempt #{iteration}. The previous attempt had errors.", ""])
+        for key, label, limit in [("test_failures", "## Test Failures", 3000), ("static_failures", "## Static Analysis Errors", 2000)]:
+            if val := ctx.get(key):
+                lines.extend([label, "", "```", val[:limit] + ("\n... (truncated)" if len(val) > limit else ""), "```", ""])
+        if advice := ctx.get("advice"):
+            lines.extend(["## SUGGESTION FROM ALTERNATE MODEL", "", advice, ""])
+        lines.extend(["**Analyze the failures above and fix the issues.", "Do not repeat the same approach that failed.**", ""])
+
+    if handoff := ctx.get("handoff_context"):
+        lines.extend(["---", "# HANDOFF FROM PREVIOUS MODEL", "", "The previous model was unable to complete this task. You are taking over. Here is what they tried:", "", handoff, ""])
