@@ -1,0 +1,147 @@
+"""Helper utilities for step verification.
+
+Provides command expansion, output parsing, and file detection utilities.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
+
+COMMAND_ALIASES: dict[str, str] = {
+    # dt commands run as-is - they have proper TOON output format
+    # No expansion needed since dt is in PATH (~/.local/bin/dt)
+}
+
+
+def expand_command(cmd: str) -> str:
+    """Expand command aliases to full commands."""
+    for alias, expansion in COMMAND_ALIASES.items():
+        if cmd.strip().startswith(alias):
+            remainder = cmd.strip()[len(alias) :].strip()
+            return f"{expansion} {remainder}".strip()
+    return cmd
+
+
+def parse_expected(expected: str | None) -> tuple[str, str | None]:
+    """Parse expected_output into (check_type, value).
+
+    Returns:
+        (check_type, value) where check_type is one of:
+        - "exit_code": Check returncode == 0
+        - "contains": Check value in output
+        - "exact": Check output == value
+    """
+    if not expected:
+        return ("exit_code", None)
+
+    expected_lower = expected.lower().strip()
+
+    if expected_lower.startswith("exit code"):
+        return ("exit_code", None)
+
+    # Note: "lint:ok", "types:ok", "test:ok" are now checked as output content
+    # Previously only checked exit code, which caused false positives when
+    # commands failed but pipeline exit code was 0
+
+    if expected_lower.startswith("contains:"):
+        return ("contains", expected[9:].strip())
+
+    return ("contains", expected)
+
+
+def detect_changed_files(project_path: str) -> list[str]:
+    """Detect Python files changed in the last commit.
+
+    Uses git diff HEAD~1 to find files modified by the agent.
+
+    Returns:
+        List of changed .py file paths relative to project root.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD~1", "--", "*.py"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning("git_diff_failed", stderr=result.stderr[:200])
+            return []
+
+        files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        logger.info("smoke_test_files_detected", count=len(files), files=files[:10])
+        return files
+    except Exception as e:
+        logger.warning("smoke_test_detect_error", error=str(e))
+        return []
+
+
+def file_to_module(project_path: str, file_path: str) -> str | None:
+    """Convert file path to Python module name.
+
+    Args:
+        project_path: Root path of the project
+        file_path: Relative path like 'backend/cli/output.py'
+
+    Returns:
+        Module name like 'cli.output' or None if not importable.
+    """
+    if not file_path.endswith(".py"):
+        return None
+    file_path = file_path[:-12] if file_path.endswith("__init__.py") else file_path[:-3]
+
+    # Handle backend/ prefix - strip it for module path
+    if file_path.startswith("backend/"):
+        file_path = file_path[8:]
+
+    # Handle app/ prefix - keep it for summitflow backend structure
+    # Convert path separators to dots
+    module_name = file_path.replace("/", ".").replace("\\", ".")
+
+    # Skip test files and migrations
+    if "test" in module_name.lower() or "migration" in module_name.lower():
+        return None
+
+    return module_name if module_name else None
+
+
+def resolve_working_directory(working_dir: str, command: str) -> str:
+    """Resolve the effective working directory for a command.
+
+    For pytest or python commands targeting backend, use backend/ as cwd.
+
+    Args:
+        working_dir: Base working directory
+        command: Command to execute
+
+    Returns:
+        Effective working directory path
+    """
+    backend_dir = str(Path(working_dir) / "backend")
+    if Path(backend_dir).is_dir() and (
+        "pytest backend/" in command or "python -c" in command
+    ):
+        return backend_dir
+    return working_dir
+
+
+def adjust_command_for_cwd(command: str, original_cwd: str, new_cwd: str) -> str:
+    """Adjust command paths when changing working directory.
+
+    Args:
+        command: Original command
+        original_cwd: Original working directory
+        new_cwd: New working directory
+
+    Returns:
+        Adjusted command with corrected paths
+    """
+    if new_cwd.endswith("/backend") and original_cwd != new_cwd:
+        return command.replace("backend/tests/", "tests/")
+    return command
