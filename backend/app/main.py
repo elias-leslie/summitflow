@@ -18,7 +18,7 @@ from .api import (
     auto_fix,
     autonomous,
     backups,
-    celery_endpoints,
+
     checkpoints,
     console_errors,
     context,
@@ -79,7 +79,7 @@ app.add_middleware(
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
-app.include_router(celery_endpoints.router, tags=["celery"])
+
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])

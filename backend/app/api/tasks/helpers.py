@@ -191,16 +191,15 @@ async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: st
 
 
 def abort_running_task(task_id: str) -> None:
-    """Emergency stop - abort any running Celery tasks for this task.
+    """Emergency stop - cancel running Hatchet workflow for this task.
 
     Called when task is dragged out of running column (to cancelled/blocked).
     """
     try:
-        from ...services.celery_inspector import revoke_task_by_name
+        from ...hatchet_app import get_hatchet
 
-        revoke_task_by_name(f"autonomous.start_execution:{task_id}")
-        logger.info("Aborted running task", task_id=task_id)
-    except ImportError:
-        logger.debug("Celery inspector not available")
+        hatchet = get_hatchet()
+        hatchet.admin.cancel_workflows(task_id)
+        logger.info("Cancelled running workflow", task_id=task_id)
     except Exception as e:
-        logger.warning("Failed to abort running task", task_id=task_id, error=str(e))
+        logger.warning("Failed to cancel running workflow", task_id=task_id, error=str(e))
