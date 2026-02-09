@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
-VERIFY_COMMAND_TIMEOUT = 120
+VERIFY_COMMAND_TIMEOUT = 300
 
 
 def _parse_expected(expected: str | None) -> tuple[str, str | None]:

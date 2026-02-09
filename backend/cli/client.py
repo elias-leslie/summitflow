@@ -28,7 +28,7 @@ class STClient(
         self,
         base_url: str | None = None,
         project_id: str | None = None,
-        timeout: float = 150.0,  # Allow time for verify_command (120s) + API overhead
+        timeout: float = 330.0,  # Allow time for verify_command (300s) + API overhead
         require_project: bool = True,
     ) -> None:
         from .config import get_config, get_config_optional
