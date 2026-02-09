@@ -12,7 +12,7 @@ import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
 import { MockupStatsGrid, type StatusFilter } from '@/components/design/MockupStatsGrid'
 import { EmptyState, ErrorState, LoadingState } from '@/components/design/MockupStates'
-import { DesignStandardsPanel } from '@/components/explorer/DesignStandardsPanel'
+import { DesignStandardsPanel } from '@/components/explorer/design-standards'
 import {
   deleteMockup,
   fetchMockupStats,
