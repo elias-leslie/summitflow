@@ -125,29 +125,3 @@ class TestCreateHealthTask:
         mock_create.assert_called_once()
 
 
-class TestTaskScheduleConfig:
-    """Test that task schedules are configured correctly."""
-
-    def test_daily_scan_task_is_registered(self) -> None:
-        """Test daily_code_health_scan is registered as Celery task."""
-        from app.tasks.code_health import daily_code_health_scan
-
-        assert hasattr(daily_code_health_scan, "name")
-        assert daily_code_health_scan.name == "summitflow.daily_code_health_scan"
-
-    def test_weekly_scan_task_is_registered(self) -> None:
-        """Test weekly_deep_scan is registered as Celery task."""
-        from app.tasks.code_health import weekly_deep_scan
-
-        assert hasattr(weekly_deep_scan, "name")
-        assert weekly_deep_scan.name == "summitflow.weekly_deep_scan"
-
-    def test_tasks_in_beat_schedule(self) -> None:
-        """Test code health tasks are in Celery beat schedule."""
-        from app.celery_app import celery_app
-
-        schedule = celery_app.conf.beat_schedule
-        assert "daily-code-health-scan" in schedule
-        assert "weekly-deep-scan" in schedule
-        assert schedule["daily-code-health-scan"]["task"] == "summitflow.daily_code_health_scan"
-        assert schedule["weekly-deep-scan"]["task"] == "summitflow.weekly_deep_scan"

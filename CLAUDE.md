@@ -15,7 +15,7 @@ summitflow/
 │   │   ├── api/       # REST endpoints
 │   │   ├── services/  # Business logic
 │   │   ├── models/    # SQLAlchemy models
-│   │   └── celery/    # Background tasks (Celery + Redis)
+│   │   └── workflows/  # Background tasks (Hatchet workflows)
 │   └── tests/
 ├── frontend/          # Frontend (Next.js, port 3001)
 │   ├── app/           # Pages (App Router)

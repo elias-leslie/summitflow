@@ -24,12 +24,10 @@ app = typer.Typer(help="View and tail service logs")
 USER_SERVICES = {
     "summitflow": "summitflow-backend.service",
     "sf-frontend": "summitflow-frontend.service",
-    "sf-celery": "summitflow-celery.service",
-    "sf-beat": "summitflow-celery-beat.service",
+    "sf-worker": "summitflow-hatchet-worker.service",
     "agent-hub": "agent-hub-backend.service",
     "ah-frontend": "agent-hub-frontend.service",
-    "ah-celery": "agent-hub-celery.service",
-    "ah-beat": "agent-hub-celery-beat.service",
+    "ah-worker": "agent-hub-hatchet-worker.service",
     "terminal": "summitflow-terminal.service",
 }
 

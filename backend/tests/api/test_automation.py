@@ -103,16 +103,3 @@ class TestAutomationSettings:
         assert response.status_code == expected_status
 
 
-class TestCelerySchedule:
-    """Tests for Celery beat schedule registration (ac-012)."""
-
-    def test_celery_beat_schedule_exists(self):
-        """Test that Celery beat schedule is configured."""
-        from app.celery_app import celery_app
-
-        # Check that the schedule exists
-        beat_schedule = celery_app.conf.beat_schedule
-        assert beat_schedule is not None
-
-        # Check that schedules exist
-        assert len(beat_schedule) > 0, "No Celery beat schedules configured"

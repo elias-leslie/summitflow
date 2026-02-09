@@ -176,9 +176,10 @@ class TestImmediateExecution:
     """Tests for POST /api/projects/{id}/ideas/execute-now (ac-011)."""
 
     def test_immediate_execution(self, mocker: MockerFixture) -> None:
-        """Test immediate execution triggers the processing task."""
+        """Test immediate execution triggers the processing workflow."""
         mock_conn = mocker.patch("app.storage.ideas_repository.get_connection")
-        mock_process = mocker.patch("app.tasks.autonomous.ideas.process_crowdsourced_ideas")
+        mock_wf = mocker.patch("app.workflows.scheduled.process_ideas_wf")
+        mock_wf.aio_run_no_wait = mocker.AsyncMock()
         mocker.patch("app.api.ideas._last_execution", {})  # Clear throttle
         mock_cursor = mocker.MagicMock()
         mock_cursor.fetchone.return_value = ["test-project"]  # Project exists
@@ -186,17 +187,12 @@ class TestImmediateExecution:
             mock_cursor
         )
 
-        mock_task = mocker.MagicMock()
-        mock_task.id = "celery-task-123"
-        mock_process.delay.return_value = mock_task
-
         response = client.post("/api/projects/test-project/ideas/execute-now")
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "dispatched"
-        assert "task_id" in data
-        mock_process.delay.assert_called_once_with("test-project")
+        mock_wf.aio_run_no_wait.assert_called_once()
 
 
 class TestRefinementFlow:
