@@ -10,7 +10,11 @@ import subprocess
 from pathlib import Path
 
 from ..lib.worktree import get_worktree_info
-from .checkpoints_branch_ops import get_branch_unmerged_commits, get_orphaned_branches, get_task_branches
+from .checkpoints_branch_ops import (
+    get_branch_unmerged_commits,
+    get_orphaned_branches,
+    get_task_branches,
+)
 
 
 def auto_cleanup_safe_items() -> tuple[int, int, int, list[dict]]:
