@@ -159,3 +159,40 @@ def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]
         "total_files_modified": list(set(all_files)),
         "key_decisions": all_decisions,
     }
+
+
+def get_subtask_summary(task_id: str) -> dict[str, Any]:
+    """Get summary of subtask completion for a task.
+
+    Returns:
+        Dict with keys:
+            - total: Total number of subtasks
+            - completed: Number of subtasks with passes=True
+            - next_subtask_id: ID of next incomplete subtask, or None
+            - progress_percent: Completion percentage (0-100)
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE passes = TRUE) as completed,
+                MIN(subtask_id) FILTER (WHERE passes = FALSE) as next_subtask_id
+            FROM task_subtasks
+            WHERE task_id = %s
+            """,
+            (task_id,),
+        )
+        row = cur.fetchone()
+
+    total = row[0] if row else 0
+    completed = row[1] if row else 0
+    next_subtask_id = row[2] if row else None
+    progress_percent = round((completed / total * 100) if total > 0 else 0, 1)
+
+    return {
+        "total": total,
+        "completed": completed,
+        "next_subtask_id": next_subtask_id,
+        "progress_percent": progress_percent,
+    }

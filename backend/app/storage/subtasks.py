@@ -74,14 +74,14 @@ def update_subtask_passes(
 
 def delete_subtasks_for_task(task_id: str) -> int:
     """Delete all subtasks for a task."""
-    from .subtasks_crud import delete_subtasks_for_task as _delete
+    from .subtasks_deletion import delete_subtasks_for_task as _delete
 
     return _delete(task_id)
 
 
 def delete_subtask(task_id: str, subtask_id: str) -> bool:
     """Delete a single subtask and its steps."""
-    from .subtasks_crud import delete_subtask as _delete
+    from .subtasks_deletion import delete_subtask as _delete
 
     return _delete(task_id, subtask_id)
 
@@ -91,14 +91,14 @@ def bulk_create_subtasks(
     subtasks: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Create multiple subtasks for a task in a single transaction."""
-    from .subtasks_crud import bulk_create_subtasks as _bulk_create
+    from .subtasks_bulk import bulk_create_subtasks as _bulk_create
 
     return _bulk_create(task_id, subtasks)
 
 
 def get_subtask_summary(task_id: str) -> dict[str, Any]:
     """Get summary of subtask completion for a task."""
-    from .subtasks_crud import get_subtask_summary as _get_summary
+    from .subtasks_summaries import get_subtask_summary as _get_summary
 
     return _get_summary(task_id)
 
