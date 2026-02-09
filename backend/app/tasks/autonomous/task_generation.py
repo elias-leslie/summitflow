@@ -117,7 +117,7 @@ def _process_refactor_target(
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results (skips existing)."""
     try:
-        result = get_refactor_targets(project_id, limit=20)
+        result = get_refactor_targets(project_id, limit=30)
         targets = result.get("targets", [])
         created = 0
         scanned = 0
@@ -153,7 +153,7 @@ def regenerate_refactor_tasks_sync(project_id: str) -> dict[str, Any]:
         }
 
     deleted_count = _delete_existing_refactor_tasks(project_id)
-    result = get_refactor_targets(project_id, limit=20)
+    result = get_refactor_targets(project_id, limit=30)
     targets = result.get("targets", [])
     created = 0
     scanned = 0
