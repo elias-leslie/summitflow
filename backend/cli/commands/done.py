@@ -2,6 +2,9 @@
 
 Checkpoint-aware completion for tasks and subtasks.
 Merges git branches and cleans up DB snapshots.
+
+Smart default: auto-verifies steps, auto-closes subtasks, stash-merge-pop.
+Use --strict for old gate-check-only behavior.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from ..lib.checkpoint import (
     merge_task_branch,
     remove_snapshot,
 )
-from ..output import output_error, output_success
+from ..output import output_error, output_success, output_warning
 
 app = typer.Typer(help="Complete task or subtask work")
 
@@ -64,6 +67,57 @@ def _is_working_tree_clean(path: str | None = None) -> bool:
         return False
 
 
+def _git_stash_push() -> bool:
+    """Stash uncommitted changes on main for merge.
+
+    Returns:
+        True if a stash entry was created, False if nothing to stash.
+    """
+    try:
+        # Count stash entries before
+        before = subprocess.run(
+            ["git", "stash", "list"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        before_count = len(before.stdout.strip().splitlines()) if before.stdout.strip() else 0
+
+        subprocess.run(
+            ["git", "stash", "push", "-m", "st-done-auto"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        # Count stash entries after to detect if stash was created
+        after = subprocess.run(
+            ["git", "stash", "list"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        after_count = len(after.stdout.strip().splitlines()) if after.stdout.strip() else 0
+
+        return after_count > before_count
+    except subprocess.CalledProcessError as e:
+        output_warning(f"git stash push failed: {e.stderr}")
+        return False
+
+
+def _git_stash_pop() -> None:
+    """Pop the most recent stash entry."""
+    try:
+        subprocess.run(
+            ["git", "stash", "pop"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        output_warning(f"git stash pop failed (manual resolve may be needed): {e.stderr}")
+
+
 def _parse_db_error(detail: Any) -> str | None:
     """Parse DB trigger error messages into helpful guidance."""
     if not isinstance(detail, (str, dict)):
@@ -87,6 +141,93 @@ def _parse_db_error(detail: Any) -> str | None:
         return "Cannot complete task: Some subtasks incomplete. Run: st subtask list <task-id>"
 
     return None
+
+
+def _auto_close_subtasks(
+    client: STClient,
+    task_id: str,
+    project_id: str | None,
+) -> None:
+    """Auto-verify steps, acknowledge citations, and close unpassed subtasks.
+
+    For each subtask not yet passed:
+    1. Verify unpassed steps via API (server-side verify_command execution)
+    2. Acknowledge citations if not already done
+    3. Close the subtask and merge its branch
+
+    Aborts immediately if any step verification fails.
+    """
+    subtasks_resp = client.get_subtasks(task_id, include_steps=True)
+    subtasks = subtasks_resp.get("subtasks", [])
+
+    for subtask in subtasks:
+        subtask_id = subtask.get("subtask_id") or subtask.get("id")
+        if not subtask_id:
+            continue
+
+        # Skip already-passed subtasks
+        if subtask.get("passes") is True:
+            continue
+
+        # Get steps for this subtask
+        steps = subtask.get("steps") or client.get_steps(task_id, subtask_id)
+
+        # Verify unpassed steps
+        for step in steps:
+            step_number = step.get("step_number")
+            if step_number is None:
+                continue
+
+            # Skip already-passed steps
+            if step.get("passes") is True:
+                continue
+
+            # Skip plan_defect steps (they have fix steps)
+            if step.get("status") == "plan_defect":
+                continue
+
+            # Verify via API (triggers server-side verify_command)
+            try:
+                result = client.update_step(task_id, subtask_id, step_number, passes=True)
+                if result.get("passes") is False:
+                    output_error(
+                        f"Step {subtask_id}#{step_number} verification failed. Aborting."
+                    )
+                    raise typer.Exit(1)
+            except APIError as e:
+                output_error(
+                    f"Step {subtask_id}#{step_number} failed: {e.detail}"
+                )
+                raise typer.Exit(1) from None
+
+        # Acknowledge citations if not already done
+        citations_status = subtask.get("citations_status") or subtask.get("citations_acknowledged")
+        if not citations_status:
+            try:
+                client.acknowledge_no_citations(task_id, subtask_id)
+            except APIError:
+                pass  # Non-fatal — citations may already be acknowledged
+
+        # Close subtask via API
+        try:
+            client.update_subtask(task_id, subtask_id, passes=True)
+        except APIError as e:
+            detail: dict[str, Any] = (
+                e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+            )
+            helpful = _parse_db_error(detail)
+            if helpful:
+                output_error(helpful)
+            else:
+                output_error(f"Failed to close subtask {subtask_id}: {e.detail}")
+            raise typer.Exit(1) from None
+
+        # Merge subtask branch
+        try:
+            merge_subtask_branch(task_id, subtask_id, project_id=project_id)
+        except SystemExit:
+            output_error(f"Subtask {subtask_id} merge failed. Resolve conflicts manually.")
+            raise typer.Exit(1) from None
 
 
 def _complete_subtask(
@@ -144,10 +285,15 @@ def _complete_task(
     client: STClient,
     task_id: str,
     message: str | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Complete a task with branch merge and snapshot cleanup.
 
-    DB triggers verify all subtasks passed and QA signoff.
+    Default (smart): auto-verifies unpassed steps, auto-closes subtasks,
+    stashes dirty main for merge then pops.
+
+    With strict=True: old behavior — fails if any gate not already passed,
+    fails if main is dirty.
     """
     # Check for existing checkpoint FIRST (need worktree path for clean check)
     snapshot_info = get_snapshot_info(task_id)
@@ -166,60 +312,74 @@ def _complete_task(
         )
         raise typer.Exit(1)
 
-    # Also check main repo - st done runs from main and needs it clean for merge
-    if not _is_working_tree_clean():
-        output_error(
-            "Main repo has uncommitted changes.\nCommit or stash first before completing task."
-        )
-        raise typer.Exit(1)
-
     # Get project_id from snapshot for per-project worktree paths
     raw_pid = snapshot_info.get("project_id")
     project_id: str | None = str(raw_pid) if raw_pid is not None else None
 
-    # Pre-validate completion gates BEFORE merging (fail fast, avoid half-done state)
-    try:
-        readiness = client.get(client._global_url(f"/tasks/{task_id}/completion-readiness"))
-        if not readiness.get("ready"):
-            for g in readiness.get("gates", []):
-                gate_name = g["gate"]
-                if gate_name == "zero_steps":
-                    output_error(
-                        "Cannot complete: Task has no steps. Create subtasks with steps first."
-                    )
-                elif gate_name == "subtasks":
-                    output_error(f"Cannot complete: Incomplete subtasks: {g['detail']}")
-                elif gate_name == "steps":
-                    output_error(f"Cannot complete: Unverified steps: {g['detail']}")
+    # Handle dirty main: stash (smart) or error (strict)
+    main_dirty = not _is_working_tree_clean()
+    stashed = False
+    if main_dirty:
+        if strict:
+            output_error(
+                "Main repo has uncommitted changes.\nCommit or stash first before completing task."
+            )
             raise typer.Exit(1)
-    except APIError as e:
-        output_error(f"Pre-validation failed: {e.detail}")
-        raise typer.Exit(1) from None
+        stashed = _git_stash_push()
 
-    # Merge task branch — only reached if completion gates will pass
     try:
-        merge_task_branch(task_id, project_id=project_id)
-    except SystemExit:
-        output_error("Merge failed. Resolve conflicts manually, then retry.")
-        raise typer.Exit(1) from None
+        # Smart mode: auto-verify and auto-close unpassed subtasks
+        if not strict:
+            _auto_close_subtasks(client, task_id, project_id)
 
-    # Mark task as completed via API (gates verify all subtasks passed)
-    # Runs AFTER merge so if gates fail, code is merged but task stays "running" (recoverable)
-    try:
-        client.update_status(task_id, "completed")
-    except APIError as e:
-        detail: dict[str, Any] = (
-            e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
-        )
-        helpful = _parse_db_error(detail)
-        if helpful:
-            output_error(helpful)
-        else:
-            output_error(f"Failed to complete task: {e.detail}")
-        raise typer.Exit(1) from None
+        # Pre-validate completion gates BEFORE merging (fail fast, avoid half-done state)
+        try:
+            readiness = client.get(client._global_url(f"/tasks/{task_id}/completion-readiness"))
+            if not readiness.get("ready"):
+                for g in readiness.get("gates", []):
+                    gate_name = g["gate"]
+                    if gate_name == "zero_steps":
+                        output_error(
+                            "Cannot complete: Task has no steps. Create subtasks with steps first."
+                        )
+                    elif gate_name == "subtasks":
+                        output_error(f"Cannot complete: Incomplete subtasks: {g['detail']}")
+                    elif gate_name == "steps":
+                        output_error(f"Cannot complete: Unverified steps: {g['detail']}")
+                raise typer.Exit(1)
+        except APIError as e:
+            output_error(f"Pre-validation failed: {e.detail}")
+            raise typer.Exit(1) from None
 
-    # Remove snapshot after successful merge + status update
-    remove_snapshot(task_id, project_id=project_id)
+        # Merge task branch — only reached if completion gates will pass
+        try:
+            merge_task_branch(task_id, project_id=project_id)
+        except SystemExit:
+            output_error("Merge failed. Resolve conflicts manually, then retry.")
+            raise typer.Exit(1) from None
+
+        # Mark task as completed via API (gates verify all subtasks passed)
+        # Runs AFTER merge so if gates fail, code is merged but task stays "running" (recoverable)
+        try:
+            client.update_status(task_id, "completed")
+        except APIError as e:
+            detail: dict[str, Any] = (
+                e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+            )
+            helpful = _parse_db_error(detail)
+            if helpful:
+                output_error(helpful)
+            else:
+                output_error(f"Failed to complete task: {e.detail}")
+            raise typer.Exit(1) from None
+
+        # Remove snapshot after successful merge + status update
+        remove_snapshot(task_id, project_id=project_id)
+
+    finally:
+        # Always pop stash if we stashed, even on failure
+        if stashed:
+            _git_stash_pop()
 
     return {
         "task_id": task_id,
@@ -240,18 +400,23 @@ def done_command(
         str | None,
         typer.Option("--message", "-m", help="Completion message"),
     ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Strict mode: fail on unpassed gates (old behavior)"),
+    ] = False,
 ) -> None:
     """Complete a task or subtask.
 
     For subtasks: Verifies all steps passed (via DB trigger), merges branch.
-    For tasks: Verifies all subtasks done (via DB trigger), merges branches, removes checkpoint.
+    For tasks: Auto-verifies steps, closes subtasks, merges branches, removes checkpoint.
 
-    This creates a clean merge point and cleans up the checkpoint artifacts.
+    Smart default: auto-closes unpassed gates, stashes dirty main for merge.
+    Use --strict for old behavior that errors on unpassed gates.
 
     Examples:
-        st done 1.1 -t task-abc123   # Complete subtask 1.1
-        st done 1.1                   # Uses active context
-        st done task-abc123           # Complete entire task
+        st done task-abc123           # Smart: auto-verify + merge + cleanup
+        st done task-abc123 --strict  # Old: fail if gates not pre-passed
+        st done 1.1 -t task-abc123   # Complete subtask 1.1 (unchanged)
     """
     from ..context import require_task_id
 
@@ -264,6 +429,6 @@ def done_command(
         _complete_subtask(client, id, resolved_task_id, message)
         output_success(f"Subtask {id} completed. Branch merged.")
     else:
-        _complete_task(client, id, message)
+        _complete_task(client, id, message, strict=strict)
         output_success(f"Task {id} completed. Checkpoint removed.")
         typer.echo(f"  Merged to: {get_snapshot_info(id) or 'main'}")
