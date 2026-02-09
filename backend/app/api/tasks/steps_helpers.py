@@ -42,7 +42,7 @@ def get_verification_cwd(project_id: str, task_id: str) -> str | None:
 
     # Check if worktree exists for this task
     if task_id:
-        worktree_info = get_worktree_info(task_id)
+        worktree_info = get_worktree_info(task_id, project_id)
         if worktree_info and worktree_info.path.exists():
             return str(worktree_info.path)
 

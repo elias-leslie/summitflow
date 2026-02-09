@@ -49,7 +49,7 @@ FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty 
        Default output: compact TOON format. Use --no-compact for raw JSON.
 
 WORKFLOW: ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
-          Alternative: abandon <id> to rollback
+          Alternative: abandon <id> --discard to rollback
 
 TASKS:
   create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]
@@ -63,14 +63,13 @@ TASKS:
   verify <plan.json>                       # validate plan file against schema
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
-CHECKPOINT (claim -> done | close | abandon):
+CHECKPOINT (claim -> done | abandon):
   claim <id> [--force]                     # claim task, create checkpoint (DB+git)
   claim <subtask> -t <task>                # claim subtask, create branch
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
-  close <task> [--force]                   # complete task (code-only), delete branches, no merge
   abandon <subtask> -t <task>              # abandon subtask, delete branch
-  abandon <task> [--force]                 # abandon task, restore DB, delete branches
+  abandon <task> [--force] [--discard]     # abandon task, delete branches (--discard if unmerged)
   checkpoints [-p project] [-d task]       # show active checkpoints (auto-cleans stale)
 
 SUBTASK:

@@ -72,7 +72,7 @@ def _parse_db_error(detail: Any) -> str | None:
     msg = str(detail).lower() if isinstance(detail, str) else str(detail.get("detail", "")).lower()
 
     if "zero steps" in msg or ("steps" in msg and "zero" in msg):
-        return "Cannot complete: Task has no steps. Create subtasks with steps, or use 'st close' for manual completion."
+        return "Cannot complete: Task has no steps. Create subtasks with steps first."
 
     if "steps" in msg and ("incomplete" in msg or "not verified" in msg):
         return "Cannot complete: Some steps not verified. Run: st step pass <subtask> <step>"
@@ -106,7 +106,8 @@ def _complete_subtask(
 
     # Get project_id from snapshot for per-project worktree paths
     snapshot_info = get_snapshot_info(task_id)
-    project_id = snapshot_info.get("project_id") if snapshot_info else None
+    raw_pid = snapshot_info.get("project_id") if snapshot_info else None
+    project_id: str | None = str(raw_pid) if raw_pid is not None else None
 
     # Mark subtask as passed via API (DB triggers verify steps)
     try:
@@ -155,7 +156,8 @@ def _complete_task(
         raise typer.Exit(1)
 
     # Check working tree is clean - check WORKTREE, not main repo
-    worktree_path = snapshot_info.get("worktree_path")
+    raw_wt = snapshot_info.get("worktree_path")
+    worktree_path: str | None = str(raw_wt) if raw_wt is not None else None
     if worktree_path and not _is_working_tree_clean(worktree_path):
         output_error(
             f"Worktree has uncommitted changes.\n"
@@ -172,7 +174,8 @@ def _complete_task(
         raise typer.Exit(1)
 
     # Get project_id from snapshot for per-project worktree paths
-    project_id = snapshot_info.get("project_id") if snapshot_info else None
+    raw_pid = snapshot_info.get("project_id")
+    project_id: str | None = str(raw_pid) if raw_pid is not None else None
 
     # Pre-validate completion gates BEFORE merging (fail fast, avoid half-done state)
     try:

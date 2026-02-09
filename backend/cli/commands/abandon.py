@@ -28,6 +28,23 @@ from ..output import output_error, output_success
 app = typer.Typer(help="Abandon task or subtask work and rollback")
 
 
+def _count_unmerged_commits(task_id: str) -> int:
+    """Count commits on task branch that are not in main/master."""
+    branch_name = f"{task_id}/main"
+    for base in ("main", "master"):
+        try:
+            result = subprocess.run(
+                ["git", "rev-list", "--count", f"{base}..{branch_name}"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            continue
+    return 0
+
+
 def _is_subtask_id(id_str: str) -> bool:
     """Check if the ID looks like a subtask (e.g., 1.1, 2.3)."""
     if "." not in id_str:
@@ -107,6 +124,7 @@ def _abandon_task(
     client: STClient,
     task_id: str,
     force: bool = False,
+    discard: bool = False,
     reason: str | None = None,
 ) -> dict[str, Any]:
     """Abandon a task - mark as abandoned and delete git branches.
@@ -117,6 +135,16 @@ def _abandon_task(
     # Check for existing checkpoint
     snapshot_info = get_snapshot_info(task_id)
     has_snapshot = snapshot_info is not None
+
+    # Safety check: warn about unmerged commits
+    unmerged = _count_unmerged_commits(task_id)
+    if unmerged > 0 and not discard:
+        output_error(
+            f"DESTRUCTIVE: Branch {task_id}/main has {unmerged} commits not in main.\n"
+            f"  Proceeding will permanently delete this work.\n"
+            f"  Use --discard to confirm, or `st done {task_id}` to merge first."
+        )
+        raise typer.Exit(1)
 
     # Check for active subtask branches
     subtask_branches = _get_subtask_branches(task_id)
@@ -134,8 +162,10 @@ def _abandon_task(
         typer.echo(f"  - Delete task branch: {task_id}/main")
         if subtask_branches:
             typer.echo(f"  - Delete {len(subtask_branches)} subtask branches")
-        if has_snapshot:
+        if has_snapshot and snapshot_info:
             typer.echo(f"  - Remove snapshot file ({snapshot_info.get('size', '?')})")
+        if unmerged > 0:
+            typer.echo(f"  - DISCARD {unmerged} unmerged commits")
         typer.echo("")
         typer.echo("NOTE: Database will NOT be restored (append-only task metadata).")
         typer.echo("")
@@ -151,7 +181,8 @@ def _abandon_task(
         typer.echo(f"Warning: Could not update task status: {e.detail}", err=True)
 
     # Get project_id from snapshot for per-project worktree paths
-    project_id = snapshot_info.get("project_id") if snapshot_info else None
+    raw_pid = snapshot_info.get("project_id") if snapshot_info else None
+    project_id: str | None = str(raw_pid) if raw_pid is not None else None
 
     # Remove worktree FIRST (so branches aren't "in use" by worktree)
     if has_snapshot:
@@ -180,6 +211,10 @@ def abandon_command(
         bool,
         typer.Option("--force", "-f", help="Skip confirmation (for task-level abandon)"),
     ] = False,
+    discard: Annotated[
+        bool,
+        typer.Option("--discard", help="Confirm deletion of unmerged commits"),
+    ] = False,
     reason: Annotated[
         str | None,
         typer.Option("--reason", "-r", help="Reason for abandonment"),
@@ -190,15 +225,19 @@ def abandon_command(
     For subtasks: Deletes git branch only.
     For tasks: Marks as 'abandoned', deletes all branches.
 
+    If the task branch has unmerged commits, --discard is required to confirm
+    you want to permanently delete that work. Use 'st done' to merge first.
+
     SAFE: Database is NOT restored. This uses append-only task metadata,
     preventing data loss when other tasks were created after this task's
     checkpoint was taken.
 
     Examples:
-        st abandon 1.1 -t task-abc123    # Abandon subtask (delete branch)
-        st abandon 1.1                    # Uses active context
-        st abandon task-abc123            # Abandon task (interactive)
-        st abandon task-abc123 --force    # Abandon task (skip confirmation)
+        st abandon 1.1 -t task-abc123          # Abandon subtask (delete branch)
+        st abandon task-abc123                  # Abandon task (interactive)
+        st abandon task-abc123 --force          # Skip confirmation
+        st abandon task-abc123 --discard        # Confirm discarding unmerged work
+        st abandon task-abc123 --discard --force  # Skip all prompts
     """
     from ..context import require_task_id
 
@@ -211,5 +250,5 @@ def abandon_command(
         _abandon_subtask(client, id, resolved_task_id, reason)
         output_success(f"Subtask {id} abandoned. Branch deleted.")
     else:
-        _abandon_task(client, id, force, reason)
+        _abandon_task(client, id, force, discard, reason)
         output_success(f"Task {id} abandoned. Branches deleted, status set to 'abandoned'.")

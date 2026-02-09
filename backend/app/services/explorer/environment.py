@@ -112,7 +112,7 @@ def get_cli_info(project_id: str) -> dict[str, Any]:
             "st context         # Show current task details",
             "st step pass <subtask> <N>  # Mark step as passed",
             "st subtask pass    # Mark subtask as passed",
-            "st close           # Close completed task",
+            "st done <task-id>  # Complete task (merge + cleanup)",
         ]
     elif project_id == "agent-hub":
         cli_info["common_commands"] = [
