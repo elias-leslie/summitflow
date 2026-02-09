@@ -58,7 +58,7 @@ show_status() {
     echo ""
     echo "Services:"
 
-    for svc in "$BACKEND_SERVICE" "$FRONTEND_SERVICE" "$CELERY_SERVICE" "$CELERY_BEAT_SERVICE" "$REDIS_SERVICE"; do
+    for svc in "$BACKEND_SERVICE" "$FRONTEND_SERVICE" "$CELERY_SERVICE" "$CELERY_BEAT_SERVICE" "$HATCHET_SERVICE" "$REDIS_SERVICE"; do
         if service_exists "$svc"; then
             local status=$(systemctl --user is-active "$svc" 2>/dev/null || echo "unknown")
             local icon="✗"

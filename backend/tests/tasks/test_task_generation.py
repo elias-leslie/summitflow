@@ -17,7 +17,7 @@ from app.tasks.autonomous.task_generation import (
 
 
 class TestGenerateTasksFromScan:
-    """Tests for generate_tasks_from_scan Celery task."""
+    """Tests for generate_tasks_from_scan task."""
 
     @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
     def test_empty_targets_returns_zero_counts(self, mock_get_targets: MagicMock):
@@ -91,7 +91,7 @@ class TestGenerateTasksFromScan:
 
 
 class TestCleanupStaleTasks:
-    """Tests for cleanup_stale_tasks Celery task."""
+    """Tests for cleanup_stale_tasks task."""
 
     @patch("app.storage.tasks.get_stale_tasks")
     def test_no_stale_tasks_returns_zero_counts(self, mock_get_stale: MagicMock):

@@ -9,7 +9,7 @@ from app.tasks.autonomous.planning import create_plan
 
 
 class TestCreatePlan:
-    """Test create_plan Celery task."""
+    """Test create_plan task."""
 
     def test_planning_module_exists(self) -> None:
         """Verify planning module is properly structured."""

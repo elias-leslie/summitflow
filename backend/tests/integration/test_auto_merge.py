@@ -9,7 +9,7 @@ from app.tasks.autonomous.review import ai_review
 
 
 class TestAIReview:
-    """Test AI review Celery task."""
+    """Test AI review task."""
 
     def test_review_module_exists(self) -> None:
         """Verify review module is properly structured."""

@@ -9,7 +9,7 @@ from app.tasks.autonomous.triage import triage_idea
 
 
 class TestTriageIdea:
-    """Test triage_idea Celery task."""
+    """Test triage_idea task."""
 
     def test_triage_module_exists(self) -> None:
         """Verify triage module is properly structured."""

@@ -170,7 +170,7 @@ class TestVerifyStepCompletion:
 
 
 class TestReviewPullRequest:
-    """Tests for review_pull_request Celery task."""
+    """Tests for review_pull_request task."""
 
     @patch("app.tasks.ai_review.task_store")
     def test_task_not_found(self, mock_store: MagicMock) -> None:
@@ -443,5 +443,5 @@ class TestEscalationToHumanReview:
         mock_verify_criteria.return_value = {"status": "pass"}
 
         # Note: We can't easily test the retry mechanism here without
-        # a full Celery test setup. This tests the error check detection.
+        # a full workflow test setup. This tests the error check detection.
         # The actual retry/escalation is integration-tested separately.

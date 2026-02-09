@@ -1,4 +1,4 @@
-"""Unit tests for self-healing Celery tasks.
+"""Unit tests for self-healing tasks.
 
 Tests the scheduled monitoring task and rate limiting.
 """
@@ -16,7 +16,7 @@ from app.tasks.self_healing import (
 
 
 class TestMonitorSystemdErrors:
-    """Tests for the monitor_systemd_errors Celery task."""
+    """Tests for the monitor_systemd_errors task."""
 
     @patch("app.tasks.self_healing.create_error_task")
     @patch("app.tasks.self_healing.SystemdMonitor")

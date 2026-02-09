@@ -294,7 +294,7 @@ def tail(
         typer.Option(
             "--service",
             "-s",
-            help="Filter by service (summitflow,agent-hub,celery,redis,postgres,neo4j,all)",
+            help="Filter by service (summitflow,agent-hub,redis,postgres,neo4j,all)",
         ),
     ] = None,
     level: Annotated[
@@ -334,7 +334,7 @@ def tail(
     Examples:
         st logs tail
         st logs tail --service summitflow
-        st logs tail -s agent-hub,celery --level ERROR
+        st logs tail -s agent-hub --level ERROR
         st logs tail --since "1 hour ago" --lines 200
         st logs tail -f  # Follow mode
     """
