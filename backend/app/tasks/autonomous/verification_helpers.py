@@ -5,6 +5,7 @@ Provides command expansion, output parsing, and file detection utilities.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -17,14 +18,51 @@ COMMAND_ALIASES: dict[str, str] = {
     # No expansion needed since dt is in PATH (~/.local/bin/dt)
 }
 
+# Regex patterns for .venv path stripping.
+# Matches: .venv/bin/X, backend/.venv/bin/X
+_VENV_BIN_PATTERN = re.compile(r"(?:backend/)?\.venv/bin/")
+# Matches: source .venv/bin/activate &&, source backend/.venv/bin/activate &&
+# Also: . .venv/bin/activate &&
+_SOURCE_ACTIVATE_PATTERN = re.compile(
+    r"(?:source|\.)\s+(?:backend/)?\.venv/bin/activate\s*&&\s*"
+)
+
+
+def strip_venv_paths(cmd: str) -> str:
+    """Strip .venv/bin/ prefixes from commands.
+
+    Since build_project_env() puts the correct venv on PATH, relative
+    .venv/bin/X paths are unnecessary and fail in worktrees where .venv
+    doesn't exist. This rewrites them to bare binary names.
+
+    Handles:
+        .venv/bin/ruff check app/     -> ruff check app/
+        backend/.venv/bin/pytest ...  -> pytest ...
+        cd backend && .venv/bin/mypy  -> cd backend && mypy
+        source .venv/bin/activate &&  -> (removed entirely)
+    """
+    if ".venv" not in cmd:
+        return cmd
+
+    # First remove "source .venv/bin/activate &&" patterns
+    cmd = _SOURCE_ACTIVATE_PATTERN.sub("", cmd)
+
+    # Then strip .venv/bin/ and backend/.venv/bin/ prefixes
+    cmd = _VENV_BIN_PATTERN.sub("", cmd)
+
+    return cmd
+
 
 def expand_command(cmd: str) -> str:
-    """Expand command aliases to full commands."""
+    """Expand command aliases and strip .venv paths."""
     for alias, expansion in COMMAND_ALIASES.items():
         if cmd.strip().startswith(alias):
             remainder = cmd.strip()[len(alias) :].strip()
-            return f"{expansion} {remainder}".strip()
-    return cmd
+            cmd = f"{expansion} {remainder}".strip()
+            break
+
+    # Always strip .venv paths — venv is on PATH via build_project_env()
+    return strip_venv_paths(cmd)
 
 
 def parse_expected(expected: str | None) -> tuple[str, str | None]:

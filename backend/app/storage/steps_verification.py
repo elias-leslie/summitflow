@@ -74,6 +74,7 @@ def run_verify_command(
         - 'crashed': Exit code 126-127 or exception
     """
     from .projects import build_project_env
+    from ..tasks.autonomous.verification_helpers import strip_venv_paths
 
     if not cwd:
         raise ValueError(
@@ -82,6 +83,7 @@ def run_verify_command(
         )
     working_dir = cwd
     env = build_project_env(project_id)
+    verify_command = strip_venv_paths(verify_command)
 
     try:
         result = subprocess.run(
