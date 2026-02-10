@@ -1,0 +1,194 @@
+"""Tasks API - Subtask helper functions.
+
+Shared logic for subtask endpoints to reduce duplication.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import HTTPException
+
+from ...schemas.tasks import SubtaskCreate, SubtaskResponse, SubtaskUpdate
+
+
+def convert_steps_to_storage_format(steps: list[Any]) -> list[str | dict[str, Any]]:
+    """Convert StepInput objects to dicts for storage layer.
+
+    Args:
+        steps: List of steps (strings or StepInput objects)
+
+    Returns:
+        List of steps in storage format (strings or dicts)
+    """
+    result: list[str | dict[str, Any]] = []
+    for step in steps:
+        if isinstance(step, str):
+            result.append(step)
+        else:
+            step_dict: dict[str, Any] = {"description": step.description}
+            if step.spec:
+                step_dict["spec"] = step.spec
+            if step.verify_command:
+                step_dict["verify_command"] = step.verify_command
+            if step.expected_output:
+                step_dict["expected_output"] = step.expected_output
+            result.append(step_dict)
+    return result
+
+
+def convert_steps_to_response_format(subtask: dict[str, Any]) -> dict[str, Any]:
+    """Convert subtask steps from storage format to response format.
+
+    Args:
+        subtask: Subtask dict from storage layer
+
+    Returns:
+        Subtask dict with steps in response format
+    """
+    if subtask.get("steps") and isinstance(subtask["steps"][0], dict):
+        subtask["steps"] = [s["description"] for s in subtask["steps"]]
+    elif "steps" not in subtask:
+        subtask["steps"] = []
+    return subtask
+
+
+def ensure_steps_field(subtask: dict[str, Any]) -> dict[str, Any]:
+    """Ensure subtask dict has a steps field.
+
+    Args:
+        subtask: Subtask dict
+
+    Returns:
+        Subtask dict with steps field
+    """
+    if "steps" not in subtask:
+        subtask["steps"] = []
+    return subtask
+
+
+def get_subtasks_with_summary(task_id: str, include_steps: bool) -> dict[str, Any]:
+    """Get subtasks and summary for a task.
+
+    Args:
+        task_id: Task ID
+        include_steps: If True, include steps for each subtask
+
+    Returns:
+        Dict with subtasks list and summary
+    """
+    from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
+
+    subtasks = get_subtasks_for_task(task_id, include_steps=include_steps)
+    summary = get_subtask_summary(task_id)
+
+    return {
+        "subtasks": subtasks,
+        "summary": summary,
+    }
+
+
+def update_subtask_logic(
+    task_id: str,
+    subtask_id: str,
+    request: SubtaskUpdate,
+) -> SubtaskResponse:
+    """Update a subtask's passes status.
+
+    Args:
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "1.1")
+        request: Update with passes boolean
+
+    Returns:
+        Updated SubtaskResponse
+
+    Raises:
+        HTTPException: If subtask not found or gate conditions not met
+    """
+    from ...storage.subtasks import SubtaskGateError, update_subtask_passes
+
+    try:
+        updated = update_subtask_passes(task_id, subtask_id, request.passes)
+    except SubtaskGateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(e),
+                "incomplete_steps": e.incomplete_steps,
+            },
+        ) from e
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subtask {subtask_id} not found for task {task_id}",
+        )
+
+    ensure_steps_field(updated)
+    return SubtaskResponse(**updated)
+
+
+def create_subtask_logic(
+    task_id: str,
+    request: SubtaskCreate,
+) -> SubtaskResponse:
+    """Create a single subtask for a task.
+
+    Args:
+        task_id: Task ID
+        request: Subtask creation data
+
+    Returns:
+        Created SubtaskResponse
+    """
+    from ...storage.subtasks import create_subtask
+
+    steps = convert_steps_to_storage_format(request.steps)
+
+    subtask = create_subtask(
+        task_id=task_id,
+        subtask_id=request.subtask_id,
+        description=request.description,
+        display_order=request.display_order,
+        phase=request.phase,
+        steps=steps,
+    )
+
+    convert_steps_to_response_format(subtask)
+    return SubtaskResponse(**subtask)
+
+
+def delete_subtask_logic(
+    project_id: str,
+    task_id: str,
+    subtask_id: str,
+) -> dict[str, Any]:
+    """Delete a subtask and all its steps.
+
+    Args:
+        project_id: Project ID
+        task_id: Task ID
+        subtask_id: Subtask ID (e.g., "99.1")
+
+    Returns:
+        Deletion confirmation with details
+
+    Raises:
+        HTTPException: If subtask not found
+    """
+    from ...storage.subtasks import delete_subtask
+
+    deleted = delete_subtask(task_id, subtask_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subtask {subtask_id} not found for task {task_id}",
+        )
+
+    return {
+        "status": "deleted",
+        "project_id": project_id,
+        "task_id": task_id,
+        "subtask_id": subtask_id,
+    }
