@@ -12,313 +12,126 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections import defaultdict
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
-from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..services.pubsub import subscribe_ws_events
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
+# Re-export for backward compatibility
+from .ws_execution_manager import (
+    ConnectionManager,
+    get_chat_handler,
+    get_stop_handler,
+    manager,
+    register_chat_handler,
+    register_stop_handler,
+    unregister_chat_handler,
+    unregister_stop_handler,
+)
+from .ws_execution_types import Message, MessageType
+
+__all__ = [
+    "ConnectionManager",
+    "Message",
+    "MessageType",
+    "manager",
+    "register_chat_handler",
+    "register_stop_handler",
+    "router",
+    "send_error",
+    "send_log",
+    "send_model_change",
+    "send_progress",
+    "unregister_chat_handler",
+    "unregister_stop_handler",
+]
 
 router = APIRouter()
 
 
-class MessageType(StrEnum):
-    """WebSocket message types."""
+async def _validate_task(websocket: WebSocket, task_id: str) -> bool:
+    """Validate that the task exists. Returns True if valid, False if invalid (and closes connection)."""
+    from ..storage import tasks as task_store
 
-    LOG = "log"
-    PROGRESS = "progress"
-    MODEL_CHANGE = "model_change"
-    CHAT_MESSAGE = "chat_message"
-    STOP_SIGNAL = "stop_signal"
-    CONNECTED = "connected"
-    ERROR = "error"
+    task = task_store.get_task(task_id)
+    if task:
+        return True
 
-
-@dataclass
-class Message:
-    """A message in the execution stream."""
-
-    type: MessageType
-    task_id: str
-    data: dict[str, object]
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    sequence: int = 0
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "type": self.type.value,
-            "task_id": self.task_id,
-            "data": self.data,
-            "timestamp": self.timestamp.isoformat(),
-            "sequence": self.sequence,
-        }
+    await websocket.accept()
+    await websocket.send_json(
+        Message(type=MessageType.ERROR, task_id=task_id, data={"error": f"Task not found: {task_id}", "recoverable": False}).to_dict()
+    )
+    await websocket.close(code=1008, reason=f"Task not found: {task_id}")
+    return False
 
 
-class ConnectionManager:
-    """Manages WebSocket connections for execution streaming.
-
-    Features:
-    - Per-task subscriptions
-    - Ephemeral Redis cache for instant reconnect (last 100 messages)
-    - DB query for historical events on initial connect
-    - Broadcast to all subscribers of a task
-    """
-
-    # Maximum messages to keep in ephemeral cache (performance optimization)
-    MAX_REPLAY_MESSAGES = 100
-
-    def __init__(self) -> None:
-        # task_id -> list of WebSocket connections
-        self._connections: dict[str, list[WebSocket]] = defaultdict(list)
-        # task_id -> ephemeral cache of recent messages (populated from live Redis stream)
-        self._redis_cache: dict[str, list[Message]] = defaultdict(list)
-        # task_id -> sequence counter
-        self._sequences: dict[str, int] = defaultdict(int)
-        # Lock for thread-safe operations
-        self._lock = asyncio.Lock()
-
-    async def connect(self, websocket: WebSocket, task_id: str) -> int:
-        """Accept a WebSocket connection and subscribe to task updates.
-
-        Returns the current sequence number for the task.
-        """
-        await websocket.accept()
-        async with self._lock:
-            self._connections[task_id].append(websocket)
-            return self._sequences[task_id]
-
-    async def disconnect(self, websocket: WebSocket, task_id: str) -> None:
-        """Remove a WebSocket connection from subscriptions."""
-        async with self._lock:
-            if websocket in self._connections[task_id]:
-                self._connections[task_id].remove(websocket)
-            # Clean up empty lists
-            if not self._connections[task_id]:
-                del self._connections[task_id]
-
-    async def broadcast(self, task_id: str, message: Message) -> None:
-        """Send a message to all subscribers of a task."""
-        async with self._lock:
-            # Assign sequence number
-            self._sequences[task_id] += 1
-            message.sequence = self._sequences[task_id]
-
-            # Add to ephemeral Redis cache (for instant reconnect)
-            cache = self._redis_cache[task_id]
-            cache.append(message)
-            # Trim to max size
-            if len(cache) > self.MAX_REPLAY_MESSAGES:
-                self._redis_cache[task_id] = cache[-self.MAX_REPLAY_MESSAGES :]
-
-        # Send to all connected clients
-        connections = self._connections.get(task_id, [])
-        disconnected = []
-        for websocket in connections:
-            try:
-                await websocket.send_json(message.to_dict())
-            except Exception:
-                disconnected.append(websocket)
-
-        # Clean up disconnected clients
-        for ws in disconnected:
-            await self.disconnect(ws, task_id)
-
-    async def replay(
-        self, websocket: WebSocket, task_id: str, from_sequence: int, trace_id: str | None = None
-    ) -> None:
-        """Replay missed messages to a reconnecting client.
-
-        Historical events are loaded via HTTP (useTimelineHistory hook) to avoid
-        duplicates. This method only replays from the ephemeral cache for very
-        recent messages that may not yet be queryable via the API.
-
-        Args:
-            websocket: The WebSocket to send messages to
-            task_id: The task to replay messages for
-            from_sequence: Send messages after this sequence number
-            trace_id: Trace ID (unused, kept for API compatibility)
-        """
-        async with self._lock:
-            cache = self._redis_cache.get(task_id, [])
-            messages_to_replay = [m for m in cache if m.sequence > from_sequence]
-
-        for message in messages_to_replay:
-            try:
-                await websocket.send_json(message.to_dict())
-            except Exception:
-                break
-
-    def get_connection_count(self, task_id: str) -> int:
-        """Get the number of active connections for a task."""
-        return len(self._connections.get(task_id, []))
+def _get_replay_sequence(websocket: WebSocket) -> int:
+    """Extract replay sequence from query params."""
+    if "from_sequence" not in websocket.query_params:
+        return 0
+    with contextlib.suppress(ValueError):
+        return int(websocket.query_params["from_sequence"])
+    return 0
 
 
-# Global connection manager instance
-manager = ConnectionManager()
+async def _forward_redis_events(task_id: str) -> None:
+    """Forward events from Redis to all connected clients via ConnectionManager."""
+    async for event in subscribe_ws_events(task_id):
+        try:
+            msg_type_str = event.get("type", "log")
+            msg_type = MessageType(msg_type_str) if msg_type_str in MessageType.__members__.values() else MessageType.LOG
+            await manager.broadcast(task_id, Message(type=msg_type, task_id=task_id, data=event.get("data", {})))
+        except Exception:
+            break
 
 
-# Callback registry for stop signals
-_stop_handlers: dict[str, Callable[[], None]] = {}
-
-# Callback registry for chat messages (receives dict with message data)
-_chat_handlers: dict[str, Callable[[dict[str, Any]], None]] = {}
-
-
-def register_stop_handler(task_id: str, handler: Callable[[], None]) -> None:
-    """Register a callback to be invoked when a stop signal is received."""
-    _stop_handlers[task_id] = handler
+async def _handle_stop_signal(task_id: str) -> None:
+    """Handle stop signal from client."""
+    handler = get_stop_handler(task_id)
+    if handler:
+        handler()
+    await manager.broadcast(task_id, Message(type=MessageType.STOP_SIGNAL, task_id=task_id, data={"source": "user"}))
 
 
-def unregister_stop_handler(task_id: str) -> None:
-    """Unregister a stop handler for a task."""
-    _stop_handlers.pop(task_id, None)
+async def _handle_chat_message(task_id: str, message_data: dict[str, object]) -> None:
+    """Handle chat message from client."""
+    handler = get_chat_handler(task_id)
+    if handler:
+        handler(message_data)
+    await manager.broadcast(task_id, Message(type=MessageType.CHAT_MESSAGE, task_id=task_id, data=message_data))
 
 
-def register_chat_handler(task_id: str, handler: Callable[[dict[str, Any]], None]) -> None:
-    """Register a callback to be invoked when a chat message is received.
-
-    Args:
-        task_id: Task ID to handle chat messages for
-        handler: Callback that receives the message data dict
-    """
-    _chat_handlers[task_id] = handler
-
-
-def unregister_chat_handler(task_id: str) -> None:
-    """Unregister a chat handler for a task."""
-    _chat_handlers.pop(task_id, None)
+async def _process_client_message(task_id: str, data: dict[str, object]) -> None:
+    """Process incoming message from client."""
+    msg_type = data.get("type")
+    if msg_type == MessageType.STOP_SIGNAL.value:
+        await _handle_stop_signal(task_id)
+    elif msg_type == MessageType.CHAT_MESSAGE.value:
+        message_data = data.get("data", {})
+        if isinstance(message_data, dict):
+            await _handle_chat_message(task_id, message_data)
 
 
 @router.websocket("/ws/execution/{task_id}")
 async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
-    """WebSocket endpoint for execution streaming.
-
-    Query params:
-        from_sequence: Optional sequence number to replay from (for reconnection)
-
-    Message format (incoming):
-        {
-            "type": "chat_message" | "stop_signal",
-            "data": { ... }
-        }
-
-    Message format (outgoing):
-        {
-            "type": "log" | "progress" | "model_change" | "chat_message" | "connected" | "error",
-            "task_id": "task-xxx",
-            "data": { ... },
-            "timestamp": "2024-01-13T...",
-            "sequence": 123
-        }
-    """
-    from ..storage import tasks as task_store
-
-    # Validate task_id exists before accepting connection
-    task = task_store.get_task(task_id)
-    if not task:
-        await websocket.accept()
-        await websocket.send_json(
-            Message(
-                type=MessageType.ERROR,
-                task_id=task_id,
-                data={"error": f"Task not found: {task_id}", "recoverable": False},
-            ).to_dict()
-        )
-        await websocket.close(code=1008, reason=f"Task not found: {task_id}")
+    """WebSocket endpoint for execution streaming with reconnection support."""
+    if not await _validate_task(websocket, task_id):
         return
 
-    # Get replay sequence from query params
-    from_sequence = 0
-    if "from_sequence" in websocket.query_params:
-        with contextlib.suppress(ValueError):
-            from_sequence = int(websocket.query_params["from_sequence"])
-
-    # Accept connection
+    from_sequence = _get_replay_sequence(websocket)
     current_seq = await manager.connect(websocket, task_id)
-
     redis_task: asyncio.Task[None] | None = None
 
     try:
-        # Send connection confirmation
-        await websocket.send_json(
-            Message(
-                type=MessageType.CONNECTED,
-                task_id=task_id,
-                data={"sequence": current_seq},
-            ).to_dict()
-        )
-
-        # Replay missed messages if reconnecting
+        await websocket.send_json(Message(type=MessageType.CONNECTED, task_id=task_id, data={"sequence": current_seq}).to_dict())
         if from_sequence > 0:
             await manager.replay(websocket, task_id, from_sequence)
 
-        async def forward_redis_events() -> None:
-            """Forward events from Redis to all connected clients via ConnectionManager.
+        redis_task = asyncio.create_task(_forward_redis_events(task_id))
 
-            Routes through manager.broadcast() so messages are:
-            1. Assigned sequence numbers
-            2. Stored for replay on reconnection
-            3. Sent to all connected clients
-            """
-            async for event in subscribe_ws_events(task_id):
-                try:
-                    msg_type_str = event.get("type", "log")
-                    msg_type = (
-                        MessageType(msg_type_str)
-                        if msg_type_str in MessageType.__members__.values()
-                        else MessageType.LOG
-                    )
-                    await manager.broadcast(
-                        task_id,
-                        Message(
-                            type=msg_type,
-                            task_id=task_id,
-                            data=event.get("data", {}),
-                        ),
-                    )
-                except Exception:
-                    break
-
-        redis_task = asyncio.create_task(forward_redis_events())
-
-        # Listen for incoming messages from client
         while True:
             data = await websocket.receive_json()
-            msg_type = data.get("type")
-
-            if msg_type == MessageType.STOP_SIGNAL.value:
-                handler = _stop_handlers.get(task_id)
-                if handler:
-                    handler()
-                await manager.broadcast(
-                    task_id,
-                    Message(
-                        type=MessageType.STOP_SIGNAL,
-                        task_id=task_id,
-                        data={"source": "user"},
-                    ),
-                )
-
-            elif msg_type == MessageType.CHAT_MESSAGE.value:
-                chat_handler = _chat_handlers.get(task_id)
-                message_data = data.get("data", {})
-                if chat_handler:
-                    chat_handler(message_data)
-                await manager.broadcast(
-                    task_id,
-                    Message(
-                        type=MessageType.CHAT_MESSAGE,
-                        task_id=task_id,
-                        data=message_data,
-                    ),
-                )
+            await _process_client_message(task_id, data)
 
     except WebSocketDisconnect:
         pass
@@ -335,11 +148,7 @@ async def send_log(task_id: str, level: str, message: str, source: str = "orches
     """Send a log message to all subscribers."""
     await manager.broadcast(
         task_id,
-        Message(
-            type=MessageType.LOG,
-            task_id=task_id,
-            data={"level": level, "message": message, "source": source},
-        ),
+        Message(type=MessageType.LOG, task_id=task_id, data={"level": level, "message": message, "source": source}),
     )
 
 
@@ -371,22 +180,12 @@ async def send_progress(
 async def send_model_change(task_id: str, model: str, reason: str = "") -> None:
     """Send a model change notification to all subscribers."""
     await manager.broadcast(
-        task_id,
-        Message(
-            type=MessageType.MODEL_CHANGE,
-            task_id=task_id,
-            data={"model": model, "reason": reason},
-        ),
+        task_id, Message(type=MessageType.MODEL_CHANGE, task_id=task_id, data={"model": model, "reason": reason})
     )
 
 
 async def send_error(task_id: str, error: str, recoverable: bool = True) -> None:
     """Send an error message to all subscribers."""
     await manager.broadcast(
-        task_id,
-        Message(
-            type=MessageType.ERROR,
-            task_id=task_id,
-            data={"error": error, "recoverable": recoverable},
-        ),
+        task_id, Message(type=MessageType.ERROR, task_id=task_id, data={"error": error, "recoverable": recoverable})
     )
