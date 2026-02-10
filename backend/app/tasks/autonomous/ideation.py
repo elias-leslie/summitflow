@@ -133,7 +133,8 @@ def _parse_ideation_response(content: str) -> dict[str, Any]:
         start = content.find("{")
         end = content.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(content[start:end])
+            result: dict[str, Any] = json.loads(content[start:end])
+            return result
     except json.JSONDecodeError:
         pass
 
