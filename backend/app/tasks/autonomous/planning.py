@@ -91,6 +91,9 @@ def _parse_plan_response(content: str) -> dict[str, Any]:
 
 _ABSOLUTE_CD_PATTERN = re.compile(r"\bcd\s+/[^\s;|&]+")
 _ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
+_SMALL_CONTEXT_WINDOW = re.compile(r"-A[1-5]\b")
+_CHAINED_RG_PIPE = re.compile(r"rg\s.+\|\s*rg")
+_HEAD_TAIL_USAGE = re.compile(r"\bhead\b|\btail\b")
 
 
 def _validate_verify_command(cmd: str) -> str | None:
@@ -130,6 +133,27 @@ def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
 
                 elif verify.startswith("grep "):
                     step["verify_command"] = "rg " + verify[5:]
+
+                if _SMALL_CONTEXT_WINDOW.search(verify):
+                    logger.warning(
+                        "small_context_window",
+                        subtask=subtask.get("subtask_id"),
+                        verify_command=verify[:80],
+                    )
+
+                if _CHAINED_RG_PIPE.search(verify):
+                    logger.warning(
+                        "chained_rg_pipe",
+                        subtask=subtask.get("subtask_id"),
+                        verify_command=verify[:80],
+                    )
+
+                if _HEAD_TAIL_USAGE.search(verify):
+                    logger.warning(
+                        "head_tail_usage",
+                        subtask=subtask.get("subtask_id"),
+                        verify_command=verify[:80],
+                    )
 
             if expected and expected.lower().strip() in generic_outputs:
                 logger.warning(

@@ -107,7 +107,7 @@ class ImplementationExecutor:
         Args:
             session_id: Session ID from start_execution
             max_iterations: Maximum iterations before giving up
-            is_manual_execution: True when called via /do_it or API,
+            is_manual_execution: True when called via API or CC session,
                                  False when called by autonomous pickup.
 
         Returns:
@@ -157,14 +157,14 @@ class ImplementationExecutor:
             logger.warning(
                 "standalone_task_rejected",
                 task_id=task_id,
-                reason="Standalone tasks require manual execution via /do_it",
+                reason="Standalone tasks require manual execution",
             )
             return ExecutionResult(
                 success=False,
                 iterations=0,
                 model_used="none",
                 reason="standalone_requires_manual",
-                error="Standalone tasks require manual execution via /do_it",
+                error="Standalone tasks require manual execution",
             )
 
         if is_standalone and is_manual_execution:

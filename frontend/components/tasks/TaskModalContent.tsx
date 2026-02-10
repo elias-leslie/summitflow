@@ -209,7 +209,7 @@ export function TaskModalContent({
           testId="subtasks-toggle"
         >
           <p className="text-sm text-slate-500 italic">
-            No subtasks defined. Run /plan_it to add subtasks.
+            No subtasks. Use st autocode to auto-plan or add subtasks via API.
           </p>
         </CollapsibleSection>
       )}

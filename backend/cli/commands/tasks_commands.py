@@ -137,7 +137,7 @@ def autocode_task(
         raise typer.Exit(1) from None
 
     if not subtasks:
-        output_error(f"Task {task_id} has no subtasks. Run /plan_it first.")
+        output_error(f"Task {task_id} has no subtasks. Use 'st autocode' to generate a plan.")
         raise typer.Exit(1)
 
     current_status = task.get("status", "pending")

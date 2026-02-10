@@ -70,7 +70,7 @@ def is_blocklisted_error(title: str) -> bool:
 def is_standalone(task: dict[str, Any]) -> bool:
     """Check if task is standalone (no capability linkage).
 
-    Standalone tasks require manual execution via /do_it because they lack
+    Standalone tasks require manual execution because they lack
     capability-driven acceptance criteria for autonomous verification.
 
     Exception: auto-generated tasks and autonomous task types (refactor, debt, regression)
@@ -149,7 +149,7 @@ def check_exclusion(task: dict[str, Any]) -> str | None:
     if "needs-human-review" in labels:
         return "needs-human-review label"
 
-    # EXCLUDE: standalone tasks (no capability_id) - require manual /do_it
+    # EXCLUDE: standalone tasks (no capability_id) - require manual execution
     if is_standalone(task):
         return "standalone (no capability_id)"
 

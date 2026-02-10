@@ -66,7 +66,7 @@ CONSULTATION_MODEL: ModelConfig = {
 MANUAL_MODEL: ModelConfig = {
     "provider": "claude",
     "model": CLAUDE_SONNET,
-    "description": "Claude Sonnet 4.5 for manual /do_it execution",
+    "description": "Claude Sonnet 4.5 for manual CC execution",
 }
 
 REVIEW_MODEL: ModelConfig = {
