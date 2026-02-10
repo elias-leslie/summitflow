@@ -99,12 +99,15 @@ def cleanup_tasks() -> Generator[list[str], None, None]:
 def create_mock_agent_response(content: str, session_id: str = "test-session") -> MagicMock:
     """Create a mock Agent Hub response.
 
-    Includes all fields used by execution code: content, session_id, cited_uuids.
+    Includes all fields used by execution code: content, session_id, cited_uuids,
+    progress_log, context_usage.
     """
     mock_response = MagicMock()
     mock_response.content = content
     mock_response.session_id = session_id
     mock_response.cited_uuids = []
+    mock_response.progress_log = None
+    mock_response.context_usage = None
     return mock_response
 
 
@@ -395,8 +398,26 @@ class TestExecutionE2E:
 
         mock_response = create_mock_agent_response("Created test.py successfully")
 
-        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
-            mock_client.return_value.run_agent.return_value = mock_response
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.handle_successful_completion",
+            ),
+        ):
+            mock_client.return_value.complete.return_value = mock_response
             result = start_execution(task_id, test_project_id)
 
         assert result["status"] == "executed"
@@ -406,10 +427,15 @@ class TestExecutionE2E:
         subtasks = get_subtasks_for_task(task_id, include_steps=True)
         assert subtasks[0]["passes"] is True
 
-    def test_execution_stops_on_failure(
+    def test_execution_handles_verification_failure(
         self, test_project_id: str, cleanup_tasks: list[str]
     ) -> None:
-        """Execution should stop when a subtask fails verification."""
+        """Execution should process subtasks and handle verification failures.
+
+        In v2, all subtasks are attempted (with retry loops) and the completion
+        handler determines the final outcome. Both subtasks fail here because
+        subtask 1.1 has an impossible verify_command and 1.2 has no verify_command.
+        """
         task = task_store.create_task(
             project_id=test_project_id,
             title="Create and verify file",
@@ -439,28 +465,51 @@ class TestExecutionE2E:
         create_subtask(
             task_id=task_id,
             subtask_id="1.2",
-            description="This subtask should not run",
+            description="Second subtask with no verification",
             display_order=1,
             phase="backend",
-            steps=[{"description": "Should be skipped"}],
+            steps=[{"description": "Should also fail (no verify_command)"}],
         )
 
         task_store.update_task_status(task_id, "queue")
 
         mock_response = create_mock_agent_response("Created file")
 
-        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
-            mock_client.return_value.run_agent.return_value = mock_response
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.escalation.get_supervisor_guidance_sync",
+                return_value=None,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.memory_writes.get_sync_client",
+            ),
+        ):
+            mock_client.return_value.complete.return_value = mock_response
             result = start_execution(task_id, test_project_id)
 
         assert result["status"] == "executed"
-        assert len(result["subtask_results"]) == 1
+        # V2: both subtasks are attempted (with retry loops)
+        assert len(result["subtask_results"]) == 2
         assert result["subtask_results"][0]["status"] == "failed"
+        assert result["subtask_results"][1]["status"] == "failed"
 
         subtasks = get_subtasks_for_task(task_id, include_steps=True)
         assert subtasks[0]["passes"] is not True
-        # Subtask 1.2 should not have run (passes defaults to False in DB)
-        assert subtasks[1]["passes"] is False
+        assert subtasks[1]["passes"] is not True
 
 
 @pytest.mark.e2e
@@ -497,7 +546,8 @@ class TestAIReviewE2E:
 
         with (
             patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
-            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review.get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review_modules.routing.auto_merge") as mock_merge,
         ):
             mock_client.return_value.complete.return_value = mock_response
             mock_diff.return_value = "- tyop\n+ typo"
@@ -506,6 +556,7 @@ class TestAIReviewE2E:
 
         assert result["status"] == "reviewed"
         assert result["verdict"] == "APPROVED"
+        mock_merge.assert_called_once_with(task_id)
 
         updated_task = task_store.get_task(task_id)
         assert updated_task is not None
@@ -542,8 +593,8 @@ class TestAIReviewE2E:
 
         with (
             patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
-            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
-            patch("app.tasks.autonomous.review._auto_merge") as mock_merge,
+            patch("app.tasks.autonomous.review.get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review_modules.routing.auto_merge") as mock_merge,
         ):
             mock_client.return_value.complete.return_value = mock_response
             mock_diff.return_value = "+ def get_users():"
@@ -588,7 +639,7 @@ class TestAIReviewE2E:
 
         with (
             patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
-            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review.get_git_diff") as mock_diff,
         ):
             mock_client.return_value.complete.return_value = mock_response
             mock_diff.return_value = "+ if not email:"
@@ -728,8 +779,26 @@ class TestFullAutonomousPipeline:
 
         exec_response = create_mock_agent_response("Added console.log to API client")
 
-        with patch("app.tasks.autonomous.execution.get_sync_client") as mock_client:
-            mock_client.return_value.run_agent.return_value = exec_response
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.handle_successful_completion",
+            ),
+        ):
+            mock_client.return_value.complete.return_value = exec_response
             exec_result = start_execution(task_id, test_project_id)
 
         assert exec_result["status"] == "executed"
@@ -747,7 +816,8 @@ class TestFullAutonomousPipeline:
 
         with (
             patch("app.tasks.autonomous.review.get_sync_client") as mock_client,
-            patch("app.tasks.autonomous.review._get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review.get_git_diff") as mock_diff,
+            patch("app.tasks.autonomous.review_modules.routing.auto_merge") as mock_merge,
         ):
             mock_client.return_value.complete.return_value = review_response
             mock_diff.return_value = "+ console.log('API call')"
@@ -756,6 +826,7 @@ class TestFullAutonomousPipeline:
 
         assert review_result["status"] == "reviewed"
         assert review_result["verdict"] == "APPROVED"
+        mock_merge.assert_called_once_with(task_id)
 
         final_task = task_store.get_task(task_id)
         assert final_task is not None

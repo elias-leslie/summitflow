@@ -67,6 +67,8 @@ def _add_missing_columns(cur: psycopg.Cursor) -> None:
         ),
         # Agent Hub session tracking
         ("agent_hub_session_ids TEXT[] DEFAULT '{}'::text[]", "tasks"),
+        # Subtask type for agent routing (v2 autocode)
+        ("subtask_type TEXT", "task_subtasks"),
     ]
 
     for column, table in column_additions:
