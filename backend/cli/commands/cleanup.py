@@ -117,10 +117,9 @@ def cleanup_worktrees(
         return
 
     # Confirm force mode if needed
-    if force and not dry_run:
-        if not confirm_force_cleanup(len(worktrees), len(categorization.needs_merge)):
-            typer.echo("Aborted")
-            return
+    if force and not dry_run and not confirm_force_cleanup(len(worktrees), len(categorization.needs_merge)):
+        typer.echo("Aborted")
+        return
 
     # Execute cleanup
     typer.echo("")

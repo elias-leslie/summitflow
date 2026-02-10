@@ -85,7 +85,7 @@ def check_pristine_codebase(project_id: str) -> None:
 
     dt_cmd = find_dev_tools()
     if dt_cmd:
-        cmd = [dt_cmd, "--check"]
+        cmd = [dt_cmd, "--quick"]
     else:
         dev_tools_script = repo_path / "scripts" / "dev-tools.sh"
         if not dev_tools_script.exists():
@@ -95,7 +95,7 @@ def check_pristine_codebase(project_id: str) -> None:
                 reason="dt command and scripts/dev-tools.sh not found",
             )
             return
-        cmd = [str(dev_tools_script), "--check"]
+        cmd = [str(dev_tools_script), "--quick"]
 
     logger.info("pristine_check_started", project_id=project_id, cmd=cmd[0])
 
@@ -119,7 +119,7 @@ def check_pristine_codebase(project_id: str) -> None:
             raise PristineCheckError(
                 f"Codebase quality gates failed (exit code {result.returncode}). "
                 f"Fix lint/type/test errors before running automated execution. "
-                f"Run 'dt --check' to see details."
+                f"Run 'dt --quick' to see details."
             )
 
         logger.info("pristine_check_passed", project_id=project_id)
@@ -172,7 +172,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
         logger.warning("pristine_self_heal_skipped", reason="dt not found")
         return True
 
-    cmd = [dt_cmd, "--check"]
+    cmd = [dt_cmd, "--quick"]
     previous_error_count: int | None = None
     pristine_session_id: str | None = None
 
@@ -356,7 +356,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
 def run_final_quality_gate(
     task_id: str, project_path: str, project_id: str
 ) -> bool:
-    """Run dt --check as final quality gate before AI review.
+    """Run dt --quick as final quality gate before AI review.
 
     Args:
         task_id: Task ID for logging
@@ -373,14 +373,14 @@ def run_final_quality_gate(
     emit_log(
         task_id,
         "info",
-        "Running final quality gate (dt --check)...",
+        "Running final quality gate (dt --quick)...",
         source="quality",
         project_id=project_id,
     )
 
     try:
         result = subprocess.run(
-            [dt_cmd, "--check"],
+            [dt_cmd, "--quick"],
             cwd=project_path,
             capture_output=True,
             text=True,

@@ -10,10 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
-
-import pytest
-
+from unittest.mock import patch
 
 # =============================================================================
 # T3: _determine_next_stage routing
@@ -241,7 +238,6 @@ class TestModelEscalation:
         mock_fix,
     ):
         """During self-heal phase (attempts < threshold), model_override is None."""
-        from app.constants import SELF_HEAL_MAX_ATTEMPTS
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test", "verify_command": "echo ok"}]

@@ -9,6 +9,7 @@ Use --strict for old gate-check-only behavior.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from typing import Annotated, Any
 
@@ -203,10 +204,8 @@ def _auto_close_subtasks(
         # Acknowledge citations if not already done
         citations_status = subtask.get("citations_status") or subtask.get("citations_acknowledged")
         if not citations_status:
-            try:
+            with contextlib.suppress(APIError):
                 client.acknowledge_no_citations(task_id, subtask_id)
-            except APIError:
-                pass  # Non-fatal — citations may already be acknowledged
 
         # Close subtask via API
         try:
