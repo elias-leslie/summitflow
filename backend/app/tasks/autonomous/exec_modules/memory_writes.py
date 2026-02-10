@@ -6,6 +6,7 @@ Agent Hub memory system for cross-session learning.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from ....logging_config import get_logger
@@ -114,9 +115,7 @@ def rate_cited_memories(
     try:
         client = get_sync_client()
         for uuid in cited_uuids[:10]:  # Cap to avoid excessive API calls
-            try:
+            with contextlib.suppress(Exception):
                 client.rate_episode(uuid, rating)
-            except Exception:
-                pass  # Individual rating failures are non-critical
     except Exception as e:
         logger.debug("Memory rating failed (non-blocking)", error=str(e))
