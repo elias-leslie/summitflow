@@ -17,7 +17,6 @@ from cli.commands.done import (
     _git_stash_pop,
     _git_stash_push,
     _is_subtask_id,
-    _is_working_tree_clean,
 )
 
 
