@@ -281,6 +281,25 @@ def _complete_subtask(
     }
 
 
+def _report_task_outcome(task_id: str, *, succeeded: bool) -> None:
+    """Report task outcome to Agent Hub memory system (fire-and-forget).
+
+    Credits loaded memories when tasks succeed, enabling utility_score tracking.
+    Non-blocking — failures are logged but never block task completion.
+    """
+    try:
+        from .memory_api import agent_hub_request
+
+        agent_hub_request(
+            "POST",
+            "/api/memory/task-outcome",
+            json={"task_id": task_id, "succeeded": succeeded},
+            tool_name="st done",
+        )
+    except Exception:
+        pass  # Fire-and-forget — never block task completion
+
+
 def _complete_task(
     client: STClient,
     task_id: str,
@@ -372,6 +391,9 @@ def _complete_task(
             else:
                 output_error(f"Failed to complete task: {e.detail}")
             raise typer.Exit(1) from None
+
+        # Report task outcome to Agent Hub memory system (fire-and-forget)
+        _report_task_outcome(task_id, succeeded=True)
 
         # Remove snapshot after successful merge + status update
         remove_snapshot(task_id, project_id=project_id)
