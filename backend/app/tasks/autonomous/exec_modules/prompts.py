@@ -6,8 +6,12 @@ from typing import Any
 
 import httpx
 
+from ....logging_config import get_logger
+from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
+
+logger = get_logger(__name__)
 
 # Prompt cache for process lifetime
 _prompt_cache: dict[str, str] = {}
@@ -90,6 +94,48 @@ def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+def build_resume_context(task_id: str) -> str:
+    """Build continuity context for a resumed task.
+
+    Queries task events for wind_down logs and prior execution history
+    to provide the agent with context about what was previously tried.
+
+    Returns empty string if no prior execution history exists.
+    """
+    try:
+        events = get_events_by_trace(task_id, limit=50)
+        if not events:
+            return ""
+
+        # Look for wind_down events and failure summaries
+        wind_down_msgs = []
+        error_msgs = []
+        for evt in events:
+            msg = evt.get("message", "") or ""
+            if "SESSION END" in msg:
+                wind_down_msgs.append(msg[:500])
+            elif evt.get("level") in ("error", "warn") and "FAILED" in msg.upper():
+                error_msgs.append(msg[:200])
+
+        if not wind_down_msgs and not error_msgs:
+            return ""
+
+        lines = ["\n# Resume Context (prior execution)"]
+        if wind_down_msgs:
+            lines.append("Last session state:")
+            lines.append(wind_down_msgs[-1])
+        if error_msgs:
+            lines.append(f"\nPrior failures ({len(error_msgs)}):")
+            for msg in error_msgs[-3:]:
+                lines.append(f"- {msg}")
+        lines.append("\nApproach this with a fresh perspective based on the above history.")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug("Failed to build resume context", error=str(e))
+        return ""
+
+
 def build_subtask_prompt(
     task_id: str,
     subtask: dict[str, Any],
@@ -115,12 +161,15 @@ def build_subtask_prompt(
             handoff_lines.append(f"- Subtask {summary['short_id']}: {summary['summary']}")
         handoff_block = "\n".join(handoff_lines)
 
+    # Inject resume context for previously-paused tasks
+    resume_block = build_resume_context(task_id)
+
     steps = subtask.get("steps_from_table", [])
     steps_block = build_steps_block(steps)
 
     template = get_prompt_template("autocode-subtask")
 
-    return template.format_map({
+    prompt = template.format_map({
         "objective": objective,
         "spirit_anti_block": spirit_anti_block,
         "handoff_block": handoff_block,
@@ -129,6 +178,12 @@ def build_subtask_prompt(
         "steps_block": steps_block,
         "project_path": project_path,
     })
+
+    # Append resume context for previously-paused tasks (outside template)
+    if resume_block:
+        prompt += resume_block
+
+    return prompt
 
 
 def build_fix_prompt(

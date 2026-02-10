@@ -24,6 +24,7 @@ def create_subtask(
     display_order: int,
     phase: str | None = None,
     steps: list[str | dict[str, Any]] | None = None,
+    subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask.
 
@@ -37,6 +38,7 @@ def create_subtask(
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
         steps: Optional list of steps - strings or {description, spec} dicts
+        subtask_type: Optional type for agent routing (backend, frontend, etc.)
 
     Returns:
         The created subtask dict.
@@ -53,15 +55,16 @@ def create_subtask(
         cur.execute(
             f"""
             INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                       display_order)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                       display_order, subtask_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (task_id, subtask_id) DO UPDATE SET
                 phase = EXCLUDED.phase,
                 description = EXCLUDED.description,
-                display_order = EXCLUDED.display_order
+                display_order = EXCLUDED.display_order,
+                subtask_type = EXCLUDED.subtask_type
             RETURNING {SUBTASK_COLUMNS}
             """,
-            (table_id, task_id, subtask_id, phase, description, display_order),
+            (table_id, task_id, subtask_id, phase, description, display_order, subtask_type),
         )
         row = cur.fetchone()
         conn.commit()

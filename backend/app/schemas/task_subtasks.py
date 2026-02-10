@@ -25,6 +25,10 @@ class SubtaskCreate(BaseModel):
     phase: str | None = Field(
         default=None, description="Phase: research, database, backend, frontend, testing"
     )
+    subtask_type: str | None = Field(
+        default=None,
+        description="Subtask type for agent routing: backend, frontend, ui-design, refactor, bug-fix, test, performance, config, devops",
+    )
     description: str = Field(min_length=5, description="Subtask description")
     steps: list[str | StepInput] = Field(
         default_factory=list, description="Steps as strings or {description, spec} objects"
@@ -45,6 +49,7 @@ class SubtaskResponse(BaseModel):
     task_id: str
     subtask_id: str
     phase: str | None
+    subtask_type: str | None = None
     description: str
     steps: list[str]
     passes: bool

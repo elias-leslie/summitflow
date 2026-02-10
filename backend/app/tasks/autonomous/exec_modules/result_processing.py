@@ -8,6 +8,7 @@ from ....core.debug import debug_error, debug_success
 from ....logging_config import get_logger
 from ....storage.subtasks import update_subtask_passes
 from .events import emit_log
+from .memory_writes import save_subtask_learning
 from .session import extract_handoff_summary
 from .steps import compute_issue_id
 
@@ -27,6 +28,7 @@ def process_final_result(
     supervisor_guided_attempts: int,
     extensions_granted: int,
     issue_counts: dict[str, int],
+    subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Process final result after retry loop completes.
 
@@ -76,6 +78,18 @@ def process_final_result(
             self_fix_attempts=self_fix_attempts,
             supervisor_guided_attempts=supervisor_guided_attempts,
         )
+
+    # Post-execution memory write (non-blocking)
+    save_subtask_learning(
+        task_id,
+        subtask_short_id,
+        subtask_type,
+        project_id,
+        all_passed,
+        self_fix_attempts,
+        supervisor_guided_attempts,
+        step_results,
+    )
 
     return {
         "subtask_id": subtask_short_id,

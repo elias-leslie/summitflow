@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ....constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
+from ....constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....storage.steps import get_steps_for_subtask
 from .agent_routing import EXTENSION_ATTEMPTS
@@ -119,6 +119,9 @@ def run_self_healing_loop(
         else:
             supervisor_guided_attempts += 1
 
+        # Escalate model during supervisor-guided phase
+        model_override = ESCALATION_MODEL if self_fix_attempts >= SELF_HEAL_MAX_ATTEMPTS else None
+
         # Execute agent fix and auto-commit
         response_content, agent_session_id = execute_fix_attempt(
             task_id,
@@ -131,6 +134,7 @@ def run_self_healing_loop(
             self_fix_attempts,
             supervisor_guided_attempts,
             heal_attempt,
+            model_override=model_override,
         )
 
         heal_attempt += 1

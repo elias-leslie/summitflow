@@ -13,6 +13,27 @@ from app.storage.tasks.claims import claim_task
 logger = get_logger(__name__)
 
 
+def dispatch_to_ideation(
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None,
+) -> bool:
+    """Dispatch task to ideation stage.
+
+    Args:
+        task_id: Task ID to dispatch
+        project_id: Project ID
+        dispatch: Dispatch callback function
+
+    Returns:
+        True if dispatched
+    """
+    if dispatch:
+        dispatch("ideate", task_id, project_id)
+    logger.info("Dispatched to ideation", task_id=task_id)
+    return True
+
+
 def dispatch_to_triage(
     task_id: str,
     project_id: str,
@@ -103,6 +124,9 @@ def dispatch_to_stage(
     Returns:
         True if dispatched, False if skipped/failed
     """
+    if stage == "ideation":
+        return dispatch_to_ideation(task_id, project_id, dispatch)
+
     if stage == "triage":
         return dispatch_to_triage(task_id, project_id, dispatch)
 

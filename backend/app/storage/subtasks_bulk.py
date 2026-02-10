@@ -55,12 +55,13 @@ def bulk_create_subtasks(
             cur.execute(
                 f"""
                 INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                           display_order)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                                           display_order, subtask_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (task_id, subtask_id) DO UPDATE SET
                     phase = EXCLUDED.phase,
                     description = EXCLUDED.description,
-                    display_order = EXCLUDED.display_order
+                    display_order = EXCLUDED.display_order,
+                    subtask_type = EXCLUDED.subtask_type
                 RETURNING {SUBTASK_COLUMNS}
                 """,
                 (
@@ -70,6 +71,7 @@ def bulk_create_subtasks(
                     subtask.get("phase"),
                     subtask["description"],
                     display_order,
+                    subtask.get("subtask_type"),
                 ),
             )
             row = cur.fetchone()

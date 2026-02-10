@@ -12,6 +12,7 @@ from ....storage.subtasks import get_subtasks_for_task
 from .completion_handler import (
     handle_early_completion,
     handle_failed_execution,
+    handle_partial_completion,
     handle_successful_completion,
 )
 from .events import emit_error, emit_log, emit_progress
@@ -119,8 +120,15 @@ def execute_task_locked(
 
     # Handle completion or failure
     all_passed = all(r.get("status") == "passed" for r in results)
+    any_passed = any(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
         handle_successful_completion(task_id, project_id, project_path, results, dispatch)
+    elif any_passed:
+        # Partial success: merge passing work, create follow-up for failures
+        if not handle_partial_completion(
+            task_id, project_id, project_path, results, dispatch
+        ):
+            handle_failed_execution(task_id, project_id)
     else:
         handle_failed_execution(task_id, project_id)
 

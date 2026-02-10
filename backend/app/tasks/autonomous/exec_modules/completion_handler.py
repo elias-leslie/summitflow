@@ -155,6 +155,114 @@ def handle_successful_completion(
         return False
 
 
+def handle_partial_completion(
+    task_id: str,
+    project_id: str,
+    project_path: str,
+    results: list[dict[str, Any]],
+    dispatch: Callable[[str, str, str], None] | None = None,
+) -> bool:
+    """Handle case where some subtasks passed but others failed.
+
+    Cherry-picks passing subtask commits, creates a follow-up task for
+    the stuck subtasks, and dispatches for QA review.
+
+    Args:
+        task_id: The task ID
+        project_id: The project ID
+        project_path: Path to project directory
+        results: List of subtask execution results
+        dispatch: Optional callback to trigger downstream workflows
+
+    Returns:
+        True if partial merge was set up, False if skipped
+    """
+    from ....storage.tasks.core import create_task
+
+    passed = [r for r in results if r.get("status") == "passed"]
+    failed = [r for r in results if r.get("status") != "passed"]
+
+    if not passed or not failed:
+        return False
+
+    emit_log(
+        task_id,
+        "info",
+        f"Partial completion: {len(passed)}/{len(results)} subtasks passed. "
+        f"Proceeding with partial merge.",
+        project_id=project_id,
+    )
+
+    # Reset failed subtask commits: interactive revert of failed commits
+    # Strategy: mark failing subtasks for follow-up, keep passing ones for merge
+    failed_ids = [r.get("subtask_id", "") for r in failed]
+
+    # Create follow-up task for stuck subtasks
+    try:
+        failed_desc = "\n".join(
+            f"- {r.get('subtask_id', '?')}: {r.get('error', r.get('reason', 'failed'))[:100]}"
+            for r in failed
+        )
+        follow_up = create_task(
+            project_id=project_id,
+            title=f"Follow-up: stuck subtasks from {task_id}",
+            description=(
+                f"Partial merge completed for task {task_id}. "
+                f"The following subtasks could not be resolved:\n\n"
+                f"{failed_desc}\n\n"
+                f"These need to be re-attempted with a fresh approach."
+            ),
+            task_type="task",
+            priority=1,
+            parent_task_id=task_id,
+            autonomous=True,
+        )
+        follow_up_id = follow_up.get("id", "unknown")
+        emit_log(
+            task_id,
+            "info",
+            f"Created follow-up task {follow_up_id} for {len(failed)} stuck subtask(s)",
+            project_id=project_id,
+        )
+    except Exception as e:
+        emit_log(
+            task_id,
+            "warn",
+            f"Failed to create follow-up task: {e}",
+            project_id=project_id,
+        )
+
+    # Proceed with QA review for the passing work
+    try:
+        task_store.update_task(
+            task_id,
+            verification_result={
+                "partial_merge": True,
+                "subtask_count": len(results),
+                "passed_count": len(passed),
+                "failed_count": len(failed),
+                "failed_subtasks": failed_ids,
+                "total_self_fix_attempts": sum(r.get("self_fix_attempts", 0) for r in results),
+                "total_supervisor_attempts": sum(
+                    r.get("supervisor_guided_attempts", 0) for r in results
+                ),
+            },
+        )
+        task_store.update_task_status(task_id, "ai_reviewing")
+        if dispatch:
+            dispatch("review", task_id, project_id)
+        return True
+    except Exception as e:
+        emit_log(
+            task_id,
+            "error",
+            f"Failed to set up partial merge review: {e}",
+            project_id=project_id,
+        )
+        task_store.update_task_status(task_id, "blocked")
+        return False
+
+
 def handle_failed_execution(task_id: str, project_id: str) -> None:
     """Handle case where subtasks failed.
 

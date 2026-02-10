@@ -1,3 +1,6 @@
 export { ActivityFeed } from './ActivityFeed'
+export { BlockedTasksAlert } from './BlockedTasksAlert'
+export { PipelineFlow } from './PipelineFlow'
 export { ProjectCard } from './ProjectCard'
+export { SuccessMetrics } from './SuccessMetrics'
 export { SystemHealthWidget } from './SystemHealthWidget'

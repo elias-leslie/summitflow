@@ -5,6 +5,11 @@ import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import {
+  BlockedTasksAlert,
+  PipelineFlow,
+  SuccessMetrics,
+} from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
@@ -185,7 +190,19 @@ export function ProjectDetailClient() {
       {/* Tab Content - Full height, no header redundancy */}
       <section className="flex-1 overflow-hidden">
         {activeTab === 'kanban' && (
-          <div className="h-full overflow-auto p-4">
+          <div className="h-full overflow-auto p-4 space-y-4">
+            <div className="flex flex-col gap-3">
+              <PipelineFlow projectId={projectId} onStageClick={(phase) => {
+                router.push(`/projects/${projectId}?tab=tasks&status=${phase}`)
+              }} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <SuccessMetrics projectId={projectId} />
+                <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
+                  setSelectedTaskId(taskId)
+                  setModalOpen(true)
+                }} />
+              </div>
+            </div>
             <TaskKanbanBoard
               tasks={kanbanTasks}
               projectId={projectId}

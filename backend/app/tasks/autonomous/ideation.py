@@ -1,0 +1,141 @@
+"""Ideation stage: flesh out raw ideas into structured task descriptions.
+
+Uses the ideator agent to expand crowdsourced ideas with:
+- Scope definition and boundaries
+- Suggested acceptance criteria
+- Dependency analysis
+- Complexity estimation
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from ...logging_config import get_logger
+from ...services.agent_hub_client import get_sync_client
+from ...storage import log_task_event
+from ...storage import tasks as task_store
+from ...storage.task_spirit import create_task_spirit
+
+logger = get_logger(__name__)
+
+
+def ideate_task(task_id: str, project_id: str) -> dict[str, Any]:
+    """Flesh out a raw idea into a structured task description.
+
+    Uses the ideator agent to expand a brief idea into a well-defined task
+    with scope, acceptance criteria, and complexity estimate.
+
+    After successful ideation, the task moves to triage.
+
+    Args:
+        task_id: The task ID to ideate on
+        project_id: The project ID
+
+    Returns:
+        Ideation result with enriched task details
+    """
+    task = task_store.get_task(task_id)
+    if not task:
+        logger.warning("Task not found for ideation", task_id=task_id)
+        return {"task_id": task_id, "status": "error", "reason": "task_not_found"}
+
+    title = task.get("title", "")
+    description = task.get("description", "")
+
+    prompt = (
+        f"You are expanding a raw idea into a well-defined task.\n\n"
+        f"## Raw Idea\n"
+        f"Title: {title}\n"
+        f"Description: {description or '(none provided)'}\n\n"
+        f"## Instructions\n"
+        f"Analyze this idea and produce a structured task definition. "
+        f"Reply with JSON:\n"
+        f'{{"objective": "clear 1-2 sentence objective",'
+        f' "scope": "what is in scope and out of scope",'
+        f' "acceptance_criteria": ["criterion 1", "criterion 2", ...],'
+        f' "suggested_type": "feature|bug|refactor|task|debt",'
+        f' "complexity": "SIMPLE|STANDARD|COMPLEX",'
+        f' "dependencies": ["any known dependencies or blockers"],'
+        f' "enriched_description": "expanded description with technical details"}}'
+    )
+
+    try:
+        client = get_sync_client()
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            agent_slug="ideator",
+            project_id=project_id,
+            use_memory=True,
+        )
+
+        result = _parse_ideation_response(response.content)
+
+        if result.get("objective"):
+            # Save objective as task spirit
+            create_task_spirit(
+                task_id,
+                objective=result["objective"],
+                context=result.get("scope", ""),
+            )
+
+            # Update task with enriched details
+            updates: dict[str, Any] = {
+                "enrichment_status": "enriched",
+                "enriched_by": "ideator",
+            }
+            if result.get("enriched_description"):
+                updates["description"] = result["enriched_description"]
+            if result.get("suggested_type"):
+                updates["task_type"] = result["suggested_type"]
+            if result.get("complexity"):
+                updates["complexity"] = result["complexity"]
+
+            task_store.update_task(task_id, **updates)
+
+            log_task_event(
+                task_id,
+                f"Ideation complete: {result['objective'][:200]}",
+            )
+            logger.info("Ideation succeeded", task_id=task_id)
+
+            return {
+                "task_id": task_id,
+                "status": "ideated",
+                "objective": result["objective"],
+                "complexity": result.get("complexity", "STANDARD"),
+            }
+
+        # Ideation didn't produce a clear objective
+        log_task_event(task_id, "Ideation: could not produce clear objective")
+        return {
+            "task_id": task_id,
+            "status": "unclear",
+            "reason": "no_objective_produced",
+        }
+
+    except Exception as e:
+        logger.warning("Ideation failed", task_id=task_id, error=str(e))
+        log_task_event(task_id, f"Ideation failed: {str(e)[:200]}")
+        return {
+            "task_id": task_id,
+            "status": "error",
+            "error": str(e),
+        }
+
+
+def _parse_ideation_response(content: str) -> dict[str, Any]:
+    """Parse ideator agent response, extracting JSON from the response."""
+    # Try to find JSON in the response
+    try:
+        # Look for JSON block
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start >= 0 and end > start:
+            return json.loads(content[start:end])
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: treat the whole response as the objective
+    return {"objective": content[:500], "enriched_description": content}

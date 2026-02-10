@@ -22,6 +22,7 @@ def execute_fix_attempt(
     self_fix_attempts: int,
     supervisor_guided_attempts: int,
     heal_attempt: int,
+    model_override: str | None = None,
 ) -> tuple[str, str | None]:
     """Execute agent fix attempt and auto-commit if changes detected.
 
@@ -37,6 +38,7 @@ def execute_fix_attempt(
             project_path,
             project_id,
             agent_session_id,
+            model_override=model_override,
         )
         response_content = response.content
 

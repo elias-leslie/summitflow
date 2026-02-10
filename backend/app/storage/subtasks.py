@@ -30,11 +30,12 @@ def create_subtask(
     display_order: int,
     phase: str | None = None,
     steps: list[str | dict[str, Any]] | None = None,
+    subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask."""
     from .subtasks_crud import create_subtask as _create
 
-    return _create(task_id, subtask_id, description, display_order, phase, steps)
+    return _create(task_id, subtask_id, description, display_order, phase, steps, subtask_type)
 
 
 def get_subtask(task_id: str, subtask_id: str) -> dict[str, Any] | None:

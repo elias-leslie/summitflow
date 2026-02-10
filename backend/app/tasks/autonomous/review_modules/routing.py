@@ -8,7 +8,7 @@ from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
 from ....storage import log_task_event
 from ....storage import tasks as task_store
-from .actions import auto_merge, create_fix_subtask, handle_plan_defect
+from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
 logger = get_logger(__name__)
 
@@ -99,7 +99,11 @@ def _handle_approved(task_id: str, complexity: str) -> None:
 
 
 def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
-    """Handle NEEDS_FIX verdict."""
+    """Handle NEEDS_FIX verdict with tight QA loop.
+
+    First tries to fix in a tight fixer→reviewer loop in same worktree.
+    Falls back to creating a fix subtask if the loop can't resolve it.
+    """
     concerns = review_result.get("concerns", [])
     verdict = review_result.get("verdict", "NEEDS_FIX")
 
@@ -111,14 +115,36 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
         auto_merge(task_id)
         task_store.update_task_status(task_id, "completed")
         logger.info("QA no concerns, auto-merged", task_id=task_id)
-    else:
-        create_fix_subtask(task_id, review_result)
-        task_store.update_task_status(task_id, "running")
-        log_task_event(
-            task_id,
-            f"AI Review: {verdict} - Created fix subtask. Issues: {concerns}",
-        )
-        logger.info("QA needs fix, returning to execution", task_id=task_id)
+        return
+
+    # Try tight QA loop first
+    task = task_store.get_task(task_id)
+    project_id = task.get("project_id", "summitflow") if task else "summitflow"
+
+    # Get worktree path for fixer to work in
+    from app.services.worktree import get_task_worktree
+
+    worktree = get_task_worktree(task_id, project_id)
+    if worktree and worktree.path:
+        log_task_event(task_id, f"AI Review: {verdict} - Starting QA loop")
+        loop_result = run_qa_loop(task_id, project_id, review_result, str(worktree.path))
+
+        if loop_result == "APPROVED":
+            _handle_approved(task_id, task.get("complexity", "STANDARD") if task else "STANDARD")
+            return
+        if loop_result == "ESCALATE":
+            _handle_escalation(task_id, review_result)
+            return
+        # NEEDS_FIX: loop exhausted, fall through to create fix subtask
+
+    # Fallback: create fix subtask (original behavior)
+    create_fix_subtask(task_id, review_result)
+    task_store.update_task_status(task_id, "running")
+    log_task_event(
+        task_id,
+        f"AI Review: {verdict} - QA loop exhausted, created fix subtask. Issues: {concerns}",
+    )
+    logger.info("QA loop exhausted, fix subtask created", task_id=task_id)
 
 
 def _handle_plan_defect_verdict(

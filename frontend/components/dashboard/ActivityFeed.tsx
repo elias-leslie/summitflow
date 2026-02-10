@@ -123,17 +123,35 @@ function ActivityRow({
   )
 }
 
+const TYPE_FILTERS: {
+  value: ActivityEventType | 'all'
+  label: string
+  icon: React.ElementType
+}[] = [
+  { value: 'all', label: 'All', icon: Activity },
+  { value: 'session', label: 'Agents', icon: Bot },
+  { value: 'task', label: 'Tasks', icon: CheckCircle2 },
+  { value: 'git', label: 'Git', icon: GitCommit },
+  { value: 'backup', label: 'Backups', icon: Archive },
+]
+
 interface ActivityFeedProps {
   className?: string
+  defaultFilter?: ActivityEventType | 'all'
 }
 
-export function ActivityFeed({ className }: ActivityFeedProps) {
+export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
+  const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['activity-feed'],
-    queryFn: () => fetchActivity({ limit: 100 }),
+    queryKey: ['activity-feed', typeFilter],
+    queryFn: () =>
+      fetchActivity({
+        limit: 100,
+        types: typeFilter === 'all' ? undefined : [typeFilter],
+      }),
     refetchInterval: 30000,
   })
 
@@ -196,6 +214,26 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
       className={clsx('card overflow-hidden', className)}
       data-testid="activity-feed"
     >
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-800">
+        {TYPE_FILTERS.map((f) => {
+          const Icon = f.icon
+          return (
+            <button
+              key={f.value}
+              onClick={() => setTypeFilter(f.value)}
+              className={clsx(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
+                typeFilter === f.value
+                  ? 'bg-slate-700 text-white'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+              )}
+            >
+              <Icon className="w-3 h-3" />
+              {f.label}
+            </button>
+          )
+        })}
+      </div>
       <List
         rowComponent={ActivityRow}
         rowCount={items.length}

@@ -1,12 +1,25 @@
 'use client'
 
 import { Filter } from 'lucide-react'
-import type { TaskStatus, TaskType } from '@/lib/api'
+import type { TaskType } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+export type PhaseFilter =
+  | 'all'
+  | 'active'
+  | 'ideation'
+  | 'planning'
+  | 'queue'
+  | 'executing'
+  | 'reviewing'
+  | 'integrating'
+  | 'blocked'
+  | 'completed'
+  | 'failed'
 
 export interface TaskFilterValues {
   type: TaskType | 'all'
-  status: TaskStatus | 'all' | 'active' | 'blocked'
+  status: PhaseFilter
   priority: number | 'all'
 }
 
@@ -17,13 +30,17 @@ interface TaskFiltersProps {
   className?: string
 }
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All Status' },
+const PHASE_OPTIONS = [
+  { value: 'all', label: 'All Phases' },
   { value: 'active', label: 'Active' },
+  { value: 'ideation', label: 'Ideation' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'queue', label: 'Queued' },
+  { value: 'executing', label: 'Executing' },
+  { value: 'reviewing', label: 'QA Review' },
+  { value: 'integrating', label: 'Integrating' },
   { value: 'blocked', label: 'Blocked' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'running', label: 'Running' },
-  { value: 'completed', label: 'Completed' },
+  { value: 'completed', label: 'Complete' },
   { value: 'failed', label: 'Failed' },
 ]
 
@@ -75,13 +92,13 @@ export function TaskFilters({
         ))}
       </select>
 
-      {/* Status Filter */}
+      {/* Phase Filter */}
       <select
         value={filters.status}
         onChange={(e) => handleChange('status', e.target.value)}
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-white"
       >
-        {STATUS_OPTIONS.map((opt) => (
+        {PHASE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>

@@ -145,8 +145,13 @@ def execute_agent_fix(
     project_path: str,
     project_id: str,
     agent_session_id: str | None,
+    model_override: str | None = None,
 ) -> tuple[Any, str | None]:
     """Execute agent fix attempt.
+
+    Args:
+        model_override: Optional model ID to use instead of agent's primary model.
+            Used for model escalation during supervisor-guided attempts.
 
     Returns:
         Tuple of (response, agent_session_id)
@@ -180,6 +185,8 @@ def execute_agent_fix(
         "include_roles": AUTOCODE_ROLES,
         "session_id": agent_session_id,
     }
+    if model_override:
+        fix_kwargs["model_override"] = model_override
 
     response = client.complete(**fix_kwargs)
 

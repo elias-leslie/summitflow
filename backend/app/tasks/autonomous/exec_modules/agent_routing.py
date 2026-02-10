@@ -15,12 +15,73 @@ logger = get_logger(__name__)
 # Map task_type to agent_slug for specialized execution
 TASK_TYPE_AGENT_MAP: dict[str, str] = {
     "refactor": "refactor",
-    # Add more mappings as specialized agents are created:
-    # "bug": "debugger",
-    # "feature": "coder",
+    "bug": "debugger",
+    "feature": "coder",
 }
 DEFAULT_AGENT = "coder"
-EXTENSION_ATTEMPTS = 2
+EXTENSION_ATTEMPTS = 4
+
+# Map subtask_type to agent_slug for per-subtask routing
+# Planner assigns subtask_type during planning; execution routes accordingly
+SUBTASK_TYPE_AGENT_MAP: dict[str, str] = {
+    "backend": "coder",
+    "frontend": "coder",
+    "ui-design": "ux-polisher",
+    "refactor": "refactor",
+    "bug-fix": "debugger",
+    "test": "test-writer",
+    "performance": "optimizer",
+    "config": "coder",
+    "devops": "coder",
+}
+
+VALID_SUBTASK_TYPES = set(SUBTASK_TYPE_AGENT_MAP.keys())
+
+# Cross-agent fallback: when primary agent fails after escalation,
+# try these alternative agents (in order)
+CROSS_AGENT_FALLBACK_MAP: dict[str, list[str]] = {
+    "backend": ["debugger", "refactor"],
+    "frontend": ["debugger", "ux-polisher"],
+    "ui-design": ["coder"],
+    "bug-fix": ["coder", "refactor"],
+    "test": ["coder"],
+    "performance": ["coder", "debugger"],
+    "refactor": ["coder"],
+    "config": ["debugger"],
+    "devops": ["coder"],
+}
+
+
+def get_fallback_agents(subtask_type: str | None, current_agent: str) -> list[str]:
+    """Get alternative agent slugs for cross-agent fallback.
+
+    Returns agents to try after the primary agent fails, excluding the current one.
+    """
+    if not subtask_type:
+        return []
+    fallbacks = CROSS_AGENT_FALLBACK_MAP.get(subtask_type, [])
+    return [a for a in fallbacks if a != current_agent]
+
+
+def get_agent_for_subtask(
+    subtask_type: str | None, task_type: str | None = None
+) -> str:
+    """Get the appropriate agent slug, preferring subtask_type over task_type.
+
+    Resolution order: subtask_type mapping > task_type mapping > default ("coder")
+
+    Args:
+        subtask_type: The subtask type (backend, frontend, bug-fix, etc.)
+        task_type: Fallback task-level type (refactor, bug, feature, etc.)
+
+    Returns:
+        Agent slug to use for execution
+    """
+    if subtask_type and subtask_type in SUBTASK_TYPE_AGENT_MAP:
+        return SUBTASK_TYPE_AGENT_MAP[subtask_type]
+    if task_type and task_type in TASK_TYPE_AGENT_MAP:
+        return TASK_TYPE_AGENT_MAP[task_type]
+    return DEFAULT_AGENT
 
 
 def get_agent_for_task(task_type: str | None) -> str:

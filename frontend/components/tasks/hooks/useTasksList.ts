@@ -49,24 +49,53 @@ export function useTasksList(
         ? blockedTasksData?.tasks || []
         : tasksData?.tasks || []
 
+    const isCrowdsourced = (t: Task) =>
+      t.labels?.some((l) => l.toLowerCase() === 'crowdsourced')
+
     const filtered = tasks.filter((task) => {
       // Type filter
       if (filters.type !== 'all' && task.task_type !== filters.type) {
         return false
       }
 
-      // Status filter (skip for "blocked" since we already fetched blocked tasks)
+      // Phase filter (maps pipeline phases to underlying statuses)
       if (filters.status !== 'all' && filters.status !== 'blocked') {
-        if (filters.status === 'active') {
-          if (
-            task.status === 'completed' ||
-            task.status === 'failed' ||
-            task.status === 'cancelled'
-          ) {
-            return false
-          }
-        } else if (task.status !== filters.status) {
-          return false
+        switch (filters.status) {
+          case 'active':
+            if (
+              task.status === 'completed' ||
+              task.status === 'failed' ||
+              task.status === 'cancelled'
+            )
+              return false
+            break
+          case 'ideation':
+            if (task.status !== 'pending' || !isCrowdsourced(task))
+              return false
+            break
+          case 'planning':
+            if (task.status !== 'pending' || isCrowdsourced(task))
+              return false
+            break
+          case 'queue':
+            if (task.status !== 'queue') return false
+            break
+          case 'executing':
+            if (task.status !== 'running' && task.status !== 'paused')
+              return false
+            break
+          case 'reviewing':
+            if (task.status !== 'ai_reviewing') return false
+            break
+          case 'integrating':
+            if (task.status !== 'pr_created') return false
+            break
+          case 'completed':
+            if (task.status !== 'completed') return false
+            break
+          case 'failed':
+            if (task.status !== 'failed') return false
+            break
         }
       }
 

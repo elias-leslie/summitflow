@@ -9,7 +9,7 @@ from typing import Any
 from ....core.debug import debug, debug_error, debug_section
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
-from .agent_routing import get_agent_for_task
+from .agent_routing import get_agent_for_subtask, get_fallback_agents
 from .events import emit_error, emit_log, emit_progress
 from .prompts import build_subtask_prompt
 from .result_processing import process_final_result
@@ -66,8 +66,9 @@ def execute_subtask(
 
         prompt = build_subtask_prompt(task_id, subtask, project_id, project_path)
 
-        # Resolve which agent to use: override > task_type mapping > default
-        agent_slug = agent_override or get_agent_for_task(task_type)
+        # Resolve which agent to use: override > subtask_type > task_type > default
+        subtask_type = subtask.get("subtask_type")
+        agent_slug = agent_override or get_agent_for_subtask(subtask_type, task_type)
 
         logger.info(
             "Executing in project",
@@ -121,6 +122,50 @@ def execute_subtask(
             response.content,
         )
 
+        # Cross-agent fallback: if primary agent failed, try alternative agents
+        if not all_passed and not agent_override:
+            fallback_agents = get_fallback_agents(subtask_type, agent_slug)
+            for fallback_slug in fallback_agents:
+                emit_log(
+                    task_id,
+                    "info",
+                    f"Cross-agent fallback: trying {fallback_slug} for subtask {subtask_short_id}",
+                    project_id=project_id,
+                )
+                try:
+                    fallback_prompt = (
+                        f"Previous agent ({agent_slug}) failed this subtask after "
+                        f"{self_fix_attempts + supervisor_guided_attempts} attempts.\n\n"
+                        f"{prompt}\n\nTry a different approach."
+                    )
+                    fb_response, fb_session = execute_agent_initial(
+                        task_id, subtask_short_id, fallback_prompt,
+                        fallback_slug, project_path, project_id,
+                    )
+                    (
+                        all_passed, step_results, fb_self, fb_super, fb_ext, _,
+                    ) = run_self_healing_loop(
+                        task_id, subtask_id, subtask_short_id, subtask,
+                        steps, project_path, project_id,
+                        fallback_slug, fb_session, fb_response.content,
+                    )
+                    if all_passed:
+                        emit_log(
+                            task_id, "info",
+                            f"Cross-agent fallback to {fallback_slug} succeeded",
+                            project_id=project_id,
+                        )
+                        agent_slug = fallback_slug
+                        self_fix_attempts += fb_self
+                        supervisor_guided_attempts += fb_super
+                        extensions_granted += fb_ext
+                        break
+                except Exception as fb_err:
+                    logger.warning(
+                        "Cross-agent fallback failed",
+                        fallback=fallback_slug, error=str(fb_err),
+                    )
+
         # Process final result
         duration = time.time() - start_time
         return process_final_result(
@@ -136,6 +181,7 @@ def execute_subtask(
             supervisor_guided_attempts,
             extensions_granted,
             issue_counts,
+            subtask_type=subtask_type,
         )
 
     except Exception as e:

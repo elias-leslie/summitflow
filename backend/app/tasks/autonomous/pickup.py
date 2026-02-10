@@ -20,6 +20,7 @@ from typing import Any
 from app.logging_config import get_logger
 from app.storage import tasks as task_store
 from app.storage.subtasks import get_subtasks_for_task
+from app.storage.task_dependencies import is_blocked
 from app.storage.task_spirit import get_task_spirit
 
 from .pickup_dispatch import dispatch_to_review, dispatch_to_stage
@@ -33,10 +34,16 @@ def _determine_next_stage(task_id: str) -> str:
     """Determine which pipeline stage a queued task needs.
 
     Returns:
-        Stage name: 'triage', 'planning', 'execution', or 'unknown'
+        Stage name: 'ideation', 'triage', 'planning', 'execution', or 'unknown'
     """
+    task = task_store.get_task(task_id)
     spirit = get_task_spirit(task_id)
     subtasks = get_subtasks_for_task(task_id)
+
+    # Crowdsourced ideas without an objective need ideation first
+    is_crowdsourced = task and "crowdsourced" in (task.get("labels") or [])
+    if is_crowdsourced and (not spirit or not spirit.get("objective")):
+        return "ideation"
 
     if not spirit or not spirit.get("objective"):
         return "triage"
@@ -77,6 +84,13 @@ def autonomous_work_pickup(
 
     for task in tasks:
         task_id = task["id"]
+
+        # Skip tasks with unresolved dependencies
+        if is_blocked(task_id):
+            logger.info("Task blocked by dependency, skipping", task_id=task_id)
+            dispatched["skipped"] += 1
+            continue
+
         stage = _determine_next_stage(task_id)
 
         try:
@@ -170,6 +184,10 @@ def dispatch_task_immediate(
 
     if error := validate_autonomous_dispatch(project_id):
         return {**error, "task_id": task_id}
+
+    if is_blocked(task_id):
+        logger.info("Task blocked by dependency", task_id=task_id)
+        return {"status": "blocked", "task_id": task_id, "reason": "dependency_blocked"}
 
     stage = _determine_next_stage(task_id)
 

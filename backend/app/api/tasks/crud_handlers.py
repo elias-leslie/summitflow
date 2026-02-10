@@ -63,6 +63,7 @@ async def handle_batch_create_tasks(project_id: str, body: BatchTaskRequest) -> 
                         {
                             "subtask_id": s.subtask_id,
                             "phase": s.phase,
+                            "subtask_type": s.subtask_type,
                             "description": s.description,
                             "steps": [
                                 step if isinstance(step, str) else step.model_dump(exclude_none=True)

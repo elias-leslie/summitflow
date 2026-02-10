@@ -25,6 +25,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     from .models import ProjectInput
 
     workflow_map = {
+        "ideate": ideate_wf,
         "triage": triage_wf,
         "plan": plan_wf,
         "execute": execute_wf,
@@ -82,6 +83,31 @@ async def dispatch_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.pickup import dispatch_task_immediate
 
     return await asyncio.to_thread(dispatch_task_immediate, input.task_id, input.project_id)
+
+
+@hatchet.task(
+    name="summitflow-ideate",
+    input_validator=TaskInput,
+    execution_timeout="300s",
+    retries=3,
+    backoff_factor=2.0,
+    concurrency=ConcurrencyExpression(
+        expression="input.task_id",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def ideate_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.autonomous.ideation import ideate_task
+
+    dispatch = _make_dispatch_callback()
+    result = await asyncio.to_thread(ideate_task, input.task_id, input.project_id)
+
+    # Auto-advance to triage on success
+    if result.get("status") == "ideated":
+        dispatch("triage", input.task_id, input.project_id)
+
+    return result
 
 
 @hatchet.task(

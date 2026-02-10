@@ -14,7 +14,7 @@ from ...services.agent_hub_client import get_sync_client
 from ...services.complexity_assessor import ComplexityAssessor, ComplexityTier
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.subtasks import bulk_create_subtasks
+from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
 from ...storage.task_spirit import create_task_spirit, get_task_spirit
 
 logger = get_logger(__name__)
@@ -174,6 +174,7 @@ def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
                 {
                     "subtask_id": st.get("subtask_id", f"{len(formatted_subtasks) + 1}.1"),
                     "phase": st.get("phase"),
+                    "subtask_type": st.get("subtask_type"),
                     "description": st.get("description", ""),
                     "steps": formatted_steps,
                 }
@@ -181,6 +182,20 @@ def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
 
         bulk_create_subtasks(task_id, formatted_subtasks)
         logger.info("Created subtasks from plan", task_id=task_id, count=len(formatted_subtasks))
+
+        # Store subtask dependencies from planner output
+        deps: list[tuple[str, str]] = []
+        for st in subtasks_data:
+            sid = st.get("subtask_id", "")
+            for dep in st.get("depends_on", []):
+                if dep and sid:
+                    deps.append((sid, dep))
+        if deps:
+            try:
+                bulk_add_subtask_dependencies(task_id, deps)
+                logger.info("Created subtask dependencies", task_id=task_id, count=len(deps))
+            except Exception as e:
+                logger.warning("Failed to create dependencies", task_id=task_id, error=str(e))
 
 
 def _supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> bool:

@@ -29,7 +29,7 @@ AGENT_SUPERVISOR = "agent:supervisor"  # Supervisor for coordination (Sonnet-bas
 AGENT_REVIEWER = "agent:reviewer"  # Code review (Opus-based)
 AGENT_FIXER = "agent:fixer"  # Error fixing (Sonnet-based with escalation)
 AGENT_QA = "agent:qa"  # QA supervisor for task quality review (Opus-based)
-AGENT_IDEA_INTAKE = "agent:idea-intake"  # Idea triage and clarification (Flash-based)
+AGENT_TRIAGER = "agent:triager"  # Task triage and clarity assessment (Flash-based)
 
 # Default models for each use case
 DEFAULT_CLAUDE_MODEL = CLAUDE_SONNET
@@ -65,7 +65,7 @@ VALID_AGENT_MODELS = (
     AGENT_REVIEWER,
     AGENT_FIXER,
     AGENT_QA,
-    AGENT_IDEA_INTAKE,
+    AGENT_TRIAGER,
 )
 
 # =============================================================================
@@ -92,6 +92,9 @@ SELF_HEAL_MAX_ATTEMPTS = 3
 
 # Number of supervisor-guided fix attempts before escalating to human
 SUPERVISOR_GUIDED_MAX_ATTEMPTS = 3
+
+# Model to escalate to during supervisor-guided retry phase
+ESCALATION_MODEL = CLAUDE_OPUS
 
 # Context window usage threshold (%) for starting a fresh session
 CONTEXT_FRESHNESS_THRESHOLD = 80

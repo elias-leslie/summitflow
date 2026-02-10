@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...constants import AGENT_IDEA_INTAKE
+from ...constants import AGENT_TRIAGER
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
@@ -19,15 +19,17 @@ logger = get_logger(__name__)
 
 
 def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
-    """Triage an idea task using the idea-intake agent.
+    """Triage a task using the triager agent.
 
-    Uses Agent Hub complete() with the idea-intake agent to assess:
-    - Clarity of the idea
+    Uses Agent Hub complete() with the triager agent to assess:
+    - Clarity of the task
     - Whether clarifying questions are needed
     - Suggested complexity
+    - Dependency conflicts with active/queued tasks
 
-    If clear, moves task to Planning status.
-    If unclear, adds clarifying questions to task chat.
+    If clear (READY), moves task to Planning status.
+    If unclear (NEEDS_CLARIFICATION), adds questions to events log.
+    If rejected (REJECT), marks task as cancelled.
 
     Args:
         task_id: The task ID to triage
@@ -46,20 +48,38 @@ def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
     title = task.get("title", "")
     description = task.get("description", "")
 
-    prompt = f"""Assess this idea for clarity and completeness:
+    # Gather context about existing active/queued tasks for conflict detection
+    active_context = ""
+    try:
+        active_tasks: list[dict[str, Any]] = []
+        for status in ("running", "queue", "pending"):
+            active_tasks.extend(task_store.list_tasks(project_id=project_id, status_filter=status))
+        if active_tasks:
+            task_titles = [f"- {t.get('title', '')}" for t in active_tasks[:20]]
+            active_context = (
+                "\n\nExisting active/queued tasks in this project:\n"
+                + "\n".join(task_titles)
+                + "\n\nCheck for duplicates or conflicts."
+            )
+    except Exception:
+        pass  # Non-critical context enrichment
+
+    prompt = f"""Assess this task for clarity, feasibility, and readiness:
 
 Title: {title}
-Description: {description or "(no description provided)"}
+Description: {description or "(no description provided)"}{active_context}
 
 Provide your assessment in JSON format:
 {{
-    "status": "CLEAR" | "NEEDS_CLARIFICATION",
+    "status": "READY" | "NEEDS_CLARIFICATION" | "REJECT",
     "objective": "Single measurable goal",
     "spirit": "Core intent - what TO accomplish",
     "anti": "What should absolutely NOT be done",
     "requirements": ["List of acceptance criteria"],
     "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",
+    "priority": "critical" | "high" | "medium" | "low",
     "clarifying_questions": ["Only if NEEDS_CLARIFICATION"],
+    "reject_reason": "Only if REJECT",
     "reasoning": "Brief explanation"
 }}"""
 
@@ -68,7 +88,7 @@ Provide your assessment in JSON format:
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
-            agent_slug=AGENT_IDEA_INTAKE.replace("agent:", ""),
+            agent_slug=AGENT_TRIAGER.replace("agent:", ""),
         )
 
         triage_result = _parse_triage_response(response.content)
@@ -90,15 +110,17 @@ Provide your assessment in JSON format:
 
 
 def _parse_triage_response(content: str) -> dict[str, Any]:
-    """Parse the idea-intake agent's response.
+    """Parse the triager agent's response.
 
     Expected format:
     {
-        "status": "CLEAR" | "NEEDS_CLARIFICATION",
+        "status": "READY" | "NEEDS_CLARIFICATION" | "REJECT",
         "objective": "...",
         "requirements": [...],
         "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",
+        "priority": "critical" | "high" | "medium" | "low",
         "clarifying_questions": [...],
+        "reject_reason": "...",
         "reasoning": "..."
     }
     """
@@ -124,12 +146,21 @@ def _parse_triage_response(content: str) -> dict[str, Any]:
 def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
     """Process triage result and update task accordingly.
 
-    If CLEAR: Create task_spirit with objective and move to 'queue' status for planning.
-    If NEEDS_CLARIFICATION: Add questions to events log.
+    If READY: Create task_spirit with objective and move to 'queue' status for planning.
+    If NEEDS_CLARIFICATION: Add questions to events log and block.
+    If REJECT: Cancel the task.
     """
     status = result.get("status", "").upper()
 
-    if status == "CLEAR":
+    # Handle REJECT verdict
+    if status == "REJECT":
+        reason = result.get("reject_reason", result.get("reasoning", "Rejected by triager"))
+        task_store.update_task_status(task_id, "cancelled")
+        log_task_event(task_id, f"Triage: REJECTED - {reason}")
+        logger.info("Triage rejected task", task_id=task_id, reason=reason[:100])
+        return
+
+    if status in ("CLEAR", "READY"):
         complexity = result.get("suggested_complexity", "STANDARD")
         objective = result.get("objective", "")
         requirements = result.get("requirements", [])

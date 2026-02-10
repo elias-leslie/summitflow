@@ -10,12 +10,13 @@ from typing import Any
 
 from psycopg.rows import TupleRow
 
-# Column list for all subtask SELECT/RETURNING queries (10 columns)
+# Column list for all subtask SELECT/RETURNING queries (11 columns)
 SUBTASK_COLUMNS = """id, task_id, subtask_id, phase, description,
-    passes, passed_at, display_order, created_at, citations_acknowledged_at"""
+    passes, passed_at, display_order, created_at, citations_acknowledged_at,
+    subtask_type"""
 
 # Expected column count for row validation
-EXPECTED_SUBTASK_COLUMNS = 10
+EXPECTED_SUBTASK_COLUMNS = 11
 
 
 def generate_subtask_id(task_id: str, subtask_id: str) -> str:
@@ -51,4 +52,5 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "display_order": row[7],
         "created_at": row[8].isoformat() if row[8] else None,
         "citations_acknowledged_at": row[9].isoformat() if row[9] else None,
+        "subtask_type": row[10],
     }

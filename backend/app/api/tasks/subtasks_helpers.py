@@ -153,6 +153,7 @@ def create_subtask_logic(
         display_order=request.display_order,
         phase=request.phase,
         steps=steps,
+        subtask_type=request.subtask_type,
     )
 
     convert_steps_to_response_format(subtask)

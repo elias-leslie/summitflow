@@ -144,6 +144,36 @@ def verify_plan(
 
 
 @app.command()
+def idea(
+    description: Annotated[str, typer.Argument()],
+    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 3,
+) -> None:
+    """Submit an idea for autonomous ideation and execution.
+
+    Shorthand for: st create "..." --labels crowdsourced --autonomous
+
+    Examples:
+        st idea "Add dark mode support"
+        st idea "Refactor auth module to use JWT" -p 1
+    """
+    from .tasks_create import create_task_command
+
+    create_task_command(
+        title=description,
+        from_file=None,
+        dry_run=False,
+        description=None,
+        priority=priority,
+        labels="crowdsourced",
+        task_type="task",
+        parent=None,
+        plan=None,
+        blocked_by=None,
+        autonomous=True,
+    )
+
+
+@app.command()
 def autocode(
     task_id: Annotated[str | None, typer.Argument()] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
