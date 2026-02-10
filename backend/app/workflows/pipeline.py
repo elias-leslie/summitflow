@@ -125,7 +125,19 @@ async def ideate_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 async def triage_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.triage import triage_idea
 
-    return await asyncio.to_thread(triage_idea, input.task_id, input.project_id)
+    result = await asyncio.to_thread(triage_idea, input.task_id, input.project_id)
+
+    # Auto-advance on success: determine next stage (planning or execution)
+    if result.get("status") == "completed":
+        from ..tasks.autonomous.pickup import _determine_next_stage
+
+        _STAGE_TO_WF = {"planning": "plan", "execution": "execute"}
+        next_stage = _determine_next_stage(input.task_id)
+        wf_stage = _STAGE_TO_WF.get(next_stage)
+        if wf_stage:
+            await _trigger_workflow(wf_stage, input.task_id, input.project_id)
+
+    return result
 
 
 @hatchet.task(
@@ -143,7 +155,13 @@ async def triage_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 async def plan_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.planning import create_plan
 
-    return await asyncio.to_thread(create_plan, input.task_id, input.project_id)
+    result = await asyncio.to_thread(create_plan, input.task_id, input.project_id)
+
+    # Auto-advance to execution on success
+    if result.get("status") == "completed":
+        await _trigger_workflow("execute", input.task_id, input.project_id)
+
+    return result
 
 
 @hatchet.task(
