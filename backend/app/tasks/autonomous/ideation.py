@@ -82,7 +82,7 @@ def ideate_task(task_id: str, project_id: str) -> dict[str, Any]:
 
             # Update task with enriched details
             updates: dict[str, Any] = {
-                "enrichment_status": "enriched",
+                "enrichment_status": "accepted",
                 "enriched_by": "ideator",
             }
             if result.get("enriched_description"):

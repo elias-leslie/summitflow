@@ -6,6 +6,9 @@ Tests the FULL flows with real database state and mocked Agent Hub:
 3. Execution: Running → execute subtasks → verify steps → complete
 4. Review: PR Created → AI review → auto-merge (SIMPLE) or human review
 5. Escalation: Failures → supervisor guidance → human escalation
+6. Ideation: Raw idea → agent expansion → task_spirit + enriched description
+7. Partial merge: Mixed results → follow-up task → QA review for passing work
+8. Auto-rollback: Merge + failed validation → revert → regression task
 
 Each test creates real database records, mocks Agent Hub, and verifies state transitions.
 """
@@ -24,8 +27,11 @@ from app.storage.connection import get_connection
 from app.storage.events import get_events_by_trace
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.task_spirit import create_task_spirit, get_task_spirit
+from app.tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
 from app.tasks.autonomous.escalation import check_escalation_needed
+from app.tasks.autonomous.exec_modules.completion_handler import handle_partial_completion
 from app.tasks.autonomous.execution import start_execution
+from app.tasks.autonomous.ideation import ideate_task
 from app.tasks.autonomous.planning import create_plan
 from app.tasks.autonomous.review import ai_review
 from app.tasks.autonomous.triage import triage_idea
@@ -832,3 +838,449 @@ class TestFullAutonomousPipeline:
         assert final_task is not None
         assert final_task["status"] == "completed"
         assert task_events_contain(task_id, "Auto-merged (SIMPLE)")
+
+
+@pytest.mark.e2e
+class TestIdeationE2E:
+    """End-to-end tests for ideation stage (raw idea expansion)."""
+
+    def test_ideation_expands_idea_creates_spirit(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Ideation should expand a raw idea and create task_spirit with objective."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Better search",
+            description="Make search better somehow",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        ideation_json = json.dumps(
+            {
+                "objective": "Implement fuzzy search with typo tolerance using Levenshtein distance",
+                "scope": "Backend search API only; frontend changes out of scope",
+                "acceptance_criteria": [
+                    "Search returns results for misspelled queries",
+                    "Response time < 200ms for fuzzy matches",
+                ],
+                "suggested_type": "feature",
+                "complexity": "STANDARD",
+                "dependencies": [],
+                "enriched_description": (
+                    "Add fuzzy matching to the search endpoint using Levenshtein distance. "
+                    "The search API should tolerate up to 2 character edits per word."
+                ),
+            }
+        )
+
+        mock_response = create_mock_agent_response(ideation_json)
+
+        with patch("app.tasks.autonomous.ideation.get_sync_client") as mock_client:
+            mock_client.return_value.complete.return_value = mock_response
+            result = ideate_task(task_id, test_project_id)
+
+        assert result["status"] == "ideated"
+        assert "fuzzy search" in result["objective"].lower()
+        assert result["complexity"] == "STANDARD"
+
+        # Verify task_spirit created with objective and scope
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        assert "fuzzy search" in spirit["objective"].lower()
+        assert "Backend search API" in spirit.get("context", "")
+
+        # Verify task updated with enriched details
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["enrichment_status"] == "accepted"
+        assert updated_task["enriched_by"] == "ideator"
+        assert updated_task["task_type"] == "feature"
+        assert updated_task["complexity"] == "STANDARD"
+        assert "Levenshtein" in (updated_task["description"] or "")
+
+        # Verify event logged
+        assert task_events_contain(task_id, "Ideation complete")
+
+    def test_ideation_missing_task_returns_error(self, test_project_id: str) -> None:
+        """Ideation on missing task should return error."""
+        result = ideate_task("nonexistent-ideation-xyz", test_project_id)
+        assert result["status"] == "error"
+        assert result["reason"] == "task_not_found"
+
+    def test_ideation_no_objective_returns_unclear(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """When ideator response has no extractable objective, return unclear."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Do something",
+            description="",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        # Return JSON without an objective field
+        mock_response = create_mock_agent_response(
+            json.dumps({"notes": "Too vague to define", "suggestions": []})
+        )
+
+        with patch("app.tasks.autonomous.ideation.get_sync_client") as mock_client:
+            mock_client.return_value.complete.return_value = mock_response
+            result = ideate_task(task_id, test_project_id)
+
+        assert result["status"] == "unclear"
+        assert result["reason"] == "no_objective_produced"
+
+        # No spirit should be created
+        spirit = get_task_spirit(task_id)
+        assert spirit is None or not spirit.get("objective")
+
+    def test_ideation_agent_error_returns_error(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Agent Hub failure during ideation should return error status."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Some idea",
+            description="An idea that will fail in ideation",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        with patch("app.tasks.autonomous.ideation.get_sync_client") as mock_client:
+            mock_client.return_value.complete.side_effect = ConnectionError("Agent Hub down")
+            result = ideate_task(task_id, test_project_id)
+
+        assert result["status"] == "error"
+        assert "Agent Hub down" in result["error"]
+        assert task_events_contain(task_id, "Ideation failed")
+
+
+@pytest.mark.e2e
+class TestPartialMergeE2E:
+    """End-to-end tests for partial merge completion flow."""
+
+    def test_partial_completion_creates_followup_task(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Partial completion should create follow-up task and dispatch for review."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Multi-step feature",
+            description="A feature with multiple subtasks",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+
+        # Create two subtasks (one will pass, one will fail)
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Add API endpoint",
+            display_order=0,
+            phase="backend",
+            steps=[{"description": "Create endpoint"}],
+        )
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.2",
+            description="Add frontend component",
+            display_order=1,
+            phase="frontend",
+            steps=[{"description": "Create component"}],
+        )
+
+        # Simulate mixed execution results
+        results = [
+            {
+                "subtask_id": "1.1",
+                "status": "passed",
+                "self_fix_attempts": 0,
+                "supervisor_guided_attempts": 0,
+            },
+            {
+                "subtask_id": "1.2",
+                "status": "failed",
+                "error": "Component tests failing",
+                "self_fix_attempts": 3,
+                "supervisor_guided_attempts": 2,
+            },
+        ]
+
+        dispatch = MagicMock()
+        success = handle_partial_completion(
+            task_id, test_project_id, "/tmp/e2e-test", results, dispatch
+        )
+
+        assert success is True
+
+        # Verify original task moved to ai_reviewing
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "ai_reviewing"
+
+        # Verify verification_result has partial merge info
+        vr = updated_task.get("verification_result") or {}
+        assert vr.get("partial_merge") is True
+        assert vr.get("passed_count") == 1
+        assert vr.get("failed_count") == 1
+
+        # Verify dispatch was called for review
+        dispatch.assert_called_once_with("review", task_id, test_project_id)
+
+        # Verify follow-up task was created
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, parent_task_id, priority FROM tasks WHERE parent_task_id = %s",
+                (task_id,),
+            )
+            follow_ups = cur.fetchall()
+
+        assert len(follow_ups) == 1
+        follow_up_id, follow_up_title, parent_id, priority = follow_ups[0]
+        cleanup_tasks.append(follow_up_id)
+        assert "stuck subtasks" in follow_up_title.lower() or task_id in follow_up_title
+        assert parent_id == task_id
+        assert priority == 1  # High priority
+
+    def test_partial_completion_all_passed_returns_false(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """When all results passed, partial completion should return False (nothing to do)."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="All-pass task",
+            description="Everything works",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+
+        results = [
+            {"subtask_id": "1.1", "status": "passed"},
+            {"subtask_id": "1.2", "status": "passed"},
+        ]
+
+        success = handle_partial_completion(
+            task_id, test_project_id, "/tmp/e2e-test", results
+        )
+
+        assert success is False
+
+    def test_partial_completion_all_failed_returns_false(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """When all results failed, partial completion should return False."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="All-fail task",
+            description="Nothing works",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+
+        results = [
+            {"subtask_id": "1.1", "status": "failed", "error": "timeout"},
+            {"subtask_id": "1.2", "status": "failed", "error": "crash"},
+        ]
+
+        success = handle_partial_completion(
+            task_id, test_project_id, "/tmp/e2e-test", results
+        )
+
+        assert success is False
+
+
+@pytest.mark.e2e
+class TestAutoRollbackE2E:
+    """End-to-end tests for merge + auto-rollback on post-merge validation failure."""
+
+    def test_successful_merge_completes(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Successful merge with passing validation should return merged status."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Merge-ready task",
+            description="A completed task ready to merge",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "completed")
+
+        mock_worktree = MagicMock()
+        mock_worktree.branch = f"{task_id}/main"
+        mock_worktree.base_branch = "main"
+        mock_worktree.path = f"/tmp/worktrees/{task_id}"
+
+        mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "app.tasks.autonomous.cleanup.get_task_worktree",
+                return_value=mock_worktree,
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.get_project_root_path",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.subprocess.run",
+                return_value=mock_subprocess_success,
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.remove_task_worktree",
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup._run_post_merge_validation",
+                return_value=True,
+            ),
+        ):
+            result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+
+        assert result["status"] == "merged"
+        assert result["task_branch"] == f"{task_id}/main"
+        assert result["base_branch"] == "main"
+        assert result["post_merge_valid"] is True
+
+    def test_merge_with_failed_validation_triggers_rollback(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Failed post-merge validation should trigger auto-rollback."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Regression-causing task",
+            description="This merge will fail validation",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "completed")
+
+        mock_worktree = MagicMock()
+        mock_worktree.branch = f"{task_id}/main"
+        mock_worktree.base_branch = "main"
+        mock_worktree.path = f"/tmp/worktrees/{task_id}"
+
+        mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "app.tasks.autonomous.cleanup.get_task_worktree",
+                return_value=mock_worktree,
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.get_project_root_path",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.subprocess.run",
+                return_value=mock_subprocess_success,
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup.remove_task_worktree",
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup._run_post_merge_validation",
+                return_value=False,
+            ),
+            patch(
+                "app.tasks.autonomous.cleanup._auto_rollback",
+                return_value=True,
+            ) as mock_rollback,
+        ):
+            result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+
+        assert result["status"] == "rolled_back"
+        assert result["reason"] == "post_merge_validation_failed"
+        mock_rollback.assert_called_once_with(
+            task_id, "/tmp/e2e-test", test_project_id, f"{task_id}/main"
+        )
+
+    def test_auto_rollback_reverts_and_creates_regression_task(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Full auto-rollback should revert merge, create regression task, block original."""
+        from app.tasks.autonomous.cleanup import _auto_rollback
+
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Task causing regression",
+            description="This task's merge breaks things",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        # ai_reviewing → blocked is a valid transition (completed → blocked is not)
+        task_store.update_task_status(task_id, "running")
+        task_store.update_task_status(task_id, "ai_reviewing")
+
+        mock_revert_success = MagicMock(returncode=0, stdout="", stderr="")
+        task_branch = f"{task_id}/main"
+
+        with (
+            patch(
+                "app.tasks.autonomous.cleanup.subprocess.run",
+                return_value=mock_revert_success,
+            ),
+            patch("app.services.agent_hub_client.get_sync_client"),
+        ):
+            success = _auto_rollback(task_id, "/tmp/e2e-test", test_project_id, task_branch)
+
+        assert success is True
+
+        # Verify original task is now blocked
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "blocked"
+
+        # Verify rollback event logged
+        assert task_events_contain(task_id, "Auto-rollback")
+        assert task_events_contain(task_id, "Reverted merge")
+
+        # Verify regression fix task was created
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, task_type, parent_task_id, priority FROM tasks WHERE parent_task_id = %s",
+                (task_id,),
+            )
+            regression_tasks = cur.fetchall()
+
+        assert len(regression_tasks) == 1
+        reg_id, reg_title, reg_type, reg_parent, reg_priority = regression_tasks[0]
+        cleanup_tasks.append(reg_id)
+        assert "regression" in reg_title.lower() or task_id in reg_title
+        assert reg_type == "regression"
+        assert reg_parent == task_id
+        assert reg_priority == 1
+
+    def test_merge_blocked_when_task_running(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Should not merge when task is still running."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Still running task",
+            description="Not ready for merge",
+            task_type="task",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "running")
+
+        result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+
+        assert result["status"] == "blocked"
+        assert result["reason"] == "task_still_running"
