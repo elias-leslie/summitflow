@@ -1,0 +1,208 @@
+"""Core backup execution logic."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from ..logging_config import get_logger
+from ..storage import backups as backup_store
+from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_utils import get_project_root, parse_backup_output
+
+logger = get_logger(__name__)
+
+# Default paths
+SCRIPT_DIR = Path.home() / "summitflow" / "scripts"
+BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
+
+
+def create_backup(
+    project_id: str,
+    note: str | None = None,
+    backup_type: str = "manual",
+    keep_local: bool = False,
+    retention_count: int | None = None,
+) -> dict[str, Any]:
+    """Create a backup for a project.
+
+    Wraps the existing backup.sh script.
+
+    Args:
+        project_id: Project ID to backup
+        note: Optional user note
+        backup_type: 'manual' or 'scheduled'
+        keep_local: If True, keep local copy in addition to SMB
+        retention_count: Number of backups to retain (overrides default)
+
+    Returns:
+        Backup record dict
+    """
+    logger.info(
+        "create_backup_started",
+        project_id=project_id,
+        backup_type=backup_type,
+    )
+
+    # Get project root path first to validate project exists
+    project_dir = get_project_root(project_id)
+    if not project_dir:
+        error_msg = f"Project {project_id} not found or has no root_path"
+        logger.error("create_backup_failed", project_id=project_id, error=error_msg)
+        return {"status": "failed", "error": error_msg}
+
+    # Acquire per-project lock to prevent concurrent backups
+    if not acquire_backup_lock(project_id):
+        logger.info(
+            "create_backup_skipped_locked",
+            project_id=project_id,
+        )
+        return {"status": "skipped", "error": f"Backup already running for {project_id}"}
+
+    try:
+        return _run_backup(project_id, project_dir, note, backup_type, keep_local, retention_count)
+    finally:
+        release_backup_lock(project_id)
+
+
+def _run_backup(
+    project_id: str,
+    project_dir: str,
+    note: str | None,
+    backup_type: str,
+    keep_local: bool,
+    retention_count: int | None = None,
+) -> dict[str, Any]:
+    """Execute backup with lock already held."""
+    # Create pending backup record
+    backup_record = backup_store.create_backup_record(
+        project_id=project_id,
+        backup_type=backup_type,
+        note=note,
+    )
+    backup_id = backup_record["id"]
+
+    # Mark as running
+    backup_store.update_backup_status(backup_id, "running")
+
+    # Build command
+    cmd = ["bash", str(BACKUP_SCRIPT)]
+    if keep_local:
+        cmd.append("--keep-local")
+    if retention_count is not None:
+        cmd.extend(["--retention", str(retention_count)])
+
+    try:
+        # Run backup.sh
+        result = subprocess.run(
+            cmd,
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+        )
+
+        if result.returncode == 0:
+            return _handle_backup_success(backup_id, project_id, result.stdout)
+
+        # Check if SMB was unavailable (pending local backup)
+        if "SMB unavailable" in result.stdout or "pending" in result.stdout.lower():
+            return _handle_pending_upload(backup_id, project_id)
+
+        # Actual failure
+        return _handle_backup_failure(backup_id, result.stderr or result.stdout or "Unknown error")
+
+    except subprocess.TimeoutExpired:
+        return _handle_backup_timeout(backup_id)
+
+    except Exception as e:
+        return _handle_backup_exception(backup_id, str(e))
+
+
+def _handle_backup_success(backup_id: str, project_id: str, stdout: str) -> dict[str, Any]:
+    """Handle successful backup completion."""
+    # Parse output for size and verification info
+    size_info = parse_backup_output(stdout)
+    verification = size_info.pop("verification", None)
+
+    verification_kwargs: dict[str, Any] = {}
+    if verification:
+        verification_kwargs["verified"] = verification.get("verified")
+        verification_kwargs["verified_at"] = verification.get("verified_at")
+        verification_kwargs["checksum"] = verification.get("checksum")
+        total = verification.get("total_files")
+        if total is not None:
+            verification_kwargs["total_files"] = int(total)
+        verification_kwargs["verification_json"] = verification
+
+    backup_store.update_backup_status(
+        backup_id,
+        "completed",
+        size_bytes=size_info.get("total_bytes"),
+        db_size_bytes=size_info.get("db_bytes"),
+        files_size_bytes=size_info.get("files_bytes"),
+        location=size_info.get("location"),
+        **verification_kwargs,
+    )
+
+    logger.info(
+        "create_backup_completed",
+        backup_id=backup_id,
+        project_id=project_id,
+        size_bytes=size_info.get("total_bytes"),
+        verified=verification.get("verified") if verification else None,
+    )
+
+    return {
+        "status": "completed",
+        "backup_id": backup_id,
+        "project_id": project_id,
+        **size_info,
+    }
+
+
+def _handle_pending_upload(backup_id: str, project_id: str) -> dict[str, Any]:
+    """Handle backup saved locally but pending SMB upload."""
+    backup_store.update_backup_status(
+        backup_id,
+        "completed",
+        location="pending_upload",
+    )
+    logger.info(
+        "create_backup_pending_upload",
+        backup_id=backup_id,
+        project_id=project_id,
+    )
+    return {
+        "status": "completed",
+        "backup_id": backup_id,
+        "location": "pending_upload",
+        "message": "Backup saved locally, pending SMB upload",
+    }
+
+
+def _handle_backup_failure(backup_id: str, error_msg: str) -> dict[str, Any]:
+    """Handle backup failure."""
+    backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
+    logger.error(
+        "create_backup_failed",
+        backup_id=backup_id,
+        error=error_msg[:200],
+    )
+    return {"status": "failed", "backup_id": backup_id, "error": error_msg}
+
+
+def _handle_backup_timeout(backup_id: str) -> dict[str, Any]:
+    """Handle backup timeout."""
+    error_msg = "Backup timed out after 10 minutes"
+    backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
+    logger.error("create_backup_timeout", backup_id=backup_id)
+    return {"status": "failed", "backup_id": backup_id, "error": error_msg}
+
+
+def _handle_backup_exception(backup_id: str, error_msg: str) -> dict[str, Any]:
+    """Handle backup exception."""
+    backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
+    logger.error("create_backup_exception", backup_id=backup_id)
+    return {"status": "failed", "backup_id": backup_id, "error": error_msg}

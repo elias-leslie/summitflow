@@ -117,7 +117,7 @@ class TestCreateBackupTask:
     def test_create_backup_creates_record(self, cleanup_project):
         """Create backup creates a backup record."""
         # Mock subprocess to avoid running actual backup
-        with patch("app.tasks.backup.subprocess.run") as mock_run:
+        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="Size: 100M\nDB Size: 50M\nLocation: /backup/test.tar.gz",
@@ -140,7 +140,7 @@ class TestCreateBackupTask:
 
     def test_create_backup_handles_failure(self, cleanup_project):
         """Create backup handles script failure."""
-        with patch("app.tasks.backup.subprocess.run") as mock_run:
+        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=1,
                 stdout="",
@@ -158,7 +158,7 @@ class TestCreateBackupTask:
 
     def test_create_backup_handles_pending_upload(self, cleanup_project):
         """Create backup handles SMB unavailable case."""
-        with patch("app.tasks.backup.subprocess.run") as mock_run:
+        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=1,
                 stdout="Backup saved locally (SMB unavailable)",
@@ -198,7 +198,7 @@ class TestScheduledBackups:
             conn.commit()
 
         # Mock create_backup to avoid actual execution
-        with patch("app.tasks.backup.create_backup") as mock_create:
+        with patch("app.tasks.backup_scheduler.create_backup") as mock_create:
             mock_create.return_value = {"status": "completed", "backup_id": "mock-backup-id"}
 
             result = run_scheduled_backups()
