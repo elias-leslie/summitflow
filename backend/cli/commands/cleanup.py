@@ -11,13 +11,20 @@ import typer
 
 from ..client import STClient
 from ..lib.worktree import get_active_worktrees
-from ..output import output_json, output_success, output_warning
+from ..output import output_json, output_success
 from .cleanup_analysis import (
     CleanupAction,
     WorktreeAnalysis,
     analyze_worktree,
     cleanup_worktree,
     format_analysis,
+)
+from .cleanup_handlers import (
+    categorize_worktrees,
+    confirm_force_cleanup,
+    execute_cleanup,
+    print_cleanup_results,
+    print_worktree_summary,
 )
 
 # Re-export for backward compatibility
@@ -33,6 +40,15 @@ __all__ = [
 ]
 
 app = typer.Typer(help="Cleanup commands for stale resources")
+
+
+def get_project_id(all_projects: bool) -> str | None:
+    """Get project ID based on --all flag."""
+    if all_projects:
+        return None
+    from ..config import get_config_optional
+
+    return get_config_optional().project_id or None
 
 
 @app.command("worktrees")
@@ -75,9 +91,7 @@ def cleanup_worktrees(
         st cleanup worktrees --stale-days 14   # Mark stale after 14 days
         st cleanup worktrees --dry-run          # Preview cleanup
     """
-    # Get worktrees scoped to current project (unless --all)
-    from ..config import get_config_optional
-    project_id = None if all_projects else (get_config_optional().project_id or None)
+    project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
@@ -86,76 +100,35 @@ def cleanup_worktrees(
 
     typer.echo(f"Analyzing {len(worktrees)} worktree(s)...")
 
-    # Analyze each worktree
+    # Analyze and categorize
     client = STClient(require_project=False)
     analyses = [analyze_worktree(wt, client) for wt in worktrees]
+    categorization = categorize_worktrees(analyses, stale_days)
 
-    # Categorize
-    safe_to_delete = [a for a in analyses if a.action in (CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED)]
-    needs_merge = [a for a in analyses if a.action == CleanupAction.NEEDS_MERGE]
-    has_conflicts = [a for a in analyses if a.action == CleanupAction.HAS_CONFLICTS]
-    needs_review = [a for a in analyses if a.action == CleanupAction.MANUAL_REVIEW]
-    active_tasks = [a for a in analyses if a.action == CleanupAction.TASK_ACTIVE]
-    stale = [a for a in analyses if a.last_commit_age_days is not None and a.last_commit_age_days >= stale_days]
-
-    # Print summary
-    typer.echo("")
-    typer.echo(f"WORKTREE ANALYSIS [{len(worktrees)} total]")
-    typer.echo(f"  Safe to delete: {len(safe_to_delete)}")
-    typer.echo(f"  Needs merge:    {len(needs_merge)}")
-    typer.echo(f"  Has conflicts:  {len(has_conflicts)}")
-    typer.echo(f"  Manual review:  {len(needs_review)}")
-    typer.echo(f"  Active tasks:   {len(active_tasks)}")
-    typer.echo(f"  Stale (>{stale_days}d):  {len(stale)}")
-    typer.echo("")
-
-    # Print details
+    # Print analysis
+    print_worktree_summary(len(worktrees), categorization, stale_days)
     for analysis in analyses:
         typer.echo(format_analysis(analysis))
 
-    # Handle cleanup modes
+    # Check if cleanup is requested
     if not auto and not force:
         typer.echo("")
         typer.echo("Use --auto to cleanup safe cases or --force for all")
         return
 
-    # Confirm force mode
+    # Confirm force mode if needed
     if force and not dry_run:
-        typer.echo("")
-        output_warning(
-            f"FORCE MODE: Will cleanup ALL {len(worktrees)} worktrees including "
-            f"{len(needs_merge)} with unmerged commits!"
-        )
-        if not typer.confirm("Are you sure?", default=False):
+        if not confirm_force_cleanup(len(worktrees), len(categorization.needs_merge)):
             typer.echo("Aborted")
             return
 
-    # Perform cleanup
+    # Execute cleanup
     typer.echo("")
-    typer.echo("DRY RUN - No changes will be made:" if dry_run else "")
-    cleaned = skipped = errors = 0
-    targets = analyses if force else safe_to_delete
-
-    for analysis in targets:
-        if dry_run:
-            typer.echo(f"  Would cleanup: {analysis.worktree.task_id}")
-            cleaned += 1
-        else:
-            success, message = cleanup_worktree(analysis, force=force)
-            if success:
-                typer.echo(f"  Cleaned: {analysis.worktree.task_id}")
-                cleaned += 1
-            elif "Skipped" in message:
-                typer.echo(f"  {message}: {analysis.worktree.task_id}")
-                skipped += 1
-            else:
-                typer.echo(f"  {message}: {analysis.worktree.task_id}")
-                errors += 1
-
-    # Summary
-    typer.echo("")
-    msg = f"Would cleanup {cleaned} worktree(s)" if dry_run else f"Cleaned {cleaned}, skipped {skipped}, errors {errors}"
-    output_success(msg)
+    if dry_run:
+        typer.echo("DRY RUN - No changes will be made:")
+    targets = analyses if force else categorization.safe_to_delete
+    results = execute_cleanup(targets, force=force, dry_run=dry_run)
+    print_cleanup_results(results, dry_run)
 
 
 @app.command("status")
@@ -169,8 +142,7 @@ def cleanup_status(
 
     Quick overview without detailed analysis.
     """
-    from ..config import get_config_optional
-    project_id = None if all_projects else (get_config_optional().project_id or None)
+    project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
