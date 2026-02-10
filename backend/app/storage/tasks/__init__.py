@@ -25,7 +25,7 @@ from .core import (
     get_task,
     update_task,
 )
-from .dedup import bug_task_exists_for_error, task_exists_for_file
+from .dedup import bug_task_exists_for_error, duplicate_task_exists, task_exists_for_file
 from .queries import (
     get_stale_tasks,
     get_tasks_by_enrichment_status,
@@ -54,6 +54,7 @@ __all__ = [
     "count_running_tasks",
     "create_task",
     "delete_task",
+    "duplicate_task_exists",
     "get_agent_hub_sessions",
     "get_stale_tasks",
     "get_task",

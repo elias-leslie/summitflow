@@ -6,6 +6,7 @@ This module provides semantic matching to prevent duplicate tasks.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from ..connection import get_connection
 
@@ -91,6 +92,72 @@ def _calculate_keyword_overlap(keywords1: set[str], keywords2: set[str]) -> floa
     intersection = len(keywords1 & keywords2)
     union = len(keywords1 | keywords2)
     return intersection / union if union > 0 else 0.0
+
+
+def _extract_title_keywords(title: str) -> set[str]:
+    """Extract significant keywords from a task title for dedup comparison.
+
+    Strips noise: hex IDs, pure numbers, timestamps, and stop words.
+    This ensures "AutoTest: Scheduled exec 111" and "AutoTest: Scheduled exec 222"
+    produce identical keyword sets and are recognized as duplicates.
+    """
+    title_lower = title.lower().strip()
+    # Remove hex-like tokens (8+ hex chars — UUIDs, random IDs)
+    title_lower = re.sub(r"\b[0-9a-f]{8,}\b", "", title_lower)
+    # Remove pure numbers (timestamps, counters)
+    title_lower = re.sub(r"\b\d+\b", "", title_lower)
+
+    stop_words = {
+        "the", "and", "for", "due", "with", "from", "into", "that", "this",
+        "not", "but", "was", "are", "has", "had", "been",
+        "task", "test", "autotest", "auto",
+    }
+    return {word for word in re.findall(r"\b[a-z]{3,}\b", title_lower) if word not in stop_words}
+
+
+def duplicate_task_exists(
+    project_id: str,
+    title: str,
+    exclude_task_id: str | None = None,
+) -> str | None:
+    """Check if a duplicate task exists based on title keyword similarity.
+
+    Uses Jaccard similarity (>= 0.8) on extracted keywords. Strips IDs and
+    timestamps so "Fix login v1" and "Fix login v2" are recognized as duplicates.
+
+    Args:
+        project_id: Project to check within
+        title: Title of the new/current task
+        exclude_task_id: Task ID to exclude from comparison (self)
+
+    Returns:
+        The ID of the duplicate task if found, None otherwise.
+    """
+    new_keywords = _extract_title_keywords(title)
+    if not new_keywords:
+        return None
+
+    query = """
+        SELECT id, title FROM tasks
+        WHERE project_id = %s
+        AND status IN ('pending', 'running', 'queue', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
+    """
+    params: list[Any] = [project_id]
+    if exclude_task_id:
+        query += " AND id != %s"
+        params.append(exclude_task_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+
+        for row in cur.fetchall():
+            existing_id, existing_title = row[0], row[1] or ""
+            existing_keywords = _extract_title_keywords(existing_title)
+            overlap = _calculate_keyword_overlap(new_keywords, existing_keywords)
+            if overlap >= 0.8:
+                return str(existing_id)
+
+    return None
 
 
 def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:

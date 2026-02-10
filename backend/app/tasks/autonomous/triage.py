@@ -14,6 +14,7 @@ from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.task_spirit import create_task_spirit
+from ...storage.tasks.dedup import duplicate_task_exists
 
 logger = get_logger(__name__)
 
@@ -21,15 +22,16 @@ logger = get_logger(__name__)
 def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
     """Triage a task using the triager agent.
 
-    Uses Agent Hub complete() with the triager agent to assess:
+    First runs a deterministic duplicate check (keyword Jaccard similarity).
+    If no duplicate, uses Agent Hub complete() with the triager agent to assess:
     - Clarity of the task
     - Whether clarifying questions are needed
     - Suggested complexity
-    - Dependency conflicts with active/queued tasks
 
-    If clear (READY), moves task to Planning status.
-    If unclear (NEEDS_CLARIFICATION), adds questions to events log.
-    If rejected (REJECT), marks task as cancelled.
+    If duplicate found: cancels immediately without LLM call.
+    If clear (READY): moves task to Planning status.
+    If unclear (NEEDS_CLARIFICATION): adds questions to events log.
+    If rejected (REJECT): marks task as cancelled.
 
     Args:
         task_id: The task ID to triage
@@ -48,26 +50,22 @@ def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
     title = task.get("title", "")
     description = task.get("description", "")
 
-    # Gather context about existing active/queued tasks for conflict detection
-    active_context = ""
-    try:
-        active_tasks: list[dict[str, Any]] = []
-        for status in ("running", "queue", "pending"):
-            active_tasks.extend(task_store.list_tasks(project_id=project_id, status_filter=status))
-        if active_tasks:
-            task_titles = [f"- {t.get('title', '')}" for t in active_tasks[:20]]
-            active_context = (
-                "\n\nExisting active/queued tasks in this project:\n"
-                + "\n".join(task_titles)
-                + "\n\nCheck for duplicates or conflicts."
-            )
-    except Exception:
-        pass  # Non-critical context enrichment
+    # Deterministic duplicate check — cheaper and more accurate than LLM
+    dup_id = duplicate_task_exists(project_id, title, exclude_task_id=task_id)
+    if dup_id:
+        task_store.update_task_status(task_id, "cancelled")
+        log_task_event(task_id, f"Triage: REJECTED - Duplicate of {dup_id} (deterministic match)")
+        logger.info("Triage rejected duplicate", task_id=task_id, duplicate_of=dup_id)
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "result": {"status": "REJECT", "reject_reason": f"Duplicate of {dup_id}"},
+        }
 
     prompt = f"""Assess this task for clarity, feasibility, and readiness:
 
 Title: {title}
-Description: {description or "(no description provided)"}{active_context}
+Description: {description or "(no description provided)"}
 
 Provide your assessment in JSON format:
 {{
