@@ -73,8 +73,8 @@ def run_verify_command(
         - 'failed': Exit code != 0
         - 'crashed': Exit code 126-127 or exception
     """
-    from .projects import build_project_env
     from ..tasks.autonomous.verification_helpers import strip_venv_paths
+    from .projects import build_project_env
 
     if not cwd:
         raise ValueError(
