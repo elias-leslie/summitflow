@@ -11,181 +11,28 @@ This module provides:
 
 from __future__ import annotations
 
-import os
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
+from agent_hub import AgentHubClient
 from agent_hub.exceptions import AgentHubError
 
 from ..logging_config import get_logger
+from ._agent_hub_config import (
+    AGENT_HUB_API_KEY,
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    SUMMITFLOW_CLIENT_SECRET,
+    SUMMITFLOW_REQUEST_SOURCE,
+    get_async_client,
+    get_sync_client,
+    response_to_llm_response,
+)
+from ._agent_hub_types import LLMClient, LLMResponse
 
 if TYPE_CHECKING:
     pass
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class LLMResponse:
-    """Standardized LLM response across all providers."""
-
-    content: str
-    provider: str  # 'claude' or 'gemini'
-    model: str
-    usage: dict[str, int] = field(default_factory=dict)
-    stop_reason: str = "end_turn"  # 'end_turn', 'tool_use', 'max_tokens'
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
-    raw_response: dict[str, Any] = field(default_factory=dict)
-
-
-class LLMClient(ABC):
-    """Abstract base class for LLM providers.
-
-    Implementations route requests through Agent Hub for unified management.
-    """
-
-    @abstractmethod
-    def generate(
-        self,
-        prompt: str,
-        system: str | None = None,
-        temperature: float = 1.0,
-        purpose: str | None = None,
-        task_id: str | None = None,
-        **kwargs: Any,
-    ) -> LLMResponse:
-        """Generate completion.
-
-        Args:
-            prompt: User prompt
-            system: System prompt (optional)
-            temperature: Sampling temperature
-            purpose: Purpose of this request for session tracking
-            task_id: Task ID for session linkage
-            **kwargs: Provider-specific options
-
-        Returns:
-            LLMResponse with content and metadata
-
-        Raises:
-            RuntimeError: If generation fails
-        """
-        pass
-
-    @abstractmethod
-    def is_available(self) -> bool:
-        """Check if provider is available and operational."""
-        pass
-
-    @abstractmethod
-    def get_model_name(self) -> str:
-        """Get the model identifier used by this client."""
-        pass
-
-    def authenticate(self) -> bool:
-        """Verify authentication is working."""
-        return self.is_available()
-
-    def send_message(
-        self,
-        message: str,
-        system: str | None = None,
-        **kwargs: Any,
-    ) -> str:
-        """Send a message and get response text.
-
-        Simplified interface for basic chat interactions.
-        """
-        response = self.generate(prompt=message, system=system, **kwargs)
-        return response.content
-
-
-# Default Agent Hub URL - can be overridden via environment
-AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
-AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
-
-# SummitFlow client credentials for Agent Hub authentication
-SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
-SUMMITFLOW_CLIENT_SECRET = os.getenv("SUMMITFLOW_CLIENT_SECRET")
-SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
-
-
-def get_sync_client(
-    base_url: str | None = None,
-    api_key: str | None = None,
-    timeout: float = 600.0,
-    client_name: str = "summitflow",
-) -> AgentHubClient:
-    """Get a configured sync Agent Hub client with credentials.
-
-    Args:
-        base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
-        api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
-        timeout: Request timeout in seconds (default: 600)
-        client_name: Client identifier for usage tracking
-
-    Returns:
-        Configured AgentHubClient with credentials injected
-    """
-    return AgentHubClient(
-        base_url=base_url or AGENT_HUB_URL,
-        api_key=api_key or AGENT_HUB_API_KEY,
-        timeout=timeout,
-        client_name=client_name,
-        client_id=SUMMITFLOW_CLIENT_ID,
-        client_secret=SUMMITFLOW_CLIENT_SECRET,
-        request_source=SUMMITFLOW_REQUEST_SOURCE,
-    )
-
-
-def get_async_client(
-    base_url: str | None = None,
-    api_key: str | None = None,
-    timeout: float = 600.0,
-    client_name: str = "summitflow",
-) -> AsyncAgentHubClient:
-    """Get a configured async Agent Hub client with credentials.
-
-    Args:
-        base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
-        api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
-        timeout: Request timeout in seconds (default: 600)
-        client_name: Client identifier for usage tracking
-
-    Returns:
-        Configured AsyncAgentHubClient with credentials injected
-    """
-    return AsyncAgentHubClient(
-        base_url=base_url or AGENT_HUB_URL,
-        api_key=api_key or AGENT_HUB_API_KEY,
-        timeout=timeout,
-        client_name=client_name,
-        client_id=SUMMITFLOW_CLIENT_ID,
-        client_secret=SUMMITFLOW_CLIENT_SECRET,
-        request_source=SUMMITFLOW_REQUEST_SOURCE,
-    )
-
-
-def _response_to_llm_response(response: CompletionResponse) -> LLMResponse:
-    """Convert Agent Hub response to LLMResponse."""
-    return LLMResponse(
-        content=response.content,
-        provider=response.provider,
-        model=response.model,
-        usage={
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "total_tokens": response.usage.total_tokens,
-        },
-        stop_reason=response.finish_reason or "end_turn",
-        tool_calls=[],
-        raw_response={
-            "session_id": response.session_id,
-            "from_cache": response.from_cache,
-        },
-    )
 
 
 class AgentHubLLMClient(LLMClient):
@@ -230,13 +77,11 @@ class AgentHubLLMClient(LLMClient):
     def _get_client(self) -> AgentHubClient:
         """Get or create Agent Hub client."""
         if self._client is None:
-            # 10 minute timeout for complex coding tasks
-            # Claude CLI can take 5+ minutes for real code generation
             self._client = AgentHubClient(
                 base_url=self.base_url,
                 api_key=self.api_key,
                 timeout=600.0,
-                client_name="summitflow",  # Usage tracking
+                client_name="summitflow",
                 client_id=SUMMITFLOW_CLIENT_ID,
                 client_secret=SUMMITFLOW_CLIENT_SECRET,
                 request_source=SUMMITFLOW_REQUEST_SOURCE,
@@ -247,7 +92,6 @@ class AgentHubLLMClient(LLMClient):
         """Check if Agent Hub is available."""
         try:
             client = self._get_client()
-            # Simple health check - list sessions with minimal params
             client.list_sessions(page_size=1)
             return True
         except Exception as e:
@@ -289,13 +133,11 @@ class AgentHubLLMClient(LLMClient):
         """
         client = self._get_client()
 
-        # Build messages array
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        # Use instance defaults if not overridden
         effective_use_memory = use_memory if use_memory is not None else self.use_memory
         effective_memory_group = memory_group_id or self.memory_group_id
 
@@ -307,12 +149,12 @@ class AgentHubLLMClient(LLMClient):
                 project_id=self.project_id,
                 session_id=kwargs.get("session_id"),
                 purpose=purpose,
-                external_id=task_id,  # Link session to task for memory extraction
+                external_id=task_id,
                 enable_caching=kwargs.get("enable_caching", True),
                 use_memory=effective_use_memory,
                 memory_group_id=effective_memory_group,
             )
-            return _response_to_llm_response(response)
+            return response_to_llm_response(response)
         except AgentHubError as e:
             logger.error(f"Agent Hub error: {e}")
             raise RuntimeError(f"Agent Hub request failed: {e}") from e
@@ -341,6 +183,11 @@ def get_agent(agent_slug: str) -> AgentHubLLMClient:
 
 
 __all__ = [
+    "AGENT_HUB_API_KEY",
+    "AGENT_HUB_URL",
+    "SUMMITFLOW_CLIENT_ID",
+    "SUMMITFLOW_CLIENT_SECRET",
+    "SUMMITFLOW_REQUEST_SOURCE",
     "AgentHubLLMClient",
     "LLMClient",
     "LLMResponse",
