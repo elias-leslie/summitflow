@@ -121,208 +121,40 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
         return cast(AgentConfig, row[0])
 
 
-def set_default_agent(project_id: str, agent_type: str) -> AgentConfig:
-    """Set the default agent for a project.
+# Re-export submodule functions for backward compatibility
+# These imports are at the end to avoid circular dependencies
+from .agent_configs_agents import (  # noqa: E402
+    enable_agent,
+    get_enabled_agents,
+    set_default_agent,
+)
+from .agent_configs_autonomous import (  # noqa: E402
+    AutonomousScheduleConfig,
+    get_autonomous_schedule,
+    is_autonomous_enabled,
+    is_within_autonomous_hours,
+    update_autonomous_schedule,
+)
+from .agent_configs_components import (  # noqa: E402
+    COMPONENT_SOURCES,
+    get_component_source,
+    set_component_source,
+)
 
-    Args:
-        project_id: Project ID
-        agent_type: "claude" or "gemini"
-
-    Returns:
-        Updated config
-
-    Raises:
-        ValueError: If invalid agent type
-    """
-    if agent_type not in ("claude", "gemini"):
-        raise ValueError(f"Invalid agent type: {agent_type}. Use 'claude' or 'gemini'.")
-
-    return update_agent_config(project_id, {"default_agent": agent_type})
-
-
-def enable_agent(project_id: str, agent_type: str, enabled: bool = True) -> AgentConfig:
-    """Enable or disable an agent for a project.
-
-    Args:
-        project_id: Project ID
-        agent_type: "claude" or "gemini"
-        enabled: Whether to enable
-
-    Returns:
-        Updated config
-
-    Raises:
-        ValueError: If invalid agent type
-    """
-    if agent_type == "claude":
-        return update_agent_config(project_id, {"claude_enabled": enabled})
-    elif agent_type == "gemini":
-        return update_agent_config(project_id, {"gemini_enabled": enabled})
-    else:
-        raise ValueError(f"Invalid agent type: {agent_type}. Use 'claude' or 'gemini'.")
-
-
-def get_enabled_agents(project_id: str) -> list[str]:
-    """Get list of enabled agents for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        List of enabled agent types (e.g., ["claude", "gemini"])
-    """
-    config = get_agent_config(project_id)
-    enabled = []
-    if config.get("claude_enabled", True):
-        enabled.append("claude")
-    if config.get("gemini_enabled", True):
-        enabled.append("gemini")
-    return enabled
-
-
-# Valid component source values
-COMPONENT_SOURCES = frozenset(["pages", "endpoints", "directories", "manual"])
-
-
-def get_component_source(project_id: str) -> str:
-    """Get the component source setting for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        Component source: 'pages', 'endpoints', 'directories', or 'manual'
-    """
-    config = get_agent_config(project_id)
-    source = config.get("component_source", "manual")
-    if source not in COMPONENT_SOURCES:
-        return "manual"
-    return source
-
-
-def set_component_source(project_id: str, source: str) -> AgentConfig:
-    """Set the component source for a project.
-
-    Args:
-        project_id: Project ID
-        source: One of 'pages', 'endpoints', 'directories', 'manual'
-
-    Returns:
-        Updated config
-
-    Raises:
-        ValueError: If invalid source value
-    """
-    if source not in COMPONENT_SOURCES:
-        raise ValueError(
-            f"Invalid component source: {source}. "
-            f"Use one of: {', '.join(sorted(COMPONENT_SOURCES))}"
-        )
-
-    return update_agent_config(project_id, {"component_source": source})
-
-
-def is_autonomous_enabled(project_id: str) -> bool:
-    """Check if autonomous execution is enabled for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        True if autonomous execution is enabled
-    """
-    config = get_agent_config(project_id)
-    return bool(config.get("autonomous_enabled", False))
-
-
-class AutonomousScheduleConfig(TypedDict):
-    """Autonomous execution schedule configuration."""
-
-    enabled: bool
-    start_hour: int  # 0-23
-    end_hour: int  # 1-24 (24 = end of day)
-    max_concurrent: int  # 1-3
-
-
-def get_autonomous_schedule(project_id: str) -> AutonomousScheduleConfig:
-    """Get autonomous execution schedule for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        AutonomousScheduleConfig with schedule settings
-    """
-    config = get_agent_config(project_id)
-    return {
-        "enabled": config.get("autonomous_enabled", False),
-        "start_hour": config.get("autonomous_start_hour", 0),
-        "end_hour": config.get("autonomous_end_hour", 24),
-        "max_concurrent": config.get("autonomous_max_concurrent", 1),
-    }
-
-
-def is_within_autonomous_hours(project_id: str, current_hour: int) -> bool:
-    """Check if current hour is within the autonomous execution window.
-
-    Args:
-        project_id: Project ID
-        current_hour: Current hour (0-23)
-
-    Returns:
-        True if current_hour is within [start_hour, end_hour)
-    """
-    schedule = get_autonomous_schedule(project_id)
-    if not schedule["enabled"]:
-        return False
-
-    start = schedule["start_hour"]
-    end = schedule["end_hour"]
-
-    # Handle wrap-around (e.g., 22:00 to 06:00)
-    if start < end:
-        # Normal range: 8-18 means 8:00 to 17:59
-        return start <= current_hour < end
-    else:
-        # Wrap-around: 22-6 means 22:00-23:59 or 00:00-05:59
-        return current_hour >= start or current_hour < end
-
-
-def update_autonomous_schedule(
-    project_id: str,
-    start_hour: int | None = None,
-    end_hour: int | None = None,
-    max_concurrent: int | None = None,
-) -> AgentConfig:
-    """Update autonomous execution schedule for a project.
-
-    Args:
-        project_id: Project ID
-        start_hour: Hour (0-23) when execution can start
-        end_hour: Hour (1-24) when execution must stop
-        max_concurrent: Max concurrent tasks (1-3)
-
-    Returns:
-        Updated config
-
-    Raises:
-        ValueError: If invalid values provided
-    """
-    updates: AgentConfig = {}
-
-    if start_hour is not None:
-        if not 0 <= start_hour <= 23:
-            raise ValueError("start_hour must be 0-23")
-        updates["autonomous_start_hour"] = start_hour
-
-    if end_hour is not None:
-        if not 1 <= end_hour <= 24:
-            raise ValueError("end_hour must be 1-24")
-        updates["autonomous_end_hour"] = end_hour
-
-    if max_concurrent is not None:
-        if not 1 <= max_concurrent <= 3:
-            raise ValueError("max_concurrent must be 1-3")
-        updates["autonomous_max_concurrent"] = max_concurrent
-
-    return update_agent_config(project_id, updates)
+__all__ = [
+    "COMPONENT_SOURCES",
+    "DEFAULT_AGENT_CONFIG",
+    "AgentConfig",
+    "AutonomousScheduleConfig",
+    "enable_agent",
+    "get_agent_config",
+    "get_autonomous_schedule",
+    "get_component_source",
+    "get_enabled_agents",
+    "is_autonomous_enabled",
+    "is_within_autonomous_hours",
+    "set_component_source",
+    "set_default_agent",
+    "update_agent_config",
+    "update_autonomous_schedule",
+]
