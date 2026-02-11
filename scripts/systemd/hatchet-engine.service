@@ -9,6 +9,7 @@ EnvironmentFile=-%h/.env.local
 ExecStartPre=/usr/bin/docker pull ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
 ExecStart=/usr/bin/docker run --rm --name hatchet-engine \
     --network host \
+    -v %h/.local/share/hatchet/config:/config \
     -e DATABASE_URL=${HATCHET_DATABASE_URL} \
     -e SERVER_AUTH_COOKIE_INSECURE=true \
     -e SERVER_AUTH_COOKIE_DOMAIN=localhost \
