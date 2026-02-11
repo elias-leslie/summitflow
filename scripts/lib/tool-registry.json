@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "description": "Centralized tool registry — single source of truth for tool enforcement and dt configuration.",
+  "cmd_start": "(^|&&\\s*|;\\s*)",
+  "wrapper_allowlist": [
+    "dt\\b",
+    "dev-tools\\.sh\\b",
+    "st\\b",
+    "db\\b",
+    "restart\\.sh\\b",
+    "rebuild\\.sh\\b"
+  ],
+  "tools": [
+    {
+      "name": "pytest",
+      "redirect_patterns": [
+        "(\\.venv/bin/)?pytest\\b",
+        "python[0-9.]*\\s+-m\\s+pytest\\b",
+        "\\.venv/bin/python.*-m\\s+pytest\\b"
+      ],
+      "redirect_message": "Use 'dt pytest [args]' — handles venv, TOON output, worktree resolution.",
+      "dt": {
+        "label": "TEST",
+        "binary": "pytest",
+        "args": "--tb=short -q",
+        "count_method": "pytest_parse",
+        "working_dir": "backend",
+        "fallback_global": false,
+        "pass_path": false
+      }
+    },
+    {
+      "name": "mypy",
+      "redirect_patterns": [
+        "(\\.venv/bin/)?mypy\\b"
+      ],
+      "redirect_message": "Use 'dt mypy [args]' — handles venv, TOON output, worktree resolution.",
+      "dt": {
+        "label": "TYPES",
+        "binary": "mypy",
+        "args": "--ignore-missing-imports",
+        "count_method": "grep_error",
+        "working_dir": "backend",
+        "fallback_global": false,
+        "pass_path": true
+      }
+    },
+    {
+      "name": "ruff",
+      "redirect_patterns": [
+        "(\\.venv/bin/)?ruff\\b"
+      ],
+      "redirect_message": "Use 'dt ruff [args]' — handles venv, TOON output, worktree resolution.",
+      "dt": {
+        "label": "LINT",
+        "binary": "ruff",
+        "args": "check --output-format=concise",
+        "count_method": "wc_l",
+        "working_dir": "backend",
+        "fallback_global": true,
+        "pass_path": true
+      }
+    },
+    {
+      "name": "biome",
+      "redirect_patterns": [
+        "(npx\\s+)?biome\\b"
+      ],
+      "redirect_message": "Use 'dt biome [args]' — handles TOON output and project detection.",
+      "dt": {
+        "label": "BIOME",
+        "binary": "npx",
+        "args": "biome lint . --max-diagnostics=100",
+        "count_method": "biome_parse",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
+    {
+      "name": "tsc",
+      "redirect_patterns": [
+        "(npx\\s+)?tsc\\b"
+      ],
+      "redirect_message": "Use 'dt tsc' — handles TOON output and project detection.",
+      "dt": {
+        "label": "TSC",
+        "binary": "npx",
+        "args": "tsc --noEmit",
+        "count_method": "grep_error_ts",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
+    {
+      "name": "sqlfluff",
+      "redirect_patterns": [
+        "(\\.venv/bin/)?sqlfluff\\b"
+      ],
+      "redirect_message": "Use 'dt sqlfluff' — handles venv, TOON output, project detection.",
+      "dt": {
+        "label": "SQLFLUFF",
+        "binary": "sqlfluff",
+        "args": "lint --dialect postgres",
+        "count_method": "wc_l",
+        "working_dir": "migrations",
+        "fallback_global": true,
+        "pass_path": true
+      }
+    },
+    {
+      "name": "squawk",
+      "redirect_patterns": [
+        "squawk\\b"
+      ],
+      "redirect_message": "Use 'dt squawk' — handles TOON output and project detection.",
+      "dt": {
+        "label": "SQUAWK",
+        "binary": "squawk",
+        "args": "",
+        "count_method": "wc_l",
+        "working_dir": "migrations",
+        "fallback_global": true,
+        "pass_path": true
+      }
+    }
+  ],
+  "service_redirects": [
+    {
+      "pattern": "systemctl\\s+(--user\\s+)?restart\\s+(summitflow|agent-hub|sf-|ah-)",
+      "message": "Use project restart scripts: ~/summitflow/scripts/restart.sh or ~/agent-hub/scripts/restart.sh"
+    },
+    {
+      "pattern": "psql\\b",
+      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db count <table>. Use db -P <project> to target a specific project."
+    }
+  ]
+}

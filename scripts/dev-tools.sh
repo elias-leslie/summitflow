@@ -72,11 +72,18 @@ OUTPUT_DIR="$PROJECT_DIR/.dev-tools"
 ACTION="status"
 TARGET="all"
 
+# Tool registry — single source of truth for tool definitions
+TOOL_REGISTRY="$SCRIPT_DIR/lib/tool-registry.json"
+
 # Check for subcommands (first positional argument)
-# All TOOL_DEFS keys are valid subcommands
-case "${1:-}" in
-    pytest|ruff|mypy|biome|tsc|sqlfluff|squawk) ACTION="tool_toon"; TOOL_NAME="$1"; shift ;;
-esac
+# Tool names are read dynamically from the registry
+if [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
+    REGISTRY_TOOL_NAMES=$(jq -r '.tools[] | select(.dt) | .name' "$TOOL_REGISTRY" 2>/dev/null | tr '\n' '|')
+    REGISTRY_TOOL_NAMES="${REGISTRY_TOOL_NAMES%|}"  # strip trailing pipe
+    if [ -n "$REGISTRY_TOOL_NAMES" ] && echo "$1" | grep -qE "^(${REGISTRY_TOOL_NAMES})$"; then
+        ACTION="tool_toon"; TOOL_NAME="$1"; shift
+    fi
+fi
 
 # Parse remaining flags
 CHANGED_ONLY=0
@@ -687,19 +694,25 @@ status_dashboard() {
 # TOON WRAPPER FUNCTIONS - Token-optimized output for Claude
 # =============================================================================
 
-# Tool definitions: LABEL|binary|args|count_method|working_dir_type|fallback_global|pass_path
-# count_method: wc_l (count lines), grep_error (grep -c error:), pytest_parse (special)
-# working_dir_type: backend, frontend, root
-# fallback_global: 1 = try global binary if venv not found, 0 = fail
-# pass_path: 1 = pass work_dir as argument, 0 = just cd to dir
+# Tool definitions loaded from centralized registry (tool-registry.json)
+# Format: LABEL|binary|args|count_method|working_dir_type|fallback_global|pass_path
 declare -A TOOL_DEFS
-TOOL_DEFS[ruff]='LINT|ruff|check --output-format=concise|wc_l|backend|1|1'
-TOOL_DEFS[mypy]='TYPES|mypy|--ignore-missing-imports|grep_error|backend|0|1'
-TOOL_DEFS[pytest]='TEST|pytest|--tb=short -q|pytest_parse|backend|0|0'
-TOOL_DEFS[biome]='BIOME|npx|biome lint . --max-diagnostics=100|biome_parse|frontend|1|0'
-TOOL_DEFS[tsc]='TSC|npx|tsc --noEmit|grep_error_ts|frontend|1|0'
-TOOL_DEFS[sqlfluff]='SQLFLUFF|sqlfluff|lint --dialect postgres|wc_l|migrations|1|1'
-TOOL_DEFS[squawk]='SQUAWK|squawk||wc_l|migrations|1|1'
+if [ -f "$TOOL_REGISTRY" ]; then
+    while IFS='|' read -r name label binary args count_method working_dir fallback_global pass_path; do
+        TOOL_DEFS[$name]="${label}|${binary}|${args}|${count_method}|${working_dir}|${fallback_global}|${pass_path}"
+    done < <(jq -r '.tools[] | select(.dt) | [
+        .name,
+        .dt.label,
+        .dt.binary,
+        .dt.args,
+        .dt.count_method,
+        .dt.working_dir,
+        (if .dt.fallback_global then "1" else "0" end),
+        (if .dt.pass_path then "1" else "0" end)
+    ] | join("|")' "$TOOL_REGISTRY")
+else
+    echo "ERROR:registry_not_found:$TOOL_REGISTRY" >&2
+fi
 
 # Check if project has frontend (biome.json, eslint.config.*, or package.json in frontend/)
 has_frontend() {
