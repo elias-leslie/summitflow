@@ -188,7 +188,7 @@ def execute_agent_fix(
         "session_id": agent_session_id,
     }
     if model_override:
-        fix_kwargs["model_override"] = model_override
+        fix_kwargs["model"] = model_override
 
     response = client.complete(**fix_kwargs)
 
