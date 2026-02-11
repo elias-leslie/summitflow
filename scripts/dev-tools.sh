@@ -85,8 +85,9 @@ if [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
     fi
 fi
 
-# Parse remaining flags
+# Parse remaining flags — unknown args are passed through to tool subcommands
 CHANGED_ONLY=0
+EXTRA_ARGS=()
 for arg in "$@"; do
     case $arg in
         --check|-c) ACTION="check"; TARGET="current" ;;
@@ -97,6 +98,7 @@ for arg in "$@"; do
         --fix-all) ACTION="fix"; TARGET="all" ;;
         --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
         --help|-h) ACTION="help" ;;
+        *) EXTRA_ARGS+=("$arg") ;;
     esac
 done
 
@@ -860,6 +862,12 @@ run_tool_toon() {
         cd "$BACKEND_PATH"
     elif [[ "$dir_type" == "frontend" ]]; then
         cd "$PROJECT_DIR/frontend" 2>/dev/null || cd "$PROJECT_DIR"
+    fi
+
+    # Append extra args passed via CLI (e.g., dt pytest tests/specific_file.py)
+    local extra="${EXTRA_ARGS[*]:-}"
+    if [[ -n "$extra" ]]; then
+        args="$args $extra"
     fi
 
     # Execute tool
