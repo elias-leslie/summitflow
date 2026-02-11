@@ -15,7 +15,7 @@ from .columns import EXPECTED_TASK_COLUMNS, EXPECTED_TASK_COLUMNS_WITH_SPIRIT
 def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (39 columns):
+    Column order (40 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits, pull_request_url,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -24,13 +24,8 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, autonomous,
-        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override, agent_hub_session_ids
-
-    Note: Migration 072 dropped plan_content, labels, objective, spirit_anti,
-          decisions, constraints, done_when (now in task_spirit/task_labels)
-    Note: Migration 099 dropped progress_log (now in events table)
-    Note: Migration 101 added agent_override
-    Note: Migration 028147425749 added agent_hub_session_ids
+        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override,
+        agent_hub_session_ids, labels
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -76,32 +71,33 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "qa_issues": row[36] or [],
         "agent_override": row[37],
         "agent_hub_session_ids": row[38] or [],
+        "labels": row[39] or [],
     }
 
 
 def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (45 columns):
-        First 39 columns are standard task columns (see row_to_dict).
+    Column order (46 columns):
+        First 40 columns are standard task columns (see row_to_dict).
         Then 6 spirit columns:
-        39: objective, 40: spirit_anti, 41: decisions, 42: constraints,
-        43: done_when, 44: plan_status
+        40: objective, 41: spirit_anti, 42: decisions, 43: constraints,
+        44: done_when, 45: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
     if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
-    # Build base task dict from first 39 columns
+    # Build base task dict from first 40 columns
     task = row_to_dict(row[:EXPECTED_TASK_COLUMNS])
 
-    # Add spirit fields (columns 39-44)
-    task["objective"] = row[39]
-    task["spirit_anti"] = row[40]
-    task["decisions"] = row[41] if row[41] else []
-    task["constraints"] = row[42] if row[42] else []
-    task["done_when"] = row[43] if row[43] else []
-    task["plan_status"] = row[44]
+    # Add spirit fields (columns 40-45)
+    task["objective"] = row[40]
+    task["spirit_anti"] = row[41]
+    task["decisions"] = row[42] if row[42] else []
+    task["constraints"] = row[43] if row[43] else []
+    task["done_when"] = row[44] if row[44] else []
+    task["plan_status"] = row[45]
 
     return task

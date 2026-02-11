@@ -15,8 +15,8 @@ from .columns import TASK_COLUMNS
 from .mapping import row_to_dict
 
 # Allowed fields for task updates
-# Note: objective, spirit_anti, decisions, constraints, done_when, labels
-# are now in task_spirit/task_labels tables (migration 072)
+# Note: objective, spirit_anti, decisions, constraints, done_when
+# are in task_spirit table (migration 072)
 # Note: progress_log moved to events table (migration 099)
 # Note: agent_override added in migration 101
 ALLOWED_UPDATE_FIELDS = {
@@ -57,6 +57,7 @@ ALLOWED_UPDATE_FIELDS = {
     "qa_issues",
     "agent_override",
     "agent_hub_session_ids",
+    "labels",
 }
 
 # JSONB dict fields
