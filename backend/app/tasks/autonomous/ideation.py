@@ -68,6 +68,7 @@ def ideate_task(task_id: str, project_id: str) -> dict[str, Any]:
             agent_slug="ideator",
             project_id=project_id,
             use_memory=True,
+            memory_group_id=f"project:{project_id}",
         )
 
         result = _parse_ideation_response(response.content)
