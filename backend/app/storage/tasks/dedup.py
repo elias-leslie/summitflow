@@ -134,7 +134,10 @@ def duplicate_task_exists(
         The ID of the duplicate task if found, None otherwise.
     """
     new_keywords = _extract_title_keywords(title)
-    if not new_keywords:
+    if len(new_keywords) < 3:
+        # Fewer than 3 keywords means insufficient signal for reliable dedup.
+        # Short keyword sets (e.g. 2 words after noise stripping) produce
+        # high Jaccard scores even for semantically different tasks.
         return None
 
     query = """

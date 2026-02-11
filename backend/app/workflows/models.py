@@ -11,7 +11,7 @@ class TaskInput(BaseModel):
 
 
 class ProjectInput(BaseModel):
-    project_id: str
+    project_id: str = "summitflow"
 
 
 class EmptyInput(BaseModel):
@@ -78,4 +78,4 @@ class SelfHealingInput(BaseModel):
 
 
 class CodeHealthInput(BaseModel):
-    project_id: str
+    project_id: str = "summitflow"

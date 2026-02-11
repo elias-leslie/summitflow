@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.storage.tasks.dedup import (
     _calculate_keyword_overlap,
     _extract_title_keywords,
@@ -144,11 +142,12 @@ class TestDuplicateTaskExists:
 
     @patch("app.storage.tasks.dedup.get_connection")
     def test_near_duplicate_with_different_id(self, mock_get_conn: MagicMock) -> None:
-        """Same title but different appended IDs should match."""
-        cur = self._mock_cursor([("task-abc", "AutoTest: Scheduled execution 111111")])
+        """Same title with different IDs matches when 3+ keywords survive filtering."""
+        # "Fix backend scheduled execution handler 111" → {fix, backend, scheduled, execution, handler}
+        cur = self._mock_cursor([("task-abc", "Fix backend scheduled execution handler 111")])
         mock_get_conn.return_value = self._mock_connection(cur)
 
-        result = duplicate_task_exists("proj", "AutoTest: Scheduled execution 222222")
+        result = duplicate_task_exists("proj", "Fix backend scheduled execution handler 222")
         assert result == "task-abc"
 
     @patch("app.storage.tasks.dedup.get_connection")
@@ -165,7 +164,7 @@ class TestDuplicateTaskExists:
         cur = self._mock_cursor([])
         mock_get_conn.return_value = self._mock_connection(cur)
 
-        duplicate_task_exists("proj", "Fix bug", exclude_task_id="task-self")
+        duplicate_task_exists("proj", "Fix login button crash", exclude_task_id="task-self")
 
         sql = cur.execute.call_args[0][0]
         params = cur.execute.call_args[0][1]
@@ -178,7 +177,7 @@ class TestDuplicateTaskExists:
         cur = self._mock_cursor([])
         mock_get_conn.return_value = self._mock_connection(cur)
 
-        duplicate_task_exists("proj", "Fix bug", exclude_task_id=None)
+        duplicate_task_exists("proj", "Fix login button crash", exclude_task_id=None)
 
         sql = cur.execute.call_args[0][0]
         assert "id != %s" not in sql
@@ -234,6 +233,31 @@ class TestDuplicateTaskExists:
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "alpha beta gamma delta")
+        assert result == "task-abc"
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_insufficient_keywords_skips_dedup(self, mock_get_conn: MagicMock) -> None:
+        """Titles that collapse to <3 keywords after filtering skip dedup entirely.
+
+        This prevents false positives from titles like "AutoTest: Scheduled exec 111"
+        where noise stripping leaves only 2 keywords.
+        """
+        cur = self._mock_cursor([("task-abc", "AutoTest: Scheduled execution 111111")])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists("proj", "AutoTest: Scheduled execution 222222")
+        assert result is None
+        # Should not query DB when new title has insufficient keywords
+        mock_get_conn.assert_not_called()
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_sufficient_keywords_still_dedupes(self, mock_get_conn: MagicMock) -> None:
+        """Titles with 3+ keywords after filtering are still deduped normally."""
+        # "fix login button crash" → {fix, login, button, crash} = 4 keywords
+        cur = self._mock_cursor([("task-abc", "Fix login button crash")])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists("proj", "Fix login button crash")
         assert result == "task-abc"
 
     @patch("app.storage.tasks.dedup.get_connection")
