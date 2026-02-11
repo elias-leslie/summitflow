@@ -136,7 +136,9 @@ def autocode_task(
         handle_api_error(e)
         raise typer.Exit(1) from None
 
-    if not subtasks:
+    # Crowdsourced tasks need ideation first (no subtasks expected)
+    is_crowdsourced = "crowdsourced" in (task.get("labels") or [])
+    if not subtasks and not is_crowdsourced:
         output_error(f"Task {task_id} has no subtasks. Use 'st autocode' to generate a plan.")
         raise typer.Exit(1)
 

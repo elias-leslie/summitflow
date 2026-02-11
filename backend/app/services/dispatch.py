@@ -43,7 +43,11 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
 
     task_input = TaskInput(task_id=task_id, project_id=project_id)
 
-    if stage == "triage":
+    if stage == "ideation":
+        from ..workflows.pipeline import ideate_wf
+
+        await ideate_wf.aio_run_no_wait(task_input)
+    elif stage == "triage":
         from ..workflows.pipeline import triage_wf
 
         await triage_wf.aio_run_no_wait(task_input)
@@ -51,10 +55,15 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
         from ..workflows.pipeline import plan_wf
 
         await plan_wf.aio_run_no_wait(task_input)
-    else:
+    elif stage == "execution":
         from ..workflows.pipeline import execute_wf
 
         await execute_wf.aio_run_no_wait(task_input)
+    else:
+        logger.warning("Unknown stage, dispatching to triage", task_id=task_id, stage=stage)
+        from ..workflows.pipeline import triage_wf
+
+        await triage_wf.aio_run_no_wait(task_input)
 
     logger.info(
         "task_dispatched",

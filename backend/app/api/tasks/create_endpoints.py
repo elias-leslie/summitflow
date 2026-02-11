@@ -34,6 +34,7 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         parent_task_id=task.parent_task_id,
         complexity=task.complexity,
         autonomous=task.autonomous,
+        labels=task.labels,
     )
 
     # Save spirit fields to task_spirit table
