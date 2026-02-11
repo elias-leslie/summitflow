@@ -1,7 +1,4 @@
-# AUTOTEST_autotest-1770761199
 """SummitFlow database storage."""
-
-# AUTOTEST_autotest-1769987075
 
 from . import agent_configs, events, explorer, explorer_sub_elements
 from .connection import get_connection
@@ -23,12 +20,3 @@ __all__ = [
     "get_events_with_filters",
     "log_task_event",
 ]
-# DONE_WORKFLOW_TEST_1770048056
-# DONE_WORKFLOW_TEST_1770048072
-# DONE_WORKFLOW_TEST_1770048142
-# DONE_WORKFLOW_TEST_1770050295
-# DONE_WORKFLOW_TEST_1770050307
-# DONE_WORKFLOW_TEST_1770050403
-# DONE_WORKFLOW_TEST_1770050824
-# DONE_WORKFLOW_TEST_1770051062
-# AutoTest done workflow marker - task-c34899a8
