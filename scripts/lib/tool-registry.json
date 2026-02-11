@@ -128,12 +128,12 @@
   ],
   "service_redirects": [
     {
-      "pattern": "systemctl\\s+(--user\\s+)?restart\\s+(summitflow|agent-hub|sf-|ah-)",
-      "message": "Use project restart scripts: ~/summitflow/scripts/restart.sh or ~/agent-hub/scripts/restart.sh"
+      "pattern": "systemctl\\s+(--user\\s+)?restart\\s+(summitflow|agent-hub|portfolio|sf-|ah-)",
+      "message": "Use project restart scripts: ~/summitflow/scripts/restart.sh, ~/agent-hub/scripts/restart.sh, or ~/portfolio-ai/scripts/restart.sh"
     },
     {
       "pattern": "psql\\b",
-      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db count <table>. Use db -P <project> to target a specific project."
+      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet)."
     }
   ]
 }
